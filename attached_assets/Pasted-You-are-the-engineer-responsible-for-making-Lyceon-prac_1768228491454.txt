@@ -1,0 +1,223 @@
+You are the engineer responsible for making Lyceon practice work end-to-end TODAY.
+
+You must NOT refactor. You must NOT rename routes. You must NOT add packages. You must NOT do partial work.
+You must implement only the minimum surgical changes required, and you must provide concrete proofs.
+
+## Context (DB policies are the source of truth)
+RLS policies already exist and enforce ownership:
+
+- practice_sessions INSERT requires: auth.uid() = user_id
+- answer_attempts INSERT requires: auth.uid() = user_id
+- practice_events INSERT requires: user_id = auth.uid()
+
+Therefore, the API must:
+1) reliably resolve the authenticated Supabase user ID (auth.uid / JWT user id)
+2) always insert `user_id` on practice_sessions, answer_attempts, practice_events
+3) never proceed if user_id cannot be resolved
+
+You MUST align server behavior to these policies. Do not change policies.
+
+## Goal (Definition of Done)
+A) In browser, logged-in student can:
+- open /practice/math
+- see a question + options
+- submit an answer successfully
+- proceed to next question
+B) practice_sessions row is created with correct user_id, status, started_at
+C) answer_attempts row is inserted with correct user_id, session_id, question_id
+D) /api/health/practice returns ok:true (schema + auth alignment checks pass)
+
+## Files in scope (do not touch anything else unless proven necessary)
+1) server/routes/practice-canonical.ts
+2) server/routes/supabase-auth-routes.ts
+3) server/routes/health-routes.ts
+4) server/index.ts (only if you must register a route)
+
+---
+
+# Phase 0 — Schema truth (required evidence, no code changes until done)
+Run these SQL queries in Supabase SQL Editor and paste results:
+
+### 0.1 Columns
+select table_name, column_name, data_type, is_nullable, column_default
+from information_schema.columns
+where table_schema='public'
+  and table_name in ('practice_sessions','answer_attempts','practice_events','questions')
+order by table_name, ordinal_position;
+
+### 0.2 Status check constraint
+SELECT conname, pg_get_constraintdef(oid) AS def
+FROM pg_constraint
+WHERE conrelid = 'public.practice_sessions'::regclass
+AND contype='c';
+
+### 0.3 RLS enabled
+select c.relname as table_name, c.relrowsecurity as rls_enabled
+from pg_class c join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public'
+  and c.relname in ('practice_sessions','answer_attempts','practice_events','questions');
+
+STOP and report if any of these are missing:
+- practice_sessions.user_id
+- answer_attempts.user_id
+- practice_sessions.status allows 'in_progress'
+- questions.options exists
+
+Only proceed if schema supports the code contract.
+
+---
+
+# Phase 1 — Make auth resolution deterministic (this is the #1 blocker)
+Problem: Current production debug outputs show resolvedUserId null and hasBearerToken false.
+That means the server is not extracting the user token reliably from cookies/headers.
+
+### Requirement
+Create ONE shared helper used by:
+- /api/auth/debug
+- ALL practice endpoints (next/answer/end-session)
+
+Helper must:
+1) Read bearer token from Authorization header (case-insensitive):
+   - accept "Bearer <token>" or "bearer <token>"
+2) If no Authorization header token, read cookie token from ANY cookie that contains "access-token"
+   - do NOT assume only "sb-access-token"
+   - Supabase often uses project-scoped cookie names; search keys.
+3) If cookie value looks JSON (starts with "{" or "["), attempt JSON.parse and extract a token if present.
+   - If parsing fails, ignore and continue.
+4) If token cannot be found => return null userId and the practice route must return 401 with a clear error.
+
+Implementation constraints:
+- NO new packages.
+- Use existing supabase client to validate token:
+  supabaseAnon.auth.getUser(token)
+- If supabaseAnon.auth.getUser fails => treat as unauthenticated.
+
+Add a small diagnostic to /api/auth/debug:
+- cookieKeys: list of cookie names seen (names only, no values)
+- authHeaderPresent: boolean
+- tokenSource: 'bearer' | 'cookie:<name>' | null
+- tokenLength: number|null
+- bearerParsed: boolean
+
+Proof required (local + production-ready):
+- Provide code snippet of helper.
+- Provide /api/auth/debug output showing:
+  cookieKeys populated when called from browser session,
+  and tokenSource non-null when user is logged in.
+
+IMPORTANT: practice endpoints must use this same helper to get userId.
+DO NOT duplicate token parsing across files.
+
+---
+
+# Phase 2 — Align practice-canonical to RLS contract (no debate)
+File: server/routes/practice-canonical.ts
+
+## 2.1 Session creation (practice_sessions)
+When creating a session, insert payload MUST include:
+- user_id: resolvedUserId
+- status: 'in_progress'
+- started_at: now
+- completed: false
+- section, mode as used by route
+
+If resolvedUserId is null => return 401 JSON:
+{ error: "unauthorized", detail: "missing_or_invalid_token" }
+
+## 2.2 Attempts insert (answer_attempts)
+When recording an answer, insert payload MUST include:
+- user_id: resolvedUserId  (required by RLS with_check)
+- session_id
+- question_id
+- selected_answer / free_response_answer
+- is_correct
+- outcome
+- time_spent_ms (or elapsed_ms mapped to correct column based on Phase 0 schema output)
+- attempted_at: now
+
+If insert fails => return 500 with supabase error message included:
+{ error: "attempt_insert_failed", detail: <supabaseError.message>, code: <supabaseError.code> }
+
+## 2.3 Events insert (practice_events) (optional but should work)
+If you insert an event, payload MUST include:
+- user_id: resolvedUserId
+- event_type
+- created_at (if required)
+If insert fails, log but DO NOT break practice.
+
+## 2.4 Questions select must match DB
+Select only columns that exist (confirmed by questions CSV):
+id, section, stem, type, options, difficulty, classification, answer_choice, answer_text, explanation
+
+Options parsing must guarantee array:
+- If string => JSON.parse safely
+- Else if array => keep
+- Else => []
+
+---
+
+# Phase 3 — Health endpoint must validate what matters (not data)
+File: server/routes/health-routes.ts
+
+Update /api/health/practice to:
+1) Resolve userId using the SAME helper as Phase 1 (Authorization/cookie)
+2) If userId resolved, check service role alignment:
+   admin.auth.admin.getUserById(userId)
+3) Schema check via information_schema ONLY:
+   - confirm required columns exist in each table
+   - confirm practice_sessions status check includes 'in_progress'
+Return:
+{
+  ok: boolean,
+  auth: { resolvedUserId, tokenSource, serviceRoleCanReadUser, userLookupError },
+  schema: {
+    questions: { missingColumns: [] },
+    practice_sessions: { missingColumns: [] },
+    answer_attempts: { missingColumns: [] },
+    practice_events: { missingColumns: [] }
+  }
+}
+
+ok must be false if:
+- resolvedUserId is null when Authorization/cookies present
+- serviceRoleCanReadUser is false (project key mismatch)
+- any required schema column missing
+- status constraint missing 'in_progress'
+
+---
+
+# Phase 4 — Proofs (required before “done”)
+You must provide:
+
+## 4.1 Grep proofs
+- grep showing practice-canonical does NOT select non-existent columns:
+  correct_answer, passage, passage_id must not appear.
+
+## 4.2 Browser proof (required)
+- Log in as student.
+- Open /practice/math.
+- Confirm question renders with options.
+- Submit answer.
+- Confirm next question loads.
+
+## 4.3 Server-side “self proof” (no curl required)
+Add minimal structured logs (safe) for 24 hours:
+- When /api/practice/next is called:
+  log requestId, resolvedUserId present?, tokenSource, sessionId created?
+- When /api/practice/answer is called:
+  log requestId, resolvedUserId present?, attempt insert ok?
+
+DO NOT log tokens.
+
+---
+
+# What to deliver back
+1) List of modified files
+2) Code snippets:
+   - auth resolution helper
+   - practice_sessions insert payload
+   - answer_attempts insert payload including user_id
+3) Health endpoint sample JSON output when logged in (from browser request, not curl)
+4) Confirmation practice works in browser end-to-end
+
+No other scope.

@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+
+# SEO-important pages
+Allow: /digital-sat
+Allow: /digital-sat/math
+Allow: /digital-sat/reading-writing
+Allow: /blog
+Allow: /legal
+
+# Disallow private routes
+Disallow: /admin
+Disallow: /auth/
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /profile
+
+Sitemap: https://lyceon.ai/sitemap.xml

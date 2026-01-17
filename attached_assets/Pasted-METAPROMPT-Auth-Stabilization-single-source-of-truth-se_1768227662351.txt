@@ -1,0 +1,238 @@
+METAPROMPT: “Auth Stabilization: single source of truth = server cookies”
+
+Context & Objective
+You are fixing intermittent login loops where Google login returns to /login with no visible error.
+Repo: Learningai (zip: Learningai - 2026-01-12T073524.487.zip).
+Goal: make auth deterministic by ensuring only the server cookie session is authoritative for API auth, and prevent Supabase client from persisting/refreshing sessions in a conflicting way.
+
+Step 1: Freeze the Supabase client from persisting/refreshing sessions
+Edit file: client/src/lib/supabase.ts
+
+Current (lines ~18–22):
+
+auth: {
+  autoRefreshToken: true,
+  persistSession: true,
+  detectSessionInUrl: true,
+  flowType: 'pkce',
+},
+
+
+Replace with:
+
+auth: {
+  // Server cookies are the source of truth.
+  // Do not persist or auto-refresh on the client; it can race with /api/auth/refresh.
+  autoRefreshToken: false,
+  persistSession: false,
+
+  // We do NOT use client-side OAuth callbacks (we use /auth/google/callback on the server).
+  detectSessionInUrl: false,
+
+  // Keep PKCE for signInWithPassword session creation only (in-memory).
+  flowType: 'pkce',
+},
+
+
+Why: This stops the Supabase JS client from storing and refreshing tokens independently, which can cause refresh-token reuse and infinite loops.
+
+Proof required:
+
+grep -n "autoRefreshToken" -n client/src/lib/supabase.ts
+grep -n "persistSession" -n client/src/lib/supabase.ts
+grep -n "detectSessionInUrl" -n client/src/lib/supabase.ts
+
+
+Expected: values are false for all three.
+
+Step 2: Remove the competing client callback route (or hard-disable it)
+Edit file: client/src/App.tsx
+
+There is a route:
+
+client/src/App.tsx line 67:
+<Route path="/auth/callback" component={AuthCallback} />
+
+Option A (recommended): remove it
+
+Remove the lazy import:
+
+client/src/App.tsx line 31:
+const AuthCallback = lazy(() => import("@/pages/auth-callback"));
+
+Remove the route:
+
+client/src/App.tsx line 67.
+
+Option B (if you refuse to remove it): hard-disable it
+Change route to redirect to /login with a message (but Option A is cleaner and safer).
+
+Proof required:
+
+grep -RIn "auth-callback|/auth/callback|AuthCallback" client/src | head -n 50
+
+
+Expected: no matches (Option A) OR only a controlled redirect page (Option B).
+
+Step 3: Make SupabaseAuthContext rely on backend cookies first, not Supabase session
+Edit file: client/src/contexts/SupabaseAuthContext.tsx
+
+In initializeAuth() you currently do:
+
+supabase.auth.getSession() then maybe /exchange-session, then separately fetchUserFromBackend().
+
+Change the initialization order to:
+
+Always attempt backend cookie hydration first:
+
+const backendUser = await fetchUserFromBackend();
+
+If backendUser exists: setUser + stop.
+
+Only if backendUser is null:
+
+attempt supabase.auth.getSession() (for fresh email/password sign-in in same tab only)
+
+if session exists, call /api/auth/exchange-session
+
+then call fetchUserFromBackend() again
+
+Replace your initializeAuth() body with this (drop-in):
+const initializeAuth = async () => {
+  try {
+    // 1) Backend cookie session is the source of truth
+    const backendUser = await fetchUserFromBackend();
+    if (backendUser) {
+      setUser(backendUser);
+      return;
+    }
+
+    // 2) Only fallback to in-memory Supabase session (email/password flow)
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await exchangeSession(session.access_token);
+      const refreshedUser = await fetchUserFromBackend();
+      if (refreshedUser) setUser(refreshedUser);
+    }
+  } catch (err) {
+    console.error('[AUTH] initializeAuth failed:', err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+Also remove or neuter any logic that triggers refresh loops repeatedly. Specifically:
+
+ensure you are not running initializeAuth() multiple times
+
+ensure you don’t call refresh in both an effect and in fetchUserFromBackend()
+
+Proof required:
+
+Show final initializeAuth() with line numbers:
+
+nl -ba client/src/contexts/SupabaseAuthContext.tsx | sed -n '1,240p'
+
+Step 4: Confirm server cookie helpers are the only way cookies are set/cleared
+Validate file: server/routes/supabase-auth-routes.ts
+
+This repo already contains cookie helpers:
+
+setAuthCookies() and clearAuthCookies()
+
+Your job is to verify:
+
+every route that sets cookies uses setAuthCookies()
+
+signout uses clearAuthCookies()
+
+refresh uses setAuthCookies() on success and clearAuthCookies() on failure
+
+Proof required:
+
+grep -RIn "res\\.cookie\\(|res\\.clearCookie\\(" server/routes | head -n 200
+grep -RIn "setAuthCookies\\(|clearAuthCookies\\(" server/routes/supabase-auth-routes.ts
+
+
+Expected: cookie writes/clears appear only in the helper functions + Google OAuth route.
+
+Step 5: Verify Google OAuth callback sets cookies + redirects correctly
+Validate file: server/routes/google-oauth-routes.ts
+
+This file sets sb-access-token and sb-refresh-token and redirects based on profile role.
+
+Proof required (show exact block with line numbers):
+
+nl -ba server/routes/google-oauth-routes.ts | sed -n '1,220p'
+nl -ba server/routes/google-oauth-routes.ts | sed -n '220,420p'
+
+Step 6: Production proofs (must be run after deploy)
+A) Confirm build changed (to prove you’re not looking at stale prod)
+
+Bump the build string in:
+
+server/routes/supabase-auth-routes.ts where it returns "build": "..." (currently in this zip it’s 2026-01-12-auth-debug-v3).
+
+Proof:
+
+curl -s https://lyceon.ai/api/auth/debug | jq .build
+
+
+Expected: matches the new build string.
+
+B) Cookie presence after Google login
+
+After logging in with Google in an incognito window, run:
+
+curl -s https://lyceon.ai/api/auth/debug | jq .cookies
+
+
+Expected:
+
+hasAccessCookie: true
+
+hasRefreshCookie: true
+
+C) Backend user resolves
+curl -s https://lyceon.ai/api/auth/user | jq .
+
+
+Expected: HTTP 200 with a user object.
+
+D) Role redirect works
+
+guardian ends on /guardian
+
+student ends on /dashboard
+
+Guardrails
+
+Do NOT reintroduce client-side OAuth callbacks.
+
+Do NOT turn Supabase client auto-refresh back on.
+
+Do NOT store access/refresh tokens in localStorage.
+
+Backend cookies remain httpOnly + secure in production.
+
+Done criteria
+
+Google login works 10 times in a row in incognito with no loops.
+
+/api/auth/debug shows cookies present after login.
+
+/api/auth/user returns 200 after login and after refresh of page.
+
+3) Extra: quick sanity checks you can run right now
+
+From repo root:
+
+# Confirm Supabase client settings
+nl -ba client/src/lib/supabase.ts | sed -n '1,80p'
+
+# Confirm /auth/callback is removed
+grep -RIn "/auth/callback" client/src | head -n 20
+
+# Confirm server Google callback exists
+grep -RIn "app.get\\(\"/auth/google/callback\"|googleCallbackHandler" server/index.ts

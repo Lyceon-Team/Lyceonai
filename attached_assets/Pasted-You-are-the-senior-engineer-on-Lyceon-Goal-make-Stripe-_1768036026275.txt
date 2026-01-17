@@ -1,0 +1,264 @@
+You are the senior engineer on Lyceon. Goal: make Stripe checkout work end-to-end in live mode and eliminate any “phantom” price IDs or wrong plan selection due to stale frontend bundles, server env caching, or fallback logic.
+
+Context (current observed failures)
+
+Browser console shows POST /api/billing/checkout returns 400 with:
+
+stripeMessage: "No such price: 'price_...'" where that price id does not exist in Replit secrets.
+
+Sometimes the request uses plan: 'quarterly' even when the user clicked monthly.
+
+/api/billing/debug/env indicates live keys are loaded (sk_live_, pk_live_) and mode is live.
+
+/api/billing/debug/validate returns ok: false and includes failed plan(s). That endpoint is supposed to retrieve the configured prices from Stripe; it’s currently failing.
+
+Hypothesis: frontend bundle is stale or hardcoded, OR backend is still using fallback/stale env, OR UI click handler always sends quarterly, OR /api/billing/prices is returning stale/mismatched data.
+
+Non-negotiable requirements
+
+No hardcoded Stripe price IDs anywhere in runtime code paths.
+
+Checkout must only ever create sessions using price IDs from env:
+
+STRIPE_PRICE_PARENT_MONTHLY
+
+STRIPE_PRICE_PARENT_QUARTERLY
+
+STRIPE_PRICE_PARENT_YEARLY
+
+Frontend must send { plan: 'monthly' | 'quarterly' | 'yearly' } that matches the user’s selection.
+
+Caching/version skew must be eliminated:
+
+If frontend is stale, force a new build and ensure browser gets the new JS.
+
+If backend env is stale, force process restart and re-read env deterministically.
+
+After fix, user-facing error should be generic (“Could not start checkout”) while detailed error stays behind ?billingDebug=1 only.
+
+Phase 0 — Reality check and proofs (do not skip)
+0.1 Identify the exact checkout payload being sent from the UI
+
+In the paywall component (likely something like client/src/.../SubscriptionPaywall.tsx or client/src/pages/guardian/...):
+
+Add a temporary console.log('[Billing] selectedPlan', selectedPlan) immediately before calling checkout.
+
+Confirm the button click sets the correct selected plan and does not get overwritten.
+
+Proof required:
+
+Paste the exact fetch payload body from the browser Network tab for the checkout call.
+
+0.2 Grep for hardcoded plan defaults + hardcoded IDs
+
+Run ripgrep across repo:
+
+Hardcoded plan strings in paywall:
+
+rg -n "plan:\s*'quarterly'|plan:\s*\"quarterly\"|default.*quarterly|setSelectedPlan\(|selectedPlan" client server
+
+Hardcoded Stripe identifiers:
+
+rg -n "price_[A-Za-z0-9]+|prod_[A-Za-z0-9]+|sk_live_|pk_live_" server client
+
+Any fallback constants that resemble old/phantom IDs:
+
+rg -n "STRIPE_PRICE|PRICE_PARENT|PRICE_MONTHLY|PRICE_QUARTERLY|PRICE_YEARLY" server client
+
+Proof required:
+
+Show “no matches” for price_ outside tests/docs, OR list each match with path and explain why it’s safe (docs/tests only).
+
+Phase 1 — Make backend price resolution impossible to “guess”
+1.1 Centralize strict env reading (server-side)
+
+In the Stripe checkout route file (likely server/routes/billing-routes.ts or similar):
+
+Create ONE helper (or ensure existing helper) like:
+
+Behavior:
+
+Reads STRIPE_PRICE_PARENT_MONTHLY|QUARTERLY|YEARLY once per request (or once at boot but with explicit logging).
+
+If any are missing/empty → return 500 with clear message in debug mode; generic otherwise.
+
+Do not provide any fallback “default price” values.
+
+If request uses { priceId } (backcompat), only allow if it exactly equals one of the three env price ids.
+
+Required logging (safe):
+
+Log only priceId.slice(0, 8) and last 4 chars.
+
+Log the requested plan and the resolved env key name.
+
+1.2 Update /api/billing/prices to reflect backend truth
+
+Ensure /api/billing/prices returns a canonical structure that includes the plan name the UI should use:
+
+Example shape:
+
+[
+  { "plan": "monthly", "amount": 99.99, "currency": "usd", "interval": "month" },
+  { "plan": "quarterly", "amount": 199.99, "currency": "usd", "interval": "3 months" },
+  { "plan": "yearly", "amount": 699.99, "currency": "usd", "interval": "year" }
+]
+
+
+But the source of truth must be Stripe via stripe.prices.retrieve(envPriceId) (or your own static amounts if you prefer), as long as the mapping from plan→priceId is env-driven.
+
+Proof required:
+
+Call /api/billing/prices in browser and paste response showing plan fields.
+
+Phase 2 — Fix frontend selection so it cannot send the wrong plan
+2.1 Remove any hardcoded checkout plan
+
+In the paywall component:
+
+Ensure the button click sends:
+
+body: JSON.stringify({ plan: selectedPlan })
+
+
+not a constant.
+
+If UI currently passes quarterly regardless, fix the state wiring:
+
+Clicking a pricing card must set selectedPlan correctly.
+
+The “Subscribe Now” button must reference that state, not its own constant.
+
+Proof required:
+
+Show a short snippet of final code for:
+
+the plan selection handler
+
+the checkout request body
+
+Confirm monthly click → request shows { plan: "monthly" } in Network tab.
+
+Phase 3 — Eliminate cache/version skew (this is likely your “phantom id” root cause)
+3.1 Frontend cache busting
+
+Add a build/version stamp that changes every deploy and is visible in the UI console:
+
+Example: window.__BUILD__ = "2026-01-10-<increment>" or an env-injected build id.
+
+Log it once on paywall mount: console.log('[Build]', __BUILD__).
+
+If you are using service workers or aggressive caching:
+
+Confirm whether any service worker is registered:
+
+rg -n "serviceWorker|navigator\.serviceWorker" client
+
+If yes, either disable it for now or force update/unregister.
+
+Proof required:
+
+A new build id appears in the console after redeploy + hard refresh.
+
+Confirm the JS bundle filename/hash changed (Network tab).
+
+3.2 Server process + env refresh
+
+Replit sometimes doesn’t inject updated secrets into already-running processes.
+Make env reload deterministic:
+
+Ensure the server process restarts on deploy.
+
+Add a boot log line printing:
+
+process.env.STRIPE_ENV
+
+prefixes of keys + price IDs
+
+Confirm the running server is the new process.
+
+Proof required:
+
+GET /api/billing/debug/env shows:
+
+stripeEnv: "live"
+
+live key prefixes
+
+price prefixes for all 3 plans
+
+envVarsSet: true for all
+
+Phase 4 — Validate Stripe objects exist (no more guessing)
+4.1 Fix /api/billing/debug/validate to pinpoint exactly what’s wrong
+
+/api/billing/debug/validate must:
+
+Retrieve all three prices using the env price IDs.
+
+Return per-plan results:
+
+ok true/false
+
+error message from Stripe if false
+
+the retrieved price’s active, currency, and recurring interval if true
+
+Proof required:
+
+Paste validate output showing all 3 ok: true.
+
+Phase 5 — End-to-end live test checklist (must be executable)
+
+Once validate is all green:
+
+In browser (guardian logged in), run:
+
+fetch('/api/billing/debug/env', { credentials:'include' }).then(r=>r.json()).then(console.log)
+fetch('/api/billing/debug/validate', { credentials:'include' }).then(r=>r.json()).then(console.log)
+
+
+Confirm monthly checkout creates a session:
+
+fetch('/api/billing/checkout', {
+  method:'POST',
+  credentials:'include',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ plan:'monthly' })
+}).then(r=>r.json()).then(console.log)
+
+
+Expected: { url: "https://checkout.stripe.com/..." }
+
+After completing Stripe Checkout, verify entitlements:
+
+fetch('/api/billing/status', { credentials:'include' }).then(r=>r.json()).then(console.log)
+
+
+Expected: effectiveAccess: true (or whatever the app uses).
+
+Phase 6 — Clean up: hide detailed errors from normal users
+
+After the root cause is fixed:
+
+UI: only show Failed to create checkout session when ?billingDebug=1 is present (or NODE_ENV !== 'production').
+
+Default user-facing copy: “Could not start checkout. Please try again.”
+
+Proof required:
+
+Show screenshot of normal mode error (generic).
+
+Show screenshot of debug mode error (detailed).
+
+Deliverables I expect you to output at the end
+
+A short list of each file changed with what changed.
+
+Grep proof: no hardcoded price_ values in runtime code.
+
+/api/billing/debug/env output + /api/billing/debug/validate output showing everything consistent.
+
+Network payload proof from the UI showing { plan: 'monthly' } when monthly is selected.
+
+Confirmation that Stripe checkout returns a URL (live) and status endpoint shows paid access after completion.

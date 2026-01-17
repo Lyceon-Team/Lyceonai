@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SAT Knowledge Integration Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 10px; cursor: pointer; }
+        .result { margin: 10px 0; padding: 10px; border: 1px solid #ccc; background: #f9f9f9; }
+        .success { border-color: green; background: #e8f5e8; }
+        .error { border-color: red; background: #ffe8e8; }
+        .loading { opacity: 0.6; }
+        pre { overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>SAT Knowledge Integration Test</h1>
+    
+    <button id="integrateBtn">Integrate SAT Knowledge Base</button>
+    <button id="statusBtn">Check Integration Status</button>
+    <button id="testSearchBtn">Test Knowledge Search</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        function addResult(title, content, isSuccess = true) {
+            const div = document.createElement('div');
+            div.className = `result ${isSuccess ? 'success' : 'error'}`;
+            div.innerHTML = `<h3>${title}</h3><pre>${JSON.stringify(content, null, 2)}</pre>`;
+            resultsDiv.appendChild(div);
+        }
+        
+        function addLoading(title) {
+            const div = document.createElement('div');
+            div.className = 'result loading';
+            div.innerHTML = `<h3>${title}</h3><p>Processing...</p>`;
+            div.id = 'loading';
+            resultsDiv.appendChild(div);
+            return div;
+        }
+        
+        function removeLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) loading.remove();
+        }
+
+        document.getElementById('integrateBtn').addEventListener('click', async () => {
+            const loading = addLoading('Integrating SAT Knowledge Base');
+            try {
+                const response = await fetch('/api/knowledge/integrate-sat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                removeLoading();
+                addResult('Integration Result', result, result.success);
+            } catch (error) {
+                removeLoading();
+                addResult('Integration Error', { error: error.message }, false);
+            }
+        });
+
+        document.getElementById('statusBtn').addEventListener('click', async () => {
+            const loading = addLoading('Checking Integration Status');
+            try {
+                const response = await fetch('/api/knowledge/sat-status');
+                const result = await response.json();
+                removeLoading();
+                addResult('Integration Status', result, result.integrated);
+            } catch (error) {
+                removeLoading();
+                addResult('Status Check Error', { error: error.message }, false);
+            }
+        });
+
+        document.getElementById('testSearchBtn').addEventListener('click', async () => {
+            const loading = addLoading('Testing Knowledge Search');
+            try {
+                const searchQuery = 'What are the SAT testing rules and structure?';
+                const response = await fetch('/api/search/unified', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: searchQuery,
+                        limit: 5,
+                        includeQuestions: false,
+                        includeChunks: true
+                    })
+                });
+                const result = await response.json();
+                removeLoading();
+                
+                // Show search results with chunk previews
+                const simplified = {
+                    query: searchQuery,
+                    chunksFound: result.chunks?.length || 0,
+                    topResults: result.chunks?.slice(0, 3).map(chunk => ({
+                        type: chunk.type,
+                        preview: chunk.content.substring(0, 200) + '...',
+                        metadata: chunk.metadata
+                    })) || []
+                };
+                
+                addResult('Knowledge Search Test', simplified, simplified.chunksFound > 0);
+            } catch (error) {
+                removeLoading();
+                addResult('Search Test Error', { error: error.message }, false);
+            }
+        });
+
+        // Auto-check status on page load
+        window.addEventListener('load', () => {
+            document.getElementById('statusBtn').click();
+        });
+    </script>
+</body>
+</html>

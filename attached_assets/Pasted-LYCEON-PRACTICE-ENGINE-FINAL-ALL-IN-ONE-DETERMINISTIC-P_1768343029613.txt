@@ -1,0 +1,403 @@
+LYCEON PRACTICE ENGINE — FINAL ALL-IN-ONE DETERMINISTIC PROMPT
+
+Repo: Learningai
+Zip: Learningai - 2026-01-13T133211.291.zip
+
+Your task is to implement a fully deterministic, scalable practice engine with:
+
+Randomized question serving (correct filters)
+
+Adaptive selector foundation (stubbed, safe)
+
+Mastery/competency persistence
+
+Parent dashboard weakness rollups
+
+This must work end-to-end on launch day.
+
+🚫 NON-NEGOTIABLE RULES
+
+❌ No refactors
+
+❌ No renaming endpoints
+
+❌ No guessing DB values
+
+❌ No “future TODO” placeholders
+
+✅ Only files listed below may be edited
+
+✅ All logic must be deterministic and explainable
+
+✅ Every DB write must be provably correct
+
+🧠 DATABASE SOURCE OF TRUTH (CONFIRMED)
+
+From Supabase:
+
+questions.section:
+- Math     → 2126
+- Reading  → 1194
+
+
+No other section strings exist.
+
+📁 FILES YOU MAY TOUCH
+Backend
+
+server/routes/practice-canonical.ts ✅
+
+server/index.ts (routing only if needed)
+
+server/middleware/usage-limits.ts
+
+server/routes/review-errors.ts (if present)
+
+Frontend
+
+client/src/pages/math-practice.tsx
+
+client/src/pages/reading-writing-practice.tsx
+
+client/src/pages/random-practice.tsx
+
+client/src/pages/review-errors.tsx
+
+client/src/pages/parent-dashboard.tsx (or equivalent)
+
+Database
+
+New SQL migration or SQL Editor script (explicit)
+
+PART A — QUESTION SELECTION (DETERMINISTIC RANDOM)
+GOAL
+
+Serve questions directly from questions
+
+No dependency on answer_attempts
+
+No repeats due to cursor misuse
+
+Works for new users with zero data
+
+IMPLEMENTATION
+
+(Use the exact logic already specified in the previous prompt:
+hash → count → stable order → range(idx, idx) → practice_events “served”)
+
+This part stays exactly the same as the previous prompt.
+Do not alter it while implementing adaptive logic below.
+
+PART B — ADAPTIVE SELECTOR STUB (SAFE, OFF BY DEFAULT)
+WHY
+
+We want the code-level foundation for adaptive learning without changing launch behavior.
+
+RULE
+
+Adaptive selection must be:
+
+Controlled by a single boolean flag
+
+Default = OFF
+
+Zero behavioral impact today
+
+PART B1 — Add selector mode enum
+
+📍 server/routes/practice-canonical.ts
+
+At the top:
+
+type SelectorMode = 'random' | 'adaptive';
+const SELECTOR_MODE: SelectorMode = 'random'; // launch-safe default
+
+PART B2 — Adaptive selector stub (NO LOGIC YET)
+
+Create this helper below the hash helper:
+
+async function selectQuestionAdaptive(params: {
+  userId: string;
+  sessionId: string;
+  section: 'Math' | 'Reading' | null;
+  supabase: any;
+}) {
+  // STUB — intentionally returns null for launch
+  // When null, caller MUST fall back to random selector
+  return null;
+}
+
+PART B3 — Wire stub safely
+
+In GET /api/practice/next:
+
+let adaptiveResult = null;
+
+if (SELECTOR_MODE === 'adaptive') {
+  adaptiveResult = await selectQuestionAdaptive({
+    userId,
+    sessionId,
+    section: sectionFilter,
+    supabase: supabaseServer,
+  });
+}
+
+if (adaptiveResult) {
+  return res.json(adaptiveResult);
+}
+
+// ELSE → use deterministic random selector (Part A)
+
+
+✅ This guarantees:
+
+No behavior change today
+
+One-line switch later to enable adaptive logic
+
+PART C — MASTERY / COMPETENCY DATA MODEL (LAUNCH-READY)
+
+You already ingest domain / skill / subskill / structure_cluster_id into questions.
+
+We now persist per-user mastery.
+
+PART C1 — Mastery table schema (NEW)
+
+Create a migration or SQL Editor script:
+
+create table if not exists public.user_competencies (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  section text not null check (section in ('Math','Reading')),
+  domain text null,
+  skill text null,
+  subskill text null,
+  structure_cluster_id uuid null,
+
+  attempts integer not null default 0,
+  correct integer not null default 0,
+  incorrect integer not null default 0,
+
+  mastery_score numeric not null default 0, -- 0.0 → 1.0
+  updated_at timestamptz not null default now(),
+
+  unique (
+    user_id,
+    section,
+    domain,
+    skill,
+    subskill,
+    structure_cluster_id
+  )
+);
+
+alter table public.user_competencies enable row level security;
+
+create policy user_competencies_self
+on public.user_competencies
+for all
+to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+PART C2 — Update mastery on answer submission
+
+📍 server/routes/practice-canonical.ts
+📍 Inside POST /api/practice/answer, after answer_attempts insert
+
+Extract metadata from question row:
+
+const {
+  section,
+  domain,
+  skill,
+  subskill,
+  structure_cluster_id,
+} = qRow;
+
+
+Then upsert mastery:
+
+await supabaseServer
+  .from('user_competencies')
+  .upsert({
+    user_id: userId,
+    section,
+    domain,
+    skill,
+    subskill,
+    structure_cluster_id,
+    attempts: 1,
+    correct: isCorrect ? 1 : 0,
+    incorrect: isCorrect ? 0 : 1,
+    mastery_score: isCorrect ? 1 : 0,
+    updated_at: new Date().toISOString(),
+  }, {
+    onConflict: 'user_id,section,domain,skill,subskill,structure_cluster_id',
+    ignoreDuplicates: false,
+  });
+
+
+⚠️ If the row exists, increment instead:
+
+attempts += 1
+
+correct / incorrect += 1
+
+mastery_score = correct / attempts
+
+(Implement with a select → update or RPC if preferred, but must be deterministic.)
+
+PART D — PARENT DASHBOARD WEAKNESS ROLLUPS (LAUNCH PROMISE)
+GOAL
+
+Parents must see:
+
+Weak domains / skills
+
+Based on real student performance
+
+Sorted from weakest → strongest
+
+PART D1 — Backend rollup endpoint
+
+📍 Create or update: server/routes/parent-dashboard.ts
+
+Add endpoint:
+
+GET /api/parent/weaknesses?studentId=UUID
+
+
+Query:
+
+select
+  section,
+  domain,
+  skill,
+  subskill,
+  structure_cluster_id,
+  attempts,
+  correct,
+  incorrect,
+  mastery_score
+from user_competencies
+where user_id = :studentId
+order by mastery_score asc, attempts desc
+limit 20;
+
+
+RLS already supports guardian access (is_guardian_of(user_id)), so:
+
+Use service role or guardian session
+
+Do NOT bypass RLS
+
+Return JSON:
+
+{
+  studentId,
+  weakestAreas: [...]
+}
+
+PART D2 — Frontend parent dashboard
+
+📍 client/src/pages/parent-dashboard.tsx
+
+On load:
+
+fetch(`/api/parent/weaknesses?studentId=${studentId}`)
+
+
+Render:
+
+Group by section
+
+Show domain → skill → subskill
+
+Visual cue:
+
+mastery_score < 0.5 → red
+
+0.5–0.75 → yellow
+
+0.75 → green
+
+This fulfills the parent insight promise without additional AI logic.
+
+PART E — REVIEW ERRORS MODE (CONFIRMED)
+
+Review Errors must:
+
+Query answer_attempts
+
+Filter outcome in ('incorrect','skipped')
+
+Join questions for stem + explanation
+
+Order by most recent attempt
+
+No new logic needed — just ensure attempts are inserting correctly.
+
+PART F — FREE TIER GATING (FINAL CHECK)
+
+Usage limits increment ONLY on:
+
+GET /api/practice/next
+
+
+Never on /answer
+
+Never on review/parent endpoints
+
+Confirm and fix if violated.
+
+✅ FINAL ACCEPTANCE CHECKLIST
+Database
+select count(*) from answer_attempts;
+select count(*) from user_competencies;
+
+
+Both must grow during practice.
+
+Student
+
+Math → Math only
+
+Reading → Reading only
+
+Random → mixed
+
+Correct answers sometimes correct
+
+Explanations visible
+
+No repeats back-to-back
+
+Parent
+
+Weaknesses visible
+
+Sorted weakest first
+
+Matches student behavior
+
+🚀 CTO CLOSING NOTE
+
+This architecture gives you:
+
+Stable launch
+
+Adaptive learning ready in one flag flip
+
+Parent value immediately
+
+No rework debt
+
+When you’re ready, adaptive selection becomes:
+
+if (SELECTOR_MODE === 'adaptive') {
+  pick weakest competency first;
+}
+
+
+No schema changes required.

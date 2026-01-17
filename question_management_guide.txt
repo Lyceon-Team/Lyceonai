@@ -1,0 +1,30 @@
+# Quick Reference - Question Management Commands
+
+## 📋 List All Questions
+python3 question_manager.py list --limit=10
+
+## 🔍 Search Questions  
+python3 question_manager.py search 'math'
+python3 question_manager.py search 'rectangle'
+
+## 📖 Show Specific Question
+python3 question_manager.py show d4f0d93b-6417-47c6-b55d-f3e00a9002ac
+
+## ✏️ Update Question
+python3 question_manager.py update QUESTION_ID --difficulty Hard
+python3 question_manager.py update QUESTION_ID --stem 'New question text'
+python3 question_manager.py update QUESTION_ID --answer A
+
+## 🗑️ Delete Question
+python3 question_manager.py delete QUESTION_ID --confirm
+
+## 🌐 Direct API Calls (Alternative)
+# Get all questions
+curl 'http://localhost:5000/api/admin/questions?limit=50'
+
+# Update question
+curl -X PUT 'http://localhost:5000/api/admin/questions/QUESTION_ID' -H 'Content-Type: application/json' -d '{"difficulty": "Hard"}'
+
+# Delete question  
+curl -X DELETE 'http://localhost:5000/api/admin/questions/QUESTION_ID'
+

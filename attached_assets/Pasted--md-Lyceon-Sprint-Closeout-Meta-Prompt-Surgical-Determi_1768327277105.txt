@@ -1,0 +1,245 @@
+````md
+# 🔧 Lyceon Sprint Closeout Meta-Prompt (Surgical + Deterministic)
+
+You are an engineer working inside the **attached Lyceon monorepo zip**.
+Your job: close the remaining auth/billing gaps with **zero drift**, **no refactors**, and **hard proofs**.
+
+## Non-Negotiable Outcomes
+1) Stripe checkout plan selection is deterministic (no “defaults to quarterly” unless explicitly chosen).
+2) No route clears auth cookies incorrectly (domain/path mismatch can leave stale cookies behind).
+3) Provide concrete proofs: file/line diffs + grep proofs + curl proofs.
+
+## Scope Guardrails (STRICT)
+- Do NOT change auth architecture.
+- Do NOT introduce new cookies or new auth providers.
+- Do NOT rename endpoints.
+- Only change the exact lines called out below.
+- If you believe an additional change is needed, STOP and provide evidence first (grep + file/line).
+
+---
+
+# ✅ Change 1 — Fix Paywall Default Plan (prevents phantom quarterly)
+
+## File
+`client/src/components/guardian/SubscriptionPaywall.tsx`
+
+## Current line (must verify in repo)
+Line **53** currently:
+```ts
+const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly' | 'yearly'>('quarterly');
+````
+
+## Required patch (choose ONE option)
+
+### Option A (fastest, safe for launch)
+
+Change line 53 to default monthly:
+
+```ts
+const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+```
+
+### Option B (best UX, still small)
+
+* Change selectedPlan type to allow null
+* Disable checkout until user selects a plan
+
+Edits:
+
+1. Replace line 53 with:
+
+```ts
+const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'quarterly' | 'yearly' | null>(null);
+```
+
+2. Wherever checkout button triggers `checkoutMutation.mutate(selectedPlan)`:
+
+* Guard it so it never runs with null.
+* Disable button when `!selectedPlan`.
+
+⚠️ If you pick Option B, keep the change minimal (no UI redesign). Only add `disabled` + a tiny guard.
+
+## Proof required for Change 1
+
+Run:
+
+```bash
+nl -ba client/src/components/guardian/SubscriptionPaywall.tsx | sed -n '45,70p'
+```
+
+and paste output showing the updated `selectedPlan` line.
+
+---
+
+# ✅ Change 2 — Fix Incorrect Cookie Clearing in apps/api bridge (stale cookie risk)
+
+## Why this matters
+
+There is a signout handler that clears only `sb-access-token` **without path/domain**, which can fail to clear the real cookie (set with `path: '/'` and prod `domain: '.lyceon.ai'`), leaving stale cookies behind.
+
+## File
+
+`apps/api/src/auth/express-bridge.ts`
+
+## Current lines (must verify in repo)
+
+Lines **67–70** currently:
+
+```ts
+router.post('/signout', (_req: Request, res: Response) => {
+  res.clearCookie('sb-access-token');
+  res.json({ ok: true, url: '/login' });
+});
+```
+
+## Required patch
+
+Update this handler to clear BOTH auth cookies with the same options used elsewhere in prod.
+
+Replace lines 67–70 with:
+
+```ts
+router.post('/signout', (req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  const base = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax' as const,
+    path: '/',
+    ...(isProd && { domain: '.lyceon.ai' }),
+  };
+
+  res.clearCookie('sb-access-token', base);
+  res.clearCookie('sb-refresh-token', base);
+
+  // Also attempt host-only clear to flush any past mis-scoped cookies
+  res.clearCookie('sb-access-token', { ...base, domain: undefined as any });
+  res.clearCookie('sb-refresh-token', { ...base, domain: undefined as any });
+
+  res.json({ ok: true, url: '/login' });
+});
+```
+
+### IMPORTANT
+
+* Do NOT change any other routes in this file.
+* Do NOT remove bearer/cookie token support in `/session`.
+* This change is purely to prevent stale cookie ghosts.
+
+## Proof required for Change 2
+
+Run:
+
+```bash
+nl -ba apps/api/src/auth/express-bridge.ts | sed -n '55,90p'
+```
+
+and paste output showing the updated signout handler.
+
+---
+
+# ✅ Validation: Ensure apps/api bridge is not accidentally mounted (or prove if it is)
+
+Right now, `createSupabaseAuthRoutes()` appears to be unused.
+We must confirm.
+
+## Proof required
+
+Run:
+
+```bash
+grep -RIn "createSupabaseAuthRoutes" .
+```
+
+Expected:
+
+* Only the definition in `apps/api/src/auth/express-bridge.ts`.
+  If there are more hits (meaning it’s mounted somewhere), paste them all.
+
+---
+
+# ✅ System Proofs (No Guessing)
+
+## Proof A — Plan sent to checkout matches selection
+
+We need evidence the selected plan is what is posted.
+
+Run:
+
+```bash
+grep -RIn "billing/checkout" client/src/components/guardian/SubscriptionPaywall.tsx
+```
+
+Then confirm the request body is:
+
+```ts
+body: JSON.stringify({ plan })
+```
+
+and NOT using any default override.
+
+Paste the matching snippet (max ~20 lines).
+
+## Proof B — Cookie clear is consistent across server
+
+Run:
+
+```bash
+grep -RIn "clearCookie\\('sb-access-token'|clearCookie\\('sb-refresh-token'" server apps/api | head -n 50
+```
+
+Paste output.
+
+---
+
+# ✅ Smoke Tests (local or prod, whichever you can run)
+
+Provide results for all tests below.
+
+### Test 1: Paywall selection determinism
+
+* Open paywall.
+* Without clicking anything, click “Subscribe”.
+  Expected:
+* Option A: monthly is sent
+* Option B: button disabled until selection
+
+### Test 2: Cookie cleanup actually clears tokens
+
+* Log in
+* Hit signout
+* Refresh page
+  Expected:
+* Still signed out
+* No stale behavior bouncing into /guardian
+
+### Test 3: Curl sanity
+
+Provide these commands + outputs:
+
+1. Not logged in:
+
+```bash
+curl -i https://lyceon.ai/api/auth/user
+```
+
+Expected: 401/403 with `user: null` (or equivalent auth-required response)
+
+2. Logged in (from browser, just confirm):
+
+* You can’t curl with httpOnly cookies easily here; instead provide a screenshot or console output showing `/api/auth/user` returns user correctly.
+
+---
+
+# Deliverables (Required)
+
+1. The two `nl -ba ... | sed -n ...` proofs above (exact line windows).
+2. The `grep -RIn "createSupabaseAuthRoutes" .` output.
+3. The cookie-clearing grep output.
+4. Brief note: “Option A” or “Option B” used for paywall.
+
+Proceed now. No extra changes.
+
+```
+```

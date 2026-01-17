@@ -1,0 +1,121 @@
+You are fixing Lyceon practice flow end-to-end. Do not refactor. Do not add packages. Do not do partial work.
+
+## Goal (Definition of Done)
+Practice must work end-to-end for an authenticated student:
+1) Creating a session succeeds (practice_sessions insert works under RLS expectations)
+2) Fetching next question returns a question with options rendered
+3) Submitting an answer succeeds and records an attempt (answer_attempts insert works under RLS expectations)
+4) End session succeeds
+5) /api/health/practice reports ok:true AND confirms service role project alignment
+
+## Hard constraints
+- Do NOT change RLS policies.
+- Align server behavior to existing policies:
+  - practice_sessions.user_id must equal auth.uid()
+  - answer_attempts.user_id must equal auth.uid()
+- Use only minimal code changes to align with DB.
+
+## Source of truth (confirmed from DB policies)
+RLS policies require:
+- practice_sessions INSERT: WITH CHECK (auth.uid() = user_id)
+- answer_attempts INSERT: WITH CHECK (auth.uid() = user_id)
+So server must provide user_id in inserts and it must match the authenticated user.
+
+## Step 0: Verify actual column existence for user_id fields (SQL evidence required)
+In Supabase SQL Editor run and paste results:
+select column_name, is_nullable, data_type
+from information_schema.columns
+where table_schema='public'
+  and table_name in ('practice_sessions','answer_attempts','practice_events')
+order by table_name, column_name;
+
+If answer_attempts.user_id column does not exist, STOP and report. Otherwise proceed.
+
+## Step 1: Align practice-canonical.ts inserts to RLS contract (required)
+File: server/routes/practice-canonical.ts
+
+A) On session create INSERT into practice_sessions:
+- Ensure payload includes:
+  user_id: resolvedUserId
+  status: 'in_progress'
+  mode, section, started_at as currently used
+
+B) On answer INSERT into answer_attempts:
+- Ensure payload includes:
+  user_id: resolvedUserId
+  session_id
+  question_id
+  selected_answer / free_response_answer
+  is_correct
+  outcome
+  time_spent_ms or elapsed_ms mapped correctly
+  attempted_at timestamp
+
+C) practice_events insert (optional but recommended):
+- Ensure payload includes user_id: resolvedUserId
+
+Guardrails:
+- Do not change question selection logic except to keep it schema-correct.
+- Do not remove user_id from any inserts.
+- Keep the options parsing.
+
+Evidence required:
+- Paste the exact insert payload blocks for practice_sessions and answer_attempts after edits.
+
+## Step 2: Ensure authenticated user resolution is correct (required)
+We previously saw production debug returning resolvedUserId null due to missing cookies in curl.
+We need deterministic user resolution in server code.
+
+File: server/routes/supabase-auth-routes.ts
+- /api/auth/debug already supports Bearer token. Keep it.
+- Ensure /api/practice routes use the same auth resolution mechanism as other authenticated endpoints:
+  - They must derive resolvedUserId from Supabase auth session (cookie or bearer if supported)
+  - DO NOT trust client-supplied user_id
+
+If practice routes do not currently accept bearer, that is okay; browser cookies will be used.
+But ensure session resolution is reliable and uses the correct supabase project keys.
+
+## Step 3: Health endpoint must validate alignment (required)
+File: server/routes/health-routes.ts
+Update /api/health/practice to:
+- Read Authorization: Bearer <token> if present
+- Resolve userId using supabase anon auth.getUser(token)
+- Then check admin.auth.admin.getUserById(userId)
+Return:
+auth: { resolvedUserId, serviceRoleCanReadUser, userLookupError }
+
+Schema check must be via information_schema, NOT by selecting rows.
+It must confirm:
+- practice_sessions has user_id, status, started_at (and finished_at if used)
+- answer_attempts has user_id, session_id, question_id, selected_answer, is_correct, attempted_at
+- practice_events has user_id, event_type, created_at
+
+Evidence required:
+- Paste /api/health/practice JSON output from production after deploy.
+
+## Step 4: Production proofs (mandatory)
+After deploy, provide these proofs:
+
+1) /api/health/practice with bearer
+TOKEN="<JWT from browser sb-access-token>"
+curl -s -H "Authorization: Bearer $TOKEN" https://lyceon.ai/api/health/practice | jq
+Expected:
+- ok:true
+- auth.resolvedUserId != null
+- auth.serviceRoleCanReadUser == true
+- schema missingColumns empty
+
+2) Practice in browser
+- Log in as student
+- Open /practice/math
+- Confirm a question renders with options
+- Answer question
+- Confirm result shown and no 500s
+
+If any of the above fails, paste full error response and stop. Do not continue with unrelated fixes.
+
+## Deliverables
+- Changed file list
+- Code snippets of both inserts showing user_id included
+- Production health endpoint output
+- Confirmation practice works in browser

@@ -1,0 +1,86 @@
+# Docker ignore file for Cloud Run
+# CRITICAL: dist/ and node_modules/ must NOT be excluded
+# The server bundle (dist/index.js) uses --packages=external and requires node_modules at runtime
+
+# Replit / system directories (large, not needed)
+.pythonlibs
+.local
+.cache
+.config
+.upm
+.replit
+replit.nix
+.replit/backup
+*.swp
+
+# Git / CI / editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+.turbo
+
+# Source directories (not needed in prod - we use dist/)
+client/src
+server/
+apps/
+
+# Test / tooling-only directories
+tests
+test
+cypress
+playwright-report
+.vitest
+.storybook
+vitest.config.ts
+playwright.config.ts
+coverage
+.nyc_output
+logs
+
+# Local assets & uploads
+uploads
+attached_assets
+
+# Python artefacts
+__pycache__
+*.pyc
+*.pyo
+venv
+.venv
+python_env*
+docling*
+ocr_tmp
+mathpix_*
+nougat_*
+
+# Large / local-only files
+*.log
+*.tmp
+*.temp
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.traineddata
+*.csv
+
+# Documentation (not needed in prod image)
+docs
+*.md
+!README.md
+
+# Development scripts and test files
+debug-*.js
+test-*.js
+trigger-*.js
+*.sh
+scripts/
+
+# Misc development files
+var/
+packages/
+exported_csv_sample.csv
+latest_export.csv
+test_export.csv

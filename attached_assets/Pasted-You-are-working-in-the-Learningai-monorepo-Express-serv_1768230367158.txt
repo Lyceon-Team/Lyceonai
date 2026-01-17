@@ -1,0 +1,245 @@
+You are working in the Learningai monorepo (Express server in server/). Goal: Make /practice/math render questions end-to-end in production by fixing auth resolution + ensuring DB FK compatibility. Do not refactor or redesign; make the smallest code changes that solve the real failures.
+
+Objective (definition of done)
+
+In production, after a normal login:
+
+Visiting https://lyceon.ai/practice/math loads a question (no 401s).
+
+Network calls to:
+
+GET /api/practice/next?section=math&mode=balanced
+
+POST /api/practice/answer
+return 200 (not 401/500).
+
+A new row appears in practice_sessions for that user (status in_progress).
+
+A new row appears in answer_attempts after answering (with user_id, session_id, question_id).
+
+Non-negotiable constraints
+
+No refactors (no reorganizing folders, no “cleanup”, no rewriting architecture).
+
+No new auth system. Keep existing cookie-based session + middleware.
+
+Make changes only in the files listed below unless absolutely required.
+
+Add targeted logs only if needed for diagnostics.
+
+Phase 1 — Fix why production requests are 401 (cookie token extraction)
+Why this is happening
+
+The frontend sends cookies (credentials: "include" is already set in client/src/lib/queryClient.ts), but the backend token resolver only searches cookie names that include "access-token":
+
+File: server/middleware/supabase-auth.ts
+Function: resolveTokenFromRequest(req)
+
+Supabase commonly stores sessions in cookies like:
+
+sb-<project-ref>-auth-token (JSON)
+not necessarily sb-access-token.
+
+So: browser has a valid session cookie, but backend never finds it → req.user stays null → requireSupabaseAuth returns 401.
+
+Required change (do exactly this)
+
+Edit:
+
+File: server/middleware/supabase-auth.ts
+Function: resolveTokenFromRequest
+
+Keep existing Bearer header behavior.
+
+Expand cookie search to include:
+
+cookie names containing auth-token (case-insensitive), and
+
+cookie names containing sb- plus token patterns
+
+If the cookie value is JSON (string that starts with {), parse it and extract:
+
+access_token (preferred)
+
+OR nested currentSession.access_token if present
+
+If the cookie value is a raw JWT string, accept it as-is.
+
+Patch (copy/paste logic — minimal)
+
+Inside the cookie scan loop, replace the existing if (cookieName.toLowerCase().includes('access-token')) { ... } block with logic like:
+
+treat cookie as candidate if cookie name includes:
+
+access-token OR
+
+auth-token
+
+Then parse:
+
+If string JSON:
+
+parsed.access_token
+
+else parsed.currentSession?.access_token
+
+else parsed?.data?.session?.access_token (some wrappers do this)
+
+Else raw string token.
+
+Important: do not remove existing behavior, only extend it.
+
+Acceptance check (code-level)
+
+resolveTokenFromRequest returns tokenSource: cookie:<cookieName> for sb-*-auth-token cookies.
+
+If cookie is JSON, tokenLength is computed on extracted access token.
+
+Phase 2 — Prevent FK failure when creating practice_sessions
+Why this is happening
+
+You posted constraints showing:
+
+practice_sessions_user_id_fkey references users(id) (public.users)
+
+But your auth user id is auth.users.id
+
+If your system does not guarantee a matching row in public.users, practice session inserts will fail with FK violations (you saw this earlier).
+
+Required change
+
+Ensure that once the user is authenticated (token valid), we upsert a matching row into public.users with id = authUserId.
+
+Do this inside the existing auth middleware flow so it happens once per session and unblocks all features.
+
+Where to implement (minimal & safe)
+
+File: server/middleware/supabase-auth.ts
+Inside supabaseAuthMiddleware, after you successfully resolve the Supabase user and before next(), add:
+
+Use supabaseAdmin (service role) to upsert into public.users:
+
+id: req.user.id
+
+email: req.user.email (if column exists)
+
+created_at: now() only if needed (don’t assume schema; keep minimal)
+
+Because we don’t know public.users exact schema, do it defensively:
+
+First attempt: upsert({ id, email }) with onConflict: 'id'
+
+If that fails due to missing email column, retry with just { id }
+
+(Yes, a retry is fine here because it’s a single write and only triggers when schema mismatch occurs.)
+
+Acceptance check
+
+Even for a brand new auth user, public.users contains a row with the same uuid before practice session insert runs.
+
+Phase 3 — Confirm practice endpoints match DB + RLS requirements
+
+You already did most of this, but verify the final state matches DB truth:
+
+3A) practice_sessions insert
+
+File: server/routes/practice-canonical.ts
+
+Insert status must be 'in_progress' (matches practice_sessions_status_check).
+
+Insert must use user_id: req.user.id
+
+Session row must include required fields from your actual schema (do not add random columns).
+
+3B) answer_attempts insert
+
+Constraints you posted show:
+
+answer_attempts_user_id_fkey references auth.users(id) ✅
+
+RLS policies require user_id = auth.uid() ✅
+
+So your insert MUST include:
+
+user_id: req.user.id
+
+session_id
+
+question_id
+
+outcome must be 'correct' | 'incorrect' | 'skipped' (matches answer_attempts_outcome_check)
+
+Respect unique constraint (session_id, question_id):
+
+On duplicate, return { deduped: true } (or update existing row). Do not crash.
+
+3C) questions select
+
+Your questions CSV confirms columns that exist. The SELECT must include only:
+
+id, section, stem, options, difficulty, classification, answer_choice, answer_text, explanation, canonical_id (if needed)
+
+And options parsing must output an array.
+
+Phase 4 — Remove the last source of confusion: 401 masking as “0 questions”
+Required frontend behavior (already mostly present)
+
+Frontend should show:
+
+If 401 → “You’re signed out. Please sign in again.”
+
+If 500 → show requestId and server error
+
+No change required unless your UI currently says “0 questions” when it’s actually 401. If it does, fix the copy only.
+
+Files you are allowed to touch
+
+server/middleware/supabase-auth.ts
+
+expand cookie token parsing to include auth-token cookies
+
+ensure public.users row exists for authenticated users
+
+server/routes/practice-canonical.ts
+
+confirm practice_sessions + answer_attempts inserts are schema/RLS compliant
+
+keep question SELECT aligned with DB columns
+
+ensure options parsing returns array
+
+Do not modify other areas unless you hit a hard blocker.
+
+Verification (must be done from the monorepo + browser, not curl)
+
+After deploying:
+
+Open Chrome DevTools → Application → Cookies → https://lyceon.ai
+
+Confirm you have either:
+
+sb-access-token, OR
+
+sb-<ref>-auth-token (JSON)
+
+Refresh /practice/math
+
+Confirm Network:
+
+/api/practice/next?... returns 200 and includes question.options as an array
+
+Answer a question:
+
+/api/practice/answer returns 200 with isCorrect boolean
+
+If it still fails:
+
+Add a single log line inside resolveTokenFromRequest returning:
+
+cookieKeys, authHeaderPresent, and tokenSource
+
+Redeploy and re-test once.
+
+The key insight (so you don’t drift)
+
+Right now the app is failing because the backend isn’t finding the cookie your production auth flow actually sets (likely sb-*-auth-token). Fix that deterministically, then ensure public.users is populated so practice session inserts don’t violate FK. After these two, the question rendering work you already did will finally show up.

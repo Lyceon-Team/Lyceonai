@@ -1,0 +1,158 @@
+Below is a **surgical, hallucination-proof metaprompt** you can hand to your engineer (or Replit Agent). It’s written to force deterministic execution, prevent scope drift, and require hard evidence at each checkpoint.
+
+````markdown
+You are implementing a production-critical fix for Lyceon (Learningai repo). Goal: make practice questions render again end-to-end in production by fixing schema/code mismatches in the canonical practice API.
+
+Context / Symptom
+- In production, practice fails on /practice/math with:
+  - GET /api/practice/next?section=math&mode=balanced → 500
+  - Error includes: session_create_failed and "practice_sessions_status_check" (DB check constraint violation)
+- Also observed:
+  - /api/progress/kpis → 500 (likely cascading from broken sessions/attempts)
+
+Source of truth for schema
+- The questions table data shape is confirmed by `questions_rows (6).csv`:
+  - Columns exist: id, section, stem, options (stringified JSON), answer, answer_choice, answer_text, explanation, difficulty, classification, etc.
+  - Columns do NOT exist: correct_answer, passage, passage_id
+- The practice_sessions table has a status check constraint that rejects 'active' and expects a different enum set (example allowed values previously observed: in_progress / paused / completed / abandoned).
+
+Hard Rules (Guardrails)
+- DO NOT refactor architecture.
+- DO NOT rename endpoints, change routing structure, or add new packages.
+- ONLY modify files explicitly listed below, unless you can prove another file is directly responsible for the failing call.
+- Every change must be backed by grep/file evidence and a curl reproduction proof.
+
+Files In Scope (must start here)
+1) server/routes/practice-canonical.ts   (PRIMARY FIX TARGET)
+Optional only if needed after Step 1 passes:
+2) apps/api/src/routes/progress.ts       (ONLY if /api/progress/kpis still fails after practice works)
+3) client/src/hooks/use-adaptive-practice.ts (ONLY if server response is correct but UI still fails)
+
+Success Criteria (Measurable)
+1) `curl -sS -i "https://lyceon.ai/api/practice/next?section=math&mode=balanced"` returns HTTP 200 and includes JSON with:
+   - `question.id`
+   - `question.section`
+   - `question.stem`
+   - `question.options` as an ARRAY (not a string)
+2) The same endpoint must NOT return 500 and must NOT reference practice_sessions_status_check.
+3) In the browser, /practice/math renders a question with visible multiple-choice options.
+4) `curl -sS -i "https://lyceon.ai/api/progress/kpis"` returns HTTP 200 (if it still fails, implement the smallest fix and prove it).
+
+Step-by-step Implementation Plan (ONE STEP AT A TIME)
+
+Step 0: Repo reality check (Evidence Required)
+Action:
+- Open `server/routes/practice-canonical.ts`.
+- Locate where a practice session is created/inserted into `practice_sessions`.
+- Locate the query selecting question columns for the /next endpoint.
+Evidence Required:
+- Paste the exact code blocks (5–20 lines each) showing:
+  A) session insert payload (including status)
+  B) the `.select(...)` list used to fetch questions
+  C) how options are passed through to the response
+
+Step 1: Fix practice session status to satisfy DB constraint (Deterministic)
+Problem:
+- Code inserts `status: 'active'` but DB check constraint rejects it.
+Action:
+- Change session creation status to a value that the DB accepts.
+- Default required value: `in_progress`.
+- Also scan for any other writes to practice_sessions.status in this same file (end session, pause, etc.) and ensure they use allowed values only.
+Implementation:
+- Replace `'active'` → `'in_progress'` at session creation.
+- If any other status values exist in this file, align them to the allowed set (paused/completed/abandoned as applicable).
+Evidence Required:
+- Grep proof showing no remaining `status: 'active'` in the repo:
+  `grep -RIn "status: 'active'" server | head`
+- Curl proof (LOCAL or STAGING) of /api/practice/next no longer returning constraint error.
+  If you cannot run against prod, show local logs + curl against local server.
+
+Step 2: Fix questions SELECT column mismatch (Deterministic)
+Problem:
+- /next endpoint selects columns that do not exist in `questions`:
+  - correct_answer, passage, passage_id
+Action:
+- Update the select list to include ONLY columns that exist in `questions_rows (6).csv`.
+Required columns for launch:
+- id, section, stem, options, difficulty, classification, type OR question_type, answer_choice, answer_text, explanation
+Implementation:
+- Replace the `.select('...')` string with a schema-correct list.
+- Remove correct_answer, passage, passage_id from the select.
+- Ensure answer_choice is selected (for correctness checks later).
+Evidence Required:
+- Paste the updated select list line(s).
+- Add a short inline comment above the select explaining it matches production schema (do not over-comment).
+- Curl proof that /api/practice/next returns 200 and includes question data.
+
+Step 3: Parse options reliably (options is stringified JSON in DB)
+Problem:
+- In DB, `options` is stored as a JSON STRING. Frontend expects an ARRAY.
+Action:
+- In /next response shaping, normalize options:
+  - If options is a string → JSON.parse safely
+  - If parse fails → []
+  - If not array → []
+Implementation (exact logic required):
+```ts
+let options: any = row.options ?? [];
+if (typeof options === 'string') {
+  try { options = JSON.parse(options); } catch { options = []; }
+}
+if (!Array.isArray(options)) options = [];
+````
+
+Evidence Required:
+
+* Paste the final response object for `question` showing options is assigned from the normalized value.
+* Curl proof that response JSON has `"options":[{...}]` (array brackets), not a quoted string.
+
+Step 4: Ensure /answer endpoint correctness uses real columns (no correct_answer)
+Problem:
+
+* Some logic may reference `correct_answer` which doesn't exist.
+  Action:
+* When checking correctness, use:
+
+  * correctKey = answer_choice ?? answer ?? null
+* Ensure /answer selects the needed columns (`answer_choice`, `answer`, `explanation`).
+  Evidence Required:
+* Paste the exact correctness computation code.
+* Show a test where submitting an answer returns `correct: true/false` consistently.
+
+Step 5: Verify /api/progress/kpis (only if still failing)
+Action:
+
+* After Steps 1–4, retest:
+  `curl -sS -i "https://lyceon.ai/api/progress/kpis"`
+  If still failing:
+* Identify the minimal failure point (likely status enum mismatch or join expecting ended_at/finished_at).
+* Implement the smallest fix to stop 500.
+  Guardrails:
+* Do NOT refactor KPIs, only patch schema mismatches.
+  Evidence Required:
+* Paste stack trace or error log excerpt.
+* Patch diff + curl proof of 200.
+
+Final Proof Bundle (Required before “done”)
+Provide:
+
+1. Diff or list of changed files
+2. Grep proof:
+
+   * no `correct_answer` usage in practice-canonical
+   * no `passage`/`passage_id` selected in practice-canonical
+   * no `status: 'active'` remaining
+3. Curl proofs:
+
+   * /api/practice/next returns 200 with options as array
+   * /api/progress/kpis returns 200
+4. Screenshot or short note confirming /practice/math shows a question with options in browser.
+
+DO NOT proceed to additional enhancements.
+DO NOT touch Stripe or other modules in this task.
+The task is complete only when practice questions render again end-to-end.
+
+```
+
+If you want, I can tailor this to your exact repo layout (whether the “active” status is in `server/routes/practice-canonical.ts` in your current deployed zip), but the prompt above is already strict enough to prevent drift.
+```

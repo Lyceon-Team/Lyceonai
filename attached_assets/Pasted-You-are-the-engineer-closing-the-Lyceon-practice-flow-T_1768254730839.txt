@@ -1,0 +1,197 @@
+You are the engineer closing the Lyceon practice flow TODAY. You must make only surgical changes. No refactors, no new packages, no redesign.
+
+## Current symptoms (must fix)
+1) Questions repeat constantly
+2) Every answer shows as wrong
+3) Explanations do not display
+
+## Root causes (treat as truth until disproven)
+A) Frontend `client/src/pages/math-practice.tsx` is NOT using the `useAdaptivePractice.submitAnswer()` result to display `correctAnswerKey` + `explanation`. It currently calls `/api/practice/answer` and throws away fields.
+B) Backend `/api/practice/answer` correctness logic is incomplete: it relies on `answer_choice` / `answer_text` but the DB may store correct choice in `answer` for many rows (as seen in questions CSV). This causes `correctKey` to be null or wrong → everything marked incorrect.
+C) Repetition is caused by attempt exclusion not working because answer_attempts insert is failing OR the selector does not exclude attempts properly.
+
+You must implement fixes + provide proofs.
+
+---
+
+# Constraints (non-negotiable)
+- Do NOT refactor or rename files.
+- Do NOT change RLS policies.
+- Do NOT change endpoints or query param contracts.
+- Only edit these files unless blocked:
+  1) `server/routes/practice-canonical.ts`
+  2) `client/src/pages/math-practice.tsx`
+- All changes must be deterministic and testable.
+- Provide end-to-end validation from the browser network panel.
+
+---
+
+# Patch 1 (Backend): Fix correctness key + explanation return contract
+
+## File: `server/routes/practice-canonical.ts`
+## Endpoint: `POST /api/practice/answer`
+
+### 1.1 Expand question SELECT to include `answer`
+Find the question lookup in /answer. It currently selects something like:
+`select('id, answer_choice, answer_text, explanation')`
+
+Change it to:
+`select('id, answer_choice, answer, answer_text, explanation')`
+
+### 1.2 Compute correctKey with strict fallback order + normalization
+Replace any existing correct-key logic with:
+
+- Fallback order:
+  1) `answer_choice`
+  2) `answer`
+  3) `answer_text`
+  4) null
+
+- Normalization:
+  - `String(value).trim().toUpperCase()`
+
+### 1.3 Compare chosen answer deterministically
+Normalize chosen answer the same way:
+- `String(chosen).trim().toUpperCase()`
+Compare `chosenKey === correctKey`.
+If `correctKey` is null => `isCorrect = false`.
+
+### 1.4 Ensure response JSON includes explanation + correctAnswerKey
+The response must include:
+- `isCorrect` (boolean)
+- `correctAnswerKey` (string|null)
+- `explanation` (string|null)
+
+Example:
+```json
+{
+  "ok": true,
+  "isCorrect": false,
+  "correctAnswerKey": "B",
+  "explanation": "..."
+}
+
+1.5 Ensure answer_attempts insert includes user_id (RLS requirement)
+
+Confirm insert payload includes:
+	•	user_id: req.user.id
+	•	session_id
+	•	question_id
+	•	selected_answer (or chosen)
+	•	is_correct
+	•	outcome must be one of: correct/incorrect/skipped (matches DB check constraint)
+	•	attempted_at
+
+If insert fails, return 500 with:
+	•	requestId
+	•	supabase error message + code
+
+⸻
+
+Patch 2 (Frontend): Show correct answer + explanation and stop discarding response
+
+File: client/src/pages/math-practice.tsx
+
+2.1 Update ValidationResult type to include explanation
+
+Ensure the local ValidationResult interface includes:
+	•	correctAnswerKey?: string | null
+	•	explanation?: string | null
+
+2.2 When submitting an answer, store correctAnswerKey + explanation in state
+
+Where the code currently sets:
+	•	correctAnswerKey: null
+	•	and ignores result.explanation
+
+Change to:
+	•	correctAnswerKey: result.correctAnswerKey ?? null
+	•	explanation: result.explanation ?? null
+
+2.3 Render explanation when showResult is true
+
+When showing feedback, display:
+	•	Correct answer key (if present)
+	•	Explanation text (if present)
+
+Must be visible under the question after submission.
+
+⸻
+
+Patch 3 (Stop repetition): Verify attempt exclusion actually works (no guessing)
+
+Repetition only stops once answer_attempts rows exist AND /next excludes attempted question_ids.
+
+3.1 Verify /next excludes attempts by session_id
+
+In server/routes/practice-canonical.ts /next route:
+	•	confirm it queries answer_attempts by session_id
+	•	builds an exclude list attemptedQuestionIds
+	•	uses .not('id','in',...) or equivalent to exclude those ids
+	•	ensure the exclude list is applied ONLY if list length > 0
+	•	ensure the ids are quoted correctly for Supabase in() syntax
+
+3.2 If insert can fail due to unique constraint (session_id, question_id)
+
+If user answers twice, insert might fail with duplicate constraint.
+Handle deterministically:
+	•	If error indicates duplicate, treat as success (or do an upsert).
+No crashes.
+
+⸻
+
+Validation (must provide evidence)
+
+You must validate from the browser (not curl) because cookies/session are involved.
+
+Step A: Open /practice/math while logged in
+
+In DevTools Network tab, capture:
+	1.	GET /api/practice/next?... response JSON
+	2.	Confirm it returns:
+	•	sessionId
+	•	question.id
+	•	question.options is an ARRAY (not a JSON string)
+
+Step B: Submit answer
+
+Capture POST /api/practice/answer response JSON
+Must include:
+	•	isCorrect boolean
+	•	correctAnswerKey non-null for MC questions
+	•	explanation non-null
+
+Step C: Refresh /practice/math and advance 3 questions
+
+Confirm question IDs change each time:
+	•	Collect 3 consecutive question.id values from /next responses
+	•	Must all be distinct
+
+Step D: Verify answer_attempts row created
+
+In Supabase SQL editor run:
+
+select session_id, user_id, question_id, is_correct, outcome, attempted_at
+from public.answer_attempts
+order by attempted_at desc
+limit 5;
+
+Paste result.
+
+⸻
+
+Deliverables
+
+Return:
+	1.	Exact code diffs/snippets for:
+	•	correctKey fallback logic + normalization
+	•	API response shape for /answer
+	•	frontend state update + explanation render
+	2.	Browser network proofs (JSON snippets) for:
+	•	/api/practice/next
+	•	/api/practice/answer
+	3.	3 consecutive question IDs proving no repetition
+	4.	SQL output showing answer_attempts rows exist
+No other work.
+
+If you want, I can also tailor this prompt to the exact line numbers in your current `practice-canonical.ts` and `math-practice.tsx` by quickly scanning the latest zip you uploaded.

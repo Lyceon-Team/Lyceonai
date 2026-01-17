@@ -1,0 +1,162 @@
+You are the engineer responsible for making Lyceon practice work end-to-end in production TODAY.
+
+Non-negotiable constraints
+- Do NOT refactor.
+- Do NOT rename routes.
+- Do NOT add new packages.
+- Do NOT do partial work: every phase must end with production curl proofs.
+- Do NOT assume tables exist: verify via information_schema.
+
+Goal (success criteria)
+A) Auth debug resolves a user via Authorization Bearer token:
+   curl -s -H "Authorization: Bearer <JWT>" https://lyceon.ai/api/auth/debug
+   => session.resolvedUserId != null AND serviceRole.canReadUser === true
+B) Health endpoint reports schema ok:
+   curl -s -H "Authorization: Bearer <JWT>" https://lyceon.ai/api/health/practice
+   => ok:true AND answer_attempts table exists
+C) Practice next question works end-to-end:
+   curl -s -H "Authorization: Bearer <JWT>" "https://lyceon.ai/api/practice/next?section=math&mode=balanced"
+   => HTTP 200 and JSON contains question.options as an ARRAY (not string)
+D) Answer submission works:
+   POST /api/practice/answer => 200 and returns isCorrect boolean
+E) Browser /practice/math renders question and options.
+
+Observed production state (source of truth from curl)
+- /api/auth/debug returned:
+  hasBearerToken=false, resolvedUserId=null
+  => Bearer parsing is not working or token is not being passed correctly
+- /api/health/practice returned:
+  answer_attempts table_not_found (production)
+  => must create answer_attempts in prod
+
+PHASE 1 — Fix Bearer token parsing deterministically (no guessing)
+
+File: server/routes/supabase-auth-routes.ts
+Endpoint: GET /api/auth/debug
+
+Requirements:
+1) Detect Authorization header case-insensitively.
+2) Accept BOTH formats:
+   - "Authorization: Bearer <JWT>"
+   - "authorization: Bearer <JWT>"
+3) Parse token safely:
+   - read req.headers['authorization'] OR req.get('authorization')
+   - if startsWith("Bearer "), extract token after space and trim
+4) Set cookies.hasBearerToken = true ONLY if token string length > 20 (avoid false positives)
+5) Resolve userId from token by calling Supabase auth:
+   - const { data: { user }, error } = await supabaseAnon.auth.getUser(token)
+   - if error or no user => return resolvedUserId null, and include error message in response field `bearerError`
+6) If resolvedUserId exists, run service role lookup:
+   - admin.auth.admin.getUserById(resolvedUserId)
+   - set serviceRole.canReadUser true/false accordingly
+
+Add a response field to make failures obvious:
+{
+  cookies: { hasBearerToken, tokenSource },
+  bearer: { parsed: boolean, tokenLength: number|null, error: string|null }
+}
+
+Proof required (production):
+- Run these commands and paste raw outputs:
+
+1) Without token:
+   curl -s https://lyceon.ai/api/auth/debug | jq '.cookies, .session, .bearer'
+   => hasBearerToken false, resolvedUserId null
+
+2) With token:
+   TOKEN="<paste real JWT from browser cookie sb-access-token>"
+   curl -s -H "Authorization: Bearer $TOKEN" https://lyceon.ai/api/auth/debug | jq '.cookies, .session, .serviceRole, .bearer'
+   => hasBearerToken true, bearer.parsed true, tokenLength > 200 typically, resolvedUserId not null, serviceRole.canReadUser true
+
+DO NOT proceed until (2) passes.
+
+PHASE 2 — Create answer_attempts table in PRODUCTION (deterministic migration)
+
+Production health currently reports answer_attempts table_not_found.
+We must add a Supabase migration SQL file and apply it.
+
+Create: supabase/migrations/20260112_answer_attempts.sql (or next timestamp consistent with repo)
+
+SQL requirements (match current code expectations in server/routes/practice-canonical.ts):
+- Table: answer_attempts
+- Columns (minimum):
+  id uuid primary key
+  session_id uuid not null references practice_sessions(id) on delete cascade
+  question_id uuid not null references questions(id)
+  selected_answer text null
+  free_response_answer text null
+  is_correct boolean null
+  outcome text null
+  time_spent_ms integer null
+  attempted_at timestamptz not null default now()
+
+Indexes:
+- create index on answer_attempts(session_id)
+- create index on answer_attempts(question_id)
+
+Do NOT include user_id (keep schema compatible and simple).
+Do NOT add RLS policies in this swing unless required for server-role writes (server role bypasses RLS).
+
+Apply migration to production using your standard Supabase deploy process (CLI or dashboard).
+After applying, verify with health endpoint.
+
+Proof required (production):
+TOKEN="<same JWT>"
+curl -s -H "Authorization: Bearer $TOKEN" https://lyceon.ai/api/health/practice | jq
+Expected:
+- schema.answer_attempts.missingColumns is []
+- schema.answer_attempts.hasColumns includes session_id, question_id, etc.
+- ok should be true (unless other missing table/columns appear)
+
+DO NOT proceed until health shows answer_attempts exists.
+
+PHASE 3 — Practice session + next question end-to-end verification (production)
+
+File: server/routes/practice-canonical.ts
+
+Confirm these are already in place (DO NOT change unless missing):
+- practice_sessions.status on create is 'in_progress'
+- questions select list only uses existing columns:
+  id, section, stem, options, difficulty, classification, answer_choice, answer_text, explanation
+- options parsing converts string to array
+- end-session uses finished_at (already manually fixed)
+
+Now run production proof:
+
+TOKEN="<JWT>"
+
+1) Next question:
+curl -s -i -H "Authorization: Bearer $TOKEN" \
+ "https://lyceon.ai/api/practice/next?section=math&mode=balanced"
+
+Expected: HTTP 200, JSON includes:
+- sessionId
+- question: { id, stem, options:[...] }
+
+2) Answer submission:
+Use the returned sessionId + question.id:
+curl -s -i -H "Authorization: Bearer $TOKEN" \
+ -H "Content-Type: application/json" \
+ -d '{"sessionId":"<sessionId>","questionId":"<questionId>","selectedAnswer":"A","elapsedMs":1234}' \
+ "https://lyceon.ai/api/practice/answer"
+
+Expected: HTTP 200, JSON includes isCorrect boolean.
+
+PHASE 4 — Browser verification
+- Log in as student
+- Visit /practice/math
+- Confirm question renders and options are visible
+- Answer question
+- Confirm feedback shows
+
+Final deliverable
+Provide:
+- List of files changed
+- Migration file name + SQL content
+- Production curl outputs for:
+  /api/auth/debug with bearer
+  /api/health/practice with bearer
+  /api/practice/next with bearer
+  /api/practice/answer with bearer
+
+No other changes.

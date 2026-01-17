@@ -1,0 +1,364 @@
+## CTO decision: “Account-level subscription” is the only model that will stay sane at scale
+
+You already have the right conceptual primitive in your codebase: **`account_id`** plus **`entitlements`** keyed by that account. The restructure is:
+
+* **One Stripe subscription ↔ one `account_id`**
+* **Multiple users (student + guardian) can belong to the same account**
+* “Paid” means **premium entitlements for the account**, which unlock:
+
+  * Student: unlimited study access (and any other premium study features you define)
+  * Guardian: parent dashboard + calendar + KPIs **for the linked student(s)** in that account
+
+This also solves the “student can pay” requirement cleanly: student simply pays for the account they belong to, and any linked guardian on the same account inherits premium access.
+
+---
+
+## Required access contract (explicit)
+
+### Premium entitlements grant:
+
+* **Student (role=student)**: premium study access (unlimited practice/AI/chat/etc. per your premium definition)
+* **Guardian (role=guardian)**: parent dashboard + calendar + KPIs for the specific student(s) they’re linked to **within the same account**
+
+### Premium does *not* grant:
+
+* Guardian viewing *any* random student. Guardian still needs a valid guardian link, and the linked student must be in the same account.
+
+---
+
+## The two biggest bugs you must eliminate
+
+1. **Paid subscription recorded in Stripe but DB entitlement stale**
+   Fix: `/api/billing/status` must self-heal by reconciling with Stripe when entitlement is not active/trialing.
+
+2. **Payment not linked deterministically to the correct user/student/account**
+   Fix: Stripe checkout must carry `account_id` in metadata (and ideally `payer_user_id`), and webhooks must upsert entitlements by `account_id` only.
+
+---
+
+# Super prompt: surgical, deterministic implementation (no refactor, no ambiguity)
+
+Target repo: `Learningai - 2026-01-14T145705.110.zip`
+
+## Change 0 — Make “account” the single billing identity
+
+### DB invariants (enforce in code, no migration required if tables already exist)
+
+* Every authenticated user has an `account_id` (directly, or derivable via an RPC like `ensure_account_for_user`).
+* `entitlements.account_id` is the **only** entitlement record you check for paid access.
+* Stripe customer + subscription IDs must be stored **at account level** (preferred), not per-profile.
+
+If your DB currently stores `stripe_customer_id` on `profiles`, keep it for now but treat it as **derived** and ensure it always matches the account.
+
+---
+
+## Change 1 — Update checkout to support BOTH student and guardian payers, and always attach `account_id`
+
+### File: `server/routes/billing-routes.ts`
+
+Find the handler:
+
+* `router.post('/checkout', requireSupabaseAuth, requireGuardian, async (req, res) => { ... })`
+
+#### 1A) Replace guardian-only gate with authenticated gate + “payer role allowed”
+
+**Current (pattern to find):**
+
+```ts
+router.post('/checkout', requireSupabaseAuth, requireGuardian, async (req, res) => {
+```
+
+**Replace with:**
+
+```ts
+router.post('/checkout', requireSupabaseAuth, async (req, res) => {
+```
+
+#### 1B) Resolve `accountId` deterministically (this is the key part)
+
+Inside this handler, find where you currently compute `accountId` / call `ensure_account_for_user`.
+
+Replace the account resolution block with this exact logic (insert as the first lines inside the handler body):
+
+```ts
+  const userId = (req as any).user?.id;
+  const role = (req as any).user?.role;
+
+  if (!userId || !role) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  // Billing entity: account_id
+  // - Students pay for their own account.
+  // - Guardians pay for the student account they are linked to (primary linked student).
+  let accountId: string | null = null;
+  let linkedStudentId: string | null = null;
+
+  if (role === "student") {
+    accountId = await ensureAccountForUser(userId); // must return account_id
+  } else if (role === "guardian") {
+    // Must have a linked student; guardian dashboard is for a student.
+    // Resolve the guardian’s primary linked student and use that student’s account.
+    const link = await getPrimaryGuardianLink(userId); // returns { student_user_id }
+    if (!link?.student_user_id) {
+      return res.status(400).json({ error: "Guardian has no linked student. Link a student before subscribing." });
+    }
+    linkedStudentId = link.student_user_id;
+    accountId = await ensureAccountForUser(linkedStudentId);
+  } else if (role === "admin") {
+    return res.status(403).json({ error: "Admins cannot initiate checkout" });
+  } else {
+    return res.status(403).json({ error: "Unsupported role" });
+  }
+
+  if (!accountId) {
+    return res.status(500).json({ error: "Failed to resolve account" });
+  }
+```
+
+> Notes:
+>
+> * `ensureAccountForUser` already exists in your codebase as RPC logic (`ensure_account_for_user`) style. Use your existing helper; do **not** invent a new DB model.
+> * `getPrimaryGuardianLink` should be a small query to `guardian_links` (or your equivalent table) that returns the target student user id.
+
+#### 1C) Ensure Stripe checkout session sets `metadata.account_id` ALWAYS
+
+Find where you create the Stripe checkout session (pattern: `stripe.checkout.sessions.create({...})`).
+
+Add these fields (verbatim) inside the session create payload:
+
+```ts
+metadata: {
+  account_id: accountId,
+  payer_user_id: userId,
+  payer_role: role,
+  ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
+},
+client_reference_id: accountId,
+```
+
+This must be present even if other metadata exists.
+
+#### 1D) Success URL must trigger status reconciliation UX
+
+Ensure `success_url` includes a deterministic marker:
+
+* `https://lyceon.ai/guardian?checkout=success`
+  or if student flow:
+* `https://lyceon.ai/dashboard?checkout=success`
+
+If you currently always return to guardian, keep it simple:
+
+* Guardians return to `/guardian?checkout=success`
+* Students return to `/dashboard?checkout=success`
+
+---
+
+## Change 2 — Webhooks must upsert entitlements strictly by `account_id`
+
+### File: `server/lib/webhookHandlers.ts`
+
+Find every place you compute `accountId` from Stripe objects.
+You must enforce this rule:
+
+* `account_id = event.data.object.metadata.account_id` OR `client_reference_id`
+* If missing, webhook MUST log error and mark event as failed. No “best effort” mapping by email.
+
+#### 2A) Replace “account id resolution” with strict resolution
+
+Insert this helper (near the top of file or inside handler file) and use it everywhere:
+
+```ts
+function requireAccountIdFromStripeObject(obj: any): string {
+  const fromMeta = obj?.metadata?.account_id;
+  const fromClientRef = obj?.client_reference_id;
+  const accountId = fromMeta || fromClientRef;
+
+  if (!accountId || typeof accountId !== "string") {
+    throw new Error("Missing account_id on Stripe object metadata/client_reference_id");
+  }
+  return accountId;
+}
+```
+
+Then in the webhook event handlers (checkout.session.completed, customer.subscription.updated, invoice.paid, etc.), replace any mapping logic with:
+
+```ts
+const accountId = requireAccountIdFromStripeObject(obj);
+```
+
+#### 2B) Always write these fields into entitlements
+
+Whenever you call `upsertEntitlement(accountId, ...)`, ensure you pass:
+
+* `stripe_customer_id`
+* `stripe_subscription_id`
+* `status`
+* `plan`
+* `current_period_end`
+
+No partial updates.
+
+---
+
+## Change 3 — Self-healing billing status (fixes “paid but still paywalled” forever)
+
+### File: `server/routes/billing-routes.ts`
+
+Find:
+
+* `router.get('/status', requireSupabaseAuth, requireGuardian, async (req,res)=>...)`
+
+#### 3A) Allow both guardian and student to call status
+
+Replace guardian-only gate with just `requireSupabaseAuth`:
+
+```ts
+router.get('/status', requireSupabaseAuth, async (req, res) => {
+```
+
+#### 3B) Add Stripe reconciliation when entitlement is not active/trialing
+
+Immediately after you load `entitlement` for `accountId`, insert:
+
+```ts
+  const isPaid =
+    entitlement?.status === "active" || entitlement?.status === "trialing";
+
+  // Self-heal: if DB says not paid but Stripe says active, reconcile now.
+  if (!isPaid) {
+    try {
+      const stripeCustomerId = entitlement?.stripe_customer_id || null;
+      if (stripeCustomerId) {
+        const subs = await stripe.subscriptions.list({
+          customer: stripeCustomerId,
+          status: "all",
+          limit: 10,
+        });
+
+        const best =
+          subs.data.find(s => s.status === "active") ||
+          subs.data.find(s => s.status === "trialing") ||
+          subs.data.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+
+        if (best) {
+          const mapped = mapStripeStatusToEntitlement(best); // use your existing helper
+          await upsertEntitlement(accountId, {
+            plan: mapped.plan,
+            status: mapped.status,
+            stripe_customer_id: stripeCustomerId,
+            stripe_subscription_id: best.id,
+            current_period_end: best.current_period_end,
+          });
+
+          // Reload entitlement after reconciliation
+          entitlement = await getOrCreateEntitlement(accountId);
+        }
+      }
+    } catch (e) {
+      // Do not throw; status endpoint should be reliable
+      console.error("[BILLING] status reconcile failed", e);
+    }
+  }
+```
+
+This makes access deterministic even if webhook delivery fails.
+
+---
+
+## Change 4 — Make guardian dashboard access depend on entitlement(account) + link(student in same account)
+
+### File: `server/middleware/guardian-entitlement.ts`
+
+Find logic like:
+
+* “guardian role” + entitlement check.
+
+You must add **link + account coherence**:
+
+* guardian must have a link to a student
+* linked student must resolve to the same account_id used for entitlement
+
+Insert the check:
+
+```ts
+const guardianId = req.user.id;
+const link = await getPrimaryGuardianLink(guardianId);
+if (!link?.student_user_id) return res.status(403).json({ error: "Guardian has no linked student" });
+
+const studentAccountId = await ensureAccountForUser(link.student_user_id);
+if (studentAccountId !== accountId) {
+  return res.status(403).json({ error: "Guardian/student account mismatch" });
+}
+```
+
+This prevents paying on one account and expecting access to a different student/account.
+
+---
+
+## Change 5 — UI: post-checkout “processing” state + polling
+
+### File: `client/src/components/guardian/SubscriptionPaywall.tsx`
+
+When URL has `checkout=success`, do:
+
+* show “Processing payment…”
+* poll `/api/billing/status` every 2s for up to 60s
+* once `effectiveAccess` true, route to guardian dashboard.
+
+Add (minimal) logic:
+
+* detect query param
+* `refetchInterval: checkoutSuccess && !data?.effectiveAccess ? 2000 : false`
+* timeout after 60s and show “If this persists, click Manage Subscription” (portal)
+
+---
+
+## Proof pack (mandatory; paste full outputs)
+
+### A) Stripe metadata / webhook mapping proof
+
+```bash
+grep -RIn "metadata:.*account_id|client_reference_id: accountId" server/routes/billing-routes.ts
+grep -RIn "Missing account_id on Stripe object" server/lib/webhookHandlers.ts
+grep -RIn "requireAccountIdFromStripeObject" server/lib/webhookHandlers.ts
+```
+
+### B) Status reconciliation proof
+
+```bash
+grep -RIn "Self-heal: if DB says not paid" server/routes/billing-routes.ts
+```
+
+### C) Guardian link/account coherence proof
+
+```bash
+grep -RIn "Guardian/student account mismatch|getPrimaryGuardianLink" server/middleware/guardian-entitlement.ts
+```
+
+### D) End-to-end manual verification
+
+1. Disable webhook temporarily (or simulate failure) → pay → `/api/billing/status` becomes paid within 10s
+2. Guardian and student both show premium access for the same account
+3. Guardian without a link cannot subscribe (hard error)
+4. Student can subscribe and later add guardian link; guardian immediately has premium dashboard access
+
+---
+
+## Notes on “one payment for guardian + student”
+
+This model achieves it without hacks:
+
+* The subscription is for the **account**
+* Guardian and student are **members** of that account (linked)
+* Premium applies to the account; link determines which student data the guardian can see
+
+```
+
+---
+
+## One thing I will not recommend
+Do **not** make the guardian dashboard unlock “globally” for any guardian regardless of linked student. That creates compliance problems and messy support. The link + account coherence check keeps it legally and logically clean.
+
+If you paste the outputs from the proof pack after your engineer applies these changes, I’ll validate line-by-line and call out any remaining gaps.
+```

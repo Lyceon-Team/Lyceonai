@@ -1,0 +1,486 @@
+## Super prompt: deterministic auth + cookie audit fixes (line-by-line, zero guesswork)
+
+You are working in **`Learningai - 2026-01-13T115641.740.zip`** (this exact zip).
+Make **only** the edits described below. No refactors, no renames, no “cleanup” beyond what is explicitly requested.
+
+---
+
+# 0) Reality check: apps/api is deployed (V4 is live code)
+
+This zip’s `server/index.ts` imports and mounts `apps/api` routers directly (so `apps/api` is not legacy).
+
+**Evidence (do not change):**
+
+* `server/index.ts` line **61** imports:
+  `import { ingestionV4Router } from "../apps/api/src/routes/ingestion-v4";`
+* `server/index.ts` line **424** mounts calendar:
+  `app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);`
+
+---
+
+# 1) Fix cookie determinism: flush stale cookie variants before setting new cookies
+
+## 1A) `server/routes/supabase-auth-routes.ts`
+
+### Change 1: update `setAuthCookies()` to clear stale variants before setting
+
+#### Current code (lines 20–45)
+
+```ts
+20|function setAuthCookies(res: any, session: any, isProd: boolean) {
+...
+28|  const base = {
+29|    httpOnly: true,
+30|    secure: isProd,
+31|    sameSite: 'lax' as const,
+32|    path: '/', // CRITICAL - ensures cookies sent to all routes
+33|    ...(isProd && { domain: '.lyceon.ai' })
+34|  };
+35|
+36|  res.cookie('sb-access-token', session.access_token, {
+37|    ...base,
+38|    maxAge: accessMaxAgeMs,
+39|  });
+40|
+41|  res.cookie('sb-refresh-token', session.refresh_token, {
+42|    ...base,
+43|    maxAge: refreshMaxAgeMs,
+44|  });
+45|}
+```
+
+#### Replace by editing **ONLY** line 20 to add one line immediately after it
+
+Insert this line at **new line 21** (right after the opening brace):
+
+```ts
+  clearAuthCookies(res, isProd);
+```
+
+So the function begins like:
+
+```ts
+function setAuthCookies(res: any, session: any, isProd: boolean) {
+  clearAuthCookies(res, isProd);
+  const accessMaxAgeMs = ...
+```
+
+✅ This ensures **no duplicate-name cookies** survive a login/refresh/exchange cycle.
+
+---
+
+### Change 2: replace `clearAuthCookies()` with a “clear all variants” implementation
+
+#### Current code (lines 47–57)
+
+```ts
+47|function clearAuthCookies(res: any, isProd: boolean) {
+48|  const base = {
+49|    httpOnly: true,
+50|    secure: isProd,
+51|    sameSite: 'lax' as const,
+52|    path: '/', // CRITICAL - must match path used when setting
+53|    ...(isProd && { domain: '.lyceon.ai' })
+54|  };
+55|  res.clearCookie('sb-access-token', base);
+56|  res.clearCookie('sb-refresh-token', base);
+57|}
+```
+
+#### Replace lines **47–57** with this exact block (verbatim)
+
+```ts
+function clearAuthCookies(res: any, isProd: boolean) {
+  // Clear cookie variants deterministically:
+  // - both tokens
+  // - both paths historically used ('/' and '/api')
+  // - both domain-scoped and host-only variants
+  // - both secure=true/false (to clear legacy mis-scoped cookies)
+  const names = ['sb-access-token', 'sb-refresh-token'] as const;
+  const paths = ['/', '/api'] as const;
+
+  const baseCommon = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+  };
+
+  const optionSets: any[] = [];
+
+  for (const path of paths) {
+    // Host-only clears (no domain)
+    optionSets.push({ ...baseCommon, path, secure: false });
+    optionSets.push({ ...baseCommon, path, secure: true });
+
+    // Production domain clears (both dot-domain and non-dot legacy)
+    if (isProd) {
+      optionSets.push({ ...baseCommon, path, secure: true, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: true, domain: 'lyceon.ai' });
+      // In case a legacy cookie was set insecure in prod (rare but possible)
+      optionSets.push({ ...baseCommon, path, secure: false, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: false, domain: 'lyceon.ai' });
+    }
+  }
+
+  for (const name of names) {
+    for (const opts of optionSets) {
+      res.clearCookie(name, opts);
+    }
+  }
+}
+```
+
+✅ This is the core “stale cookie” fix. It prevents split-brain behavior caused by old `/api`-scoped or host-only cookie variants.
+
+---
+
+### Change 3: prevent `/api`-path duplicates from surviving even when cookies are “allowed”
+
+Your current legacy cleaner **skips allowed cookies** entirely:
+
+#### Current code (lines 90–93)
+
+```ts
+90|  for (const name of cookieNames) {
+91|    // Skip allowed cookies
+92|    if (ALLOWED_COOKIES.has(name)) continue;
+93|
+```
+
+This lets old `sb-access-token` or `sb-refresh-token` cookies scoped to `/api` survive forever unless you explicitly clear them.
+
+#### Replace lines **90–93** with the following block (verbatim)
+
+```ts
+  for (const name of cookieNames) {
+    // Special-case: allow current sb-* cookies, but always clear any legacy '/api' path variants
+    // without touching the canonical '/' cookie.
+    if (name === 'sb-access-token' || name === 'sb-refresh-token') {
+      const deleteApiPathOptions: any[] = [
+        { path: '/api', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
+      ];
+
+      if (isProd) {
+        deleteApiPathOptions.push(
+          { path: '/api', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: 'lyceon.ai' } as any,
+          { path: '/api', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: '.lyceon.ai' } as any,
+        );
+      }
+
+      for (const opts of deleteApiPathOptions) {
+        res.clearCookie(name, opts);
+      }
+
+      // Continue normal loop; do NOT delete the canonical '/' cookie here.
+      continue;
+    }
+
+    // Skip allowed cookies
+    if (ALLOWED_COOKIES.has(name)) continue;
+```
+
+✅ This makes the cleanup safe (doesn’t log users out) while removing the most common duplicate cookie variant (`/api`).
+
+---
+
+## 1B) `server/routes/google-oauth-routes.ts`
+
+### Change 4: clear stale variants before setting cookies in `setSupabaseSessionCookies()`
+
+#### Current function (lines 55–81)
+
+```ts
+55|export function setSupabaseSessionCookies(
+56|  res: Response, 
+57|  session: { access_token: string; refresh_token: string; expires_in?: number }
+58|): void {
+...
+64|  const base = {
+65|    httpOnly: true,
+66|    secure: isProduction,
+67|    sameSite: 'lax' as const,
+68|    path: '/', // CRITICAL - ensures cookies sent to all routes
+69|    ...(isProduction && { domain: '.lyceon.ai' })
+70|  };
+...
+72|  res.cookie('sb-access-token', session.access_token, { ... });
+77|  res.cookie('sb-refresh-token', session.refresh_token, { ... });
+81|}
+```
+
+### Insert a new helper function immediately above line 55
+
+Insert this block starting at **new line 55** (so it appears right before `export function setSupabaseSessionCookies`):
+
+```ts
+function clearSupabaseSessionCookies(res: Response): void {
+  const isProd = isProduction;
+  const names = ['sb-access-token', 'sb-refresh-token'] as const;
+  const paths = ['/', '/api'] as const;
+
+  const baseCommon = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+  };
+
+  const optionSets: any[] = [];
+
+  for (const path of paths) {
+    optionSets.push({ ...baseCommon, path, secure: false });
+    optionSets.push({ ...baseCommon, path, secure: true });
+
+    if (isProd) {
+      optionSets.push({ ...baseCommon, path, secure: true, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: true, domain: 'lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: false, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: false, domain: 'lyceon.ai' });
+    }
+  }
+
+  for (const name of names) {
+    for (const opts of optionSets) {
+      res.clearCookie(name, opts);
+    }
+  }
+}
+```
+
+### Then, inside `setSupabaseSessionCookies()`, add exactly one line after the opening brace
+
+Add this line right after `): void {`:
+
+```ts
+  clearSupabaseSessionCookies(res);
+```
+
+✅ This makes Google OAuth consistent with email/password flows.
+
+---
+
+# 2) Fix Google OAuth role redirect deterministically (remove anon-RLS ambiguity)
+
+## File: `server/routes/google-oauth-routes.ts`
+
+### Current role fetch (lines 261–266)
+
+```ts
+261|    try {
+262|      const { data: profile, error: profileError } = await supabase
+263|        .from('profiles')
+264|        .select('role')
+265|        .eq('id', userId)
+266|        .single();
+```
+
+This uses `supabase` created at line 236 with anon key and **no Authorization header**, which can fail under RLS and default you to `/dashboard`.
+
+### Replace lines 262–266 with this block (verbatim)
+
+```ts
+      const supabaseAuthed = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+        },
+      });
+
+      const { data: profile, error: profileError } = await supabaseAuthed
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+```
+
+✅ This makes guardian redirect consistent and uses the same user token you just set in cookies.
+
+---
+
+# 3) Remove dual auth authority inside V4 router (do not use apps/api admin auth middleware)
+
+## File: `apps/api/src/routes/ingestion-v4.ts`
+
+### Current import (line 40)
+
+```ts
+40|import { requireAdmin, V4_DEBUG_AUTH_BYPASS, isV4BypassAllowed } from "../middleware/auth";
+```
+
+### Replace line 40 with:
+
+```ts
+import { V4_DEBUG_AUTH_BYPASS, isV4BypassAllowed } from "../middleware/auth";
+```
+
+---
+
+### Current middleware `requireAdminOrBypass()` (lines 52–60)
+
+```ts
+52|function requireAdminOrBypass(req: Request, res: Response, next: NextFunction): void {
+53|  // If already marked as bypassed by early middleware, allow through
+54|  if ((req as any).__v4Bypassed) {
+55|    next();
+56|    return;
+57|  }
+58|  // Fall through to requireAdmin
+59|  requireAdmin(req, res, next);
+60|}
+```
+
+### Replace lines 52–60 with this exact block (verbatim)
+
+```ts
+function requireAdminOrBypass(req: Request, res: Response, next: NextFunction): void {
+  // SINGLE SOURCE OF TRUTH:
+  // server/index.ts mounts this router behind v4AdminMiddleware which either:
+  // - sets __v4Bypassed for allowlisted debug endpoints, OR
+  // - enforces requireSupabaseAdmin (admin-only).
+  //
+  // Therefore, this middleware must NOT use apps/api auth logic.
+  // It may only do a lightweight defense-in-depth check using req.user (set by server middleware).
+
+  if ((req as any).__v4Bypassed) {
+    next();
+    return;
+  }
+
+  const role = (req as any).user?.role;
+  if (role === 'admin') {
+    next();
+    return;
+  }
+
+  return res.status(401).json({ ok: false, error: "Admin access required" });
+}
+```
+
+✅ This removes the second “admin auth stack” while still preventing accidental unauth’d use if someone mounts the router elsewhere.
+
+---
+
+# 4) Fix `/api/calendar/generate`: remove “service_role required” browser-token logic
+
+## File: `apps/api/src/routes/calendar.ts`
+
+### Current code (lines 423–447)
+
+```ts
+423|calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response) => {
+424|  try {
+425|    const token =
+426|      req.cookies?.["sb-access-token"] ||
+427|      (req.headers.authorization?.startsWith("Bearer ")
+428|        ? req.headers.authorization.slice(7)
+429|        : null);
+430|
+431|    if (!token) {
+432|      return res.status(401).json({ error: "Authentication required" });
+433|    }
+434|
+435|    const decoded = decode(token) as { role?: string } | null;
+436|    if (!decoded || decoded.role !== "service_role") {
+437|      return res.status(403).json({ error: "Service role required" });
+438|    }
+439|
+440|    const { start_date, days, user_id } = req.body ?? {};
+441|
+442|    if (!user_id || typeof user_id !== "string") {
+443|      return res.status(400).json({ error: "user_id is required" });
+444|    }
+445|
+446|    const userId = user_id;
+447|
+```
+
+This endpoint is mounted behind:
+`app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);`
+So it should use `req.user`, not decode raw JWTs and definitely not “service_role required”.
+
+### Replace lines 425–447 with this exact block (verbatim)
+
+```ts
+    // Auth is enforced by server/index.ts:
+    // app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+    // Therefore, we must rely on req.user for determinism (no JWT decode checks).
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const { start_date, days, user_id } = req.body ?? {};
+
+    // Default: generate for the logged-in student.
+    // Admins may optionally generate for a specific user_id.
+    const userId =
+      req.user.role === "admin" && typeof user_id === "string"
+        ? user_id
+        : req.user.id;
+```
+
+✅ This makes generation usable for students and avoids any privileged “service role token” concept in the browser.
+
+---
+
+# 5) Proof requirements (mandatory, paste outputs)
+
+After making changes, run these commands and paste full output:
+
+## Proof A — show modified blocks with line numbers
+
+```bash
+nl -ba server/routes/supabase-auth-routes.ts | sed -n '15,140p'
+nl -ba server/routes/google-oauth-routes.ts | sed -n '45,120p'
+nl -ba server/routes/google-oauth-routes.ts | sed -n '240,290p'
+nl -ba apps/api/src/routes/ingestion-v4.ts | sed -n '30,90p'
+nl -ba apps/api/src/routes/calendar.ts | sed -n '410,470p'
+```
+
+## Proof B — grep that no “service_role required” remains in calendar route
+
+```bash
+grep -RIn "service_role|required\"\\s*\\}" apps/api/src/routes/calendar.ts
+```
+
+## Proof C — grep that ingestion-v4 no longer imports or calls `requireAdmin` from apps/api middleware
+
+```bash
+grep -RIn "requireAdmin" apps/api/src/routes/ingestion-v4.ts
+```
+
+Expected output: **no matches**.
+
+## Proof D — grep all cookie setters and clearers for sb-* tokens
+
+```bash
+grep -RIn "res\\.cookie\\('sb-access-token'|res\\.cookie\\('sb-refresh-token'|clearCookie\\('sb-access-token'|clearCookie\\('sb-refresh-token'" server apps/api | head -n 200
+```
+
+---
+
+# 6) Deterministic smoke tests (paste results)
+
+## Test 1 — login stability (browser)
+
+* Login
+* Refresh page **5 times**
+* Confirm `/api/auth/user` returns 200 each time
+
+## Test 2 — cookie duplicate elimination
+
+* After login, in DevTools → Application → Cookies:
+
+  * Confirm **no duplicate** `sb-access-token` / `sb-refresh-token` with different paths (`/` vs `/api`)
+  * Confirm domain is consistent (`.lyceon.ai` in prod)
+
+## Test 3 — Google OAuth redirect determinism
+
+* Complete Google OAuth
+* Confirm redirect goes to `/guardian` if profile.role is guardian, else `/dashboard`
+
+---
+
+## Notes (do not deviate)
+
+* Do not modify anything else in billing/paywall; in this zip it is already deterministic (`selectedPlan` is `null` and checkout is disabled until selection).
+* Do not modify `server/middleware/supabase-auth.ts` unless a proof command shows a direct conflict with the above changes.
+
+Proceed exactly as specified.

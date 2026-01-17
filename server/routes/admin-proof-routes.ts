@@ -1,0 +1,212 @@
+/**
+ * Admin Proof Routes - "No More Lying" Layer
+ * 
+ * These endpoints verify Supabase is actually receiving data.
+ * All queries use the service role key to bypass RLS.
+ */
+
+import { Router, Request, Response } from 'express';
+import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
+import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/ingestion/types/supabaseQuestionsRow';
+
+const router = Router();
+
+function getSupabaseProjectRef(): string {
+  const url = process.env.SUPABASE_URL || '';
+  const match = url.match(/https:\/\/([^.]+)\.supabase\.co/);
+  return match ? match[1] : 'unknown';
+}
+
+function isAuthorized(req: Request): boolean {
+  const authHeader = req.headers.authorization;
+  const adminToken = process.env.INGEST_ADMIN_TOKEN;
+  
+  if (authHeader && adminToken) {
+    const token = authHeader.replace('Bearer ', '');
+    if (token === adminToken) {
+      return true;
+    }
+  }
+  
+  const supabaseUser = (req as any).supabaseUser;
+  if (supabaseUser?.role === 'admin') {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * GET /api/admin/proof/questions
+ * Returns proof that questions exist in Supabase
+ */
+router.get('/questions', async (req: Request, res: Response) => {
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
+    });
+  }
+
+  try {
+    const { count, error: countError } = await supabaseServer
+      .from('questions')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      return res.status(500).json({
+        error: 'Supabase query failed',
+        code: countError.code,
+        message: countError.message,
+        details: countError.details,
+      });
+    }
+
+    const { data: latestRows, error: latestError } = await supabaseServer
+      .from('questions')
+      .select('id, canonical_id, section, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (latestError) {
+      return res.status(500).json({
+        error: 'Supabase query failed',
+        code: latestError.code,
+        message: latestError.message,
+        details: latestError.details,
+      });
+    }
+
+    const latestCreatedAt = latestRows?.[0]?.created_at || null;
+
+    return res.json({
+      supabaseProjectRef: getSupabaseProjectRef(),
+      total: count || 0,
+      latestCreatedAt,
+      latestRows: latestRows || [],
+      queriedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      error: 'Server error',
+      message: err.message,
+    });
+  }
+});
+
+/**
+ * POST /api/admin/proof/insert-smoke
+ * Insert ONE smoke test row to verify write path works
+ */
+router.post('/insert-smoke', async (req: Request, res: Response) => {
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
+    });
+  }
+
+  try {
+    const timestamp = Date.now();
+    const uniqueChars = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const smokeRow = {
+      canonical_id: `SATM2SMOKE${uniqueChars}`,
+      section: 'Math',
+      stem: `Smoke test question inserted at ${new Date().toISOString()}`,
+      question_type: 'multiple_choice',
+      options: [
+        { key: 'A', text: 'Smoke option A' },
+        { key: 'B', text: 'Smoke option B' },
+        { key: 'C', text: 'Smoke option C' },
+        { key: 'D', text: 'Smoke option D' },
+      ],
+      answer: 'A',
+      exam: 'SAT',
+      test_code: 'SAT',
+      section_code: 'M',
+      ai_generated: true,
+      needs_review: true,
+      confidence: 0,
+    };
+
+    const validation = validateQuestionRow(smokeRow);
+    if (!validation.valid) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        errors: validation.errors,
+        droppedKeys: validation.droppedKeys,
+      });
+    }
+
+    const { data, error } = await supabaseServer
+      .from('questions')
+      .insert([validation.cleanedRow])
+      .select('id, canonical_id, created_at')
+      .single();
+
+    if (error) {
+      return res.status(500).json({
+        error: 'Supabase insert failed',
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        attemptedColumns: Object.keys(validation.cleanedRow || {}),
+        schemaColumns: SUPABASE_QUESTIONS_COLUMNS,
+      });
+    }
+
+    return res.json({
+      success: true,
+      supabaseProjectRef: getSupabaseProjectRef(),
+      insertedRow: data,
+      message: 'Smoke test row inserted successfully',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      error: 'Server error',
+      message: err.message,
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/proof/cleanup-smoke
+ * Delete smoke test rows (optional cleanup)
+ */
+router.delete('/cleanup-smoke', async (req: Request, res: Response) => {
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
+    });
+  }
+
+  try {
+    const { data, error } = await supabaseServer
+      .from('questions')
+      .delete()
+      .like('canonical_id', '%SMOKE%')
+      .select('id');
+
+    if (error) {
+      return res.status(500).json({
+        error: 'Supabase delete failed',
+        code: error.code,
+        message: error.message,
+      });
+    }
+
+    return res.json({
+      success: true,
+      deletedCount: data?.length || 0,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      error: 'Server error',
+      message: err.message,
+    });
+  }
+});
+
+export default router;

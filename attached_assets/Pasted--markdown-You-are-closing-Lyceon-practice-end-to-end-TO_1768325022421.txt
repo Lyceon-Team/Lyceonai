@@ -1,0 +1,159 @@
+````markdown
+You are closing Lyceon practice end-to-end TODAY. No refactors, no new packages, no redesign. Only surgical fixes.
+
+## Current confirmed state (from latest monorepo zip)
+- Backend `/api/practice/next` is schema-aligned, parses options, and excludes attempted questions by querying `answer_attempts` using `session_id`.
+- Backend `/api/practice/answer` now returns `{ isCorrect, correctAnswerKey, explanation }` and inserts `answer_attempts` with `user_id` (RLS compliant).
+- Frontend stores and renders `explanation` + `correctAnswerKey` when an answer is submitted.
+
+## Remaining production bug
+Questions repeat because "Skip" does NOT record an attempt.
+If skip does not insert an `answer_attempts` row, `/api/practice/next` sees no attempted IDs and can return the same question again (especially under deterministic selection).
+
+Therefore: skipping must POST `/api/practice/answer` with `{ skipped: true }` before fetching the next question.
+
+---
+
+# DO THIS (exact changes)
+
+## Patch 1 — Math practice skip must record an attempt
+File: `client/src/pages/math-practice.tsx`
+
+### Replace/Update the existing `handleSkip` implementation:
+Requirements:
+- If `!currentQuestion` or `!sessionId`, return.
+- Call POST `/api/practice/answer` with:
+  - `sessionId`
+  - `questionId: currentQuestion.id`
+  - `skipped: true`
+  - `selectedAnswer: null`
+  - `freeResponseAnswer: null`
+  - `elapsedMs: 0`
+- Only after that resolves, advance to next question using the existing "next" flow (call the existing `handleNext()` or `fetchNextQuestion()` in the correct order).
+- Update local score state:
+  - `skipped + 1`
+  - `total + 1`
+  - reset streak to 0
+
+Implement this EXACT code pattern (adjust naming only if your local variable names differ):
+
+```ts
+const handleSkip = async () => {
+  if (!currentQuestion || !sessionId) return;
+
+  setIsValidating(true);
+  try {
+    await apiRequest(`/api/practice/answer`, {
+      method: "POST",
+      body: JSON.stringify({
+        sessionId,
+        questionId: currentQuestion.id,
+        skipped: true,
+        selectedAnswer: null,
+        freeResponseAnswer: null,
+        elapsedMs: 0,
+      }),
+    });
+
+    setScore((prev) => ({
+      ...prev,
+      skipped: prev.skipped + 1,
+      total: prev.total + 1,
+      streak: 0,
+    }));
+  } catch (e) {
+    console.error("Error skipping question:", e);
+    // Still allow advance, but repetition risk remains if skip isn't recorded
+  } finally {
+    setIsValidating(false);
+    await handleNext(); // uses the existing next flow
+  }
+};
+````
+
+Important:
+
+* Do NOT invent new state machines.
+* Do NOT bypass existing `handleNext` logic; use it.
+
+---
+
+## Patch 2 — Reading/Writing practice skip must record an attempt
+
+File: `client/src/pages/reading-writing-practice.tsx`
+
+Apply the same fix as Patch 1.
+
+---
+
+## Patch 3 (Optional hardening, only if you find text-based answer mismatches)
+
+File: `server/routes/practice-canonical.ts` in `POST /api/practice/answer`
+
+If you see cases where:
+
+* correctAnswerKey returned is a long string (answer text) instead of A/B/C/D
+  then add a safe mapping:
+* also SELECT `options`
+* if correctKey is not A-D, try to match correctKey against option.text and convert to option.key.
+
+Do NOT do this unless you can prove it occurs via a real /answer response.
+
+---
+
+# REQUIRED END-TO-END VALIDATION (provide evidence)
+
+You must validate in the BROWSER (not curl) because cookies/session apply.
+
+## Proof A — Skip records an attempt
+
+1. Open DevTools → Network.
+2. On /practice/math click Skip.
+3. Confirm a POST occurs:
+   `POST /api/practice/answer`
+   Request body contains `"skipped": true`
+4. Confirm response is 200.
+
+Paste the response JSON.
+
+## Proof B — No repetition across 3 skips/answers
+
+1. Capture 3 consecutive `GET /api/practice/next` responses.
+2. Extract `question.id` from each.
+3. Provide the 3 IDs showing all distinct.
+
+## Proof C — Explanations show and answers can be correct
+
+1. Answer one multiple-choice question correctly.
+2. Confirm:
+
+   * Response includes `isCorrect: true`
+   * UI shows "Correct answer" and explanation block.
+
+Paste the response JSON from `/api/practice/answer`.
+
+## Proof D — DB confirms attempts are being written
+
+Run in Supabase SQL editor and paste results:
+
+```sql
+select session_id, user_id, question_id, is_correct, outcome, attempted_at
+from public.answer_attempts
+order by attempted_at desc
+limit 10;
+```
+
+---
+
+# Deliverables
+
+Return:
+
+1. Changed files list (only the 2 pages unless optional patch is needed)
+2. Code snippet of both updated `handleSkip` functions
+3. Proof A/B/C network outputs
+4. Proof D SQL output
+   No other changes.
+
+```
+```

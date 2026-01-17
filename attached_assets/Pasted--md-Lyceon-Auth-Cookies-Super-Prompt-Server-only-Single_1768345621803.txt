@@ -1,0 +1,630 @@
+````md
+# 🔒 Lyceon Auth + Cookies Super Prompt (Server-only, Single Cookie Logic, No Bypass)
+Repo target: `Learningai - 2026-01-13T155357.467.zip` (THIS zip only)
+
+Goal: kill split-brain auth, remove duplicate logout paths, unify cookie clearing into ONE implementation, delete leftover auth bridge endpoints, and delete V4 bypass end-to-end.
+
+Rules:
+- No refactors beyond what is explicitly described.
+- No new cookie names.
+- Supabase remains the source of truth for identity, but the browser app must use **server-only auth** (httpOnly cookies only).
+- Changes must be line-for-line deterministic and verifiable by proofs.
+
+---
+
+## ✅ CHANGE 1 — Kill split-brain auth in the client (server-only auth)
+
+### File: `client/src/contexts/SupabaseAuthContext.tsx`
+
+#### 1A) Replace imports to remove Supabase-js session authority
+
+**Current lines 1–4**
+```ts
+1|import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
+2|import { supabase, AuthUser, SupabaseProfile } from '@/lib/supabase';
+3|import { Session } from '@supabase/supabase-js';
+4|import { useQueryClient } from '@tanstack/react-query';
+````
+
+**Replace with**
+
+```ts
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
+import { AuthUser, SupabaseProfile } from '@/lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
+```
+
+(You are deleting Supabase client import and the `Session` import entirely.)
+
+---
+
+#### 1B) Delete Supabase session fallback in initialization (NO `getSession`, NO `exchange-session` in init)
+
+In `initializeAuth()`, delete the entire block **from line 103 to line 160 inclusive**:
+
+**Delete lines 103–160**
+
+```ts
+103|      // Fallback: check Supabase session and exchange for cookies if needed
+104|      const { data } = await supabase.auth.getSession();
+105|      
+106|      if (mounted) {
+107|        const sessionUser = data.session?.user;
+108|        if (sessionUser && data.session) {
+109|          console.log('[AUTH] Found Supabase session, exchanging for cookies');
+110|          // Exchange session tokens for HTTP-only cookies
+111|          try {
+112|            const exchangeResponse = await fetch('/api/auth/exchange-session', {
+113|              method: 'POST',
+114|              headers: { 'Content-Type': 'application/json' },
+115|              credentials: 'include',
+116|              body: JSON.stringify({
+117|                access_token: data.session.access_token,
+118|                refresh_token: data.session.refresh_token
+119|              }),
+120|            });
+121|
+122|            if (!exchangeResponse.ok) {
+123|              // Exchange failed - clear Supabase session to prevent retry loops
+124|              console.warn('[AUTH] Failed to exchange session on init - clearing Supabase session');
+125|              await supabase.auth.signOut();
+126|              setUser(null);
+127|              setAuthLoading(false);
+128|              isInitializing.current = false;
+129|              return;
+130|            }
+131|
+132|            // Fetch user from backend to get correct isAdmin from profiles table
+133|            const backendUser = await fetchUserFromBackend();
+134|            if (backendUser) {
+135|              setUser(backendUser);
+136|            } else {
+137|              // Backend fetch failed - set basic user without admin access
+138|              // User can refresh to retry; this prevents permanent lockout
+139|              console.warn('[AUTH] Backend fetch failed on init, setting basic user state');
+140|              setUser({
+141|                id: sessionUser.id,
+142|                email: sessionUser.email!,
+143|                display_name: sessionUser.user_metadata?.display_name || sessionUser.email!.split('@')[0],
+144|                role: 'student', // Default role until backend confirms
+145|                isAdmin: false, // Must be false until backend confirms
+146|                isGuardian: false,
+147|                is_under_13: sessionUser.user_metadata?.is_under_13,
+148|                guardian_consent: sessionUser.user_metadata?.guardian_consent,
+149|              });
+150|            }
+151|          } catch (err) {
+152|            console.warn('[AUTH] Failed to exchange session on init:', err);
+153|            await supabase.auth.signOut();
+154|            setUser(null);
+155|          }
+156|        } else {
+157|          console.log('[AUTH] No existing session found');
+158|          setUser(null);
+159|        }
+160|        
+```
+
+After deleting that block, directly replace it with this minimal deterministic fallback:
+
+**Insert immediately after line 101**
+
+```ts
+      console.log('[AUTH] No existing backend cookie session found');
+      if (mounted) {
+        setUser(null);
+        setAuthLoading(false);
+        isInitializing.current = false;
+      }
+```
+
+Important: this ensures init is based ONLY on `/api/auth/user` (server cookie session), never on Supabase-js local session.
+
+---
+
+#### 1C) Delete Supabase auth state subscription entirely (NO `onAuthStateChange`, NO exchange loop)
+
+Delete **lines 168–239 inclusive**:
+
+**Delete lines 168–239**
+
+```ts
+168|    // Subscribe to auth state changes
+169|    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+...
+234|    });
+235|
+236|    return () => {
+237|      mounted = false;
+238|      subscription.unsubscribe();
+239|    };
+```
+
+Replace with this cleanup-only return:
+
+**Insert in the same location**
+
+```ts
+    return () => {
+      mounted = false;
+    };
+```
+
+---
+
+#### 1D) Replace email/password sign-in to use server `/api/auth/signin` ONLY
+
+`signIn` currently uses Supabase-js and exchanges session tokens.
+
+Delete the entire current signIn body **lines 287–349**, and replace it with the server-only implementation below.
+
+**Current function header starts at line 287**
+
+```ts
+287|  const signIn = async (email: string, password: string) => {
+```
+
+**Replace lines 287–349 with exactly**
+
+```ts
+  const signIn = async (email: string, password: string) => {
+    setAuthLoading(true);
+    try {
+      const response = await fetch('/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('[AUTH] Server sign in failed:', data?.error || data);
+        throw new Error(data?.error || 'Invalid email or password');
+      }
+
+      // Backend set HTTP-only cookies. Now fetch the user deterministically from backend.
+      const backendUser = await fetchUserFromBackend();
+      if (backendUser) {
+        setUser(backendUser);
+      } else {
+        // If cookies were set but /user fails, treat as auth failure (do NOT invent a local session)
+        setUser(null);
+        throw new Error('Failed to load user profile after sign-in');
+      }
+
+      console.log('[AUTH] Server sign in successful');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+```
+
+This completely removes:
+
+* `supabase.auth.signInWithPassword`
+* `/api/auth/exchange-session`
+
+---
+
+#### 1E) Make signOut server-only (NO Supabase-js signOut)
+
+Locate `signOut` block around lines 366–380. It currently calls backend signout then Supabase signOut.
+
+Delete lines **376–380**:
+
+**Delete**
+
+```ts
+376|      // Then sign out from Supabase client
+377|      const { error } = await supabase.auth.signOut();
+378|      if (error) {
+379|        console.error('[AUTH] Supabase sign out failed:', error);
+380|      }
+```
+
+Keep backend `/api/auth/signout` call. After the fetch, ensure we set user null deterministically:
+
+If not already present immediately after backend signout, add:
+
+```ts
+      setUser(null);
+      queryClient.invalidateQueries();
+```
+
+---
+
+### Proofs required for CHANGE 1
+
+Run and paste full output:
+
+```bash
+nl -ba client/src/contexts/SupabaseAuthContext.tsx | sed -n '1,60p'
+nl -ba client/src/contexts/SupabaseAuthContext.tsx | sed -n '80,210p'
+nl -ba client/src/contexts/SupabaseAuthContext.tsx | sed -n '270,410p'
+grep -RIn "supabase\\.auth\\.getSession|onAuthStateChange|signInWithPassword|exchange-session" client/src/contexts/SupabaseAuthContext.tsx
+```
+
+Expected grep: **no matches**.
+
+---
+
+## ✅ CHANGE 2 — Single logout path: delete `/logout` alias and use `/signout` only
+
+### File: `server/routes/supabase-auth-routes.ts`
+
+Delete the entire alias route block **lines 374–389 inclusive**.
+
+**Delete**
+
+```ts
+374|/**
+375| * POST /api/auth/logout (backwards-compatible alias)
+376| * Older clients/mobile Safari caches may still call this endpoint
+377| */
+378|router.post('/logout', async (req: Request, res: Response) => {
+379|  try {
+380|    const isProd = process.env.NODE_ENV === 'production';
+381|    clearAuthCookies(res, isProd);
+382|    return res.json({ success: true });
+383|  } catch (e) {
+384|    console.error('[AUTH] Logout alias failed:', e);
+385|    const isProd = process.env.NODE_ENV === 'production';
+386|    clearAuthCookies(res, isProd);
+387|    return res.status(200).json({ success: true });
+388|  }
+389|});
+```
+
+No replacement. `/signout` is the only logout endpoint.
+
+### Proofs required for CHANGE 2
+
+```bash
+grep -RIn "router\\.post\\('/logout'" server/routes/supabase-auth-routes.ts
+```
+
+Expected: **no output**.
+
+---
+
+## ✅ CHANGE 3 — One cookie-clearing implementation only (server-only)
+
+We will consolidate cookie clearing into ONE module and delete the duplicate Google helper.
+
+### 3A) Create new file: `server/lib/auth-cookies.ts`
+
+Create this file with EXACT contents:
+
+```ts
+import type { Response } from "express";
+
+export function clearAuthCookies(res: Response | any, isProd: boolean) {
+  // Clear cookie variants deterministically:
+  // - both tokens
+  // - both paths historically used ('/' and '/api')
+  // - both domain-scoped and host-only variants
+  // - both secure=true/false (to clear legacy mis-scoped cookies)
+  const names = ['sb-access-token', 'sb-refresh-token'] as const;
+  const paths = ['/', '/api'] as const;
+
+  const baseCommon = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+  };
+
+  const optionSets: any[] = [];
+
+  for (const path of paths) {
+    // Host-only clears (no domain)
+    optionSets.push({ ...baseCommon, path, secure: false });
+    optionSets.push({ ...baseCommon, path, secure: true });
+
+    // Production domain clears (both dot-domain and non-dot legacy)
+    if (isProd) {
+      optionSets.push({ ...baseCommon, path, secure: true, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: true, domain: 'lyceon.ai' });
+      // In case a legacy cookie was set insecure in prod (rare but possible)
+      optionSets.push({ ...baseCommon, path, secure: false, domain: '.lyceon.ai' });
+      optionSets.push({ ...baseCommon, path, secure: false, domain: 'lyceon.ai' });
+    }
+  }
+
+  for (const name of names) {
+    for (const opts of optionSets) {
+      res.clearCookie(name, opts);
+    }
+  }
+}
+```
+
+---
+
+### 3B) Update: `server/routes/supabase-auth-routes.ts`
+
+1. Add this import at the top (after other imports; keep `.js` extension to match ESM style):
+
+Add on a new line after current imports:
+
+```ts
+import { clearAuthCookies } from '../lib/auth-cookies.js';
+```
+
+2. Delete the local `clearAuthCookies` function definition (lines 48–84).
+
+**Delete**
+
+```ts
+48|function clearAuthCookies(res: any, isProd: boolean) {
+...
+84|}
+```
+
+No replacement needed because it’s now imported.
+
+---
+
+### 3C) Update: `server/routes/google-oauth-routes.ts`
+
+1. Add import (after line 27):
+
+```ts
+import { clearAuthCookies } from '../lib/auth-cookies.js';
+```
+
+2. Delete the duplicate Google helper **lines 55–84**:
+
+**Delete**
+
+```ts
+55|function clearSupabaseSessionCookies(res: Response): void {
+...
+84|}
+```
+
+3. Update `setSupabaseSessionCookies()` to call the shared helper:
+
+**Current line 90**
+
+```ts
+90|  clearSupabaseSessionCookies(res);
+```
+
+**Replace line 90 with**
+
+```ts
+  clearAuthCookies(res, isProduction);
+```
+
+---
+
+### Proofs required for CHANGE 3
+
+```bash
+grep -RIn "function clearAuthCookies|function clearSupabaseSessionCookies" server/routes
+grep -RIn "clearAuthCookies\\(" server/routes/supabase-auth-routes.ts server/routes/google-oauth-routes.ts
+nl -ba server/routes/google-oauth-routes.ts | sed -n '20,110p'
+nl -ba server/routes/supabase-auth-routes.ts | sed -n '15,110p'
+```
+
+Expected:
+
+* No `clearSupabaseSessionCookies` exists anywhere.
+* Only one `clearAuthCookies` implementation exists (in `server/lib/auth-cookies.ts`).
+
+---
+
+## ✅ CHANGE 4 — Delete leftover auth bridge endpoints completely (apps/api)
+
+### File to delete entirely:
+
+`apps/api/src/auth/express-bridge.ts`
+
+Action:
+
+* Delete the file from the repo completely.
+
+### Proof required for CHANGE 4
+
+```bash
+test -f apps/api/src/auth/express-bridge.ts && echo "STILL EXISTS" || echo "DELETED"
+grep -RIn "express-bridge|createSupabaseAuthRoutes" apps/api server || true
+```
+
+Expected:
+
+* “DELETED”
+* Grep shows **no references**.
+
+---
+
+## ✅ CHANGE 5 — Delete V4 bypass end-to-end (no env, no allowlist, no endpoints, no flags)
+
+### 5A) `server/index.ts` — remove bypass import and bypass middleware logic
+
+1. Delete import line **62**:
+
+```ts
+62|import { V4_DEBUG_AUTH_BYPASS, isV4BypassAllowed } from "../apps/api/src/middleware/auth";
+```
+
+2. Replace the entire v4AdminMiddleware block **lines 314–326** with a simple admin-only middleware:
+
+**Current lines 314–326**
+
+```ts
+314|// Early bypass for V4 debug endpoints when V4_DEBUG_AUTH_BYPASS=true
+315|const v4AdminMiddleware = (req: Request, res: Response, next: express.NextFunction) => {
+316|  const fullPath = req.originalUrl?.split("?")[0] || (req.baseUrl + req.path);
+317|  if (isV4BypassAllowed(fullPath)) {
+318|    console.log(`[V4][BYPASS] ${req.method} ${fullPath}`);
+319|    (req as any).__v4Bypassed = true;
+320|    return next();
+321|  }
+322|  return requireSupabaseAdmin(req, res, next);
+323|};
+324|if (V4_DEBUG_AUTH_BYPASS) {
+325|  console.log("[V4][BYPASS] DEBUG AUTH ENABLED - allowlisted V4 endpoints accessible without auth");
+326|}
+```
+
+**Replace with**
+
+```ts
+// Ingestion V4 Routes (foundation for new question generation pipeline)
+// Admin-only: enforced via requireSupabaseAdmin (no bypass)
+const v4AdminMiddleware = (req: Request, res: Response, next: express.NextFunction) => {
+  return requireSupabaseAdmin(req, res, next);
+};
+```
+
+Keep line 327 (mounting) unchanged:
+
+```ts
+app.use("/api/ingestion-v4", v4AdminMiddleware, ingestionV4Router);
+```
+
+---
+
+### 5B) `apps/api/src/middleware/auth.ts` — delete bypass exports + allowlist + functions + bypass behavior
+
+1. Delete the entire bypass section **lines 23–82 inclusive**:
+
+**Delete**
+
+```ts
+23|export const V4_DEBUG_AUTH_BYPASS = process.env.V4_DEBUG_AUTH_BYPASS === "true";
+...
+82|}
+```
+
+2. Remove bypass short-circuit inside `requireAuth`:
+
+Delete lines **114–117**:
+
+```ts
+114|  if ((req as any).__v4Bypassed) {
+115|    next();
+116|    return;
+117|  }
+```
+
+3. Remove bypass short-circuit inside `requireAdmin`:
+
+Delete lines **171–174**:
+
+```ts
+171|  if ((req as any).__v4Bypassed) {
+172|    next();
+173|    return;
+174|  }
+```
+
+No replacements.
+
+---
+
+### 5C) `apps/api/src/routes/ingestion-v4.ts` — remove bypass imports, delete bypass-status endpoint, remove bypass flag logic
+
+1. Update import line **40**:
+
+**Current**
+
+```ts
+40|import { V4_DEBUG_AUTH_BYPASS, isV4BypassAllowed } from "../middleware/auth";
+```
+
+**Replace with**
+
+```ts
+// V4 bypass removed: no imports needed from ../middleware/auth
+```
+
+(Yes: replace the entire line with that comment line.)
+
+2. Update `requireAdminOrBypass()` to remove bypass flag:
+
+In the function at lines **52–73**, delete the bypass block **lines 61–64**:
+
+**Delete**
+
+```ts
+61|  if ((req as any).__v4Bypassed) {
+62|    next();
+63|    return;
+64|  }
+```
+
+Also update the comment block lines 53–60 to remove bypass references.
+Replace lines 53–60 with:
+
+```ts
+  // SINGLE SOURCE OF TRUTH:
+  // server/index.ts mounts this router behind requireSupabaseAdmin (admin-only).
+  // Defense-in-depth: verify req.user.role is admin.
+```
+
+3. Delete the bypass status endpoint entirely **lines 75–99**:
+
+**Delete**
+
+```ts
+75|/**
+76| * GET /api/ingestion-v4/debug/bypass-status
+...
+99|});
+```
+
+No replacement.
+
+---
+
+### 5D) `apps/api/scripts/v4-proof-runner.ts` — remove bypass-status step (keeps docs/scripts aligned)
+
+Remove the step/comment that requires `/debug/bypass-status`. (This is not runtime-critical but required for “end-to-end deletion”.)
+
+---
+
+### Proofs required for CHANGE 5
+
+```bash
+grep -RIn "V4_DEBUG_AUTH_BYPASS|isV4BypassAllowed|__v4Bypassed|bypass-status" server apps/api | head -n 200
+```
+
+Expected: **no matches** in `server/` and `apps/api/` source files.
+
+---
+
+## ✅ Final Proof Pack (mandatory)
+
+Paste all outputs:
+
+```bash
+# Client split-brain removed
+grep -RIn "supabase\\.auth\\.getSession|onAuthStateChange|signInWithPassword|exchange-session" client/src/contexts/SupabaseAuthContext.tsx
+
+# Logout alias removed
+grep -RIn "router\\.post\\('/logout'" server/routes/supabase-auth-routes.ts
+
+# Single cookie clearing logic
+grep -RIn "clearSupabaseSessionCookies|function clearAuthCookies" server | head -n 200
+
+# V4 bypass fully removed
+grep -RIn "V4_DEBUG_AUTH_BYPASS|isV4BypassAllowed|__v4Bypassed|bypass-status" server apps/api | head -n 200
+
+# Confirm express-bridge deleted
+test -f apps/api/src/auth/express-bridge.ts && echo "STILL EXISTS" || echo "DELETED"
+```
+
+Success criteria:
+
+* Client has no Supabase-js session authority.
+* Only `/api/auth/signin` and `/api/auth/signout` are used for auth actions.
+* `/api/auth/logout` alias does not exist.
+* Only one cookie-clearing implementation exists (`server/lib/auth-cookies.ts`).
+* No V4 bypass flags, allowlists, endpoints, or markers exist.
+* `apps/api/src/auth/express-bridge.ts` is deleted and unreferenced.
+
+```
+```

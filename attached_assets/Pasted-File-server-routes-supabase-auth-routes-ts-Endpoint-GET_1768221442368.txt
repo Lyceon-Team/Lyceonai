@@ -1,0 +1,103 @@
+File:
+server/routes/supabase-auth-routes.ts
+
+Endpoint:
+GET /api/auth/debug
+
+Add this block inside the if (accessToken) { ... } section after resolvedUserId is set:
+
+let serviceRoleCanReadUser: boolean | null = null;
+let serviceRoleUserLookupError: string | null = null;
+
+if (resolvedUserId) {
+  try {
+    const admin = getSupabaseAdmin(); // already used in this file
+    const { data, error } = await admin.auth.admin.getUserById(resolvedUserId);
+
+    if (error || !data?.user) {
+      serviceRoleCanReadUser = false;
+      serviceRoleUserLookupError = error?.message || 'user_not_found';
+    } else {
+      serviceRoleCanReadUser = true;
+    }
+  } catch (e: any) {
+    serviceRoleCanReadUser = false;
+    serviceRoleUserLookupError = e?.message || 'exception';
+  }
+}
+
+
+Then include it in the JSON response:
+
+serviceRole: {
+  canReadUser: serviceRoleCanReadUser,
+  userLookupError: serviceRoleUserLookupError,
+},
+
+
+Guardrails:
+
+Do not log secrets
+
+Do not return the service key
+
+Only return boolean + error string
+
+What you do immediately after it’s deployed
+
+Hit:
+
+curl -s https://lyceon.ai/api/auth/debug | jq
+
+
+Look at:
+
+session.resolvedUserId (should be set)
+
+serviceRole.canReadUser
+
+Interpretation (deterministic)
+
+If serviceRole.canReadUser === true
+→ Keys match. FK error means something else (rare).
+
+If serviceRole.canReadUser === false
+→ Your SUPABASE_SERVICE_ROLE_KEY is for the wrong project or wrong environment.
+Fix the env var and redeploy. This will unblock practice.
+
+The actual fix if keys are mismatched (most likely)
+
+Go to the same Supabase project your site uses (the one that issues the JWT cookies)
+
+Settings → API → copy the Service Role key
+
+Update production secret:
+
+SUPABASE_SERVICE_ROLE_KEY
+
+Redeploy
+
+That’s it. Once the service role key matches the project, the FK insert will succeed instantly.
+
+Prompt you can paste to the engineer/agent (copy-paste)
+We are still failing /api/practice/next with:
+"violates foreign key constraint practice_sessions_user_id_fkey"
+
+This FK references auth.users(id). That means the user_id being inserted is not present in auth.users in the DB the service-role client is writing to. Most likely the SUPABASE_SERVICE_ROLE_KEY is for a different Supabase project than the anon key/token.
+
+Surgical task:
+1) Update server/routes/supabase-auth-routes.ts, endpoint GET /api/auth/debug
+2) After resolvedUserId is determined, call:
+   const admin = getSupabaseAdmin();
+   const { data, error } = await admin.auth.admin.getUserById(resolvedUserId);
+3) Add to response:
+   serviceRole: { canReadUser: boolean|null, userLookupError: string|null }
+
+Guardrails:
+- Do not log or return any secrets.
+- Do not refactor.
+- Only add this small diagnostic.
+
+Proof:
+- Paste the updated /api/auth/debug JSON output showing:
+  session.resolvedUserId and serviceRole.canReadUser.

@@ -1,0 +1,58 @@
+# Replit packaging ignore file for Cloud Run
+# CRITICAL: dist/ and node_modules/ must NOT be excluded
+# The server bundle uses --packages=external and requires node_modules at runtime
+
+# System directories (large, not needed)
+.pythonlibs
+.local
+.cache
+.config
+.upm
+.git
+.github
+.replit/backup
+.turbo
+
+# Source directories (not needed in prod - we use dist/)
+client/src
+server/
+apps/
+
+# Test directories
+tests
+test
+cypress
+playwright-report
+.vitest
+coverage
+.nyc_output
+
+# Local assets
+uploads
+attached_assets
+
+# Python artefacts
+__pycache__
+*.pyc
+*.pyo
+venv
+.venv
+docling*
+
+# Large files
+*.log
+*.tmp
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.traineddata
+*.csv
+
+# Development files
+debug-*.js
+test-*.js
+trigger-*.js
+scripts/
+var/
+docs/

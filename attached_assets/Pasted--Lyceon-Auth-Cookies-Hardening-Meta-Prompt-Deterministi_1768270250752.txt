@@ -1,0 +1,209 @@
+# Lyceon Auth + Cookies Hardening Meta-Prompt (Deterministic)
+
+You are a senior full-stack engineer working in the Lyceon monorepo on Replit.
+The current issue: login sometimes works and sometimes fails, likely due to stale/competing cookies and mixed auth authorities.
+Supabase is the single source of truth for authentication.
+
+## Goal (Non-Negotiable Outcomes)
+1) Login is deterministic (no “sometimes works”).
+2) There is exactly ONE auth authority: Supabase Auth.
+3) The API never infers auth from legacy/custom cookies.
+4) All protected API routes authenticate via verified Supabase JWT (Authorization header OR Supabase SSR session extraction), then authorize using DB role + entitlements.
+5) All legacy cookies are hard-deleted safely (correct domain/path) so stale cookies cannot break routing.
+6) Provide hard proofs: grep proofs, curl proofs, and a browser check list.
+
+## Constraints
+- Do NOT introduce a new auth provider.
+- Do NOT add a new “server session system” (no Redis sessions, no NextAuth).
+- Keep changes minimal and safe for launch.
+- Do NOT break Stripe webhooks or billing.
+- Ensure guardian/student routing is based on DB role, not client cache.
+
+---
+
+# Phase 0 — Repo Reality Check (Required)
+1) Identify where auth is handled in:
+   - frontend auth context/provider
+   - server middleware
+   - any cookie parsing logic
+   - login/callback routes
+   - guardian redirect logic (/guardian, /login, etc.)
+2) Output an inventory:
+   - File path
+   - Purpose
+   - Any cookie names used
+   - Any redirects triggered
+
+Success criteria: you can point to the exact files responsible for:
+- setting cookies
+- reading cookies
+- deciding user role routing
+
+---
+
+# Phase 1 — Cookie Audit + Legacy Cookie Kill Switch
+## 1.1 Enumerate cookie names
+Search the repo for cookie usage. Grep for:
+- "setHeader('Set-Cookie'"
+- "Set-Cookie"
+- "cookie"
+- "cookies."
+- "document.cookie"
+- "sb-" (Supabase cookie patterns)
+- common legacy names: "access", "session", "token", "guardian", "role"
+
+Create a list:
+A) Supabase cookies (expected)
+B) Custom cookies (must be removed or hard-deleted)
+C) Legacy cookies (must be hard-deleted)
+
+## 1.2 Implement a deterministic cookie cleanup middleware
+Add server middleware that runs on every request (or at minimum for /, /login, /guardian, /dashboard, /api/*) that:
+- If any cookie name exists that is NOT part of the allowed Supabase cookie set, it sets a deletion cookie for it.
+
+Deletion rules (must be correct):
+- Clear cookie with:
+  - same name
+  - value empty
+  - Expires in the past
+  - Max-Age=0
+  - Path="/" (and any other known paths used historically, like "/api")
+  - Domain: include both "lyceon.ai" and ".lyceon.ai" deletions if uncertain
+  - Secure=true in production
+  - SameSite=Lax (or None only if truly needed; prefer Lax)
+- IMPORTANT: delete for BOTH host-only and dot-domain variants if you have ever changed domain scoping.
+
+Add a constant:
+ALLOWED_AUTH_COOKIE_PREFIXES = ["sb-"]  // allow Supabase cookies
+ALLOWED_COOKIE_NAMES = []              // add any truly required non-auth cookies (theme, etc.)
+
+Hard delete everything else.
+
+Provide a note in code:
+- This middleware is intended to run for 7 days after deploy to flush legacy cookies, then can be narrowed.
+
+Success criteria:
+- After visiting the site once, the browser cookie jar contains only Supabase cookies + truly necessary non-auth cookies.
+
+---
+
+# Phase 2 — Make the API Auth Deterministic (No Cookie Guessing)
+## 2.1 Create a single auth middleware for API routes
+Implement `requireUser(req)` for all protected API routes:
+- Extract Supabase JWT in one of these supported ways:
+  Option A (preferred for API): Authorization header `Bearer <token>`
+  Option B (SSR cookie flow): create Supabase server client using cookies and call `auth.getUser()`
+
+Do NOT accept any custom cookie as proof of auth.
+
+If no valid user:
+- Return 401 JSON with stable error code: `{ error: "unauthorized", code: "AUTH_REQUIRED" }`
+
+## 2.2 Role enforcement middleware
+Implement:
+- `requireRole("student"|"guardian"|"admin")`
+
+Role must be loaded from DB `profiles.role` (or your canonical role table), not from client state or cookies.
+
+Return 403 with:
+`{ error: "forbidden", code: "ROLE_REQUIRED", requiredRole: "guardian" }`
+
+## 2.3 Entitlement enforcement middleware (paid gates)
+Implement:
+- `requireEntitlementActive()`
+- Reads `entitlements.status` from DB (active/trialing ok; past_due/canceled denied)
+- Add caching TTL 60s max (optional); must be invalidated by webhook processing if you already have that.
+
+Return 402/403 (choose one) with stable code:
+`{ error: "payment_required", code: "ENTITLEMENT_REQUIRED" }`
+
+Success criteria:
+- Every protected route uses: requireUser -> requireRole (if needed) -> requireEntitlement (if needed)
+
+---
+
+# Phase 3 — Fix Redirect / Routing Flakiness (Guardian vs Login)
+## 3.1 Eliminate client-side role assumptions
+Find any frontend code that:
+- reads role from localStorage
+- reads role from cookies
+- defaults to guardian or student
+- uses "isGuardian" from stale cached state
+
+Replace with:
+- On app load, call `/api/me` (or `/api/auth/me`) that returns:
+  - user id
+  - role
+  - entitlement status
+- Store that in React Query (server state), not localStorage.
+
+## 3.2 Make /guardian routing deterministic
+Current bug: session sometimes skips /login and lands in /guardian.
+Fix rules:
+- If user not authenticated -> redirect to /login
+- If authenticated but role != guardian -> redirect to /dashboard (or student home)
+- If guardian -> allow /guardian
+
+This decision must be based on server-verified user + DB role, not cookies or client guesswork.
+
+Add server-side protection on the /guardian route (or the API routes it depends on).
+
+---
+
+# Phase 4 — Proofs (Required, No Exceptions)
+
+## 4.1 Grep proofs
+Provide command outputs:
+- `grep -RIn "Set-Cookie|document.cookie|cookie" apps packages server client`
+- `grep -RIn "access_token|session|guardian|role" ...`
+Show that only Supabase cookies remain used for auth.
+
+## 4.2 Curl proofs (auth required)
+Provide:
+1) Unauthed request:
+   - `curl -i https://lyceon.ai/api/me`
+   Expect 401 with AUTH_REQUIRED
+
+2) Authed request (Bearer token):
+   - show example command structure (token redacted)
+   Expect 200 with `{ id, role, entitlement }`
+
+3) Guardian route protection:
+   - if role != guardian, expect 403 ROLE_REQUIRED
+
+## 4.3 Browser proof checklist
+In Chrome DevTools > Application > Cookies:
+- Only sb-* cookies (and non-auth cookies you listed) exist.
+- No duplicates with different domains.
+- Path is "/" for auth cookies.
+- Secure is true in prod.
+- SameSite is Lax unless you have a proven need for None.
+
+## 4.4 Regression checks
+- Log in 5 times in a row in a normal window: must succeed every time.
+- Log in 3 times in Incognito: must succeed every time.
+- Open two tabs: auth state consistent.
+- Stripe checkout success return: user remains logged in, entitlements read from DB.
+
+---
+
+# Guardrails
+DO:
+- Prefer removing complexity over adding.
+- Make role/entitlement checks server-driven.
+- Keep changes small and provable.
+
+DO NOT:
+- Add NextAuth, Redis sessions, or a new auth provider.
+- Store auth tokens in localStorage.
+- Create new custom auth cookies.
+
+---
+
+# Deliverables
+1) List of files changed (paths).
+2) Short explanation of the final auth flow (web -> API -> Supabase).
+3) Proof section with grep + curl outputs.
+4) A rollback note: how to revert cookie cleanup if needed (keep it simple).
+
+Proceed now.

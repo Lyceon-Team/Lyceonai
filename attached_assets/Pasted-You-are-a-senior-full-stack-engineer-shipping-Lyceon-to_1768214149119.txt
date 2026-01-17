@@ -1,0 +1,143 @@
+You are a senior full-stack engineer shipping Lyceon to production.
+
+Goal: Implement 3 billing hardening upgrades deterministically and prove they work end-to-end.
+
+Constraints:
+- Supabase is the single source of truth for auth.
+- Stripe is LIVE mode only for this deployment.
+- NO Stripe keys or price IDs may live in `.replit`, repo files, or committed configs.
+- All Stripe config must come from environment variables (Replit Secrets / deployment env).
+- Webhook MUST verify Stripe signature using raw request body.
+- Webhook MUST be idempotent (same event never processed twice).
+- System MUST gate guardian access to paid features via an entitlement check.
+- Provide proof via grep + curl + runtime debug endpoints.
+
+Deliverables:
+A) Code changes
+B) SQL migration(s) for new tables/columns
+C) Verification commands & expected outputs
+D) A short “What changed” summary
+
+---
+
+### 1) Env hygiene + price config
+Implement:
+- Remove/ignore `STRIPE_PRICE_*` values from `.replit` entirely (do not read from `.replit` at runtime).
+- Centralize Stripe config reads in a single module (e.g., `server/billing/stripeConfig.ts`):
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET (dashboard endpoint secret, not Stripe CLI forward secret)
+  - STRIPE_PRICE_PARENT_MONTHLY
+  - STRIPE_PRICE_PARENT_QUARTERLY
+  - STRIPE_PRICE_PARENT_YEARLY
+  - PUBLIC_SITE_URL (or SITE_URL) used for success/cancel URLs
+- Add `GET /api/billing/prices` returning:
+  { monthly: {amount, currency, priceId}, quarterly: {...}, yearly: {...} }
+  (amount/currency can be resolved by calling Stripe Prices API once and cached for 5–15 minutes, or returned as configured constants if already known; but include priceId always)
+- Keep `GET /api/billing/debug/validate` (or add it if missing) that:
+  - Checks all env vars exist (no partial config)
+  - Calls Stripe API to retrieve each configured price id
+  - Returns: { ok, mode, failedPlans[], prices: {monthly:{ok,...},...}, requestId }
+
+Acceptance:
+- `.replit` contains ZERO `STRIPE_` secrets/price IDs.
+- Hitting `/api/billing/debug/validate` returns ok:true with mode:"live".
+- `/api/billing/prices` returns 200 and correct ids.
+
+---
+
+### 2) Webhook reliability + idempotency + logging
+Implement:
+- Ensure webhook route uses RAW body middleware, before any JSON parser:
+  - Only the webhook route should use `express.raw({ type: 'application/json' })`.
+  - Other routes keep `express.json()`.
+- Verify signature:
+  - Read header `stripe-signature`
+  - Use `stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET)`
+  - On missing/invalid signature: respond 400 with a clear error and requestId
+- Idempotency:
+  - Add Supabase table `stripe_event_log` with UNIQUE(event_id).
+  - On webhook:
+    - If event_id already exists and processed_at set -> return 200 immediately
+    - Else insert row, process, then update processed_at + status + any linked account ids
+- Handle only required event types; ignore others with 200:
+  - checkout.session.completed (primary)
+  - customer.subscription.created / updated / deleted (backup sync)
+  - invoice.paid (optional)
+- Important: Webhook should return 200 quickly; don’t do slow network calls without timeouts.
+- Add minimal structured logging with requestId/eventId.
+
+SQL (migration):
+- `stripe_event_log`:
+  - id uuid pk default gen_random_uuid()
+  - event_id text unique not null
+  - type text not null
+  - livemode boolean not null
+  - payload jsonb not null
+  - received_at timestamptz default now()
+  - processed_at timestamptz
+  - status text (e.g., "processed" | "ignored" | "failed")
+  - error text
+  - account_id uuid nullable
+  - user_id uuid nullable
+
+Acceptance:
+- `POST /api/billing/webhook` without signature returns 400 “Missing stripe-signature”.
+- Stripe Dashboard deliveries show 2xx (no HTML 404 page response).
+- Replaying the same event shows “already processed” behavior and stays 200.
+
+---
+
+### 3) Entitlements + subscription sync (guardian gating)
+Implement:
+- Define the entitlement source of truth in Supabase:
+  - Table `guardian_entitlements` or reuse existing subscription table if present.
+  - Must at minimum track: account_id (guardian), status, current_period_end, stripe_customer_id, stripe_subscription_id, plan
+- In checkout creation endpoint:
+  - Require auth (guardian role).
+  - Create Stripe customer if missing; attach metadata:
+    { account_id, userId, role:"guardian" }
+  - Create checkout session with:
+    - mode:"subscription"
+    - line_items with selected priceId
+    - success_url + cancel_url
+    - customer (or customer_email)
+    - metadata that lets webhook map back to guardian
+- In webhook handlers:
+  - On `checkout.session.completed`:
+    - Extract account_id/userId from metadata (or from customer metadata if needed).
+    - Persist entitlement status active + plan + stripe ids.
+  - On subscription updated/deleted:
+    - Update entitlement status accordingly.
+- Add middleware `requireGuardianEntitlement` applied to:
+  - guardian dashboard endpoints that show student calendar, reports, etc.
+  - (not applied to `/guardian` paywall page itself, and not applied to billing endpoints)
+- The middleware should:
+  - Read current user and guardian account id
+  - Check entitlement status active (and not expired)
+  - Return 402/403 with a clean JSON error that frontend can route to subscription UI.
+
+Also:
+- If any code expects `_updated_at`, ensure the target table has it:
+  - Add `_updated_at timestamptz default now()` + a trigger to bump on update
+  - OR change code to use existing `updated_at` consistently (choose one and standardize)
+
+Acceptance:
+- Guardian without subscription can reach `/guardian` but is blocked from paid endpoints (returns 402/403).
+- After successful Stripe checkout + webhook, the same guardian is allowed immediately.
+- Existing paid users remain paid after subscription updates.
+
+---
+
+### Required proof output in final response
+1) Grep proof:
+   - No `STRIPE_PRICE_` or secret values in `.replit` or repo.
+2) Show the exact express middleware order for webhook vs json parser.
+3) Show the webhook signature verification code snippet.
+4) Show the entitlement middleware and where it’s applied.
+5) Verification commands (curl) + expected responses:
+   - GET /api/billing/debug/validate
+   - GET /api/billing/prices
+   - POST /api/billing/checkout (authenticated)
+   - Stripe dashboard webhook delivery 2xx
+
+Do the work now, commit the changes, and provide the proofs and commands.

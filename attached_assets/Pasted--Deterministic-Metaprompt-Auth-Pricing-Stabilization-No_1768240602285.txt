@@ -1,0 +1,241 @@
+
+Deterministic Metaprompt: Auth + Pricing Stabilization (No Loops, No Crashes, Mobile-Safe)
+
+Goal
+
+Fix two launch-blocking regressions:
+	1.	Auth regression: intermittent Google login loops / “skips /login and jumps to /guardian” / stale-cookie behavior.
+	2.	Pricing regression: mobile crash: j.map is not a function / pricing UI expects an array but receives something else.
+
+Non-negotiables
+	•	No “it seems” fixes. Every change must be proven with grep + curl + screenshots.
+	•	No mode switching test/live. We’re on live only.
+	•	Don’t break working Stripe checkout again.
+	•	Any redirect must be role-safe (guardian → /guardian, student → /dashboard, admin → /admin if applicable).
+
+⸻
+
+Phase 0 — Freeze + Identify “Last Known Good”
+	1.	Create a branch:
+
+git checkout -b fix/auth-pricing-stabilization
+
+	2.	Find last known good deploy (by your build string or git history). Add a tag:
+
+git tag -a last-known-good -m "Last known good before auth/pricing regressions" <COMMIT_SHA>
+
+	3.	Capture current build + behavior (baseline proofs):
+
+curl -s https://lyceon.ai/api/auth/debug | jq .
+curl -s https://lyceon.ai/api/auth/user | jq .
+curl -s https://lyceon.ai/api/billing/prices | jq .
+
+Save outputs in docs/proofs/YYYY-MM-DD-baseline.md.
+
+⸻
+
+Phase 1 — Fix Pricing Crash (j.map is not a function) FIRST
+
+This is almost certainly: frontend expects plans to be an array, but backend returns an object or null, so .map explodes on mobile.
+
+1A) Locate pricing UI and API contract
+
+Run:
+
+git grep -n "billing/prices"
+git grep -n "\.map" client/src | grep -i plan
+git grep -n "plans" client/src | head
+
+Identify the component that renders the 3 tiles (monthly/quarterly/yearly) — likely under something like:
+	•	client/src/pages/guardian*
+	•	client/src/components/billing*
+	•	client/src/pages/guardian-dashboard*
+
+1B) Normalize the response defensively in the UI
+
+In that component:
+	•	Ensure the value you .map() over is always an array:
+	•	If backend returns { plans: {...} }, convert Object.values(plans)
+	•	If backend returns { monthly: {...}, ... }, convert Object.values(data)
+	•	If fetch fails, set plans = [] and show a friendly error state
+
+Required UI patch pattern (engineer must implement exactly):
+	•	Never do something.map(...) unless guarded with Array.isArray(something).
+	•	Add a console log once:
+	•	console.error("[Billing] prices payload unexpected shape", data)
+
+1C) Make backend /api/billing/prices return a stable array
+
+Find the route for /api/billing/prices and enforce a stable contract:
+
+Required response format:
+
+{
+  "plans": [
+    { "plan": "monthly", "label": "Monthly", "amount": 99.99, "interval": "month", "intervalCount": 1, "priceId": "price_..." },
+    { "plan": "quarterly", "label": "Quarterly", "amount": 199.99, "interval": "month", "intervalCount": 3, "priceId": "price_..." },
+    { "plan": "yearly", "label": "Yearly", "amount": 699.99, "interval": "year", "intervalCount": 1, "priceId": "price_..." }
+  ]
+}
+
+Also keep backward compatibility if anything else depends on the old shape:
+	•	optionally include byPlan: { monthly: {...}, ... }
+
+1D) Pricing Proofs (must be captured)
+	1.	API proof:
+
+curl -s https://lyceon.ai/api/billing/prices | jq '.plans | type, length'
+
+Must output: array and 3.
+	2.	Mobile proof:
+
+	•	open /guardian on iPhone
+	•	confirm no red error screen
+	•	confirm tiles render and selecting plan works
+
+Save screenshots + output to docs/proofs/pricing-fix.md.
+
+⸻
+
+Phase 2 — Auth Stabilization (Stop Loops + Stop “Skip /login”)
+
+Your debug output showed:
+	•	cookies present
+	•	access token expired
+	•	/api/auth/user still returns authenticated true sometimes
+
+That usually means your system is partially working but has stale/expired access cookie + refresh behavior mismatch across endpoints, plus frontend routing that redirects too aggressively.
+
+2A) List every login/auth file (required inventory)
+
+Run and paste results into docs/proofs/auth-inventory.md:
+
+git grep -n "api/auth" server client
+git grep -n "exchange-session" server client
+git grep -n "sb-access-token" server
+git grep -n "sb-refresh-token" server
+git grep -n "signInWithOAuth|signInWithIdToken|exchangeCodeForSession" -n server client
+git grep -n "RequireAuth|RequireRole|isGuardian|role" client/src
+git grep -n "supabase\.auth" client/src
+
+From this list, the engineer must explicitly name (in the doc) the exact files responsible for:
+	•	Google OAuth start + callback
+	•	cookie set/clear
+	•	/api/auth/user logic
+	•	client routing guards
+	•	Supabase client config
+
+2B) Enforce “Server owns auth cookies” everywhere
+
+Required invariant:
+	•	Frontend does NOT persist Supabase session locally.
+	•	Frontend uses fetch("/api/auth/user", { credentials: "include" }) as the source of truth.
+	•	Server refreshes access token when expired (using refresh cookie) and re-sets cookies.
+
+Backend required behaviors
+	1.	Cookie set helper used everywhere:
+
+	•	path: "/" ALWAYS
+	•	httpOnly: true
+	•	secure: true in production
+	•	sameSite: "lax" (or “none” only if you truly must, but then secure required)
+	•	maxAge for access cookie must match token lifetime (usually ~1 hour)
+	•	refresh cookie longer (days)
+
+	2.	Cookie clear helper used everywhere:
+
+	•	clears both cookies with the SAME attributes (path, sameSite, secure) or browsers won’t delete them reliably.
+
+	3.	/api/auth/user must:
+
+	•	try access token
+	•	if expired/invalid → try refresh
+	•	if refresh succeeds → set new cookies and return user 200
+	•	if refresh fails → clear cookies and return 401
+
+	4.	/api/auth/debug should NOT confuse you:
+
+	•	If it reads access cookie and finds it expired, that’s fine,
+	•	But it must clearly indicate whether refresh cookie exists and whether refresh would succeed (optional), OR at least not imply “logged out” while /user says authenticated.
+
+2C) Fix “skipping /login → /guardian”
+
+This is almost always client routing:
+	•	/login route likely has logic like:
+	•	“if user exists, redirect to role home”
+	•	But your app sometimes thinks a user exists due to stale cached auth state, or it immediately navigates based on an old role before /api/auth/user finishes.
+
+Required client rule:
+	•	Don’t redirect away from /login until auth initialization is complete and you have a confirmed user from /api/auth/user.
+	•	Introduce authLoading / initializing gating and keep /login stable until done.
+
+Also ensure:
+	•	/guardian is protected by RequireRole("guardian") or equivalent
+	•	if not authenticated, it must redirect to /login?next=/guardian (and nothing else)
+	•	after login, server redirects to next only if allowed by role; otherwise role home.
+
+2D) Supabase client settings (required)
+
+In the file that creates the Supabase client (often client/src/lib/supabase.ts):
+	•	autoRefreshToken: false
+	•	persistSession: false
+	•	detectSessionInUrl: false
+
+This prevents “double refresh token use” and local/session storage conflicts.
+
+2E) Auth Proofs (must be captured)
+	1.	Incognito 10-run test:
+
+	•	Start incognito
+	•	Login with Google
+	•	Confirm final landing page correct
+	•	Refresh page 3x
+	•	Close tab, reopen /guardian directly
+	•	Must not loop, must not silently fail
+
+	2.	Cookie proof:
+
+	•	In DevTools after login: request to /api/auth/user includes cookies
+	•	Response 200
+
+	3.	Refresh proof:
+
+	•	Manually delete ONLY sb-access-token cookie (keep refresh)
+	•	Refresh page
+	•	Must still succeed and re-issue access cookie
+
+	4.	Logout proof:
+
+	•	Logout
+	•	Verify cookies are gone (Application → Cookies)
+	•	/api/auth/user returns 401
+
+Save all proofs in docs/proofs/auth-fix.md.
+
+⸻
+
+Phase 3 — “Revert if anything breaks” safety net
+
+If any phase breaks prod behavior:
+	1.	Roll back immediately to last-known-good tag.
+	2.	Re-apply fixes one phase at a time (pricing first, auth second).
+	3.	Only deploy once proofs pass locally + staging (or at minimum locally + one prod canary).
+
+⸻
+
+Definition of Done
+	•	Pricing page never crashes on iPhone; plans render; checkout starts.
+	•	Auth: no login loops; /guardian and /dashboard are role-correct; logout clears cookies reliably.
+	•	/api/auth/debug is consistent with /api/auth/user outcomes (no misleading “expired” without refresh handling).
+
+⸻
+
+Quick CTO review (why this happened “so late”)
+
+This pattern is classic “small changes compound”:
+	•	Contract drift (API returns object, UI expects array) → map crash.
+	•	Cookie attribute mismatch (path/samesite/secure) → cookies don’t clear / stale state.
+	•	Two competing session managers (Supabase client + server cookies) → refresh token races, intermittent loops.
+	•	Eager redirects in the router → “skips /login” feeling.
+
+You can revert to how it was before, but you’ll still want the pricing contract lock + auth single-source-of-truth because otherwise this will recur.

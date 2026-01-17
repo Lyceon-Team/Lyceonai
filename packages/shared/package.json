@@ -1,0 +1,16 @@
+{
+  "name": "@sat-copilot/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  }
+}

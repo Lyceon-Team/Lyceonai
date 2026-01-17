@@ -1,0 +1,189 @@
+METAPROMPT FOR ENGINEER (COPY/PASTE)
+Goal
+
+Stop the silent login loop by ensuring expired access tokens refresh automatically using the existing sb-refresh-token httpOnly cookie.
+
+Non-negotiable constraints
+
+No new auth system.
+
+No “test vs live” branching.
+
+Must work in incognito, on first login, and after access token expiry.
+
+Must be provable via curl + browser devtools.
+
+1) Server Fix: Refresh from cookie when body is missing
+File
+
+server/routes/supabase-auth-routes.ts
+
+Current code (problem)
+
+POST /api/auth/refresh reads refresh token only from req.body.refresh_token (around lines 405–417).
+
+Implement this patch
+
+In router.post('/refresh', ...) update refreshToken resolution.
+
+Replace this block (around lines ~405–417):
+
+const { refresh_token } = req.body;
+if (!refresh_token) {
+  return res.status(400).json({ error: 'Missing refresh token' });
+}
+
+
+With this:
+
+// Accept refresh token from body OR from httpOnly cookie
+const refreshToken =
+  req.body?.refresh_token ||
+  req.cookies?.['sb-refresh-token'];
+
+if (!refreshToken) {
+  return res.status(400).json({ error: 'Missing refresh token' });
+}
+
+
+Then update the refresh call (around lines ~418–431) to use refreshToken:
+
+const { data, error } = await supabase.auth.refreshSession({
+  refresh_token: refreshToken,
+});
+
+Why this is correct
+
+The refresh token is intentionally stored in an httpOnly cookie (set in multiple places).
+
+Client JS can’t read it, so the server must be able to refresh using cookies.
+
+2) Client Fix: If /api/auth/user returns 401, refresh once and retry
+File
+
+client/src/contexts/SupabaseAuthContext.tsx
+
+Current code (problem)
+
+fetchUserFromBackend() returns null immediately on 401/403 (around lines 33–39).
+
+Implement this patch
+
+Modify fetchUserFromBackend so it:
+
+Calls /api/auth/user
+
+If 401/403: calls /api/auth/refresh (empty body, credentials: 'include')
+
+Then retries /api/auth/user once
+
+If still 401/403: return null
+
+Replace this block (around lines ~37–39):
+if (response.status === 401 || response.status === 403) {
+  return null;
+}
+
+With this implementation:
+const tryFetchUser = async (): Promise<Response> => {
+  return fetch('/api/auth/user', { credentials: 'include' });
+};
+
+let response = await tryFetchUser();
+
+if (response.status === 401 || response.status === 403) {
+  // Attempt one server-side refresh using httpOnly cookie
+  const refreshResp = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({}), // server will fall back to cookie
+  });
+
+  if (refreshResp.ok) {
+    response = await tryFetchUser();
+  }
+}
+
+if (response.status === 401 || response.status === 403) {
+  return null;
+}
+
+
+Everything else in the function can stay the same.
+
+Why this is correct
+
+Your access token cookie can outlive the JWT’s real expiry.
+
+Refresh token cookie is present, but only server can use it.
+
+This makes auth resilient without rewriting your flow.
+
+3) Optional but recommended: Improve observability on /api/auth/user
+File
+
+server/routes/supabase-auth-routes.ts
+
+In /user route (around lines 249–277), when you return:
+
+return res.status(401).json({ error: 'Invalid or expired token' });
+
+
+Add a requestId and a short reason:
+
+return res.status(401).json({
+  error: 'Invalid or expired token',
+  requestId,
+  hint: 'Access token invalid. If sb-refresh-token exists, call POST /api/auth/refresh then retry /api/auth/user.'
+});
+
+
+This makes debugging from DevTools immediate.
+
+Validation (Proofs required)
+Proof A: Server refresh works with cookie only (no refresh_token in body)
+
+Log in once in browser (so cookies exist).
+
+In DevTools → Application → Cookies confirm:
+
+sb-access-token
+
+sb-refresh-token
+
+Then run:
+
+curl -i -X POST https://lyceon.ai/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  --cookie "sb-refresh-token=PASTE_FROM_BROWSER" \
+  -d '{}'
+
+
+Expected: 200 and response includes "success": true or session info (depending on your current response structure).
+
+Proof B: Frontend recovers after forced 401
+
+In Chrome:
+
+Go to DevTools → Application → Cookies
+
+Edit sb-access-token value to something invalid (or delete it), keep sb-refresh-token.
+
+Hard refresh page.
+
+Expected:
+
+First /api/auth/user returns 401
+
+Then /api/auth/refresh returns 200
+
+Then /api/auth/user returns 200
+
+User lands in app (no loop back to /login)
+
+Proof C: No regression
+
+Incognito: Google login should land on /dashboard or /guardian
+
+Refresh page multiple times: no intermittent login loop

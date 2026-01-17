@@ -1,0 +1,415 @@
+Superprompt: Deterministic Practice + Mastery Persistence + Secure DTO + Stats Rehydration
+Context & Objective
+
+You are working in the Lyceon monorepo on Replit. Goal: make the practice flow secure, deterministic, and mastery-driven by:
+
+Preventing answer/explanation leakage on GET endpoints (DTO pattern)
+
+Ensuring all practice submissions log attempts to:
+
+student_question_attempts.time_spent_ms
+
+student_skill_mastery via RPC upsert_skill_mastery
+
+student_cluster_mastery via RPC upsert_cluster_mastery
+
+Returning stable session stats from /api/practice/next to support session rehydration on refresh
+
+Keeping changes minimal and local, with explicit safety checks and tests
+
+Non-negotiables
+
+Do not change auth architecture. Use existing requireSupabaseAuth.
+
+Do not break existing endpoints or UI contracts unless explicitly updated in client.
+
+No randomness that changes on re-render. Do not introduce Math.random() into option order. If shuffling is added, it must be seeded and stable per (sessionId, questionId).
+
+Do not leak answer_choice or explanation until after a submission validation POST.
+
+Repo Reality (verified)
+
+Practice controller: server/routes/practice-canonical.ts
+
+Mastery logging exists but is unused: apps/api/src/services/studentMastery.ts
+
+logAttemptAndUpdateMastery(input)
+
+getQuestionMetadataForAttempt(questionId) (returns canonical_id + SAT metadata snapshot)
+
+Mastery tables exist in Supabase migrations:
+
+student_question_attempts
+
+student_skill_mastery (RPC upsert_skill_mastery)
+
+student_cluster_mastery (RPC upsert_cluster_mastery)
+
+Current bug: practice flow uses answer_attempts and does not call mastery logging.
+
+Current security gap: /api/practice/next returns explanation in question payload.
+
+Phase 0 — Identify exact submit/validate endpoint(s) (must be done first)
+Step 0.1: Open full file
+
+Open:
+
+server/routes/practice-canonical.ts from line 1 to end.
+
+Step 0.2: Locate all routes
+
+Find all occurrences of:
+
+router.post( and router.get( in that file.
+Specifically identify:
+
+GET /next (already present)
+
+POST handler(s) that accept question_id and a user response (selected choice / free response)
+
+Any endpoint that returns correctness feedback or explanation
+
+Guardrail: Do not invent endpoints. Only patch endpoints that exist.
+
+Phase 1 — Implement Secure Question DTO (no answer/explanation leakage)
+Goal
+
+Ensure GET endpoints that serve questions (at least /next) return a safe DTO.
+
+Step 1.1: Add DTO helper functions in server/routes/practice-canonical.ts
+
+Add below type McOption = ...:
+
+type SafeQuestionDTO = {
+  id: string;
+  section: string;
+  stem: string;
+  type: "mc" | "fr";
+  options: McOption[] | null;
+  difficulty: string | null;
+  classification: any;
+};
+
+// Ensure we never leak explanation/answer_choice in GET responses.
+function toSafeQuestionDTO(q: any): SafeQuestionDTO {
+  return {
+    id: q.id,
+    section: q.section,
+    stem: q.stem,
+    type: q.type,
+    options: q.type === "mc" ? (q.options ?? null) : null,
+    difficulty: q.difficulty ?? null,
+    classification: q.classification ?? null,
+  };
+}
+
+Step 1.2: Modify pickRandomQuestion() return type and payload
+
+Currently pickRandomQuestion() includes explanation in returned question. Remove it.
+
+In the select(...) call, remove explanation unless required for validation (it is not required for GET).
+
+Keep answer_choice out of GET selection as well.
+
+Change this:
+
+.select("id, section, stem, type, options, difficulty, classification, answer_choice, explanation")
+
+
+To:
+
+.select("id, section, stem, type, options, difficulty, classification")
+
+
+Also remove explanation and _answer_choice from the candidate mapping logic, and adjust MC validity check:
+
+You still need to ensure MC questions are valid, which previously relied on answer_choice.
+
+Because we no longer select answer_choice in GET, we must validate MC questions differently for serving:
+
+Minimum: require options length >= 2. That’s safe.
+
+Correctness validity will be enforced at submission time.
+
+Update isValidMcQuestion usage
+Replace isValidMcQuestion with a serving-safe version:
+
+function isServeableMcQuestion(row: any): boolean {
+  const options = safeParseOptions(row?.options);
+  return options.length >= 2;
+}
+
+
+Then filter MC candidates using isServeableMcQuestion({ options: row.options }).
+
+Step 1.3: Ensure /next returns safe DTO
+
+In router.get("/next"... after picked is chosen, return:
+
+return res.json({
+  sessionId,
+  question: toSafeQuestionDTO(picked.question),
+  requestId,
+  // stats added in Phase 3
+});
+
+
+Guardrail: confirm no other GET endpoint returns full questions rows.
+
+Phase 2 — Wire deterministic attempt logging and mastery updates on submission
+Goal
+
+On every submitted answer, do all of:
+
+grade server-side deterministically
+
+insert into answer_attempts (if already used)
+
+insert into student_question_attempts + update mastery rollups via logAttemptAndUpdateMastery
+
+Step 2.1: Import mastery service in server/routes/practice-canonical.ts
+
+At top, add:
+
+import { getQuestionMetadataForAttempt, logAttemptAndUpdateMastery } from "../../apps/api/src/services/studentMastery";
+
+Step 2.2: Identify the canonical submit endpoint
+
+In practice-canonical.ts, find the POST endpoint that validates answers.
+It will likely:
+
+accept body with questionId or question_id
+
+accept selectedChoice or selected_choice (MC)
+
+accept freeResponse or similar (FR)
+
+accept sessionId and/or section
+
+Do not create a new endpoint unless none exists.
+If none exists, create:
+
+POST /api/practice/submit
+
+Step 2.3: Add strict request schema with Zod
+
+In the submit handler file, define:
+
+const SubmitAnswerSchema = z.object({
+  sessionId: z.string().uuid(),
+  questionId: z.string().uuid(),
+  selectedChoice: z.string().optional().nullable(),  // MC
+  freeResponse: z.string().optional().nullable(),    // FR
+  timeSpentMs: z.number().int().min(0).max(30 * 60 * 1000).optional().nullable(),
+});
+
+Step 2.4: Load correct answer server-side
+
+On submit:
+
+Query questions table by id to load:
+
+id, type, answer_choice, answer_text, explanation, options, section, domain, skill, subskill, difficulty_bucket, structure_cluster_id, canonical_id
+
+Compute correctness:
+
+For mc: normalize selectedChoice, normalize answer_choice, compare.
+
+For fr: for now, treat as unsupported or exact match to answer_text (if present). Do not hallucinate equivalence logic yet.
+
+Step 2.5: Call mastery logging
+
+After determining isCorrect:
+
+call getQuestionMetadataForAttempt(questionId) (this reads canonical + metadata snapshot)
+
+reject if canonicalId null (still record answer_attempts, but skip mastery logging)
+
+call logAttemptAndUpdateMastery({...})
+
+Payload mapping:
+
+userId: from req.user.id
+
+questionCanonicalId: from metadata.canonicalId
+
+sessionId: from Submit schema
+
+isCorrect
+
+selectedChoice: normalized (if MC)
+
+timeSpentMs: validated int (use 0 if missing)
+
+metadata: snapshot from getQuestionMetadataForAttempt
+
+Step 2.6: Return sensitive fields ONLY here
+
+Response should include:
+
+isCorrect
+
+correctAnswer (MC: key; FR: normalized answer_text if exists)
+
+explanation (string or null)
+
+stats (from Phase 3)
+
+Guardrail: never return explanation from GET.
+
+Phase 3 — Session Rehydration Stats from DB
+Goal
+
+Return in /next:
+
+correct count
+
+total attempts
+
+current streak (count of most recent consecutive correct, skipping “served” events)
+
+Step 3.1: Decide which table is authoritative for stats
+
+You already use answer_attempts (session-scoped). Use that for session stats.
+
+Implement helper:
+
+async function getSessionStats(sessionId: string, userId: string) {
+  const { data, error } = await supabaseServer
+    .from("answer_attempts")
+    .select("is_correct, outcome, attempted_at")
+    .eq("session_id", sessionId)
+    .eq("user_id", userId)
+    .order("attempted_at", { ascending: false });
+
+  if (error) return { correct: 0, total: 0, streak: 0 };
+
+  const attempts = data ?? [];
+  const correct = attempts.filter(a => a.is_correct === true).length;
+  const total = attempts.length;
+
+  let streak = 0;
+  for (const a of attempts) {
+    if (a.outcome === "skipped") continue;
+    if (a.is_correct) streak++;
+    else break;
+  }
+
+  return { correct, total, streak };
+}
+
+Step 3.2: Add stats to /next response
+
+After sessionId is known:
+
+const stats = await getSessionStats(sessionId, userId);
+return res.json({ sessionId, question: toSafeQuestionDTO(picked.question), stats, requestId });
+
+Step 3.3: Add stats to submit response too
+
+So UI can update without re-fetch:
+
+const stats = await getSessionStats(sessionId, userId);
+return res.json({ result: { isCorrect, correctAnswer, explanation }, stats });
+
+Phase 4 — Deterministic time tracking verification
+Goal
+
+Ensure timeSpentMs is computed client-side and passed to server.
+
+Step 4.1: Find the client submit payload
+
+Search in client/src for the call to /api/practice/submit (or existing submit endpoint).
+Confirm payload includes a timeSpentMs field.
+
+Step 4.2: Add deterministic timer if missing
+
+If missing, implement:
+
+questionShownAt = Date.now() when question loads
+
+On submit: timeSpentMs = Date.now() - questionShownAt
+
+Clamp client-side: min 0, max 30min
+
+Send to server
+
+Server remains source of truth:
+
+Zod validation + clamp
+
+Phase 5 — Question pool scaling (do NOT do “limit 10000”)
+Goal
+
+Improve sampling without huge selects.
+
+Replace .limit(400) strategy with deterministic approach:
+
+Option A (fast, safe):
+
+Keep limit but make it adaptive based on DB size (e.g., 2000) AND filter by section.
+
+Add “avoid repeat” by excluding answer_attempts question_ids for the session directly in query using .not("id", "in", ...) with a bounded list (e.g., last 200 attempts).
+
+Option B (best practice):
+
+Use a server-side RPC for sampling unattempted based on indexed random offset.
+
+For launch, do Option A unless performance is proven good.
+
+Validation Steps (must pass)
+Server checks
+
+Run:
+
+npm run check
+npm test
+
+Manual verification
+
+Call /api/practice/next and inspect JSON:
+
+Must NOT contain answer_choice or explanation.
+
+Submit an answer:
+
+Response must contain explanation (only here)
+
+Confirm mastery tables get rows:
+
+student_question_attempts increments
+
+student_skill_mastery increments
+
+student_cluster_mastery increments (when cluster id exists)
+
+Confirm time_spent_ms is non-null and reasonable.
+
+Safety guardrails
+
+No changes to auth middleware architecture
+
+No schema changes in this prompt (calendar schema addressed separately)
+
+Deliverables
+
+Updated server/routes/practice-canonical.ts with:
+
+safe DTO
+
+mastery logging wired
+
+stats helper and response embedding
+
+Updated client submit payload to include timeSpentMs if missing
+
+All TS checks passing
+
+IMPORTANT: If any table/column names differ
+
+Do not guess. Confirm by searching in repo:
+
+answer_attempts schema
+
+columns outcome, attempted_at
+If they differ, update helper accordingly while preserving the contract: correct/total/streak.

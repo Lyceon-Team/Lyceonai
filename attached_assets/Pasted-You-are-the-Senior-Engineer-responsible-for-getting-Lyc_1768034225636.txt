@@ -1,0 +1,192 @@
+You are the Senior Engineer responsible for getting Lyceon’s Stripe billing working **end-to-end in LIVE mode**, deterministically, with proofs. Do not guess. Use the repo zip as source of truth and only make changes that are necessary to fix the real issue.
+
+## Context (read carefully)
+- Frontend guardian paywall calls `POST /api/billing/checkout`.
+- We now have these env vars set in Replit secrets:
+  - `STRIPE_SECRET_KEY` (live)
+  - `STRIPE_PUBLISHABLE_KEY` (live)
+  - `STRIPE_WEBHOOK_SECRET`
+  - `STRIPE_ENV=live`
+  - `STRIPE_PRICE_PARENT_MONTHLY`, `STRIPE_PRICE_PARENT_QUARTERLY`, `STRIPE_PRICE_PARENT_YEARLY`
+  - `SITE_URL=https://lyceon.ai`
+- Current symptom in browser console when trying checkout:
+  - `stripeMessage: "No such price: 'price_...'"` (a price id that does not match what we believe we set)
+- We also have `GET /api/billing/debug/env` and `GET /api/billing/debug/validate` already implemented.
+- Goal: **Make checkout succeed and confirm webhook + entitlements update path is correct**, then hide the user-facing error details (keep debug-only).
+
+## Absolute requirements
+1. Prove whether the runtime is using the env vars we expect (and which exact price IDs it’s using at runtime, safely).
+2. Prove whether the price IDs exist in Stripe **LIVE** mode using Stripe API (not dashboard eyeballing).
+3. Eliminate any possibility of hardcoded/fallback/stale price ids being used.
+4. Provide a minimal patch with exact file paths + line-level explanation + commands to verify.
+5. Do not leak secrets; only show safe prefixes (first 8) + last 4 or a short hash.
+
+---
+
+# Phase 0 — Repo reality check (no edits yet)
+## 0.1 Confirm the exact files that control Stripe + billing
+Open and inspect:
+- `server/lib/stripeClient.ts`
+  - `getUncachableStripeClient()` (currently around lines 101–110)
+  - `getEnvStripeSecretKey()` (around lines 13–31)
+- `server/routes/billing-routes.ts`
+  - `resolvePriceIdAndPlan()` (around lines 52–122)
+  - `POST /checkout` handler (around lines 124–260)
+  - `GET /prices` (around lines 275–321)
+  - `GET /debug/env` (around lines 326–378)
+  - `GET /debug/validate` (around lines 380–518)
+
+## 0.2 Prove there are NO hardcoded Stripe Price IDs anywhere
+Run ripgrep from repo root:
+- `rg -n "price_[A-Za-z0-9]+" -S .`
+- `rg -n "STRIPE_PRICE|PRICE_PARENT|PRICE_MONTHLY|PRICE_QUARTERLY|PRICE_YEARLY" -S .`
+- `rg -n "prod_[A-Za-z0-9]+" -S .`
+If matches exist:
+- classify them as:
+  - (A) code path used in runtime
+  - (B) docs only (README/replit.md)
+  - (C) dead code
+- If ANY runtime code includes hardcoded price ids, remove/replace it to use env vars only.
+
+Deliverable: paste the grep outputs (or “no matches”) and list exact file paths if any exist.
+
+---
+
+# Phase 1 — Identify the REAL runtime price ids being used (debug-proof)
+The failure is “No such price …” — this means the backend is calling Stripe with a price id that does not exist in the active Stripe mode.
+
+## 1.1 Strengthen `/api/billing/debug/env` to reveal EXACT runtime mapping (safely)
+Edit: `server/routes/billing-routes.ts` inside `GET /debug/env` (currently ~326–378)
+
+Add these fields to the JSON response:
+- `resolvedPrices` object:
+  - `monthly: { prefix: <first8>, last4: <last4>, length: <len> }`
+  - `quarterly: { ... }`
+  - `yearly: { ... }`
+- Also include `source` flags to prove where keys came from:
+  - `usingEnvSecretKey: true/false`
+  - `usingReplitConnectionFallback: true/false` (if you can infer it)
+  - `stripeEnvNormalized: normalizeStripeEnv(process.env.STRIPE_ENV)`
+  - `stripeEnvRaw: process.env.STRIPE_ENV || null`
+
+**Important:** never return full ids/keys; only prefix + last4 + len.
+
+Proof target:
+- We must be able to look at `/api/billing/debug/env` and see exactly which price IDs are being used at runtime, and confirm they match the Replit secrets we set.
+
+## 1.2 Strengthen `/api/billing/debug/validate` to return per-plan Stripe errors verbosely (safe)
+Edit: `server/routes/billing-routes.ts` inside `GET /debug/validate` (currently ~380–518)
+
+It already calls `stripe.prices.retrieve()` per plan. Enhance response:
+- For each plan, return:
+  - `ok: boolean`
+  - `priceIdPrefix`, `priceIdLast4`, `priceIdLen`
+  - If ok: `currency`, `active`, `type`, `recurring.interval`, `recurring.interval_count`
+  - If fail: `stripeErrorType`, `stripeErrorCode`, `stripeErrorMessage`
+- Also return:
+  - `mode` (live/test from your existing response)
+  - `secretKeyPrefix`
+  - `requestId`
+
+Proof target:
+- This endpoint must tell us *which* plan is failing and *why*, without needing to guess.
+
+---
+
+# Phase 2 — Deterministically fix the “No such price” root cause
+Once Phase 1 is added, reproduce the failure and read `/debug/validate`.
+
+## 2.1 If validate fails for any plan in LIVE mode
+This almost always means:
+- You are using LIVE secret key, but the price IDs are from TEST mode (or wrong account), OR
+- Env vars are not the ones you think are loaded in the running process, OR
+- There is an unexpected fallback mapping being used.
+
+Actions:
+1) Use `/debug/env` output to identify the exact runtime price id prefix+last4 for each plan.
+2) Compare against the values stored in Replit secrets (user can confirm last4).
+3) If they don’t match, the process is reading stale env:
+   - ensure server process was restarted AND that deployment/runtime environment is the one with those secrets.
+   - add a single log line (server-side) in `resolvePriceIdAndPlan()` that logs only prefix+last4 for the selected plan *on each checkout attempt* with requestId.
+4) If they DO match but Stripe still says “No such price” in live:
+   - conclusion: those price IDs don’t exist in LIVE mode.
+   - fix is NOT code: the price IDs must be recreated in Stripe LIVE mode and secrets updated.
+   - Provide a deterministic note in PR message explaining this is a Stripe configuration mismatch.
+
+Deliverable:
+- A short “Root Cause” paragraph with the proof from `/debug/validate` output.
+
+---
+
+# Phase 3 — Checkout flow correctness + DB persistence
+Even after prices exist, checkout can still fail if we don’t create/reuse a Stripe customer correctly or write it to the DB.
+
+## 3.1 Confirm DB column exists and is used correctly
+We have `profiles.stripe_customer_id` column (confirmed by schema list).
+
+In `server/routes/billing-routes.ts` checkout handler (~124–260), verify:
+- It reads current `stripe_customer_id`
+- Creates a Stripe customer if null
+- Persists it back to `profiles.stripe_customer_id`
+- Uses that customer in `checkout.sessions.create`
+
+If there is ANY reference to `stripe_customer_id` on the wrong table name (e.g. `profiles` vs `profile`) or wrong schema cache, fix it.
+
+Add fail-fast DB error messaging:
+- If update fails, return 500 with `requestId` and a safe DB error summary.
+
+Proof target:
+- A successful checkout attempt should write `stripe_customer_id` for the guardian profile.
+
+## 3.2 Ensure success/cancel redirect URLs are correct and safe
+Confirm `SITE_URL` is used (already is).
+- In `checkout.sessions.create`, success_url and cancel_url should be:
+  - `${SITE_URL}/guardian?billing=success`
+  - `${SITE_URL}/guardian?billing=cancel`
+(or your existing paths)
+No `req.host` usage anywhere.
+
+---
+
+# Phase 4 — Webhook wiring sanity check (minimal, deterministic)
+We need to be confident the webhook can update entitlements after payment.
+
+## 4.1 Confirm webhook is registered correctly in server startup
+Find where the billing router is mounted and where webhook route is registered.
+Confirm:
+- webhook endpoint uses `express.raw({ type: 'application/json' })` BEFORE `express.json()`
+- Stripe signature verification uses `STRIPE_WEBHOOK_SECRET`
+- Events are idempotent (stripe_webhook_events table)
+
+If ordering is wrong, fix ordering (this is critical).
+
+Deliverable:
+- Exact file + line number proof of webhook middleware ordering.
+
+---
+
+# Phase 5 — Frontend: make user message friendly, keep debug details gated
+The user asked:
+- “show this temporarily, but after we fix it, hide the error message”
+
+## 5.1 Confirm frontend sends canonical `{ plan }`
+Find the paywall component (likely in `client/` or `apps/`):
+- Ensure checkout call is `POST /api/billing/checkout` with `{ plan: 'monthly'|'quarterly'|'yearly' }`
+- No `priceId` is sent from UI.
+
+## 5.2 Error display rules
+- Default UI: show “Could not start checkout. Please try again.”
+- Debug mode only (query `?billingDebug=1`): show `stripeMessage`, `requestId`, etc.
+
+Deliverable:
+- File path + snippet for this gating logic.
+
+---
+
+# Phase 6 — Proofs (must include exact commands and expected outputs)
+Provide a “Proof Checklist” that can be executed immediately.
+
+## 6.1 Backend proof (browser console while logged in as guardian)
+1) Env:
+```js
+fetch('/api/billing/debug/env', { credentials:'include' }).then(r=>r.json()).then(console.log)

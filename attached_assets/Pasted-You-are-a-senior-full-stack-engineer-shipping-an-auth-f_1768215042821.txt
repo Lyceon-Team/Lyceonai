@@ -1,0 +1,85 @@
+You are a senior full-stack engineer shipping an auth fix to production.
+
+GOAL
+Fix the Google OAuth login loop where the user successfully signs into Google but is returned to /login with no visible error (silent loop). Implement deterministic callback handling, strong diagnostics, and hardened URL/cookie consistency.
+
+CONSTRAINTS
+- Supabase is the single source of truth for auth.
+- Production domain is https://lyceon.ai (be explicit; avoid www unless the app truly uses it everywhere).
+- Do NOT introduce additional auth providers.
+- Do NOT “guess” success. Add concrete debug output and proof endpoints.
+- Do not break existing guardian/student role handling.
+
+DELIVERABLES (ALL 3 REQUIRED)
+1) Deterministic OAuth callback page/route
+   - Ensure there is a dedicated client route (ex: /auth/callback) that:
+     a) reads URL params: code, error, error_description
+     b) if error exists -> show a friendly error screen AND console log details
+     c) if code exists -> calls supabase.auth.exchangeCodeForSession(code)
+     d) after exchange: verify session exists via getSession()
+     e) redirect to the correct destination:
+        - if guardian -> /guardian (or dashboard)
+        - if student -> /dashboard
+     f) if exchange fails or no session -> show a visible error message and log the reason
+
+2) Auth observability (server + client)
+   - Add server endpoint GET /api/auth/debug that returns:
+     - build/version
+     - PUBLIC_SITE_URL / SITE_URL / any relevant env values (redact secrets)
+     - supabase URL set? (true/false)
+     - google client id suffix (safe)
+     - request host + protocol
+   - Add client logging to print:
+     - current origin
+     - callback URL (full)
+     - whether code/error params exist
+     - exchange result success/failure
+     - session presence after exchange
+
+3) URL / Redirect / Cookie consistency hardening
+   - Create a single source of truth helper for “site url”:
+     - Prefer PUBLIC_SITE_URL (or SITE_URL) but do not allow mismatch with window.location.origin in production
+   - Ensure the app always uses the same canonical origin (https://lyceon.ai)
+     - If www is used anywhere, normalize or make it consistent everywhere.
+   - Ensure Supabase redirectTo uses the same origin + /auth/callback
+   - Ensure the server and client do not reference different domains in redirects.
+   - Add a startup warning (or hard error in production) if:
+     - PUBLIC_SITE_URL is missing
+     - PUBLIC_SITE_URL does not match allowed host(s)
+   - Ensure any “ignore INITIAL_SESSION” logic doesn’t block setting the session on first load.
+
+IMPLEMENTATION PLAN
+A) Locate current Google OAuth initiation code (signInWithOAuth) and confirm redirectTo is being set.
+B) Add/verify client route /auth/callback exists and is registered in router.
+C) Implement callback flow:
+   - parse params
+   - exchangeCodeForSession
+   - getSession
+   - route by role
+D) Add a visible error UI for callback failures (not only console).
+E) Add GET /api/auth/debug endpoint.
+F) Add guardrails for PUBLIC_SITE_URL consistency.
+G) Add verification commands + proofs.
+
+ACCEPTANCE TESTS (MUST PASS)
+1) Fresh incognito login:
+   - Click “Sign in with Google”
+   - Complete Google login
+   - You land on the correct post-login page (guardian or student) without returning to /login.
+2) If redirect mismatch happens:
+   - /auth/callback shows a visible error message with a requestId and log hints.
+3) GET https://lyceon.ai/api/auth/debug returns JSON (200) with expected fields.
+4) No infinite loop:
+   - If session exchange fails, the user is not bounced silently; they see an error and a “Try again” action.
+
+PROOFS REQUIRED IN OUTPUT
+- List every file changed with brief reason.
+- Provide exact code snippets for:
+  - callback handler
+  - oauth initiation redirectTo
+  - /api/auth/debug route
+- Provide curl commands to validate:
+  - /api/auth/debug
+- Provide a manual test checklist.
+
+DO IT NOW. Be precise and deterministic. No hand-waving.

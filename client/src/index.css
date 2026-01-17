@@ -1,0 +1,321 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Lyceon Brand: Cream #FFFAEF + Navy #0F2E48 */
+  --color-cream: #FFFAEF;
+  --color-cream-alt: #F9F3E7;
+  --color-navy: #0F2E48;
+  
+  /* Theme tokens derived from brand colors */
+  --background: #FFFAEF;
+  --foreground: #0F2E48;
+  --card: #F9F3E7;
+  --card-foreground: #0F2E48;
+  --popover: #F9F3E7;
+  --popover-foreground: #0F2E48;
+  --primary: #0F2E48;
+  --primary-foreground: #FFFAEF;
+  --secondary: #F9F3E7;
+  --secondary-foreground: #0F2E48;
+  --muted: #F0EAE0;
+  --muted-foreground: rgba(15, 46, 72, 0.6);
+  --accent: #0F2E48;
+  --accent-foreground: #FFFAEF;
+  --destructive: #B91C1C;
+  --destructive-foreground: #FFFAEF;
+  --border: rgba(15, 46, 72, 0.12);
+  --input: rgba(15, 46, 72, 0.12);
+  --ring: rgba(15, 46, 72, 0.25);
+  
+  /* Charts - navy-based tints */
+  --chart-1: #0F2E48;
+  --chart-2: rgba(15, 46, 72, 0.7);
+  --chart-3: rgba(15, 46, 72, 0.5);
+  --chart-4: rgba(15, 46, 72, 0.35);
+  --chart-5: rgba(15, 46, 72, 0.2);
+  
+  /* Sidebar */
+  --sidebar: #F9F3E7;
+  --sidebar-foreground: #0F2E48;
+  --sidebar-primary: #0F2E48;
+  --sidebar-primary-foreground: #FFFAEF;
+  --sidebar-accent: #F0EAE0;
+  --sidebar-accent-foreground: #0F2E48;
+  --sidebar-border: rgba(15, 46, 72, 0.12);
+  --sidebar-ring: rgba(15, 46, 72, 0.25);
+  
+  /* Typography */
+  --font-sans: 'Poppins', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-mono: 'SF Mono', Menlo, Monaco, 'Courier New', monospace;
+  
+  /* Radius & Shadows */
+  --radius: 8px;
+  --shadow-2xs: 0px 1px 2px 0px rgba(15, 46, 72, 0.04);
+  --shadow-xs: 0px 1px 3px 0px rgba(15, 46, 72, 0.06);
+  --shadow-sm: 0px 2px 4px -1px rgba(15, 46, 72, 0.06), 0px 1px 2px -1px rgba(15, 46, 72, 0.04);
+  --shadow: 0px 4px 6px -1px rgba(15, 46, 72, 0.06), 0px 2px 4px -2px rgba(15, 46, 72, 0.04);
+  --shadow-md: 0px 6px 10px -2px rgba(15, 46, 72, 0.08), 0px 3px 6px -3px rgba(15, 46, 72, 0.06);
+  --shadow-lg: 0px 10px 20px -4px rgba(15, 46, 72, 0.10), 0px 6px 10px -4px rgba(15, 46, 72, 0.06);
+  --shadow-xl: 0px 20px 30px -6px rgba(15, 46, 72, 0.12), 0px 10px 15px -5px rgba(15, 46, 72, 0.08);
+  --shadow-2xl: 0px 25px 50px -12px rgba(15, 46, 72, 0.20);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: #0F2E48;
+  --foreground: #FFFAEF;
+  --card: #1A3D5C;
+  --card-foreground: #FFFAEF;
+  --popover: #1A3D5C;
+  --popover-foreground: #FFFAEF;
+  --primary: #FFFAEF;
+  --primary-foreground: #0F2E48;
+  --secondary: #1A3D5C;
+  --secondary-foreground: #FFFAEF;
+  --muted: #1A3D5C;
+  --muted-foreground: rgba(255, 250, 239, 0.6);
+  --accent: #FFFAEF;
+  --accent-foreground: #0F2E48;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFAEF;
+  --border: rgba(255, 250, 239, 0.15);
+  --input: rgba(255, 250, 239, 0.15);
+  --ring: rgba(255, 250, 239, 0.3);
+  --chart-1: #FFFAEF;
+  --chart-2: rgba(255, 250, 239, 0.7);
+  --chart-3: rgba(255, 250, 239, 0.5);
+  --chart-4: rgba(255, 250, 239, 0.35);
+  --chart-5: rgba(255, 250, 239, 0.2);
+  --sidebar: #1A3D5C;
+  --sidebar-foreground: #FFFAEF;
+  --sidebar-primary: #FFFAEF;
+  --sidebar-primary-foreground: #0F2E48;
+  --sidebar-accent: #0F2E48;
+  --sidebar-accent-foreground: #FFFAEF;
+  --sidebar-border: rgba(255, 250, 239, 0.15);
+  --sidebar-ring: rgba(255, 250, 239, 0.3);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html, body {
+    width: 100%;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    overflow-x: hidden;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "kern" 1, "liga" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.7;
+  }
+
+  #root {
+    width: 100%;
+  }
+
+  img, svg, video, canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+    color: var(--foreground);
+    line-height: 1.3;
+  }
+
+  h1 { @apply text-3xl md:text-4xl lg:text-5xl; }
+  h2 { @apply text-2xl md:text-3xl; }
+  h3 { @apply text-xl md:text-2xl; }
+  h4 { @apply text-lg md:text-xl; }
+
+  p {
+    @apply leading-relaxed;
+    line-height: 1.75;
+  }
+
+  a {
+    color: var(--foreground);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: opacity 0.2s ease;
+  }
+  
+  a:hover {
+    opacity: 0.7;
+  }
+}
+
+/* FlowCards 3D Flip Animation */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* TikTok-style Smooth Transitions */
+@keyframes slideUp {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+/* Answer option selection states */
+.answer-option {
+  transition: all 0.2s ease-in-out;
+}
+
+.answer-option:hover {
+  transform: translateY(-1px);
+}
+
+.answer-option.selected {
+  border-color: var(--primary);
+  background-color: rgba(15, 46, 72, 0.05);
+}
+
+.answer-option.correct {
+  border-color: var(--primary);
+  background-color: rgba(15, 46, 72, 0.08);
+}
+
+.answer-option.incorrect {
+  border-color: var(--destructive);
+  background-color: rgba(185, 28, 28, 0.08);
+}
+
+/* Markdown rendering in question stems */
+.question-stem {
+  @apply prose prose-sm max-w-none;
+}
+
+.question-stem p {
+  @apply mb-3 last:mb-0;
+}
+
+.question-stem ul, .question-stem ol {
+  @apply pl-5 mb-3;
+}
+
+.question-stem li {
+  @apply mb-1;
+}
+
+/* Math rendering */
+.katex {
+  font-size: 1.1em;
+}
+
+/* Progress indicators */
+.progress-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+/* Custom scrollbar for chat */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 46, 72, 0.2);
+  border-radius: 3px;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 46, 72, 0.3);
+}
+
+/* Loading skeleton animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    rgba(15, 46, 72, 0.08) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Focus states */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  --tw-ring-color: var(--ring);
+  --tw-ring-offset-color: var(--background);
+}
+
+/* Button base styles */
+.btn-base {
+  @apply inline-flex items-center justify-center rounded-md font-medium transition-colors;
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  --tw-ring-color: var(--ring);
+}
+
+/* Utility classes for brand colors */
+.bg-brand-cream {
+  background-color: #FFFAEF;
+}
+
+.bg-brand-surface {
+  background-color: #F9F3E7;
+}
+
+.text-brand-navy {
+  color: #0F2E48;
+}
+
+.border-brand-navy {
+  border-color: rgba(15, 46, 72, 0.12);
+}

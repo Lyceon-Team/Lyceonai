@@ -1,0 +1,475 @@
+Context
+
+You are working inside the Learningai monorepo (old build). Practice questions now “load”, but we still have these failures:
+
+Same question repeats frequently.
+
+Every answer appears wrong, and correct answers aren’t highlighted.
+
+Explanations aren’t reliably shown (especially for RW/Random flows).
+
+Free tier gating for unpaid students must work deterministically.
+
+All practice buttons must be consistent end-to-end:
+
+Math Practice (/practice/math)
+
+Reading & Writing Practice (/practice/reading-writing)
+
+Random Practice (/practice/random)
+
+Review Errors (/review-errors)
+
+You must make minimal, surgical changes. No refactoring. No changing endpoint names. No moving files. Only fix broken logic, missing wiring, and determinism.
+
+Phase 0 — Hard Requirements (Do Not Skip)
+A) Use these DB truths
+
+We already know:
+
+questions rows exist with columns: id, section, stem, type, options, difficulty, classification, answer_choice, answer_text, explanation (and many more).
+
+answer_attempts and practice_events tables exist (currently 0 rows).
+
+RLS policies exist requiring user_id = auth.uid() for inserts/selects on attempts/events.
+
+Constraints exist including:
+
+answer_attempts_user_id_fkey → auth.users(id)
+
+answer_attempts_session_question_unique → prevents duplicates
+
+B) “Deterministic” means:
+
+A submitted answer must create exactly one answer_attempts row per (session_id, question_id).
+
+“Next question” must exclude previously attempted questions for that session.
+
+Frontend must highlight correct answer deterministically using correctAnswerKey returned from backend.
+
+Explanations must show deterministically using backend explanation or question’s explanation.
+
+Phase 1 — Backend Audit + Fix (Practice Canonical)
+1.1 Verify current backend source of truth
+
+Open:
+
+File: server/routes/practice-canonical.ts
+
+Confirm these routes exist:
+
+GET /api/practice/next
+
+POST /api/practice/answer
+
+Required behavior
+
+GET /next returns:
+
+sessionId
+
+question with options as an array (not string)
+
+rationale optional
+
+POST /answer returns:
+
+isCorrect
+
+correctAnswerKey
+
+explanation
+
+Backend change requirement (minimal)
+
+In this repo state, backend logic is mostly correct. The remaining issues are likely coming from frontend ignoring returned fields, plus usage gating counting incorrectly, plus review-errors endpoint mismatch, plus random/rw flows hardcoding correctAnswerKey: null.
+
+Still, do this one strict backend verification:
+
+Patch 1 — Ensure POST /api/practice/answer always returns correctAnswerKey + explanation
+
+In server/routes/practice-canonical.ts, find the JSON response at the end of the answer handler. It must include:
+
+correctAnswerKey: correctKey
+
+explanation: qRow.explanation ?? null
+
+If either is missing, add them.
+
+Do not rename fields. Frontend will use these exact names.
+
+Phase 2 — Frontend Fixes (This is where the bugs are)
+
+The “every answer wrong / no explanation / no correct highlighting” issue is primarily caused by RW + Random flows explicitly setting correctAnswerKey: null and not passing explanation from the server result.
+
+You must apply the exact same fix pattern to BOTH:
+
+client/src/pages/reading-writing-practice.tsx
+
+client/src/pages/random-practice.tsx
+
+2.1 Reading & Writing Practice fix
+
+File: client/src/pages/reading-writing-practice.tsx
+
+Current broken logic
+
+After submitting, it sets:
+
+correctAnswerKey: null
+
+no explanation stored in validationResult
+
+So QuestionRenderer cannot highlight the correct option (it compares option.key to validationResult.correctAnswerKey).
+
+Patch 2 — Use backend result fields
+
+Find the code after:
+
+const result = await response.json();
+
+
+Replace the setValidationResult({...}) block with this exact logic:
+
+setValidationResult({
+  isCorrect: result.isCorrect,
+  mode: derivedType,
+  correctAnswerKey: result.correctAnswerKey ?? null,
+  explanation: result.explanation ?? null,
+  feedback: result.isCorrect ? 'Correct!' : 'Incorrect',
+});
+
+Patch 3 — Update the ValidationResult interface in this file
+
+At the top of reading-writing-practice.tsx, the local ValidationResult interface currently does NOT include explanation.
+
+Add it:
+
+interface ValidationResult {
+  isCorrect: boolean;
+  mode?: 'mc' | 'fr';
+  correctAnswerKey?: string | null;
+  explanation?: string | null;
+  feedback?: string;
+}
+
+
+That’s it. No other changes.
+
+2.2 Random Practice fix
+
+File: client/src/pages/random-practice.tsx
+
+Current broken logic
+
+After submit, it sets:
+
+correctAnswerKey: null
+
+no explanation stored
+
+also it chooses sections with Math.random() (not fatal, but we can make it more deterministic later)
+
+Patch 4 — Use backend result fields
+
+Find:
+
+const result = await response.json();
+
+
+Replace the setValidationResult({...}) block with:
+
+setValidationResult({
+  isCorrect: result.isCorrect,
+  mode: currentQuestion.type,
+  correctAnswerKey: result.correctAnswerKey ?? null,
+  explanation: result.explanation ?? null,
+  feedback: result.isCorrect ? 'Correct!' : 'Incorrect',
+});
+
+Patch 5 — Update the ValidationResult interface in this file
+
+Add explanation?: string | null;:
+
+interface ValidationResult {
+  isCorrect: boolean;
+  mode?: 'mc' | 'fr';
+  correctAnswerKey?: string | null;
+  explanation?: string | null;
+  feedback?: string;
+}
+
+Phase 3 — Fix “Same question repeats constantly” deterministically
+
+When repetition happens, it’s almost always one of these:
+
+answer_attempts inserts aren’t happening (so exclusion never works)
+
+frontend keeps creating new sessions (sessionId not retained)
+
+backend is not excluding attempted questions correctly
+
+We will enforce determinism by adding two minimal checks.
+
+3.1 Ensure sessionId is always used after first fetch
+Random practice (risk)
+
+In client/src/pages/random-practice.tsx, the code sets sessionId only if data.sessionId && !sessionId.
+
+That’s OK, but if server returns sessionId nested in data.rationale.sessionId, we also set it. Good.
+
+No change needed unless you find sessionId is not being set.
+
+3.2 Backend: make exclusion use question_id (not canonicalId)
+
+The backend already excludes by question_id from answer_attempts. That’s correct and deterministic.
+
+Patch 6 (only if needed): Confirm exclusion is actually used
+
+In server/routes/practice-canonical.ts, confirm this block exists and uses session_id:
+
+.from('answer_attempts')
+.select('question_id')
+.eq('session_id', sessionId)
+
+
+And the not in (...) filter is applied before question selection.
+
+If missing, add it. If present, do not change.
+
+Phase 4 — Free Tier Gating for unpaid students (deterministic)
+
+You requested: “free tier gating for unpaid students.”
+
+Right now the middleware exists but is too broad, because it can increment usage for non-question actions, and it may be applied inconsistently.
+
+4.1 Make gating count ONLY “question served”
+
+We only count usage when the student receives a new question:
+
+GET /api/practice/next should increment 1 practice question (if allowed).
+
+POST /api/practice/answer should NOT increment usage.
+
+Patch 7 — Update middleware to support “check-only” vs “check+increment”
+
+File: server/middleware/usage-limits.ts
+
+Current function:
+
+export function checkPracticeLimit() {
+  return checkLimit('practice');
+}
+
+
+Change it to:
+
+export function checkPracticeLimit(opts?: { increment?: boolean }) {
+  return checkLimit('practice', opts);
+}
+
+
+Then update checkLimit signature:
+
+function checkLimit(type: 'practice' | 'ai_chat', opts?: { increment?: boolean }) {
+
+
+Inside the middleware, right now it always increments after checking allowed.
+
+Change it so increment only happens if opts?.increment !== false.
+
+Specifically, replace:
+
+await incrementUsage(accountId, type);
+
+
+with:
+
+if (opts?.increment !== false) {
+  await incrementUsage(accountId, type);
+}
+
+
+Default should remain incrementing (so existing behavior stays unless overridden).
+
+4.2 Apply gating ONLY to “next question”
+
+Now wire it.
+
+File: server/routes/practice-canonical.ts
+
+On the GET /next route, add gating middleware before handler:
+
+router.get(
+  '/next',
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  checkPracticeLimit({ increment: true }),
+  async (req, res) => { ... }
+);
+
+
+On the POST /answer route, add gating but with increment: false OR do not add it at all.
+
+Preferred: do NOT gate answers, only gate serving new questions.
+
+So keep /answer as-is (no gating).
+
+Phase 5 — Review Errors endpoint mismatch (one dead end to remove)
+
+Frontend calls:
+
+POST /api/review-errors/attempt (to record review activity)
+
+Backend does NOT implement it (currently only GET /api/review-errors exists).
+
+This causes noise and confusion, not fatal, but it is a “dead end”.
+
+Choose ONE option (do not do both)
+Option A (minimal): remove the POST call from frontend
+
+File: client/src/pages/review-errors.tsx
+
+Search for /api/review-errors/attempt (there are two calls).
+Wrap both calls with a comment and remove them completely (or leave but disable with a single return;).
+
+This is safest for launch.
+
+Option B (small backend add): implement the endpoint
+
+Add to server/index.ts:
+
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
+  return res.json({ ok: true });
+});
+
+
+No DB writes needed for launch; just make it stop failing.
+
+Pick A if time is tight. Pick B if you want clean network logs.
+
+Phase 6 — Final Deterministic Validation (Must Provide Evidence)
+
+You must provide proof that:
+
+Correct answer highlights in RW + Random + Math
+
+Explanation shows after submit
+
+Repetition stops because attempts are being recorded
+
+Free-tier gating blocks after limit for unpaid users
+
+6.1 Grep proofs (run and paste output)
+
+From repo root:
+
+grep -RIn "correctAnswerKey: null" client/src/pages/random-practice.tsx client/src/pages/reading-writing-practice.tsx || true
+
+
+Expected: no matches.
+
+grep -RIn "explanation\\?:" client/src/pages/random-practice.tsx client/src/pages/reading-writing-practice.tsx
+
+
+Expected: shows explanation?: string | null; in both.
+
+6.2 Network/UI proof checklist (screenshots accepted)
+
+In browser:
+
+Go to Math Practice
+
+Submit correct answer once
+
+Correct option should be highlighted green
+
+Explanation section should appear
+
+Go to RW Practice
+
+Submit once
+
+Correct option highlight works
+
+Explanation appears
+
+Go to Random Practice
+
+Submit once
+
+Correct option highlight works
+
+Explanation appears
+
+Do 3–5 questions in same session
+
+Confirm question IDs change (no constant repetition)
+
+6.3 DB proof (SQL query output)
+
+Run in Supabase SQL editor and paste results:
+
+select
+  count(*) as attempts_total
+from answer_attempts;
+
+select
+  session_id,
+  count(*) as attempts_in_session
+from answer_attempts
+group by session_id
+order by attempts_in_session desc
+limit 10;
+
+
+Expected:
+
+attempts_total > 0 after answering
+
+attempts_in_session grows as you answer
+
+6.4 Free-tier gating proof
+
+As an unpaid/free user, keep clicking next until limit is reached.
+Expected: GET /api/practice/next returns a controlled error:
+
+HTTP 402 or 403 with JSON including:
+
+error: 'Free tier limit reached' (or similar)
+
+current, limit, resetAt
+
+If it blocks too early or increments on answer: fix middleware as described.
+
+Deliverables Required
+
+Commit diff (or patch list) for these exact files:
+
+client/src/pages/reading-writing-practice.tsx
+
+client/src/pages/random-practice.tsx
+
+server/middleware/usage-limits.ts
+
+server/routes/practice-canonical.ts
+
+(optional) client/src/pages/review-errors.tsx OR server/index.ts for /api/review-errors/attempt
+
+Paste:
+
+grep outputs
+
+screenshots or screen recording showing correct highlight + explanation
+
+SQL outputs showing answer_attempts rows created
+
+Notes (Do NOT drift)
+
+Do not rename endpoints.
+
+Do not introduce new state management.
+
+Do not “improve architecture”.
+
+Only patch wiring and determinism.

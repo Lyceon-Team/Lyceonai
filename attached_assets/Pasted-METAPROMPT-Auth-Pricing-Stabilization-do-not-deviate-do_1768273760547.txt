@@ -1,0 +1,161 @@
+METAPROMPT: Auth + Pricing Stabilization (do not deviate, do not refactor beyond scope)
+
+Goal:
+
+Make logout deterministic (cookies always cleared).
+
+Make auth debugging deterministic (single build constant).
+
+Make guardian pricing UI impossible to crash even if /api/billing/prices returns a bad shape.
+
+Step 0 — Create a branch + confirm you’re using the correct repo
+
+Branch: fix/auth-logout-build-pricing-guard
+
+Confirm file exists: client/src/components/navigation.tsx
+
+Step 1 — Fix logout endpoint mismatch (client → server)
+
+Change 1.1: update frontend logout endpoint
+
+File: client/src/components/navigation.tsx
+
+Line: 27
+
+Replace:
+
+return apiRequest("/api/auth/logout", { method: "POST" });
+
+
+With:
+
+return apiRequest("/api/auth/signout", { method: "POST" });
+
+
+Change 1.2: add a server alias route for backwards compatibility
+Even after the client fix, stale caches (mobile Safari especially) can still call the old endpoint. Add an alias on the server.
+
+File: server/routes/supabase-auth-routes.ts
+
+Near existing signout route: around line 285 where this exists:
+
+router.post('/signout', async (req, res) => { ... })
+
+
+Add immediately below it:
+
+// Backwards-compatible alias (older clients may still call /logout)
+router.post('/logout', async (req, res) => {
+  try {
+    clearAuthCookies(res);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('[AUTH] Logout alias failed:', e);
+    clearAuthCookies(res);
+    return res.status(200).json({ success: true });
+  }
+});
+
+
+Done when:
+
+POST /api/auth/logout returns { success: true }
+
+POST /api/auth/signout returns { success: true }
+
+Step 2 — Unify build version used by debug endpoints (stop lying to ourselves)
+
+Problem: BUILD is defined in multiple places and not consistent.
+
+Change 2.1: create shared build constant
+
+New file: server/lib/build.ts
+
+Contents:
+
+export const BUILD = '2026-01-12-auth-stable-v5';
+
+
+Change 2.2: use it in auth debug
+
+File: server/routes/supabase-auth-routes.ts
+
+Line: 44 currently has const BUILD = ...
+
+Replace that line with:
+
+import { BUILD } from '../lib/build';
+
+
+…and delete the local const BUILD = ....
+
+Change 2.3: use it anywhere else that reports build
+
+Search for const BUILD = in server/ and update to import the shared one.
+
+Step 3 — Make guardian pricing UI crash-proof (no .map on non-array ever)
+
+Change 3.1: harden the prices normalization
+
+File: client/src/components/guardian/SubscriptionPaywall.tsx
+
+Locate: where prices is defined (around line 140+ in this file)
+
+Replace:
+
+const prices = pricesData || [];
+
+
+With:
+
+const prices = Array.isArray(pricesData) ? pricesData : [];
+
+
+Change 3.2: show a real error UI when pricing fails
+In the same component, you already have pricesError. Add a visible fallback.
+
+Right before the pricing cards render (before prices.map(...) at ~line 237):
+
+if (pricesError) {
+  return (
+    <div className="p-4 border border-red-200 bg-red-50 rounded-lg text-sm">
+      <div className="font-semibold">Pricing is temporarily unavailable.</div>
+      <div className="mt-1 opacity-80">Please refresh the page or try again in a minute.</div>
+    </div>
+  );
+}
+
+
+Optional but recommended: also guard the map:
+
+{Array.isArray(prices) && prices.map((plan) => ( ... ))}
+
+4) Proofs (must be included in the PR)
+Proof A — Grep proves logout endpoint fixed + alias exists
+grep -RIn "/api/auth/logout" client/src/components/navigation.tsx
+grep -RIn "router.post\\('/logout'" server/routes/supabase-auth-routes.ts
+grep -RIn "router.post\\('/signout'" server/routes/supabase-auth-routes.ts
+
+Proof B — Build constant is single source of truth
+grep -RIn "const BUILD" server | cat
+grep -RIn "export const BUILD" server/lib/build.ts
+
+
+Expectation: only server/lib/build.ts defines it.
+
+Proof C — Logout actually clears cookies (manual)
+
+Login
+
+Call:
+
+curl -i -X POST https://lyceon.ai/api/auth/signout
+
+
+In browser DevTools → Application → Cookies: sb-access-token and sb-refresh-token should be removed (or set expired).
+
+Proof D — Pricing never crashes
+
+Temporarily simulate a pricing failure (block /api/billing/prices in DevTools or return 500)
+
+/guardian must render an error box, not crash.

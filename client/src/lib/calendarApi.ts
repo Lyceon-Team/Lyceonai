@@ -1,0 +1,74 @@
+export interface StudyProfile {
+  user_id: string;
+  baseline_score: number | null;
+  target_score: number | null;
+  exam_date: string | null;
+  daily_minutes: number | null;
+  timezone: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudyPlanDay {
+  day_date: string;
+  planned_minutes: number;
+  completed_minutes: number | null;
+  status: string | null;
+  focus: Array<{ section: string; weight: number }> | null;
+  tasks: Array<{ type: string; section: string; mode: string; minutes: number }> | null;
+  plan_version: number;
+  generated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getCalendarProfile(): Promise<StudyProfile | null> {
+  const response = await fetch('/api/calendar/profile', {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch calendar profile');
+  }
+  const data = await response.json();
+  return data.profile ?? null;
+}
+
+export async function saveCalendarProfile(profile: {
+  baseline_score?: number | null;
+  target_score?: number | null;
+  exam_date?: string | null;
+  daily_minutes?: number | null;
+  timezone?: string | null;
+}): Promise<StudyProfile> {
+  const response = await fetch('/api/calendar/profile', {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to save calendar profile');
+  }
+  const data = await response.json();
+  return data.profile;
+}
+
+export interface CalendarMonthResponse {
+  days: StudyPlanDay[];
+  streak: { current: number; longest: number };
+}
+
+export async function getCalendarMonth(start: string, end: string): Promise<CalendarMonthResponse> {
+  const response = await fetch(`/api/calendar/month?start=${start}&end=${end}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch calendar month');
+  }
+  const data = await response.json();
+  return {
+    days: data.days ?? [],
+    streak: data.streak ?? { current: 0, longest: 0 },
+  };
+}

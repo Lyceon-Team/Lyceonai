@@ -1,0 +1,82 @@
+You must eliminate duplicated practice page logic by implementing a single client-side source of truth.
+
+## Objective
+Refactor three pages:
+- client/src/pages/math-practice.tsx
+- client/src/pages/reading-writing-practice.tsx
+- client/src/pages/random-practice.tsx
+
+So they share ONE canonical hook + ONE canonical page renderer component.
+
+## Non-negotiables
+- Do NOT change route paths.
+- Do NOT change server behavior in this task.
+- Keep existing PracticeShell + QuestionRenderer UX identical.
+- Ensure TypeScript compiles with strict mode.
+- Any future change to practice flow must be made in one file, not three.
+
+## Step 1: Create canonical hook
+Create exactly this file:
+client/src/hooks/useCanonicalPractice.ts
+
+It must:
+- own state: question, selectedAnswer, freeResponseAnswer, showResult, isCorrect, correctAnswerKey, explanation, score, currentIndex, totalQuestions
+- measure elapsedMs using a ref questionStartMs
+- call GET /api/practice/next?section=<section>
+- call POST /api/practice/answer with payload:
+  { questionId, selectedAnswer, freeResponseAnswer, elapsedMs, skipped }
+- accept optional server stats from either endpoint and adopt it if present; otherwise fallback to current client increment logic.
+- expose handleMissingMcChoices that triggers submitAnswer({skipped:true}) for MC questions.
+
+Implementation must match the exact content provided in the spec (do not invent types).
+
+## Step 2: Create canonical page component
+Create exactly this file:
+client/src/components/practice/CanonicalPracticePage.tsx
+
+It must:
+- accept props: { title, badgeLabel, section }
+- render the same UI structure currently used in each page:
+  PracticeShell -> Card -> header row -> QuestionRenderer -> action row
+- wire all handlers and state from useCanonicalPractice()
+
+## Step 3: Replace the three pages with thin wrappers
+Replace entire contents of:
+
+client/src/pages/math-practice.tsx
+with:
+  import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
+  export default function MathPracticePage() {
+    return <CanonicalPracticePage title="Math Practice" badgeLabel="Math" section="math" />;
+  }
+
+client/src/pages/reading-writing-practice.tsx
+with:
+  import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
+  export default function ReadingWritingPracticePage() {
+    return (
+      <CanonicalPracticePage
+        title="Reading & Writing Practice"
+        badgeLabel="Reading & Writing"
+        section="reading-writing"
+      />
+    );
+  }
+
+client/src/pages/random-practice.tsx
+with:
+  import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
+  export default function RandomPracticePage() {
+    return <CanonicalPracticePage title="Random Practice" badgeLabel="Random" section="random" />;
+  }
+
+## Step 4: Validation
+Run:
+- pnpm -s check
+- pnpm -s dev (ensure no runtime errors)
+
+Manual UI verification:
+- Visit all three practice routes and confirm identical behavior to before (skip/check/next).
+- Confirm elapsedMs continues to be sent (no NaN).
+- Confirm MC requires a selection before "Check Answer" enables.
+- Confirm FR requires non-empty input before "Check Answer" enables.
