@@ -30,4 +30,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-  
+      - name: Build workspaces
+        run: pnpm -r --if-present run build
