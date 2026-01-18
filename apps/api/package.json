@@ -8,7 +8,7 @@
     "build": "esbuild src/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "next:dev": "next dev --port 3001",
-    "next:build": "next build", 
+    "next:build": "next build",
     "next:start": "next start --port 3001",
     "seed:dev-question": "tsx scripts/seed-dev-question.ts"
   },
@@ -16,7 +16,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "tsx": "^4.19.1",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.12",
+    "tsx": "^4.19.1"
   }
 }
