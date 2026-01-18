@@ -30,6 +30,4 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Build only workspaces that define build
-      - name: Build workspaces
-        run: pnpm -r run build --if-present
+  
