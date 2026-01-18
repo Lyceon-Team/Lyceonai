@@ -30,14 +30,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Lint only if defined
-      - name: Lint (if present)
-        run: pnpm run lint --if-present
+      # Run lint only in workspaces that define it
+      - name: Lint workspaces
+        run: pnpm -r run lint --if-present
 
-      # Typecheck only if defined
-      - name: Typecheck (if present)
-        run: pnpm run typecheck --if-present
+      # Run typecheck only in workspaces that define it
+      - name: Typecheck workspaces
+        run: pnpm -r run typecheck --if-present
 
-      # Build each workspace safely
+      # Build only workspaces that define build
       - name: Build workspaces
         run: pnpm -r run build --if-present
