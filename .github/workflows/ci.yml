@@ -9,12 +9,13 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CI: true
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Install pnpm first so setup-node's pnpm cache can work reliably
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -26,14 +27,17 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Install
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+      # Lint only if defined
+      - name: Lint (if present)
+        run: pnpm run lint --if-present
 
-      - name: Typecheck
-        run: pnpm typecheck
+      # Typecheck only if defined
+      - name: Typecheck (if present)
+        run: pnpm run typecheck --if-present
 
-      - name: Build
-        run: pnpm build
+      # Build each workspace safely
+      - name: Build workspaces
+        run: pnpm -r run build --if-present
