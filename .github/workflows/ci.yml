@@ -29,3 +29,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build root app
+        run: pnpm run build
+
+      - name: Build API app
+        run: pnpm -C apps/api run build
