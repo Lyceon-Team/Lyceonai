@@ -5,7 +5,7 @@
   "main": "./src/index.js",
   "scripts": {
     "dev": "NODE_ENV=development tsx src/index.ts",
-    "build": "pnpm exec esbuild src/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "pnpm exec esbuild ./src/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "next:dev": "next dev --port 3001",
     "next:build": "next build",
