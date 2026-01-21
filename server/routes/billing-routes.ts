@@ -159,40 +159,38 @@ router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response
       });
     }
 
-    const userEmail = req.user!.email;
-    let profile = await billingStorage.getProfile(userId);
-      // AFTER you have accountId resolved…
-      let entitlement = await getOrCreateEntitlement(accountId);
-      let customerId = entitlement?.stripe_customer_id || null;
+   const userEmail = req.user!.email;
+let profile = await billingStorage.getProfile(userId);
 
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: req.user!.email,
-          metadata: {
-            account_id: accountId,
-            payer_user_id: userId,
-            payer_role: userRole,
-          },
-        });
+let entitlement = await getOrCreateEntitlement(accountId);
+let customerId = entitlement?.stripe_customer_id || null;
 
-        customerId = customer.id;
+if (!customerId) {
+  const customer = await stripe.customers.create({
+    email: req.user!.email,
+    metadata: {
+      account_id: accountId,
+      payer_user_id: userId,
+      payer_role: userRole,
+    },
+  });
 
-        // Always persist at ENTITLEMENT level (source of truth)
-        await upsertEntitlement(accountId, { stripe_customer_id: customerId });
+  customerId = customer.id;
 
-        // Optional backward compatibility only
-        await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
-      }
+  // Always persist at ENTITLEMENT level (source of truth)
+  await upsertEntitlement(accountId, { stripe_customer_id: customerId });
 
+  // Optional backward compatibility only
+  await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
+}
 
-      logger.info('BILLING', 'checkout', 'Created Stripe customer', {
-        userId,
-        customerId,
-        accountId,
-        role,
-        requestId,
-      });
-    }
+logger.info('BILLING', 'checkout', 'Created Stripe customer', {
+  userId,
+  customerId,
+  accountId,
+  role,
+  requestId,
+});
 
     // CRITICAL: Persist customerId at account entitlement level so /status can self-heal
     // even if webhook delivery is delayed or misconfigured.
