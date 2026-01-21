@@ -75,6 +75,32 @@ npm run preview
 
 The app will be available at http://localhost:5000
 
+### Local Windows builds (pnpm)
+
+This repo uses pnpm workspaces for `apps/*` and `packages/*`. The `server/` and `client/`
+directories are source folders, not standalone packages, so avoid running `pnpm -C server`
+or `pnpm -C client`.
+
+Install dependencies from the repo root:
+```bash
+pnpm install
+```
+
+Build the API package:
+```bash
+pnpm -C apps/api run build
+```
+
+Build all workspace packages that provide a build script:
+```bash
+pnpm -r run build
+```
+
+Clean build artifacts:
+```bash
+pnpm run clean
+```
+
 ## Boot & Health Monitoring
 
 ### Health Endpoints
