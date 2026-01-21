@@ -159,46 +159,45 @@ router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response
       });
     }
 
-    const userEmail = req.user!.email;
-    let profile = await billingStorage.getProfile(userId);
-      // AFTER you have accountId resolved…
-      let entitlement = await getOrCreateEntitlement(accountId);
-      let customerId = entitlement?.stripe_customer_id || null;
+   // Resolve stripe customer id from entitlement (account-level source of truth).
+const entitlement = await getOrCreateEntitlement(accountId);
+let customerId: string | null = entitlement?.stripe_customer_id || null;
 
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: req.user!.email,
-          metadata: {
-            account_id: accountId,
-            payer_user_id: userId,
-            payer_role: userRole,
-          },
-        });
+if (!customerId) {
+  const customer = await stripe.customers.create({
+    email: req.user!.email,
+    metadata: {
+      account_id: accountId,
+      payer_user_id: userId,
+      payer_role: normalizedRole, // "student" | "guardian"
+    },
+  });
 
-        customerId = customer.id;
+  customerId = customer.id;
 
-        // Always persist at ENTITLEMENT level (source of truth)
-        await upsertEntitlement(accountId, { stripe_customer_id: customerId });
+  // Persist at ENTITLEMENT level (source of truth)
+  await upsertEntitlement(accountId, { stripe_customer_id: customerId });
 
-        // Optional backward compatibility only
-        await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
-      }
+  // Optional backward compatibility only
+  await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
 
+  logger.info('BILLING', 'checkout', 'Created Stripe customer', {
+    userId,
+    accountId,
+    customerId,
+    role: normalizedRole,
+    requestId,
+  });
+} else {
+  logger.info('BILLING', 'checkout', 'Reusing existing Stripe customer from entitlement', {
+    userId,
+    accountId,
+    customerId,
+    role: normalizedRole,
+    requestId,
+  });
+}
 
-      logger.info('BILLING', 'checkout', 'Created Stripe customer', {
-        userId,
-        customerId,
-        accountId,
-        role,
-        requestId,
-      });
-    }
-
-    // CRITICAL: Persist customerId at account entitlement level so /status can self-heal
-    // even if webhook delivery is delayed or misconfigured.
-    await upsertEntitlement(accountId, {
-      stripe_customer_id: customerId,
-    });
 
     logger.info('BILLING', 'checkout', 'Upserted entitlement stripe_customer_id', {
       accountId,
