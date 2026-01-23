@@ -51,14 +51,12 @@ export async function requireAuth(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = 
-      req.cookies?.['sb-access-token'] ||
-      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
-
+    // Enforce cookie-only authentication: ignore Authorization header
+    const token = req.cookies?.['sb-access-token'];
     if (!token) {
       res.status(401).json({ 
         error: 'Authentication required',
-        message: 'Please log in to access this resource'
+        message: 'Please log in to access this resource (cookie required)'
       });
       return;
     }
@@ -103,14 +101,12 @@ export async function requireAdmin(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = 
-      req.cookies?.['sb-access-token'] ||
-      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
-
+    // Enforce cookie-only authentication: ignore Authorization header
+    const token = req.cookies?.['sb-access-token'];
     if (!token) {
       res.status(401).json({ 
         error: 'Authentication required',
-        message: 'Please log in to access this resource'
+        message: 'Please log in to access this resource (cookie required)'
       });
       return;
     }

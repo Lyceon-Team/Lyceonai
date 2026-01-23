@@ -522,53 +522,48 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
 // POST /api/questions/validate - Secure server-side answer validation (CRITICAL for practice)
 export const validateAnswer = async (req: Request, res: Response) => {
   try {
-    const { questionId, studentAnswer } = req.body;
-    
-    if (!questionId || studentAnswer === undefined || studentAnswer === null) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: questionId and studentAnswer' 
-      });
+    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
+    const authUser = (req as any).authUser || req.user;
+    const userId = authUser?.id;
+    const isAdmin = !!authUser?.isAdmin;
+    const role = authUser?.role || (isAdmin ? 'admin' : 'student');
+    const isGuardian = authUser?.isGuardian || role === 'guardian';
+
+    // Defensive: guardians never get answers
+    if (isGuardian) {
+      return res.status(403).json({ error: 'Guardians are not permitted to validate answers.' });
     }
 
-    // Fetch the question with answers (server-side only)
-    // NOTE: question_type is the AUTHORITATIVE source of truth for mode
+    // Validate input
+    const { questionId, studentAnswer } = req.body;
+    if (!questionId || studentAnswer === undefined || studentAnswer === null) {
+      return res.status(400).json({ error: 'Missing required fields: questionId and studentAnswer' });
+    }
+
+    // Fetch the question
     const { data, error } = await supabaseServer
       .from('questions')
-      .select(`
-        id,
-        question_type,
-        type,
-        answer_choice,
-        answer_text,
-        answer,
-        explanation
-      `)
+      .select(`id, question_type, type, answer_choice, answer_text, answer, explanation`)
       .eq('id', questionId)
       .limit(1)
       .single();
-
     if (error || !data) {
       console.error('Error fetching question for validation:', error);
       return res.status(404).json({ error: 'Question not found' });
     }
-
     const question = data;
-    let isCorrect = false;
+    let isCorrect: boolean | null = null;
     let feedback = '';
     let correctAnswerKey: string | null = null;
     let mode: 'mc' | 'fr' = 'mc';
 
-    // STEP 1: Derive mode EXCLUSIVELY from question_type column (source of truth)
-    // question_type values: 'multiple_choice' | 'free_response'
+    // Derive mode
     const qt = (question.question_type ?? '').trim().toLowerCase();
-    
     if (qt === 'multiple_choice') {
       mode = 'mc';
     } else if (qt === 'free_response') {
       mode = 'fr';
     } else {
-      // FALLBACK for legacy rows where question_type is null/empty:
-      // Use old heuristics based on type/answer_choice fields
       if (question.type === 'mc' || (!question.type && question.answer_choice)) {
         mode = 'mc';
       } else if (question.type === 'fr' || (!question.type && !question.answer_choice)) {
@@ -579,68 +574,74 @@ export const validateAnswer = async (req: Request, res: Response) => {
       }
     }
 
-    // STEP 2 & 3: Validate based on determined mode
+    // Only admins can always see correct answer/explanation
+    let canSeeAnswer = false;
+    let canSeeExplanation = false;
+    if (isAdmin) {
+      canSeeAnswer = true;
+      canSeeExplanation = true;
+    } else {
+      // For students, require a verified submission (answer_attempt exists for this user/question)
+      if (userId) {
+        const { data: attempt } = await supabaseServer
+          .from('answer_attempts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('question_id', questionId)
+          .limit(1)
+          .single();
+        if (attempt) {
+          canSeeAnswer = true;
+          canSeeExplanation = true;
+        }
+      }
+    }
+
+    // Validate answer
     if (mode === 'mc') {
-      // Multiple Choice validation
-      // Use 'answer' column as source of truth for the correct letter key (A/B/C/D)
       const rawKey = question.answer ?? question.answer_choice ?? null;
-      
       if (!rawKey) {
         console.warn(`[VALIDATE] MC Question ${questionId} has no correct answer configured`);
-        return res.status(400).json({ error: 'Question has no correct answer configured' });
+        feedback = 'Question has no correct answer configured.';
+        isCorrect = null;
+      } else {
+        correctAnswerKey = String(rawKey).trim().toUpperCase();
+        const studentKey = String(studentAnswer ?? '').trim().toUpperCase();
+        isCorrect = !!correctAnswerKey && studentKey === correctAnswerKey;
+        feedback = isCorrect ? 'Correct!' : 'Incorrect.';
       }
-      
-      // correctAnswerKey is the letter (A, B, C, D, etc.) - always uppercase
-      correctAnswerKey = String(rawKey).trim().toUpperCase();
-      const studentKey = String(studentAnswer ?? '').trim().toUpperCase();
-      
-      isCorrect = !!correctAnswerKey && studentKey === correctAnswerKey;
-      feedback = isCorrect ? 'Correct!' : 'Incorrect.';
-        
+      // Only return correctAnswerKey if allowed
+      if (!canSeeAnswer) correctAnswerKey = null;
     } else {
-      // Free Response validation (mode === 'fr')
-      // SECURITY: correctAnswerKey MUST be null for FR - never leak the answer
+      // Free Response
       const rawAnswer = question.answer_text ?? question.answer ?? null;
-      
       if (!rawAnswer) {
-        console.warn(`[VALIDATE] FR Question ${questionId} has no correct answer configured`);
-        isCorrect = false;
-        feedback = 'Incorrect.';
+        feedback = 'Question has no correct answer configured.';
+        isCorrect = null;
       } else {
         const normalizedStudent = String(studentAnswer ?? '').trim().toLowerCase();
         const normalizedCorrect = String(rawAnswer).trim().toLowerCase();
-        
         isCorrect = normalizedStudent === normalizedCorrect;
         feedback = isCorrect ? 'Correct!' : 'Incorrect.';
       }
-      
-      // SECURITY: Never leak FR answer in any response field
-      correctAnswerKey = null;
+      correctAnswerKey = null; // Never leak FR answer
     }
 
-    // Response with validation result
-    // SECURITY: correctAnswerKey is only set for MC questions, always null for FR
+    // Response: only include explanation if allowed
     res.json({
       questionId,
       mode,
       isCorrect,
       correctAnswerKey,
       feedback,
-      explanation: question.explanation ?? null,
+      explanation: canSeeExplanation ? (question.explanation ?? null) : null,
     });
 
-    console.log(`📝 Answer validation: Question ${questionId}, Mode: ${mode}, Correct: ${isCorrect}`);
-
+    console.log(`📝 Answer validation: Question ${questionId}, Mode: ${mode}, Correct: ${isCorrect}, User: ${userId}, Admin: ${isAdmin}, Verified: ${canSeeAnswer}`);
   } catch (error) {
     console.error('Error validating answer:', error);
-
-    const message =
-      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
-
-    res.status(500).json({
-      error: 'Failed to validate answer',
-      detail: message,
-    });
+    const message = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+    res.status(500).json({ error: 'Failed to validate answer', detail: message });
   }
 };
 

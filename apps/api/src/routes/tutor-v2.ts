@@ -70,20 +70,11 @@ function summarizeQuestionNaturally(q: QuestionContext): string {
   const shortStem = stem.length > 150 ? stem.slice(0, 150) + "..." : stem;
   
   let summary = `The question asks: "${shortStem}"`;
-  
   if (q.options && q.options.length > 0) {
     const optionList = q.options.map(o => `${o.key}) ${o.text}`).join(", ");
     summary += ` The answer choices are: ${optionList}.`;
   }
-  
-  if (q.answer) {
-    summary += ` The correct answer is ${q.answer}.`;
-  }
-  
-  if (q.explanation) {
-    summary += ` Here's why: ${q.explanation}`;
-  }
-  
+  // Do NOT include answer or explanation here; handled by reveal policy in handler
   return summary;
 }
 
@@ -216,9 +207,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const { userId, message, mode, canonicalQuestionId, testCode, sectionCode } = parsed.data;
-
     console.log(`🎓 [TUTOR-V2] Request from ${userId}, mode: ${mode}`);
-
     const ragService = getRagService();
     const ragRequest: RagQueryRequest = {
       userId,
@@ -228,10 +217,40 @@ router.post("/", async (req: Request, res: Response) => {
       testCode,
       sectionCode,
     };
-
     const ragResult = await ragService.handleRagQuery(ragRequest);
     const { context } = ragResult;
-    const { primaryQuestion, supportingQuestions, competencyContext, studentProfile } = context;
+    let { primaryQuestion, supportingQuestions, competencyContext, studentProfile } = context;
+
+    // ========== REVEAL POLICY ENFORCEMENT ========== //
+    // Only allow answer/explanation if admin or verified submission exists
+    let canReveal = false;
+    let isAdmin = false;
+    // Admin check: treat userId 'admin' or with special tag as admin (customize as needed)
+    if (userId && (userId === 'admin' || userId.startsWith('admin|'))) {
+      isAdmin = true;
+      canReveal = true;
+    } else if (userId && primaryQuestion?.canonicalId) {
+      // Check for verified submission (answer_attempt exists)
+      const { data: attempt } = await supabaseServer
+        .from('answer_attempts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('question_id', primaryQuestion.canonicalId)
+        .limit(1)
+        .single();
+      if (attempt) {
+        canReveal = true;
+      }
+    }
+    // Remove answer/explanation if not allowed
+    if (primaryQuestion && !canReveal) {
+      primaryQuestion = { ...primaryQuestion, answer: null, explanation: null };
+    }
+    // Also scrub supporting questions if needed (defensive)
+    if (!canReveal) {
+      supportingQuestions = supportingQuestions.map(q => ({ ...q, answer: null, explanation: null }));
+    }
+    // ========== END REVEAL POLICY ========== //
 
     const prompt = buildTutorPrompt(
       message,

@@ -319,6 +319,21 @@ router.post("/answer", requireSupabaseAuth, async (req, res) => {
 
   const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs } = parsed.data;
 
+  // --- ENFORCE SESSION OWNERSHIP ---
+  // Load session and verify user_id matches authenticated user
+  const { data: sessionRow, error: sessionErr } = await supabaseServer
+    .from("practice_sessions")
+    .select("id, user_id")
+    .eq("id", sessionId)
+    .single();
+  if (sessionErr || !sessionRow) {
+    return res.status(404).json({ error: "session_not_found", message: "Practice session not found", requestId });
+  }
+  if (sessionRow.user_id !== userId) {
+    return res.status(403).json({ error: "forbidden", message: "Session does not belong to this user", requestId });
+  }
+  // --- END SESSION OWNERSHIP CHECK ---
+
   // Fetch canonical answer + explanation from DB
   const { data: qRow, error: qErr } = await supabaseServer
     .from("questions")
