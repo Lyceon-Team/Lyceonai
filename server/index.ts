@@ -18,7 +18,7 @@ import rateLimit from "express-rate-limit";
 import { ingest } from "../apps/api/src/routes/ingest";
 import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
-import tutorV2Router from "../apps/api/src/routes/tutor-v2";
+import tutorV2Router from "./routes/tutor-v2";
 // Ingestion v3 (LLM-based) Routes - v2 endpoints are soft-disabled (410 Gone)
 import {
   ingestLlm,
@@ -36,11 +36,11 @@ import {
   getQuestionStats,
   getQuestionsFeed,
   getRecentQuestions,
-  validateAnswer,
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
 } from "../apps/api/src/routes/questions";
+import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
   approveQuestion,

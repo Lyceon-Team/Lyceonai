@@ -24,12 +24,12 @@ const ALLOWED_AUTH_COOKIES = ['sb-access-token', 'sb-refresh-token'] as const;
 /**
  * SHARED AUTH HELPER: Extract access token from request
  * Used by practice endpoints, auth debug, and health check
- * 
- * Priority:
- * 1. Authorization header (case-insensitive "Bearer")
- * 2. Exactly 'sb-access-token' cookie (strict matching)
- * 
+ *
  * SECURITY: Only accepts exact cookie names to prevent stale/legacy cookies from breaking auth
+ *
+ * ENFORCED: For user-facing auth, tokens MUST come from httpOnly cookies only.
+ * Any Authorization: Bearer header is rejected for user-facing routes.
+ * Internal bearer usage must NOT use this function.
  */
 export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
   const result: TokenResolutionResult = {
@@ -45,26 +45,22 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
   const cookies = req.cookies || {};
   result.cookieKeys = Object.keys(cookies);
 
-  // 1. Try Authorization header (case-insensitive)
+  // Reject Authorization: Bearer for user-facing auth
   const authHeader = req.headers.authorization || req.headers['Authorization'] as string || req.get('authorization');
   result.authHeaderPresent = !!authHeader;
-
   if (authHeader && typeof authHeader === 'string') {
     const lowerHeader = authHeader.toLowerCase();
     if (lowerHeader.startsWith('bearer ')) {
-      const bearerToken = authHeader.slice(7).trim();
-      if (bearerToken.length >= 20) {
-        result.token = bearerToken;
-        result.tokenSource = 'bearer';
-        result.tokenLength = bearerToken.length;
-        result.bearerParsed = true;
-        return result;
-      }
+      // Explicitly reject Bearer tokens for user-facing auth
+      result.bearerParsed = true;
+      result.tokenSource = 'bearer';
+      result.token = null;
+      result.tokenLength = 0;
+      return result;
     }
   }
 
-  // 2. STRICT: Only accept exactly 'sb-access-token' cookie
-  // This prevents stale/legacy cookies from interfering with auth
+  // STRICT: Only accept exactly 'sb-access-token' cookie
   const accessToken = cookies['sb-access-token'];
   if (typeof accessToken === 'string' && accessToken.length >= 20) {
     result.token = accessToken;
