@@ -15,6 +15,11 @@ import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
+// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, ingestion, embeddings, etc.).
+// apps/api MUST NOT be mounted for user-facing routes:
+//   - /api/questions/validate
+//   - /api/tutor/v2
+//   - auth token resolution / requireSupabaseAuth
 import { ingest } from "../apps/api/src/routes/ingest";
 import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
