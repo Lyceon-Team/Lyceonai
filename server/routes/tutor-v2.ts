@@ -9,8 +9,8 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 
 const router = Router();
 
+// userId must NOT be accepted from body; always derive from req.user.id
 const TutorV2RequestSchema = z.object({
-  userId: z.string(),
   message: z.string().min(1).max(2000),
   mode: z.enum(["question", "concept", "strategy"]).default("concept"),
   canonicalQuestionId: z.string().optional(),
@@ -162,6 +162,9 @@ Now respond as the tutor in a warm, helpful tone:`;
 router.post("/", async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
+    // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
     const parsed = TutorV2RequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -169,7 +172,7 @@ router.post("/", async (req: Request, res: Response) => {
         details: parsed.error.flatten()
       });
     }
-    const { userId, message, mode, canonicalQuestionId, testCode, sectionCode } = parsed.data;
+    const { message, mode, canonicalQuestionId, testCode, sectionCode } = parsed.data;
     const ragService = getRagService();
     const ragRequest: RagQueryRequest = {
       userId,

@@ -392,6 +392,18 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
       return res.status(400).json({ error: 'eventType must be correct, incorrect, or skipped' });
     }
 
+    // ENFORCEMENT: If sessionId is provided, validate session ownership
+    if (sessionId) {
+      const { data: session, error: sessionError } = await supabaseServer
+        .from('practice_sessions')
+        .select('id, user_id')
+        .eq('id', sessionId)
+        .single();
+      if (sessionError || !session || session.user_id !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden: session does not belong to user' });
+      }
+    }
+
     const { data: question, error: qError } = await supabaseServer
       .from('questions')
       .select('id, section, unit_tag, competencies, tags')
