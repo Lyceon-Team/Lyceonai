@@ -1,22 +1,25 @@
-import { describe, it, expect, vi } from 'vitest';
-import * as tutorV2Module from '../server/routes/tutor-v2';
-import * as ragServiceModule from '../../apps/api/src/lib/rag-service';
-import * as profileServiceModule from '../../apps/api/src/lib/profile-service';
-import * as tutorLogModule from '../../apps/api/src/lib/tutor-log';
-import * as progressModule from '../../apps/api/src/routes/progress';
-import * as supabaseServerModule from '../../apps/api/src/lib/supabase-server';
 
+import { describe, it, expect, vi } from 'vitest';
+
+// ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
   it('tutor_v2_userid_ignored_from_body', async () => {
     vi.resetModules();
-    // Mock downstream dependencies
+    // Mock downstream dependencies before importing the router (ESM-safe)
     const handleRagQueryMock = vi.fn(async (args) => ({ context: {}, metadata: {}, ok: true }));
-    vi.spyOn(ragServiceModule, 'getRagService').mockReturnValue({ handleRagQuery: handleRagQueryMock });
+    vi.doMock('../../apps/api/src/lib/rag-service', () => ({
+      getRagService: () => ({ handleRagQuery: handleRagQueryMock })
+    }));
     const updateStudentStyleMock = vi.fn(async () => true);
-    vi.spyOn(profileServiceModule, 'updateStudentStyle').mockImplementation(updateStudentStyleMock);
+    vi.doMock('../../apps/api/src/lib/profile-service', () => ({
+      updateStudentStyle: updateStudentStyleMock
+    }));
     const logTutorInteractionMock = vi.fn(async () => {});
-    vi.spyOn(tutorLogModule, 'logTutorInteraction').mockImplementation(logTutorInteractionMock);
-
+    vi.doMock('../../apps/api/src/lib/tutor-log', () => ({
+      logTutorInteraction: logTutorInteractionMock
+    }));
+    // Import router after mocks are set
+    const { default: router } = await import('../server/routes/tutor-v2');
     // Prepare request/response mocks
     const req = {
       user: { id: 'real-user' },
@@ -28,7 +31,6 @@ describe('IDOR Regression Invariants', () => {
       json(obj) { this.body = obj; return this; },
     };
     // Find the POST handler
-    const router = tutorV2Module.default;
     const postLayer = router.stack.find(
       (r) => r.route && r.route.path === '/' && r.route.methods.post
     );
@@ -44,24 +46,44 @@ describe('IDOR Regression Invariants', () => {
 
   it('progress_review_attempt_rejects_foreign_session', async () => {
     vi.resetModules();
-    // Mock supabaseServer to return a session owned by someone else
-    const fromMock = vi.fn().mockReturnThis();
-    const selectMock = vi.fn().mockReturnThis();
-    const eqMock = vi.fn().mockReturnThis();
-    const singleMock = vi.fn().mockResolvedValue({ data: { id: 'session-b', user_id: 'not-user-a' }, error: null });
-    supabaseServerModule.supabaseServer = {
-      from: () => ({ select: selectMock, eq: eqMock, single: singleMock }),
-    } as any;
-    // Patch the rest of the supabaseServer chain for questions
-    selectMock.mockReturnThis();
-    eqMock.mockReturnThis();
-    // Patch recordCompetencyEvent to fail if called
+    // ESM-safe: Mock the exact modules as imported in progress.ts
+    // 1. Mock supabaseServer to return a session owned by someone else for practice_sessions
+    const sessionId = 'foreign-session';
+    const userId = 'real-user';
+    const supabaseMock = {
+      from: (table) => {
+        if (table === 'practice_sessions') {
+          return {
+            select: () => ({
+              eq: (col, val) => ({
+                single: async () => ({ data: { id: sessionId, user_id: 'someone-else' }, error: null })
+              })
+            })
+          };
+        }
+        // Any other table: throw to fail test if called unexpectedly
+        throw new Error('Unexpected table: ' + table);
+      }
+    };
+    vi.doMock('../../apps/api/src/lib/supabase-server', () => ({
+      supabaseServer: supabaseMock
+    }));
+    // 2. Mock recordCompetencyEvent to fail if called
     const recordCompetencyEventMock = vi.fn();
-    progressModule.recordCompetencyEvent = recordCompetencyEventMock;
+    vi.doMock('../../apps/api/src/routes/progress', async () => {
+      // Import the real module to spread all other exports
+      const actual = await vi.importActual('../../apps/api/src/routes/progress');
+      return {
+        ...actual,
+        recordCompetencyEvent: recordCompetencyEventMock
+      };
+    });
+    // Import after mocks
+    const { recordReviewAttempt } = await import('../../apps/api/src/routes/progress');
     // Prepare request/response mocks
     const req = {
-      user: { id: 'user-a' },
-      body: { questionId: 'q1', eventType: 'correct', sessionId: 'session-b' },
+      user: { id: userId },
+      body: { questionId: 'q1', eventType: 'correct', sessionId },
     };
     let statusCode = 0;
     let jsonBody = null;
@@ -69,7 +91,7 @@ describe('IDOR Regression Invariants', () => {
       status(code) { statusCode = code; return this; },
       json(obj) { jsonBody = obj; return this; },
     };
-    await progressModule.recordReviewAttempt(req as any, res as any);
+    await recordReviewAttempt(req, res);
     expect(statusCode).toBe(403);
     expect(recordCompetencyEventMock).not.toHaveBeenCalled();
   });
