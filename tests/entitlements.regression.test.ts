@@ -39,13 +39,16 @@ describe('Entitlement/Auth Regression Invariants', () => {
     expect([401, 403]).toContain(res.status);
   });
 
-  // For rag_v2_userid_ignored_from_body, we cannot easily mock cookie auth, so we unit test the handler
   it('rag_v2_userid_ignored_from_body', async () => {
-    // Import the handler directly
+    vi.resetModules();
+    const handleRagQueryMock = vi.fn(async (args) => ({ ok: true, args }));
+    vi.mock('../lib/rag-service', () => ({
+      getRagService: () => ({ handleRagQuery: handleRagQueryMock }),
+    }));
     const ragV2Router = (await import('../apps/api/src/routes/rag-v2')).default;
     const req: any = {
       user: { id: 'real-user' },
-      body: { userId: 'victim', message: 'hi', mode: 'concept' },
+      body: { userId: 'victim-id', message: 'hi', mode: 'concept' },
     };
     let statusCode = 0;
     const res: any = {
@@ -53,11 +56,16 @@ describe('Entitlement/Auth Regression Invariants', () => {
       json(obj: any) { this.body = obj; return this; },
     };
     const next = () => {};
-    // Find the POST handler
-    const postHandler = ragV2Router.stack.find((r: any) => r.route && r.route.path === '/' && r.route.methods.post).route.stack[0].handle;
+    const postHandler = ragV2Router.stack.find(
+      (r: any) => r.route && r.route.path === '/' && r.route.methods.post
+    ).route.stack[0].handle;
     await postHandler(req, res, next);
-    // The handler should not set status 400
-    expect(statusCode).not.toBe(400);
+    expect(handleRagQueryMock).toHaveBeenCalledTimes(1);
+    const calledWith = handleRagQueryMock.mock.calls[0][0];
+    expect(calledWith.userId).toBe('real-user');
+    expect(calledWith.userId).not.toBe('victim-id');
+    expect(statusCode).toBeGreaterThanOrEqual(200);
+    expect(statusCode).toBeLessThan(300);
   });
 
   it('admin_db_health_requires_admin', async () => {
