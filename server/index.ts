@@ -287,36 +287,25 @@ app.post("/api/ingest", requireBearer("INGEST_ADMIN_TOKEN"), ingestLimiter, inge
 
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
-app.post("/api/rag", ragLimiter, (req, res, next) => {
-  // Check if user is already authenticated via Supabase (cookie-based)
-  if ((req as any).user) {
-    // Apply CSRF protection for cookie-based auth
-    return csrfProtection(req, res, next);
-  }
+// RAG endpoint - cookie-only auth, no Bearer allowed
+app.post(
+  "/api/rag",
+  ragLimiter,
+  csrfProtection,
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  rag
+);
 
-  // Otherwise, require valid Bearer token (no CSRF needed for Bearer tokens)
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "Provide either Supabase session or Bearer token",
-    });
-  }
-
-  // Extract token and validate it's non-empty
-  const token = authHeader.substring(7).trim();
-  if (!token || token.length === 0) {
-    return res.status(401).json({
-      error: "Invalid Bearer token",
-      message: "Bearer token cannot be empty",
-    });
-  }
-
-  return requireBearer("API_USER_TOKEN")(req, res, next);
-}, rag);
-
-// RAG v2 endpoint - student-aware retrieval with structured context
-app.use("/api/rag/v2", ragLimiter, ragV2Router);
+// RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
+app.use(
+  "/api/rag/v2",
+  ragLimiter,
+  csrfProtection,
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  ragV2Router
+);
 
 // Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
@@ -471,8 +460,8 @@ app.get("/api/admin/ingest-summary", requireBearer("INGEST_ADMIN_TOKEN"), async 
   }
 });
 
-// Admin DB Health Check (read-only, no CSRF, no auth required for operational health)
-app.get("/api/admin/db-health", async (_req, res) => {
+// Admin DB Health Check (requires Supabase admin)
+app.get("/api/admin/db-health", requireSupabaseAdmin, async (_req, res) => {
   try {
     const ok = await testSupabaseHttpConnection();
 

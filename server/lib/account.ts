@@ -1,3 +1,20 @@
+/**
+ * Get guardian link for a specific studentId
+ * Returns { account_id, student_user_id } if linked, else null
+ */
+export async function getGuardianLinkForStudent(guardianProfileId: string, studentId: string): Promise<{ account_id: string, student_user_id: string } | null> {
+  const { data, error } = await supabaseServer
+    .from('guardian_links')
+    .select('account_id, student_user_id')
+    .eq('guardian_profile_id', guardianProfileId)
+    .eq('student_user_id', studentId)
+    .single();
+  if (error && error.code !== 'PGRST116') {
+    console.error('[Account] Failed to get guardian link for student:', error);
+    throw new Error(`Failed to get guardian link: ${error.message}`);
+  }
+  return data || null;
+}
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SupabaseClient } from '@supabase/supabase-js';
 

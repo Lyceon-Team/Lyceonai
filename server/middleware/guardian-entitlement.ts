@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getAccountIdForUser, getEntitlement, getPrimaryGuardianLink, ensureAccountForUser } from '../lib/account';
+import { getAccountIdForUser, getEntitlement, getPrimaryGuardianLink, ensureAccountForUser, getGuardianLinkForStudent } from '../lib/account';
 import { getSupabaseAdmin } from './supabase-auth';
 import { logger } from '../logger';
 
@@ -36,21 +36,36 @@ export async function requireGuardianEntitlement(
   }
 
   try {
-    const link = await getPrimaryGuardianLink(userId);
-    if (!link?.student_user_id) {
-      res.status(403).json({ 
-        error: 'Guardian has no linked student',
-        code: 'NO_LINKED_STUDENT',
-        requestId 
-      });
-      return;
+    let link;
+    let studentId = req.params?.studentId;
+    if (studentId) {
+      // Check guardian is linked to this studentId
+      link = await getGuardianLinkForStudent(userId, studentId);
+      if (!link) {
+        res.status(403).json({
+          error: 'Guardian not linked to requested student',
+          code: 'NO_LINKED_STUDENT',
+          requestId
+        });
+        return;
+      }
+    } else {
+      link = await getPrimaryGuardianLink(userId);
+      if (!link?.student_user_id) {
+        res.status(403).json({
+          error: 'Guardian has no linked student',
+          code: 'NO_LINKED_STUDENT',
+          requestId
+        });
+        return;
+      }
+      studentId = link.student_user_id;
     }
 
     const supabaseAdmin = getSupabaseAdmin();
-    const studentAccountId = await ensureAccountForUser(supabaseAdmin, link.student_user_id, 'student');
-    
+    const studentAccountId = await ensureAccountForUser(supabaseAdmin, studentId, 'student');
     if (!studentAccountId) {
-      logger.warn('GUARDIAN_ENTITLEMENT', 'no_account', 'Guardian linked student has no account', { userId, studentId: link.student_user_id, requestId });
+      logger.warn('GUARDIAN_ENTITLEMENT', 'no_account', 'Guardian linked student has no account', { userId, studentId, requestId });
       res.status(402).json({
         error: 'Subscription required',
         code: 'PAYMENT_REQUIRED',

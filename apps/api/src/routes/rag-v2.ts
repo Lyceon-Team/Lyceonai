@@ -70,8 +70,27 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(500).json({
       error: 'RAG v2 request failed',
       message: error.message || String(error),
-    });
-  }
-});
-
-export default router;
+        const ragService = getRagService();
+        // Always use req.user.id for userId, ignore body.userId
+        const userId = req.user?.id || 'anonymous';
+        const response = await ragService.handleRagQuery({
+          userId,
+          message: validation.data.message || '',
+          mode: validation.data.mode || 'concept',
+          canonicalQuestionId: validation.data.canonicalQuestionId,
+          testCode: validation.data.testCode,
+          sectionCode: validation.data.sectionCode,
+          studentProfile: validation.data.studentProfile ? {
+            userId,
+            overallLevel: validation.data.studentProfile.overallLevel,
+            competencyMap: validation.data.studentProfile.competencyMap as Record<string, { correct?: number; incorrect?: number; total?: number; masteryLevel?: number }>,
+            recentQuestions: validation.data.studentProfile.recentQuestions?.map(q => ({
+              canonicalId: q.canonicalId,
+              correct: q.correct,
+              timestamp: q.timestamp,
+            })),
+            primaryStyle: validation.data.studentProfile.primaryStyle,
+            secondaryStyle: validation.data.studentProfile.secondaryStyle,
+          } : undefined,
+          topK: validation.data.topK,
+        });
