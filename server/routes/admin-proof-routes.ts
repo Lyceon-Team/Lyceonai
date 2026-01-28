@@ -6,6 +6,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { csrfGuard } from '../middleware/csrf';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/ingestion/types/supabaseQuestionsRow';
 
@@ -17,36 +18,16 @@ function getSupabaseProjectRef(): string {
   return match ? match[1] : 'unknown';
 }
 
-function isAuthorized(req: Request): boolean {
-  const authHeader = req.headers.authorization;
-  const adminToken = process.env.INGEST_ADMIN_TOKEN;
-  
-  if (authHeader && adminToken) {
-    const token = authHeader.replace('Bearer ', '');
-    if (token === adminToken) {
-      return true;
-    }
-  }
-  
-  const supabaseUser = (req as any).supabaseUser;
-  if (supabaseUser?.role === 'admin') {
-    return true;
-  }
-  
-  return false;
-}
+
+// All routes are now protected by requireSupabaseAdmin upstream. No bearer or isAuthorized logic remains.
+const csrfProtection = csrfGuard();
 
 /**
  * GET /api/admin/proof/questions
  * Returns proof that questions exist in Supabase
  */
-router.get('/questions', async (req: Request, res: Response) => {
-  if (!isAuthorized(req)) {
-    return res.status(401).json({ 
-      error: 'Unauthorized',
-      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
-    });
-  }
+
+router.get('/questions', async (_req: Request, res: Response) => {
 
   try {
     const { count, error: countError } = await supabaseServer
@@ -98,13 +79,8 @@ router.get('/questions', async (req: Request, res: Response) => {
  * POST /api/admin/proof/insert-smoke
  * Insert ONE smoke test row to verify write path works
  */
-router.post('/insert-smoke', async (req: Request, res: Response) => {
-  if (!isAuthorized(req)) {
-    return res.status(401).json({ 
-      error: 'Unauthorized',
-      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
-    });
-  }
+
+router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response) => {
 
   try {
     const timestamp = Date.now();
@@ -174,13 +150,8 @@ router.post('/insert-smoke', async (req: Request, res: Response) => {
  * DELETE /api/admin/proof/cleanup-smoke
  * Delete smoke test rows (optional cleanup)
  */
-router.delete('/cleanup-smoke', async (req: Request, res: Response) => {
-  if (!isAuthorized(req)) {
-    return res.status(401).json({ 
-      error: 'Unauthorized',
-      message: 'Provide INGEST_ADMIN_TOKEN as Bearer token or be a Supabase admin'
-    });
-  }
+
+router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Response) => {
 
   try {
     const { data, error } = await supabaseServer
