@@ -49,9 +49,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-<<<<<<< HEAD
       - name: Security Regression Tests
         run: pnpm run test:security
-=======
-  
->>>>>>> 08cff06b3ea85eda35847a1fa2815d15d933b1e1
