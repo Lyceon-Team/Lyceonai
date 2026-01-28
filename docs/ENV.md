@@ -47,7 +47,7 @@ The following environment variables are **required** for the MVP. Missing variab
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# PostgreSQL (provided by Replit)
+# PostgreSQL (provided by Github env)
 DATABASE_URL=postgresql://...
 ```
 
@@ -149,4 +149,4 @@ nano .env.local
 
 ## Production
 
-Set all required variables in your deployment platform (Replit Secrets, etc).
+Set all required variables in your deployment platform (Github Secrets, etc).
