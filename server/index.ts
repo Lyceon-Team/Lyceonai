@@ -53,7 +53,7 @@ import {
   getParsingStatistics,
 } from "./admin-review-routes";
 import { analyzeQuestion } from "./routes/student-routes";
-import { requireBearer } from "../apps/api/src/middleware/bearer-auth";
+// import { requireBearer } from "../apps/api/src/middleware/bearer-auth"; // No longer needed for admin-proof/ingest-summary
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -397,10 +397,21 @@ app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRec
 app.use("/api/admin", adminStatsRoutes);
 
 // Admin Proof Routes - "No More Lying" layer for verification
-app.use("/api/admin/proof", adminProofRoutes);
+// Enforce cookie-admin only for admin-proof routes
+app.use(
+  "/api/admin/proof",
+  requireSupabaseAuth,
+  requireSupabaseAdmin,
+  adminProofRoutes
+);
 
 // STEP 4: Ingestion Quality Summary endpoint
-app.get("/api/admin/ingest-summary", requireBearer("INGEST_ADMIN_TOKEN"), async (_req, res) => {
+// Enforce cookie-admin only for ingest-summary
+app.get(
+  "/api/admin/ingest-summary",
+  requireSupabaseAuth,
+  requireSupabaseAdmin,
+  async (_req, res) => {
   try {
     // Get the last 50 questions for completeness analysis
     const { data: recentQuestions, error: questionsError } = await supabaseServer
