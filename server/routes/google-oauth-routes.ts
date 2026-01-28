@@ -38,10 +38,7 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const isProduction = process.env.NODE_ENV === 'production';
 
 function getSiteUrl(): string {
-  let raw = process.env.PUBLIC_SITE_URL || '';
-  if (!raw && process.env.REPLIT_DEV_DOMAIN) {
-    raw = `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  }
+  const raw = process.env.PUBLIC_SITE_URL || '';
   return raw.replace(/\/$/, '');
 }
 

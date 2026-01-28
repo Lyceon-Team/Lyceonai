@@ -38,7 +38,7 @@ The Guardian feature enables parents to monitor their child's SAT prep progress 
 Every user has an associated Lyceon account for billing and entitlement tracking. This involves tables for accounts, memberships, entitlements, and daily usage, with helper functions for managing these entities and checking usage limits.
 
 ## Guardian Subscription & Billing
-Parent access to student monitoring features requires a paid subscription integrated with Stripe using `stripe-replit-sync` for schema management and webhook processing. Billing routes, a paywall component, and configurable pricing tiers are implemented, supporting multiple accounts for guardians.
+Parent access to student monitoring features requires a paid subscription integrated with Stripe for schema management and webhook processing. Billing routes, a paywall component, and configurable pricing tiers are implemented, supporting multiple accounts for guardians.
 
 ## Canonical Practice System
 All practice flows use a unified canonical API with deterministic question selection and no repeats within a session. A single `use-adaptive-practice.ts` hook provides core functionality. Database hardening ensures unique constraints, efficient indexing, RLS, and foreign key integrity.
@@ -58,8 +58,7 @@ All date bucketing uses Luxon IANA timezone patterns to ensure correct local day
 ## Dashboard Architecture
 The dashboard is entirely deterministic, sourcing all UI values from calendar and progress APIs, displaying today's focus, score projection, and weekly KPIs.
 
-## Deployment
-The application is configured for deployment using Replit Autoscale.
+
 
 # External Dependencies
 

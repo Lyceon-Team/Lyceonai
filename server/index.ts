@@ -82,8 +82,7 @@ import accountRoutes from "./routes/account-routes";
 import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
-import { runMigrations } from "stripe-replit-sync";
-import { getStripeSync } from "./lib/stripeClient";
+// ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 

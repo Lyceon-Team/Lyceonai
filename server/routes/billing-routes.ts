@@ -231,7 +231,7 @@ if (!customerId) {
         payer_role: role,
         ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
         plan,
-        environment: process.env.REPLIT_DEPLOYMENT === '1' ? 'production' : 'development',
+        environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
       },
       client_reference_id: accountId,
       subscription_data: {
