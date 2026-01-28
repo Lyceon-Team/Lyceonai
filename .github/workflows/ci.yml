@@ -1,5 +1,24 @@
 name: CI
 
+env:
+  CI: true
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+  STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+  CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+  CSRF_ALLOWED_ORIGINS: ${{ secrets.CSRF_ALLOWED_ORIGINS }}
+  SITE_URL: ${{ secrets.SITE_URL }}
+  PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+  BASE_URL: ${{ secrets.BASE_URL }}
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
 on:
   pull_request:
   push:
