@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "ingest:dev": "tsx server/scripts/run-ingestion-dev.ts",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
-    "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts"
+    "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
+    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts"
   },
   "dependencies": {
     "@auth/core": "^0.34.2",
