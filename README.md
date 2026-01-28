@@ -320,6 +320,20 @@ curl -f http://localhost:5000/healthz || exit 1
 
 See the full runbook here: [docs/SECURITY_RUNBOOK.md](docs/SECURITY_RUNBOOK.md)
 
+## Security Regression Tests
+
+To run the security regression tests locally (PowerShell):
+
+```powershell
+# From the project root
+pnpm install
+pnpm run test:security
+```
+
+- These tests are deterministic and do not require Codespaces.
+- Ensure your `.env` contains valid SUPABASE_URL and GEMINI_API_KEY for full test coverage.
+- Only the security regression tests are run in CI (see .github/workflows/ci.yml).
+
 ## Score Projection Engine
 
 The Score Projection Engine calculates estimated SAT scores using College Board domain weights and student mastery data.
