@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "prebuild": "rm -rf dist client/dist",
+    "prebuild": "rimraf dist client/dist",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
     "postbuild": "! grep -RIn 'cdn.jsdelivr.net/npm/katex' dist public client/dist 2>/dev/null || (echo 'FOUND CDN KATEX - FAIL' && exit 1)",
     "start": "NODE_ENV=production node dist/index.js",
@@ -137,6 +137,7 @@
     "jest": "^30.2.0",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.6",
+    "rimraf": "^6.1.2",
     "supertest": "^7.2.2",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
