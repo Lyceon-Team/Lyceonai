@@ -6,7 +6,7 @@ This guide explains how to migrate your SAT Learning Copilot from Neon PostgreSQ
 
 ## Prerequisites
 
-**Required Secrets in Replit:**
+**Required Secrets in Github:**
 - `SUPABASE_URL` ✅ (already set)
 - `SUPABASE_ANON_KEY` ✅ (already set)
 - `SUPABASE_SERVICE_ROLE_KEY` ✅ (already set)

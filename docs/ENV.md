@@ -37,6 +37,8 @@ GOOGLE_CLIENT_SECRET=...
 INGEST_ADMIN_TOKEN=your_secret_admin_token_here
 
 # All user-facing endpoints use Supabase cookie auth only (no Bearer tokens)
+# PostgreSQL (provided by Github env)
+DATABASE_URL=postgresql://...
 ```
 
 
@@ -142,3 +144,4 @@ Set all required variables as GitHub Actions Secrets or in your cloud provider's
 ## Production
 
 Set all required variables in your deployment platform (Replit Secrets, etc).
+Set all required variables in your deployment platform (Github Secrets, etc).
