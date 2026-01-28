@@ -1,55 +1,47 @@
-# Environment Variables - MVP Architecture
 
-## Bearer Token Authentication (New MVP Model)
+# Environment Variables - GitHub Native
 
-The MVP uses simple Bearer token authentication instead of the previous Supabase Auth/NextAuth system.
+All secrets and environment variables should be managed via GitHub Actions Secrets (for CI/CD) and a local `.env` file (for development). No Replit or third-party secret connectors are used.
 
-### Required Tokens
+## Required Variables
 
-```bash
-# Admin endpoints (POST /api/ingest)
-INGEST_ADMIN_TOKEN=your_secret_admin_token_here
-
-# User endpoints (POST /api/rag)
-API_USER_TOKEN=your_secret_user_token_here
-```
-
-**Security Notes:**
-- If not set, defaults to `"changeme"` for development only
-- **Never use default tokens in production**
-- Generate strong tokens: `openssl rand -hex 32`
-- Rotate tokens regularly
-
-### Usage
+Set the following in your `.env` file (for local dev) or as GitHub Secrets (for production):
 
 ```bash
-# Ingest requests (admin)
-curl -X POST http://localhost:5000/api/ingest \
-  -H "Authorization: Bearer $INGEST_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '[...]'
+# Core
+DATABASE_URL=postgresql://...
+NODE_ENV=development|production
+SITE_URL=https://lyceon.ai
+PUBLIC_SITE_URL=https://lyceon.ai
 
-# RAG requests (user)
-curl -X POST http://localhost:5000/api/rag \
-  -H "Authorization: Bearer $API_USER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"...","topK":5}'
-```
-
-## Core Required Variables
-
-The following environment variables are **required** for the MVP. Missing variables will be logged as warnings but use defaults.
-
-### Core Infrastructure
-
-```bash
-# Supabase Database & Vector Search
+# Supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_ANON_KEY=your-anon-key
 
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_PARENT_MONTHLY=...
+STRIPE_PRICE_PARENT_QUARTERLY=...
+STRIPE_PRICE_PARENT_YEARLY=...
+
+# Google / Gemini
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GEMINI_API_KEY=...
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+# Admin tokens (for internal endpoints only)
+INGEST_ADMIN_TOKEN=your_secret_admin_token_here
+
+# All user-facing endpoints use Supabase cookie auth only (no Bearer tokens)
 # PostgreSQL (provided by Github env)
 DATABASE_URL=postgresql://...
 ```
+
+
 
 ### AI Services
 
@@ -135,18 +127,21 @@ Example error output:
   - SUPABASE_URL: SUPABASE_URL must be a valid URL
 ```
 
+
 ## Local Development
 
-Create `.env.local`:
+Copy `.env.example` to `.env` and fill in your credentials:
 
 ```bash
-# Copy from .env.example
-cp .env.example .env.local
-
-# Edit with your credentials
-nano .env.local
+cp server/.env.example .env
+# Edit .env with your secrets
 ```
 
 ## Production
 
+Set all required variables as GitHub Actions Secrets or in your cloud provider's environment configuration. No Replit or third-party secret connectors are used.
+
+## Production
+
+Set all required variables in your deployment platform (Replit Secrets, etc).
 Set all required variables in your deployment platform (Github Secrets, etc).

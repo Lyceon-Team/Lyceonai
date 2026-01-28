@@ -126,9 +126,9 @@ if (!authLoading && !user) {
 **File**: `server/index.ts` (lines 101-126)
 
 Development mode allows:
-- Replit domain (http/https)
-- localhost:5000 (http/https)
-- 127.0.0.1:5000 (http/https)
+  - lyceon.ai (https)
+  - localhost:5000 (http/https)
+  - 127.0.0.1:5000 (http/https)
 
 Production mode:
 - Only explicitly configured ALLOWED_ORIGINS

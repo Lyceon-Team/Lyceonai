@@ -16,14 +16,14 @@ An AI-powered SAT practice application with RAG (Retrieval-Augmented Generation)
 - **Backend**: Express.js + TypeScript
 - **Database**: PostgreSQL (Neon) + Supabase (vector search)
 - **AI/ML**: Google Gemini + OpenAI embeddings
-- **Auth**: Local authentication + optional NextAuth.js
+- **Auth**: Supabase authentication (cookie-based, no Bearer tokens)
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+ or 20+
-- PostgreSQL database (provided by Replit)
+- PostgreSQL database (Neon, Supabase, or self-hosted)
 - API keys for Gemini and OpenAI (optional for local development)
 
 ### Environment Variables
@@ -45,10 +45,7 @@ EMBEDDINGS_MODEL=text-embedding-3-small  # Embedding model to use
 SUPABASE_URL=https://...
 SUPABASE_SERVICE_ROLE_KEY=...
 
-# Authentication
-NEXTAUTH_ENABLED=true                # Enable NextAuth.js (default: false, uses local auth only)
-NEXTAUTH_SECRET=...                  # Required if NEXTAUTH_ENABLED=true
-NEXTAUTH_URL=http://localhost:5000   # Required if NEXTAUTH_ENABLED=true
+
 
 # Security
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5000  # CORS origins (comma-separated)
@@ -96,7 +93,7 @@ Returns system health status and diagnostics. This endpoint works even if the da
   "dbReachable": true,
   "hasSupabase": true,
   "embeddingsModel": "text-embedding-3-small",
-  "nextAuthEnabled": false
+
 }
 ```
 
@@ -110,7 +107,7 @@ Returns system health status and diagnostics. This endpoint works even if the da
 - `dbReachable`: Whether database connection is working
 - `hasSupabase`: Whether Supabase is configured
 - `embeddingsModel`: Active embeddings model
-- `nextAuthEnabled`: Whether NextAuth.js is enabled
+
 
 #### `/api/health` - Legacy Health Check
 Returns configuration details:
@@ -156,12 +153,7 @@ The app supports flexible authentication:
 - Username/password authentication
 - Session-based with PostgreSQL storage
 
-**NextAuth.js (Optional)**
-- Enable with `NEXTAUTH_ENABLED=true`
-- Requires `NEXTAUTH_SECRET` and `NEXTAUTH_URL`
-- Supports OAuth providers (Google, etc.)
 
-Both modes can coexist - local auth is always available as fallback.
 
 ### Security Features
 
@@ -392,3 +384,5 @@ Returns:
 ## License
 
 MIT
+
+- `projection.math`: Math section score (200-800)
