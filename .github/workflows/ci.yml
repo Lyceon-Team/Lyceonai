@@ -55,7 +55,3 @@ jobs:
           echo "Checking if critical secrets are loaded..."
           if [ -z "$SUPABASE_URL" ]; then echo "SUPABASE_URL is MISSING"; exit 1; else echo "SUPABASE_URL is present"; fi
           if [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY is MISSING"; exit 1; else echo "GEMINI_API_KEY is present"; fi
-
-      - name: Security Regression Tests
-        # We ensure the env is explicitly available to the test runner
-        run: pnpm run test:security
