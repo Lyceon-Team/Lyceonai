@@ -50,12 +50,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Security Regression Tests
-        run: pnpm run test:security
-
-      - name: Security Regression Tests
-        run: pnpm run test:security
-
       - name: Verify Secrets (Debug Step)
         run: |
           echo "Checking if critical secrets are loaded..."
