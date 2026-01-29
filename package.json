@@ -17,7 +17,8 @@
     "packageManager": "pnpm@10.28.1"
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
-    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts"
+    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
+    "audit:no-ingest": "rg -n --color=always 'api/ingest|ingestion-v4|ingest-llm' server apps | (grep . && (echo 'Ingest code found!' && exit 1) || exit 0)"
   },
   "dependencies": {
     "@auth/core": "^0.34.2",
