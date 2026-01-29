@@ -51,3 +51,7 @@ jobs:
 
       - name: Security Regression Tests
         run: pnpm run test:security
+
+      - name: Security Regression Tests
+        run: pnpm run test:security
+
