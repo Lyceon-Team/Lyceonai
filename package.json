@@ -81,7 +81,7 @@
     "katex": "^0.16.27",
     "lucide-react": "^0.453.0",
     "luxon": "^3.7.2",
-    "packageManager": "pnpm@10.28.1"
+    "packageManager": "pnpm@10.28.1",
     "p-limit": "^7.1.1",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
