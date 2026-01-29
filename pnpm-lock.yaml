@@ -14,9 +14,6 @@ importers:
       '@auth/drizzle-adapter':
         specifier: ^1.10.0
         version: 1.11.1
-      '@google-cloud/documentai':
-        specifier: ^9.4.0
-        version: 9.5.0
       '@google/genai':
         specifier: ^1.19.0
         version: 1.35.0(bufferutil@4.1.0)
@@ -155,9 +152,6 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.1
-      express-rate-limit:
-        specifier: ^8.1.0
-        version: 8.2.1(express@4.22.1)
       express-session:
         specifier: ^1.18.2
         version: 1.18.2
@@ -194,9 +188,6 @@ importers:
       luxon:
         specifier: ^3.7.2
         version: 3.7.2
-      multer:
-        specifier: ^2.0.2
-        version: 2.0.2
       next-auth:
         specifier: ^4.24.13
         version: 4.24.13(@auth/core@0.34.3)(next@16.1.1(@babel/core@7.28.6)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -206,15 +197,6 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
-      pdf-parse:
-        specifier: ^1.1.1
-        version: 1.1.4
-      pdf-parse-debugging-disabled:
-        specifier: ^1.1.1
-        version: 1.1.1
-      pdfjs-dist:
-        specifier: ^5.4.449
-        version: 5.4.530
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -242,9 +224,6 @@ importers:
       stripe:
         specifier: ^20.1.0
         version: 20.1.2(@types/node@24.10.8)
-      stripe-replit-sync:
-        specifier: ^1.0.0
-        version: 1.0.0(bufferutil@4.1.0)(stripe@20.1.2(@types/node@24.10.8))
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.0
@@ -267,12 +246,6 @@ importers:
         specifier: ^3.4.0
         version: 3.5.4(zod@3.25.76)
     devDependencies:
-      '@replit/vite-plugin-cartographer':
-        specifier: ^0.3.0
-        version: 0.3.2
-      '@replit/vite-plugin-runtime-error-modal':
-        specifier: ^0.0.3
-        version: 0.0.3
       '@tailwindcss/typography':
         specifier: ^0.5.15
         version: 0.5.19(tailwindcss@3.4.19(tsx@4.21.0))
