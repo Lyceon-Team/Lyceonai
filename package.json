@@ -14,7 +14,6 @@
     "test": "vitest run",
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
-    "packageManager": "pnpm@10.28.1"
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
     "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
@@ -82,6 +81,7 @@
     "katex": "^0.16.27",
     "lucide-react": "^0.453.0",
     "luxon": "^3.7.2",
+    "packageManager": "pnpm@10.28.1"
     "p-limit": "^7.1.1",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
