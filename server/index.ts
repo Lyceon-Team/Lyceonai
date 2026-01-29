@@ -20,19 +20,11 @@ import rateLimit from "express-rate-limit";
 //   - /api/questions/validate
 //   - /api/tutor/v2
 //   - auth token resolution / requireSupabaseAuth
-import { ingest } from "../apps/api/src/routes/ingest";
+// ...removed ingest import...
 import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
-// Ingestion v3 (LLM-based) Routes - v2 endpoints are soft-disabled (410 Gone)
-import {
-  ingestLlm,
-  ingestLlmTest,
-  getIngestLlmStatus,
-  getIngestLlmJobs,
-  retryIngestLlmJob,
-  uploadMiddleware,
-} from "../apps/api/src/routes/ingest-llm";
+// ...removed ingest-llm imports...
 import { legalRouter } from "./routes/legal-routes.js";
 import {
   getQuestions,
@@ -70,8 +62,7 @@ import adminStatsRoutes from "./routes/admin-stats-routes";
 import adminProofRoutes from "./routes/admin-proof-routes";
 import { csrfGuard } from "./middleware/csrf";
 import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
-import { ingestionV4Router } from "../apps/api/src/routes/ingestion-v4";
-import { startWorker, stopWorker, isWorkerEnabled, getWorkerStatus } from "../apps/api/src/ingestion_v4/services/v4AlwaysOnWorker";
+// ...removed ingestion-v4 imports...
 import { weaknessRouter } from "../apps/api/src/routes/weakness";
 import { masteryRouter } from "../apps/api/src/routes/mastery";
 import { calendarRouter } from "../apps/api/src/routes/calendar";
@@ -249,25 +240,9 @@ app.all("/terms", (_req, res) => res.redirect(301, "/legal/student-terms"));
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" })); // Legacy alias
 
-// Debug endpoint for env presence (boolean only, never exposes actual values)
-app.get("/debug/env/ingest", (_req, res) => {
-  res.json({
-    GCP_PROJECT_ID: !!process.env.GCP_PROJECT_ID,
-    DOC_AI_PROCESSOR_ID: !!process.env.DOC_AI_PROCESSOR_ID,
-    DOC_AI_LOCATION: !!process.env.DOC_AI_LOCATION,
-    GOOGLE_APPLICATION_CREDENTIALS_JSON: !!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
-    GOOGLE_APPLICATION_CREDENTIALS: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    GCS_BUCKET_NAME: !!process.env.GCS_BUCKET_NAME,
-    GEMINI_API_KEY: !!process.env.GEMINI_API_KEY,
-  });
-});
+// ...removed /debug/env/ingest route...
 
-// Rate limiters
-const ingestLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  message: { error: "Too many ingest requests" },
-});
+// ...removed ingestLimiter...
 
 const ragLimiter = rateLimit({
   windowMs: 60_000,
@@ -281,8 +256,7 @@ const studentUploadLimiter = rateLimit({
   message: { error: "Too many upload requests. Please wait a moment before trying again." },
 });
 
-// MVP Endpoints
-app.post("/api/ingest", requireBearer("INGEST_ADMIN_TOKEN"), ingestLimiter, ingest);
+// ...removed /api/ingest endpoint...
 
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
@@ -309,65 +283,13 @@ app.use(
 // Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
 
-// Ingestion V4 Routes (foundation for new question generation pipeline)
-// Admin-only: enforced via requireSupabaseAdmin (no bypass)
-const v4AdminMiddleware = (req: Request, res: Response, next: express.NextFunction) => {
-  return requireSupabaseAdmin(req, res, next);
-};
-app.use("/api/ingestion-v4", v4AdminMiddleware, ingestionV4Router);
+// ...removed /api/ingestion-v4 route...
 
-// Ingestion v2 Pipeline Endpoints - DEPRECATED (soft-disabled)
-const deprecatedV2Handler = (_req: Request, res: Response) => {
-  res.status(410).json({
-    error: "Gone",
-    message:
-      "This v2 endpoint has been deprecated. Use /api/ingest/pdf for uploads, /api/ingest-llm/status/:jobId for status, /api/ingest-llm/jobs for job list, and /api/ingest-llm/retry/:jobId for retries.",
-    migration: {
-      upload: "POST /api/ingest/pdf",
-      status: "GET /api/ingest-llm/status/:jobId",
-      jobs: "GET /api/ingest-llm/jobs or GET /api/ingest/jobs",
-      retry: "POST /api/ingest-llm/retry/:jobId",
-    },
-  });
-};
+// ...removed all /api/ingest-v2/* deprecated endpoints...
 
-app.post("/api/ingest-v2/upload", deprecatedV2Handler);
-app.get("/api/ingest-v2/status/:jobId", deprecatedV2Handler);
-app.get("/api/ingest-v2/jobs", deprecatedV2Handler);
-app.post("/api/ingest-v2/retry/:jobId", deprecatedV2Handler);
-app.delete("/api/ingest-v2/cancel/:jobId", deprecatedV2Handler);
-app.get("/api/ingest-v2/stats", deprecatedV2Handler);
-app.get("/api/ingest-v2/debug/qa/:jobId", deprecatedV2Handler);
+// ...removed requireIngestAdmin middleware...
 
-// Middleware: Accept either Bearer INGEST_ADMIN_TOKEN OR Supabase admin session
-const requireIngestAdmin = (req: Request, res: Response, next: Function) => {
-  // Check Supabase admin first (from supabaseAuthMiddleware)
-  const user = (req as any).user;
-  if (user && (user as any).role === "admin") return next();
-
-  // Fall back to Bearer token auth
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.substring(7).trim();
-    const expectedToken = process.env.INGEST_ADMIN_TOKEN;
-    if (expectedToken && token === expectedToken) return next();
-  }
-
-  return res.status(401).json({
-    error: "Unauthorized",
-    message: "Admin access required. Provide Supabase admin session or valid INGEST_ADMIN_TOKEN.",
-  });
-};
-
-// Ingestion v3 (LLM-based) Routes
-app.post("/api/ingest-llm", requireIngestAdmin, uploadMiddleware, ingestLlm);
-app.post("/api/ingest-llm/test", requireIngestAdmin, uploadMiddleware, ingestLlmTest);
-app.get("/api/ingest-llm/status/:jobId", requireIngestAdmin, getIngestLlmStatus);
-app.get("/api/ingest-llm/jobs", requireIngestAdmin, getIngestLlmJobs);
-app.post("/api/ingest-llm/retry/:jobId", requireIngestAdmin, retryIngestLlmJob);
-
-// V3 Jobs alias for backward compatibility with JobDashboard
-app.get("/api/ingest/jobs", requireIngestAdmin, getIngestLlmJobs);
+// ...removed all /api/ingest-llm/* and /api/ingest/jobs endpoints...
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
@@ -404,71 +326,7 @@ app.use(
   adminProofRoutes
 );
 
-// STEP 4: Ingestion Quality Summary endpoint
-// Enforce cookie-admin only for ingest-summary
-app.get(
-  "/api/admin/ingest-summary",
-  requireSupabaseAuth,
-  requireSupabaseAdmin,
-  async (_req, res) => {
-  try {
-    // Get the last 50 questions for completeness analysis
-    const { data: recentQuestions, error: questionsError } = await supabaseServer
-      .from("questions")
-      .select("id, canonical_id, competencies, difficulty, exam, test_code, section_code")
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (questionsError) {
-      console.error("[INGEST-SUMMARY] Failed to fetch questions:", questionsError);
-      return res.status(500).json({ error: "Failed to fetch questions" });
-    }
-
-    const total = recentQuestions?.length || 0;
-    const withCanonicalId = recentQuestions?.filter((q: any) => q.canonical_id).length || 0;
-    const withCompetencies =
-      recentQuestions?.filter((q: any) => Array.isArray(q.competencies) && q.competencies.length > 0).length || 0;
-    const withDifficulty = recentQuestions?.filter((q: any) => q.difficulty).length || 0;
-    const withExam = recentQuestions?.filter((q: any) => q.exam || q.test_code).length || 0;
-    const withSectionCode = recentQuestions?.filter((q: any) => q.section_code).length || 0;
-
-    // Try to get last ingestion job info
-    let lastJob: any = null;
-    try {
-      const { data: jobs } = await supabaseServer
-        .from("ingestion_jobs")
-        .select("id, filename, status, total_parsed, approved, rejected, needs_review, created_at")
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (jobs && jobs.length > 0) lastJob = jobs[0];
-    } catch {
-      // ingestion_jobs table may not exist - that's ok
-    }
-
-    const summary = {
-      lastJobId: lastJob?.id || null,
-      pdfName: lastJob?.filename || null,
-      totalParsed: lastJob?.total_parsed || null,
-      approved: lastJob?.approved || null,
-      rejected: lastJob?.rejected || null,
-      needsReview: lastJob?.needs_review || null,
-      fieldsCompleteness: {
-        total,
-        canonicalId: total > 0 ? Number((withCanonicalId / total).toFixed(2)) : 0,
-        competencies: total > 0 ? Number((withCompetencies / total).toFixed(2)) : 0,
-        difficulty: total > 0 ? Number((withDifficulty / total).toFixed(2)) : 0,
-        exam: total > 0 ? Number((withExam / total).toFixed(2)) : 0,
-        sectionCode: total > 0 ? Number((withSectionCode / total).toFixed(2)) : 0,
-      },
-    };
-
-    return res.json(summary);
-  } catch (err: any) {
-    console.error("[INGEST-SUMMARY] Error:", err);
-    return res.status(500).json({ error: "Failed to generate summary", detail: err?.message });
-  }
-});
+// ...removed /api/admin/ingest-summary endpoint...
 
 // Admin DB Health Check (requires Supabase admin)
 app.get("/api/admin/db-health", requireSupabaseAdmin, async (_req, res) => {
