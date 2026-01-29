@@ -53,7 +53,7 @@ import {
   getParsingStatistics,
 } from "./admin-review-routes";
 import { analyzeQuestion } from "./routes/student-routes";
-// import { requireBearer } from "../apps/api/src/middleware/bearer-auth"; // No longer needed for admin-proof/ingest-summary
+import { requireBearer } from "../apps/api/src/middleware/bearer-auth";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
