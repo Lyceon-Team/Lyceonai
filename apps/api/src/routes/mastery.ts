@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth';
+
 import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
 import { getSupabaseAdmin } from '../lib/supabase-admin';
 import { DateTime } from 'luxon';
@@ -144,7 +144,7 @@ function getTomorrowDate(): string {
 
 const router = Router();
 
-router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/summary', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -164,7 +164,7 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/skills', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -255,7 +255,7 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/weakest', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
@@ -288,7 +288,7 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/add-to-plan', async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });

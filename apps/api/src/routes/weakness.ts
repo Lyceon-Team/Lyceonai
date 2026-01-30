@@ -10,7 +10,7 @@ const router = Router();
 
 router.get('/skills', async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -20,7 +20,7 @@ router.get('/skills', async (req: Request, res: Response) => {
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
     const skills = await getWeakestSkills({
-      userId: req.user.id,
+      userId: user.id,
       section,
       limit,
       minAttempts,

@@ -7,13 +7,7 @@ import { z } from "zod";
 import { generateJson, isV4GeminiEnabled } from "../ingestion_v4/services/gemini";
 import { DateTime } from "luxon";
 
-import type { ApiUser } from "../middleware/auth";
 
-// Extend Express Request to allow req.body and req.query, and add user/supabase from middleware
-interface AuthenticatedRequest extends Request {
-  supabase?: SupabaseClient;
-  user?: ApiUser;
-}
 
 export const calendarRouter = Router();
 
@@ -128,11 +122,11 @@ export async function syncCalendarDayFromSessions(userId: string, dayDate: strin
   }
 }
 
-calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.get("/profile", async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
 
+    const userId = req.user?.id;
+    const supabase = (req as any).supabase;
     if (!userId || !supabase) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -153,11 +147,11 @@ calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) 
   }
 });
 
-calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.put("/profile", async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
 
+    const userId = req.user?.id;
+    const supabase = (req as any).supabase;
     if (!userId || !supabase) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -279,11 +273,11 @@ async function calculateStreak(userId: string, timezone: string = "America/Chica
   return { current: currentStreak, longest: longestStreak };
 }
 
-calendarRouter.get("/streak", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.get("/streak", async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
 
+    const userId = req.user?.id;
+    const supabase = (req as any).supabase;
     if (!userId) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -304,11 +298,11 @@ calendarRouter.get("/streak", async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
-calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.get("/month", async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
 
+    const userId = req.user?.id;
+    const supabase = (req as any).supabase;
     if (!userId || !supabase) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -407,14 +401,14 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-calendarRouter.patch("/day/complete", async (_req: AuthenticatedRequest, res: Response) => {
+calendarRouter.patch("/day/complete", async (_req: Request, res: Response) => {
   return res.status(410).json({ 
     error: "Completion is session-derived. Start a study session to count progress.",
     message: "Manual completion override has been removed. Completion minutes are now computed from practice_sessions automatically."
   });
 });
 
-calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.post("/generate", async (req: Request, res: Response) => {
   try {
     // Auth is enforced by server/index.ts:
     // app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);

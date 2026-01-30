@@ -194,7 +194,7 @@ export const getRandomQuestions = async (req: Request, res: Response) => {
     const section = req.query.section as string;
     const type = req.query.type as string;
     const focus = (req.query.focus as string | undefined)?.toLowerCase();
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     // ========================================================================
     // ADAPTIVE MODE: focus=weak biases toward user's weak competencies
