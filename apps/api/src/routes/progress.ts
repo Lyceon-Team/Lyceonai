@@ -1,4 +1,4 @@
-import { Response, Request as ExpressRequest } from 'express';
+import type { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
 
 import { calculateScore, DomainMastery, ScoreProjection } from '../../../../server/services/score-projection';
@@ -220,7 +220,7 @@ export const getRecentActivity = async (req: Request, res: Response) => {
         .order('attempted_at', { ascending: false })
         .limit(20);
 
-      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === (req as ExpressRequest).user?.id);
+      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id);
       
       const fallbackData = userAttempts.map((a: any) => ({
         id: a.id,
