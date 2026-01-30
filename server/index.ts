@@ -725,7 +725,7 @@ if (isMainModule) {
 
   // Ingestion worker controls (if enabled)
   try {
-    if (isWorkerEnabled()) {
+    if (await isWorkerEnabled()) {
       startWorker();
     }
   } catch (e: any) {
