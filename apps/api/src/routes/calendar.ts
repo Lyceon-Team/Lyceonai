@@ -377,7 +377,8 @@ calendarRouter.get("/month", async (req: Request, res: Response) => {
       dayStats.totalTimeMs += attempt.time_spent_ms || 0;
     }
 
-    const enrichedDays = (planDaysResult.data ?? []).map(day => {
+    type PlanDay = (typeof planDaysResult.data extends Array<infer U> ? U : never);
+    const enrichedDays = (planDaysResult.data ?? []).map((day: PlanDay) => {
       const dayStats = attemptsByDay.get(day.day_date);
       
       return {

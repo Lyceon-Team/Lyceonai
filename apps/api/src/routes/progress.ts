@@ -336,14 +336,14 @@ export const getProgress = async (req: Request, res: Response) => {
     const { data: weakest } = await supabaseServer
       .from('user_competencies')
       .select('competency_key, section, score, incorrect_count')
-      .eq('user_id', (req as ExpressRequest).user.id)
+      .eq('user_id', user.id)
       .order('score', { ascending: false })
       .limit(5);
 
     const { data: improving } = await supabaseServer
       .from('user_competencies')
       .select('competency_key, section, score')
-      .eq('user_id', (req as ExpressRequest).user.id)
+      .eq('user_id', user.id)
       .order('score', { ascending: true })
       .limit(5);
 
@@ -382,7 +382,7 @@ export const getProgress = async (req: Request, res: Response) => {
 // ============================================================================
 export const recordReviewAttempt = async (req: Request, res: Response) => {
   try {
-    const user = (req as ExpressRequest).user;
+    const user = req.user;
     if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -443,7 +443,7 @@ export const recordReviewAttempt = async (req: Request, res: Response) => {
 // ============================================================================
 export const getScoreProjection = async (req: Request, res: Response) => {
   try {
-    const user = (req as ExpressRequest).user;
+    const user = req.user;
     if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
@@ -531,7 +531,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
 // ============================================================================
 export const getRecencyKpis = async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
