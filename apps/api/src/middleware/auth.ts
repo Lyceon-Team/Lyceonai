@@ -20,27 +20,17 @@ async function lookupProfileRole(userId: string): Promise<boolean> {
   return profile?.role === 'admin';
 }
 
+export interface ApiUser {
+  id: string;
+  email?: string | null;
+  role?: 'student' | 'admin' | 'guardian';
+  isAdmin?: boolean;
+  isGuardian?: boolean;
+  display_name?: string | null;
+}
+
 export interface ApiAuthenticatedRequest extends Request {
-  authUser?: {
-    id: string;
-    email?: string | null;
-    name?: string | null;
-    username?: string;
-    isAdmin?: boolean;
-  };
-  user?: {
-    id: string;
-    email?: string | null;
-    display_name?: string | null;
-    role?: 'student' | 'admin' | 'guardian';
-    isAdmin?: boolean;
-    isGuardian?: boolean;
-    is_under_13?: boolean;
-    guardian_consent?: boolean;
-    jwt?: string;
-    username?: string;
-    name?: string;
-  };
+  user?: ApiUser;
 }
 
 export type AuthenticatedRequest = ApiAuthenticatedRequest;

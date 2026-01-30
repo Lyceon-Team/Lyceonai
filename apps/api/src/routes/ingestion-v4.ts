@@ -1507,7 +1507,7 @@ ingestionV4Router.post("/admin/fanout-pdfs", requireAdminOrBypass, async (req: R
     }
 
     const result = await runPdfFanout({
-      section: sectionNormalized,
+      section: sectionNormalized ?? undefined,
       dpi: typeof dpi === "number" ? dpi : undefined,
       maxPages: typeof maxPages === "number" ? maxPages : undefined,
       pageMode: pageMode === "first" || pageMode === "all" || pageMode === "range" ? pageMode : undefined,

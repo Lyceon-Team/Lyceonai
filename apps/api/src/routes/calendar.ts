@@ -7,18 +7,11 @@ import { z } from "zod";
 import { generateJson, isV4GeminiEnabled } from "../ingestion_v4/services/gemini";
 import { DateTime } from "luxon";
 
-interface SupabaseUser {
-  id: string;
-  email: string;
-  display_name: string | null;
-  role: 'student' | 'admin' | 'guardian';
-  isAdmin: boolean;
-  isGuardian?: boolean;
-}
+import type { ApiUser } from "../middleware/auth";
 
 interface AuthenticatedRequest extends Request {
   supabase?: SupabaseClient;
-  user?: SupabaseUser;
+  user?: ApiUser;
 }
 
 export const calendarRouter = Router();

@@ -646,7 +646,7 @@ export async function repairUnlinkedPages(
       let isNewCluster = false;
       
       if (!cluster) {
-        cluster = await createCluster(section, clusterKey, title, description, signature, 0.6);
+        cluster = (await createCluster(section, clusterKey, title, description, signature, 0.6)) ?? undefined;
         if (cluster) {
           clusters.push(cluster);
           isNewCluster = true;
@@ -818,7 +818,13 @@ Analyze the attached PNG image and return ONLY valid JSON matching the schema ab
             [attachment]
           );
           
-          v2Response = rawResponse;
+          v2Response = {
+            ...rawResponse,
+            evidence: {
+              ...rawResponse.evidence,
+              notes: rawResponse.evidence?.notes ?? [],
+            },
+          };
           
           const validatedDomain = validateDomain(section, rawResponse.domain);
           if (rawResponse.domain && !validatedDomain) {
@@ -831,7 +837,14 @@ Analyze the attached PNG image and return ONLY valid JSON matching the schema ab
             fallback = true;
           }
           
-          response = convertV2ResponseToLegacy(rawResponse);
+          const normalizedRawResponse = {
+            ...rawResponse,
+            evidence: {
+              ...rawResponse.evidence,
+              notes: rawResponse.evidence?.notes ?? [],
+            },
+          };
+          response = convertV2ResponseToLegacy(normalizedRawResponse);
           
         } catch (llmErr: any) {
           const errorMsg = llmErr.message || "Unknown LLM error";

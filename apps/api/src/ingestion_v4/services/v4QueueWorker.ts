@@ -90,6 +90,7 @@ export async function processNextQueueItem(): Promise<ProcessResult> {
       }
     } else {
       const batchResult = await runBatchForJob(item.job_id, {
+        section: (payload.section as "math" | "rw") || "math",
         count: (payload.count as number) || 1,
         sleepMs: (payload.sleepMs as number) || 1200,
         stopOnQaFail: (payload.stopOnQaFail as boolean) || false,
