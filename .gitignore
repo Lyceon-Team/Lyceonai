@@ -14,3 +14,4 @@ coverage
 var
 uploads
 *.tsbuildinfo
+*.csv
