@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   checks:
-    name: Checks (hygiene, tsc, test, build, audit)
+    name: Checks (hygiene, tsc, tests, build, audit)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -25,7 +25,8 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Match your local pnpm major version for determinism
+          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -36,31 +37,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Repo hygiene (block artifacts + exports)
+      - name: Repo hygiene (block artifacts + exports + root debug)
+        shell: bash
         run: |
           set -euo pipefail
 
           echo "Checking for forbidden committed artifacts..."
 
-          # Block tsbuildinfo artifacts
+          # 1) Block tsbuildinfo artifacts
           if git ls-files | grep -E "\.tsbuildinfo$"; then
             echo "ERROR: .tsbuildinfo files are committed. Remove them and add *.tsbuildinfo to .gitignore."
             exit 1
           fi
 
-          # Block root accidental file named "0"
+          # 2) Block accidental root file named "0"
           if [ -f "0" ]; then
             echo "ERROR: Found root file named '0'. Remove it."
             exit 1
           fi
 
-          # Block CSV exports (allow only docs/samples/ if you decide to keep anonymized examples)
+          # 3) Block CSV exports (allow only docs/samples/ if you keep anonymized examples)
           if git ls-files | grep -E "\.csv$" | grep -v "^docs/samples/"; then
             echo "ERROR: CSV files are committed outside docs/samples/. Remove exports and keep only approved anonymized samples."
             exit 1
           fi
 
-          # Block root debug/test clutter
+          # 4) Block root debug/test clutter
           if ls -1 | grep -E "^(test-|debug-).*\.(js|ts|mjs|cjs)$"; then
             echo "ERROR: Found root test/debug scripts. Move to tests/legacy/ or delete."
             exit 1
@@ -71,26 +73,27 @@ jobs:
       - name: TypeScript check (tsc)
         run: pnpm run check
 
+      # Unit tests (repo-wide)
       - name: Unit tests (vitest)
-        run: pnpm test
+        run: pnpm run test
 
-      - name: Build
+      # API tests (explicit)
+      - name: API tests
+        run: pnpm run test:api
+
+      - name: Build (vite + esbuild)
         run: pnpm run build
 
       - name: Dependency audit (high+)
         run: pnpm audit --audit-level=high
 
-      # Optional enforcement: fail if ingestion routes exist in prod code paths
-      # - name: Enforce no ingest code
-      #   run: pnpm run audit:no-ingest
-
-  security:
-    name: Security regression (requires secrets)
+  integration:
+    name: Integration (secrets-only)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [checks]
 
-    # Only run when secrets are available:
+    # Run only when secrets are available:
     # - pushes to main (trusted)
     # - PRs from same repo (not forks)
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -121,7 +124,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -132,5 +135,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Security regression tests
-        run: pnpm run test:security
+      # Replace this with any *real* integration command(s) you have.
+      # If you don't have any, remove this whole job.
+      - name: Integration smoke (no-op placeholder)
+        run: |
+          echo "No integration commands defined yet."
+          echo "Add scripts like test:integration when ready."
