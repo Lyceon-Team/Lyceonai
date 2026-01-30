@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
 import { StudentQuestion, StudentMcQuestion, StudentFrQuestion, QuestionOption } from '../../../../shared/schema';
-import { AuthenticatedRequest } from '../middleware/auth';
+
 
 // ============================================================================
 // FISHER-YATES SHUFFLE HELPER: In-place randomization with O(n) complexity
@@ -188,13 +188,13 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
 
 // GET /api/questions/random - Random questions for practice (SECURE: No answer leaking)
 // Supports optional ?focus=weak to bias toward user's weak competencies
-export const getRandomQuestions = async (req: AuthenticatedRequest, res: Response) => {
+export const getRandomQuestions = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
     const section = req.query.section as string;
     const type = req.query.type as string;
     const focus = (req.query.focus as string | undefined)?.toLowerCase();
-    const userId = req.user?.id;
+    const userId = (req as any).user?.id;
 
     // ========================================================================
     // ADAPTIVE MODE: focus=weak biases toward user's weak competencies
@@ -972,9 +972,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
 
 export const submitQuestionFeedback = async (req: Request, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.id;
-    
+    const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }

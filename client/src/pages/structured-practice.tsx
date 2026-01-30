@@ -86,15 +86,6 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     setShowExplanation(true);
   };
 
-  // Restore missing symbols for compilation only
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const setIsValidating = () => {};
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const setScore = () => {};
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const handleNext = () => {};
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const apiRequest = async () => { return { ok: true, json: async () => ({}) }; };
 
   const handleNextQuestion = async () => {
     await fetchNextQuestion(sessionId || undefined);
@@ -107,34 +98,14 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
 
   const handleSkip = async () => {
     if (!currentQuestion || !sessionId) return;
-
-    setIsValidating(true);
-    try {
-      await apiRequest(`/api/practice/answer`, {
-        method: "POST",
-        body: JSON.stringify({
-          sessionId,
-          questionId: currentQuestion.id,
-          skipped: true,
-          selectedAnswer: null,
-          freeResponseAnswer: null,
-          elapsedMs: 0,
-        }),
-      });
-
-      setScore(prev => ({
-        ...prev,
-        skipped: prev.skipped + 1,
-        total: prev.total + 1,
-        streak: 0,
-      }));
-    } catch (e) {
-      console.error("Error skipping question:", e);
-      // still let them move on, but repetition risk remains if backend doesn't record skip
-    } finally {
-      setIsValidating(false);
-      await handleNext();
-    }
+    // Use real skipQuestion and fetchNextQuestion logic
+    await skipQuestion(0);
+    await fetchNextQuestion(sessionId);
+    setSelectedAnswer(null);
+    setFreeResponseAnswer("");
+    setShowExplanation(false);
+    setIsAnswered(false);
+    setStartTime(Date.now());
   };
 
   const handleEndSession = async () => {
@@ -306,12 +277,10 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
               <QuestionRenderer
                 question={currentQuestion}
                 selectedAnswer={selectedAnswer}
+                onSelectAnswer={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
                 freeResponseAnswer={freeResponseAnswer}
-                onAnswerSelect={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
-                onFreeResponseChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
+                onFreeResponseAnswerChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
                 showResult={showExplanation}
-                validationResult={validationResult}
-                hideActions={true}
               />
 
               {showExplanation && validationResult && (

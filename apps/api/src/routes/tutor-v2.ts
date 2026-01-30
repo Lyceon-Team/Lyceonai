@@ -1,3 +1,4 @@
+import { supabaseServer } from "../lib/supabase-server";
 /**
  * POST /api/tutor/v2
  * AI Tutor v2 endpoint - uses RAG v2 + student profiles for personalized tutoring

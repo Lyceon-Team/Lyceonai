@@ -304,16 +304,7 @@ export class WebhookHandlers {
       throw handlerError;
     }
 
-    try {
-      const sync = await getStripeSync();
-      await sync.processWebhook(payload, signature);
-    } catch (err) {
-      logger.warn('WEBHOOK', 'sync', 'StripeSync.processWebhook failed', { 
-        error: (err as Error).message,
-        eventId: event.id,
-        requestId,
-      });
-    }
+    // No additional sync or custom processWebhook needed here.
 
     logger.info('WEBHOOK', 'completed', 'Event processed successfully', { 
       eventId: event.id, 

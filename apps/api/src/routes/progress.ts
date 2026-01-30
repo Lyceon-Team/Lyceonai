@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
-import { AuthenticatedRequest } from '../middleware/auth';
+
 import { calculateScore, DomainMastery, ScoreProjection } from '../../../../server/services/score-projection';
 import { DateTime } from 'luxon';
 
@@ -136,9 +136,10 @@ export async function recordCompetencyEvent(
 // ============================================================================
 // GET /api/recent-activity - Last 20 items for authenticated user
 // ============================================================================
-export const getRecentActivity = async (req: AuthenticatedRequest, res: Response) => {
+export const getRecentActivity = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -152,7 +153,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         section,
         occurred_at
       `)
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .order('occurred_at', { ascending: false })
       .limit(20);
 
@@ -264,9 +265,10 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
 // ============================================================================
 // GET /api/progress - Dashboard aggregates
 // ============================================================================
-export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
+export const getProgress = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -276,7 +278,7 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
     const { data: events, error: eventsError } = await supabaseServer
       .from('competency_events')
       .select('event_type, section, delta')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .gte('occurred_at', sevenDaysAgo.toISOString());
 
     let totals = { correct: 0, incorrect: 0, skipped: 0 };
@@ -376,9 +378,10 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
 // ============================================================================
 // POST /api/review-errors/attempt - Record review attempt competency event
 // ============================================================================
-export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Response) => {
+export const recordReviewAttempt = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -436,16 +439,17 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
 // ============================================================================
 // GET /api/progress/projection - Score Projection with College Board Weights
 // ============================================================================
-export const getScoreProjection = async (req: AuthenticatedRequest, res: Response) => {
+export const getScoreProjection = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
     const { data: masteryRows, error: masteryError } = await supabaseServer
       .from('student_skill_mastery')
       .select('section, domain, skill, mastery_score, attempts, updated_at')
-      .eq('user_id', req.user.id);
+      .eq('user_id', user.id);
 
     if (masteryError) {
       console.error('[Projection] Error fetching mastery:', masteryError.message);
@@ -523,9 +527,10 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
 // ============================================================================
 // GET /api/progress/kpis - Weekly + Recency KPIs (IANA timezone-aware)
 // ============================================================================
-export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) => {
+export const getRecencyKpis = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -533,7 +538,7 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     const { data: profile } = await supabaseServer
       .from('student_study_profile')
       .select('timezone')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .maybeSingle();
     
     const timezone = profile?.timezone || 'America/Chicago';

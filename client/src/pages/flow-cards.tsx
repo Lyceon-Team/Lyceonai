@@ -325,12 +325,10 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
                   <QuestionRenderer
                     question={currentQuestion}
                     selectedAnswer={selectedAnswer}
+                    onSelectAnswer={handleAnswerSelect}
                     freeResponseAnswer={freeResponseAnswer}
-                    onAnswerSelect={handleAnswerSelect}
-                    onFreeResponseChange={handleFreeResponseChange}
+                    onFreeResponseAnswerChange={handleFreeResponseChange}
                     showResult={false}
-                    validationResult={null}
-                    hideActions={true}
                   />
                   
                   {!isMcQuestion && freeResponseAnswer.trim() && !isAutoSubmitting && (

@@ -29,11 +29,8 @@ export interface ApiUser {
   display_name?: string | null;
 }
 
-export interface ApiAuthenticatedRequest extends Request {
-  user?: ApiUser;
-}
 
-export type AuthenticatedRequest = ApiAuthenticatedRequest;
+// No custom request interface. Use Express Request and type assertion for req.user where needed.
 
 export async function requireAuth(
   req: Request,

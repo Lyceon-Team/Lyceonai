@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth';
+
 import { 
   getWeakestSkills, 
   getWeakestClusters, 
@@ -8,9 +8,10 @@ import {
 
 const router = Router();
 
-router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/skills', async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -36,9 +37,10 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/clusters', async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const user = (req as any).user;
+    if (!user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
@@ -46,7 +48,7 @@ router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
     const clusters = await getWeakestClusters({
-      userId: req.user.id,
+      userId: user.id,
       limit,
       minAttempts,
     });

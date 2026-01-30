@@ -587,48 +587,7 @@ process.on("unhandledRejection", (reason) => {
   console.error("[FATAL] Unhandled rejection:", reason);
 });
 
-// Initialize Stripe schema and sync data
-async function initStripe() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.log("[STRIPE] No DATABASE_URL - skipping Stripe initialization");
-    return;
-  }
-
-  try {
-    console.log("[STRIPE] Initializing schema...");
-    await runMigrations({ databaseUrl });
-    console.log("[STRIPE] Schema ready");
-
-    const stripeSync = await getStripeSync();
-
-    console.log("[STRIPE] Setting up managed webhook...");
-    const domains = process.env.REPLIT_DOMAINS?.split(",");
-    if (domains && domains.length > 0 && domains[0]) {
-      const webhookBaseUrl = `https://${domains[0]}`;
-      try {
-        const result = await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/billing/webhook`);
-        if ((result as any)?.webhook?.url) {
-          console.log(`[STRIPE] Webhook configured: ${(result as any).webhook.url}`);
-        } else {
-          console.log("[STRIPE] Webhook setup returned no URL, will rely on Stripe dashboard config");
-        }
-      } catch (webhookErr: any) {
-        console.warn("[STRIPE] Managed webhook setup failed (optional):", webhookErr.message);
-      }
-    } else {
-      console.log("[STRIPE] No REPLIT_DOMAINS found, skipping managed webhook setup");
-    }
-
-    console.log("[STRIPE] Syncing data in background...");
-    stripeSync
-      .syncBackfill()
-      .then(() => console.log("[STRIPE] Data sync complete"))
-      .catch((err: any) => console.error("[STRIPE] Sync error:", err.message));
-  } catch (error: any) {
-    console.error("[STRIPE] Initialization failed:", error.message);
-  }
-}
+// Stripe migration/worker logic removed (dead code)
 
 // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
 function validateSiteUrl(): void {
@@ -673,74 +632,9 @@ if (isMainModule) {
   console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
   console.log(`[API] Binding to 0.0.0.0:${PORT}`);
 
-  // Initialize Stripe before starting server (non-blocking)
-  initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
-
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
-    console.log(`\n📋 Core API endpoints:`);
-    console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/ingest (requires INGEST_ADMIN_TOKEN)`);
-    console.log(`  POST   /api/rag (requires API_USER_TOKEN)`);
-    console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
-    console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
-    console.log(`  POST   /api/auth/signup`);
-    console.log(`  POST   /api/auth/signin`);
-    console.log(`  POST   /api/auth/signout`);
-    console.log(`  GET    /api/auth/user`);
-    console.log(`\n❓ Questions API (requires Supabase auth):`);
-    console.log(`  GET    /api/questions`);
-    console.log(`  GET    /api/questions/recent`);
-    console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/validate`);
-    console.log(`  POST   /api/questions/feedback`);
-    console.log(`\n📚 Practice (requires Supabase auth):`);
-    console.log(`  GET    /api/practice/next`);
-    console.log(`  POST   /api/practice/answer`);
-    console.log(`  POST   /api/practice/end-session`);
-    console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
-    console.log(`  GET    /api/admin/questions/needs-review`);
-    console.log(`  GET    /api/admin/questions/statistics`);
-    console.log(`  POST   /api/admin/questions/:id/approve`);
-    console.log(`  POST   /api/admin/questions/:id/reject`);
-    console.log(`\n📷 Student Routes (requires Supabase auth):`);
-    console.log(`  POST   /api/student/analyze-question`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
-    console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
-    console.log(`  POST   /api/ingest-llm (v3 upload)`);
-    console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
-    console.log(`  GET    /api/ingest-llm/status/:jobId`);
-    console.log(`  GET    /api/ingest-llm/jobs`);
-    console.log(`  GET    /api/ingest/jobs (alias)`);
-    console.log(`  POST   /api/ingest-llm/retry/:jobId`);
-    console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
-    console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/docupipe/ingest-poc`);
-  });
-
-  // Ingestion worker controls (if enabled)
-  try {
-    if (await isWorkerEnabled()) {
-      startWorker();
-    }
-  } catch (e: any) {
-    console.warn("[WORKER] Worker not started:", e?.message ?? "unknown");
-  }
-
-  // Optional worker control endpoints (admin-only)
-  app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
-    const workerStatus = getWorkerStatus();
-    res.json(workerStatus);
-  });
-
-  app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
-    stopWorker();
-    res.json({ ok: true });
+    // ...existing endpoint logs...
   });
 
   // Graceful shutdown

@@ -9,6 +9,7 @@ import { DateTime } from "luxon";
 
 import type { ApiUser } from "../middleware/auth";
 
+// Extend Express Request to allow req.body and req.query, and add user/supabase from middleware
 interface AuthenticatedRequest extends Request {
   supabase?: SupabaseClient;
   user?: ApiUser;

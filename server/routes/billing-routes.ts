@@ -117,7 +117,9 @@ router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response
     const supabaseAdmin = getSupabaseAdmin();
     let accountId: string | null = null;
     let linkedStudentId: string | null = null;
-    const normalizedRole = role === ('parent' as any) ? 'guardian' : role;
+    // Only allow 'guardian', 'student', 'admin' as valid roles
+    // Only allow valid roles in the union
+    const normalizedRole: 'student' | 'guardian' | 'admin' = role === 'guardian' || role === 'admin' ? role : 'student';
 
     if (normalizedRole === 'admin') {
       return res.status(403).json({ error: 'Admins cannot initiate checkout', requestId });
