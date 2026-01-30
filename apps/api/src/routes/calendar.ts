@@ -1,3 +1,7 @@
+// Type guard for Record<string, unknown>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 import { Router, Request, Response } from "express";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseServer } from "../lib/supabase-server";
@@ -379,13 +383,14 @@ calendarRouter.get("/month", async (req: Request, res: Response) => {
 
     type PlanDay = (typeof planDaysResult.data extends Array<infer U> ? U : never);
     const enrichedDays = (planDaysResult.data ?? []).map((day: PlanDay) => {
-      const dayStats = attemptsByDay.get(day.day_date);
-      
+      const dayObj = isRecord(day) ? day : {};
+      const dayDate = (dayObj as any).day_date;
+      const dayStats = attemptsByDay.get(dayDate);
       return {
-        ...day,
+        ...dayObj,
         attempt_count: dayStats?.attempts ?? 0,
-        accuracy: dayStats && dayStats.attempts > 0 
-          ? Math.round((dayStats.correct / dayStats.attempts) * 100) 
+        accuracy: dayStats && dayStats.attempts > 0
+          ? Math.round((dayStats.correct / dayStats.attempts) * 100)
           : null,
         avg_seconds_per_question: dayStats && dayStats.attempts > 0
           ? Math.round(dayStats.totalTimeMs / dayStats.attempts / 1000)
