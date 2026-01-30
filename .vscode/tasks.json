@@ -7,6 +7,15 @@
 			"command": "pnpm run check",
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "pnpm run check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run",
+				"check"
+			]
 		}
 	]
 }
