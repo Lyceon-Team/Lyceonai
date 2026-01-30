@@ -324,7 +324,6 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
                 <div className="space-y-4">
                   <QuestionRenderer
                     question={currentQuestion}
-                    questionIndex={score.total}
                     selectedAnswer={selectedAnswer}
                     freeResponseAnswer={freeResponseAnswer}
                     onAnswerSelect={handleAnswerSelect}
