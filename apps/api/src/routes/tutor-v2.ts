@@ -10,6 +10,7 @@ import { callLlm } from "../lib/embeddings";
 import { updateStudentStyle } from "../lib/profile-service";
 import { logTutorInteraction } from "../lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../lib/rag-types";
+import { supabaseServer } from "../lib/supabase-server";
 
 const router = Router();
 
