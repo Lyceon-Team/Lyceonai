@@ -37,6 +37,7 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "../apps/api/src/routes/questions";
+import { searchQuestions } from "../apps/api/src/routes/search";
 import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
@@ -300,6 +301,31 @@ app.get("/auth/google/callback", googleCallbackHandler);
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
+// Profile endpoint - requires authentication
+app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    // User is already attached by supabaseAuthMiddleware
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Return user profile
+    return res.json({ 
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        display_name: req.user.display_name,
+        role: req.user.role,
+        is_under_13: req.user.is_under_13,
+        guardian_consent: req.user.guardian_consent
+      }
+    });
+  } catch (error) {
+    console.error('[PROFILE] Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);
 
@@ -363,7 +389,8 @@ app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req
   return getQuestions(req, res);
 });
 
-app.get("/api/questions/recent", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
+app.get("/api/questions/recent", async (req, res) => {
+  // Allow anonymous access to recent questions for public preview
   const originalJson = res.json.bind(res);
   res.json = function (data: any) {
     if (Array.isArray(data)) {
@@ -388,6 +415,9 @@ app.get("/api/questions/random", requireSupabaseAuth, requireStudentOrAdmin, asy
 app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQuestionCount);
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
+
+// Search endpoint - allow anonymous access for public search
+app.get("/api/questions/search", searchQuestions);
 
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
@@ -461,6 +491,11 @@ app.use("/api/billing", billingRoutes);
 
 // Account Routes (bootstrap, status)
 app.use("/api/account", accountRoutes);
+
+// Document upload endpoint - requires authentication
+app.post("/api/documents/upload", requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
+  res.status(501).json({ error: 'Document upload not implemented' });
+});
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
@@ -578,98 +613,53 @@ const isMainModule = (() => {
   }
 })();
 
-// Global error handlers to prevent crashes before port binding
-process.on("uncaughtException", (err) => {
-  console.error("[FATAL] Uncaught exception:", (err as any)?.message);
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  console.error("[FATAL] Unhandled rejection:", reason);
-});
-
-// Initialize Stripe schema and sync data
-// TODO: Restore this when runMigrations and getStripeSync are implemented
-/* 
-async function initStripe() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.log("[STRIPE] No DATABASE_URL - skipping Stripe initialization");
-    return;
-  }
-
-  try {
-    console.log("[STRIPE] Initializing schema...");
-    await runMigrations({ databaseUrl });
-    console.log("[STRIPE] Schema ready");
-
-    const stripeSync = await getStripeSync();
-
-    console.log("[STRIPE] Setting up managed webhook...");
-    const domains = process.env.REPLIT_DOMAINS?.split(",");
-    if (domains && domains.length > 0 && domains[0]) {
-      const webhookBaseUrl = `https://${domains[0]}`;
-      try {
-        const result = await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/billing/webhook`);
-        if ((result as any)?.webhook?.url) {
-          console.log(`[STRIPE] Webhook configured: ${(result as any).webhook.url}`);
-        } else {
-          console.log("[STRIPE] Webhook setup returned no URL, will rely on Stripe dashboard config");
-        }
-      } catch (webhookErr: any) {
-        console.warn("[STRIPE] Managed webhook setup failed (optional):", webhookErr.message);
-      }
-    } else {
-      console.log("[STRIPE] No REPLIT_DOMAINS found, skipping managed webhook setup");
-    }
-
-    console.log("[STRIPE] Syncing data in background...");
-    stripeSync
-      .syncBackfill()
-      .then(() => console.log("[STRIPE] Data sync complete"))
-      .catch((err: any) => console.error("[STRIPE] Sync error:", err.message));
-  } catch (error: any) {
-    console.error("[STRIPE] Initialization failed:", error.message);
-  }
-}
-*/
-
-// Validate PUBLIC_SITE_URL at startup (critical for OAuth)
-function validateSiteUrl(): void {
-  const publicSiteUrl = process.env.PUBLIC_SITE_URL;
-  const isProduction = process.env.NODE_ENV === "production";
-
-  if (!publicSiteUrl) {
-    if (isProduction) {
-      console.error("❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.");
-      console.error("   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.");
-      process.exit(1);
-    } else {
-      console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
-      console.warn("   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.");
-    }
-    return;
-  }
-
-  if (publicSiteUrl.endsWith("/")) {
-    console.warn("⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.");
-  }
-
-  if (!publicSiteUrl.startsWith("https://") && isProduction) {
-    console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
-    process.exit(1);
-  }
-
-  const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
-  if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
-    console.warn("⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.");
-  }
-
-  console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
-  console.log(`✅ [AUTH] OAuth callback: ${publicSiteUrl.replace(/\/$/, "")}/auth/google/callback`);
-}
-
 // Start server if run directly or as bundled entry
 if (isMainModule) {
+  // Global error handlers to prevent crashes before port binding
+  // NOTE: These are only set up when running as main module, not during tests
+  process.on("uncaughtException", (err) => {
+    console.error("[FATAL] Uncaught exception:", (err as any)?.message);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("[FATAL] Unhandled rejection:", reason);
+  });
+
+  // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
+  function validateSiteUrl(): void {
+    const publicSiteUrl = process.env.PUBLIC_SITE_URL;
+    const isProduction = process.env.NODE_ENV === "production";
+
+    if (!publicSiteUrl) {
+      if (isProduction) {
+        console.error("❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.");
+        console.error("   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.");
+        process.exit(1);
+      } else {
+        console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
+        console.warn("   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.");
+      }
+      return;
+    }
+
+    if (publicSiteUrl.endsWith("/")) {
+      console.warn("⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.");
+    }
+
+    if (!publicSiteUrl.startsWith("https://") && isProduction) {
+      console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
+      process.exit(1);
+    }
+
+    const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
+    if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
+      console.warn("⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.");
+    }
+
+    console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
+    console.log(`✅ [AUTH] OAuth callback: ${publicSiteUrl.replace(/\/$/, "")}/auth/google/callback`);
+  }
+
   validateSiteUrl();
 
   console.log(`[API] Starting Lyceon API server...`);

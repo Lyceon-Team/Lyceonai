@@ -33,18 +33,26 @@ export function buildAllowedOrigins(opts: {
 }) {
   const nodeEnv = opts.nodeEnv || process.env.NODE_ENV;
   const isDev = nodeEnv === "development";
+  const isTest = nodeEnv === "test";
 
-  // Hard defaults for production safety (Option A)
+  // Hard defaults for production safety
   const DEFAULTS = [
     "https://lyceon.ai",
     "https://www.lyceon.ai",
   ];
+  
+  // In test mode, add localhost origins for testing
+  const TEST_DEFAULTS = isTest ? [
+    "http://localhost:5000",
+    "http://localhost:3000",
+    "http://localhost:3001",
+  ] : [];
 
   const fromCors = splitCsv(opts.corsOriginsCsv);
   const fromCsrf = splitCsv(opts.csrfOriginsCsv);
 
-  // In dev we can be permissive, but we still return a normalized set for logging/debug
-  const raw = Array.from(new Set([...DEFAULTS, ...fromCors, ...fromCsrf]));
+  // Combine all origins
+  const raw = Array.from(new Set([...DEFAULTS, ...TEST_DEFAULTS, ...fromCors, ...fromCsrf]));
 
   const normalized = new Set(raw.map(normalizeOrigin));
 

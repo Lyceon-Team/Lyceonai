@@ -8,7 +8,21 @@ export function getSupabaseClient(): SupabaseClient {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+    // In test mode, return placeholder client if env vars missing
+    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+    
     if (!supabaseUrl || !supabaseKey) {
+      if (isTestEnv) {
+        console.log('[SUPABASE] Test mode: using placeholder client');
+        supabaseClient = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        });
+        return supabaseClient;
+      }
+      
       throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
     }
 

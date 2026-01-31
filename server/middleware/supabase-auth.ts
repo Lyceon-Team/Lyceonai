@@ -115,28 +115,72 @@ declare global {
   }
 }
 
+/**
+ * Detect if running in test environment
+ * In test mode, placeholder clients are allowed
+ * In production/dev, missing env vars must throw on first use
+ */
+function isTestEnvironment(): boolean {
+  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+}
+
 // Supabase client with service role (bypasses RLS for admin operations)
-// Creates a dummy client if env vars are missing (for test environments)
-const supabaseAdmin = (() => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    // Return dummy client for tests - will fail at runtime if actually used
-    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+// Lazy initialization with environment-based error handling
+let _supabaseAdmin: SupabaseClient | null = null;
+const supabaseAdmin = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    if (!_supabaseAdmin) {
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!url || !key) {
+        if (isTestEnvironment()) {
+          // In test environment, return placeholder client
+          _supabaseAdmin = createClient('https://placeholder.supabase.co', 'placeholder-key');
+        } else {
+          // In production/dev, throw on first use
+          throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in production/development');
+        }
+      } else {
+        _supabaseAdmin = createClient(url, key);
+      }
+    }
+    const value = (_supabaseAdmin as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(_supabaseAdmin);
+    }
+    return value;
   }
-  return createClient(url, key);
-})();
+});
 
 // Supabase client with anon key (enforces RLS)
-const supabaseAnon = (() => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    // Return dummy client for tests - will fail at runtime if actually used
-    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+// Lazy initialization with environment-based error handling
+let _supabaseAnon: SupabaseClient | null = null;
+const supabaseAnon = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    if (!_supabaseAnon) {
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_ANON_KEY;
+      
+      if (!url || !key) {
+        if (isTestEnvironment()) {
+          // In test environment, return placeholder client
+          _supabaseAnon = createClient('https://placeholder.supabase.co', 'placeholder-key');
+        } else {
+          // In production/dev, throw on first use
+          throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY must be set in production/development');
+        }
+      } else {
+        _supabaseAnon = createClient(url, key);
+      }
+    }
+    const value = (_supabaseAnon as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(_supabaseAnon);
+    }
+    return value;
   }
-  return createClient(url, key);
-})();
+});
 
 /**
  * Middleware to extract and validate Supabase Auth JWT

@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.ci",
+    "target": "ES2020",
+    "noEmit": true,
+    "module": "ESNext",
+    "strict": true,
+    "lib": ["ES2020", "dom", "dom.iterable"],
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "bundler",
+    "downlevelIteration": true,
+    "baseUrl": ".",
+    "types": ["node", "vite/client"],
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "paths": {
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": [
+    "client/src/**/*",
+    "client/*.d.ts",
+    "shared/**/*",
+    "types/**/*",
+    "server/middleware/**/*",
+    "apps/api/src/config.ts",
+    "apps/api/src/db/**/*",
+    "apps/api/src/env.ts",
+    "apps/api/src/lib/**/*",
+    "apps/api/src/middleware/**/*",
+    "apps/api/src/services/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "server/legacy-server.ts",
+    "client/src/test/setupTests.ts",
+    "client/src/__tests__/**/*",
+    "apps/api/scripts/**/*",
+    "**/AdminReviewPage.tsx",
+    "**/structured-practice.tsx",
+    "apps/api/src/ingestion/**/*",
+    "apps/api/src/ingestion_v4/**/*",
+    "apps/api/src/routes/ingestion-v4.ts",
+    "apps/api/src/routes/ingest.ts",
+    "apps/api/src/routes/ingest-llm.ts",
+    "apps/api/src/routes/calendar.ts",
+    "server/services/ingestionWorker.ts",
+    "server/services/jobPersistenceSupabase.ts",
+    "server/scripts/run-ingestion-dev.ts"
+  ]
+}

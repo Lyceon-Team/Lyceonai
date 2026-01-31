@@ -55,3 +55,12 @@ jobs:
           echo "Checking if critical secrets are loaded..."
           if [ -z "$SUPABASE_URL" ]; then echo "SUPABASE_URL is MISSING"; exit 1; else echo "SUPABASE_URL is present"; fi
           if [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY is MISSING"; exit 1; else echo "GEMINI_API_KEY is present"; fi
+
+      - name: TypeScript Check (CI)
+        run: pnpm exec tsc -p tsconfig.ci.json
+
+      - name: Run Tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build

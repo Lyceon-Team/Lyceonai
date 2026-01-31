@@ -11,6 +11,8 @@ export function csrfGuard() {
   console.log("[CSRF] Allowed origins (raw):", raw);
 
   return function csrfMiddleware(req: Request, res: Response, next: NextFunction) {
+    // Skip CSRF in development mode only, NOT test mode
+    // Tests need to verify CSRF behavior works correctly
     if (isDev) return next();
 
     const method = (req.method || "").toUpperCase();
