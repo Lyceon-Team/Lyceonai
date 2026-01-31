@@ -28,11 +28,18 @@
     "shared/**/*",
     "types/**/*",
     "server/middleware/**/*",
+    "server/routes/**/*",
+    "server/services/**/*",
+    "server/lib/**/*",
+    "server/index.ts",
+    "server/logger.ts",
+    "server/seo-content.ts",
     "apps/api/src/config.ts",
     "apps/api/src/db/**/*",
     "apps/api/src/env.ts",
     "apps/api/src/lib/**/*",
     "apps/api/src/middleware/**/*",
+    "apps/api/src/routes/**/*",
     "apps/api/src/services/**/*"
   ],
   "exclude": [
@@ -46,15 +53,6 @@
     "client/src/__tests__/**/*",
     "apps/api/scripts/**/*",
     "**/AdminReviewPage.tsx",
-    "**/structured-practice.tsx",
-    "apps/api/src/ingestion/**/*",
-    "apps/api/src/ingestion_v4/**/*",
-    "apps/api/src/routes/ingestion-v4.ts",
-    "apps/api/src/routes/ingest.ts",
-    "apps/api/src/routes/ingest-llm.ts",
-    "apps/api/src/routes/calendar.ts",
-    "server/services/ingestionWorker.ts",
-    "server/services/jobPersistenceSupabase.ts",
-    "server/scripts/run-ingestion-dev.ts"
+    "**/structured-practice.tsx"
   ]
 }

@@ -1,11 +1,11 @@
 /**
- * MVP Server - Minimal Express server for Bearer auth + Ingest + RAG
+ * Production Server - Express server for Supabase auth + RAG + Practice
  *
  * Replaces the legacy monolithic server (now in server/legacy-server.ts)
- * with a clean MVP focused on:
- *   - Simple Bearer token authentication
- *   - POST /api/ingest (admin token required)
- *   - POST /api/rag (user token required)
+ * with a clean production-ready server focused on:
+ *   - Supabase authentication (httpOnly cookies)
+ *   - POST /api/rag (authenticated users)
+ *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
 
@@ -15,16 +15,14 @@ import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
-// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, ingestion, embeddings, etc.).
+// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, embeddings, etc.).
 // apps/api MUST NOT be mounted for user-facing routes:
 //   - /api/questions/validate
 //   - /api/tutor/v2
 //   - auth token resolution / requireSupabaseAuth
-// ...removed ingest import...
 import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
-// ...removed ingest-llm imports...
 import { legalRouter } from "./routes/legal-routes.js";
 import {
   getQuestions,
@@ -46,7 +44,6 @@ import {
   getParsingStatistics,
 } from "./admin-review-routes";
 import { analyzeQuestion } from "./routes/student-routes";
-import { requireBearer } from "../apps/api/src/middleware/bearer-auth";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -63,7 +60,6 @@ import adminStatsRoutes from "./routes/admin-stats-routes";
 import adminProofRoutes from "./routes/admin-proof-routes";
 import { csrfGuard } from "./middleware/csrf";
 import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
-// ...removed ingestion-v4 imports...
 import { weaknessRouter } from "../apps/api/src/routes/weakness";
 import { masteryRouter } from "../apps/api/src/routes/mastery";
 import { calendarRouter } from "../apps/api/src/routes/calendar";
@@ -241,10 +237,6 @@ app.all("/terms", (_req, res) => res.redirect(301, "/legal/student-terms"));
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" })); // Legacy alias
 
-// ...removed /debug/env/ingest route...
-
-// ...removed ingestLimiter...
-
 const ragLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
@@ -256,8 +248,6 @@ const studentUploadLimiter = rateLimit({
   max: 10,
   message: { error: "Too many upload requests. Please wait a moment before trying again." },
 });
-
-// ...removed /api/ingest endpoint...
 
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
@@ -283,14 +273,6 @@ app.use(
 
 // Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
-
-// ...removed /api/ingestion-v4 route...
-
-// ...removed all /api/ingest-v2/* deprecated endpoints...
-
-// ...removed requireIngestAdmin middleware...
-
-// ...removed all /api/ingest-llm/* and /api/ingest/jobs endpoints...
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
@@ -351,8 +333,6 @@ app.use(
   requireSupabaseAdmin,
   adminProofRoutes
 );
-
-// ...removed /api/admin/ingest-summary endpoint...
 
 // Admin DB Health Check (requires Supabase admin)
 app.get("/api/admin/db-health", requireSupabaseAdmin, async (_req, res) => {
@@ -442,7 +422,7 @@ app.get("/api/admin/questions/statistics", requireSupabaseAdmin, getParsingStati
 app.post("/api/admin/questions/:id/approve", csrfProtection, requireSupabaseAdmin, approveQuestion);
 app.post("/api/admin/questions/:id/reject", csrfProtection, requireSupabaseAdmin, rejectQuestion);
 
-// Task B: Admin-only Supabase debug endpoint to verify ingestion target
+// Admin-only Supabase debug endpoint to verify database connection
 app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => {
   try {
     const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -511,7 +491,7 @@ app.get("/api/_whoami", (_req, res) => {
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
     version: "1.0.0",
-    routes: ["rag/v2", "tutor/v2", "ingest", "ingest-v2/upload", "ingest-v2/jobs", "ingest-v2/status/:jobId", "admin/ingest-summary", "admin/db-health"],
+    routes: ["rag/v2", "tutor/v2", "admin/db-health"],
     timestamp: new Date().toISOString(),
   });
 });
@@ -583,8 +563,6 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
     "GEMINI_API_KEY",
-    "INGEST_ADMIN_TOKEN",
-    "API_USER_TOKEN",
   ];
 
   const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);
@@ -674,8 +652,7 @@ if (isMainModule) {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/ingest (requires INGEST_ADMIN_TOKEN)`);
-    console.log(`  POST   /api/rag (requires API_USER_TOKEN)`);
+    console.log(`  POST   /api/rag (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
@@ -704,50 +681,7 @@ if (isMainModule) {
     console.log(`  GET    /api/notifications/unread-count`);
     console.log(`  PATCH  /api/notifications/:id/read`);
     console.log(`  PATCH  /api/notifications/mark-all-read`);
-    console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
-    console.log(`  POST   /api/ingest-llm (v3 upload)`);
-    console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
-    console.log(`  GET    /api/ingest-llm/status/:jobId`);
-    console.log(`  GET    /api/ingest-llm/jobs`);
-    console.log(`  GET    /api/ingest/jobs (alias)`);
-    console.log(`  POST   /api/ingest-llm/retry/:jobId`);
-    console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
-    console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/docupipe/ingest-poc`);
   });
-
-  // Ingestion worker controls (isolated behind INGESTION_ENABLED)
-  if (process.env.INGESTION_ENABLED === "true") {
-    import("../apps/api/src/ingestion_v4/services/v4AlwaysOnWorker")
-      .then(async ({ isWorkerEnabled, startWorker, getWorkerStatus, stopWorker }) => {
-        try {
-          const enabled = await isWorkerEnabled();
-          if (enabled) {
-            startWorker();
-            console.log("[WORKER] Ingestion worker started");
-          }
-
-          // Optional worker control endpoints (admin-only)
-          app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
-            const workerStatus = getWorkerStatus();
-            res.json(workerStatus);
-          });
-
-          app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
-            stopWorker();
-            res.json({ ok: true });
-          });
-        } catch (e: any) {
-          console.warn("[WORKER] Ingestion worker not started:", e?.message ?? "unknown");
-        }
-      })
-      .catch((e: any) => {
-        console.warn("[WORKER] Failed to load ingestion worker:", e?.message ?? "unknown");
-      });
-  } else {
-    console.log("[WORKER] Ingestion disabled (INGESTION_ENABLED != 'true')");
-  }
 
   // Graceful shutdown
   process.on("SIGTERM", () => {

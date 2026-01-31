@@ -8,7 +8,7 @@
 import { Router, Request, Response } from 'express';
 import { csrfGuard } from '../middleware/csrf';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
-import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/ingestion/types/supabaseQuestionsRow';
+import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/lib/question-validation';
 
 const router = Router();
 
