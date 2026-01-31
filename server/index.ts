@@ -300,6 +300,31 @@ app.get("/auth/google/callback", googleCallbackHandler);
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
+// Profile endpoint - requires authentication
+app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    // User is already attached by supabaseAuthMiddleware
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Return user profile
+    return res.json({ 
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        display_name: req.user.display_name,
+        role: req.user.role,
+        is_under_13: req.user.is_under_13,
+        guardian_consent: req.user.guardian_consent
+      }
+    });
+  } catch (error) {
+    console.error('[PROFILE] Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);
 
@@ -363,7 +388,8 @@ app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req
   return getQuestions(req, res);
 });
 
-app.get("/api/questions/recent", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
+app.get("/api/questions/recent", async (req, res) => {
+  // Allow anonymous access to recent questions for public preview
   const originalJson = res.json.bind(res);
   res.json = function (data: any) {
     if (Array.isArray(data)) {
