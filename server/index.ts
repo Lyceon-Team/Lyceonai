@@ -588,6 +588,8 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // Initialize Stripe schema and sync data
+// TODO: Restore this when runMigrations and getStripeSync are implemented
+/* 
 async function initStripe() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -629,6 +631,7 @@ async function initStripe() {
     console.error("[STRIPE] Initialization failed:", error.message);
   }
 }
+*/
 
 // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
 function validateSiteUrl(): void {
@@ -674,7 +677,8 @@ if (isMainModule) {
   console.log(`[API] Binding to 0.0.0.0:${PORT}`);
 
   // Initialize Stripe before starting server (non-blocking)
-  initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
+  // TODO: Restore when initStripe is implemented
+  // initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
@@ -723,25 +727,37 @@ if (isMainModule) {
     console.log(`  POST   /api/docupipe/ingest-poc`);
   });
 
-  // Ingestion worker controls (if enabled)
-  try {
-    if (isWorkerEnabled()) {
-      startWorker();
-    }
-  } catch (e: any) {
-    console.warn("[WORKER] Worker not started:", e?.message ?? "unknown");
+  // Ingestion worker controls (isolated behind INGESTION_ENABLED)
+  if (process.env.INGESTION_ENABLED === "true") {
+    import("../apps/api/src/ingestion_v4/services/v4AlwaysOnWorker")
+      .then(async ({ isWorkerEnabled, startWorker, getWorkerStatus, stopWorker }) => {
+        try {
+          const enabled = await isWorkerEnabled();
+          if (enabled) {
+            startWorker();
+            console.log("[WORKER] Ingestion worker started");
+          }
+
+          // Optional worker control endpoints (admin-only)
+          app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
+            const workerStatus = getWorkerStatus();
+            res.json(workerStatus);
+          });
+
+          app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
+            stopWorker();
+            res.json({ ok: true });
+          });
+        } catch (e: any) {
+          console.warn("[WORKER] Ingestion worker not started:", e?.message ?? "unknown");
+        }
+      })
+      .catch((e: any) => {
+        console.warn("[WORKER] Failed to load ingestion worker:", e?.message ?? "unknown");
+      });
+  } else {
+    console.log("[WORKER] Ingestion disabled (INGESTION_ENABLED != 'true')");
   }
-
-  // Optional worker control endpoints (admin-only)
-  app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
-    const workerStatus = getWorkerStatus();
-    res.json(workerStatus);
-  });
-
-  app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
-    stopWorker();
-    res.json({ ok: true });
-  });
 
   // Graceful shutdown
   process.on("SIGTERM", () => {

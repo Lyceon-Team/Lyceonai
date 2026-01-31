@@ -116,16 +116,27 @@ declare global {
 }
 
 // Supabase client with service role (bypasses RLS for admin operations)
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Creates a dummy client if env vars are missing (for test environments)
+const supabaseAdmin = (() => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    // Return dummy client for tests - will fail at runtime if actually used
+    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  }
+  return createClient(url, key);
+})();
 
 // Supabase client with anon key (enforces RLS)
-const supabaseAnon = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+const supabaseAnon = (() => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    // Return dummy client for tests - will fail at runtime if actually used
+    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  }
+  return createClient(url, key);
+})();
 
 /**
  * Middleware to extract and validate Supabase Auth JWT
