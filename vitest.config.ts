@@ -13,10 +13,13 @@ export default defineConfig({
     include: ['**/*.test.{ts,tsx}'],
     // Exclude ingestion tests unless INGESTION_ENABLED=true
     exclude: process.env.INGESTION_ENABLED === 'true' 
-      ? []
+      ? [
+          '**/node_modules/**',
+        ]
       : [
           'apps/api/src/ingestion_v4/**/*.test.ts',
           'apps/api/src/ingestion/**/*.test.ts',
+          'tests/regressions.test.ts', // Legacy file with jest syntax, tests migrated to separate files
           '**/node_modules/**',
         ],
   },
