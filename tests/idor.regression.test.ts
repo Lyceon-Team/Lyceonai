@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import request from 'supertest';
+import app from '../server/index';
 
 // ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
@@ -7,8 +9,6 @@ describe('IDOR Regression Invariants', () => {
   it('tutor_v2_userid_from_auth_not_body', async () => {
     // This test validates that the endpoint requires authentication
     // and rejects requests without proper auth (preventing IDOR)
-    const request = (await import('supertest')).default;
-    const app = (await import('../server/index')).default;
     
     // Test 1: Unauthenticated request should be rejected
     const res = await request(app)
