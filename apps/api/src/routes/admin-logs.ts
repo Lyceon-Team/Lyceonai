@@ -1,15 +1,15 @@
 import { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
 
-// GET /api/admin/logs - Get comprehensive system logs including ingestion history, errors, and practice activity
+// GET /api/admin/logs - Get comprehensive system logs including practice activity and audit logs
 export const getAdminLogs = async (req: Request, res: Response) => {
   try {
     const { 
-      type = 'all', // 'all', 'ingestion', 'practice', 'system', 'audit'
+      type = 'all', // 'all', 'practice', 'system', 'audit'
       limit = 100,
       offset = 0,
       level, // 'debug', 'info', 'warning', 'error', 'critical' (for system logs)
-      status, // Filter by status (for ingestion logs)
+      status, // Filter by status (for practice logs)
       from, // ISO timestamp for date range filtering
       to, // ISO timestamp for date range filtering
     } = req.query;
@@ -28,39 +28,6 @@ export const getAdminLogs = async (req: Request, res: Response) => {
     // Helper to parse date range
     const fromDate = from ? new Date(from as string).toISOString() : undefined;
     const toDate = to ? new Date(to as string).toISOString() : undefined;
-
-    // Fetch ingestion logs (ingestion_runs table)
-    if (type === 'all' || type === 'ingestion') {
-      let query = supabaseServer.from('ingestion_runs').select('*');
-      
-      if (status) {
-        query = query.eq('status', status as string);
-      }
-      if (fromDate) {
-        query = query.gte('created_at', fromDate);
-      }
-      if (toDate) {
-        query = query.lte('created_at', toDate);
-      }
-      
-      const { data: jobs, error: jobsError } = await query
-        .order('created_at', { ascending: false })
-        .range(numOffset, numOffset + numLimit - 1);
-
-      if (jobsError) {
-        console.error('[ADMIN_LOGS] Error fetching ingestion runs:', jobsError);
-      }
-
-      response.data.ingestion = {
-        jobs: jobs || [],
-        summary: {
-          totalJobs: jobs?.length || 0,
-          running: jobs?.filter(j => j.status === 'running').length || 0,
-          completed: jobs?.filter(j => j.status === 'completed').length || 0,
-          failed: jobs?.filter(j => j.status === 'failed').length || 0,
-        },
-      };
-    }
 
     // Fetch practice activity logs
     if (type === 'all' || type === 'practice') {
@@ -223,33 +190,23 @@ export const getLogsSummary = async (req: Request, res: Response) => {
 
     // Get counts from various tables in parallel
     const [
-      totalIngestionRunsResult,
-      runningIngestionRunsResult,
       recentErrorsResult,
       activePracticeSessionsResult,
       totalPracticeSessions24hResult,
-      recentJobsResult,
       recentSystemErrorsResult,
     ] = await Promise.all([
-      supabaseServer.from('ingestion_runs').select('*', { count: 'exact', head: true }),
-      supabaseServer.from('ingestion_runs').select('*', { count: 'exact', head: true }).eq('status', 'running'),
       supabaseServer.from('system_event_logs').select('*', { count: 'exact', head: true })
         .eq('level', 'error').gte('created_at', yesterday),
       supabaseServer.from('practice_sessions').select('*', { count: 'exact', head: true })
         .eq('status', 'in_progress'),
       supabaseServer.from('practice_sessions').select('*', { count: 'exact', head: true })
         .gte('started_at', yesterday),
-      supabaseServer.from('ingestion_runs').select('*').order('created_at', { ascending: false }).limit(5),
       supabaseServer.from('system_event_logs').select('*')
         .eq('level', 'error').order('created_at', { ascending: false }).limit(10),
     ]);
 
     res.json({
       summary: {
-        ingestionRuns: {
-          total: totalIngestionRunsResult.count || 0,
-          running: runningIngestionRunsResult.count || 0,
-        },
         errors: {
           last24h: recentErrorsResult.count || 0,
         },
@@ -258,7 +215,6 @@ export const getLogsSummary = async (req: Request, res: Response) => {
           last24h: totalPracticeSessions24hResult.count || 0,
         },
       },
-      recentJobs: recentJobsResult.data || [],
       recentErrors: recentSystemErrorsResult.data || [],
       timestamp: new Date().toISOString(),
     });
