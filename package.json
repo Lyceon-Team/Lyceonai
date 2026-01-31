@@ -12,6 +12,8 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
+    "test:ci": "vitest run",
+    "test:integration": "echo 'Integration tests with real secrets not yet configured'",
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
