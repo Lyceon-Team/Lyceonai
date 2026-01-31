@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { render } from "@testing-library/react";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { useEffect } from "react";

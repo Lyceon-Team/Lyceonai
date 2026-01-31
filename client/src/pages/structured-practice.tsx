@@ -97,34 +97,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
 
   const handleSkip = async () => {
     if (!currentQuestion || !sessionId) return;
-
-    setIsValidating(true);
-    try {
-      await apiRequest(`/api/practice/answer`, {
-        method: "POST",
-        body: JSON.stringify({
-          sessionId,
-          questionId: currentQuestion.id,
-          skipped: true,
-          selectedAnswer: null,
-          freeResponseAnswer: null,
-          elapsedMs: 0,
-        }),
-      });
-
-      setScore(prev => ({
-        ...prev,
-        skipped: prev.skipped + 1,
-        total: prev.total + 1,
-        streak: 0,
-      }));
-    } catch (e) {
-      console.error("Error skipping question:", e);
-      // still let them move on, but repetition risk remains if backend doesn't record skip
-    } finally {
-      setIsValidating(false);
-      await handleNext();
-    }
+    await skipQuestion();
   };
 
   const handleEndSession = async () => {
@@ -295,14 +268,14 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
             <CardContent className="space-y-6">
               <QuestionRenderer
                 question={currentQuestion}
-                questionIndex={score.total}
                 selectedAnswer={selectedAnswer}
                 freeResponseAnswer={freeResponseAnswer}
-                onAnswerSelect={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
-                onFreeResponseChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
+                onSelectAnswer={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
+                onFreeResponseAnswerChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
                 showResult={showExplanation}
-                validationResult={validationResult}
-                hideActions={true}
+                isCorrect={validationResult?.isCorrect}
+                correctAnswerKey={validationResult?.correctAnswerKey ?? undefined}
+                explanation={validationResult?.explanation ?? undefined}
               />
 
               {showExplanation && validationResult && (

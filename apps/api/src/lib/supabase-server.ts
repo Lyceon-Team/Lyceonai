@@ -23,12 +23,28 @@ function getSupabaseServer(): SupabaseClient {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl) {
-    throw new Error('SUPABASE_URL environment variable is not set');
-  }
-
-  if (!supabaseServiceRoleKey) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not set');
+  // In test mode, return placeholder client if env vars missing
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+  
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    if (isTestEnv) {
+      console.log('[SUPABASE-HTTP] Test mode: using placeholder client');
+      _supabaseServer = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+      return _supabaseServer;
+    }
+    
+    if (!supabaseUrl) {
+      throw new Error('SUPABASE_URL environment variable is not set');
+    }
+    
+    if (!supabaseServiceRoleKey) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not set');
+    }
   }
 
   _supabaseServer = createClient(supabaseUrl, supabaseServiceRoleKey, {
