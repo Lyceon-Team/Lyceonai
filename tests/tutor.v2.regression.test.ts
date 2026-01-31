@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../server/index';
+import { describeIfSupabaseEnv } from './helpers/supabaseEnv';
 
 // Minimal mocks for tutor context and LLM
 const mockRagService = {
@@ -16,7 +17,9 @@ jest.mock('../server/routes/tutor-v2', () => {
   };
 });
 
-describe('Tutor V2 Security Regression', () => {
+const describeWithSupabase = describeIfSupabaseEnv();
+
+describeWithSupabase('Tutor V2 Security Regression', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });

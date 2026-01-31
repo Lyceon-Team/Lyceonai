@@ -12,13 +12,17 @@ let lastTickAt: Date | null = null;
 let consecutiveErrors = 0;
 let totalProcessed = 0;
 let workerStartedAt: Date | null = null;
-let workerEnabledSource: 'env' | 'db' | 'both' | 'none' | 'always-on' = 'always-on';
+let workerEnabledSource: 'env' | 'db' | 'both' | 'none' | 'always-on' = 'none';
+let workerEnabled = false;
 
 export function isWorkerEnabledByEnv(): boolean {
-  return process.env.V4_WORKER_ENABLED === "true";
+  return process.env.INGESTION_ENABLED === "true" && process.env.V4_WORKER_ENABLED === "true";
 }
 
 export async function isWorkerEnabledByDb(): Promise<boolean> {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    return false;
+  }
   try {
     const supabase = getSupabaseAdmin();
     const { data } = await supabase
@@ -33,6 +37,12 @@ export async function isWorkerEnabledByDb(): Promise<boolean> {
 }
 
 export async function isWorkerEnabled(): Promise<boolean> {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    workerEnabledSource = 'none';
+    workerEnabled = false;
+    return false;
+  }
+
   const envEnabled = isWorkerEnabledByEnv();
   const dbEnabled = await isWorkerEnabledByDb();
   
@@ -43,10 +53,11 @@ export async function isWorkerEnabled(): Promise<boolean> {
   } else if (dbEnabled) {
     workerEnabledSource = 'db';
   } else {
-    workerEnabledSource = 'always-on';
+    workerEnabledSource = 'none';
   }
-  
-  return true;
+
+  workerEnabled = envEnabled || dbEnabled;
+  return workerEnabled;
 }
 
 export async function setWorkerEnabledInDb(enabled: boolean): Promise<void> {
@@ -63,15 +74,24 @@ export async function getWorkerConfig(): Promise<{
   envEnabled: boolean;
   dbEnabled: boolean;
 }> {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    return {
+      workerEnabledSource: 'none',
+      workerEnabled: false,
+      envEnabled: false,
+      dbEnabled: false,
+    };
+  }
+
   const envEnabled = isWorkerEnabledByEnv();
   const dbEnabled = await isWorkerEnabledByDb();
   
-  let source: 'env' | 'db' | 'both' | 'none' | 'always-on' = 'always-on';
+  let source: 'env' | 'db' | 'both' | 'none' | 'always-on' = 'none';
   if (envEnabled && dbEnabled) source = 'both';
   else if (envEnabled) source = 'env';
   else if (dbEnabled) source = 'db';
   
-  return { workerEnabledSource: source, workerEnabled: true, envEnabled, dbEnabled };
+  return { workerEnabledSource: source, workerEnabled: envEnabled || dbEnabled, envEnabled, dbEnabled };
 }
 
 export function getWorkerStatus(): {
@@ -84,7 +104,7 @@ export function getWorkerStatus(): {
   enabledSource: 'env' | 'db' | 'both' | 'none' | 'always-on';
 } {
   return {
-    enabled: true,
+    enabled: workerEnabled,
     running: isRunning,
     lastTickAt: lastTickAt?.toISOString() || null,
     consecutiveErrors,
@@ -200,9 +220,10 @@ async function workerLoop(): Promise<void> {
   }
 }
 
-export function startWorker(): void {
-  if (!isWorkerEnabled()) {
-    console.log(`[V4Worker] Worker disabled (V4_WORKER_ENABLED != true)`);
+export async function startWorker(): Promise<void> {
+  const enabled = await isWorkerEnabled();
+  if (!enabled) {
+    console.log(`[V4Worker] Worker disabled (INGESTION_ENABLED/V4_WORKER_ENABLED not true)`);
     return;
   }
   

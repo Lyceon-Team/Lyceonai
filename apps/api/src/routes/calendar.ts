@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseServer } from "../lib/supabase-server";
 import { decode } from "jsonwebtoken";
 import { getWeakestSkills, getMasterySummary } from "../services/studentMastery";
@@ -7,19 +6,7 @@ import { z } from "zod";
 import { generateJson, isV4GeminiEnabled } from "../ingestion_v4/services/gemini";
 import { DateTime } from "luxon";
 
-interface SupabaseUser {
-  id: string;
-  email: string;
-  display_name: string | null;
-  role: 'student' | 'admin' | 'guardian';
-  isAdmin: boolean;
-  isGuardian?: boolean;
-}
-
-interface AuthenticatedRequest extends Request {
-  supabase?: SupabaseClient;
-  user?: SupabaseUser;
-}
+type AuthenticatedRequest = Request;
 
 export const calendarRouter = Router();
 

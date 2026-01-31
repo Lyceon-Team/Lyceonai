@@ -1,7 +1,10 @@
 import request from 'supertest';
 import app from '../server/index';
+import { describeIfSupabaseEnv } from './helpers/supabaseEnv';
 
-describe('Auth Integration Tests', () => {
+const describeWithSupabase = describeIfSupabaseEnv();
+
+describeWithSupabase('Auth Integration Tests', () => {
   describe('Public Endpoints', () => {
     it('should return health status', async () => {
       const res = await request(app).get('/api/health');

@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../server/index';
+import { describeIfSupabaseEnv } from './helpers/supabaseEnv';
 
 // Minimal mocking utilities
 const mockSupabaseServer = {
@@ -10,7 +11,9 @@ const mockSupabaseServer = {
   single: jest.fn(),
 };
 
-describe('Practice/Questions Validate Security Regression', () => {
+const describeWithSupabase = describeIfSupabaseEnv();
+
+describeWithSupabase('Practice/Questions Validate Security Regression', () => {
   beforeAll(() => {
     jest.resetModules();
     jest.doMock('../server/routes/questions-validate', () => {

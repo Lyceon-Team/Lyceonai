@@ -527,9 +527,11 @@ describe('RagService', () => {
       expect(breakdown.weaknessBoost).toBe(1.0);
       // Recency: 0.1 * 0 = 0 (stubbed)
       expect(breakdown.recencyScore).toBe(0);
+      // Quality bonus: competency + difficulty metadata = 0.10
+      expect(breakdown.qualityBonus).toBeCloseTo(0.1, 2);
 
-      // Combined: 0.36 + 0.30 + 0.10 + 0 + 0.10 = 0.86
-      expect(scored[0].combinedScore).toBeCloseTo(0.86, 2);
+      // Combined: 0.36 + 0.30 + 0.10 + 0 + 0.10 + 0.10 = 0.96
+      expect(scored[0].combinedScore).toBeCloseTo(0.96, 2);
     });
   });
 });

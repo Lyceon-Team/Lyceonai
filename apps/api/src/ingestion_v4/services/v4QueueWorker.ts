@@ -1,7 +1,7 @@
 import { dequeueNext, completeQueueItem, failQueueItem } from "./v4Queue";
 import { runBatchForJob } from "./v4Runner";
 import { renderPagesForPdf } from "./v4PageRenderer";
-import { QueueRenderPagesRequestSchema } from "../types/schemas";
+import { BatchRunRequestSchema, QueueRenderPagesRequestSchema } from "../types/schemas";
 import { v4 as uuidv4 } from "uuid";
 import { isV4GeminiEnabled } from "./gemini";
 import { clusterBatch } from "./v4Clustering";
@@ -89,12 +89,13 @@ export async function processNextQueueItem(): Promise<ProcessResult> {
         }
       }
     } else {
-      const batchResult = await runBatchForJob(item.job_id, {
-        count: (payload.count as number) || 1,
-        sleepMs: (payload.sleepMs as number) || 1200,
-        stopOnQaFail: (payload.stopOnQaFail as boolean) || false,
-        maxQaFails: (payload.maxQaFails as number) || 3,
-      });
+      const parsed = BatchRunRequestSchema.safeParse(payload);
+
+      if (!parsed.success) {
+        throw new Error(`Invalid batch_generate payload: ${parsed.error.message}`);
+      }
+
+      const batchResult = await runBatchForJob(item.job_id, parsed.data);
       
       result = {
         type: "batch_generate",

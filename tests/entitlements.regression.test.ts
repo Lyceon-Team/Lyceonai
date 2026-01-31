@@ -1,28 +1,29 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import http from 'http';
 
 // Import the Express app directly if exported, else require here
 import app from '../server/index';
-
+import { describeIfSupabaseEnv } from './helpers/supabaseEnv';
 
 let server: http.Server;
 let baseUrl: string;
 
-beforeAll((done) => {
-  server = http.createServer(app);
-  server.listen(0, () => {
-    const { port } = server.address() as any;
-    baseUrl = `http://localhost:${port}`;
-    done();
+const describeWithSupabase = describeIfSupabaseEnv();
+
+describeWithSupabase('Entitlement/Auth Regression Invariants', () => {
+  beforeAll((done) => {
+    server = http.createServer(app);
+    server.listen(0, () => {
+      const { port } = server.address() as any;
+      baseUrl = `http://localhost:${port}`;
+      done();
+    });
   });
-});
 
-afterAll((done) => {
-  server.close(done);
-});
-
-describe('Entitlement/Auth Regression Invariants', () => {
+  afterAll((done) => {
+    server.close(done);
+  });
 
   it('auth_cookie_only_api_rag_rejects_bearer', async () => {
     const res = await fetch(`${baseUrl}/api/rag`, {

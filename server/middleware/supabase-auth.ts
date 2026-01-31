@@ -80,10 +80,7 @@ export async function resolveUserIdFromToken(token: string | null): Promise<stri
   if (!token) return null;
   
   try {
-    const supabaseAnon = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!
-    );
+    const supabaseAnon = getSupabaseAnonClient();
     const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
     if (error || !user) return null;
     return user.id;
@@ -115,17 +112,40 @@ declare global {
   }
 }
 
-// Supabase client with service role (bypasses RLS for admin operations)
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let supabaseAdmin: SupabaseClient | null = null;
+let supabaseAnon: SupabaseClient | null = null;
 
-// Supabase client with anon key (enforces RLS)
-const supabaseAnon = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+function getSupabaseAdminClient(): SupabaseClient {
+  if (supabaseAdmin) {
+    return supabaseAdmin;
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+  return supabaseAdmin;
+}
+
+function getSupabaseAnonClient(): SupabaseClient {
+  if (supabaseAnon) {
+    return supabaseAnon;
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_ANON_KEY");
+  }
+
+  supabaseAnon = createClient(supabaseUrl, supabaseAnonKey);
+  return supabaseAnon;
+}
 
 /**
  * Middleware to extract and validate Supabase Auth JWT
@@ -137,6 +157,13 @@ export async function supabaseAuthMiddleware(
   next: NextFunction
 ) {
   try {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      logger.warn('AUTH', 'supabase_env_missing', 'Supabase env not configured; skipping auth', {
+        path: req.path
+      });
+      return next();
+    }
+
     // Use shared helper for robust token extraction
     const tokenResult = resolveTokenFromRequest(req);
     const token = tokenResult.token;
@@ -147,7 +174,8 @@ export async function supabaseAuthMiddleware(
     }
 
     // Verify JWT and get user
-    const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token);
+    const supabaseAnonClient = getSupabaseAnonClient();
+    const { data: { user }, error: authError } = await supabaseAnonClient.auth.getUser(token);
 
     if (authError || !user) {
       logger.warn('AUTH', 'jwt_validation', 'Invalid or expired Supabase JWT', { error: authError });
@@ -201,7 +229,7 @@ export async function supabaseAuthMiddleware(
         });
       }
       
-      const { data: newProfile, error: createError } = await supabaseAdmin
+      const { data: newProfile, error: createError } = await getSupabaseAdminClient()
         .from('profiles')
         .insert({
           id: user.id,
@@ -286,7 +314,7 @@ export async function supabaseAuthMiddleware(
     // PHASE 2: Ensure public.users row exists (FK constraint for practice_sessions)
     // This prevents FK violation when inserting into tables that reference public.users(id)
     try {
-      const { error: upsertError } = await supabaseAdmin
+      const { error: upsertError } = await getSupabaseAdminClient()
         .from('users')
         .upsert(
           { 
@@ -298,7 +326,7 @@ export async function supabaseAuthMiddleware(
       
       if (upsertError) {
         // Retry with just id if email column doesn't exist or other schema issue
-        const { error: retryError } = await supabaseAdmin
+        const { error: retryError } = await getSupabaseAdminClient()
           .from('users')
           .upsert({ id: req.user.id }, { onConflict: 'id' });
         
@@ -320,7 +348,7 @@ export async function supabaseAuthMiddleware(
     // Ensure user has a lyceon_account and membership (student/guardian only)
     if (req.user.role === 'student' || req.user.role === 'guardian') {
       try {
-        const accountId = await ensureAccountForUser(supabaseAdmin, req.user.id, req.user.role);
+        const accountId = await ensureAccountForUser(getSupabaseAdminClient(), req.user.id, req.user.role);
         logger.info('AUTH', 'account_ensured', 'Account ensured for user', {
           userId: req.user.id,
           role: req.user.role,
@@ -465,12 +493,12 @@ export function requireStudentOrAdmin(
  * Get Supabase admin client (bypasses RLS - use carefully!)
  */
 export function getSupabaseAdmin() {
-  return supabaseAdmin;
+  return getSupabaseAdminClient();
 }
 
 /**
  * Get Supabase anon client (enforces RLS)
  */
 export function getSupabaseAnon() {
-  return supabaseAnon;
+  return getSupabaseAnonClient();
 }

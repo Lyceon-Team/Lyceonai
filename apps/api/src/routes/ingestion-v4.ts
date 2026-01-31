@@ -1401,7 +1401,7 @@ ingestionV4Router.get("/worker/status", async (_req: Request, res: Response) => 
  */
 ingestionV4Router.post("/worker/start", async (_req: Request, res: Response) => {
   try {
-    startWorker();
+    await startWorker();
     const status = getWorkerStatus();
     return res.status(200).json({ ok: true, message: "Worker start initiated", ...status });
   } catch (err: any) {
@@ -1498,7 +1498,7 @@ ingestionV4Router.post("/admin/fanout-pdfs", requireAdminOrBypass, async (req: R
   try {
     const { section, dpi, maxPages, pageMode, dryRun, overwrite } = req.body;
     
-    const sectionNormalized = section ? normalizeSection(section) : undefined;
+    const sectionNormalized = section ? normalizeSection(section) : null;
     if (section && !sectionNormalized) {
       return res.status(400).json({ 
         ok: false, 
@@ -1507,7 +1507,7 @@ ingestionV4Router.post("/admin/fanout-pdfs", requireAdminOrBypass, async (req: R
     }
 
     const result = await runPdfFanout({
-      section: sectionNormalized,
+      section: sectionNormalized ?? undefined,
       dpi: typeof dpi === "number" ? dpi : undefined,
       maxPages: typeof maxPages === "number" ? maxPages : undefined,
       pageMode: pageMode === "first" || pageMode === "all" || pageMode === "range" ? pageMode : undefined,

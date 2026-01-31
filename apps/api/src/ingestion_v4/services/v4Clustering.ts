@@ -642,7 +642,7 @@ export async function repairUnlinkedPages(
         copy_risk_sensitivity: "medium",
       };
       
-      let cluster = clusters.find(c => c.cluster_key === clusterKey);
+      let cluster: StyleCluster | null = clusters.find(c => c.cluster_key === clusterKey) ?? null;
       let isNewCluster = false;
       
       if (!cluster) {
@@ -812,7 +812,7 @@ Context for this page:
 Analyze the attached PNG image and return ONLY valid JSON matching the schema above.`;
         
         try {
-          const rawResponse = await generateJsonWithAttachments(
+          const rawResponse = await generateJsonWithAttachments<z.output<typeof SupapromptV2ResponseSchema>>(
             contextPrompt,
             SupapromptV2ResponseSchema,
             [attachment]

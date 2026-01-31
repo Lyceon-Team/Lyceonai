@@ -76,14 +76,19 @@ import practiceCanonicalRouter from "./routes/practice-canonical";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
+import { getStripeSync, runMigrations } from "./lib/stripeSync";
+import { loadEnvFile } from "../shared/loadEnv";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
+
+loadEnvFile();
 
 // Validate environment variables on startup
 validateEnvironment();
 
 const app = express();
+const ingestionEnabled = process.env.INGESTION_ENABLED === "true";
 
 // Trust proxy headers (required for Replit infrastructure and rate limiting)
 // Set to 1 to trust the first proxy layer (Replit's infrastructure)
@@ -230,6 +235,32 @@ function injectBodyContent(html: string, content: string): string {
   // Replace empty <div id="root"></div> with content inside
   // Content will be replaced by React hydration
   return html.replace(/<div\s+id="root">\s*<\/div>/i, `<div id="root">${content}</div>`);
+}
+
+async function registerIngestionRoutes(): Promise<void> {
+  if (!ingestionEnabled) {
+    console.log("[INGESTION] INGESTION_ENABLED is not true; ingestion routes disabled.");
+    return;
+  }
+
+  const requireIngestAdmin = requireBearer("INGEST_ADMIN_TOKEN");
+  const [
+    ingestModule,
+    ingestLlmModule,
+    ingestionV4Module,
+  ] = await Promise.all([
+    import("../apps/api/src/routes/ingest"),
+    import("../apps/api/src/routes/ingest-llm"),
+    import("../apps/api/src/routes/ingestion-v4"),
+  ]);
+
+  app.post("/api/ingest", requireIngestAdmin, ingestModule.ingest);
+  app.post("/api/ingest-llm", requireIngestAdmin, ingestLlmModule.uploadMiddleware, ingestLlmModule.ingestLlm);
+  app.post("/api/ingest-llm/test", requireIngestAdmin, ingestLlmModule.uploadMiddleware, ingestLlmModule.ingestLlmTest);
+  app.get("/api/ingest-llm/status/:jobId", requireIngestAdmin, ingestLlmModule.getIngestLlmStatus);
+  app.get("/api/ingest-llm/jobs", requireIngestAdmin, ingestLlmModule.getIngestLlmJobs);
+  app.post("/api/ingest-llm/retry/:jobId", requireIngestAdmin, ingestLlmModule.retryIngestLlmJob);
+  app.use("/api/ingestion-v4", requireSupabaseAuth, requireSupabaseAdmin, ingestionV4Module.ingestionV4Router);
 }
 
 // SEO 301 redirects for legacy URLs (GET + HEAD)
@@ -667,91 +698,100 @@ function validateSiteUrl(): void {
 
 // Start server if run directly or as bundled entry
 if (isMainModule) {
-  validateSiteUrl();
+  void (async () => {
+    await registerIngestionRoutes();
+    validateSiteUrl();
 
-  console.log(`[API] Starting Lyceon API server...`);
-  console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
-  console.log(`[API] Binding to 0.0.0.0:${PORT}`);
+    console.log(`[API] Starting Lyceon API server...`);
+    console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
+    console.log(`[API] Binding to 0.0.0.0:${PORT}`);
 
-  // Initialize Stripe before starting server (non-blocking)
-  initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
+    // Initialize Stripe before starting server (non-blocking)
+    initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
-    console.log(`\n📋 Core API endpoints:`);
-    console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/ingest (requires INGEST_ADMIN_TOKEN)`);
-    console.log(`  POST   /api/rag (requires API_USER_TOKEN)`);
-    console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
-    console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
-    console.log(`  POST   /api/auth/signup`);
-    console.log(`  POST   /api/auth/signin`);
-    console.log(`  POST   /api/auth/signout`);
-    console.log(`  GET    /api/auth/user`);
-    console.log(`\n❓ Questions API (requires Supabase auth):`);
-    console.log(`  GET    /api/questions`);
-    console.log(`  GET    /api/questions/recent`);
-    console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/validate`);
-    console.log(`  POST   /api/questions/feedback`);
-    console.log(`\n📚 Practice (requires Supabase auth):`);
-    console.log(`  GET    /api/practice/next`);
-    console.log(`  POST   /api/practice/answer`);
-    console.log(`  POST   /api/practice/end-session`);
-    console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
-    console.log(`  GET    /api/admin/questions/needs-review`);
-    console.log(`  GET    /api/admin/questions/statistics`);
-    console.log(`  POST   /api/admin/questions/:id/approve`);
-    console.log(`  POST   /api/admin/questions/:id/reject`);
-    console.log(`\n📷 Student Routes (requires Supabase auth):`);
-    console.log(`  POST   /api/student/analyze-question`);
-    console.log(`\n🔔 Notifications (requires Supabase auth):`);
-    console.log(`  GET    /api/notifications`);
-    console.log(`  GET    /api/notifications/unread-count`);
-    console.log(`  PATCH  /api/notifications/:id/read`);
-    console.log(`  PATCH  /api/notifications/mark-all-read`);
-    console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
-    console.log(`  POST   /api/ingest-llm (v3 upload)`);
-    console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
-    console.log(`  GET    /api/ingest-llm/status/:jobId`);
-    console.log(`  GET    /api/ingest-llm/jobs`);
-    console.log(`  GET    /api/ingest/jobs (alias)`);
-    console.log(`  POST   /api/ingest-llm/retry/:jobId`);
-    console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
-    console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/docupipe/ingest-poc`);
-  });
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
+      console.log(`\n📋 Core API endpoints:`);
+      console.log(`  GET    /healthz`);
+      console.log(`  POST   /api/ingest (requires INGEST_ADMIN_TOKEN)`);
+      console.log(`  POST   /api/rag (requires API_USER_TOKEN)`);
+      console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
+      console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
+      console.log(`  POST   /api/auth/signup`);
+      console.log(`  POST   /api/auth/signin`);
+      console.log(`  POST   /api/auth/signout`);
+      console.log(`  GET    /api/auth/user`);
+      console.log(`\n❓ Questions API (requires Supabase auth):`);
+      console.log(`  GET    /api/questions`);
+      console.log(`  GET    /api/questions/recent`);
+      console.log(`  GET    /api/questions/random`);
+      console.log(`  POST   /api/questions/validate`);
+      console.log(`  POST   /api/questions/feedback`);
+      console.log(`\n📚 Practice (requires Supabase auth):`);
+      console.log(`  GET    /api/practice/next`);
+      console.log(`  POST   /api/practice/answer`);
+      console.log(`  POST   /api/practice/end-session`);
+      console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
+      console.log(`  GET    /api/admin/questions/needs-review`);
+      console.log(`  GET    /api/admin/questions/statistics`);
+      console.log(`  POST   /api/admin/questions/:id/approve`);
+      console.log(`  POST   /api/admin/questions/:id/reject`);
+      console.log(`\n📷 Student Routes (requires Supabase auth):`);
+      console.log(`  POST   /api/student/analyze-question`);
+      console.log(`\n🔔 Notifications (requires Supabase auth):`);
+      console.log(`  GET    /api/notifications`);
+      console.log(`  GET    /api/notifications/unread-count`);
+      console.log(`  PATCH  /api/notifications/:id/read`);
+      console.log(`  PATCH  /api/notifications/mark-all-read`);
+      console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
+      console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
+      console.log(`  POST   /api/ingest-llm (v3 upload)`);
+      console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
+      console.log(`  GET    /api/ingest-llm/status/:jobId`);
+      console.log(`  GET    /api/ingest-llm/jobs`);
+      console.log(`  GET    /api/ingest/jobs (alias)`);
+      console.log(`  POST   /api/ingest-llm/retry/:jobId`);
+      console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
+      console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
+      console.log(`  POST   /api/docupipe/ingest-poc`);
+    });
 
-  // Ingestion worker controls (if enabled)
-  try {
-    if (isWorkerEnabled()) {
-      startWorker();
+    if (ingestionEnabled) {
+      const worker = await import("../apps/api/src/ingestion_v4/services/v4AlwaysOnWorker");
+
+      try {
+        if (await worker.isWorkerEnabled()) {
+          await worker.startWorker();
+        }
+      } catch (e: any) {
+        console.warn("[WORKER] Worker not started:", e?.message ?? "unknown");
+      }
+
+      // Optional worker control endpoints (admin-only)
+      app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
+        const workerStatus = worker.getWorkerStatus();
+        res.json(workerStatus);
+      });
+
+      app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
+        worker.stopWorker();
+        res.json({ ok: true });
+      });
     }
-  } catch (e: any) {
-    console.warn("[WORKER] Worker not started:", e?.message ?? "unknown");
-  }
 
-  // Optional worker control endpoints (admin-only)
-  app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
-    const workerStatus = getWorkerStatus();
-    res.json(workerStatus);
-  });
+    // Graceful shutdown
+    process.on("SIGTERM", () => {
+      console.log("[API] SIGTERM received. Shutting down.");
+      server.close(() => process.exit(0));
+    });
 
-  app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
-    stopWorker();
-    res.json({ ok: true });
-  });
-
-  // Graceful shutdown
-  process.on("SIGTERM", () => {
-    console.log("[API] SIGTERM received. Shutting down.");
-    server.close(() => process.exit(0));
-  });
-
-  process.on("SIGINT", () => {
-    console.log("[API] SIGINT received. Shutting down.");
-    server.close(() => process.exit(0));
+    process.on("SIGINT", () => {
+      console.log("[API] SIGINT received. Shutting down.");
+      server.close(() => process.exit(0));
+    });
+  })().catch((err) => {
+    console.error("[API] Startup failed:", err);
+    process.exit(1);
   });
 }
 

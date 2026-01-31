@@ -110,7 +110,7 @@ export function getGeminiModel(): GoogleGenAI {
 
 export async function generateJson<T>(
   prompt: string,
-  schema: z.ZodSchema<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   modelName: string = "gemini-2.0-flash"
 ): Promise<T> {
   return generateJsonWithAttachments(prompt, schema, [], modelName);
@@ -118,7 +118,7 @@ export async function generateJson<T>(
 
 export async function generateJsonWithAttachments<T>(
   prompt: string,
-  schema: z.ZodSchema<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   attachments: PdfAttachment[] = [],
   modelName: string = "gemini-2.0-flash"
 ): Promise<T> {

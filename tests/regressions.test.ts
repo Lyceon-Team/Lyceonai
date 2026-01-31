@@ -82,9 +82,24 @@ describe('PRAC-001: /api/questions/validate response security', () => {
         ...real,
         supabaseServer: {
           from: () => ({
-            select: () => ({ eq: () => ({ limit: () => ({ single: async () => ({ data: {
-              id: 'q1', question_type: 'mc', type: 'mc', answer_choice: 'A', answer_text: '42', answer: 'A', explanation: 'The answer is A because...'
-            }, error: null }) }) }) }) })
+            select: () => ({
+              eq: () => ({
+                limit: () => ({
+                  single: async () => ({
+                    data: {
+                      id: 'q1',
+                      question_type: 'mc',
+                      type: 'mc',
+                      answer_choice: 'A',
+                      answer_text: '42',
+                      answer: 'A',
+                      explanation: 'The answer is A because...'
+                    },
+                    error: null
+                  })
+                })
+              })
+            })
           })
         }
       };
