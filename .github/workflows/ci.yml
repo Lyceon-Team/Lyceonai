@@ -5,32 +5,15 @@ on:
   push:
     branches: [main]
 
-# Define global environment variables here
+# CI runs without secrets by default (for forks and basic validation)
+# Secrets are only required for integration tests, which should be skipped in CI
 env:
   CI: true
-  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-  SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-  STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-  CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-  CSRF_ALLOWED_ORIGINS: ${{ secrets.CSRF_ALLOWED_ORIGINS }}
-  SITE_URL: ${{ secrets.SITE_URL }}
-  PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
-  BASE_URL: ${{ secrets.BASE_URL }}
-  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
 jobs:
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # The 'env' here was redundant and potentially clearing the global scope. 
-    # I have removed the job-level env block to ensure it pulls from the global one.
 
     steps:
       - name: Checkout
@@ -49,12 +32,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Verify Secrets (Debug Step)
-        run: |
-          echo "Checking if critical secrets are loaded..."
-          if [ -z "$SUPABASE_URL" ]; then echo "SUPABASE_URL is MISSING"; exit 1; else echo "SUPABASE_URL is present"; fi
-          if [ -z "$GEMINI_API_KEY" ]; then echo "GEMINI_API_KEY is MISSING"; exit 1; else echo "GEMINI_API_KEY is present"; fi
 
       - name: TypeScript Check (CI)
         run: pnpm exec tsc -p tsconfig.ci.json
