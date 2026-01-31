@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import { vi } from 'vitest';
 import { resolveTokenFromRequest } from '../server/middleware/supabase-auth';
 
 // --- AUTH-001: Bearer rejection ---
@@ -74,10 +75,10 @@ describe('AUTH-001: Cookie-only auth for user-facing routes', () => {
 // --- PRAC-001: /api/questions/validate must not leak answers ---
 describe('PRAC-001: /api/questions/validate response security', () => {
   it('student: response has isCorrect/feedback, not correctAnswerKey/explanation', async () => {
-    jest.resetModules();
+    vi.resetModules();
     // Mock supabaseServer for questions-validate
-    jest.doMock('../server/routes/questions-validate', () => {
-      const real = jest.requireActual('../server/routes/questions-validate');
+    vi.doMock('../server/routes/questions-validate', () => {
+      const real = vi.importActual('../server/routes/questions-validate');
       return {
         ...real,
         supabaseServer: {
@@ -108,7 +109,7 @@ describe('PRAC-001: /api/questions/validate response security', () => {
   });
 
   it('guardian: response is 403', async () => {
-    jest.resetModules();
+    vi.resetModules();
     const { validateAnswer } = await import('../server/routes/questions-validate');
     const app = express();
     app.use(express.json());

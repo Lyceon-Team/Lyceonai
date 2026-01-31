@@ -1,21 +1,22 @@
 import request from 'supertest';
 import app from '../server/index';
 
+import { vi } from 'vitest';
 // Minimal mocking utilities
 const mockSupabaseServer = {
-  from: jest.fn().mockReturnThis(),
-  select: jest.fn().mockReturnThis(),
-  eq: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockReturnThis(),
-  single: jest.fn(),
+  from: vi.fn().mockReturnThis(),
+  select: vi.fn().mockReturnThis(),
+  eq: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  single: vi.fn(),
 };
 
 describe('Practice/Questions Validate Security Regression', () => {
   beforeAll(() => {
-    jest.resetModules();
-    jest.doMock('../server/routes/questions-validate', () => {
+    vi.resetModules();
+    vi.doMock('../server/routes/questions-validate', () => {
       // Re-require the real module but override supabaseServer
-      const real = jest.requireActual('../server/routes/questions-validate');
+      const real = vi.importActual('../server/routes/questions-validate');
       return {
         ...real,
         __esModule: true,

@@ -1,14 +1,15 @@
 import request from 'supertest';
 import app from '../server/index';
 
+import { vi } from 'vitest';
 // Minimal mocks for tutor context and LLM
 const mockRagService = {
-  handleRagQuery: jest.fn(),
+  handleRagQuery: vi.fn(),
 };
-const mockCallLlm = jest.fn();
+const mockCallLlm = vi.fn();
 
-jest.mock('../server/routes/tutor-v2', () => {
-  const real = jest.requireActual('../server/routes/tutor-v2');
+vi.mock('../server/routes/tutor-v2', () => {
+  const real = vi.importActual('../server/routes/tutor-v2');
   return {
     ...real,
     getRagService: () => mockRagService,
@@ -18,7 +19,7 @@ jest.mock('../server/routes/tutor-v2', () => {
 
 describe('Tutor V2 Security Regression', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('PRAC-002: does not leak answers/explanations in prompt for students', async () => {
