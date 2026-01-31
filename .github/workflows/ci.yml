@@ -73,13 +73,83 @@ jobs:
       - name: TypeScript check (tsc)
         run: pnpm run check
 
+
+
+      # Secrets presence check (non-fork only)
+      - name: Secrets presence check (non-fork only)
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          missing_vars=()
+          for var in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_DB_URL DATABASE_URL GEMINI_API_KEY OPENAI_API_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET CORS_ORIGINS CSRF_ALLOWED_ORIGINS SITE_URL PUBLIC_SITE_URL BASE_URL VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            if [ -z "${!var}" ]; then
+              missing_vars+=("$var")
+            fi
+          done
+          if [ ${#missing_vars[@]} -ne 0 ]; then
+            echo "Missing required secrets: ${missing_vars[*]}"
+            exit 1
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          CSRF_ALLOWED_ORIGINS: ${{ secrets.CSRF_ALLOWED_ORIGINS }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
       # Unit tests (repo-wide)
       - name: Unit tests (vitest)
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: pnpm run test
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          CSRF_ALLOWED_ORIGINS: ${{ secrets.CSRF_ALLOWED_ORIGINS }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       # API tests (explicit)
       - name: API tests
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: pnpm run test:api
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          CSRF_ALLOWED_ORIGINS: ${{ secrets.CSRF_ALLOWED_ORIGINS }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          PUBLIC_SITE_URL: ${{ secrets.PUBLIC_SITE_URL }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Build (vite + esbuild)
         run: pnpm run build
@@ -134,6 +204,21 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+
+      # Secrets presence check (non-fork only)
+      - name: Secrets presence check (non-fork only)
+        run: |
+          missing_vars=()
+          for var in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY SUPABASE_DB_URL DATABASE_URL GEMINI_API_KEY OPENAI_API_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET CORS_ORIGINS CSRF_ALLOWED_ORIGINS SITE_URL PUBLIC_SITE_URL BASE_URL VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            if [ -z "${!var}" ]; then
+              missing_vars+=("$var")
+            fi
+          done
+          if [ ${#missing_vars[@]} -ne 0 ]; then
+            echo "Missing required secrets: ${missing_vars[*]}"
+            exit 1
+          fi
 
       # Replace this with any *real* integration command(s) you have.
       # If you don't have any, remove this whole job.
