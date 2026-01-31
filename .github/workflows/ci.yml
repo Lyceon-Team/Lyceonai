@@ -18,6 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    name: Secrets presence check (no values)
+    shell: bash
+    run: |
+      set -euo pipefail
+      for k in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY STRIPE_SECRET_KEY; do
+      if [ -n "${!k:-}" ]; then
+        echo "$k: set"
+      else
+        echo "$k: MISSING"
+      fi
+      done
+
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
