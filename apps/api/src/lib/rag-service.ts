@@ -4,11 +4,11 @@
  * per PRP — RAG Retrieval v2 specifications
  */
 
-import { questions, userProgress } from '../../../../shared/schema';
-import { generateEmbedding } from './embeddings';
-import { matchSimilar, MatchResult } from './vector';
-import { supabaseServer } from './supabase-server';
-import {
+import { questions, userProgress } from '../../../../shared/schema.ts';
+import { generateEmbedding } from './embeddings.ts';
+import { matchSimilar, MatchResult } from './vector.ts';
+import { supabaseServer } from './supabase-server.ts';
+import type {
   RagMode,
   RagContext,
   RagQueryRequest,
@@ -17,10 +17,10 @@ import {
   QuestionContext,
   CompetencyContext,
   Competency,
-} from './rag-types';
+} from './rag-types.ts';
 
 // Re-export MatchResult for tests
-export type { MatchResult } from './vector';
+export type { MatchResult } from './vector.ts';
 
 /**
  * Scored vector match with combined weighted score

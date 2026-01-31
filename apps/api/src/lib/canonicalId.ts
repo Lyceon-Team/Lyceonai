@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { getSupabaseAdmin } from "./supabase-admin";
+import { getSupabaseAdmin } from "./supabase-admin.ts";
 
 export type TestCode = "SAT" | "ACT" | "AP" | "MCAT" | "LSAT";
 export type SectionCode = "M" | "R" | "W" | "S";

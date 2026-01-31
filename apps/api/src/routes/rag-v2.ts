@@ -5,8 +5,8 @@
  */
 
 import { Request, Response, Router } from 'express';
-import { RagQueryRequestSchema } from '../lib/rag-types';
-import { getRagService } from '../lib/rag-service';
+import { RagQueryRequestSchema } from '../lib/rag-types.ts';
+import { getRagService } from '../lib/rag-service.ts';
 
 const router = Router();
 

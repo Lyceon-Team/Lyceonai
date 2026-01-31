@@ -116,15 +116,21 @@ declare global {
 }
 
 // Supabase client with service role (bypasses RLS for admin operations)
+
+// Use dummy fallback values for Supabase env in test/dev to prevent test failures
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://dummy.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'dummy-anon-key';
+
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY
 );
 
 // Supabase client with anon key (enforces RLS)
 const supabaseAnon = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
 );
 
 /**

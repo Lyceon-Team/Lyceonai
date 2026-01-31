@@ -4,7 +4,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 import { Router, Request, Response } from "express";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { supabaseServer } from "../lib/supabase-server";
+import { supabaseServer } from "../lib/supabase-server.ts";
 import { decode } from "jsonwebtoken";
 import { getWeakestSkills, getMasterySummary } from "../services/studentMastery";
 import { z } from "zod";

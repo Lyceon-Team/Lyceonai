@@ -116,3 +116,6 @@ export const RagQueryRequestSchema = z.object({
 });
 
 export type ValidatedRagQueryRequest = z.infer<typeof RagQueryRequestSchema>;
+
+// Explicit ESM type export for Competency
+export type { Competency };

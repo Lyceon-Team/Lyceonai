@@ -1,4 +1,4 @@
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 
 export async function testDbConnection(): Promise<boolean> {
   try {

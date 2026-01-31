@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 
 import { calculateScore, DomainMastery, ScoreProjection } from '../../../../server/services/score-projection';
 import { DateTime } from 'luxon';

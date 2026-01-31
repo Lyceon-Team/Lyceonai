@@ -1,11 +1,11 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { getRagService } from "../../apps/api/src/lib/rag-service";
-import { callLlm } from "../../apps/api/src/lib/embeddings";
-import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
-import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
-import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
-import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { getRagService } from "../../apps/api/src/lib/rag-service.ts";
+import { callLlm } from "../../apps/api/src/lib/embeddings.ts";
+import { updateStudentStyle } from "../../apps/api/src/lib/profile-service.ts";
+import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log.ts";
+import type { RagQueryRequest, StudentProfile, QuestionContext, Competency } from "../../apps/api/src/lib/rag-types.ts";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server.ts";
 
 const router = Router();
 

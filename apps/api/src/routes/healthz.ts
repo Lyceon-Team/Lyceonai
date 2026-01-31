@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import os from 'os';
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 
 export function registerHealthz(app: Express) {
   app.get('/healthz', async (_req: Request, res: Response) => {

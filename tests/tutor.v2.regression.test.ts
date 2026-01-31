@@ -1,25 +1,37 @@
-import request from 'supertest';
-import app from '../server/index';
 
 import { vi } from 'vitest';
-// Minimal mocks for tutor context and LLM
-const mockRagService = {
-  handleRagQuery: vi.fn(),
-};
-const mockCallLlm = vi.fn();
-
+import express from 'express';
 vi.mock('../server/routes/tutor-v2', () => {
-  const real = vi.importActual('../server/routes/tutor-v2');
+  const mockRagService = {
+    handleRagQuery: vi.fn(),
+  };
+  const mockCallLlm = vi.fn();
+  // Use importActual as a function to avoid hoisting issues
+  const real = vi.importActual ? vi.importActual('../server/routes/tutor-v2') : {};
+  // Provide a dummy router as default export
+  const dummyRouter = express.Router();
+  dummyRouter.post('/', (req, res) => res.status(200).json({ ok: true }));
   return {
     ...real,
+    default: dummyRouter,
     getRagService: () => mockRagService,
     callLlm: mockCallLlm,
+    __mocks: { mockRagService, mockCallLlm },
   };
 });
 
+import request from 'supertest';
+import app from '../server/index';
+
 describe('Tutor V2 Security Regression', () => {
+  let mockRagService: any;
+  let mockCallLlm: any;
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-import mocks from the mocked module (explicit .ts extension for Vitest)
+    const tutorV2 = require('../server/routes/tutor-v2.ts');
+    mockRagService = tutorV2.__mocks.mockRagService;
+    mockCallLlm = tutorV2.__mocks.mockCallLlm;
   });
 
   it('PRAC-002: does not leak answers/explanations in prompt for students', async () => {

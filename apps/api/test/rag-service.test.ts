@@ -12,12 +12,12 @@ import {
   VectorClient,
   EmbeddingClient,
   QuestionRepository,
-} from '../src/lib/rag-service';
+} from '../src/lib/rag-service.ts';
 import {
   StudentProfile,
   QuestionContext,
   RagQueryRequest,
-} from '../src/lib/rag-types';
+} from '../src/lib/rag-types.ts';
 
 // ========== MOCK DATA ==========
 

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 import { generateEmbedding } from '../lib/embeddings';
 import { searchSimilarQuestions, getSupabaseClient } from '../lib/supabase';
 

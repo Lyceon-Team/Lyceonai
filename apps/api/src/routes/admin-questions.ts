@@ -10,7 +10,7 @@
  */
 
 import { Request, Response } from 'express';
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 
 /**
  * GET /api/admin/questions/needs-review

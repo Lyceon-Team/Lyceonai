@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { supabaseServer } from '../lib/supabase-server';
+import { supabaseServer } from '../lib/supabase-server.ts';
 
 // GET /api/admin/logs - Get comprehensive system logs including ingestion history, errors, and practice activity
 export const getAdminLogs = async (req: Request, res: Response) => {

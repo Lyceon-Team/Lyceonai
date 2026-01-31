@@ -1,4 +1,4 @@
-import { supabaseServer } from "./supabase-server";
+import { supabaseServer } from "./supabase-server.ts";
 
 export async function logTutorInteraction(params: {
   userId: string;

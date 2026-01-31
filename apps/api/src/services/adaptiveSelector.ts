@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { getSupabaseAdmin } from "../lib/supabase-admin.ts";
 import { getWeakestSkills, getWeakestClusters, SkillWeakness, ClusterWeakness } from "./studentMastery";
 
 export type SectionFilter = "math" | "rw";

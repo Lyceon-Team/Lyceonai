@@ -5,8 +5,8 @@
 
 import { Request, Response, Router } from "express";
 import { z } from "zod";
-import { generateEmbedding, callLlm } from "../lib/embeddings";
-import { matchSimilar } from "../lib/vector";
+import { generateEmbedding, callLlm } from "../lib/embeddings.ts";
+import { matchSimilar } from "../lib/vector.ts";
 
 const router = Router();
 

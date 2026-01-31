@@ -1,4 +1,4 @@
-import { supabaseServer } from "../lib/supabase-server";
+import { supabaseServer } from "../lib/supabase-server.ts";
 /**
  * POST /api/tutor/v2
  * AI Tutor v2 endpoint - uses RAG v2 + student profiles for personalized tutoring
@@ -6,11 +6,11 @@ import { supabaseServer } from "../lib/supabase-server";
 
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { getRagService } from "../lib/rag-service";
-import { callLlm } from "../lib/embeddings";
-import { updateStudentStyle } from "../lib/profile-service";
-import { logTutorInteraction } from "../lib/tutor-log";
-import type { RagQueryRequest, StudentProfile, QuestionContext } from "../lib/rag-types";
+import { getRagService } from "../lib/rag-service.ts";
+import { callLlm } from "../lib/embeddings.ts";
+import { updateStudentStyle } from "../lib/profile-service.ts";
+import { logTutorInteraction } from "../lib/tutor-log.ts";
+import type { RagQueryRequest, StudentProfile, QuestionContext } from "../lib/rag-types.ts";
 
 const router = Router();
 
