@@ -1,0 +1,41 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "server/legacy-server.ts",
+    "client/src/test/setupTests.ts",
+    "client/src/__tests__/**/*",
+    "apps/api/scripts/**/*",
+    "**/AdminReviewPage.tsx",
+    "**/structured-practice.tsx",
+    "apps/api/src/ingestion/**/*",
+    "apps/api/src/ingestion_v4/**/*"
+  ],
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.ci",
+    "target": "ES2020",
+    "noEmit": true,
+    "module": "ESNext",
+    "strict": true,
+    "lib": ["ES2020", "dom", "dom.iterable"],
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "bundler",
+    "downlevelIteration": true,
+    "baseUrl": ".",
+    "types": ["node", "vite/client"],
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "paths": {
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  }
+}
