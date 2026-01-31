@@ -266,13 +266,16 @@ describe('RagService', () => {
       const scored = service.testScoreAndSortMatches(matches, scoringContext);
 
       // The M.LIN.1 match should get a 10% weakness boost
-      // Score for M.GEO.2: 0.4 * 0.85 + 0 (no comp match) + 0 (no difficulty) + 0 (no weakness) = 0.34
-      // Score for M.LIN.1: 0.4 * 0.80 + 0 (no comp match) + 0 (no difficulty) + 0.1 * 1 (weakness boost) = 0.42
+      const weights = service.SCORING_WEIGHTS;
+      const geoScore = weights.semanticSim * 0.85 + weights.competencyMatch * 0 + weights.difficultyMatch * 0 + weights.weaknessBoost * 0 + weights.recencyScore * 0;
+      const linScore = weights.semanticSim * 0.80 + weights.competencyMatch * 0 + weights.difficultyMatch * 0 + weights.weaknessBoost * 1 + weights.recencyScore * 0;
 
       expect(scored[0].question_id).toBe('q-lin-1');
       expect(scored[0].scoreBreakdown.weaknessBoost).toBe(1);
+      expect(scored[0].combinedScore).toBeCloseTo(linScore, 2);
       expect(scored[1].question_id).toBe('q-geo-1');
       expect(scored[1].scoreBreakdown.weaknessBoost).toBe(0);
+      expect(scored[1].combinedScore).toBeCloseTo(geoScore, 2);
     });
 
     it('should compute weakness boost as 1 when match competency is in weak areas', () => {
@@ -528,8 +531,9 @@ describe('RagService', () => {
       // Recency: 0.1 * 0 = 0 (stubbed)
       expect(breakdown.recencyScore).toBe(0);
 
-      // Combined: 0.36 + 0.30 + 0.10 + 0 + 0.10 = 0.86
-      expect(scored[0].combinedScore).toBeCloseTo(0.86, 2);
+      // Combined: use weights for future-proofing
+      const expectedScore = weights.semanticSim * 0.90 + weights.competencyMatch * 1.0 + weights.difficultyMatch * 1.0 + weights.weaknessBoost * 1.0 + weights.recencyScore * 0;
+      expect(scored[0].combinedScore).toBeCloseTo(expectedScore, 2);
     });
   });
 });

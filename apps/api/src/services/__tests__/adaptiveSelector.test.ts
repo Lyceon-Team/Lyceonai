@@ -52,14 +52,14 @@ const mockQuestions = [...mockMathQuestions, ...mockRWQuestions];
 
 function createChainableMock(returnData: any[] = []) {
   const mock: any = {};
-  const methods = ['select', 'eq', 'neq', 'in', 'ilike', 'or', 'gte', 'gt', 'lt', 'lte', 'order', 'limit'];
-  
+  const methods = ['select', 'eq', 'neq', 'in', 'ilike', 'or', 'gte', 'gt', 'lt', 'lte', 'order', 'limit', 'not'];
+
   methods.forEach(method => {
     mock[method] = vi.fn(() => mock);
   });
-  
+
   mock.limit = vi.fn(() => Promise.resolve({ data: returnData, error: null }));
-  
+
   return mock;
 }
 
