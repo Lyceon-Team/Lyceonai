@@ -26,14 +26,13 @@
     "client/src/**/*",
     "client/*.d.ts",
     "shared/**/*",
-    "server/**/*",
     "types/**/*",
+    "server/middleware/**/*",
     "apps/api/src/config.ts",
     "apps/api/src/db/**/*",
     "apps/api/src/env.ts",
     "apps/api/src/lib/**/*",
     "apps/api/src/middleware/**/*",
-    "apps/api/src/routes/**/*",
     "apps/api/src/services/**/*"
   ],
   "exclude": [
