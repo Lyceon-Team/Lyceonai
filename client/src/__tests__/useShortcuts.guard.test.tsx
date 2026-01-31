@@ -10,7 +10,7 @@ function Harness({ onS }: { onS: () => void }) {
     document.body.appendChild(input);
     input.focus();
     const evt = new KeyboardEvent("keydown", { key: "s" });
-    document.dispatchEvent(evt);
+    input.dispatchEvent(evt);
   }, []);
   return null;
 }

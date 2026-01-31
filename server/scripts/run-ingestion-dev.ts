@@ -7,6 +7,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function main() {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    console.error("❌ Ingestion is disabled. Set INGESTION_ENABLED=true to run this script.");
+    process.exit(1);
+  }
+
   console.log('🧪 [DEV-INGEST] Starting dev ingestion test...\n');
   
   const pdfPath = path.resolve(__dirname, '../../attached_assets/SAT Suite Question Bank - math17_1758972100863.pdf');

@@ -1,22 +1,66 @@
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const {
+  handleRagQueryMock,
+  updateStudentStyleMock,
+  logTutorInteractionMock,
+  callLlmMock,
+  supabaseServerMock,
+} = vi.hoisted(() => ({
+  handleRagQueryMock: vi.fn(),
+  updateStudentStyleMock: vi.fn(),
+  logTutorInteractionMock: vi.fn(),
+  callLlmMock: vi.fn(),
+  supabaseServerMock: { from: vi.fn() },
+}));
+
+vi.mock('../../apps/api/src/lib/rag-service', () => ({
+  getRagService: () => ({ handleRagQuery: handleRagQueryMock })
+}));
+vi.mock('../../apps/api/src/lib/profile-service', () => ({
+  updateStudentStyle: updateStudentStyleMock
+}));
+vi.mock('../../apps/api/src/lib/tutor-log', () => ({
+  logTutorInteraction: logTutorInteractionMock
+}));
+vi.mock('../../apps/api/src/lib/embeddings', () => ({
+  callLlm: callLlmMock
+}));
+vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+  supabaseServer: supabaseServerMock
+}));
 
 // ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('tutor_v2_userid_ignored_from_body', async () => {
-    vi.resetModules();
-    // Mock downstream dependencies before importing the router (ESM-safe)
-    const handleRagQueryMock = vi.fn(async (args) => ({ context: {}, metadata: {}, ok: true }));
-    vi.doMock('../../apps/api/src/lib/rag-service', () => ({
-      getRagService: () => ({ handleRagQuery: handleRagQueryMock })
-    }));
-    const updateStudentStyleMock = vi.fn(async () => true);
-    vi.doMock('../../apps/api/src/lib/profile-service', () => ({
-      updateStudentStyle: updateStudentStyleMock
-    }));
-    const logTutorInteractionMock = vi.fn(async () => {});
-    vi.doMock('../../apps/api/src/lib/tutor-log', () => ({
-      logTutorInteraction: logTutorInteractionMock
+    handleRagQueryMock.mockResolvedValue({
+      ok: true,
+      metadata: { canonicalIdsUsed: [] },
+      context: {
+        primaryQuestion: { canonicalId: 'c1', stem: 'q', options: [], answer: null, explanation: null },
+        supportingQuestions: [],
+        competencyContext: { studentWeakAreas: [], studentStrongAreas: [], competencyLabels: [] },
+        studentProfile: { overallLevel: 3, primaryStyle: null, secondaryStyle: null, explanationLevel: 2 },
+      },
+    });
+    updateStudentStyleMock.mockResolvedValue(true);
+    logTutorInteractionMock.mockResolvedValue(undefined);
+    callLlmMock.mockResolvedValue('ok');
+    supabaseServerMock.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            limit: () => ({
+              single: async () => ({ data: null, error: null })
+            })
+          })
+        })
+      })
     }));
     // Import router after mocks are set
     const { default: router } = await import('../server/routes/tutor-v2');
@@ -45,29 +89,23 @@ describe('IDOR Regression Invariants', () => {
   });
 
   it('progress_review_attempt_rejects_foreign_session', async () => {
-    vi.resetModules();
     // ESM-safe: Mock the exact modules as imported in progress.ts
     // 1. Mock supabaseServer to return a session owned by someone else for practice_sessions
     const sessionId = 'foreign-session';
     const userId = 'real-user';
-    const supabaseMock = {
-      from: (table) => {
-        if (table === 'practice_sessions') {
-          return {
-            select: () => ({
-              eq: (col, val) => ({
-                single: async () => ({ data: { id: sessionId, user_id: 'someone-else' }, error: null })
-              })
+    supabaseServerMock.from.mockImplementation((table: string) => {
+      if (table === 'practice_sessions') {
+        return {
+          select: () => ({
+            eq: () => ({
+              single: async () => ({ data: { id: sessionId, user_id: 'someone-else' }, error: null })
             })
-          };
-        }
-        // Any other table: throw to fail test if called unexpectedly
-        throw new Error('Unexpected table: ' + table);
+          })
+        };
       }
-    };
-    vi.doMock('../../apps/api/src/lib/supabase-server', () => ({
-      supabaseServer: supabaseMock
-    }));
+      // Any other table: throw to fail test if called unexpectedly
+      throw new Error('Unexpected table: ' + table);
+    });
     // 2. Mock recordCompetencyEvent to fail if called
     const recordCompetencyEventMock = vi.fn();
     vi.doMock('../../apps/api/src/routes/progress', async () => {

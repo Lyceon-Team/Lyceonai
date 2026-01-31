@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import { describe, it, expect, vi } from 'vitest';
 import { resolveTokenFromRequest } from '../server/middleware/supabase-auth';
 
 // --- AUTH-001: Bearer rejection ---
@@ -43,11 +44,11 @@ describe('AUTH-001: Cookie-only auth for user-facing routes', () => {
 
   it('middleware attaches req.user for valid cookie', async () => {
     // Mock supabaseAnon.auth.getUser to always return a user
-    jest.resetModules();
-    jest.doMock('@supabase/supabase-js', () => {
-      const real = jest.requireActual('@supabase/supabase-js');
+    vi.resetModules();
+    vi.doMock('@supabase/supabase-js', async () => {
+      const real = await vi.importActual('@supabase/supabase-js');
       return {
-        ...real,
+        ...(real as object),
         createClient: () => ({
           auth: {
             getUser: async () => ({ data: { user: { id: 'u1', email: 'a@b.com', user_metadata: {} } }, error: null }),
@@ -74,19 +75,35 @@ describe('AUTH-001: Cookie-only auth for user-facing routes', () => {
 // --- PRAC-001: /api/questions/validate must not leak answers ---
 describe('PRAC-001: /api/questions/validate response security', () => {
   it('student: response has isCorrect/feedback, not correctAnswerKey/explanation', async () => {
-    jest.resetModules();
+    vi.resetModules();
     // Mock supabaseServer for questions-validate
-    jest.doMock('../server/routes/questions-validate', () => {
-      const real = jest.requireActual('../server/routes/questions-validate');
-      return {
-        ...real,
-        supabaseServer: {
-          from: () => ({
-            select: () => ({ eq: () => ({ limit: () => ({ single: async () => ({ data: {
-              id: 'q1', question_type: 'mc', type: 'mc', answer_choice: 'A', answer_text: '42', answer: 'A', explanation: 'The answer is A because...'
-            }, error: null }) }) }) }) })
+    vi.doMock('../server/routes/questions-validate', async () => {
+      const real = await vi.importActual('../server/routes/questions-validate');
+      const supabaseServer = {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              limit: () => ({
+                single: async () => ({
+                  data: {
+                    id: 'q1',
+                    question_type: 'mc',
+                    type: 'mc',
+                    answer_choice: 'A',
+                    answer_text: '42',
+                    answer: 'A',
+                    explanation: 'The answer is A because...'
+                  },
+                  error: null
+                })
+              })
+            })
           })
-        }
+        })
+      };
+      return {
+        ...(real as object),
+        supabaseServer
       };
     });
     const { validateAnswer } = await import('../server/routes/questions-validate');

@@ -26,8 +26,21 @@ const upload = multer({
 
 export const uploadMiddleware = upload.single('file');
 
+function ensureIngestionEnabled(res: Response): boolean {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    res.status(503).json({
+      error: "Ingestion disabled",
+      message: "Set INGESTION_ENABLED=true to enable ingestion endpoints.",
+    });
+    return false;
+  }
+  return true;
+}
+
 export const ingestLlm = async (req: Request, res: Response) => {
   try {
+    if (!ensureIngestionEnabled(res)) return;
+
     const { pdfPath, testCode, sectionCode } = req.body;
     
     if (!pdfPath && !req.file) {
@@ -55,6 +68,8 @@ export const ingestLlm = async (req: Request, res: Response) => {
 
 export const ingestLlmTest = async (req: Request, res: Response) => {
   try {
+    if (!ensureIngestionEnabled(res)) return;
+
     const { pdfPath, maxQuestions = 3, testCode, sectionCode } = req.body;
     
     if (!pdfPath && !req.file) {
@@ -101,6 +116,8 @@ export const ingestLlmTest = async (req: Request, res: Response) => {
 
 export const getIngestLlmStatus = async (req: Request, res: Response) => {
   try {
+    if (!ensureIngestionEnabled(res)) return;
+
     const { jobId } = req.params;
     
     const job = await getJobFromDB(jobId);
@@ -133,6 +150,8 @@ export const getIngestLlmStatus = async (req: Request, res: Response) => {
 
 export const getIngestLlmJobs = async (_req: Request, res: Response) => {
   try {
+    if (!ensureIngestionEnabled(res)) return;
+
     const jobs = await getJobsFromDB(50);
     
     const mappedJobs = jobs.map((job) => {
@@ -161,6 +180,8 @@ export const getIngestLlmJobs = async (_req: Request, res: Response) => {
 
 export const retryIngestLlmJob = async (req: Request, res: Response) => {
   try {
+    if (!ensureIngestionEnabled(res)) return;
+
     const { jobId } = req.params;
     
     const job = await getJobFromDB(jobId);

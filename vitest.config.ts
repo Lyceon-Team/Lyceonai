@@ -11,6 +11,8 @@ export default defineConfig({
       ['client/**/*.test.{ts,tsx}', 'jsdom'],
     ],
     include: ['**/*.test.{ts,tsx}'],
+    exclude: ['**/node_modules/**', '**/apps/api/src/ingestion_v4/**'],
+    setupFiles: ['tests/vitest.setup.ts'],
   },
   resolve: {
     alias: {

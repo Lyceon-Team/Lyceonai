@@ -27,7 +27,7 @@ export function Toaster() {
           </Toast>
         )
       })}
-      <ToastViewport />
+      <ToastViewport data-testid="toaster" />
     </ToastProvider>
   )
 }

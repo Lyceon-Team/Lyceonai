@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, Heart, BookOpen, Calculator, Zap, CheckCircle, XCircle, Flame, RotateCcw, ChevronLeft, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
-import { QuestionRenderer } from "@/components/question-renderer";
+import QuestionRenderer from "@/components/question-renderer";
 import { useAdaptivePractice } from "@/hooks/use-adaptive-practice";
 import { PracticeErrorBoundary } from "@/components/PracticeErrorBoundary";
 import type { StudentQuestion, StudentMcQuestion } from "@shared/schema";
@@ -324,14 +324,12 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
                 <div className="space-y-4">
                   <QuestionRenderer
                     question={currentQuestion}
-                    questionIndex={score.total}
                     selectedAnswer={selectedAnswer}
                     freeResponseAnswer={freeResponseAnswer}
-                    onAnswerSelect={handleAnswerSelect}
-                    onFreeResponseChange={handleFreeResponseChange}
+                    onSelectAnswer={handleAnswerSelect}
+                    onFreeResponseAnswerChange={handleFreeResponseChange}
                     showResult={false}
-                    validationResult={null}
-                    hideActions={true}
+                    disabled={isSubmitting}
                   />
                   
                   {!isMcQuestion && freeResponseAnswer.trim() && !isAutoSubmitting && (

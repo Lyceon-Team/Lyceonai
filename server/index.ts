@@ -76,6 +76,9 @@ import practiceCanonicalRouter from "./routes/practice-canonical";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
+import { runMigrations } from "stripe-replit-sync";
+import { getStripeSync } from "./lib/stripeSync";
+import { getWorkerStatus, isWorkerEnabled, startWorker, stopWorker } from "./services/ingestionWorkerControl";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
@@ -710,17 +713,21 @@ if (isMainModule) {
     console.log(`  GET    /api/notifications/unread-count`);
     console.log(`  PATCH  /api/notifications/:id/read`);
     console.log(`  PATCH  /api/notifications/mark-all-read`);
-    console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
-    console.log(`  POST   /api/ingest-llm (v3 upload)`);
-    console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
-    console.log(`  GET    /api/ingest-llm/status/:jobId`);
-    console.log(`  GET    /api/ingest-llm/jobs`);
-    console.log(`  GET    /api/ingest/jobs (alias)`);
-    console.log(`  POST   /api/ingest-llm/retry/:jobId`);
-    console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
-    console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
-    console.log(`  POST   /api/docupipe/ingest-poc`);
+    if (process.env.INGESTION_ENABLED === "true") {
+      console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
+      console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
+      console.log(`  POST   /api/ingest-llm (v3 upload)`);
+      console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
+      console.log(`  GET    /api/ingest-llm/status/:jobId`);
+      console.log(`  GET    /api/ingest-llm/jobs`);
+      console.log(`  GET    /api/ingest/jobs (alias)`);
+      console.log(`  POST   /api/ingest-llm/retry/:jobId`);
+      console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
+      console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
+      console.log(`  POST   /api/docupipe/ingest-poc`);
+    } else {
+      console.log(`\n📤 Ingestion pipelines disabled (set INGESTION_ENABLED=true to enable).`);
+    }
   });
 
   // Ingestion worker controls (if enabled)

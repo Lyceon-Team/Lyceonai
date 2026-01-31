@@ -1,29 +1,38 @@
 import request from 'supertest';
-import app from '../server/index';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { hasSupabaseSecrets, supabaseSkipMessage } from './helpers/supabaseEnv';
 
 // Minimal mocking utilities
 const mockSupabaseServer = {
-  from: jest.fn().mockReturnThis(),
-  select: jest.fn().mockReturnThis(),
-  eq: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockReturnThis(),
-  single: jest.fn(),
+  from: vi.fn().mockReturnThis(),
+  select: vi.fn().mockReturnThis(),
+  eq: vi.fn().mockReturnThis(),
+  limit: vi.fn().mockReturnThis(),
+  single: vi.fn(),
 };
 
-describe('Practice/Questions Validate Security Regression', () => {
-  beforeAll(() => {
-    jest.resetModules();
-    jest.doMock('../server/routes/questions-validate', () => {
-      // Re-require the real module but override supabaseServer
-      const real = jest.requireActual('../server/routes/questions-validate');
-      return {
-        ...real,
-        __esModule: true,
-        // Patch supabaseServer for test
-        supabaseServer: mockSupabaseServer,
-      };
-    });
+let app: typeof import('../server/index').default;
+
+if (!hasSupabaseSecrets()) {
+  describe.skip('Practice/Questions Validate Security Regression', () => {
+    it(supabaseSkipMessage(), () => {});
   });
+} else {
+  describe('Practice/Questions Validate Security Regression', () => {
+    beforeAll(async () => {
+      vi.resetModules();
+      vi.doMock('../server/routes/questions-validate', async () => {
+        const real = await vi.importActual('../server/routes/questions-validate');
+        return {
+          ...(real as any),
+          __esModule: true,
+          supabaseServer: mockSupabaseServer,
+        };
+      });
+
+      const mod = await import('../server/index');
+      app = mod.default;
+    });
 
   it('PRAC-001: does not leak correctAnswerKey or explanation to students', async () => {
     // Arrange: mock DB response for a question
@@ -52,4 +61,5 @@ describe('Practice/Questions Validate Security Regression', () => {
     expect(res.body).toHaveProperty('isCorrect');
     expect(res.body).toHaveProperty('feedback');
   });
-});
+  });
+}

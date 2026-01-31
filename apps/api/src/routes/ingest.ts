@@ -183,6 +183,13 @@ function deriveCanonicalIdFromStem(stem: string | undefined): string | null {
 }
 
 export async function ingest(req: Request, res: Response) {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    return res.status(503).json({
+      error: "Ingestion disabled",
+      message: "Set INGESTION_ENABLED=true to enable ingestion endpoints.",
+    });
+  }
+
   const items = normalizeBody(req.body);
   
   if (!Array.isArray(items) || items.length === 0) {

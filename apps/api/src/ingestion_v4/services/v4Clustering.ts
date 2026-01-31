@@ -380,7 +380,7 @@ async function createCluster(
   description: string,
   signature: ClusterSignature,
   confidence: number
-): Promise<StyleCluster | null> {
+): Promise<StyleCluster | undefined> {
   const supabase = getSupabaseAdmin();
   
   const normalizedKey = normalizeClusterKey(clusterKey);
@@ -398,13 +398,13 @@ async function createCluster(
       .select("*")
       .eq("id", existing.id)
       .single();
-    return cluster as StyleCluster | null;
+    return cluster as StyleCluster | undefined;
   }
   
   const clusterCount = await getClusterCount(section);
   if (clusterCount >= MAX_CLUSTERS_PER_SECTION) {
     console.warn(`[v4Clustering] Max clusters reached for section ${section}. Cannot create new cluster.`);
-    return null;
+    return undefined;
   }
   
   const { data, error } = await supabase
@@ -422,7 +422,7 @@ async function createCluster(
   
   if (error) {
     console.error("[v4Clustering] Failed to create cluster:", error.message);
-    return null;
+    return undefined;
   }
   
   console.log(`[v4Clustering] Created new cluster: ${normalizedKey} (${title})`);
@@ -864,7 +864,7 @@ Analyze the attached PNG image and return ONLY valid JSON matching the schema ab
       fallback,
     };
     
-    let cluster: StyleCluster | null = null;
+    let cluster: StyleCluster | undefined;
     
     if (response.match.new_cluster) {
       const canCreateNew = response.match.confidence >= CONFIDENCE_THRESHOLD || clusters.length === 0;

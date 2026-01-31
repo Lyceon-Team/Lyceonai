@@ -115,17 +115,35 @@ declare global {
   }
 }
 
-// Supabase client with service role (bypasses RLS for admin operations)
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let supabaseAdmin: SupabaseClient | null = null;
+let supabaseAnon: SupabaseClient | null = null;
 
-// Supabase client with anon key (enforces RLS)
-const supabaseAnon = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+function requireEnvValue(name: string, value: string | undefined): string {
+  if (!value) {
+    throw new Error(`${name} environment variable is not set`);
+  }
+  return value;
+}
+
+function getSupabaseAdminClient(): SupabaseClient {
+  if (supabaseAdmin) return supabaseAdmin;
+
+  const supabaseUrl = requireEnvValue('SUPABASE_URL', process.env.SUPABASE_URL);
+  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+  return supabaseAdmin;
+}
+
+function getSupabaseAnonClient(): SupabaseClient {
+  if (supabaseAnon) return supabaseAnon;
+
+  const supabaseUrl = requireEnvValue('SUPABASE_URL', process.env.SUPABASE_URL);
+  const anonKey = requireEnvValue('SUPABASE_ANON_KEY', process.env.SUPABASE_ANON_KEY);
+
+  supabaseAnon = createClient(supabaseUrl, anonKey);
+  return supabaseAnon;
+}
 
 /**
  * Middleware to extract and validate Supabase Auth JWT
@@ -146,6 +164,8 @@ export async function supabaseAuthMiddleware(
       return next();
     }
 
+    const supabaseAnon = getSupabaseAnonClient();
+
     // Verify JWT and get user
     const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token);
 
@@ -157,8 +177,8 @@ export async function supabaseAuthMiddleware(
     // Fetch user profile from Supabase using anon client with user's JWT (RLS enforced)
     // The JWT is automatically recognized by auth.uid() in RLS policies
     const userSupabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!,
+      requireEnvValue('SUPABASE_URL', process.env.SUPABASE_URL),
+      requireEnvValue('SUPABASE_ANON_KEY', process.env.SUPABASE_ANON_KEY),
       {
         global: {
           headers: {
@@ -201,7 +221,7 @@ export async function supabaseAuthMiddleware(
         });
       }
       
-      const { data: newProfile, error: createError } = await supabaseAdmin
+      const { data: newProfile, error: createError } = await getSupabaseAdminClient()
         .from('profiles')
         .insert({
           id: user.id,
@@ -282,6 +302,8 @@ export async function supabaseAuthMiddleware(
       email: req.user.email,
       role: req.user.role
     });
+
+    const supabaseAdmin = getSupabaseAdminClient();
 
     // PHASE 2: Ensure public.users row exists (FK constraint for practice_sessions)
     // This prevents FK violation when inserting into tables that reference public.users(id)
@@ -465,12 +487,12 @@ export function requireStudentOrAdmin(
  * Get Supabase admin client (bypasses RLS - use carefully!)
  */
 export function getSupabaseAdmin() {
-  return supabaseAdmin;
+  return getSupabaseAdminClient();
 }
 
 /**
  * Get Supabase anon client (enforces RLS)
  */
 export function getSupabaseAnon() {
-  return supabaseAnon;
+  return getSupabaseAnonClient();
 }

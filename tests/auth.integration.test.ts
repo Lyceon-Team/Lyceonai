@@ -1,7 +1,19 @@
 import request from 'supertest';
-import app from '../server/index';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { hasSupabaseSecrets, supabaseSkipMessage } from './helpers/supabaseEnv';
 
-describe('Auth Integration Tests', () => {
+let app: typeof import('../server/index').default;
+
+if (!hasSupabaseSecrets()) {
+  describe.skip('Auth Integration Tests', () => {
+    it(supabaseSkipMessage(), () => {});
+  });
+} else {
+  describe('Auth Integration Tests', () => {
+    beforeAll(async () => {
+      const mod = await import('../server/index');
+      app = mod.default;
+    });
   describe('Public Endpoints', () => {
     it('should return health status', async () => {
       const res = await request(app).get('/api/health');
@@ -228,4 +240,5 @@ describe('Auth Integration Tests', () => {
       expect([400, 500]).toContain(res.status);
     });
   });
-});
+  });
+}

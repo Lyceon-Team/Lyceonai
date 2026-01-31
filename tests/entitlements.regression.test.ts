@@ -1,28 +1,36 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import express from 'express';
 import http from 'http';
+import { hasSupabaseSecrets, supabaseSkipMessage } from './helpers/supabaseEnv';
 
-// Import the Express app directly if exported, else require here
-import app from '../server/index';
-
-
+let app: typeof import('../server/index').default;
 let server: http.Server;
 let baseUrl: string;
 
-beforeAll((done) => {
-  server = http.createServer(app);
-  server.listen(0, () => {
-    const { port } = server.address() as any;
-    baseUrl = `http://localhost:${port}`;
-    done();
+if (!hasSupabaseSecrets()) {
+  describe.skip('Entitlement/Auth Regression Invariants', () => {
+    it(supabaseSkipMessage(), () => {});
   });
-});
+} else {
+  beforeAll(async () => {
+    const mod = await import('../server/index');
+    app = mod.default;
+  });
 
-afterAll((done) => {
-  server.close(done);
-});
+  beforeAll((done) => {
+    server = http.createServer(app);
+    server.listen(0, () => {
+      const { port } = server.address() as any;
+      baseUrl = `http://localhost:${port}`;
+      done();
+    });
+  });
 
-describe('Entitlement/Auth Regression Invariants', () => {
+  afterAll((done) => {
+    server.close(done);
+  });
+
+  describe('Entitlement/Auth Regression Invariants', () => {
 
   it('auth_cookie_only_api_rag_rejects_bearer', async () => {
     const res = await fetch(`${baseUrl}/api/rag`, {
@@ -42,7 +50,7 @@ describe('Entitlement/Auth Regression Invariants', () => {
   it('rag_v2_userid_ignored_from_body', async () => {
     vi.resetModules();
     const handleRagQueryMock = vi.fn(async (args) => ({ ok: true, args }));
-    vi.mock('../lib/rag-service', () => ({
+    vi.mock('../apps/api/src/lib/rag-service', () => ({
       getRagService: () => ({ handleRagQuery: handleRagQueryMock }),
     }));
     const ragV2Router = (await import('../apps/api/src/routes/rag-v2')).default;
@@ -72,4 +80,5 @@ describe('Entitlement/Auth Regression Invariants', () => {
     const res = await fetch(`${baseUrl}/api/admin/db-health`);
     expect([401, 403]).toContain(res.status);
   });
-});
+  });
+}

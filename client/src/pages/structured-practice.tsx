@@ -9,7 +9,7 @@ import { useAdaptivePractice, SectionType } from '@/hooks/use-adaptive-practice'
 import { useTimer } from '@/hooks/useTimer';
 import { useToast } from '@/hooks/use-toast';
 import { PracticeErrorBoundary } from '@/components/PracticeErrorBoundary';
-import { QuestionRenderer } from '@/components/question-renderer';
+import QuestionRenderer from '@/components/question-renderer';
 
 interface StructuredPracticeProps {
   section?: string;
@@ -98,33 +98,8 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
   const handleSkip = async () => {
     if (!currentQuestion || !sessionId) return;
 
-    setIsValidating(true);
-    try {
-      await apiRequest(`/api/practice/answer`, {
-        method: "POST",
-        body: JSON.stringify({
-          sessionId,
-          questionId: currentQuestion.id,
-          skipped: true,
-          selectedAnswer: null,
-          freeResponseAnswer: null,
-          elapsedMs: 0,
-        }),
-      });
-
-      setScore(prev => ({
-        ...prev,
-        skipped: prev.skipped + 1,
-        total: prev.total + 1,
-        streak: 0,
-      }));
-    } catch (e) {
-      console.error("Error skipping question:", e);
-      // still let them move on, but repetition risk remains if backend doesn't record skip
-    } finally {
-      setIsValidating(false);
-      await handleNext();
-    }
+    await skipQuestion(0);
+    await handleNextQuestion();
   };
 
   const handleEndSession = async () => {
@@ -295,14 +270,15 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
             <CardContent className="space-y-6">
               <QuestionRenderer
                 question={currentQuestion}
-                questionIndex={score.total}
                 selectedAnswer={selectedAnswer}
                 freeResponseAnswer={freeResponseAnswer}
-                onAnswerSelect={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
-                onFreeResponseChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
+                onSelectAnswer={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
+                onFreeResponseAnswerChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
                 showResult={showExplanation}
-                validationResult={validationResult}
-                hideActions={true}
+                isCorrect={validationResult?.isCorrect}
+                correctAnswerKey={validationResult?.correctAnswerKey ?? null}
+                explanation={validationResult?.explanation ?? null}
+                disabled={isSubmitting || isAnswered}
               />
 
               {showExplanation && validationResult && (

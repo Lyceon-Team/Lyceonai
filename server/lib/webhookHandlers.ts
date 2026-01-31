@@ -1,4 +1,5 @@
 import { getUncachableStripeClient } from './stripeClient';
+import { getStripeSync } from './stripeSync';
 import { upsertEntitlement, mapStripeStatusToEntitlement } from './account';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';

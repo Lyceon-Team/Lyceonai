@@ -40,6 +40,15 @@ import { isV4GeminiEnabled, getGeminiKeySource } from "../ingestion_v4/services/
 import type { NextFunction } from "express";
 
 export const ingestionV4Router = Router();
+ingestionV4Router.use((_req: Request, res: Response, next) => {
+  if (process.env.INGESTION_ENABLED !== "true") {
+    return res.status(503).json({
+      error: "Ingestion disabled",
+      message: "Set INGESTION_ENABLED=true to enable ingestion endpoints.",
+    });
+  }
+  return next();
+});
 
 const V4_BUILD_VERSION = `v4-proof-20251227-robust`;
 
@@ -1498,7 +1507,7 @@ ingestionV4Router.post("/admin/fanout-pdfs", requireAdminOrBypass, async (req: R
   try {
     const { section, dpi, maxPages, pageMode, dryRun, overwrite } = req.body;
     
-    const sectionNormalized = section ? normalizeSection(section) : undefined;
+    const sectionNormalized = section ? normalizeSection(section) : null;
     if (section && !sectionNormalized) {
       return res.status(400).json({ 
         ok: false, 
@@ -1507,7 +1516,7 @@ ingestionV4Router.post("/admin/fanout-pdfs", requireAdminOrBypass, async (req: R
     }
 
     const result = await runPdfFanout({
-      section: sectionNormalized,
+      section: sectionNormalized ?? undefined,
       dpi: typeof dpi === "number" ? dpi : undefined,
       maxPages: typeof maxPages === "number" ? maxPages : undefined,
       pageMode: pageMode === "first" || pageMode === "all" || pageMode === "range" ? pageMode : undefined,
