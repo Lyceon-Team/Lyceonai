@@ -77,9 +77,6 @@ import { checkAiChatLimit } from "./middleware/usage-limits";
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
 
-// Validate environment variables on startup
-validateEnvironment();
-
 const app = express();
 
 // Trust proxy headers (required for Replit infrastructure and rate limiting)
@@ -602,6 +599,9 @@ if (isMainModule) {
   process.on("unhandledRejection", (reason) => {
     console.error("[FATAL] Unhandled rejection:", reason);
   });
+
+  // Validate environment variables on startup
+  validateEnvironment();
 
   // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
   function validateSiteUrl(): void {

@@ -52,7 +52,6 @@
     "client/src/test/setupTests.ts",
     "client/src/__tests__/**/*",
     "apps/api/scripts/**/*",
-    "**/AdminReviewPage.tsx",
-    "**/structured-practice.tsx"
+    "**/AdminReviewPage.tsx"
   ]
 }

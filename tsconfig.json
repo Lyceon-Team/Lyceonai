@@ -1,6 +1,6 @@
 {
   "include": ["client/src/**/*", "client/*.d.ts", "shared/**/*", "server/**/*", "types/**/*", "apps/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "**/*.test.tsx", "server/legacy-server.ts", "client/src/test/setupTests.ts", "client/src/__tests__/**/*", "apps/api/scripts/**/*", "**/AdminReviewPage.tsx", "**/structured-practice.tsx"],
+  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "**/*.test.tsx", "server/legacy-server.ts", "client/src/test/setupTests.ts", "client/src/__tests__/**/*", "apps/api/scripts/**/*", "**/AdminReviewPage.tsx"],
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
