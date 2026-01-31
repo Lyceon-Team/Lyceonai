@@ -37,6 +37,7 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "../apps/api/src/routes/questions";
+import { searchQuestions } from "../apps/api/src/routes/search";
 import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
@@ -415,6 +416,9 @@ app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQ
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
 
+// Search endpoint - allow anonymous access for public search
+app.get("/api/questions/search", searchQuestions);
+
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
@@ -487,6 +491,11 @@ app.use("/api/billing", billingRoutes);
 
 // Account Routes (bootstrap, status)
 app.use("/api/account", accountRoutes);
+
+// Document upload endpoint - requires authentication
+app.post("/api/documents/upload", requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
+  res.status(501).json({ error: 'Document upload not implemented' });
+});
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
