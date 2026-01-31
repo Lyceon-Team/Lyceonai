@@ -18,29 +18,6 @@ function isIsoDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-const StudyBlockSchema = z.object({
-  type: z.enum(["practice", "review", "flashcards", "full_test"]),
-  minutes: z.number().int().min(5).max(180),
-  skills: z.array(z.string()),
-  instructions: z.string(),
-});
-
-const StudyDaySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  planned_minutes: z.number().int().min(0).max(600),
-  focus_skills: z.array(z.string()),
-  blocks: z.array(StudyBlockSchema),
-});
-
-const LLMStudyPlanSchema = z.object({
-  plan_version: z.string(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  days: z.array(StudyDaySchema),
-});
-
-type LLMStudyPlan = z.infer<typeof LLMStudyPlanSchema>;
-
 function getLocalDayBounds(timezone: string, localDate: string): { utcStart: string; utcEnd: string } {
   try {
     const startOfDay = DateTime.fromISO(localDate, { zone: timezone }).startOf('day');
@@ -462,7 +439,7 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
     const endDateStr = endDt.toISODate()!;
 
     // LLM-based calendar generation has been removed (ingestion no longer supported)
-    const llmPlan: LLMStudyPlan | null = null;
+    // Calendar now uses heuristic-only approach
 
     const { data: existingDays } = await supabaseServer
       .from("student_study_plan_days")
