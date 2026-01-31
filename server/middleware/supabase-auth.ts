@@ -116,16 +116,32 @@ declare global {
 }
 
 // Supabase client with service role (bypasses RLS for admin operations)
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _supabaseAdminInstance: ReturnType<typeof createClient> | null = null;
+function _getSupabaseAdminLazy() {
+  if (!_supabaseAdminInstance) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
+    }
+    _supabaseAdminInstance = createClient(url, key);
+  }
+  return _supabaseAdminInstance;
+}
 
 // Supabase client with anon key (enforces RLS)
-const supabaseAnon = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+let _supabaseAnonInstance: ReturnType<typeof createClient> | null = null;
+function _getSupabaseAnonLazy() {
+  if (!_supabaseAnonInstance) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required');
+    }
+    _supabaseAnonInstance = createClient(url, key);
+  }
+  return _supabaseAnonInstance;
+}
 
 /**
  * Middleware to extract and validate Supabase Auth JWT
@@ -147,7 +163,7 @@ export async function supabaseAuthMiddleware(
     }
 
     // Verify JWT and get user
-    const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token);
+    const { data: { user }, error: authError } = await _getSupabaseAnonLazy().auth.getUser(token);
 
     if (authError || !user) {
       logger.warn('AUTH', 'jwt_validation', 'Invalid or expired Supabase JWT', { error: authError });
@@ -320,7 +336,7 @@ export async function supabaseAuthMiddleware(
     // Ensure user has a lyceon_account and membership (student/guardian only)
     if (req.user.role === 'student' || req.user.role === 'guardian') {
       try {
-        const accountId = await ensureAccountForUser(supabaseAdmin, req.user.id, req.user.role);
+        const accountId = await ensureAccountForUser(_getSupabaseAdminLazy(), req.user.id, req.user.role);
         logger.info('AUTH', 'account_ensured', 'Account ensured for user', {
           userId: req.user.id,
           role: req.user.role,
@@ -465,12 +481,12 @@ export function requireStudentOrAdmin(
  * Get Supabase admin client (bypasses RLS - use carefully!)
  */
 export function getSupabaseAdmin() {
-  return supabaseAdmin;
+  return _getSupabaseAdminLazy();
 }
 
 /**
  * Get Supabase anon client (enforces RLS)
  */
 export function getSupabaseAnon() {
-  return supabaseAnon;
+  return _getSupabaseAnonLazy();
 }
