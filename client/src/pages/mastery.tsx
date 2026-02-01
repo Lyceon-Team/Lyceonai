@@ -1,18 +1,11 @@
-import { useLocation } from "wouter";
 import { AppShell } from "@/components/layout/app-shell";
 import { SkillHeatmap } from "@/components/mastery/SkillHeatmap";
 import { Button } from "@/components/ui/button";
 import { Brain, ArrowLeft } from "lucide-react";
 
 export default function MasteryPage() {
-  const [, navigate] = useLocation();
-  
   const handleBack = () => {
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      navigate("/dashboard");
-    }
+    window.history.back();
   };
 
   return (
