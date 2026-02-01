@@ -70,10 +70,11 @@ export default function UserProfile() {
     enabled: !!user,
   });
 
-  // Get user stats
+  // Get user stats - DISABLED (endpoint /api/progress/detailed does not exist)
+  // Available endpoints: /api/progress/kpis, /api/progress/projection
   const { data: userStats } = useQuery<UserStats>({
     queryKey: ['/api/progress/detailed'],
-    enabled: !!userProfile?.authenticated,
+    enabled: false, // Disabled - endpoint not implemented
   });
 
   // Get notification settings - DISABLED (endpoint not implemented)
