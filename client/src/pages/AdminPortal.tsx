@@ -18,10 +18,8 @@ import {
   Activity,
   Upload, 
   Shield, 
-  BarChart3, 
-  Zap
+  BarChart3
 } from 'lucide-react';
-import AdminV4Operations from './admin-v4-operations';
 import { SafeBoundary } from '@/components/common/SafeBoundary';
 import { AdminGuard } from '@/components/auth/AdminGuard';
 
@@ -80,14 +78,10 @@ export function AdminPortal() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-1">
                 <TabsTrigger value="dashboard" className="flex items-center gap-2" data-testid="tab-dashboard">
                   <BarChart3 className="w-4 h-4" />
                   Dashboard
-                </TabsTrigger>
-                <TabsTrigger value="v4" className="flex items-center gap-2" data-testid="tab-v4">
-                  <Zap className="w-4 h-4" />
-                  V4 Generator
                 </TabsTrigger>
               </TabsList>
 
@@ -196,11 +190,6 @@ export function AdminPortal() {
                     </CardContent>
                   </Card>
                 )}
-              </TabsContent>
-
-              {/* V4 Operations Tab */}
-              <TabsContent value="v4" className="space-y-6">
-                <AdminV4Operations />
               </TabsContent>
             </Tabs>
           </div>

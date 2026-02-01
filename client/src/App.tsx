@@ -62,6 +62,9 @@ function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={Login} />
+        
+        {/* Signup redirects to login page (signup happens via modal/form on login page) */}
+        <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
                 
         {/* SEO Content Pages */}
         <Route path="/digital-sat" component={DigitalSAT} />
