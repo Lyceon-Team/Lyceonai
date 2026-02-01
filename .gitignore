@@ -12,3 +12,6 @@ replit.nix
 .upm
 *.backup
 *.bak
+*.tsbuildinfo
+*.csv
+*.png

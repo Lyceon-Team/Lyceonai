@@ -6,7 +6,21 @@ import PublicLayout from '@/components/layout/PublicLayout';
 import { Container, Breadcrumb, Card, Section } from '@/components/layout/primitives';
 
 function parseMarkdown(content: string): string {
-  let html = content
+  // Helper to escape HTML entities to prevent XSS
+  const escapeHtml = (text: string): string => {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // First escape all HTML in the content
+  let html = escapeHtml(content);
+  
+  // Now apply markdown formatting (safe since HTML is escaped)
+  html = html
     .replace(/^## (.+)$/gm, '<h2 class="text-2xl font-semibold mt-10 mb-4">$1</h2>')
     .replace(/^### (.+)$/gm, '<h3 class="text-xl font-semibold mt-8 mb-3">$1</h3>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')

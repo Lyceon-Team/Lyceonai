@@ -201,8 +201,7 @@ export function requireAdminAuth(req: AdminAuthenticatedRequest, res: Response, 
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({
-        error: 'Admin authentication required',
-        message: 'Provide Authorization: Bearer <admin-token> header'
+        error: 'Authentication required'
       });
       return;
     }
@@ -212,16 +211,22 @@ export function requireAdminAuth(req: AdminAuthenticatedRequest, res: Response, 
     
     if (!adminToken) {
       res.status(500).json({
-        error: 'Server configuration error',
-        message: 'Admin authentication is not properly configured'
+        error: 'Server configuration error'
       });
       return;
     }
     
-    if (token !== adminToken) {
+    // Use timing-safe comparison to prevent timing attacks
+    const tokenBuffer = Buffer.from(token, 'utf8');
+    const adminTokenBuffer = Buffer.from(adminToken, 'utf8');
+    
+    // Ensure buffers are the same length for comparison
+    const isValidLength = tokenBuffer.length === adminTokenBuffer.length;
+    const isValidToken = isValidLength && crypto.timingSafeEqual(tokenBuffer, adminTokenBuffer);
+    
+    if (!isValidToken) {
       res.status(403).json({
-        error: 'Invalid admin token',
-        message: 'Admin privileges required for this endpoint'
+        error: 'Access denied'
       });
       return;
     }

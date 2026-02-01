@@ -19,6 +19,41 @@ import { getLegalDocBySlug } from "@/lib/legal";
 import Footer from "@/components/layout/Footer";
 import NotFound from "./not-found";
 
+// Helper to safely format and highlight text
+// Only allows <strong> and <mark> tags, escapes everything else
+function safeFormatAndHighlight(text: string, searchQuery: string): string {
+  // First, escape all HTML
+  const escapeHtml = (str: string) => {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // Escape the entire text first
+  let safe = escapeHtml(text);
+  
+  // Now apply bold formatting (safe since HTML is escaped)
+  safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  
+  // Apply search highlighting if query exists
+  if (searchQuery.trim()) {
+    // Escape special regex characters in search query
+    const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Escape HTML entities in the query for matching
+    const queryForMatch = escapeHtml(escapedQuery);
+    
+    safe = safe.replace(
+      new RegExp(`(${queryForMatch})`, 'gi'),
+      '<mark class="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">$1</mark>'
+    );
+  }
+  
+  return safe;
+}
+
 export default function LegalDocPage() {
   const { slug } = useParams<{ slug: string }>();
   const doc = getLegalDocBySlug(slug || '');
@@ -119,19 +154,13 @@ export default function LegalDocPage() {
         );
       } else if (trimmed) {
         flushList();
-        const formatted = trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        const safeHtml = safeFormatAndHighlight(trimmed, searchQuery);
+        
         elements.push(
           <p 
             key={index} 
             className="text-muted-foreground mb-3"
-            dangerouslySetInnerHTML={{ 
-              __html: searchQuery.trim() 
-                ? formatted.replace(
-                    new RegExp(`(${searchQuery})`, 'gi'),
-                    '<mark class="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">$1</mark>'
-                  )
-                : formatted
-            }}
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
         );
       } else {

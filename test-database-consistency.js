@@ -15,8 +15,14 @@
 
 import fetch from 'node-fetch';
 
-const BASE_URL = 'http://localhost:5000';
-const ADMIN_TOKEN = 'admin-dev-token-2024';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+const ADMIN_TOKEN = process.env.ADMIN_DEV_TOKEN || '';
+
+if (!ADMIN_TOKEN) {
+  console.error('⚠️  ERROR: ADMIN_DEV_TOKEN environment variable not set');
+  console.error('Please set ADMIN_DEV_TOKEN to run tests');
+  process.exit(1);
+}
 
 // Test utilities
 const adminHeaders = {
