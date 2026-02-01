@@ -12,10 +12,12 @@ The ingestion system, including all v3 and v4 implementations, has been deprecat
 
 ### What was removed:
 
-- **Routes (unmounted and deleted):**
-  - `apps/api/src/routes/ingestion-v4.ts` (did not exist)
-  - `apps/api/src/routes/ingest-llm.ts` (did not exist)
-  - `apps/api/src/routes/documents.ts` (deleted)
+- **Routes (deleted):**
+  - `apps/api/src/routes/documents.ts` - Deleted deprecated ingestion route
+
+- **Routes (never implemented in this codebase):**
+  - `apps/api/src/routes/ingestion-v4.ts` - Listed in plan but did not exist
+  - `apps/api/src/routes/ingest-llm.ts` - Listed in plan but did not exist
 
 - **Admin UI (deleted):**
   - `client/src/pages/AdminIngestPage.tsx`
