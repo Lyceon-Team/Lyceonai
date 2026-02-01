@@ -15,6 +15,8 @@ import { AdminGuard } from "@/components/auth/AdminGuard";
 interface HealthCheck {
   ok: boolean;
   detail?: string;
+  status?: 'OK' | 'FAIL' | 'UNKNOWN';
+  reason?: string;
 }
 
 interface StripeCheck {
@@ -26,7 +28,11 @@ interface SecurityCheck {
   cookieOnlyAuth: boolean;
   bearerRejected: boolean;
   csrfProduction: boolean;
-  canonicalHost: string;
+  canonicalHost: string | { status: 'UNKNOWN'; reason: string };
+}
+
+interface VersionInfo {
+  sha: string | { status: 'UNKNOWN'; reason: string };
 }
 
 interface HealthResponse {
@@ -34,9 +40,7 @@ interface HealthResponse {
   serverTime: string;
   uptimeSec: number;
   env: string;
-  version: {
-    sha: string;
-  };
+  version: VersionInfo;
   checks: {
     db: HealthCheck;
     supabase: HealthCheck;
@@ -51,6 +55,19 @@ export default function AdminDashboard() {
     queryKey: ['/api/admin/health'],
     refetchInterval: 30000, // Refresh every 30 seconds
   });
+
+  // Helper to extract string value or UNKNOWN status
+  const getStringValue = (value: string | { status: 'UNKNOWN'; reason: string } | undefined): string => {
+    if (!value) return 'Loading...';
+    if (typeof value === 'string') return value;
+    return 'UNKNOWN';
+  };
+
+  // Helper to get reason for UNKNOWN status
+  const getUnknownReason = (value: string | { status: 'UNKNOWN'; reason: string } | undefined): string | null => {
+    if (!value || typeof value === 'string') return null;
+    return value.reason;
+  };
 
   const getStatusIcon = (ok: boolean | undefined) => {
     if (ok === undefined || ok === null) {
@@ -134,13 +151,13 @@ export default function AdminDashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-2xl font-bold" data-testid="text-system-status">
-                        {healthData?.ok ? "System Healthy" : healthData ? "System Issues Detected" : "Loading..."}
+                        {isLoading ? "Loading..." : healthData?.ok ? "System Healthy" : "System Issues Detected"}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Environment: <Badge variant="outline">{healthData?.env || "unknown"}</Badge>
+                        Environment: <Badge variant="outline">{healthData?.env || "Loading..."}</Badge>
                       </p>
                     </div>
-                    {getStatusBadge(healthData?.ok, "HEALTHY", "DEGRADED")}
+                    {!isLoading && getStatusBadge(healthData?.ok, "HEALTHY", "DEGRADED")}
                   </div>
                 </CardContent>
               </Card>
@@ -164,19 +181,24 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Uptime:</span>
                     <span className="text-sm" data-testid="text-uptime">
-                      {healthData?.uptimeSec ? formatUptime(healthData.uptimeSec) : "N/A"}
+                      {isLoading ? "Loading..." : healthData?.uptimeSec ? formatUptime(healthData.uptimeSec) : "UNKNOWN"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Version:</span>
                     <Badge variant="outline" className="text-xs" data-testid="text-version">
-                      {healthData?.version.sha || "unknown"}
+                      {isLoading ? "Loading..." : getStringValue(healthData?.version.sha)}
                     </Badge>
                   </div>
+                  {!isLoading && healthData?.version.sha && typeof healthData.version.sha === 'object' && (
+                    <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
+                      {healthData.version.sha.reason}
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Server Time:</span>
                     <span className="text-xs text-muted-foreground" data-testid="text-server-time">
-                      {healthData?.serverTime ? format(new Date(healthData.serverTime), 'HH:mm:ss') : "N/A"}
+                      {isLoading ? "Loading..." : healthData?.serverTime ? format(new Date(healthData.serverTime), 'HH:mm:ss') : "UNKNOWN"}
                     </span>
                   </div>
                 </CardContent>
@@ -198,12 +220,17 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Status:</span>
                     <span className="text-sm" data-testid="text-db-detail">
-                      {healthData?.checks.db.detail || "not checked"}
+                      {healthData?.checks.db.detail || (isLoading ? "Loading..." : "UNKNOWN")}
                     </span>
                   </div>
-                  {!healthData?.checks.db.ok && healthData?.checks.db.detail && (
+                  {!healthData?.checks.db.ok && healthData?.checks.db.reason && (
                     <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">
-                      {healthData.checks.db.detail}
+                      <strong>Reason:</strong> {healthData.checks.db.reason}
+                    </div>
+                  )}
+                  {healthData?.checks.db.status === 'UNKNOWN' && healthData?.checks.db.reason && (
+                    <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
+                      <strong>Note:</strong> {healthData.checks.db.reason}
                     </div>
                   )}
                 </CardContent>
@@ -225,12 +252,17 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Status:</span>
                     <span className="text-sm" data-testid="text-supabase-detail">
-                      {healthData?.checks.supabase.detail || "not checked"}
+                      {healthData?.checks.supabase.detail || (isLoading ? "Loading..." : "UNKNOWN")}
                     </span>
                   </div>
-                  {!healthData?.checks.supabase.ok && healthData?.checks.supabase.detail && (
+                  {!healthData?.checks.supabase.ok && healthData?.checks.supabase.reason && (
                     <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">
-                      {healthData.checks.supabase.detail}
+                      <strong>Reason:</strong> {healthData.checks.supabase.reason}
+                    </div>
+                  )}
+                  {healthData?.checks.supabase.status === 'UNKNOWN' && healthData?.checks.supabase.reason && (
+                    <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
+                      <strong>Note:</strong> {healthData.checks.supabase.reason}
                     </div>
                   )}
                 </CardContent>
@@ -285,9 +317,14 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Canonical Host:</span>
                     <span className="text-xs text-muted-foreground" data-testid="text-canonical-host">
-                      {healthData?.checks.security.canonicalHost || "unknown"}
+                      {isLoading ? "Loading..." : getStringValue(healthData?.checks.security.canonicalHost)}
                     </span>
                   </div>
+                  {!isLoading && healthData?.checks.security.canonicalHost && typeof healthData.checks.security.canonicalHost === 'object' && (
+                    <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
+                      {healthData.checks.security.canonicalHost.reason}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -325,7 +362,7 @@ export default function AdminDashboard() {
             {/* Status Footer */}
             <div className="mt-8 text-center text-sm text-muted-foreground">
               <p>
-                Last updated: {healthData?.serverTime ? format(new Date(healthData.serverTime), 'MMM dd, yyyy HH:mm:ss') : 'Never'}
+                Last updated: {isLoading ? "Loading..." : healthData?.serverTime ? format(new Date(healthData.serverTime), 'MMM dd, yyyy HH:mm:ss') : 'Never'}
               </p>
               <p className="mt-1 text-xs">
                 Dashboard auto-refreshes every 30 seconds
