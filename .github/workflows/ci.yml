@@ -36,6 +36,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Security Audit
+        run: |
+          pnpm audit --audit-level=high || echo "Security vulnerabilities found - review required"
+          
       - name: TypeScript Check (CI)
         run: pnpm exec tsc -p tsconfig.ci.json
 
@@ -44,6 +48,11 @@ jobs:
 
       - name: Build
         run: pnpm run build
+        
+      - name: Validate Build Output
+        run: |
+          test -f dist/index.js || (echo "Build output missing!" && exit 1)
+          pnpm run postbuild
 
   # Optional integration tests - only runs when secrets are available
   # This job is not required for PR merge
