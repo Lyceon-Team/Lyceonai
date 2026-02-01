@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { SkillHeatmap } from "@/components/mastery/SkillHeatmap";
 import { Button } from "@/components/ui/button";
-import { Brain, ArrowLeft } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Brain, ArrowLeft, Construction } from "lucide-react";
 
 export default function MasteryPage() {
   const handleBack = () => {
@@ -21,11 +21,24 @@ export default function MasteryPage() {
             <h1 className="text-3xl font-bold text-foreground">Skill Mastery</h1>
           </div>
           <p className="text-muted-foreground">
-            Track your progress across all SAT skills. Click on weak areas to add them to your study plan.
+            Track your progress across all SAT skills.
           </p>
         </div>
 
-        <SkillHeatmap />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Construction className="h-5 w-5" />
+              Coming Soon
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">
+              The skill mastery heatmap is being rebuilt with improved tracking. 
+              Check back soon for detailed insights into your SAT performance.
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   );

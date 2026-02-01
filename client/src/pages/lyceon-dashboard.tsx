@@ -13,7 +13,6 @@ import { Calendar, Target, TrendingUp, Clock, BookOpen, Zap, ArrowRight, Brain, 
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import QuestionUpload from "@/components/student/QuestionUpload";
-import { FocusAreasCard } from "@/components/mastery/FocusAreasCard";
 import { ScoreProjectionCard } from "@/components/progress/ScoreProjectionCard";
 import { getCalendarMonth, getCalendarProfile, StudyProfile, StudyPlanDay } from "@/lib/calendarApi";
 import { DateTime } from "luxon";
@@ -59,15 +58,15 @@ export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
   const [, navigate] = useLocation();
   
-  const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
-    queryKey: ['/api/progress'],
-    enabled: !!user,
-  });
-
-  const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
-    queryKey: ['/api/recent-activity'],
-    enabled: !!user,
-  });
+  // Progress and activity data removed - endpoints not implemented
+  // const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
+  //   queryKey: ['/api/progress'],
+  //   enabled: !!user,
+  // });
+  // const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
+  //   queryKey: ['/api/recent-activity'],
+  //   enabled: !!user,
+  // });
 
   // Calendar profile query (provides timezone, baseline, target, exam date)
   const { data: profileData, isLoading: profileLoading } = useQuery<StudyProfile | null>({
@@ -120,9 +119,9 @@ export default function LyceonDashboard() {
     refetchInterval: 60000,
   });
 
-  // Derive focus areas from weakest competencies
-  const focusAreas = progressData?.weakestCompetencies ?? [];
-  const hasFocusAreas = !!focusAreas && focusAreas.length > 0;
+  // Derive focus areas from weakest competencies (removed - API not implemented)
+  // const focusAreas = progressData?.weakestCompetencies ?? [];
+  // const hasFocusAreas = !!focusAreas && focusAreas.length > 0;
 
   // Derive values from calendar profile (deterministic)
   const baselineScore = profileData?.baseline_score ?? 400;
@@ -344,9 +343,6 @@ export default function LyceonDashboard() {
             {/* Score Projection */}
             <ScoreProjectionCard />
 
-            {/* Current Focus Areas */}
-            <FocusAreasCard />
-
             {/* Ask AI About My Question - Student Upload */}
             <QuestionUpload className="border-2 border-primary/20 shadow-lg" />
           </div>
@@ -387,58 +383,12 @@ export default function LyceonDashboard() {
               </div>
             </PageCard>
 
-            {/* Focus Areas - Weakest Competencies */}
+            {/* Focus Areas - Temporarily Disabled */}
             <PageCard title="Focus Areas">
-              {progressLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-5 w-1/2" />
-                </div>
-              ) : !hasFocusAreas ? (
-                <EmptyState
-                  title="No focus areas yet"
-                  description="As you practice more, we'll highlight the skills that need your attention here."
-                />
-              ) : (
-                <div className="space-y-3">
-                  {focusAreas.map((c) => {
-                    const score = c.score ?? 0;
-                    let label = 'Watch list';
-                    if (score >= 5) label = 'High priority';
-                    else if (score >= 2) label = 'Needs review';
-
-                    return (
-                      <div
-                        key={c.key}
-                        className="flex items-start justify-between gap-3 rounded-lg border bg-muted/40 p-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{c.key}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {(c.section || 'General') + ' · ' + label}
-                          </p>
-                        </div>
-                        {typeof c.incorrectCount === 'number' && c.incorrectCount > 0 && (
-                          <Tag variant="warning" className="shrink-0">
-                            {c.incorrectCount} wrong
-                          </Tag>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <div className="pt-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => navigate('/practice/random?mode=weak_areas')}
-                    >
-                      Practice my weak areas
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <EmptyState
+                title="Coming Soon"
+                description="Detailed progress tracking is being rebuilt. Continue practicing and we'll show your focus areas soon!"
+              />
             </PageCard>
 
             {/* Next Topic */}

@@ -76,19 +76,20 @@ export default function UserProfile() {
     enabled: !!userProfile?.authenticated,
   });
 
-  // Get notification settings
+  // Get notification settings - DISABLED (endpoint not implemented)
   const { data: notificationSettings, isLoading: settingsLoading } = useQuery<NotificationSettings>({
     queryKey: ['/api/user/notification-settings'],
-    enabled: !!userProfile?.authenticated,
+    enabled: false, // Disabled - endpoint not implemented
   });
 
-  // Update profile mutation
+  // Update profile mutation - DISABLED (PATCH endpoint not implemented, only GET exists)
   const updateProfileMutation = useMutation({
     mutationFn: async (updates: Partial<UserProfile>) => {
-      return apiRequest('/api/user/profile', {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-      });
+      // return apiRequest('/api/user/profile', {
+      //   method: 'PATCH',
+      //   body: JSON.stringify(updates),
+      // });
+      throw new Error('Profile updates not yet implemented');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
@@ -101,19 +102,20 @@ export default function UserProfile() {
     onError: () => {
       toast({
         title: "Update Failed",
-        description: "Failed to update your profile. Please try again.",
+        description: "Profile updates are not yet available. Please try again later.",
         variant: "destructive",
       });
     },
   });
 
-  // Update notification settings mutation
+  // Update notification settings mutation - DISABLED (endpoint not implemented)
   const updateNotificationsMutation = useMutation({
     mutationFn: async (settings: NotificationSettings) => {
-      return apiRequest('/api/user/notification-settings', {
-        method: 'PATCH',
-        body: JSON.stringify(settings),
-      });
+      // return apiRequest('/api/user/notification-settings', {
+      //   method: 'PATCH',
+      //   body: JSON.stringify(settings),
+      // });
+      throw new Error('Notification settings not yet implemented');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/user/notification-settings'] });
