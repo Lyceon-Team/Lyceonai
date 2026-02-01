@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 
-export function requireBearer(envName: "INGEST_ADMIN_TOKEN" | "API_USER_TOKEN") {
+export function requireBearer(envName: "API_USER_TOKEN") {
   const secret = process.env[envName];
   const isProduction = process.env.NODE_ENV === "production";
 
