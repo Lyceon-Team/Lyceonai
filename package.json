@@ -12,10 +12,11 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
-    "test:ci": "vitest run",
-    "test:integration": "echo 'Integration tests with real secrets not yet configured'",
+    "test:ci": "vitest run tests/ci",
+    "test:integration": "vitest run tests/integration",
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
+    "test:all": "vitest run",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
     "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts"
