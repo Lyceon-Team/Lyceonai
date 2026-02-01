@@ -20,7 +20,6 @@ import {
   Download, Upload, RefreshCw, AlertCircle, CheckCircle,
   Eye, EyeOff, Trash2, RotateCcw, FileText, Copy, Users
 } from 'lucide-react';
-import { AdminPDFUpload } from '@/components/admin/AdminPDFUpload';
 import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
@@ -554,11 +553,6 @@ export default function UserProfile() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Admin-only PDF Ingestion */}
-            {profileUser?.isAdmin && (
-              <AdminPDFUpload />
-            )}
           </TabsContent>
 
           {/* Billing Tab */}
