@@ -48,10 +48,8 @@
     "dist",
     "**/*.test.ts",
     "**/*.test.tsx",
-    "server/legacy-server.ts",
     "client/src/test/setupTests.ts",
     "client/src/__tests__/**/*",
-    "apps/api/scripts/**/*",
-    "**/AdminReviewPage.tsx"
+    "apps/api/scripts/**/*"
   ]
 }
