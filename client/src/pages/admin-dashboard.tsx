@@ -364,7 +364,7 @@ export default function AdminDashboard() {
             {/* Status Footer */}
             <div className="mt-8 text-center text-sm text-muted-foreground">
               <p>
-                Last updated: {isLoading ? "Loading..." : healthData?.serverTime ? format(new Date(healthData.serverTime), 'MMM dd, yyyy HH:mm:ss') : 'Never'}
+                Last updated: {isLoading ? "Loading..." : healthData?.serverTime ? format(new Date(healthData.serverTime), 'MMM dd, yyyy HH:mm:ss') : 'UNKNOWN'}
               </p>
               <p className="mt-1 text-xs">
                 Dashboard auto-refreshes every 30 seconds
