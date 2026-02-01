@@ -62,6 +62,7 @@ router.get('/health', async (req: Request, res: Response) => {
 
   // Get environment and version info
   const env = process.env.NODE_ENV || 'development';
+  // Commit SHA: Try GIT_COMMIT_SHA first (CI/CD standard), then REPLIT_DEPLOYMENT_ID (Replit platform)
   const commitSha = process.env.GIT_COMMIT_SHA || process.env.REPLIT_DEPLOYMENT_ID || 'unknown';
 
   // Initialize response
@@ -165,7 +166,7 @@ router.get('/health', async (req: Request, res: Response) => {
       // CSRF is enabled in production (csrfGuard middleware)
       csrfProduction: env === 'production',
       // Canonical host enforcement (check if PUBLIC_SITE_URL is set)
-      canonicalHost: process.env.PUBLIC_SITE_URL ? new URL(process.env.PUBLIC_SITE_URL).hostname : 'not configured',
+      canonicalHost: process.env.PUBLIC_SITE_URL ? new URL(process.env.PUBLIC_SITE_URL).hostname : 'PUBLIC_SITE_URL not set',
     };
 
     res.json(response);
