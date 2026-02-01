@@ -1,3 +1,10 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - apps/*
+  - packages/*
+
+onlyBuiltDependencies:
+  - bufferutil
+  - esbuild
+  - protobufjs
+  - sharp
+  - unrs-resolver

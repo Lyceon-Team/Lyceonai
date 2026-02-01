@@ -18,13 +18,10 @@ import {
   Activity,
   Upload, 
   Shield, 
-  BarChart3, 
-  Zap
+  BarChart3
 } from 'lucide-react';
-import AdminV4Operations from './admin-v4-operations';
 import { SafeBoundary } from '@/components/common/SafeBoundary';
 import { AdminGuard } from '@/components/auth/AdminGuard';
-import { AdminPDFUpload } from '@/components/admin/AdminPDFUpload';
 
 export function AdminPortal() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -76,23 +73,15 @@ export function AdminPortal() {
                 </Badge>
               </div>
               <p className="text-gray-600 dark:text-gray-400">
-                Monitor ingestion jobs, upload PDFs, and view system statistics.
+                Monitor system statistics and generate questions.
               </p>
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-1">
                 <TabsTrigger value="dashboard" className="flex items-center gap-2" data-testid="tab-dashboard">
                   <BarChart3 className="w-4 h-4" />
                   Dashboard
-                </TabsTrigger>
-                <TabsTrigger value="pdf" className="flex items-center gap-2" data-testid="tab-pdf">
-                  <FileText className="w-4 h-4" />
-                  PDF Upload
-                </TabsTrigger>
-                <TabsTrigger value="v4" className="flex items-center gap-2" data-testid="tab-v4">
-                  <Zap className="w-4 h-4" />
-                  V4 Generator
                 </TabsTrigger>
               </TabsList>
 
@@ -201,44 +190,6 @@ export function AdminPortal() {
                     </CardContent>
                   </Card>
                 )}
-              </TabsContent>
-
-              {/* PDF Upload Tab - Uses AdminPDFUpload for full v3 metrics */}
-              <TabsContent value="pdf" className="space-y-6">
-                <AdminPDFUpload />
-
-                {/* V4 Generator Reference */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Activity className="w-5 h-5" />
-                      Processing Monitor
-                    </CardTitle>
-                    <CardDescription>
-                      View generation status in the V4 Generator tab for real-time updates
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-4">
-                      <p className="text-gray-500 mb-4">
-                        After uploading PDFs, switch to the V4 Generator tab to generate questions.
-                      </p>
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setActiveTab('v4')}
-                        data-testid="button-view-v4"
-                      >
-                        <Zap className="w-4 h-4 mr-2" />
-                        Open V4 Generator
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              {/* V4 Operations Tab */}
-              <TabsContent value="v4" className="space-y-6">
-                <AdminV4Operations />
               </TabsContent>
             </Tabs>
           </div>

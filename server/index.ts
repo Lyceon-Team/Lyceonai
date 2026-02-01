@@ -68,6 +68,7 @@ import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import healthRoutes from "./routes/health-routes";
+import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 // ...existing code...
@@ -321,6 +322,9 @@ app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRec
 
 // Admin Stats Routes
 app.use("/api/admin", adminStatsRoutes);
+
+// Admin Health Routes - consolidated health check endpoint
+app.use("/api/admin", requireSupabaseAdmin, adminHealthRoutes);
 
 // Admin Proof Routes - "No More Lying" layer for verification
 // Enforce cookie-admin only for admin-proof routes

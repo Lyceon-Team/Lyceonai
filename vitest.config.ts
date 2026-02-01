@@ -22,6 +22,8 @@ export default defineConfig({
     include: ['**/*.test.{ts,tsx}'],
     exclude: [
       'tests/regressions.test.ts', // Legacy file with jest syntax, tests migrated to separate files
+      'tests/auth.integration.test.ts', // Moved to tests/integration/
+      'tests/integration/**', // Integration tests require real Supabase, excluded from default test run
       '**/node_modules/**',
     ],
   },
