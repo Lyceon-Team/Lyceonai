@@ -130,6 +130,7 @@ describe('CI Routes Tests', () => {
   describe('Admin Routes - Admin Auth Required', () => {
     const adminRoutes = [
       { path: '/api/admin/questions/needs-review', method: 'get', name: 'Questions needing review' },
+      { path: '/api/admin/health', method: 'get', name: 'Admin health endpoint' },
     ];
 
     adminRoutes.forEach(({ path, method, name }) => {
@@ -249,6 +250,34 @@ describe('CI Routes Tests', () => {
 
     it('should include error field in error responses', async () => {
       const res = await request(app).get('/api/profile');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
+    });
+  });
+
+  describe('Admin Health Endpoint Security', () => {
+    it('should not leak SUPABASE_SERVICE_ROLE_KEY in response', async () => {
+      // Even if endpoint fails auth, it should never leak secrets
+      const res = await request(app).get('/api/admin/health');
+      const responseText = JSON.stringify(res.body);
+      
+      // Check that no secret keys are in the response
+      expect(responseText).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+      expect(responseText).not.toContain('STRIPE_SECRET_KEY');
+      expect(responseText).not.toContain('STRIPE_WEBHOOK_SECRET');
+      
+      // Should not contain actual key values (even partial)
+      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        expect(responseText).not.toContain(process.env.SUPABASE_SERVICE_ROLE_KEY);
+      }
+      if (process.env.STRIPE_SECRET_KEY) {
+        expect(responseText).not.toContain(process.env.STRIPE_SECRET_KEY);
+      }
+    });
+
+    it('should require admin role for health endpoint', async () => {
+      // Anonymous user should get 401
+      const res = await request(app).get('/api/admin/health');
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');
     });
