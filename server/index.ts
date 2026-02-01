@@ -648,10 +648,6 @@ if (isMainModule) {
   console.log(`[API] NODE_ENV: ${process.env.NODE_ENV || "development"}`);
   console.log(`[API] Binding to 0.0.0.0:${PORT}`);
 
-  // Initialize Stripe before starting server (non-blocking)
-  // TODO: Restore when initStripe is implemented
-  // initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
-
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
     console.log(`\n📋 Core API endpoints:`);
