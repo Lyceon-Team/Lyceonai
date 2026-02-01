@@ -181,7 +181,7 @@ export default function AdminDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Uptime:</span>
                     <span className="text-sm" data-testid="text-uptime">
-                      {isLoading ? "Loading..." : healthData?.uptimeSec ? formatUptime(healthData.uptimeSec) : "UNKNOWN"}
+                      {isLoading ? "Loading..." : (healthData?.uptimeSec !== undefined ? formatUptime(healthData.uptimeSec) : "Error")}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -190,7 +190,7 @@ export default function AdminDashboard() {
                       {isLoading ? "Loading..." : getStringValue(healthData?.version.sha)}
                     </Badge>
                   </div>
-                  {!isLoading && healthData?.version.sha && typeof healthData.version.sha === 'object' && (
+                  {!isLoading && typeof healthData?.version.sha === 'object' && (
                     <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
                       {healthData.version.sha.reason}
                     </div>
@@ -223,9 +223,10 @@ export default function AdminDashboard() {
                       {healthData?.checks.db.detail || (isLoading ? "Loading..." : "UNKNOWN")}
                     </span>
                   </div>
-                  {!healthData?.checks.db.ok && healthData?.checks.db.reason && (
+                  {/* Show reason based on status - prioritize FAIL over UNKNOWN */}
+                  {!healthData?.checks.db.ok && healthData?.checks.db.status === 'FAIL' && healthData?.checks.db.reason && (
                     <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">
-                      <strong>Reason:</strong> {healthData.checks.db.reason}
+                      <strong>Error:</strong> {healthData.checks.db.reason}
                     </div>
                   )}
                   {healthData?.checks.db.status === 'UNKNOWN' && healthData?.checks.db.reason && (
@@ -255,9 +256,10 @@ export default function AdminDashboard() {
                       {healthData?.checks.supabase.detail || (isLoading ? "Loading..." : "UNKNOWN")}
                     </span>
                   </div>
-                  {!healthData?.checks.supabase.ok && healthData?.checks.supabase.reason && (
+                  {/* Show reason based on status - prioritize FAIL over UNKNOWN */}
+                  {!healthData?.checks.supabase.ok && healthData?.checks.supabase.status === 'FAIL' && healthData?.checks.supabase.reason && (
                     <div className="mt-2 p-2 bg-red-50 rounded text-xs text-red-700">
-                      <strong>Reason:</strong> {healthData.checks.supabase.reason}
+                      <strong>Error:</strong> {healthData.checks.supabase.reason}
                     </div>
                   )}
                   {healthData?.checks.supabase.status === 'UNKNOWN' && healthData?.checks.supabase.reason && (
@@ -320,7 +322,7 @@ export default function AdminDashboard() {
                       {isLoading ? "Loading..." : getStringValue(healthData?.checks.security.canonicalHost)}
                     </span>
                   </div>
-                  {!isLoading && healthData?.checks.security.canonicalHost && typeof healthData.checks.security.canonicalHost === 'object' && (
+                  {!isLoading && typeof healthData?.checks.security.canonicalHost === 'object' && (
                     <div className="mt-2 p-2 bg-yellow-50 rounded text-xs text-yellow-700">
                       {healthData.checks.security.canonicalHost.reason}
                     </div>

@@ -79,7 +79,7 @@ router.get('/health', async (req: Request, res: Response) => {
     ? new URL(process.env.PUBLIC_SITE_URL).hostname 
     : { status: 'UNKNOWN', reason: 'PUBLIC_SITE_URL not configured' };
 
-  // Initialize response
+  // Initialize response - initial values will be immediately overwritten by health checks
   const response: HealthResponse = {
     ok: true,
     serverTime: now.toISOString(),
@@ -87,8 +87,9 @@ router.get('/health', async (req: Request, res: Response) => {
     env,
     version: versionInfo,
     checks: {
-      db: { ok: false, status: 'UNKNOWN', detail: 'check not yet performed', reason: 'Health check in progress' },
-      supabase: { ok: false, status: 'UNKNOWN', detail: 'check not yet performed', reason: 'Health check in progress' },
+      // These initial values are placeholders - they are overwritten immediately in the try block
+      db: { ok: false, status: 'UNKNOWN', detail: 'initializing...', reason: 'Health check starting' },
+      supabase: { ok: false, status: 'UNKNOWN', detail: 'initializing...', reason: 'Health check starting' },
       stripe: {
         secretKeyConfigured: false,
         webhookConfigured: false,
