@@ -97,8 +97,8 @@ export default function ProfileComplete() {
   const completeProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
       // Endpoint /auth/complete-profile does not exist on server
-      // Temporarily disabled until server endpoint is implemented
-      throw new Error('Profile completion is temporarily unavailable.');
+      // Profile completion disabled until server endpoint is added
+      throw new Error('Profile completion endpoint is not yet available.');
     },
     onSuccess: () => {
       toast({ 
