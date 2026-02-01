@@ -101,24 +101,41 @@ describe('CI Auth Tests', () => {
 
   describe('Protected Endpoints - Auth Required', () => {
     const protectedEndpoints = [
-      { method: 'get', path: '/api/profile', name: 'profile' },
-      { method: 'post', path: '/api/practice/sessions', name: 'practice sessions', body: { mode: 'flow', section: 'math' } },
-      { method: 'post', path: '/api/rag', name: 'RAG endpoint', body: { question: 'test' } },
-      { method: 'post', path: '/api/tutor/v2', name: 'Tutor v2', body: { message: 'test' } },
+      { method: 'get', path: '/api/profile', name: 'profile', needsOrigin: false },
+      { method: 'post', path: '/api/practice/sessions', name: 'practice sessions', body: { mode: 'flow', section: 'math' }, needsOrigin: true },
+      { method: 'post', path: '/api/rag', name: 'RAG endpoint', body: { question: 'test' }, needsOrigin: true },
+      { method: 'post', path: '/api/tutor/v2', name: 'Tutor v2', body: { message: 'test' }, needsOrigin: true },
     ];
 
-    protectedEndpoints.forEach(({ method, path, name, body }) => {
-      it(`should return 401 for ${name} (${method.toUpperCase()} ${path}) without auth`, async () => {
+    protectedEndpoints.forEach(({ method, path, name, body, needsOrigin }) => {
+      it(`should require auth for ${name} (${method.toUpperCase()} ${path})`, async () => {
         const req = request(app)[method](path);
+        
+        // Add Origin for POST requests to pass CSRF check
+        if (needsOrigin) {
+          req.set('Origin', 'http://localhost:5000');
+        }
         
         if (body) {
           req.send(body);
         }
 
         const res = await req;
+        // Should get 401 (auth required) since we passed CSRF but no auth cookie
         expect(res.status).toBe(401);
         expect(res.body).toHaveProperty('error');
       });
+    });
+
+    // Test that POST endpoints are CSRF protected (403 without Origin)
+    it('should block POST /api/rag without Origin/Referer (CSRF protection)', async () => {
+      const res = await request(app)
+        .post('/api/rag')
+        .send({ question: 'test' });
+      
+      // Should get 403 (CSRF blocked) before auth check
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty('error', 'csrf_blocked');
     });
   });
 
