@@ -19,7 +19,8 @@
     "test:all": "vitest run",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
-    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts"
+    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
+    "route:validate": "node scripts/validate-route-registry.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.34.2",
