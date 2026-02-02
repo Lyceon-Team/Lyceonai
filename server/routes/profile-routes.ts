@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabaseAdmin } from '../middleware/supabase-auth';
+import { csrfGuard } from '../middleware/csrf';
 
 const router = Router();
+const csrfProtection = csrfGuard();
 
 // Profile completion schema - matches client validation
 const profileCompletionSchema = z.object({
@@ -25,9 +27,9 @@ const profileCompletionSchema = z.object({
 /**
  * PATCH /api/profile
  * Complete user profile with additional information
- * Requires authentication
+ * Requires authentication and CSRF protection
  */
-router.patch('/', async (req: Request, res: Response) => {
+router.patch('/', csrfProtection, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
