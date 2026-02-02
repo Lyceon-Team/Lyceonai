@@ -282,6 +282,7 @@ app.get("/auth/google/callback", googleCallbackHandler);
 app.use("/api/auth", supabaseAuthRoutes);
 
 // Profile endpoint - requires authentication
+// Canonical endpoint for user profile (replaces /api/auth/user in frontend)
 app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     // User is already attached by supabaseAuthMiddleware
@@ -289,15 +290,26 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    // Return user profile
+    // Return complete user profile with all fields needed by frontend
+    // This matches the structure of /api/auth/user for compatibility
+    const fallbackUsername = req.user.email ? req.user.email.split('@')[0] : null;
+    const normalizedName = req.user.display_name || fallbackUsername || 'Student';
+    
     return res.json({ 
+      authenticated: true,
       user: {
         id: req.user.id,
         email: req.user.email,
         display_name: req.user.display_name,
+        name: normalizedName,
+        username: fallbackUsername,
         role: req.user.role,
+        isAdmin: req.user.isAdmin,
+        isGuardian: req.user.isGuardian,
         is_under_13: req.user.is_under_13,
-        guardian_consent: req.user.guardian_consent
+        guardian_consent: req.user.guardian_consent,
+        // Note: avatarUrl, createdAt, lastLoginAt are not tracked in current schema
+        // These can be added later if needed
       }
     });
   } catch (error) {

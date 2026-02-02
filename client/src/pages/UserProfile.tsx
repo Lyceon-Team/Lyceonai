@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageCard } from '@/components/common/page-card';
+import { EmptyState } from '@/components/common/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,24 +37,9 @@ interface UserProfile {
   lastLoginAt?: string;
 }
 
-interface UserStats {
-  totalQuestions: number;
-  correctAnswers: number;
-  averageScore: number;
-  studyTime: number;
-  streak: number;
-  mathProgress: number;
-  readingProgress: number;
-  writingProgress: number;
-}
-
-interface NotificationSettings {
-  emailNotifications: boolean;
-  pushNotifications: boolean;
-  studyReminders: boolean;
-  progressUpdates: boolean;
-  weeklyReports: boolean;
-}
+// Note: UserStats are not currently tracked by backend
+// Progress tracking uses /api/progress/kpis and /api/progress/projection
+// These features are temporarily disabled and shown as placeholders
 
 export default function UserProfile() {
   const [activeTab, setActiveTab] = useState('profile');
@@ -64,23 +50,10 @@ export default function UserProfile() {
   const queryClient = useQueryClient();
   const { user, signOut } = useSupabaseAuth();
 
-  // Get user stats
+  // Get user profile from canonical endpoint
   const { data: userProfile, isLoading: profileLoading } = useQuery<{ user: UserProfile; authenticated: boolean }>({
-    queryKey: ['/api/auth/user'],
+    queryKey: ['/api/profile'],
     enabled: !!user,
-  });
-
-  // Get user stats - DISABLED (endpoint /api/progress/detailed does not exist on server)
-  // Available endpoints: /api/progress/kpis, /api/progress/projection
-  const { data: userStats } = useQuery<UserStats>({
-    queryKey: ['/api/progress/detailed'],
-    enabled: false, // Disabled - endpoint does not exist
-  });
-
-  // Get notification settings - DISABLED (endpoint not implemented)
-  const { data: notificationSettings, isLoading: settingsLoading } = useQuery<NotificationSettings>({
-    queryKey: ['/api/user/notification-settings'],
-    enabled: false, // Disabled - endpoint not implemented
   });
 
   // Update profile mutation - DISABLED (PATCH endpoint not implemented, only GET exists)
@@ -93,7 +66,7 @@ export default function UserProfile() {
       throw new Error('Profile updates not yet implemented');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/profile'] });
       setIsEditing(false);
       toast({
         title: "Profile Updated",
@@ -105,24 +78,6 @@ export default function UserProfile() {
         title: "Update Failed",
         description: "Profile updates are not yet available. Please try again later.",
         variant: "destructive",
-      });
-    },
-  });
-
-  // Update notification settings mutation - DISABLED (endpoint not implemented)
-  const updateNotificationsMutation = useMutation({
-    mutationFn: async (settings: NotificationSettings) => {
-      // return apiRequest('/api/user/notification-settings', {
-      //   method: 'PATCH',
-      //   body: JSON.stringify(settings),
-      // });
-      throw new Error('Notification settings not yet implemented');
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/user/notification-settings'] });
-      toast({
-        title: "Settings Updated",
-        description: "Your notification preferences have been saved.",
       });
     },
   });
@@ -154,16 +109,6 @@ export default function UserProfile() {
 
   const handleProfileSave = () => {
     updateProfileMutation.mutate(editedProfile);
-  };
-
-  const handleNotificationChange = (key: keyof NotificationSettings, value: boolean) => {
-    if (!notificationSettings) return;
-    
-    const updatedSettings = {
-      ...notificationSettings,
-      [key]: value,
-    };
-    updateNotificationsMutation.mutate(updatedSettings);
   };
 
   const profileUser = userProfile?.user;
@@ -388,6 +333,14 @@ export default function UserProfile() {
 
           {/* Progress Tab */}
           <TabsContent value="progress" className="space-y-6">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Detailed progress tracking is currently being rebuilt. 
+                Visit the Dashboard for your current stats and progress insights.
+              </AlertDescription>
+            </Alert>
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card>
                 <CardHeader>
@@ -398,9 +351,9 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-overall-score">
-                    {userStats?.averageScore || 0}%
+                    —
                   </div>
-                  <p className="text-sm text-muted-foreground">Average performance</p>
+                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
                 </CardContent>
               </Card>
 
@@ -413,10 +366,10 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-questions-total">
-                    {userStats?.totalQuestions || 0}
+                    —
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {userStats?.correctAnswers || 0} correct
+                    Check Dashboard
                   </p>
                 </CardContent>
               </Card>
@@ -430,9 +383,9 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-study-time">
-                    {Math.round((userStats?.studyTime || 0) / 60)}h
+                    —
                   </div>
-                  <p className="text-sm text-muted-foreground">Total practice time</p>
+                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
                 </CardContent>
               </Card>
             </div>
@@ -445,27 +398,10 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Math</span>
-                    <span>{userStats?.mathProgress || 0}%</span>
-                  </div>
-                  <Progress value={userStats?.mathProgress || 0} className="h-2" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Reading</span>
-                    <span>{userStats?.readingProgress || 0}%</span>
-                  </div>
-                  <Progress value={userStats?.readingProgress || 0} className="h-2" />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Writing</span>
-                    <span>{userStats?.writingProgress || 0}%</span>
-                  </div>
-                  <Progress value={userStats?.writingProgress || 0} className="h-2" />
-                </div>
+                <EmptyState
+                  title="Coming Soon"
+                  description="Subject-specific progress tracking will be available soon. Keep practicing!"
+                />
               </CardContent>
             </Card>
           </TabsContent>
@@ -483,28 +419,12 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {notificationSettings && Object.entries(notificationSettings).map(([key, value]) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor={key} className="text-sm font-medium">
-                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        {key === 'emailNotifications' && 'Receive notifications via email'}
-                        {key === 'pushNotifications' && 'Receive browser push notifications'}
-                        {key === 'studyReminders' && 'Get reminders to study'}
-                        {key === 'progressUpdates' && 'Receive progress milestone updates'}
-                        {key === 'weeklyReports' && 'Get weekly progress reports'}
-                      </p>
-                    </div>
-                    <Switch
-                      id={key}
-                      checked={value}
-                      onCheckedChange={(checked) => handleNotificationChange(key as keyof NotificationSettings, checked)}
-                      data-testid={`switch-${key.toLowerCase()}`}
-                    />
-                  </div>
-                ))}
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Notification settings are coming soon. We'll let you know when this feature is available!
+                  </AlertDescription>
+                </Alert>
               </CardContent>
             </Card>
 
