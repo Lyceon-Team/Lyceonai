@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageCard } from '@/components/common/page-card';
 import { EmptyState } from '@/components/common/empty-state';
@@ -8,20 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress';
 import { 
   User, Settings, CreditCard, Bell, Shield, LogOut, 
-  Edit3, Save, Camera, Mail, Phone, MapPin, Calendar,
+  Calendar,
   Trophy, Target, BookOpen, Clock, TrendingUp, Star,
-  Download, Upload, RefreshCw, AlertCircle, CheckCircle,
-  Eye, EyeOff, Trash2, RotateCcw, FileText, Copy, Users
+  AlertCircle, CheckCircle,
+  Copy, Users
 } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
@@ -43,9 +39,6 @@ interface UserProfile {
 
 export default function UserProfile() {
   const [activeTab, setActiveTab] = useState('profile');
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedProfile, setEditedProfile] = useState<Partial<UserProfile>>({});
-  const [showPassword, setShowPassword] = useState(false);
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user, signOut } = useSupabaseAuth();
@@ -54,32 +47,6 @@ export default function UserProfile() {
   const { data: userProfile, isLoading: profileLoading } = useQuery<{ user: UserProfile; authenticated: boolean }>({
     queryKey: ['/api/profile'],
     enabled: !!user,
-  });
-
-  // Update profile mutation - DISABLED (PATCH endpoint not implemented, only GET exists)
-  const updateProfileMutation = useMutation({
-    mutationFn: async (updates: Partial<UserProfile>) => {
-      // return apiRequest('/api/user/profile', {
-      //   method: 'PATCH',
-      //   body: JSON.stringify(updates),
-      // });
-      throw new Error('Profile updates not yet implemented');
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/profile'] });
-      setIsEditing(false);
-      toast({
-        title: "Profile Updated",
-        description: "Your profile has been successfully updated.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Update Failed",
-        description: "Profile updates are not yet available. Please try again later.",
-        variant: "destructive",
-      });
-    },
   });
 
   // Logout handler
@@ -99,16 +66,6 @@ export default function UserProfile() {
         variant: "destructive",
       });
     }
-  };
-
-  useEffect(() => {
-    if (userProfile?.user) {
-      setEditedProfile(userProfile.user);
-    }
-  }, [userProfile]);
-
-  const handleProfileSave = () => {
-    updateProfileMutation.mutate(editedProfile);
   };
 
   const profileUser = userProfile?.user;
@@ -136,14 +93,6 @@ export default function UserProfile() {
                     {profileUser.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                   </AvatarFallback>
                 </Avatar>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full"
-                  data-testid="button-change-avatar"
-                >
-                  <Camera className="h-4 w-4" />
-                </Button>
               </div>
               <div className="flex-1">
                 <h2 className="text-2xl font-bold mb-1" data-testid="text-profile-name">
@@ -233,32 +182,10 @@ export default function UserProfile() {
           <TabsContent value="profile" className="space-y-6">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Personal Information</CardTitle>
-                    <CardDescription>
-                      Manage your personal details and account information
-                    </CardDescription>
-                  </div>
-                  <Button
-                    variant={isEditing ? "default" : "outline"}
-                    onClick={isEditing ? handleProfileSave : () => setIsEditing(true)}
-                    disabled={updateProfileMutation.isPending}
-                    data-testid={isEditing ? "button-save" : "button-edit"}
-                  >
-                    {isEditing ? (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        {updateProfileMutation.isPending ? 'Saving...' : 'Save'}
-                      </>
-                    ) : (
-                      <>
-                        <Edit3 className="h-4 w-4 mr-2" />
-                        Edit
-                      </>
-                    )}
-                  </Button>
-                </div>
+                <CardTitle>Personal Information</CardTitle>
+                <CardDescription>
+                  Your profile information (editing coming soon)
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -266,9 +193,8 @@ export default function UserProfile() {
                     <Label htmlFor="name">Full Name</Label>
                     <Input
                       id="name"
-                      value={isEditing ? editedProfile.name || '' : profileUser?.name || ''}
-                      onChange={(e) => setEditedProfile(prev => ({ ...prev, name: e.target.value }))}
-                      disabled={!isEditing}
+                      value={profileUser?.name || ''}
+                      disabled
                       data-testid="input-name"
                     />
                   </div>
@@ -276,9 +202,8 @@ export default function UserProfile() {
                     <Label htmlFor="username">Username</Label>
                     <Input
                       id="username"
-                      value={isEditing ? editedProfile.username || '' : profileUser?.username || ''}
-                      onChange={(e) => setEditedProfile(prev => ({ ...prev, username: e.target.value }))}
-                      disabled={!isEditing}
+                      value={profileUser?.username || ''}
+                      disabled
                       data-testid="input-username"
                     />
                   </div>
@@ -436,44 +361,12 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Export Your Data</p>
-                    <p className="text-sm text-muted-foreground">
-                      Download all your practice data and progress
-                    </p>
-                  </div>
-                  <Button variant="outline" data-testid="button-export-data">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Reset Progress</p>
-                    <p className="text-sm text-muted-foreground">
-                      Clear all practice history and start fresh
-                    </p>
-                  </div>
-                  <Button variant="outline" data-testid="button-reset-progress">
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Reset
-                  </Button>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-destructive">Delete Account</p>
-                    <p className="text-sm text-muted-foreground">
-                      Permanently delete your account and all data
-                    </p>
-                  </div>
-                  <Button variant="destructive" data-testid="button-delete-account">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </div>
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Data management features (export, reset, delete) are coming soon.
+                  </AlertDescription>
+                </Alert>
               </CardContent>
             </Card>
           </TabsContent>
@@ -506,52 +399,10 @@ export default function UserProfile() {
                 <Alert>
                   <Star className="h-4 w-4" />
                   <AlertDescription>
-                    Upgrade to Premium for unlimited practice tests, detailed analytics, 
-                    and personalized study plans.
+                    Premium subscriptions coming soon! Upgrade to unlock unlimited practice tests, 
+                    detailed analytics, and personalized study plans.
                   </AlertDescription>
                 </Alert>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Premium Monthly</CardTitle>
-                      <CardDescription>Best for short-term intensive study</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">$19.99/month</div>
-                      <ul className="mt-4 space-y-1 text-sm">
-                        <li>✓ Unlimited practice tests</li>
-                        <li>✓ Detailed performance analytics</li>
-                        <li>✓ Personalized study plans</li>
-                        <li>✓ Priority support</li>
-                      </ul>
-                      <Button className="w-full mt-4" data-testid="button-upgrade-monthly">
-                        Choose Monthly
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Premium Annual</CardTitle>
-                      <CardDescription>Save 40% with annual billing</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">$11.99/month</div>
-                      <div className="text-sm text-muted-foreground">Billed annually at $143.88</div>
-                      <ul className="mt-4 space-y-1 text-sm">
-                        <li>✓ Everything in Monthly</li>
-                        <li>✓ Save 40% annually</li>
-                        <li>✓ Free SAT prep book (PDF)</li>
-                        <li>✓ Exclusive webinars</li>
-                      </ul>
-                      <Button className="w-full mt-4" data-testid="button-upgrade-annual">
-                        Choose Annual
-                        <Badge variant="secondary" className="ml-2">Best Value</Badge>
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
