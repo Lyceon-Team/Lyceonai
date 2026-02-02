@@ -30,7 +30,6 @@ export function AdminPortal() {
   // Dashboard stats
   const { data: dashboardStats, isLoading: statsLoading, error: statsError } = useQuery<{
     questions: { total: number; needsReview: number };
-    ingestion: { total: number; pending: number; completed: number; failed: number };
     practice: { recentSessions: number };
   }>({
     queryKey: ['/api/admin/stats'],
@@ -135,7 +134,7 @@ export function AdminPortal() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold text-blue-600" data-testid="stat-active-jobs">
-                        {statsLoading ? '...' : (dashboardStats?.ingestion?.pending || 0)}
+                        0
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Processing in queue
@@ -158,38 +157,6 @@ export function AdminPortal() {
                     </CardContent>
                   </Card>
                 </div>
-
-                {/* Ingestion Status */}
-                {dashboardStats?.ingestion && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Ingestion Pipeline Status</CardTitle>
-                      <CardDescription>
-                        PDF processing jobs and their current status
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-4 gap-4">
-                        <div className="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                          <div className="text-2xl font-bold">{dashboardStats.ingestion.total}</div>
-                          <div className="text-sm text-gray-500">Total Jobs</div>
-                        </div>
-                        <div className="text-center p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                          <div className="text-2xl font-bold text-amber-600">{dashboardStats.ingestion.pending}</div>
-                          <div className="text-sm text-gray-500">Pending</div>
-                        </div>
-                        <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600">{dashboardStats.ingestion.completed}</div>
-                          <div className="text-sm text-gray-500">Completed</div>
-                        </div>
-                        <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                          <div className="text-2xl font-bold text-red-600">{dashboardStats.ingestion.failed}</div>
-                          <div className="text-sm text-gray-500">Failed</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
               </TabsContent>
             </Tabs>
           </div>
