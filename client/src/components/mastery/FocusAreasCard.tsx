@@ -30,9 +30,9 @@ const statusColors = {
 
 export function FocusAreasCard() {
   const { data, isLoading, error } = useQuery<WeakestResponse>({
-    queryKey: ["/api/mastery/weakest"],
+    queryKey: ["/api/me/mastery/weakest"],
     queryFn: async () => {
-      const response = await fetch("/api/mastery/weakest", { credentials: "include" });
+      const response = await fetch("/api/me/mastery/weakest", { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch");
       return response.json();
     },

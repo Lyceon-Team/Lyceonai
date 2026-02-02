@@ -177,16 +177,16 @@ export function SkillHeatmap() {
   const [addedSkill, setAddedSkill] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<SkillsResponse>({
-    queryKey: ["/api/mastery/skills"],
+    queryKey: ["/api/me/mastery/skills"],
     queryFn: async () => {
-      const response = await apiRequest("/api/mastery/skills");
+      const response = await apiRequest("/api/me/mastery/skills");
       return response.json();
     },
   });
 
   const addToPlanMutation = useMutation({
     mutationFn: async ({ section, domain, skill }: { section: string; domain: string; skill: string }) => {
-      const response = await apiRequest("/api/mastery/add-to-plan", {
+      const response = await apiRequest("/api/me/mastery/add-to-plan", {
         method: "POST",
         body: JSON.stringify({ section, domain, skill }),
       });

@@ -539,6 +539,75 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
 });
 
 /**
+ * POST /api/auth/complete-profile
+ * Complete user profile with personal information and legal acceptances
+ */
+router.post('/complete-profile', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const {
+      firstName,
+      lastName,
+      phoneNumber,
+      dateOfBirth,
+      address,
+      timeZone,
+      preferredLanguage,
+      marketingOptIn
+    } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !dateOfBirth || !address || !timeZone) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: firstName, lastName, dateOfBirth, address, timeZone' 
+      });
+    }
+
+    const admin = getSupabaseAdmin();
+
+    // Update profile with all provided information
+    const profileUpdate: Record<string, any> = {
+      first_name: firstName,
+      last_name: lastName,
+      phone_number: phoneNumber || null,
+      date_of_birth: dateOfBirth,
+      address: address,
+      time_zone: timeZone,
+      preferred_language: preferredLanguage || 'en',
+      marketing_opt_in: marketingOptIn || false,
+      profile_completed_at: new Date().toISOString()
+    };
+
+    const { error: updateError } = await admin
+      .from('profiles')
+      .update(profileUpdate)
+      .eq('id', userId);
+
+    if (updateError) {
+      logger.error('AUTH', 'profile_completion_failed', 'Failed to complete profile', { 
+        userId, 
+        error: updateError 
+      });
+      return res.status(500).json({ error: 'Failed to complete profile' });
+    }
+
+    logger.info('AUTH', 'profile_completed', 'User profile completed successfully', {
+      userId,
+      hasPhoneNumber: !!phoneNumber,
+      marketingOptIn: !!marketingOptIn
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile completed successfully'
+    });
+  } catch (error) {
+    logger.error('AUTH', 'complete_profile_error', 'Complete profile endpoint error', error);
+    res.status(500).json({ error: 'Failed to complete profile' });
+  }
+});
+
+/**
  * POST /api/auth/refresh
  * Refresh access token using refresh token
  */
