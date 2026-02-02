@@ -38,15 +38,22 @@
 | `/guardian/students/:studentId/calendar` | `GuardianCalendar` | No | `RequireRole` allow `guardian, admin` | `client/src/App.tsx` line 103.【client/src/App.tsx:L102-L104】 |
 | `/admin` | `AdminPortal` | No | `AdminGuard` inside component | `client/src/App.tsx` line 106 and `client/src/pages/AdminPortal.tsx` lines 22-36.【client/src/App.tsx:L105-L107】【client/src/pages/AdminPortal.tsx:L22-L36】 |
 | `/admin-dashboard` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 109.【client/src/App.tsx:L108-L110】 |
-| `/admin-pdf-monitor` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 110.【client/src/App.tsx:L109-L111】 |
 | `/admin-system-config` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 111.【client/src/App.tsx:L110-L112】 |
 | `/admin-questions` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 112.【client/src/App.tsx:L111-L113】 |
 | `/admin-review` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 113.【client/src/App.tsx:L112-L114】 |
-| `/admin-ingest-jobs` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 114.【client/src/App.tsx:L113-L115】 |
 | `/admin-portal` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 115.【client/src/App.tsx:L114-L116】 |
-| `/admin-ingest` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 116.【client/src/App.tsx:L115-L117】 |
 | `/admin-review-v2` | Redirect to `/admin` | Yes | None | `client/src/App.tsx` line 117.【client/src/App.tsx:L116-L118】 |
 | `*` | `NotFound` | No | None | `client/src/App.tsx` lines 119-120.【client/src/App.tsx:L119-L120】 |
+
+## DEPRECATED Routes (Removed in Sprint 2)
+
+The following ingestion-related routes have been **REMOVED** as part of Sprint 2 "Kill ingestion surfaces":
+
+| Path | Previous Behavior | Status | Removal Date |
+|---|---|---|---|
+| `/admin-pdf-monitor` | Redirected to `/admin` | ❌ REMOVED | 2026-02-02 |
+| `/admin-ingest-jobs` | Redirected to `/admin` | ❌ REMOVED | 2026-02-02 |
+| `/admin-ingest` | Redirected to `/admin` | ❌ REMOVED | 2026-02-02 |
 
 ## Guards and redirects
 - `RequireRole` enforces role-based access and redirects to `/login`, `/guardian`, `/admin`, or `/dashboard` based on role. Evidence: `client/src/components/auth/RequireRole.tsx` lines 13-57.【client/src/components/auth/RequireRole.tsx:L13-L57】

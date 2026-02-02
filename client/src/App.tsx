@@ -110,13 +110,10 @@ function Router() {
         
         {/* Legacy admin routes - redirect to canonical /admin */}
         <Route path="/admin-dashboard">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-pdf-monitor">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-system-config">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-questions">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-review">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-ingest-jobs">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-portal">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-ingest">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-review-v2">{() => <Redirect to="/admin" replace />}</Route>
         
         {/* 404 */}
