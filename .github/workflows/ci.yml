@@ -39,6 +39,9 @@ jobs:
       - name: TypeScript Check (CI)
         run: pnpm exec tsc -p tsconfig.ci.json
 
+      - name: Validate Route Registry
+        run: npm run route:validate
+
       - name: Run Tests (Deterministic CI Suite)
         run: pnpm test:ci
 
