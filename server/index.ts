@@ -71,6 +71,7 @@ import healthRoutes from "./routes/health-routes";
 import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import profileRoutes from "./routes/profile-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -281,8 +282,9 @@ app.get("/auth/google/callback", googleCallbackHandler);
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
-// Profile endpoint - requires authentication
-// Canonical endpoint for user profile (replaces /api/auth/user in frontend)
+// Profile endpoints - requires authentication
+// GET /api/profile - Get current user profile
+// PATCH /api/profile - Complete/update user profile
 app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     // User is already attached by supabaseAuthMiddleware
@@ -308,8 +310,7 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
         isGuardian: req.user.isGuardian,
         is_under_13: req.user.is_under_13,
         guardian_consent: req.user.guardian_consent,
-        // Note: avatarUrl, createdAt, lastLoginAt are not tracked in current schema
-        // These can be added later if needed
+        profileCompletedAt: (req.user as any).profile_completed_at || null,
       }
     });
   } catch (error) {
@@ -317,6 +318,8 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);

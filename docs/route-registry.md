@@ -25,8 +25,8 @@ This document is the single authoritative registry of:
 | `/digital-sat/reading-writing` | public | free | DigitalSATReadingWriting | N/A (static SEO) | ACTIVE |
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
-| `/legal` | public | free | LegalHub | `/api/legal` | ACTIVE |
-| `/legal/:slug` | public | free | LegalDoc | `/api/legal/:slug` | ACTIVE |
+| `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
+| `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection`, `/api/calendar/profile`, `/api/calendar/month` | ACTIVE |
@@ -137,8 +137,8 @@ The following routes have been **REMOVED** from the codebase:
 ### Legal & Public Endpoints
 | Endpoint | Method | Auth Required | Purpose |
 |----------|--------|--------------|---------|
-| `/api/legal` | GET | No | Get legal documents list |
-| `/api/legal/:slug` | GET | No | Get specific legal document |
+| `/api/legal/accept` | POST | Yes | Record legal document acceptance (authenticated users) |
+| `/api/legal/acceptances` | GET | Yes | Get user's legal acceptances (authenticated users) |
 | `/healthz` | GET | No | Health check |
 | `/api/health` | GET | No | Health check (legacy) |
 
