@@ -6,17 +6,13 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   FileText, 
   AlertCircle, 
   CheckCircle, 
-  Clock, 
-  Activity,
-  Upload, 
   Shield, 
   BarChart3
 } from 'lucide-react';
@@ -35,25 +31,6 @@ export function AdminPortal() {
     queryKey: ['/api/admin/stats'],
     refetchInterval: 30000,
   });
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: typeof CheckCircle }> = {
-      'completed': { variant: 'default', icon: CheckCircle },
-      'processing': { variant: 'secondary', icon: Activity },
-      'pending': { variant: 'outline', icon: Clock },
-      'failed': { variant: 'destructive', icon: AlertCircle }
-    };
-    
-    const config = statusConfig[status] || statusConfig['pending'];
-    const Icon = config.icon;
-    
-    return (
-      <Badge variant={config.variant} className="inline-flex items-center gap-1">
-        <Icon className="w-3 h-3" />
-        {status}
-      </Badge>
-    );
-  };
 
   return (
     <SafeBoundary fallback={<div className="p-6">Admin page failed to load.</div>}>
@@ -96,7 +73,7 @@ export function AdminPortal() {
                   </Alert>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium">Total Questions</CardTitle>
@@ -123,21 +100,6 @@ export function AdminPortal() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Questions needing validation
-                      </p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Active Jobs</CardTitle>
-                      <Activity className="h-4 w-4 text-blue-500" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-blue-600" data-testid="stat-active-jobs">
-                        0
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Processing in queue
                       </p>
                     </CardContent>
                   </Card>
