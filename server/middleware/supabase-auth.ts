@@ -225,7 +225,7 @@ export async function supabaseAuthMiddleware(
     
     const { data: fetchedProfile, error: profileError } = await userSupabase
       .from('profiles')
-      .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code')
+      .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
       .eq('id', user.id)
       .single();
 
@@ -267,7 +267,7 @@ export async function supabaseAuthMiddleware(
           guardian_consent: user.user_metadata?.guardian_consent || false,
           guardian_email: user.user_metadata?.guardian_email || null,
         })
-        .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code')
+        .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
         .single();
       
       if (createError || !newProfile) {

@@ -96,9 +96,14 @@ export default function ProfileComplete() {
   // Profile completion mutation
   const completeProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
-      // Endpoint /auth/complete-profile does not exist on server
-      // Profile completion disabled until server endpoint is added
-      throw new Error('Profile completion endpoint is not yet available.');
+      const response = await apiRequest('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return response;
     },
     onSuccess: () => {
       toast({ 
@@ -188,13 +193,8 @@ export default function ProfileComplete() {
       console.error('Failed to record legal acceptances:', err);
     }
 
-    // Profile completion endpoint not yet implemented on server
-    // Navigate to profile page after recording legal acceptances
-    toast({ 
-      title: "Legal agreements accepted", 
-      description: "Profile completion is temporarily unavailable. You can continue using the platform." 
-    });
-    navigate('/profile');
+    // Call the profile completion mutation
+    await completeProfileMutation.mutateAsync(data);
   };
 
   const nextStep = () => {

@@ -49,8 +49,8 @@ Some features are available to free tier but with **usage limits**:
 | `/digital-sat/reading-writing` | public | free | None | None | `client/src/App.tsx:72` |
 | `/blog` | public | free | None | None | `client/src/App.tsx:73` |
 | `/blog/:slug` | public | free | None | None | `client/src/App.tsx:74` |
-| `/legal` | public | free | None | `/api/legal` | `client/src/App.tsx:77` |
-| `/legal/:slug` | public | free | None | `/api/legal/:slug` | `client/src/App.tsx:78` |
+| `/legal` | public | free | None | N/A (static content) | `client/src/App.tsx:77` |
+| `/legal/:slug` | public | free | None | N/A (static content) | `client/src/App.tsx:78` |
 | `/privacy` | public | free | None | None | `client/src/App.tsx:81` |
 | `/terms` | public | free | None | None | `client/src/App.tsx:82` |
 | **Student Routes** | | | | | |
@@ -98,6 +98,16 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/auth/signout` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/auth/user` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/profile` | any | free | requireSupabaseAuth | `server/index.ts:286` |
+| `PATCH /api/profile` | any | free | requireSupabaseAuth | `server/routes/profile-routes.ts` |
+
+### Legal APIs
+
+| Endpoint | Role | Entitlement | Server Gate | Evidence |
+|----------|------|-------------|-------------|----------|
+| `POST /api/legal/accept` | any | free | requireSupabaseAuth | `server/routes/legal-routes.ts:10` |
+| `GET /api/legal/acceptances` | any | free | requireSupabaseAuth | `server/routes/legal-routes.ts:53` |
+
+**Note**: Legal *content* (terms, privacy policy) is served statically from client-side. The `/api/legal/*` endpoints are for recording/retrieving user acceptances, not for fetching legal documents.
 
 ### Student APIs
 
