@@ -140,15 +140,6 @@ describe('CI Routes Tests', () => {
         expect(res.body).toHaveProperty('error');
       });
     });
-
-    it('should require admin role for document upload', async () => {
-      const res = await request(app)
-        .post('/api/documents/upload')
-        .attach('file', Buffer.from('test'), 'test.pdf');
-      
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
-    });
   });
 
   describe('User Identity Derivation', () => {

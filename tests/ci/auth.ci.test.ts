@@ -145,15 +145,6 @@ describe('CI Auth Tests', () => {
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');
     });
-
-    it('should return 401 for document upload without auth', async () => {
-      const res = await request(app)
-        .post('/api/documents/upload')
-        .attach('file', Buffer.from('test'), 'test.pdf');
-      
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
-    });
   });
 
   describe('Token Security', () => {

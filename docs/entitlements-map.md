@@ -57,7 +57,7 @@ Some features are available to free tier but with **usage limits**:
 | `/dashboard` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:85`, `server/index.ts:330-333` |
 | `/calendar` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:86`, `server/index.ts:327` |
 | `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `client/src/App.tsx:87`, `server/index.ts:273` |
-| `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:88` |
+| `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | None (UI-disabled stub) | `client/src/App.tsx:88` |
 | `/practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:89`, `server/routes/practice-canonical.ts:219` |
 | `/practice/math` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:90` |
 | `/practice/reading-writing` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:91` |
@@ -65,7 +65,7 @@ Some features are available to free tier but with **usage limits**:
 | `/math-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:93` |
 | `/reading-writing-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:94` |
 | `/mastery` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:95`, `server/index.ts:326` |
-| `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:419` |
+| `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:422` |
 | `/flow-cards` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:97` |
 | `/structured-practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:98` |
 | **Profile Routes** | | | | | |
@@ -117,16 +117,18 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/progress/projection` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:330` |
 | `GET /api/calendar/profile` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:327` |
 | `GET /api/calendar/month` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:327` |
-| `POST /api/student/analyze-question` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:470-477` |
 | `GET /api/practice/next` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `server/routes/practice-canonical.ts:219-306` |
 | `POST /api/practice/answer` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/practice-canonical.ts` |
+| `GET /api/practice/topics` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:479` |
+| `GET /api/practice/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:480` |
 | `POST /api/tutor/v2` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `server/index.ts:273` |
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
 | `POST /api/questions/validate` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:427` |
 | `POST /api/questions/feedback` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:430` |
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
-| `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:419` |
+| `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
+| `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
 | `GET /api/me/mastery` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
 | `GET /api/me/weakness` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 
