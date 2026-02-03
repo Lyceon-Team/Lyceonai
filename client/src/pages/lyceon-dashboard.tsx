@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar, Target, TrendingUp, Clock, BookOpen, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,7 +69,7 @@ export default function LyceonDashboard() {
   // });
 
   // Calendar profile query (provides timezone, baseline, target, exam date)
-  const { data: profileData, isLoading: profileLoading } = useQuery<StudyProfile | null>({
+  const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<StudyProfile | null>({
     queryKey: ['calendar-profile'],
     queryFn: getCalendarProfile,
     enabled: !!user,
@@ -79,7 +80,7 @@ export default function LyceonDashboard() {
   const userTimezone = profileData?.timezone || 'America/Chicago';
   const todayISO = DateTime.now().setZone(userTimezone).toISODate()!;
 
-  const { data: calendarData, isLoading: streakLoading } = useQuery({
+  const { data: calendarData, isLoading: streakLoading, error: calendarError } = useQuery({
     queryKey: ['calendar-month', userTimezone],
     queryFn: async () => {
       const now = DateTime.now().setZone(userTimezone);
@@ -112,7 +113,7 @@ export default function LyceonDashboard() {
     };
   }
   
-  const { data: kpiData, isLoading: kpiLoading } = useQuery<KpiResponse>({
+  const { data: kpiData, isLoading: kpiLoading, error: kpiError } = useQuery<KpiResponse>({
     queryKey: ['/api/progress/kpis'],
     enabled: !!user,
     refetchInterval: 60000,
@@ -159,6 +160,14 @@ export default function LyceonDashboard() {
             }
           </p>
         </div>
+
+        {(profileError || calendarError || kpiError) && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>
+              Some dashboard data failed to load. Please refresh the page or try again later.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* FlowCards Featured Hero */}
         <Card className="relative overflow-hidden border-0 bg-background from-purple-900 via-pink-900 to-indigo-900 mb-8" data-testid="card-flowcards-hero">
@@ -262,6 +271,11 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-12 w-full" />
                   <Skeleton className="h-12 w-full" />
                 </div>
+              ) : profileData === null ? (
+                <EmptyState
+                  title="Set up your study plan"
+                  description="Add your baseline score and test date to see your personalized plan."
+                />
               ) : (
                 <div className="space-y-6">
                   {/* Score Overview + Streak */}
@@ -419,26 +433,38 @@ export default function LyceonDashboard() {
 
             {/* Quick Stats */}
             <PageCard title="This Week">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3 min-w-0">
-                  <span className="text-sm text-muted-foreground min-w-0 truncate">Practice Sessions</span>
-                  <span className="text-2xl font-bold shrink-0">
-                    {kpiLoading ? "—" : (kpiData?.week?.practiceSessions ?? 0)}
-                  </span>
+              {kpiLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-full" />
+                  <Skeleton className="h-6 w-full" />
                 </div>
-                <div className="flex items-center justify-between gap-3 min-w-0">
-                  <span className="text-sm text-muted-foreground min-w-0 truncate">Questions Solved</span>
-                  <span className="text-2xl font-bold shrink-0">
-                    {kpiLoading ? "—" : (kpiData?.week?.questionsSolved ?? 0)}
-                  </span>
+              ) : kpiError ? (
+                <div className="text-sm text-destructive">Unable to load weekly stats.</div>
+              ) : !kpiData ? (
+                <div className="text-sm text-muted-foreground">No weekly stats yet.</div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <span className="text-sm text-muted-foreground min-w-0 truncate">Practice Sessions</span>
+                    <span className="text-2xl font-bold shrink-0">
+                      {kpiData.week?.practiceSessions ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <span className="text-sm text-muted-foreground min-w-0 truncate">Questions Solved</span>
+                    <span className="text-2xl font-bold shrink-0">
+                      {kpiData.week?.questionsSolved ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <span className="text-sm text-muted-foreground min-w-0 truncate">Accuracy</span>
+                    <span className="text-2xl font-bold text-green-600 shrink-0">
+                      {kpiData.week?.questionsSolved === 0 ? "—" : `${kpiData.week?.accuracy ?? 0}%`}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-3 min-w-0">
-                  <span className="text-sm text-muted-foreground min-w-0 truncate">Accuracy</span>
-                  <span className="text-2xl font-bold text-green-600 shrink-0">
-                    {kpiLoading ? "—" : (kpiData?.week?.questionsSolved === 0 ? "—" : `${kpiData?.week?.accuracy ?? 0}%`)}
-                  </span>
-                </div>
-              </div>
+              )}
             </PageCard>
           </div>
         </div>

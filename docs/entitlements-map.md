@@ -58,7 +58,7 @@ Some features are available to free tier but with **usage limits**:
 | `/calendar` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:86`, `server/index.ts:327` |
 | `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `client/src/App.tsx:87`, `server/index.ts:273` |
 | `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | None (UI-disabled stub) | `client/src/App.tsx:88` |
-| `/practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:89`, `server/routes/practice-canonical.ts:219` |
+| `/practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:89`, `server/index.ts:478-480` |
 | `/practice/math` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:90` |
 | `/practice/reading-writing` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:91` |
 | `/practice/random` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:92` |
