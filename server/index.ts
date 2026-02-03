@@ -72,6 +72,7 @@ import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
+import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -473,6 +474,10 @@ app.use("/api/account", accountRoutes);
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
 
+// Practice Topics Routes (for browsing and filtering)
+app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
+app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
@@ -670,8 +675,6 @@ if (isMainModule) {
     console.log(`  GET    /api/admin/questions/statistics`);
     console.log(`  POST   /api/admin/questions/:id/approve`);
     console.log(`  POST   /api/admin/questions/:id/reject`);
-    console.log(`\n📷 Student Routes (requires Supabase auth):`);
-    console.log(`  POST   /api/student/analyze-question`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);
