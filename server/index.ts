@@ -43,7 +43,7 @@ import {
   rejectQuestion,
   getParsingStatistics,
 } from "./admin-review-routes";
-import { analyzeQuestion } from "./routes/student-routes";
+import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -72,6 +72,7 @@ import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
+import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -240,12 +241,6 @@ const ragLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
   message: { error: "Too many RAG requests" },
-});
-
-const studentUploadLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  message: { error: "Too many upload requests. Please wait a moment before trying again." },
 });
 
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
@@ -421,10 +416,8 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
-// Review errors attempt stub endpoint (prevents 404 from frontend POST calls)
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.json({ ok: true });
-});
+// Review errors attempt endpoint - records student attempts during error review
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 app.post("/api/questions/validate", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, validateAnswer);
@@ -469,16 +462,6 @@ app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => 
   }
 });
 
-// Student Routes (requires Supabase auth + CSRF protection)
-app.post(
-  "/api/student/analyze-question",
-  csrfProtection,
-  studentUploadLimiter,
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  ...(analyzeQuestion as any)
-);
-
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);
 
@@ -488,13 +471,12 @@ app.use("/api/billing", billingRoutes);
 // Account Routes (bootstrap, status)
 app.use("/api/account", accountRoutes);
 
-// Document upload endpoint - requires authentication
-app.post("/api/documents/upload", requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.status(501).json({ error: 'Document upload not implemented' });
-});
-
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
+
+// Practice Topics Routes (for browsing and filtering)
+app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
+app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
@@ -693,8 +675,6 @@ if (isMainModule) {
     console.log(`  GET    /api/admin/questions/statistics`);
     console.log(`  POST   /api/admin/questions/:id/approve`);
     console.log(`  POST   /api/admin/questions/:id/reject`);
-    console.log(`\n📷 Student Routes (requires Supabase auth):`);
-    console.log(`  POST   /api/student/analyze-question`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);

@@ -12,7 +12,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Target, TrendingUp, Clock, BookOpen, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
-import QuestionUpload from "@/components/student/QuestionUpload";
 import { ScoreProjectionCard } from "@/components/progress/ScoreProjectionCard";
 import { getCalendarMonth, getCalendarProfile, StudyProfile, StudyPlanDay } from "@/lib/calendarApi";
 import { DateTime } from "luxon";
@@ -342,9 +341,6 @@ export default function LyceonDashboard() {
 
             {/* Score Projection */}
             <ScoreProjectionCard />
-
-            {/* Ask AI About My Question - Student Upload */}
-            <QuestionUpload className="border-2 border-primary/20 shadow-lg" />
           </div>
 
           {/* Right Column (1/3 width) */}

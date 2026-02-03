@@ -32,8 +32,8 @@ This document is the single authoritative registry of:
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection`, `/api/calendar/profile`, `/api/calendar/month` | ACTIVE |
 | `/calendar` | student, admin | free | CalendarPage | `/api/calendar/month`, `/api/calendar/profile` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
-| `/full-test` | student, admin | free | FullTest | `/api/questions`, `/api/questions/validate` | ACTIVE |
-| `/practice` | student, admin | entitled† | Practice | `/api/practice/next` (with usage limits) | ACTIVE |
+| `/full-test` | student, admin | free | FullTest | None (UI-disabled stub; not implemented yet) | ACTIVE |
+| `/practice` | student, admin | entitled† | Practice | `/api/practice/next`, `/api/practice/topics`, `/api/practice/questions` (with usage limits) | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next` (with usage limits) | ACTIVE |
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next` (with usage limits) | ACTIVE |
@@ -93,9 +93,10 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/progress/projection` | GET | Yes | student/admin | free | SAT score projection |
 | `/api/calendar/profile` | GET | Yes | student/admin | free | Calendar profile data |
 | `/api/calendar/month` | GET | Yes | student/admin | free | Monthly calendar data |
-| `/api/student/analyze-question` | POST | Yes | student/admin | free | AI question analysis |
 | `/api/practice/next` | GET | Yes | student/admin | entitled† | Get next practice question |
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
+| `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
+| `/api/practice/questions` | GET | Yes | student/admin | free | Get filtered questions for practice |
 | `/api/tutor/v2` | POST | Yes | student/admin | entitled† | AI tutor chat |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
@@ -103,6 +104,7 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
 | `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
+| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Record review error attempt |
 | `/api/me/mastery` | GET | Yes | student/admin | free | Mastery statistics |
 | `/api/me/weakness` | GET | Yes | student/admin | free | Weakness areas |
 

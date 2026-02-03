@@ -26,6 +26,17 @@ interface QuestionStats {
   recentlyAdded: number;
 }
 
+interface PracticeTopics {
+  sections?: Array<{
+    section: string;
+    label: string;
+    domains?: Array<{
+      domain: string;
+      skills: string[];
+    }>;
+  }>;
+}
+
 const MATH_TOPICS = [
   { id: 'algebra', name: 'Algebra', count: 45 },
   { id: 'geometry', name: 'Geometry', count: 32 },
@@ -46,6 +57,12 @@ function Practice() {
   
   const { data: stats, isLoading: statsLoading } = useQuery<QuestionStats>({
     queryKey: ['/api/questions/stats'],
+    enabled: !!user && !authLoading,
+  });
+
+  // Fetch practice topics from the new endpoint
+  const { data: topicsData, isLoading: topicsLoading } = useQuery<PracticeTopics>({
+    queryKey: ['/api/practice/topics'],
     enabled: !!user && !authLoading,
   });
 
@@ -170,8 +187,8 @@ function Practice() {
             </PageCard>
 
             {/* Browse by Topic - Math */}
-            <PageCard title="Browse Math Topics">
-              {statsLoading ? (
+            <PageCard title="Browse Math Topics" description="Topic-specific practice available through section practice">
+              {topicsLoading || !topicsData ? (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
@@ -179,31 +196,51 @@ function Practice() {
                   <Skeleton className="h-20 w-full" />
                 </div>
               ) : (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {MATH_TOPICS.map((topic) => (
-                    <button
-                      key={topic.id}
-                      className="p-4 rounded-lg border text-left hover:bg-muted/50 hover:border-primary/50 transition-all group"
-                      data-testid={`topic-${topic.id}`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-sm group-hover:text-primary transition-colors">
-                          {topic.name}
-                        </span>
-                        <Tag variant="muted">{topic.count}</Tag>
+                <div>
+                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                    {topicsData.sections?.find((s: any) => s.section === 'math')?.domains?.map((domain: any) => (
+                      <div
+                        key={domain.domain}
+                        className="p-4 rounded-lg border text-left bg-muted/20"
+                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">
+                            {domain.domain}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {domain.skills?.length || 0} skills
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Click to practice {topic.name.toLowerCase()}
-                      </p>
-                    </button>
-                  ))}
+                    )) || MATH_TOPICS.map((topic) => (
+                      <div
+                        key={topic.id}
+                        className="p-4 rounded-lg border text-left bg-muted/20"
+                        data-testid={`topic-${topic.id}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">
+                            {topic.name}
+                          </span>
+                          <Tag variant="muted">{topic.count}</Tag>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Practice {topic.name.toLowerCase()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Use section practice above to focus on specific topics
+                  </p>
                 </div>
               )}
             </PageCard>
 
             {/* Browse by Topic - Reading & Writing */}
-            <PageCard title="Browse Reading & Writing Topics">
-              {statsLoading ? (
+            <PageCard title="Browse Reading & Writing Topics" description="Topic-specific practice available through section practice">
+              {topicsLoading || !topicsData ? (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
@@ -211,24 +248,44 @@ function Practice() {
                   <Skeleton className="h-20 w-full" />
                 </div>
               ) : (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {READING_TOPICS.map((topic) => (
-                    <button
-                      key={topic.id}
-                      className="p-4 rounded-lg border text-left hover:bg-muted/50 hover:border-primary/50 transition-all group"
-                      data-testid={`topic-${topic.id}`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium text-sm group-hover:text-primary transition-colors">
-                          {topic.name}
-                        </span>
-                        <Tag variant="muted">{topic.count}</Tag>
+                <div>
+                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                    {topicsData.sections?.find((s: any) => s.section === 'reading_writing')?.domains?.map((domain: any) => (
+                      <div
+                        key={domain.domain}
+                        className="p-4 rounded-lg border text-left bg-muted/20"
+                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">
+                            {domain.domain}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {domain.skills?.length || 0} skills
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Click to practice {topic.name.toLowerCase()}
-                      </p>
-                    </button>
-                  ))}
+                    )) || READING_TOPICS.map((topic) => (
+                      <div
+                        key={topic.id}
+                        className="p-4 rounded-lg border text-left bg-muted/20"
+                        data-testid={`topic-${topic.id}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-sm">
+                            {topic.name}
+                          </span>
+                          <Tag variant="muted">{topic.count}</Tag>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Practice {topic.name.toLowerCase()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Use section practice above to focus on specific topics
+                  </p>
                 </div>
               )}
             </PageCard>
