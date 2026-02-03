@@ -71,7 +71,12 @@ function BrowseTopics() {
     error: questionsError,
     refetch: searchQuestions 
   } = useQuery<QuestionsResponse>({
-    queryKey: ['/api/practice/questions', buildQueryParams()],
+    queryKey: ['/api/practice/questions', { 
+      section: selectedSection, 
+      domain: selectedDomain, 
+      skill: selectedSkill, 
+      limit: selectedLimit 
+    }],
     enabled: false, // Don't auto-fetch, only on manual search
   });
 

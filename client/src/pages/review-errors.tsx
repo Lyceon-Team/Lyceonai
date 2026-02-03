@@ -164,9 +164,10 @@ function ReviewErrors() {
           const errorData = await recordResponse.json().catch(() => ({}));
           setRecordError(errorData.error || 'Failed to record attempt');
         }
-      } catch (compError: any) {
+      } catch (compError: unknown) {
         console.warn('Failed to record review competency event:', compError);
-        setRecordError(compError.message || 'Failed to record attempt');
+        const errorMessage = compError instanceof Error ? compError.message : 'Failed to record attempt';
+        setRecordError(errorMessage);
       }
     } catch (error) {
       console.error('Error validating answer:', error);
