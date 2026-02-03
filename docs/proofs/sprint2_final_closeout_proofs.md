@@ -55,10 +55,17 @@ $ grep -rn "documents/upload" client/ --include="*.ts" --include="*.tsx"
 # (Exit code 1 = no matches found)
 ```
 
+**Documentation cleanup:**
+```bash
+$ grep -rn "/api/documents/upload" . --include="*.md"
+# (Exit code 1 = no matches found - all historical references removed)
+```
+
 **Validation:**
 - ✅ Endpoint removed from server/index.ts
 - ✅ No server references found
 - ✅ No client references found
+- ✅ All documentation references removed (README, AUTH_SECURITY, ground-truth, etc.)
 
 ---
 
