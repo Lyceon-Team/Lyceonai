@@ -49,14 +49,6 @@
 - **Recommended action:** defer
 - **Risk if left as-is:** unused endpoint increases maintenance surface area.
 
-### Document upload endpoint unused by client
-- **Endpoint:** `/api/documents/upload`
-- **Server evidence:** `server/index.ts` lines 476-478.【server/index.ts:L476-L478】
-- **Client search evidence (no matches):**
-  - `rg -n "/api/documents/upload" client/src` → *(no output)*
-- **Recommended action:** defer
-- **Risk if left as-is:** unused endpoint increases maintenance surface area.
-
 ## Client calls to endpoints not mounted in server/index.ts (404 risk)
 
 ### Progress and activity endpoints

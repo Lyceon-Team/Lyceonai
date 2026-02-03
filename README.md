@@ -222,7 +222,6 @@ To enable vector search in Supabase, run:
 - `POST /api/ingest/run` - Process ingestion batch
 - `GET /api/ingest/status/:jobId` - Check job status
 - `GET /api/ingest/jobs` - List all jobs
-- `POST /api/documents/upload` - Upload PDF
 - `POST /api/documents/process-and-ingest` - Process and ingest PDF
 
 ### Auth Routes

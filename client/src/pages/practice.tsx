@@ -231,9 +231,14 @@ function Practice() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Use section practice above to focus on specific topics
-                  </p>
+                  <div className="flex justify-center">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/practice/topics">
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        Browse & Filter All Topics
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               )}
             </PageCard>
@@ -283,9 +288,14 @@ function Practice() {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Use section practice above to focus on specific topics
-                  </p>
+                  <div className="flex justify-center">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/practice/topics">
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        Browse & Filter All Topics
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               )}
             </PageCard>

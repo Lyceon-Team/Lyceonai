@@ -33,20 +33,21 @@ This document is the single authoritative registry of:
 | `/calendar` | student, admin | free | CalendarPage | `/api/calendar/month`, `/api/calendar/profile` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | None (UI-disabled stub; not implemented yet) | ACTIVE |
-| `/practice` | student, admin | entitled† | Practice | `/api/practice/next`, `/api/practice/topics`, `/api/practice/questions` (with usage limits) | ACTIVE |
-| `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next` (with usage limits) | ACTIVE |
-| `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next` (with usage limits) | ACTIVE |
-| `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next` (with usage limits) | ACTIVE |
-| `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next` (with usage limits) | ACTIVE |
-| `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next` (with usage limits) | ACTIVE |
-| `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery` | ACTIVE |
-| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/attempt` | ACTIVE |
-| `/flow-cards` | student, admin | free | FlowCards | `/api/questions/feed` | ACTIVE |
-| `/structured-practice` | student, admin | free | StructuredPractice | `/api/questions` | ACTIVE |
+| `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
+| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/questions` | ACTIVE |
+| `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
+| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/attempt`, `/api/questions/:id`, `/api/questions/validate` | ACTIVE |
+| `/flow-cards` | student, admin | free | FlowCards | `/api/practice/next`, `/api/practice/answer` | ACTIVE |
+| `/structured-practice` | student, admin | free | StructuredPractice | `/api/practice/next`, `/api/practice/answer` | ACTIVE |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
-| `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile` | ACTIVE |
-| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary` | ACTIVE |
-| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month` | ACTIVE |
+| `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/auth/user`, `/api/legal/accept` | ACTIVE |
+| `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
+| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
 | `/admin` | admin | admin-only | AdminPortal | `/api/admin/*` (all admin endpoints) | ACTIVE |
 | `/admin-dashboard` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
 | `/admin-system-config` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
@@ -83,7 +84,9 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/auth/signin` | POST | No | public | Email/password signin |
 | `/api/auth/signout` | POST | Yes | any | Sign out current user |
 | `/api/auth/user` | GET | Yes | any | Get current user (legacy) |
-| `/api/auth/google` | GET | No | public | Google OAuth flow |
+| `/api/auth/google/start` | GET | No | public | Google OAuth flow |
+| `/api/auth/consent` | GET/POST | No | public | OAuth consent handling |
+| `/api/auth/refresh` | POST | No | public | Refresh auth token |
 | `/api/profile` | GET | Yes | any | Get user profile (canonical) |
 
 ### Student Endpoints
@@ -102,10 +105,11 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
 | `/api/questions/validate` | POST | Yes | student/admin | free | Validate answer |
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
+| `/api/questions/stats` | GET | Yes | student/admin | free | Question statistics |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
 | `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
 | `/api/review-errors/attempt` | POST | Yes | student/admin | free | Record review error attempt |
-| `/api/me/mastery` | GET | Yes | student/admin | free | Mastery statistics |
+| `/api/me/mastery/skills` | GET | Yes | student/admin | free | Mastery statistics |
 | `/api/me/weakness` | GET | Yes | student/admin | free | Weakness areas |
 
 ### Guardian Endpoints
@@ -132,6 +136,7 @@ The following routes have been **REMOVED** from the codebase:
 ### Billing Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |
 |----------|--------|--------------|------|---------|
+| `/api/billing/prices` | GET | No | public | Get pricing information |
 | `/api/billing/checkout` | POST | Yes | any | Create Stripe checkout |
 | `/api/billing/status` | GET | Yes | any | Get billing status |
 | `/api/billing/portal` | POST | Yes | any | Access customer portal |

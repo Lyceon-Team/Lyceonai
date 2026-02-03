@@ -49,7 +49,6 @@
 - `POST /api/admin/questions/:id/approve`, `POST /api/admin/questions/:id/reject` with `csrfProtection` → `requireSupabaseAdmin`. Access: admin. Evidence: `server/index.ts` lines 423-424.【server/index.ts:L423-L424】
 - `GET /api/admin/supabase-debug` with `requireSupabaseAdmin`. Access: admin. Evidence: `server/index.ts` lines 426-454.【server/index.ts:L426-L454】
 - `POST /api/student/analyze-question` with `csrfProtection` → `studentUploadLimiter` → `requireSupabaseAuth` → `requireStudentOrAdmin`. Access: user (student/admin). Evidence: `server/index.ts` lines 457-464.【server/index.ts:L457-L464】
-- `POST /api/documents/upload` with `requireSupabaseAuth` → `requireStudentOrAdmin`. Access: user (student/admin). Evidence: `server/index.ts` lines 476-478.【server/index.ts:L476-L478】
 - `GET /api/_whoami` (debug). Access: public. Evidence: `server/index.ts` lines 489-497.【server/index.ts:L489-L497】
 - `ALL /privacy` and `ALL /terms` redirect to `/legal/...`. Access: public. Evidence: `server/index.ts` lines 230-232.【server/index.ts:L230-L232】
 

@@ -75,6 +75,7 @@ function ReviewErrors() {
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [reviewResults, setReviewResults] = useState<Record<string, ReviewRunResult>>({});
+  const [recordError, setRecordError] = useState<string | null>(null);
 
   const { data: reviewData, isLoading, refetch } = useQuery<ReviewErrorsResponse>({
     queryKey: ['/api/review-errors'],
@@ -106,6 +107,7 @@ function ReviewErrors() {
     setFreeResponseAnswer("");
     setShowResult(false);
     setValidationResult(null);
+    setRecordError(null);
   }, []);
 
   const startReview = useCallback((filter: ReviewFilter) => {
@@ -146,16 +148,26 @@ function ReviewErrors() {
       }));
       
       try {
-        await apiRequest('/api/review-errors/attempt', {
+        const recordResponse = await apiRequest('/api/review-errors/attempt', {
           method: 'POST',
           body: JSON.stringify({
-            questionId: currentItem.questionId,
-            eventType: reviewOutcome,
-            sessionId: null,
+            question_id: currentItem.questionId,
+            selected_answer: fullQuestion.type === 'mc' ? selectedAnswer : freeResponseAnswer.trim(),
+            is_correct: result.isCorrect,
+            seconds_spent: null,
+            source_context: 'review_errors',
+            client_attempt_id: `${currentItem.questionId}-${Date.now()}`,
           }),
         });
-      } catch (compError) {
+        
+        if (!recordResponse.ok) {
+          const errorData = await recordResponse.json().catch(() => ({}));
+          setRecordError(errorData.error || 'Failed to record attempt');
+        }
+      } catch (compError: unknown) {
         console.warn('Failed to record review competency event:', compError);
+        const errorMessage = compError instanceof Error ? compError.message : 'Failed to record attempt';
+        setRecordError(errorMessage);
       }
     } catch (error) {
       console.error('Error validating answer:', error);
@@ -179,9 +191,12 @@ function ReviewErrors() {
       await apiRequest('/api/review-errors/attempt', {
         method: 'POST',
         body: JSON.stringify({
-          questionId: currentItem.questionId,
-          eventType: 'skipped',
-          sessionId: null,
+          question_id: currentItem.questionId,
+          selected_answer: null,
+          is_correct: false,
+          seconds_spent: null,
+          source_context: 'review_errors',
+          client_attempt_id: `${currentItem.questionId}-skip-${Date.now()}`,
         }),
       });
     } catch (compError) {
@@ -407,6 +422,18 @@ function ReviewErrors() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {recordError && (
+                  <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-orange-600" />
+                      <span className="font-medium text-orange-600">Warning</span>
+                    </div>
+                    <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                      {recordError}. Your answer was validated, but we couldn't save it to your progress.
+                    </p>
                   </div>
                 )}
 

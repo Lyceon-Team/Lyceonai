@@ -65,7 +65,6 @@ All require `requireSupabaseAuth` + `requireStudentOrAdmin` middleware:
 | `GET /api/account/bootstrap` | `server/routes/account-routes.ts` | No | None | Account bootstrap |
 | `GET /api/account/status` | `server/routes/account-routes.ts` | No | None | Account status |
 | `POST /api/account/select` | `server/routes/account-routes.ts` | Yes | None | Account selection |
-| `POST /api/documents/upload` | `server/index.ts:496` | No | 10/min | Document upload |
 | `/api/practice/*` | `server/routes/practice-canonical.ts` | Varies | None | **CRITICAL**: Practice mode, session ownership validation |
 
 #### Admin-Only Endpoints

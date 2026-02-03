@@ -97,6 +97,9 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/auth/signin` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signout` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/auth/user` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
+| `GET /api/auth/google/start` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
+| `GET /api/auth/consent` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
+| `POST /api/auth/refresh` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/profile` | any | free | requireSupabaseAuth | `server/index.ts:286` |
 | `PATCH /api/profile` | any | free | requireSupabaseAuth | `server/routes/profile-routes.ts` |
 
@@ -124,13 +127,18 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/tutor/v2` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `server/index.ts:273` |
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
+| `GET /api/questions/stats` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
 | `POST /api/questions/validate` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:427` |
 | `POST /api/questions/feedback` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:430` |
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
 | `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
 | `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
-| `GET /api/me/mastery` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
+| `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
 | `GET /api/me/weakness` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
+| `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
+| `POST /api/notifications/:id/read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
+| `POST /api/notifications/mark-all-read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
 
 ### Guardian APIs
 
@@ -159,6 +167,7 @@ Some features are available to free tier but with **usage limits**:
 
 | Endpoint | Role | Entitlement | Server Gate | Evidence |
 |----------|------|-------------|-------------|----------|
+| `GET /api/billing/prices` | public | free | None (public) | `server/routes/billing-routes.ts` |
 | `POST /api/billing/checkout` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
 | `GET /api/billing/status` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
 | `POST /api/billing/portal` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
