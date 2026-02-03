@@ -66,8 +66,8 @@ Some features are available to free tier but with **usage limits**:
 | `/reading-writing-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:94` |
 | `/mastery` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:95`, `server/index.ts:326` |
 | `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:422` |
-| `/flow-cards` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:97` |
-| `/structured-practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:98` |
+| `/flow-cards` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:97` |
+| `/structured-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:98` |
 | **Profile Routes** | | | | | |
 | `/profile` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:101`, `server/index.ts:286` |
 | `/profile/complete` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:102` |

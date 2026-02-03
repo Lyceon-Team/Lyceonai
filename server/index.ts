@@ -669,7 +669,6 @@ if (isMainModule) {
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  GET    /api/practice/next`);
     console.log(`  POST   /api/practice/answer`);
-    console.log(`  POST   /api/practice/end-session`);
     console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
     console.log(`  GET    /api/admin/questions/needs-review`);
     console.log(`  GET    /api/admin/questions/statistics`);
