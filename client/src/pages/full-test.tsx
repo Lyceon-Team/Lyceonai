@@ -68,12 +68,12 @@ export default function FullTest() {
 
           {/* CTA */}
           <div className="flex flex-col items-center gap-4">
-            <Button size="lg" className="px-12" data-testid="button-start-full-test">
+            <Button size="lg" className="px-12" data-testid="button-start-full-test" disabled>
               <Clock className="h-5 w-5 mr-2" />
-              Start Full Length Test
+              Coming Soon
             </Button>
             <p className="text-sm text-muted-foreground">
-              Test will begin immediately — make sure you're ready!
+              Full-length SAT tests are not yet available. Practice individual sections in the meantime.
             </p>
           </div>
         </PageCard>

@@ -43,7 +43,7 @@ import {
   rejectQuestion,
   getParsingStatistics,
 } from "./admin-review-routes";
-import { analyzeQuestion } from "./routes/student-routes";
+import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -242,12 +242,6 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
-const studentUploadLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  message: { error: "Too many upload requests. Please wait a moment before trying again." },
-});
-
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
 // RAG endpoint - cookie-only auth, no Bearer allowed
@@ -421,10 +415,8 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
-// Review errors attempt stub endpoint (prevents 404 from frontend POST calls)
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.json({ ok: true });
-});
+// Review errors attempt endpoint - records student attempts during error review
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 app.post("/api/questions/validate", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, validateAnswer);
@@ -469,16 +461,6 @@ app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => 
   }
 });
 
-// Student Routes (requires Supabase auth + CSRF protection)
-app.post(
-  "/api/student/analyze-question",
-  csrfProtection,
-  studentUploadLimiter,
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  ...(analyzeQuestion as any)
-);
-
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);
 
@@ -487,11 +469,6 @@ app.use("/api/billing", billingRoutes);
 
 // Account Routes (bootstrap, status)
 app.use("/api/account", accountRoutes);
-
-// Document upload endpoint - requires authentication
-app.post("/api/documents/upload", requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.status(501).json({ error: 'Document upload not implemented' });
-});
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
