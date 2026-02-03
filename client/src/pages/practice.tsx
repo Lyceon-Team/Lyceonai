@@ -278,11 +278,6 @@ function Practice() {
                 </div>
               )}
             </PageCard>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </PageCard>
 
             {/* Other Options */}
             <PageCard title="More Practice Modes">
