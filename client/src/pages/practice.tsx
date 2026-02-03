@@ -26,6 +26,17 @@ interface QuestionStats {
   recentlyAdded: number;
 }
 
+interface PracticeTopics {
+  sections?: Array<{
+    section: string;
+    label: string;
+    domains?: Array<{
+      domain: string;
+      skills: string[];
+    }>;
+  }>;
+}
+
 const MATH_TOPICS = [
   { id: 'algebra', name: 'Algebra', count: 45 },
   { id: 'geometry', name: 'Geometry', count: 32 },
@@ -50,7 +61,7 @@ function Practice() {
   });
 
   // Fetch practice topics from the new endpoint
-  const { data: topicsData, isLoading: topicsLoading } = useQuery({
+  const { data: topicsData, isLoading: topicsLoading } = useQuery<PracticeTopics>({
     queryKey: ['/api/practice/topics'],
     enabled: !!user && !authLoading,
   });
