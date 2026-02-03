@@ -1,6 +1,6 @@
 # Analytics Event Taxonomy
 
-**Last Updated:** 2026-02-02 (Sprint 2 PR-4)
+**Last Updated:** 2026-02-02 (Sprint 2 Closeout)
 
 ## Overview
 
@@ -15,12 +15,19 @@ This document defines the event taxonomy for analytics tracking in the SAT Learn
 - Initialization: Conditional on production environment and user consent
 - Project ID: Configured via `VITE_CLARITY_PROJECT_ID` environment variable
 - Consent mechanism: User opt-in via `lyceon_analytics_consent` localStorage flag
+- API: `window.__lyceonSetAnalyticsConsent(boolean)` - Read-only global function for consent management
 
 **Privacy Safeguards:**
 - Only runs in production builds (`import.meta.env.MODE === "production"`)
 - Requires explicit user consent before initialization
 - Session recording can be disabled by user
 - No PII is explicitly sent to Clarity (relies on Clarity's built-in PII masking)
+- Single initialization guard prevents double-init
+- Environment variable required (`VITE_CLARITY_PROJECT_ID`)
+
+**Code Cleanup (Sprint 2):**
+- Removed non-functional `window.analytics.track()` calls from `client/src/pages/home.tsx`
+- Only Clarity SDK is active; no other analytics frameworks are integrated
 
 ## Future Event Taxonomy
 
