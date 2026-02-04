@@ -118,7 +118,6 @@ export default function UserProfile() {
       <AppShell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
           <EmptyState
-            icon={User}
             title="No Profile Data"
             description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
             action={{
