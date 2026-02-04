@@ -83,9 +83,9 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/auth/signup` | POST | No | public | Email/password signup |
 | `/api/auth/signin` | POST | No | public | Email/password signin |
 | `/api/auth/signout` | POST | Yes | any | Sign out current user |
-| `/api/auth/user` | GET | Yes | any | Get current user (legacy) |
+| `/api/auth/user` | GET | No | any | Get current user (returns {user: null} for anonymous) |
 | `/api/auth/google/start` | GET | No | public | Google OAuth flow |
-| `/api/auth/consent` | GET/POST | No | public | OAuth consent handling |
+| `/api/auth/consent` | POST | Yes | any | Submit guardian consent for under-13 users (CSRF protected) |
 | `/api/auth/refresh` | POST | No | public | Refresh auth token |
 | `/api/profile` | GET | Yes | any | Get user profile (canonical) |
 
@@ -110,7 +110,8 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
 | `/api/review-errors/attempt` | POST | Yes | student/admin | free | Record review error attempt |
 | `/api/me/mastery/skills` | GET | Yes | student/admin | free | Mastery statistics |
-| `/api/me/weakness` | GET | Yes | student/admin | free | Weakness areas |
+| `/api/me/weakness/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
+| `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
 
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |

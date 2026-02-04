@@ -96,9 +96,9 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/auth/signup` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signin` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signout` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
-| `GET /api/auth/user` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
+| `GET /api/auth/user` | any | free | None (allows anonymous) | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/auth/google/start` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
-| `GET /api/auth/consent` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
+| `POST /api/auth/consent` | any | free | requireSupabaseAuth, csrfProtection | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/refresh` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/profile` | any | free | requireSupabaseAuth | `server/index.ts:286` |
 | `PATCH /api/profile` | any | free | requireSupabaseAuth | `server/routes/profile-routes.ts` |
@@ -134,7 +134,8 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
 | `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
 | `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
-| `GET /api/me/weakness` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/me/weakness/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/me/weakness/clusters` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:17` |
 | `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:114` |
 | `PATCH /api/notifications/:id/read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/routes/notification-routes.ts:169` |
