@@ -112,6 +112,25 @@ export default function UserProfile() {
     );
   }
 
+  // Empty state when no profile data
+  if (!profileUser) {
+    return (
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center px-4">
+          <EmptyState
+            icon={User}
+            title="No Profile Data"
+            description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
+            action={{
+              label: "Refresh",
+              onClick: () => refetchProfile()
+            }}
+          />
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 max-w-6xl">

@@ -73,6 +73,16 @@ export function AdminPortal() {
                   </Alert>
                 )}
 
+                {/* Empty State */}
+                {!statsLoading && !statsError && !dashboardStats && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No dashboard statistics available. The system may still be initializing.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

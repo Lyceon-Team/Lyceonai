@@ -185,6 +185,43 @@ export default function ProfileComplete() {
     );
   }
 
+  // Empty state when no auth payload
+  if (!userProfile || !(userProfile as any)?.user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full text-center">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              No Profile Data
+            </CardTitle>
+            <CardDescription>
+              Unable to load your profile information. Please sign in to continue.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => refetchUser()}
+                className="flex-1"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/login')}
+                className="flex-1"
+              >
+                Back to Login
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const calculateAge = (birthDate: string): number => {
     const today = new Date();
     const birth = new Date(birthDate);
