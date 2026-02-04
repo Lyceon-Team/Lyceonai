@@ -77,7 +77,13 @@ function ReviewErrors() {
   const [reviewResults, setReviewResults] = useState<Record<string, ReviewRunResult>>({});
   const [recordError, setRecordError] = useState<string | null>(null);
 
-  const { data: reviewData, isLoading, refetch } = useQuery<ReviewErrorsResponse>({
+  const {
+    data: reviewData,
+    isLoading,
+    isError,
+    error: reviewError,
+    refetch,
+  } = useQuery<ReviewErrorsResponse>({
     queryKey: ['/api/review-errors'],
   });
 
@@ -250,6 +256,30 @@ function ReviewErrors() {
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-foreground" />
           <p className="text-muted-foreground">Loading your recent session...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md w-full text-center" data-testid="card-review-error">
+          <CardHeader>
+            <AlertCircle className="h-10 w-10 mx-auto text-red-500 mb-2" />
+            <CardTitle>Unable to load review data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {(reviewError as Error)?.message ?? "Please try again."}
+            </p>
+            <Button onClick={() => refetch()} data-testid="button-review-retry">
+              Retry
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/practice">Back to Practice</Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

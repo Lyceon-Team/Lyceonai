@@ -33,7 +33,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     autoStart: false,
     onExpire: () => {
       if (isSessionActive) {
-        handleEndSession();
+        handleExitSession();
       }
     }
   });
@@ -51,7 +51,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     submitAnswer,
     skipQuestion,
     startSession,
-    endSession,
+    resetSession,
   } = useAdaptivePractice({
     section: sectionNormalized,
     mode: 'structured',
@@ -100,13 +100,13 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     await skipQuestion();
   };
 
-  const handleEndSession = async () => {
+  const handleExitSession = async () => {
     timer.pause();
     setIsSessionActive(false);
-    await endSession();
+    resetSession();
     toast({
-      title: "Session Complete!",
-      description: `You answered ${score.correct} out of ${score.total} questions correctly.`
+      title: "Session ended",
+      description: "This session was ended locally. Your stats reflect the answers submitted so far."
     });
   };
 
@@ -239,8 +239,8 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
               <span className="font-medium text-[#0F2E48]">{score.correct}/{score.total}</span>
             </div>
             
-            <Button variant="outline" size="sm" onClick={handleEndSession}>
-              <Flag className="w-4 h-4 mr-1" /> End
+            <Button variant="outline" size="sm" onClick={handleExitSession}>
+              <Flag className="w-4 h-4 mr-1" /> Exit Session
             </Button>
           </div>
         </div>

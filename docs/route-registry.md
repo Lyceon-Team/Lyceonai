@@ -42,8 +42,8 @@ This document is the single authoritative registry of:
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
 | `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/attempt`, `/api/questions/:id`, `/api/questions/validate` | ACTIVE |
-| `/flow-cards` | student, admin | free | FlowCards | `/api/practice/next`, `/api/practice/answer` | ACTIVE |
-| `/structured-practice` | student, admin | free | StructuredPractice | `/api/practice/next`, `/api/practice/answer` | ACTIVE |
+| `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/auth/user`, `/api/legal/accept` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
