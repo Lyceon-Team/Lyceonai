@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Build server bundle using esbuild-wasm for deterministic builds
- * This script bundles server/index.ts into dist/index.js using esbuild-wasm,
- * which avoids the native binary execution issues in some environments.
+ * Build server bundle using esbuild
+ * This script bundles server/index.ts into dist/index.js using esbuild.
  */
 
-import * as esbuild from 'esbuild-wasm';
+import * as esbuild from 'esbuild';
 import { existsSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -29,7 +28,7 @@ async function buildServer() {
   try {
     const outfile = join(rootDir, 'dist', 'index.js');
     
-    console.log('Building server with esbuild-wasm...');
+    console.log('Building server with esbuild...');
 
     // Bundle server (esbuild-wasm auto-initializes in Node.js)
     const result = await esbuild.build({
