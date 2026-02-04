@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
-import { BookOpen, AlertCircle, User, MapPin, Phone, Calendar, Globe, CheckCircle, ExternalLink, Shield } from "lucide-react";
+import { BookOpen, AlertCircle, User, MapPin, Phone, Calendar, Globe, CheckCircle, ExternalLink, Shield, RefreshCw } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -62,7 +62,7 @@ export default function ProfileComplete() {
   const progress = (currentStep / totalSteps) * 100;
 
   // Check if user is authenticated
-  const { data: userProfile, isLoading: authLoading } = useQuery({
+  const { data: userProfile, isLoading: authLoading, error: authError, refetch: refetchUser } = useQuery({
     queryKey: ['/api/auth/user'],
     retry: false
   });
@@ -120,9 +120,52 @@ export default function ProfileComplete() {
   });
 
   // Redirect if not authenticated
-  if (!authLoading && !(userProfile as any)?.authenticated) {
+  if (!authLoading && !authError && !(userProfile as any)?.authenticated) {
     navigate('/login');
     return null;
+  }
+
+  // Show error state if auth check failed
+  if (authError && !authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Authentication Error
+            </CardTitle>
+            <CardDescription>
+              Failed to verify your authentication status
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {(authError as any)?.message || 'Unable to connect to authentication service'}
+              </AlertDescription>
+            </Alert>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => refetchUser()}
+                className="flex-1"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/login')}
+                className="flex-1"
+              >
+                Back to Login
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // Redirect if profile already completed
