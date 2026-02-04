@@ -224,7 +224,7 @@ export default function NotificationDropdown() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Failed to load notifications. {(notificationsError as any)?.message || 'Please try again.'}
+                Failed to load notifications. {notificationsError instanceof Error ? notificationsError.message : 'Please try again.'}
               </AlertDescription>
             </Alert>
             <Button
@@ -243,7 +243,7 @@ export default function NotificationDropdown() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Failed to load unread count. {(unreadError as any)?.message || 'Please try again.'}
+                Failed to load unread count. {unreadError instanceof Error ? unreadError.message : 'Please try again.'}
               </AlertDescription>
             </Alert>
             <Button

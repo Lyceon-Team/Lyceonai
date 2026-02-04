@@ -143,7 +143,7 @@ export default function ProfileComplete() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                {(authError as any)?.message || 'Unable to connect to authentication service'}
+                {authError instanceof Error ? authError.message : 'Unable to connect to authentication service'}
               </AlertDescription>
             </Alert>
             <div className="flex gap-2">
