@@ -3,7 +3,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw } from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
 import {
@@ -107,6 +108,7 @@ export default function CalendarPage() {
   const [monthData, setMonthData] = useState<StudyPlanDay[]>([]);
   const [streak, setStreak] = useState<{ current: number; longest: number }>({ current: 0, longest: 0 });
   const [monthLoading, setMonthLoading] = useState(false);
+  const [monthError, setMonthError] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const year = currentMonth.getFullYear();
@@ -128,11 +130,13 @@ export default function CalendarPage() {
   const loadMonthData = useCallback(async () => {
     if (!profile) return;
     setMonthLoading(true);
+    setMonthError(null);
     try {
       const response = await getCalendarMonth(gridStartDate, gridEndDate);
       setMonthData(response.days);
       setStreak(response.streak);
-    } catch {
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to load calendar data");
       setMonthData([]);
       setStreak({ current: 0, longest: 0 });
     } finally {
@@ -205,11 +209,13 @@ export default function CalendarPage() {
   const handlePrevMonth = () => {
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
     setSelectedDateKey(null);
+    setMonthError(null);
   };
 
   const handleNextMonth = () => {
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
     setSelectedDateKey(null);
+    setMonthError(null);
   };
 
   if (profileLoading) {
@@ -252,6 +258,24 @@ export default function CalendarPage() {
           <div className="flex items-center justify-center py-4">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
+        )}
+
+        {monthError && !monthLoading && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>{monthError}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadMonthData}
+                className="ml-4"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Streak Display */}

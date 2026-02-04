@@ -135,10 +135,10 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
 | `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
 | `GET /api/me/weakness` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
-| `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
-| `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
-| `POST /api/notifications/:id/read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
-| `POST /api/notifications/mark-all-read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
+| `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:17` |
+| `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:114` |
+| `PATCH /api/notifications/:id/read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/routes/notification-routes.ts:169` |
+| `PATCH /api/notifications/mark-all-read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/routes/notification-routes.ts:231` |
 
 ### Guardian APIs
 
