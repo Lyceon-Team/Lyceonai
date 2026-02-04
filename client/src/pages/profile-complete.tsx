@@ -52,6 +52,18 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 
+interface AuthUserResponse {
+  user?: {
+    profileCompletedAt?: string;
+    [key: string]: any;
+  } | null;
+  authenticated?: boolean;
+}
+
+function isAuthUserResponse(data: unknown): data is AuthUserResponse {
+  return typeof data === 'object' && data !== null;
+}
+
 export default function ProfileComplete() {
   const [location, navigate] = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
@@ -62,7 +74,7 @@ export default function ProfileComplete() {
   const progress = (currentStep / totalSteps) * 100;
 
   // Check if user is authenticated
-  const { data: userProfile, isLoading: authLoading, error: authError, refetch: refetchUser } = useQuery({
+  const { data: userProfile, isLoading: authLoading, error: authError, refetch: refetchUser } = useQuery<AuthUserResponse>({
     queryKey: ['/api/auth/user'],
     retry: false
   });
@@ -120,7 +132,7 @@ export default function ProfileComplete() {
   });
 
   // Redirect if not authenticated
-  if (!authLoading && !authError && !(userProfile as any)?.authenticated) {
+  if (!authLoading && !authError && !userProfile?.authenticated) {
     navigate('/login');
     return null;
   }
@@ -169,7 +181,7 @@ export default function ProfileComplete() {
   }
 
   // Redirect if profile already completed
-  if ((userProfile as any)?.user?.profileCompletedAt) {
+  if (userProfile?.user?.profileCompletedAt) {
     navigate('/');
     return null;
   }
@@ -186,7 +198,7 @@ export default function ProfileComplete() {
   }
 
   // Empty state when no auth payload
-  if (!userProfile || !(userProfile as any)?.user) {
+  if (!userProfile || !userProfile?.user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="max-w-md w-full text-center">

@@ -30,7 +30,7 @@ async function buildServer() {
     
     console.log('Building server with esbuild...');
 
-    // Bundle server (esbuild-wasm auto-initializes in Node.js)
+    // Bundle server with esbuild
     const result = await esbuild.build({
       entryPoints: [join(rootDir, 'server', 'index.ts')],
       bundle: true,
