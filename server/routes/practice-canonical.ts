@@ -11,6 +11,7 @@ import { getQuestionMetadataForAttempt, logAttemptAndUpdateMastery } from "../..
 
 
 const router = Router();
+const csrfProtection = csrfGuard();
 
 /**
  * DB truth (from your questions_rows (6).csv):
@@ -303,7 +304,7 @@ const AnswerBodySchema = z.object({
   elapsedMs: z.number().optional().nullable(),
 });
 
-router.post("/answer", requireSupabaseAuth, async (req, res) => {
+router.post("/answer", requireSupabaseAuth, csrfProtection, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;

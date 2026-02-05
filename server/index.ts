@@ -96,6 +96,7 @@ app.use(cookieParser());
 
 // Stripe webhook route MUST be registered BEFORE express.json()
 // Webhook needs raw Buffer, not parsed JSON
+// CSRF_EXEMPT_REASON: Webhook uses Stripe signature verification instead of CSRF
 app.post(
   "/api/billing/webhook",
   express.raw({ type: "application/json" }),
