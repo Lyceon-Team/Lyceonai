@@ -543,7 +543,7 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
 /**
  * POST /api/auth/exchange-session
  * Exchange tokens for a session (set httpOnly cookies)
- * No CSRF protection - this is for programmatic token exchange (mobile, etc.)
+ * CSRF_EXEMPT_REASON: Programmatic token exchange for mobile/API clients - uses Bearer tokens not cookies
  */
 router.post('/exchange-session', async (req: Request, res: Response) => {
   try {

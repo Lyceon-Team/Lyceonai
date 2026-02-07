@@ -11,8 +11,10 @@ import {
 } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
+import { csrfGuard } from '../middleware/csrf';
 
 const router = Router();
+const csrfProtection = csrfGuard();
 
 router.get('/bootstrap', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
@@ -148,7 +150,7 @@ const selectAccountSchema = z.object({
   accountId: z.string().uuid('Invalid account ID'),
 });
 
-router.post('/select', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post('/select', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const userId = req.user!.id;
   const rawRole = req.user!.role as string;
