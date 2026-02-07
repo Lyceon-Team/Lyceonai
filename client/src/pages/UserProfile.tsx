@@ -44,7 +44,13 @@ export default function UserProfile() {
   const { user, signOut } = useSupabaseAuth();
 
   // Get user profile from canonical endpoint
-  const { data: userProfile, isLoading: profileLoading } = useQuery<{ user: UserProfile; authenticated: boolean }>({
+  const {
+    data: userProfile,
+    isLoading: profileLoading,
+    isError: profileError,
+    error: profileErrorObj,
+    refetch: refetchProfile,
+  } = useQuery<{ user: UserProfile; authenticated: boolean }>({
     queryKey: ['/api/profile'],
     enabled: !!user,
   });
@@ -69,6 +75,60 @@ export default function UserProfile() {
   };
 
   const profileUser = userProfile?.user;
+
+  if (profileLoading) {
+    return (
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Loading your profile...</p>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center px-4">
+          <Card className="max-w-md w-full text-center">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500" />
+                Unable to load profile
+              </CardTitle>
+              <CardDescription>
+                {(profileErrorObj as Error)?.message ?? "Please try again."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => refetchProfile()}>Retry</Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Empty state when no profile data
+  if (!profileUser) {
+    return (
+      <AppShell>
+        <div className="min-h-[60vh] flex items-center justify-center px-4">
+          <EmptyState
+            title="No Profile Data"
+            description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
+            action={{
+              label: "Refresh",
+              onClick: () => refetchProfile()
+            }}
+          />
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

@@ -43,7 +43,7 @@ import {
   rejectQuestion,
   getParsingStatistics,
 } from "./admin-review-routes";
-import { analyzeQuestion } from "./routes/student-routes";
+import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -71,6 +71,8 @@ import healthRoutes from "./routes/health-routes";
 import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import practiceCanonicalRouter from "./routes/practice-canonical";
+import profileRoutes from "./routes/profile-routes";
+import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -94,6 +96,7 @@ app.use(cookieParser());
 
 // Stripe webhook route MUST be registered BEFORE express.json()
 // Webhook needs raw Buffer, not parsed JSON
+// CSRF_EXEMPT_REASON: Webhook uses Stripe signature verification instead of CSRF
 app.post(
   "/api/billing/webhook",
   express.raw({ type: "application/json" }),
@@ -241,12 +244,6 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
-const studentUploadLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  message: { error: "Too many upload requests. Please wait a moment before trying again." },
-});
-
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
 // RAG endpoint - cookie-only auth, no Bearer allowed
@@ -281,8 +278,9 @@ app.get("/auth/google/callback", googleCallbackHandler);
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
-// Profile endpoint - requires authentication
-// Canonical endpoint for user profile (replaces /api/auth/user in frontend)
+// Profile endpoints - requires authentication
+// GET /api/profile - Get current user profile
+// PATCH /api/profile - Complete/update user profile
 app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     // User is already attached by supabaseAuthMiddleware
@@ -308,8 +306,7 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
         isGuardian: req.user.isGuardian,
         is_under_13: req.user.is_under_13,
         guardian_consent: req.user.guardian_consent,
-        // Note: avatarUrl, createdAt, lastLoginAt are not tracked in current schema
-        // These can be added later if needed
+        profileCompletedAt: (req.user as any).profile_completed_at || null,
       }
     });
   } catch (error) {
@@ -317,6 +314,8 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);
@@ -418,10 +417,8 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
-// Review errors attempt stub endpoint (prevents 404 from frontend POST calls)
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.json({ ok: true });
-});
+// Review errors attempt endpoint - records student attempts during error review
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 app.post("/api/questions/validate", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, validateAnswer);
@@ -466,16 +463,6 @@ app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => 
   }
 });
 
-// Student Routes (requires Supabase auth + CSRF protection)
-app.post(
-  "/api/student/analyze-question",
-  csrfProtection,
-  studentUploadLimiter,
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  ...(analyzeQuestion as any)
-);
-
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);
 
@@ -485,13 +472,12 @@ app.use("/api/billing", billingRoutes);
 // Account Routes (bootstrap, status)
 app.use("/api/account", accountRoutes);
 
-// Document upload endpoint - requires authentication
-app.post("/api/documents/upload", requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
-  res.status(501).json({ error: 'Document upload not implemented' });
-});
-
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
+
+// Practice Topics Routes (for browsing and filtering)
+app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
+app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
@@ -684,14 +670,11 @@ if (isMainModule) {
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  GET    /api/practice/next`);
     console.log(`  POST   /api/practice/answer`);
-    console.log(`  POST   /api/practice/end-session`);
     console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
     console.log(`  GET    /api/admin/questions/needs-review`);
     console.log(`  GET    /api/admin/questions/statistics`);
     console.log(`  POST   /api/admin/questions/:id/approve`);
     console.log(`  POST   /api/admin/questions/:id/reject`);
-    console.log(`\n📷 Student Routes (requires Supabase auth):`);
-    console.log(`  POST   /api/student/analyze-question`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);

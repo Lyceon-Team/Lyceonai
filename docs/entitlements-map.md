@@ -49,25 +49,25 @@ Some features are available to free tier but with **usage limits**:
 | `/digital-sat/reading-writing` | public | free | None | None | `client/src/App.tsx:72` |
 | `/blog` | public | free | None | None | `client/src/App.tsx:73` |
 | `/blog/:slug` | public | free | None | None | `client/src/App.tsx:74` |
-| `/legal` | public | free | None | `/api/legal` | `client/src/App.tsx:77` |
-| `/legal/:slug` | public | free | None | `/api/legal/:slug` | `client/src/App.tsx:78` |
+| `/legal` | public | free | None | N/A (static content) | `client/src/App.tsx:77` |
+| `/legal/:slug` | public | free | None | N/A (static content) | `client/src/App.tsx:78` |
 | `/privacy` | public | free | None | None | `client/src/App.tsx:81` |
 | `/terms` | public | free | None | None | `client/src/App.tsx:82` |
 | **Student Routes** | | | | | |
 | `/dashboard` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:85`, `server/index.ts:330-333` |
 | `/calendar` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:86`, `server/index.ts:327` |
 | `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `client/src/App.tsx:87`, `server/index.ts:273` |
-| `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:88` |
-| `/practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:89`, `server/routes/practice-canonical.ts:219` |
+| `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | None (UI-disabled stub) | `client/src/App.tsx:88` |
+| `/practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:89`, `server/index.ts:478-480` |
 | `/practice/math` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:90` |
 | `/practice/reading-writing` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:91` |
 | `/practice/random` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:92` |
 | `/math-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:93` |
 | `/reading-writing-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:94` |
 | `/mastery` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:95`, `server/index.ts:326` |
-| `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:419` |
-| `/flow-cards` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:97` |
-| `/structured-practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:98` |
+| `/review-errors` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:96`, `server/index.ts:422` |
+| `/flow-cards` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:97` |
+| `/structured-practice` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:98` |
 | **Profile Routes** | | | | | |
 | `/profile` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:101`, `server/index.ts:286` |
 | `/profile/complete` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:102` |
@@ -96,8 +96,21 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/auth/signup` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signin` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signout` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
-| `GET /api/auth/user` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
+| `GET /api/auth/user` | any | free | None (allows anonymous) | `server/routes/supabase-auth-routes.ts` |
+| `GET /api/auth/google/start` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
+| `POST /api/auth/consent` | any | free | requireSupabaseAuth, csrfProtection | `server/routes/supabase-auth-routes.ts` |
+| `POST /api/auth/refresh` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/profile` | any | free | requireSupabaseAuth | `server/index.ts:286` |
+| `PATCH /api/profile` | any | free | requireSupabaseAuth | `server/routes/profile-routes.ts` |
+
+### Legal APIs
+
+| Endpoint | Role | Entitlement | Server Gate | Evidence |
+|----------|------|-------------|-------------|----------|
+| `POST /api/legal/accept` | any | free | requireSupabaseAuth | `server/routes/legal-routes.ts:10` |
+| `GET /api/legal/acceptances` | any | free | requireSupabaseAuth | `server/routes/legal-routes.ts:53` |
+
+**Note**: Legal *content* (terms, privacy policy) is served statically from client-side. The `/api/legal/*` endpoints are for recording/retrieving user acceptances, not for fetching legal documents.
 
 ### Student APIs
 
@@ -107,18 +120,26 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/progress/projection` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:330` |
 | `GET /api/calendar/profile` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:327` |
 | `GET /api/calendar/month` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:327` |
-| `POST /api/student/analyze-question` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:470-477` |
 | `GET /api/practice/next` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `server/routes/practice-canonical.ts:219-306` |
 | `POST /api/practice/answer` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/practice-canonical.ts` |
+| `GET /api/practice/topics` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:479` |
+| `GET /api/practice/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:480` |
 | `POST /api/tutor/v2` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `server/index.ts:273` |
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
+| `GET /api/questions/stats` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
 | `POST /api/questions/validate` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:427` |
 | `POST /api/questions/feedback` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:430` |
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
-| `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:419` |
-| `GET /api/me/mastery` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
-| `GET /api/me/weakness` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
+| `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
+| `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
+| `GET /api/me/weakness/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/me/weakness/clusters` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
+| `GET /api/notifications` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:17` |
+| `GET /api/notifications/unread-count` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/notification-routes.ts:114` |
+| `PATCH /api/notifications/:id/read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/routes/notification-routes.ts:169` |
+| `PATCH /api/notifications/mark-all-read` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/routes/notification-routes.ts:231` |
 
 ### Guardian APIs
 
@@ -147,6 +168,7 @@ Some features are available to free tier but with **usage limits**:
 
 | Endpoint | Role | Entitlement | Server Gate | Evidence |
 |----------|------|-------------|-------------|----------|
+| `GET /api/billing/prices` | public | free | None (public) | `server/routes/billing-routes.ts` |
 | `POST /api/billing/checkout` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
 | `GET /api/billing/status` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
 | `POST /api/billing/portal` | any | free | requireSupabaseAuth | `server/routes/billing-routes.ts` |
