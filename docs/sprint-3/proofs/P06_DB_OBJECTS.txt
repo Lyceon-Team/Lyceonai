@@ -1,0 +1,410 @@
+$ rg -n --hidden --glob '!**/dist/**' --glob '!**/node_modules/**' --glob '**/*.sql' "student_skill_mastery|mastery|progress|attempt|attempts|question_results|question_result|submissions|grades" .
+./database/supabase-auth-only.sql:56:CREATE TABLE IF NOT EXISTS public.answer_attempts (
+./database/supabase-auth-only.sql:65:  attempted_at timestamp with time zone DEFAULT NOW() NOT NULL
+./database/supabase-auth-only.sql:90:ALTER TABLE public.answer_attempts ENABLE ROW LEVEL SECURITY;
+./database/supabase-auth-only.sql:130:CREATE POLICY "Students can manage own attempts"
+./database/supabase-auth-only.sql:131:  ON public.answer_attempts FOR ALL
+./database/supabase-auth-only.sql:135:CREATE POLICY "Admins have full access to attempts"
+./database/supabase-auth-only.sql:136:  ON public.answer_attempts FOR ALL
+./database/supabase-auth-only.sql:194:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session ON public.answer_attempts(session_id);
+./database/supabase-auth-only.sql:195:CREATE INDEX IF NOT EXISTS idx_answer_attempts_student ON public.answer_attempts(student_id);
+./database/supabase-auth-only.sql:204:GRANT SELECT, INSERT, UPDATE, DELETE ON public.answer_attempts TO authenticated;
+./database/supabase-auth-only.sql:217:-- ✅ answer_attempts  
+./database/policies/exam_attempts.sql:1:-- RLS Policies for exam_attempts table
+./database/policies/exam_attempts.sql:2:-- Users can only access their own exam attempts
+./database/policies/exam_attempts.sql:4:ALTER TABLE exam_attempts ENABLE ROW LEVEL SECURITY;
+./database/policies/exam_attempts.sql:6:-- Users can view their own exam attempts
+./database/policies/exam_attempts.sql:7:CREATE POLICY "exam_attempts_select_own"
+./database/policies/exam_attempts.sql:8:ON exam_attempts FOR SELECT
+./database/policies/exam_attempts.sql:11:-- Users can create their own exam attempts
+./database/policies/exam_attempts.sql:12:CREATE POLICY "exam_attempts_insert_own"
+./database/policies/exam_attempts.sql:13:ON exam_attempts FOR INSERT
+./database/policies/exam_attempts.sql:16:-- Users can update their own exam attempts
+./database/policies/exam_attempts.sql:17:CREATE POLICY "exam_attempts_update_own"
+./database/policies/exam_attempts.sql:18:ON exam_attempts FOR UPDATE
+./database/policies/exam_attempts.sql:21:-- Users can delete their own exam attempts
+./database/policies/exam_attempts.sql:22:CREATE POLICY "exam_attempts_delete_own"
+./database/policies/exam_attempts.sql:23:ON exam_attempts FOR DELETE
+./database/policies/exam_attempts.sql:26:COMMENT ON TABLE exam_attempts IS 'RLS enabled - users can only access their own exam attempts';
+./database/policies/jobs_audit.sql:5:ALTER TABLE batch_file_progress ENABLE ROW LEVEL SECURITY;
+./database/policies/jobs_audit.sql:33:-- Users can view batch file progress for their jobs
+./database/policies/jobs_audit.sql:34:CREATE POLICY "batch_file_progress_select_via_job"
+./database/policies/jobs_audit.sql:35:ON batch_file_progress FOR SELECT
+./database/policies/jobs_audit.sql:39:    WHERE j.id = batch_file_progress.batch_job_id
+./database/policies/jobs_audit.sql:44:-- System creates batch file progress (no user insert)
+./database/policies/jobs_audit.sql:50:-- Users can view exam sections for their own exam attempts
+./database/policies/jobs_audit.sql:55:    SELECT 1 FROM exam_attempts e
+./database/policies/jobs_audit.sql:56:    WHERE e.id = exam_sections.exam_attempt_id
+./database/policies/jobs_audit.sql:66:    SELECT 1 FROM exam_attempts e
+./database/policies/jobs_audit.sql:67:    WHERE e.id = exam_sections.exam_attempt_id
+./database/policies/jobs_audit.sql:76:    SELECT 1 FROM exam_attempts e
+./database/policies/jobs_audit.sql:77:    WHERE e.id = exam_sections.exam_attempt_id
+./database/policies/jobs_audit.sql:115:COMMENT ON TABLE batch_file_progress IS 'RLS enabled - visible via job ownership';
+./database/policies/jobs_audit.sql:116:COMMENT ON TABLE exam_sections IS 'RLS enabled - visible via exam attempt ownership';
+./database/policies/attempts.sql:1:-- RLS Policies for attempts table
+./database/policies/attempts.sql:2:-- Users can only access their own answer attempts
+./database/policies/attempts.sql:4:ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
+./database/policies/attempts.sql:6:-- Users can view their own attempts
+./database/policies/attempts.sql:7:CREATE POLICY "attempts_select_own"
+./database/policies/attempts.sql:8:ON attempts FOR SELECT
+./database/policies/attempts.sql:11:-- Users can create their own attempts
+./database/policies/attempts.sql:12:CREATE POLICY "attempts_insert_own"
+./database/policies/attempts.sql:13:ON attempts FOR INSERT
+./database/policies/attempts.sql:16:-- Users can update their own attempts (rare, but allowed)
+./database/policies/attempts.sql:17:CREATE POLICY "attempts_update_own"
+./database/policies/attempts.sql:18:ON attempts FOR UPDATE
+./database/policies/attempts.sql:21:-- Users can delete their own attempts
+./database/policies/attempts.sql:22:CREATE POLICY "attempts_delete_own"
+./database/policies/attempts.sql:23:ON attempts FOR DELETE
+./database/policies/attempts.sql:26:COMMENT ON TABLE attempts IS 'RLS enabled - users can only access their own answer attempts';
+./database/policies/progress.sql:1:-- RLS Policies for progress table
+./database/policies/progress.sql:2:-- Users can only access their own progress data
+./database/policies/progress.sql:4:ALTER TABLE progress ENABLE ROW LEVEL SECURITY;
+./database/policies/progress.sql:6:-- Users can view their own progress
+./database/policies/progress.sql:7:CREATE POLICY "progress_select_own"
+./database/policies/progress.sql:8:ON progress FOR SELECT
+./database/policies/progress.sql:11:-- Users can insert their own progress records
+./database/policies/progress.sql:12:CREATE POLICY "progress_insert_own"
+./database/policies/progress.sql:13:ON progress FOR INSERT
+./database/policies/progress.sql:16:-- Users can update their own progress
+./database/policies/progress.sql:17:CREATE POLICY "progress_update_own"
+./database/policies/progress.sql:18:ON progress FOR UPDATE
+./database/policies/progress.sql:21:-- Users can delete their own progress
+./database/policies/progress.sql:22:CREATE POLICY "progress_delete_own"
+./database/policies/progress.sql:23:ON progress FOR DELETE
+./database/policies/progress.sql:26:COMMENT ON TABLE progress IS 'RLS enabled - users can only access their own progress';
+./supabase/migrations/20260102_practice_tables.sql:24:  status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'paused', 'completed', 'abandoned')),
+./supabase/migrations/20260102_practice_tables.sql:44:-- Table: answer_attempts
+./supabase/migrations/20260102_practice_tables.sql:45:-- Stores individual question attempts within a practice session
+./supabase/migrations/20260102_practice_tables.sql:47:CREATE TABLE IF NOT EXISTS public.answer_attempts (
+./supabase/migrations/20260102_practice_tables.sql:59:  attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+./supabase/migrations/20260102_practice_tables.sql:62:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session_id 
+./supabase/migrations/20260102_practice_tables.sql:63:  ON public.answer_attempts(session_id);
+./supabase/migrations/20260102_practice_tables.sql:65:CREATE INDEX IF NOT EXISTS idx_answer_attempts_question_id 
+./supabase/migrations/20260102_practice_tables.sql:66:  ON public.answer_attempts(question_id);
+./supabase/migrations/20260102_practice_tables.sql:68:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session_question 
+./supabase/migrations/20260102_practice_tables.sql:69:  ON public.answer_attempts(session_id, question_id);
+./supabase/migrations/20260102_practice_tables.sql:102:-- RLS Policies for answer_attempts
+./supabase/migrations/20260102_practice_tables.sql:104:ALTER TABLE public.answer_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20260102_practice_tables.sql:106:DROP POLICY IF EXISTS "Users can view own answer attempts" ON public.answer_attempts;
+./supabase/migrations/20260102_practice_tables.sql:107:CREATE POLICY "Users can view own answer attempts"
+./supabase/migrations/20260102_practice_tables.sql:108:  ON public.answer_attempts
+./supabase/migrations/20260102_practice_tables.sql:113:      WHERE ps.id = answer_attempts.session_id
+./supabase/migrations/20260102_practice_tables.sql:118:DROP POLICY IF EXISTS "Users can create own answer attempts" ON public.answer_attempts;
+./supabase/migrations/20260102_practice_tables.sql:119:CREATE POLICY "Users can create own answer attempts"
+./supabase/migrations/20260102_practice_tables.sql:120:  ON public.answer_attempts
+./supabase/migrations/20260102_practice_tables.sql:125:      WHERE ps.id = answer_attempts.session_id
+./supabase/migrations/20260102_practice_tables.sql:130:DROP POLICY IF EXISTS "Service role full access to answer attempts" ON public.answer_attempts;
+./supabase/migrations/20260102_practice_tables.sql:131:CREATE POLICY "Service role full access to answer attempts"
+./supabase/migrations/20260102_practice_tables.sql:132:  ON public.answer_attempts
+./database/supabase-auth-migration-simple.sql:56:CREATE TABLE IF NOT EXISTS public.answer_attempts (
+./database/supabase-auth-migration-simple.sql:65:  attempted_at timestamp with time zone DEFAULT NOW() NOT NULL
+./database/supabase-auth-migration-simple.sql:90:ALTER TABLE public.answer_attempts ENABLE ROW LEVEL SECURITY;
+./database/supabase-auth-migration-simple.sql:135:-- Students can manage their own attempts
+./database/supabase-auth-migration-simple.sql:136:CREATE POLICY "Students can manage own attempts"
+./database/supabase-auth-migration-simple.sql:137:  ON public.answer_attempts FOR ALL
+./database/supabase-auth-migration-simple.sql:142:CREATE POLICY "Admins have full access to attempts"
+./database/supabase-auth-migration-simple.sql:143:  ON public.answer_attempts FOR ALL
+./database/supabase-auth-migration-simple.sql:236:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session ON public.answer_attempts(session_id);
+./database/supabase-auth-migration-simple.sql:237:CREATE INDEX IF NOT EXISTS idx_answer_attempts_student ON public.answer_attempts(student_id);
+./database/supabase-auth-migration-simple.sql:246:GRANT SELECT, INSERT, UPDATE, DELETE ON public.answer_attempts TO authenticated;
+./database/supabase-auth-migration-simple.sql:259:-- ✅ answer_attempts
+./supabase/migrations/20241218_competency_tables.sql:11:  status text NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'cancelled')),
+./supabase/migrations/20241218_competency_tables.sql:26:CREATE TABLE IF NOT EXISTS answer_attempts (
+./supabase/migrations/20241218_competency_tables.sql:35:  attempted_at timestamptz DEFAULT now(),
+./supabase/migrations/20241218_competency_tables.sql:39:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session 
+./supabase/migrations/20241218_competency_tables.sql:40:  ON answer_attempts(session_id);
+./supabase/migrations/20241218_competency_tables.sql:41:CREATE INDEX IF NOT EXISTS idx_answer_attempts_user 
+./supabase/migrations/20241218_competency_tables.sql:42:  ON answer_attempts(user_id, attempted_at DESC);
+./supabase/migrations/20241218_competency_tables.sql:43:CREATE INDEX IF NOT EXISTS idx_answer_attempts_question 
+./supabase/migrations/20241218_competency_tables.sql:44:  ON answer_attempts(question_id);
+./supabase/migrations/20241218_competency_tables.sql:79:  attempt_count int DEFAULT 0 NOT NULL,
+./supabase/migrations/20241218_competency_tables.sql:92:ALTER TABLE answer_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20241218_competency_tables.sql:112:-- RLS Policies for answer_attempts
+./supabase/migrations/20241218_competency_tables.sql:114:  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'answer_attempts_select_own') THEN
+./supabase/migrations/20241218_competency_tables.sql:115:    CREATE POLICY answer_attempts_select_own ON answer_attempts FOR SELECT USING (auth.uid() = user_id);
+./supabase/migrations/20241218_competency_tables.sql:117:  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'answer_attempts_insert_own') THEN
+./supabase/migrations/20241218_competency_tables.sql:118:    CREATE POLICY answer_attempts_insert_own ON answer_attempts FOR INSERT WITH CHECK (auth.uid() = user_id);
+./supabase/migrations/20241218_competency_tables.sql:120:  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'answer_attempts_service') THEN
+./supabase/migrations/20241218_competency_tables.sql:121:    CREATE POLICY answer_attempts_service ON answer_attempts FOR ALL USING (auth.role() = 'service_role');
+./database/postgresql-rls-policies.sql:47:ALTER TABLE "user_progress" ENABLE ROW LEVEL SECURITY;
+./database/postgresql-rls-policies.sql:49:ALTER TABLE answer_attempts ENABLE ROW LEVEL SECURITY;
+./database/postgresql-rls-policies.sql:50:ALTER TABLE exam_attempts ENABLE ROW LEVEL SECURITY;
+./database/postgresql-rls-policies.sql:87:-- Users can manage their own progress
+./database/postgresql-rls-policies.sql:88:CREATE POLICY "user_progress_manage_own" ON "user_progress"
+./database/postgresql-rls-policies.sql:94:CREATE POLICY "user_progress_admin_all" ON "user_progress"
+./database/postgresql-rls-policies.sql:117:-- Users can manage their own answer attempts (via session ownership)
+./database/postgresql-rls-policies.sql:118:CREATE POLICY "answer_attempts_manage_own" ON answer_attempts
+./database/postgresql-rls-policies.sql:123:      WHERE practice_sessions.id = answer_attempts.session_id
+./database/postgresql-rls-policies.sql:127:      SELECT 1 FROM exam_attempts
+./database/postgresql-rls-policies.sql:128:      WHERE exam_attempts.id = answer_attempts.exam_attempt_id
+./database/postgresql-rls-policies.sql:129:      AND exam_attempts."user_id" = get_current_user_id()
+./database/postgresql-rls-policies.sql:135:      WHERE practice_sessions.id = answer_attempts.session_id
+./database/postgresql-rls-policies.sql:139:      SELECT 1 FROM exam_attempts
+./database/postgresql-rls-policies.sql:140:      WHERE exam_attempts.id = answer_attempts.exam_attempt_id
+./database/postgresql-rls-policies.sql:141:      AND exam_attempts."user_id" = get_current_user_id()
+./database/postgresql-rls-policies.sql:146:CREATE POLICY "answer_attempts_admin_all" ON answer_attempts
+./database/postgresql-rls-policies.sql:154:-- Users can manage their own exam attempts
+./database/postgresql-rls-policies.sql:155:CREATE POLICY "exam_attempts_manage_own" ON exam_attempts
+./database/postgresql-rls-policies.sql:161:CREATE POLICY "exam_attempts_admin_all" ON exam_attempts
+./database/postgresql-rls-policies.sql:169:-- Users can manage their own exam sections (via exam attempt ownership)
+./database/postgresql-rls-policies.sql:174:      SELECT 1 FROM exam_attempts
+./database/postgresql-rls-policies.sql:175:      WHERE exam_attempts.id = exam_sections.exam_attempt_id
+./database/postgresql-rls-policies.sql:176:      AND exam_attempts."user_id" = get_current_user_id()
+./database/postgresql-rls-policies.sql:181:      SELECT 1 FROM exam_attempts
+./database/postgresql-rls-policies.sql:182:      WHERE exam_attempts.id = exam_sections.exam_attempt_id
+./database/postgresql-rls-policies.sql:183:      AND exam_attempts."user_id" = get_current_user_id()
+./database/postgresql-rls-policies.sql:316:ALTER TABLE batch_file_progress ENABLE ROW LEVEL SECURITY;
+./database/postgresql-rls-policies.sql:318:-- Only admins can access batch file progress
+./database/postgresql-rls-policies.sql:319:CREATE POLICY "batch_file_progress_admin_only" ON batch_file_progress
+./database/postgresql-rls-policies.sql:336:CREATE INDEX IF NOT EXISTS idx_user_progress_user_id ON "user_progress"("user_id");
+./database/postgresql-rls-policies.sql:338:CREATE INDEX IF NOT EXISTS idx_exam_attempts_user_id ON exam_attempts("user_id");
+./database/postgresql-rls-policies.sql:340:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session_id ON answer_attempts(session_id);
+./database/postgresql-rls-policies.sql:341:CREATE INDEX IF NOT EXISTS idx_answer_attempts_exam_attempt_id ON answer_attempts(exam_attempt_id);
+./database/postgresql-rls-policies.sql:342:CREATE INDEX IF NOT EXISTS idx_exam_sections_exam_attempt_id ON exam_sections(exam_attempt_id);
+./supabase/migrations/20260203_review_error_attempts.sql:2:-- Stores student attempts during error review sessions
+./supabase/migrations/20260203_review_error_attempts.sql:6:-- Table: review_error_attempts
+./supabase/migrations/20260203_review_error_attempts.sql:7:-- Stores review error practice attempts with idempotency support
+./supabase/migrations/20260203_review_error_attempts.sql:9:CREATE TABLE IF NOT EXISTS public.review_error_attempts (
+./supabase/migrations/20260203_review_error_attempts.sql:22:  client_attempt_id TEXT,
+./supabase/migrations/20260203_review_error_attempts.sql:28:CREATE INDEX IF NOT EXISTS idx_review_error_attempts_student_id 
+./supabase/migrations/20260203_review_error_attempts.sql:29:  ON public.review_error_attempts(student_id);
+./supabase/migrations/20260203_review_error_attempts.sql:31:CREATE INDEX IF NOT EXISTS idx_review_error_attempts_student_created 
+./supabase/migrations/20260203_review_error_attempts.sql:32:  ON public.review_error_attempts(student_id, created_at DESC);
+./supabase/migrations/20260203_review_error_attempts.sql:34:CREATE INDEX IF NOT EXISTS idx_review_error_attempts_student_question 
+./supabase/migrations/20260203_review_error_attempts.sql:35:  ON public.review_error_attempts(student_id, question_id);
+./supabase/migrations/20260203_review_error_attempts.sql:37:-- Unique index for idempotency (only when client_attempt_id is provided)
+./supabase/migrations/20260203_review_error_attempts.sql:38:CREATE UNIQUE INDEX IF NOT EXISTS idx_review_error_attempts_client_id 
+./supabase/migrations/20260203_review_error_attempts.sql:39:  ON public.review_error_attempts(student_id, client_attempt_id) 
+./supabase/migrations/20260203_review_error_attempts.sql:40:  WHERE client_attempt_id IS NOT NULL;
+./supabase/migrations/20260203_review_error_attempts.sql:43:-- RLS Policies for review_error_attempts
+./supabase/migrations/20260203_review_error_attempts.sql:45:ALTER TABLE public.review_error_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20260203_review_error_attempts.sql:47:-- Students can view their own attempts
+./supabase/migrations/20260203_review_error_attempts.sql:48:DROP POLICY IF EXISTS "Students can view own review error attempts" ON public.review_error_attempts;
+./supabase/migrations/20260203_review_error_attempts.sql:49:CREATE POLICY "Students can view own review error attempts"
+./supabase/migrations/20260203_review_error_attempts.sql:50:  ON public.review_error_attempts
+./supabase/migrations/20260203_review_error_attempts.sql:54:-- Students can insert their own attempts
+./supabase/migrations/20260203_review_error_attempts.sql:55:DROP POLICY IF EXISTS "Students can create own review error attempts" ON public.review_error_attempts;
+./supabase/migrations/20260203_review_error_attempts.sql:56:CREATE POLICY "Students can create own review error attempts"
+./supabase/migrations/20260203_review_error_attempts.sql:57:  ON public.review_error_attempts
+./supabase/migrations/20260203_review_error_attempts.sql:61:-- Admins can read all attempts
+./supabase/migrations/20260203_review_error_attempts.sql:62:DROP POLICY IF EXISTS "Admins can view all review error attempts" ON public.review_error_attempts;
+./supabase/migrations/20260203_review_error_attempts.sql:63:CREATE POLICY "Admins can view all review error attempts"
+./supabase/migrations/20260203_review_error_attempts.sql:64:  ON public.review_error_attempts
+./supabase/migrations/20260203_review_error_attempts.sql:75:DROP POLICY IF EXISTS "Service role full access to review error attempts" ON public.review_error_attempts;
+./supabase/migrations/20260203_review_error_attempts.sql:76:CREATE POLICY "Service role full access to review error attempts"
+./supabase/migrations/20260203_review_error_attempts.sql:77:  ON public.review_error_attempts
+./database/migrations/0001_core_schema.sql:48:  login_attempts INTEGER DEFAULT 0 NOT NULL,
+./database/migrations/0001_core_schema.sql:219:-- User progress on individual questions
+./database/migrations/0001_core_schema.sql:220:CREATE TABLE IF NOT EXISTS progress (
+./database/migrations/0001_core_schema.sql:228:  attempted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+./database/migrations/0001_core_schema.sql:244:  status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'abandoned')),
+./database/migrations/0001_core_schema.sql:252:-- Exam attempts
+./database/migrations/0001_core_schema.sql:253:CREATE TABLE IF NOT EXISTS exam_attempts (
+./database/migrations/0001_core_schema.sql:259:  status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'submitted', 'failed', 'abandoned')),
+./database/migrations/0001_core_schema.sql:269:-- Answer attempts (for practice and exams)
+./database/migrations/0001_core_schema.sql:270:CREATE TABLE IF NOT EXISTS attempts (
+./database/migrations/0001_core_schema.sql:274:  exam_attempt_id UUID REFERENCES exam_attempts(id) ON DELETE CASCADE,
+./database/migrations/0001_core_schema.sql:284:  attempted_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+./database/migrations/0001_core_schema.sql:290:  exam_attempt_id UUID NOT NULL REFERENCES exam_attempts(id) ON DELETE CASCADE,
+./database/migrations/0001_core_schema.sql:297:  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'timed_out'))
+./database/migrations/0001_core_schema.sql:345:  attempts INTEGER DEFAULT 0,
+./database/migrations/0001_core_schema.sql:361:-- Batch file progress
+./database/migrations/0001_core_schema.sql:362:CREATE TABLE IF NOT EXISTS batch_file_progress (
+./database/migrations/0001_core_schema.sql:462:CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id);
+./database/migrations/0001_core_schema.sql:463:CREATE INDEX IF NOT EXISTS idx_progress_user_course ON progress(user_id, course_id);
+./database/migrations/0001_core_schema.sql:464:CREATE INDEX IF NOT EXISTS idx_progress_question ON progress(question_id);
+./database/migrations/0001_core_schema.sql:470:-- Exam attempt indexes
+./database/migrations/0001_core_schema.sql:471:CREATE INDEX IF NOT EXISTS idx_exam_attempts_user ON exam_attempts(user_id);
+./database/migrations/0001_core_schema.sql:474:CREATE INDEX IF NOT EXISTS idx_attempts_user ON attempts(user_id);
+./database/migrations/0001_core_schema.sql:475:CREATE INDEX IF NOT EXISTS idx_attempts_session ON attempts(session_id);
+./database/migrations/0001_core_schema.sql:476:CREATE INDEX IF NOT EXISTS idx_attempts_question ON attempts(question_id);
+./database/migrations/0001_core_schema.sql:521:CREATE TRIGGER update_progress_updated_at BEFORE UPDATE ON progress FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+./database/migrations/0002_rls_policies.sql:19:-- RLS Policies for progress table
+./database/migrations/0002_rls_policies.sql:20:-- Users can only access their own progress data
+./database/migrations/0002_rls_policies.sql:22:ALTER TABLE progress ENABLE ROW LEVEL SECURITY;
+./database/migrations/0002_rls_policies.sql:24:CREATE POLICY "progress_select_own"
+./database/migrations/0002_rls_policies.sql:25:ON progress FOR SELECT
+./database/migrations/0002_rls_policies.sql:28:CREATE POLICY "progress_insert_own"
+./database/migrations/0002_rls_policies.sql:29:ON progress FOR INSERT
+./database/migrations/0002_rls_policies.sql:32:CREATE POLICY "progress_update_own"
+./database/migrations/0002_rls_policies.sql:33:ON progress FOR UPDATE
+./database/migrations/0002_rls_policies.sql:36:CREATE POLICY "progress_delete_own"
+./database/migrations/0002_rls_policies.sql:37:ON progress FOR DELETE
+./database/migrations/0002_rls_policies.sql:40:COMMENT ON TABLE progress IS 'RLS enabled - users can only access their own progress';
+./database/migrations/0002_rls_policies.sql:42:-- RLS Policies for attempts table
+./database/migrations/0002_rls_policies.sql:43:-- Users can only access their own answer attempts
+./database/migrations/0002_rls_policies.sql:45:ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
+./database/migrations/0002_rls_policies.sql:47:CREATE POLICY "attempts_select_own"
+./database/migrations/0002_rls_policies.sql:48:ON attempts FOR SELECT
+./database/migrations/0002_rls_policies.sql:51:CREATE POLICY "attempts_insert_own"
+./database/migrations/0002_rls_policies.sql:52:ON attempts FOR INSERT
+./database/migrations/0002_rls_policies.sql:55:CREATE POLICY "attempts_update_own"
+./database/migrations/0002_rls_policies.sql:56:ON attempts FOR UPDATE
+./database/migrations/0002_rls_policies.sql:59:CREATE POLICY "attempts_delete_own"
+./database/migrations/0002_rls_policies.sql:60:ON attempts FOR DELETE
+./database/migrations/0002_rls_policies.sql:63:COMMENT ON TABLE attempts IS 'RLS enabled - users can only access their own answer attempts';
+./database/migrations/0002_rls_policies.sql:88:-- RLS Policies for exam_attempts table
+./database/migrations/0002_rls_policies.sql:89:-- Users can only access their own exam attempts
+./database/migrations/0002_rls_policies.sql:91:ALTER TABLE exam_attempts ENABLE ROW LEVEL SECURITY;
+./database/migrations/0002_rls_policies.sql:93:CREATE POLICY "exam_attempts_select_own"
+./database/migrations/0002_rls_policies.sql:94:ON exam_attempts FOR SELECT
+./database/migrations/0002_rls_policies.sql:97:CREATE POLICY "exam_attempts_insert_own"
+./database/migrations/0002_rls_policies.sql:98:ON exam_attempts FOR INSERT
+./database/migrations/0002_rls_policies.sql:101:CREATE POLICY "exam_attempts_update_own"
+./database/migrations/0002_rls_policies.sql:102:ON exam_attempts FOR UPDATE
+./database/migrations/0002_rls_policies.sql:105:CREATE POLICY "exam_attempts_delete_own"
+./database/migrations/0002_rls_policies.sql:106:ON exam_attempts FOR DELETE
+./database/migrations/0002_rls_policies.sql:109:COMMENT ON TABLE exam_attempts IS 'RLS enabled - users can only access their own exam attempts';
+./database/migrations/0002_rls_policies.sql:308:-- RLS Policies for jobs, batch_file_progress, exam_sections
+./database/migrations/0002_rls_policies.sql:312:ALTER TABLE batch_file_progress ENABLE ROW LEVEL SECURITY;
+./database/migrations/0002_rls_policies.sql:319:CREATE POLICY "batch_file_progress_select_via_job"
+./database/migrations/0002_rls_policies.sql:320:ON batch_file_progress FOR SELECT
+./database/migrations/0002_rls_policies.sql:324:    WHERE j.id = batch_file_progress.batch_job_id
+./database/migrations/0002_rls_policies.sql:333:    SELECT 1 FROM exam_attempts e
+./database/migrations/0002_rls_policies.sql:334:    WHERE e.id = exam_sections.exam_attempt_id
+./database/migrations/0002_rls_policies.sql:343:    SELECT 1 FROM exam_attempts e
+./database/migrations/0002_rls_policies.sql:344:    WHERE e.id = exam_sections.exam_attempt_id
+./database/migrations/0002_rls_policies.sql:353:    SELECT 1 FROM exam_attempts e
+./database/migrations/0002_rls_policies.sql:354:    WHERE e.id = exam_sections.exam_attempt_id
+./database/migrations/0002_rls_policies.sql:384:COMMENT ON TABLE batch_file_progress IS 'RLS enabled - visible via job ownership';
+./database/migrations/0002_rls_policies.sql:385:COMMENT ON TABLE exam_sections IS 'RLS enabled - visible via exam attempt ownership';
+./supabase/migrations/20251222_student_mastery_tables.sql:2:-- Enables weakness tracking: attempts logging + skill/cluster mastery rollups
+./supabase/migrations/20251222_student_mastery_tables.sql:5:-- Table: student_question_attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:6:-- Logs each answer attempt with question metadata snapshot for analytics
+./supabase/migrations/20251222_student_mastery_tables.sql:8:CREATE TABLE IF NOT EXISTS public.student_question_attempts (
+./supabase/migrations/20251222_student_mastery_tables.sql:28:  attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+./supabase/migrations/20251222_student_mastery_tables.sql:32:-- Indexes for querying attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:33:CREATE INDEX IF NOT EXISTS idx_student_attempts_user_id ON public.student_question_attempts(user_id);
+./supabase/migrations/20251222_student_mastery_tables.sql:34:CREATE INDEX IF NOT EXISTS idx_student_attempts_user_section ON public.student_question_attempts(user_id, section);
+./supabase/migrations/20251222_student_mastery_tables.sql:35:CREATE INDEX IF NOT EXISTS idx_student_attempts_user_domain ON public.student_question_attempts(user_id, domain);
+./supabase/migrations/20251222_student_mastery_tables.sql:36:CREATE INDEX IF NOT EXISTS idx_student_attempts_user_skill ON public.student_question_attempts(user_id, skill);
+./supabase/migrations/20251222_student_mastery_tables.sql:37:CREATE INDEX IF NOT EXISTS idx_student_attempts_canonical_id ON public.student_question_attempts(question_canonical_id);
+./supabase/migrations/20251222_student_mastery_tables.sql:38:CREATE INDEX IF NOT EXISTS idx_student_attempts_attempted_at ON public.student_question_attempts(attempted_at DESC);
+./supabase/migrations/20251222_student_mastery_tables.sql:41:-- Table: student_skill_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:42:-- Rollup table for skill-level mastery tracking
+./supabase/migrations/20251222_student_mastery_tables.sql:44:CREATE TABLE IF NOT EXISTS public.student_skill_mastery (
+./supabase/migrations/20251222_student_mastery_tables.sql:52:  attempts INTEGER NOT NULL DEFAULT 0,
+./supabase/migrations/20251222_student_mastery_tables.sql:55:  mastery_score NUMERIC(5,4) NOT NULL DEFAULT 0,
+./supabase/migrations/20251222_student_mastery_tables.sql:57:  last_attempt_at TIMESTAMPTZ,
+./supabase/migrations/20251222_student_mastery_tables.sql:64:CREATE INDEX IF NOT EXISTS idx_skill_mastery_user_id ON public.student_skill_mastery(user_id);
+./supabase/migrations/20251222_student_mastery_tables.sql:65:CREATE INDEX IF NOT EXISTS idx_skill_mastery_user_section ON public.student_skill_mastery(user_id, section);
+./supabase/migrations/20251222_student_mastery_tables.sql:66:CREATE INDEX IF NOT EXISTS idx_skill_mastery_accuracy ON public.student_skill_mastery(user_id, accuracy ASC);
+./supabase/migrations/20251222_student_mastery_tables.sql:69:-- Table: student_cluster_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:70:-- Rollup table for structure-cluster-level mastery tracking
+./supabase/migrations/20251222_student_mastery_tables.sql:72:CREATE TABLE IF NOT EXISTS public.student_cluster_mastery (
+./supabase/migrations/20251222_student_mastery_tables.sql:78:  attempts INTEGER NOT NULL DEFAULT 0,
+./supabase/migrations/20251222_student_mastery_tables.sql:81:  mastery_score NUMERIC(5,4) NOT NULL DEFAULT 0,
+./supabase/migrations/20251222_student_mastery_tables.sql:83:  last_attempt_at TIMESTAMPTZ,
+./supabase/migrations/20251222_student_mastery_tables.sql:90:CREATE INDEX IF NOT EXISTS idx_cluster_mastery_user_id ON public.student_cluster_mastery(user_id);
+./supabase/migrations/20251222_student_mastery_tables.sql:91:CREATE INDEX IF NOT EXISTS idx_cluster_mastery_accuracy ON public.student_cluster_mastery(user_id, accuracy ASC);
+./supabase/migrations/20251222_student_mastery_tables.sql:96:ALTER TABLE public.student_question_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20251222_student_mastery_tables.sql:97:ALTER TABLE public.student_skill_mastery ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20251222_student_mastery_tables.sql:98:ALTER TABLE public.student_cluster_mastery ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20251222_student_mastery_tables.sql:100:-- Students can only see their own attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:101:CREATE POLICY "Users can view own attempts" ON public.student_question_attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:104:CREATE POLICY "Users can insert own attempts" ON public.student_question_attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:107:-- Skill mastery policies
+./supabase/migrations/20251222_student_mastery_tables.sql:108:CREATE POLICY "Users can view own skill mastery" ON public.student_skill_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:111:CREATE POLICY "Users can manage own skill mastery" ON public.student_skill_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:114:-- Cluster mastery policies
+./supabase/migrations/20251222_student_mastery_tables.sql:115:CREATE POLICY "Users can view own cluster mastery" ON public.student_cluster_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:118:CREATE POLICY "Users can manage own cluster mastery" ON public.student_cluster_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:124:CREATE POLICY "Service role full access to attempts" ON public.student_question_attempts
+./supabase/migrations/20251222_student_mastery_tables.sql:127:CREATE POLICY "Service role full access to skill mastery" ON public.student_skill_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:130:CREATE POLICY "Service role full access to cluster mastery" ON public.student_cluster_mastery
+./supabase/migrations/20251222_student_mastery_tables.sql:134:-- RPC: Upsert skill mastery (atomic increment)
+./supabase/migrations/20251222_student_mastery_tables.sql:136:CREATE OR REPLACE FUNCTION public.upsert_skill_mastery(
+./supabase/migrations/20251222_student_mastery_tables.sql:148:  v_attempts INTEGER;
+./supabase/migrations/20251222_student_mastery_tables.sql:152:  INSERT INTO public.student_skill_mastery (user_id, section, domain, skill, attempts, correct, accuracy, mastery_score, last_attempt_at, updated_at)
+./supabase/migrations/20251222_student_mastery_tables.sql:155:    attempts = student_skill_mastery.attempts + 1,
+./supabase/migrations/20251222_student_mastery_tables.sql:156:    correct = student_skill_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END,
+./supabase/migrations/20251222_student_mastery_tables.sql:157:    accuracy = (student_skill_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END)::NUMERIC / (student_skill_mastery.attempts + 1)::NUMERIC,
+./supabase/migrations/20251222_student_mastery_tables.sql:158:    mastery_score = (student_skill_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END)::NUMERIC / (student_skill_mastery.attempts + 1)::NUMERIC,
+./supabase/migrations/20251222_student_mastery_tables.sql:159:    last_attempt_at = NOW(),
+./supabase/migrations/20251222_student_mastery_tables.sql:165:-- RPC: Upsert cluster mastery (atomic increment)
+./supabase/migrations/20251222_student_mastery_tables.sql:167:CREATE OR REPLACE FUNCTION public.upsert_cluster_mastery(
+./supabase/migrations/20251222_student_mastery_tables.sql:177:  INSERT INTO public.student_cluster_mastery (user_id, structure_cluster_id, attempts, correct, accuracy, mastery_score, last_attempt_at, updated_at)
+./supabase/migrations/20251222_student_mastery_tables.sql:180:    attempts = student_cluster_mastery.attempts + 1,
+./supabase/migrations/20251222_student_mastery_tables.sql:181:    correct = student_cluster_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END,
+./supabase/migrations/20251222_student_mastery_tables.sql:182:    accuracy = (student_cluster_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END)::NUMERIC / (student_cluster_mastery.attempts + 1)::NUMERIC,
+./supabase/migrations/20251222_student_mastery_tables.sql:183:    mastery_score = (student_cluster_mastery.correct + CASE WHEN p_is_correct THEN 1 ELSE 0 END)::NUMERIC / (student_cluster_mastery.attempts + 1)::NUMERIC,
+./supabase/migrations/20251222_student_mastery_tables.sql:184:    last_attempt_at = NOW(),
+./supabase/migrations/20251222_student_mastery_tables.sql:189:COMMENT ON TABLE public.student_question_attempts IS 'Logs each student answer attempt with question metadata snapshot';
+./supabase/migrations/20251222_student_mastery_tables.sql:190:COMMENT ON TABLE public.student_skill_mastery IS 'Rollup of student accuracy by skill for weakness tracking';
+./supabase/migrations/20251222_student_mastery_tables.sql:191:COMMENT ON TABLE public.student_cluster_mastery IS 'Rollup of student accuracy by structure cluster for weakness tracking';
+./supabase/migrations/20260102_guardian_link_code.sql:151:  max_attempts INT := 10;
+./supabase/migrations/20260102_guardian_link_code.sql:152:  attempt INT := 0;
+./supabase/migrations/20260102_guardian_link_code.sql:164:        attempt := attempt + 1;
+./supabase/migrations/20260102_guardian_link_code.sql:165:        IF attempt >= max_attempts THEN
+./supabase/migrations/20260102_guardian_link_code.sql:166:          RAISE EXCEPTION 'Could not generate unique student link code after % attempts', max_attempts;
+./supabase/migrations/20260109_practice_canonical.sql:7:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session_id ON public.answer_attempts (session_id);
+./supabase/migrations/20260109_practice_canonical.sql:8:CREATE INDEX IF NOT EXISTS idx_answer_attempts_user_id ON public.answer_attempts (user_id);
+./supabase/migrations/20260109_practice_canonical.sql:9:CREATE INDEX IF NOT EXISTS idx_answer_attempts_question_id ON public.answer_attempts (question_id);
+./supabase/migrations/20260109_practice_canonical.sql:11:-- 2) Prevent duplicate submissions of same question in same session
+./supabase/migrations/20260109_practice_canonical.sql:17:      AND indexname = 'uniq_answer_attempts_session_question'
+./supabase/migrations/20260109_practice_canonical.sql:19:    EXECUTE 'CREATE UNIQUE INDEX uniq_answer_attempts_session_question ON public.answer_attempts (session_id, question_id)';
+./supabase/migrations/20260109_practice_canonical.sql:30:    SELECT 1 FROM pg_constraint WHERE conname = 'answer_attempts_session_id_fkey'
+./supabase/migrations/20260109_practice_canonical.sql:32:    ALTER TABLE public.answer_attempts
+./supabase/migrations/20260109_practice_canonical.sql:33:      ADD CONSTRAINT answer_attempts_session_id_fkey
+./supabase/migrations/20260109_practice_canonical.sql:52:    SELECT 1 FROM pg_constraint WHERE conname = 'answer_attempts_user_id_fkey'
+./supabase/migrations/20260109_practice_canonical.sql:54:    ALTER TABLE public.answer_attempts
+./supabase/migrations/20260109_practice_canonical.sql:55:      ADD CONSTRAINT answer_attempts_user_id_fkey
+./supabase/migrations/20260109_practice_canonical.sql:66:  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'answer_attempts') THEN
+./supabase/migrations/20260109_practice_canonical.sql:67:    ALTER TABLE public.answer_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20260109_practice_canonical.sql:109:  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='answer_attempts' AND policyname='answer_attempts_select_own') THEN
+./supabase/migrations/20260109_practice_canonical.sql:111:      CREATE POLICY "answer_attempts_select_own" ON public.answer_attempts FOR SELECT USING (auth.uid() = user_id)
+./supabase/migrations/20260109_practice_canonical.sql:115:  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='answer_attempts' AND policyname='answer_attempts_insert_own') THEN
+./supabase/migrations/20260109_practice_canonical.sql:117:      CREATE POLICY "answer_attempts_insert_own" ON public.answer_attempts FOR INSERT WITH CHECK (auth.uid() = user_id)
+./supabase/migrations/20260113_practice_engine_competencies.sql:7:-- User Competencies Table - tracks mastery by competency key
+./supabase/migrations/20260113_practice_engine_competencies.sql:14:  attempt_count int DEFAULT 0 NOT NULL,
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:3:-- Ensures: practice_sessions, answer_attempts, practice_events
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:47:-- 2) answer_attempts
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:48:CREATE TABLE IF NOT EXISTS public.answer_attempts (
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:60:  attempted_at timestamptz NOT NULL DEFAULT now(),
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:66:  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'answer_attempts' AND column_name = 'user_id') THEN
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:67:    ALTER TABLE public.answer_attempts ADD COLUMN user_id uuid;
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:77:    WHERE conname = 'answer_attempts_session_id_fkey'
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:79:    ALTER TABLE public.answer_attempts
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:80:      ADD CONSTRAINT answer_attempts_session_id_fkey
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:91:    WHERE conname = 'answer_attempts_user_id_fkey'
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:93:    ALTER TABLE public.answer_attempts
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:94:      ADD CONSTRAINT answer_attempts_user_id_fkey
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:101:CREATE UNIQUE INDEX IF NOT EXISTS uq_answer_attempts_session_question
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:102:  ON public.answer_attempts(session_id, question_id);
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:104:CREATE INDEX IF NOT EXISTS idx_answer_attempts_session_id
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:105:  ON public.answer_attempts(session_id);
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:107:CREATE INDEX IF NOT EXISTS idx_answer_attempts_user_id
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:108:  ON public.answer_attempts(user_id);
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:157:ALTER TABLE public.answer_attempts ENABLE ROW LEVEL SECURITY;
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:194:    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='answer_attempts' AND policyname='answer_attempts_select_own'
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:196:    CREATE POLICY answer_attempts_select_own
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:197:      ON public.answer_attempts
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:204:    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='answer_attempts' AND policyname='answer_attempts_insert_own'
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:206:    CREATE POLICY answer_attempts_insert_own
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:207:      ON public.answer_attempts
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:249:    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='answer_attempts' AND policyname='answer_attempts_service'
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:251:    CREATE POLICY answer_attempts_service
+./supabase/migrations/20260110_practice_canonical_plus_events.sql:252:      ON public.answer_attempts
+
+$ ls supabase/migrations
+20241218_competency_tables.sql
+20251222_add_canonical_id_to_questions.sql
+20251222_dedupe_canonical_id_indexes.sql
+20251222_drop_internal_id_column.sql
+20251222_questions_drop_internal_id_uniqueness.sql
+20251222_student_mastery_tables.sql
+20251223_legal_acceptances.sql
+20251227_enqueue_rpc_v2_wrapper.sql
+20251227_study_calendar_tables.sql
+20260102_guardian_link_code.sql
+20260102_practice_tables.sql
+20260108_sprint21_hardening.sql
+20260109_practice_canonical.sql
+20260110_practice_canonical_plus_events.sql
+20260113_practice_engine_competencies.sql
+20260202_profile_completion_fields.sql
+20260203_review_error_attempts.sql
+
+$ ls migrations
+meta
