@@ -17,9 +17,26 @@ const rootDir = join(__dirname, '..');
 const externalizePlugin = {
   name: 'externalize-deps',
   setup(build) {
-    // Match bare imports (not starting with ./ ../ or /)
-    build.onResolve({ filter: /^[^./]/ }, args => {
-      return { path: args.path, external: true };
+    build.onResolve({ filter: /.*/ }, (args) => {
+      // Never externalize the entry point
+      if (args.kind === "entry-point") return;
+
+      const p = args.path;
+
+      // Relative paths
+      if (p.startsWith("./") || p.startsWith("../")) return;
+
+      // POSIX absolute paths
+      if (p.startsWith("/")) return;
+
+      // Windows absolute paths (C:\ or C:/)
+      if (/^[A-Za-z]:[\\/]/.test(p)) return;
+
+      // UNC paths (\\server\share\...)
+      if (p.startsWith("\\\\")) return;
+
+      // Otherwise treat as bare package import
+      return { path: p, external: true };
     });
   },
 };
