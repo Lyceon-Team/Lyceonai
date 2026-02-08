@@ -12,3 +12,4 @@ replit.nix
 .upm
 *.backup
 *.bak
+package-lock.json
