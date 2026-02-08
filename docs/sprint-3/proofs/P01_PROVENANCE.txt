@@ -1,0 +1,23 @@
+$ pwd
+/workspace/Lyceonai
+
+$ git rev-parse --show-toplevel
+/workspace/Lyceonai
+
+$ git rev-parse --abbrev-ref HEAD
+sprint-2
+
+$ git rev-parse HEAD
+cb9f45deabdc0387feca09f70378ee3eb4b1bd23
+
+$ git status --porcelain
+?? docs/sprint-3/
+
+$ git log -1 --oneline
+cb9f45d Merge pull request #61 from Lyceon-Team/copilot/standardize-on-pnpm-only
+
+$ node -v
+v22.21.1
+
+$ pnpm -v
+10.13.1
