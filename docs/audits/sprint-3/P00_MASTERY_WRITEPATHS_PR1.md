@@ -367,7 +367,7 @@ $ grep -n "rpc.*upsert_skill_mastery\|rpc.*upsert_cluster_mastery" apps/api/src/
 
 2. **Inline Documentation:**
    - Choke point module has prominent header warnings
-   - Each read function documents it's READ-ONLY
+   - Each read function documents its READ-ONLY status
    - Clear guidance on where to add write logic
 
 3. **Code Review Checkpoint:**
