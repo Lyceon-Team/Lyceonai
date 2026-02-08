@@ -29,9 +29,10 @@ An AI-powered SAT practice application with RAG (Retrieval-Augmented Generation)
 
 **Install pnpm:**
 ```bash
-npm install -g pnpm
-# or
+# Recommended: Standalone installer
 curl -fsSL https://get.pnpm.io/install.sh | sh -
+# or via npm (if already installed)
+npm install -g pnpm
 ```
 
 ### Environment Variables
