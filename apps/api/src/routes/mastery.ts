@@ -131,6 +131,18 @@ interface SectionNode {
   avgMastery: number;
 }
 
+/**
+ * DERIVED COMPUTATION: Compute mastery status from stored mastery_score
+ * 
+ * This function computes a UI-facing status label from the stored mastery_score.
+ * It does NOT recalculate mastery_score itself.
+ * 
+ * Thresholds:
+ * - not_started: attempts === 0
+ * - weak: mastery_score < 40%
+ * - improving: mastery_score < 70%
+ * - proficient: mastery_score >= 70%
+ */
 function getMasteryStatus(score: number, attempts: number): "not_started" | "weak" | "improving" | "proficient" {
   if (attempts === 0) return "not_started";
   if (score < 40) return "weak";
@@ -144,6 +156,12 @@ function getTomorrowDate(): string {
 
 const router = Router();
 
+/**
+ * GET /mastery/summary - READ ONLY endpoint
+ * 
+ * Returns aggregated mastery summary by section and domain.
+ * Does NOT mutate mastery state or recalculate scores.
+ */
 router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {
@@ -164,6 +182,16 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+/**
+ * GET /mastery/skills - READ ONLY endpoint
+ * 
+ * Returns full skill tree with mastery status computed from STORED mastery scores.
+ * 
+ * DERIVED COMPUTATION: Status thresholds (not_started, weak, improving, proficient)
+ * are computed from stored mastery_score, but mastery_score itself is NOT recalculated.
+ * 
+ * Does NOT apply decay, weighting, or mutate mastery state.
+ */
 router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {
@@ -173,6 +201,7 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user.id;
     const supabase = getSupabaseAdmin();
 
+    // READ ONLY: Fetch stored mastery scores
     const { data: masteryData, error } = await supabase
       .from("student_skill_mastery")
       .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
@@ -255,6 +284,12 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+/**
+ * GET /mastery/weakest - READ ONLY endpoint
+ * 
+ * Returns weakest skills sorted by stored accuracy.
+ * Does NOT mutate mastery state or recalculate scores.
+ */
 router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {

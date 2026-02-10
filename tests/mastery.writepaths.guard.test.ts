@@ -1,12 +1,17 @@
 /**
  * Mastery Write Paths Guard Test
  * 
- * Sprint 3 PR-1: This test enforces the single choke point invariant.
+ * Sprint 3 PR-2: Enhanced guard test enforcing mastery source of truth invariants.
  * 
  * REQUIREMENT: Only apps/api/src/services/mastery-write.ts should contain
  * write operations (.insert, .update, .upsert, rpc) on canonical mastery tables:
  * - student_skill_mastery
  * - student_cluster_mastery
+ * 
+ * INVARIANTS ENFORCED:
+ * 1. No direct SQL writes to mastery tables outside mastery-write.ts
+ * 2. No RPC calls to upsert_skill_mastery or upsert_cluster_mastery outside mastery-write.ts
+ * 3. Read functions must not mutate mastery state
  * 
  * This is a deterministic, filesystem-only test that scans source code
  * to prevent future drift.
@@ -23,7 +28,19 @@ const CHOKE_POINT_MODULE = "apps/api/src/services/mastery-write.ts";
 const MASTERY_TABLES = ["student_skill_mastery", "student_cluster_mastery"];
 
 // Write operation patterns to detect
-const WRITE_PATTERNS = [".insert(", ".update(", ".upsert(", "rpc("];
+const WRITE_PATTERNS = [
+  ".insert(",
+  ".update(",
+  ".upsert(",
+  "rpc(",
+  ".delete(",  // Also prevent deletes
+];
+
+// Specific mastery RPC calls that should only be in choke point
+const MASTERY_RPC_CALLS = [
+  "upsert_skill_mastery",
+  "upsert_cluster_mastery",
+];
 
 // Directories to scan
 const SCAN_DIRS = ["apps/api/src", "server", "client/src"];
@@ -207,5 +224,79 @@ describe("Mastery Write Paths Guard", () => {
 
     // Verify it contains the canonical function
     expect(content).toContain("applyMasteryUpdate");
+    
+    // Verify it has proper documentation
+    expect(content).toContain("CANONICAL MASTERY WRITE CHOKE POINT");
+  });
+
+  it("should prevent RPC calls to mastery functions outside choke point", () => {
+    const repoRoot = path.resolve(__dirname, "..");
+    const violations: FileViolation[] = [];
+
+    // Scan all relevant directories
+    for (const scanDir of SCAN_DIRS) {
+      const fullPath = path.join(repoRoot, scanDir);
+      const files = scanDirectory(fullPath, repoRoot);
+
+      for (const file of files) {
+        const relativePath = path.relative(repoRoot, file);
+        
+        // Skip the choke point module itself
+        if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
+          continue;
+        }
+
+        const content = fs.readFileSync(file, "utf-8");
+        const lines = content.split("\n");
+
+        // Check for mastery RPC calls
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const lineNumber = i + 1;
+
+          for (const rpcCall of MASTERY_RPC_CALLS) {
+            if (line.includes(rpcCall)) {
+              violations.push({
+                file: relativePath,
+                table: "rpc_violation",  // Not a real table - indicates RPC call violation
+                writePattern: rpcCall,
+                lineNumber,
+                lineContent: line.trim(),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      const errorMessage = [
+        "",
+        "❌ MASTERY RPC CALL VIOLATION DETECTED",
+        "",
+        `Found ${violations.length} direct RPC call(s) to mastery functions outside the choke point.`,
+        "",
+        "Only this file should call mastery RPCs:",
+        `  ✓ ${CHOKE_POINT_MODULE}`,
+        "",
+        "Violations found:",
+        ...violations.map((v, idx) => {
+          return [
+            `  ${idx + 1}. ${v.file}:${v.lineNumber}`,
+            `     RPC: ${v.writePattern}`,
+            `     Code: ${v.lineContent}`,
+          ].join("\n");
+        }),
+        "",
+        "ACTION REQUIRED:",
+        "  - Remove direct RPC calls",
+        "  - Use applyMasteryUpdate() from mastery-write.ts instead",
+        "",
+      ].join("\n");
+
+      throw new Error(errorMessage);
+    }
+
+    expect(violations.length).toBe(0);
   });
 });
