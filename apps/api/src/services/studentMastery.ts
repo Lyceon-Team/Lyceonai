@@ -1,6 +1,33 @@
 import { supabaseServer } from "../lib/supabase-server";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 
+/**
+ * MASTERY WRITE FUNCTIONS MOVED TO mastery-write.ts
+ * 
+ * Sprint 3 PR-1: All mastery write operations have been moved to the canonical
+ * choke point module: apps/api/src/services/mastery-write.ts
+ * 
+ * This file now only contains:
+ * - Read operations (getWeakestSkills, getWeakestClusters, getMasterySummary)
+ * - Helper functions (getQuestionMetadataForAttempt)
+ * - Re-exports for backward compatibility
+ * 
+ * DO NOT add mastery write logic here. Use mastery-write.ts instead.
+ */
+
+// Re-export write types and functions from canonical choke point
+export type {
+  QuestionMetadataSnapshot,
+  AttemptInput,
+  AttemptResult,
+} from "./mastery-write";
+
+export {
+  applyMasteryUpdate,
+  logAttemptAndUpdateMastery, // Legacy alias
+} from "./mastery-write";
+
+// Define QuestionMetadataSnapshot type inline as fallback
 export interface QuestionMetadataSnapshot {
   exam: string | null;
   section: string | null;
@@ -9,106 +36,6 @@ export interface QuestionMetadataSnapshot {
   subskill: string | null;
   difficulty_bucket: string | null;
   structure_cluster_id: string | null;
-}
-
-export interface AttemptInput {
-  userId: string;
-  questionCanonicalId: string;
-  sessionId?: string | null;
-  isCorrect: boolean;
-  selectedChoice?: string | null;
-  timeSpentMs?: number | null;
-  metadata: QuestionMetadataSnapshot;
-}
-
-export interface AttemptResult {
-  attemptId: string;
-  rollupUpdated: boolean;
-  error?: string;
-}
-
-export async function logAttemptAndUpdateMastery(input: AttemptInput): Promise<AttemptResult> {
-  const supabase = getSupabaseAdmin();
-  
-  const attemptId = crypto.randomUUID();
-  let rollupUpdated = true;
-  let rollupError: string | undefined;
-  
-  const { error: insertError } = await supabase
-    .from("student_question_attempts")
-    .insert({
-      id: attemptId,
-      user_id: input.userId,
-      question_canonical_id: input.questionCanonicalId,
-      session_id: input.sessionId || null,
-      is_correct: input.isCorrect,
-      selected_choice: input.selectedChoice || null,
-      time_spent_ms: input.timeSpentMs || null,
-      exam: input.metadata.exam,
-      section: input.metadata.section,
-      domain: input.metadata.domain,
-      skill: input.metadata.skill,
-      subskill: input.metadata.subskill,
-      difficulty_bucket: input.metadata.difficulty_bucket,
-      structure_cluster_id: input.metadata.structure_cluster_id,
-    });
-
-  if (insertError) {
-    console.error("[Mastery] Failed to log attempt:", insertError.message);
-    return {
-      attemptId,
-      rollupUpdated: false,
-      error: `Failed to log attempt: ${insertError.message}`,
-    };
-  }
-
-  if (input.metadata.section && input.metadata.skill) {
-    try {
-      const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
-        p_user_id: input.userId,
-        p_section: input.metadata.section,
-        p_domain: input.metadata.domain || "unknown",
-        p_skill: input.metadata.skill,
-        p_is_correct: input.isCorrect,
-      });
-      
-      if (skillError) {
-        console.warn("[Mastery] Skill rollup failed:", skillError.message);
-        rollupUpdated = false;
-        rollupError = skillError.message;
-      }
-    } catch (err: any) {
-      console.warn("[Mastery] Skill rollup error:", err.message);
-      rollupUpdated = false;
-      rollupError = err.message;
-    }
-  }
-
-  if (input.metadata.structure_cluster_id) {
-    try {
-      const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
-        p_user_id: input.userId,
-        p_structure_cluster_id: input.metadata.structure_cluster_id,
-        p_is_correct: input.isCorrect,
-      });
-      
-      if (clusterError) {
-        console.warn("[Mastery] Cluster rollup failed:", clusterError.message);
-        rollupUpdated = false;
-        rollupError = clusterError.message;
-      }
-    } catch (err: any) {
-      console.warn("[Mastery] Cluster rollup error:", err.message);
-      rollupUpdated = false;
-      rollupError = err.message;
-    }
-  }
-
-  return {
-    attemptId,
-    rollupUpdated,
-    error: rollupError,
-  };
 }
 
 export async function getQuestionMetadataForAttempt(
@@ -183,6 +110,12 @@ export interface ClusterWeakness {
   mastery_score: number;
 }
 
+/**
+ * getWeakestSkills - READ-ONLY query for student_skill_mastery
+ * 
+ * This function performs SELECT operations only.
+ * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
+ */
 export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
@@ -210,6 +143,12 @@ export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakn
   return data || [];
 }
 
+/**
+ * getWeakestClusters - READ-ONLY query for student_cluster_mastery
+ * 
+ * This function performs SELECT operations only.
+ * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
+ */
 export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
@@ -244,6 +183,12 @@ export interface MasterySummary {
   }[];
 }
 
+/**
+ * getMasterySummary - READ-ONLY query for student_skill_mastery
+ * 
+ * This function performs SELECT operations only.
+ * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
+ */
 export async function getMasterySummary(
   userId: string,
   section?: string
