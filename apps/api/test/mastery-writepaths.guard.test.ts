@@ -139,7 +139,7 @@ function checkFileForViolations(filePath: string): Violation[] {
 
 describe('Mastery Write Path Guard', () => {
   it('should enforce that all mastery writes go through mastery-write.ts', () => {
-    const projectRoot = path.resolve(__dirname, '../../../..');
+    const projectRoot = path.resolve(__dirname, '../../..');
     const allViolations: Violation[] = [];
     
     for (const scanDir of SCAN_DIRECTORIES) {
@@ -181,11 +181,11 @@ This is a CRITICAL security and consistency invariant.
   });
   
   it('should verify that mastery-write.ts exists and exports applyMasteryUpdate', () => {
-    const projectRoot = path.resolve(__dirname, '../../../..');
+    const projectRoot = path.resolve(__dirname, '../../..');
     const chokePointPath = path.join(projectRoot, CANONICAL_CHOKE_POINT);
     
     expect(fs.existsSync(chokePointPath), 
-      `Canonical choke point ${CANONICAL_CHOKE_POINT} must exist`
+      `Canonical choke point ${CANONICAL_CHOKE_POINT} must exist at ${chokePointPath}`
     ).toBe(true);
     
     const content = fs.readFileSync(chokePointPath, 'utf-8');
@@ -204,7 +204,7 @@ This is a CRITICAL security and consistency invariant.
   });
   
   it('should verify that diagnostic routes use applyMasteryUpdate', () => {
-    const projectRoot = path.resolve(__dirname, '../../../..');
+    const projectRoot = path.resolve(__dirname, '../../..');
     const diagnosticPath = path.join(projectRoot, 'apps/api/src/routes/diagnostic.ts');
     
     if (!fs.existsSync(diagnosticPath)) {
