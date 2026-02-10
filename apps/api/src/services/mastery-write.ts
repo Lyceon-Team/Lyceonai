@@ -22,6 +22,11 @@
  */
 
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { 
+  MasteryEventType, 
+  EVENT_WEIGHTS, 
+  DEFAULT_QUESTION_WEIGHT 
+} from "./mastery-constants";
 
 export interface QuestionMetadataSnapshot {
   exam: string | null;
@@ -40,6 +45,8 @@ export interface AttemptInput {
   isCorrect: boolean;
   selectedChoice?: string | null;
   timeSpentMs?: number | null;
+  eventType: MasteryEventType;
+  questionWeight?: number;
   metadata: QuestionMetadataSnapshot;
 }
 
@@ -53,22 +60,43 @@ export interface AttemptResult {
  * applyMasteryUpdate - CANONICAL CHOKE POINT for all mastery writes
  * 
  * This function:
- * 1. Logs the attempt to student_question_attempts
- * 2. Updates student_skill_mastery via RPC (if metadata available)
- * 3. Updates student_cluster_mastery via RPC (if cluster ID available)
+ * 1. Validates event type (must be in MasteryEventType enum)
+ * 2. Logs the attempt to student_question_attempts
+ * 3. Updates student_skill_mastery via RPC (if metadata available and event is scored)
+ * 4. Updates student_cluster_mastery via RPC (if cluster ID available and event is scored)
  * 
  * CRITICAL: This is the ONLY function that should write to mastery tables.
  * All mastery updates in the application MUST call this function.
  * 
- * @param input - Attempt data including user, question, correctness, and metadata
+ * Mastery v1.0: Uses event-weighted delta formula with EMA-style updates.
+ * - TUTOR_VIEW does not change mastery (no-op for mastery updates)
+ * - All other event types trigger mastery updates with their respective weights
+ * 
+ * @param input - Attempt data including user, question, correctness, event type, and metadata
  * @returns AttemptResult with attemptId and status
  */
 export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptResult> {
   const supabase = getSupabaseAdmin();
   
+  // Validate event type (closed set enforcement)
+  if (!Object.values(MasteryEventType).includes(input.eventType)) {
+    return {
+      attemptId: '',
+      rollupUpdated: false,
+      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.values(MasteryEventType).join(', ')}`,
+    };
+  }
+  
   const attemptId = crypto.randomUUID();
   let rollupUpdated = true;
   let rollupError: string | undefined;
+  
+  // Get event weight for this event type
+  const eventWeight = EVENT_WEIGHTS[input.eventType];
+  const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
+  
+  // TUTOR_VIEW is a no-op for mastery - we still log the attempt but don't update mastery
+  const shouldUpdateMastery = input.eventType !== MasteryEventType.TUTOR_VIEW;
   
   // Step 1: Log raw attempt (not a mastery table, but part of the write transaction)
   const { error: insertError } = await supabase
@@ -101,7 +129,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
 
   // Step 2: Update student_skill_mastery (CANONICAL WRITE #1)
   // This RPC performs INSERT...ON CONFLICT DO UPDATE on student_skill_mastery
-  if (input.metadata.section && input.metadata.skill) {
+  // Using Mastery v1.0 formula: M_new = clamp(M_old + ALPHA * delta, 0, 100)
+  if (shouldUpdateMastery && input.metadata.section && input.metadata.skill) {
     try {
       const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
         p_user_id: input.userId,
@@ -109,6 +138,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_domain: input.metadata.domain || "unknown",
         p_skill: input.metadata.skill,
         p_is_correct: input.isCorrect,
+        p_event_weight: eventWeight,
       });
       
       if (skillError) {
@@ -125,12 +155,14 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
 
   // Step 3: Update student_cluster_mastery (CANONICAL WRITE #2)
   // This RPC performs INSERT...ON CONFLICT DO UPDATE on student_cluster_mastery
-  if (input.metadata.structure_cluster_id) {
+  // Using Mastery v1.0 formula: M_new = clamp(M_old + ALPHA * delta, 0, 100)
+  if (shouldUpdateMastery && input.metadata.structure_cluster_id) {
     try {
       const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
         p_user_id: input.userId,
         p_structure_cluster_id: input.metadata.structure_cluster_id,
         p_is_correct: input.isCorrect,
+        p_event_weight: eventWeight,
       });
       
       if (clusterError) {

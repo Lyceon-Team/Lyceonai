@@ -62,6 +62,7 @@ import { csrfGuard } from "./middleware/csrf";
 import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
 import { weaknessRouter } from "../apps/api/src/routes/weakness";
 import { masteryRouter } from "../apps/api/src/routes/mastery";
+import { diagnosticRouter } from "../apps/api/src/routes/diagnostic";
 import { calendarRouter } from "../apps/api/src/routes/calendar";
 import { getScoreProjection, getRecencyKpis } from "../apps/api/src/routes/progress";
 import guardianRoutes from "./routes/guardian-routes";
@@ -323,6 +324,7 @@ app.use("/api/notifications", notificationRoutes);
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
+app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
