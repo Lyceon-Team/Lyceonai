@@ -79,11 +79,11 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
   const supabase = getSupabaseAdmin();
   
   // Validate event type (closed set enforcement)
-  if (!Object.values(MasteryEventType).includes(input.eventType)) {
+  if (!(input.eventType in EVENT_WEIGHTS)) {
     return {
       attemptId: '',
       rollupUpdated: false,
-      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.values(MasteryEventType).join(', ')}`,
+      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.keys(EVENT_WEIGHTS).join(', ')}`,
     };
   }
   

@@ -184,6 +184,7 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
         canonical_id,
         answer_choice,
         answer_text,
+        explanation,
         section,
         domain,
         skill,
@@ -253,7 +254,7 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
       isCorrect,
       isComplete: recordResult.isComplete,
       nextQuestionId: recordResult.nextQuestionId,
-      explanation: isCorrect ? null : question.answer_text, // Show explanation on wrong answers
+      explanation: isCorrect ? null : (question.explanation || null), // Show explanation on wrong answers
     });
   } catch (err: any) {
     console.error('[Diagnostic] Error submitting answer:', err);

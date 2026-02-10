@@ -23,6 +23,7 @@ import {
  */
 const SAT_TAXONOMY = {
   math: {
+    section_name: 'Math',
     section_code: 'M',
     domains: [
       'algebra',
@@ -32,6 +33,7 @@ const SAT_TAXONOMY = {
     ],
   },
   rw: {
+    section_name: 'Reading & Writing',
     section_code: 'RW',
     domains: [
       'craft_structure',
@@ -123,8 +125,9 @@ async function selectQuestionsForDomain(
   });
   
   // Query questions for this section/domain
-  // Note: Assuming section is stored as "Math" or "Reading & Writing" in DB
-  const sectionName = section === 'math' ? 'Math' : 'Reading & Writing';
+  // Use section_name from taxonomy to match database values
+  const taxonomy = SAT_TAXONOMY[section as keyof typeof SAT_TAXONOMY];
+  const sectionName = taxonomy?.section_name || section;
   
   const { data: candidates, error } = await supabase
     .from('questions')

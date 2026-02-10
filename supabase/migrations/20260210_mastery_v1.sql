@@ -83,9 +83,9 @@ CREATE POLICY "Users can view own diagnostic sessions"
   ON public.diagnostic_sessions
   FOR SELECT USING (auth.uid() = student_id);
 
-CREATE POLICY "Users can manage own diagnostic sessions" 
+CREATE POLICY "Service role can manage diagnostic sessions" 
   ON public.diagnostic_sessions
-  FOR ALL USING (auth.uid() = student_id);
+  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
 -- Students can only access responses for their own sessions
 CREATE POLICY "Users can view own diagnostic responses" 
@@ -96,13 +96,9 @@ CREATE POLICY "Users can view own diagnostic responses"
     )
   );
 
-CREATE POLICY "Users can manage own diagnostic responses" 
+CREATE POLICY "Service role can manage diagnostic responses" 
   ON public.diagnostic_responses
-  FOR ALL USING (
-    session_id IN (
-      SELECT id FROM public.diagnostic_sessions WHERE student_id = auth.uid()
-    )
-  );
+  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
 -- Service role bypass
 CREATE POLICY "Service role full access to diagnostic sessions" 

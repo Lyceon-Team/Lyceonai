@@ -84,9 +84,9 @@ export enum MasteryEventType {
 #### Skill Mastery Update Function
 
 **Function:** `upsert_skill_mastery`  
-**Lines:** 153-230
+**Lines:** 116-195
 
-**Formula Implementation (Lines 182-192):**
+**Formula Implementation (Lines 153-164):**
 
 ```sql
 -- Get current mastery score, or use M_init if no row exists
@@ -102,7 +102,7 @@ v_new_mastery := v_current_mastery + (v_alpha * v_delta);
 v_new_mastery := GREATEST(v_m_min, LEAST(v_m_max, v_new_mastery));
 ```
 
-**Constants Hardcoded in RPC (Lines 160-164):**
+**Constants Hardcoded in RPC (Lines 128-132):**
 ```sql
 v_alpha CONSTANT NUMERIC := 0.20;
 v_base_delta CONSTANT NUMERIC := 10.0;
@@ -114,7 +114,7 @@ v_m_max CONSTANT NUMERIC := 100;
 #### Cluster Mastery Update Function
 
 **Function:** `upsert_cluster_mastery`  
-**Lines:** 235-305
+**Lines:** 199-278
 
 Same formula as skill mastery, applied to cluster-level rollups.
 
