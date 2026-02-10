@@ -27,6 +27,17 @@ export {
   logAttemptAndUpdateMastery, // Legacy alias
 } from "./mastery-write";
 
+// Define QuestionMetadataSnapshot type inline as fallback
+export interface QuestionMetadataSnapshot {
+  exam: string | null;
+  section: string | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  difficulty_bucket: string | null;
+  structure_cluster_id: string | null;
+}
+
 export async function getQuestionMetadataForAttempt(
   questionId: string
 ): Promise<QuestionMetadataSnapshot & { canonicalId: string | null }> {
