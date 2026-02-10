@@ -258,7 +258,7 @@ describe("Mastery Write Paths Guard", () => {
             if (line.includes(rpcCall)) {
               violations.push({
                 file: relativePath,
-                table: "mastery_rpc",
+                table: "rpc_violation",  // Not a real table - indicates RPC call violation
                 writePattern: rpcCall,
                 lineNumber,
                 lineContent: line.trim(),
