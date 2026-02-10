@@ -38,6 +38,12 @@ export interface QuestionMetadataSnapshot {
   structure_cluster_id: string | null;
 }
 
+/**
+ * getQuestionMetadataForAttempt - READ-ONLY helper for fetching question metadata
+ * 
+ * READ ONLY: This function fetches question metadata for logging attempts.
+ * It does NOT write to mastery tables or mutate any mastery state.
+ */
 export async function getQuestionMetadataForAttempt(
   questionId: string
 ): Promise<QuestionMetadataSnapshot & { canonicalId: string | null }> {
@@ -113,7 +119,12 @@ export interface ClusterWeakness {
 /**
  * getWeakestSkills - READ-ONLY query for student_skill_mastery
  * 
- * This function performs SELECT operations only.
+ * READ ONLY: This function performs SELECT operations only.
+ * It does NOT:
+ * - Recalculate mastery scores
+ * - Apply decay or weighting
+ * - Mutate any state
+ * 
  * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
  */
 export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
@@ -146,7 +157,12 @@ export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakn
 /**
  * getWeakestClusters - READ-ONLY query for student_cluster_mastery
  * 
- * This function performs SELECT operations only.
+ * READ ONLY: This function performs SELECT operations only.
+ * It does NOT:
+ * - Recalculate mastery scores
+ * - Apply decay or weighting
+ * - Mutate any state
+ * 
  * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
  */
 export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
@@ -186,7 +202,13 @@ export interface MasterySummary {
 /**
  * getMasterySummary - READ-ONLY query for student_skill_mastery
  * 
- * This function performs SELECT operations only.
+ * READ ONLY: This function performs SELECT operations only.
+ * It does NOT:
+ * - Recalculate mastery scores
+ * - Apply decay or weighting
+ * - Mutate any state
+ * 
+ * Aggregates stored mastery data by section and domain.
  * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
  */
 export async function getMasterySummary(

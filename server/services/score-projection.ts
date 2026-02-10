@@ -1,6 +1,21 @@
 /**
  * Score Projection Engine
  * 
+ * DERIVED COMPUTATION MODULE - READ ONLY
+ * 
+ * This module computes DERIVED SAT score projections from STORED mastery data.
+ * It does NOT:
+ * - Write to mastery tables
+ * - Recalculate mastery_score (uses stored values from student_skill_mastery)
+ * - Mutate any mastery state
+ * 
+ * WHAT IT DOES:
+ * - Applies recency decay to stored mastery scores (for projection accuracy)
+ * - Weights domains using College Board weights
+ * - Projects SAT scores with confidence intervals
+ * 
+ * SOURCE OF TRUTH: student_skill_mastery table (written by mastery-write.ts)
+ * 
  * Implements College Board domain weights for SAT score projection
  * with recency decay and cube root confidence intervals.
  */
@@ -60,6 +75,10 @@ interface DomainBreakdown {
 
 /**
  * Apply recency decay to mastery score based on weeks inactive
+ * 
+ * DERIVED COMPUTATION: This applies a decay factor for projection purposes.
+ * It does NOT mutate stored mastery_score in the database.
+ * 
  * Decay_Factor = 0.95 ^ Weeks_Inactive
  */
 function applyRecencyDecay(mastery: number, lastActivity: Date | string | null | undefined): number {
@@ -94,8 +113,11 @@ function calculateVariance(totalQuestions: number): number {
 /**
  * Calculate projected SAT score from mastery data
  * 
+ * DERIVED COMPUTATION: Projects SAT score from STORED mastery data.
+ * Does NOT recalculate or mutate stored mastery_score values.
+ * 
  * Algorithm:
- * 1. Group mastery by domain with recency decay applied
+ * 1. Group mastery by domain with recency decay applied (for projection only)
  * 2. Apply College Board weights: Section_Mastery = Sum(Domain_Mastery * Domain_Weight)
  * 3. Calculate raw score: Projected = 200 + (600 * Section_Mastery)
  * 4. Apply cube root variance for confidence intervals
