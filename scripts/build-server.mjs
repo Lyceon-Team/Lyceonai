@@ -21,15 +21,18 @@ const rootDir = join(__dirname, '..');
 /**
  * Check if an import path is a bare import (package from node_modules).
  * Returns false for:
- * - Relative paths (starting with . or ..)
+ * - Relative paths (starting with ./ or ../)
  * - Absolute paths (starting with /)
- * - Windows absolute paths (C:\, D:\, etc.)
+ * - Windows absolute paths (C:\ or C:/, D:\ or D:/, etc.)
  */
 function isBareImport(path) {
   if (!path) return false;
-  if (path.startsWith(".") || path.startsWith("/")) return false;
-  // Windows absolute paths like C:\...
-  if (/^[A-Za-z]:\\/.test(path)) return false;
+  // Relative paths
+  if (path.startsWith("./") || path.startsWith("../")) return false;
+  // Absolute paths (Unix)
+  if (path.startsWith("/")) return false;
+  // Windows absolute paths like C:\... or C:/...
+  if (/^[A-Za-z]:[/\\]/.test(path)) return false;
   return true;
 }
 
