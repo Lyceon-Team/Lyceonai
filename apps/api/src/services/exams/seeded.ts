@@ -17,7 +17,7 @@ export function stableSeededShuffle<T>(items: readonly T[], seed: string): T[] {
     x ^= x << 13;
     x ^= x >>> 17;
     x ^= x << 5;
-    return (x >>> 0) / 0xffffffff;
+    return (x >>> 0) / 0x100000000;
   };
 
   for (let i = out.length - 1; i > 0; i--) {
