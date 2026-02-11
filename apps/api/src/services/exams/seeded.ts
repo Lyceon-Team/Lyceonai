@@ -1,5 +1,5 @@
 // apps/api/src/services/exams/seeded.ts
-import crypto from 'node:crypto';
+import * as crypto from 'node:crypto';
 
 export function hashToUint32(seed: string): number {
   const h = crypto.createHash('sha256').update(seed).digest();
