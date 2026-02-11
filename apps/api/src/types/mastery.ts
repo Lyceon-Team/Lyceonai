@@ -76,13 +76,3 @@ export interface MasteryUpdateParams {
     structure_cluster_id: string | null;
   };
 }
-
-/**
- * Decayed mastery projection (derived, never persisted)
- */
-export interface DecayedMastery {
-  stored_mastery: number;
-  weeks_inactive: number;
-  decay_factor: number;
-  decayed_mastery: number;
-}
