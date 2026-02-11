@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Build server bundle using esbuild - Production-ready configuration
+ * Build server bundle using esbuild-wasm - Production-ready configuration
  * 
- * Uses esbuild's built-in `packages: 'external'` option which:
- * - Automatically externalizes all node_modules
+ * Uses deterministic esbuild-wasm with custom externalization:
+ * - Automatically externalizes all bare imports (node_modules)
  * - Bundles all local/relative imports
- * - Never externalizes the entry point
+ * - Never externalizes the entry point or relative/absolute paths
  * 
- * This is the official esbuild approach for Node.js server bundling.
+ * This ensures cross-platform deterministic builds (including Windows).
  */
 
-import * as esbuild from 'esbuild';
+import * as esbuild from 'esbuild-wasm';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -18,12 +18,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, '..');
 
+/**
+ * Check if an import path is a bare import (package from node_modules).
+ * Returns false for:
+ * - Relative paths (starting with . or ..)
+ * - Absolute paths (starting with /)
+ * - Windows absolute paths (C:\, D:\, etc.)
+ */
+function isBareImport(path) {
+  if (!path) return false;
+  if (path.startsWith(".") || path.startsWith("/")) return false;
+  // Windows absolute paths like C:\...
+  if (/^[A-Za-z]:\\/.test(path)) return false;
+  return true;
+}
+
 async function buildServer() {
   try {
     const outfile = join(rootDir, 'dist', 'index.js');
     const entryPoint = join(rootDir, 'server', 'index.ts');
     
-    console.log('Building server with esbuild...');
+    console.log('Building server with esbuild-wasm...');
     console.log(`Entry: ${entryPoint}`);
     console.log(`Output: ${outfile}`);
 
@@ -34,9 +49,23 @@ async function buildServer() {
       format: 'esm',
       outfile: outfile,
       
-      // Externalize all node_modules, bundle local code
-      // This is the recommended approach for Node.js servers
-      packages: 'external',
+      // Custom externalization plugin
+      plugins: [{
+        name: 'externalize-bare-imports',
+        setup(build) {
+          // Externalize only bare imports (node_modules packages)
+          build.onResolve({ filter: /.*/ }, (args) => {
+            // Never externalize entry points
+            if (args.kind === 'entry-point') return;
+            
+            // Never externalize relative or absolute paths
+            if (!isBareImport(args.path)) return;
+            
+            // Externalize bare imports (packages)
+            return { path: args.path, external: true };
+          });
+        }
+      }],
       
       logLevel: 'info',
       minify: false,
