@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import type { AttemptInput, AttemptResult, QuestionMetadataSnapshot } from "./mastery-write";
 
 /**
  * MASTERY WRITE FUNCTIONS MOVED TO mastery-write.ts
@@ -15,11 +16,7 @@ import { getSupabaseAdmin } from "../lib/supabase-admin";
  */
 
 // Re-export write types and functions from canonical choke point
-export type {
-  QuestionMetadataSnapshot,
-  AttemptInput,
-  AttemptResult,
-} from "./mastery-write";
+export type { QuestionMetadataSnapshot, AttemptInput, AttemptResult };
 
 export {
   applyMasteryUpdate,
