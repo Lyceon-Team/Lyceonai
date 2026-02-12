@@ -10,7 +10,6 @@
  */
 
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { deterministicPick, weightedDeterministicPick } from "./adaptiveSelector";
 import type { 
   FullLengthExamSession, 
   FullLengthExamModule,
