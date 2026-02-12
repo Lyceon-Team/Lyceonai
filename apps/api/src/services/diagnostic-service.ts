@@ -121,7 +121,7 @@ async function selectQuestionsForDomain(
   
   const priorDiagnosticIds = new Set<string>();
   (priorSessions || []).forEach(session => {
-    (session.question_ids || []).forEach(id: string) => priorDiagnosticIds.add(id));
+    (session.question_ids || []).forEach((id: string) => priorDiagnosticIds.add(id));
   });
   
   // Query questions for this section/domain
