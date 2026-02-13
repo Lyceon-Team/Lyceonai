@@ -11,12 +11,13 @@
  */
 
 import * as esbuild from 'esbuild-wasm';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { dirname, join, resolve } from 'path';
+import { createRequire } from 'module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const rootDir = join(__dirname, '..');
+const rootDir = resolve(__dirname, '..');
 
 /**
  * Check if an import path is a bare import (package from node_modules).
@@ -24,6 +25,7 @@ const rootDir = join(__dirname, '..');
  * - Relative paths (starting with ./ or ../)
  * - Absolute paths (starting with /)
  * - Windows absolute paths (C:\ or C:/, D:\ or D:/, etc.)
+ * - Paths containing backslashes (Windows paths)
  */
 function isBareImport(path) {
   if (!path) return false;
@@ -33,15 +35,22 @@ function isBareImport(path) {
   if (path.startsWith("/")) return false;
   // Windows absolute paths like C:\... or C:/...
   if (/^[A-Za-z]:[/\\]/.test(path)) return false;
+  // Any path with backslashes is a Windows path
+  if (path.includes("\\")) return false;
   return true;
 }
 
 async function buildServer() {
   try {
+    // Initialize esbuild-wasm explicitly (required for Node.js)
+    console.log('Initializing esbuild-wasm...');
+    await esbuild.initialize();
+    
     const outfile = join(rootDir, 'dist', 'index.js');
-    const entryPoint = join(rootDir, 'server', 'index.ts');
+    const entryPoint = resolve(rootDir, 'server', 'index.ts');
     
     console.log('Building server with esbuild-wasm...');
+    console.log(`Working dir: ${rootDir}`);
     console.log(`Entry: ${entryPoint}`);
     console.log(`Output: ${outfile}`);
 
@@ -51,6 +60,7 @@ async function buildServer() {
       platform: 'node',
       format: 'esm',
       outfile: outfile,
+      absWorkingDir: rootDir,
       
       // Custom externalization plugin
       plugins: [{
@@ -59,10 +69,15 @@ async function buildServer() {
           // Externalize only bare imports (node_modules packages)
           build.onResolve({ filter: /.*/ }, (args) => {
             // Never externalize entry points
-            if (args.kind === 'entry-point') return;
+            if (args.kind === 'entry-point') {
+              console.log(`[Plugin] Entry point detected: ${args.path} (kind: ${args.kind})`);
+              return; // Let esbuild handle it
+            }
             
             // Never externalize relative or absolute paths
-            if (!isBareImport(args.path)) return;
+            if (!isBareImport(args.path)) {
+              return; // Let esbuild bundle it
+            }
             
             // Externalize bare imports (packages)
             return { path: args.path, external: true };
