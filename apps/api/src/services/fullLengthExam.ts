@@ -99,10 +99,14 @@ export interface GetCurrentSessionResult {
     type: "mc" | "fr";
     options: Array<{ key: string; text: string }> | null;
     difficulty: string | null;
-    classification: any;
     orderIndex: number;
     moduleQuestionCount: number;
     answeredCount: number;
+    // User's previously submitted answer (for resume support)
+    submittedAnswer?: {
+      selectedAnswer?: string;
+      freeResponseAnswer?: string;
+    };
   } | null;
   timeRemaining: number | null; // milliseconds remaining, null if module not started
   breakTimeRemaining: number | null; // milliseconds remaining for break, null if not on break
@@ -226,9 +230,27 @@ function calculateTimeRemaining(module: FullLengthExamModule): number | null {
 
 /**
  * Create a new full-length exam session
+ * Idempotent: returns existing active session if one exists for the user
  */
 export async function createExamSession(params: CreateSessionParams): Promise<FullLengthExamSession> {
   const supabase = getSupabaseAdmin();
+
+  // Check for existing active session (not_started, in_progress, or break)
+  const { data: existingSession } = await supabase
+    .from("full_length_exam_sessions")
+    .select("*")
+    .eq("user_id", params.userId)
+    .in("status", ["not_started", "in_progress"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // If active session exists, return it (idempotent)
+  if (existingSession) {
+    return existingSession;
+  }
+
+  // No active session - create a new one
   const seed = generateSeed(params.userId);
 
   // Create the session
@@ -366,7 +388,7 @@ export async function getCurrentSession(
     }
   }
 
-  // Get questions for this module
+  // Get questions for this module (whitelist safe fields only - no answer/explanation leakage)
   const { data: moduleQuestions, error: questionsError } = await supabase
     .from("full_length_exam_questions")
     .select(`
@@ -379,8 +401,7 @@ export async function getCurrentSession(
         section,
         type,
         options,
-        difficulty,
-        classification
+        difficulty
       )
     `)
     .eq("module_id", currentModule.id)
@@ -390,37 +411,66 @@ export async function getCurrentSession(
     throw new Error(`Failed to fetch module questions: ${questionsError.message}`);
   }
 
-  // Get responses for this module
+  // Get responses for this module (including answer content for resume support)
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id")
+    .select("question_id, selected_answer, free_response_answer")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
     throw new Error(`Failed to fetch responses: ${responsesError.message}`);
   }
 
+  // Build a map of question_id -> response for quick lookup
+  const responseMap = new Map(
+    responses?.map((r) => [r.question_id, { 
+      selectedAnswer: r.selected_answer, 
+      freeResponseAnswer: r.free_response_answer 
+    }]) || []
+  );
   const answeredQuestionIds = new Set(responses?.map((r) => r.question_id) || []);
+
+  // Type guard for module question with embedded question data
+  interface ModuleQuestionWithData {
+    id: string;
+    question_id: string;
+    order_index: number;
+    questions: {
+      id: string;
+      stem: string;
+      section: string;
+      type: string;
+      options: Array<{ key: string; text: string }> | null;
+      difficulty: string | null;
+    } | null;
+  }
 
   // Find first unanswered question
   let currentQuestion = null;
   if (moduleQuestions && moduleQuestions.length > 0) {
-    const unanswered = moduleQuestions.find((mq) => !answeredQuestionIds.has(mq.question_id));
-    const target = unanswered || moduleQuestions[0];
+    const typedQuestions = moduleQuestions as unknown as ModuleQuestionWithData[];
+    const unanswered = typedQuestions.find((mq) => !answeredQuestionIds.has(mq.question_id));
+    const target = unanswered || typedQuestions[0];
     
-    if (target && (target as any).questions) {
-      const q = (target as any).questions;
+    if (target?.questions) {
+      const q = target.questions;
+      const submittedAnswer = responseMap.get(q.id);
+      
       currentQuestion = {
         id: q.id,
         stem: q.stem,
         section: q.section,
-        type: q.type,
+        type: q.type as "mc" | "fr",
         options: q.type === "mc" ? q.options : null,
         difficulty: q.difficulty,
-        classification: q.classification,
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
         answeredCount: answeredQuestionIds.size,
+        // Include previously submitted answer if it exists (for resume support)
+        submittedAnswer: submittedAnswer ? {
+          selectedAnswer: submittedAnswer.selectedAnswer || undefined,
+          freeResponseAnswer: submittedAnswer.freeResponseAnswer || undefined,
+        } : undefined,
       };
     }
   }
