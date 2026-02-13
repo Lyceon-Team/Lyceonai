@@ -54,11 +54,7 @@ router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Reques
     return res.status(201).json({ session });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Create session error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(500).json({ 
-      error: "Failed to create exam session",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -87,16 +83,13 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
     return res.json(result);
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Get current session error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to fetch current session",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -125,20 +118,17 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
     return res.json({ success: true });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Start exam error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
     if (message.includes("already started")) {
-      return res.status(400).json({ error: "Exam already started" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to start exam",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -183,28 +173,25 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
     return res.json({ success: true });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Submit answer error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
     if (message.includes("not in progress")) {
-      return res.status(400).json({ error: "Session is not in progress" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
     if (message.includes("time has expired")) {
-      return res.status(400).json({ error: "Module time has expired" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
     if (message.includes("not found in current module")) {
-      return res.status(400).json({ error: "Question not found in current module" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to submit answer",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -237,24 +224,21 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
     return res.json(result);
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Submit module error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
     if (message.includes("not in progress")) {
-      return res.status(400).json({ error: "Session is not in progress" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
     if (message.includes("already submitted")) {
-      return res.status(400).json({ error: "Module already submitted" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to submit module",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -283,20 +267,17 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
     return res.json({ success: true });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Continue from break error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
     if (message.includes("Not on break")) {
-      return res.status(400).json({ error: "Not on break" });
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to continue from break",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
@@ -329,20 +310,17 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
     return res.json(result);
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Complete exam error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
       return res.status(404).json({ error: "Session not found" });
     }
     
-    if (message.includes("already completed")) {
-      return res.status(400).json({ error: "Exam already completed" });
+    if (message.includes("Invalid exam state")) {
+      return res.status(400).json({ error: "Invalid exam state" });
     }
     
-    return res.status(500).json({ 
-      error: "Failed to complete exam",
-      message 
-    });
+    return res.status(500).json({ error: "Internal error" });
   }
 });
 
