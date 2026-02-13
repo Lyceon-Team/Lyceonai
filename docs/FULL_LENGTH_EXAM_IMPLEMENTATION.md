@@ -35,13 +35,18 @@ All endpoints require Supabase authentication and enforce user ownership.
 
 ### POST /api/full-length/sessions
 - Creates a new exam session
+- **Idempotent**: Returns existing active session if one exists for the user (status: not_started or in_progress)
+- Only creates new session if no active session exists
 - Returns session with unique seed
 - CSRF protected
 
 ### GET /api/full-length/sessions/current?sessionId={id}
 - Returns current session state
-- Includes current question (without answers/explanations)
+- Includes current question (without answers/explanations - anti-leak)
+- **Resume support**: Includes user's previously submitted answer for current question (if already answered)
+- Response includes: `submittedAnswer: { selectedAnswer?, freeResponseAnswer? }`
 - Includes time remaining for active module
+- **Security**: Never returns answer, explanation, or classification fields from questions table
 
 ### POST /api/full-length/sessions/:sessionId/start
 - Starts the exam (RW Module 1)
@@ -104,11 +109,15 @@ These thresholds are defined in `apps/api/src/services/fullLengthExam.ts` as con
 - requireSupabaseAuth middleware on all routes
 - User ID from auth only (IDOR prevention)
 
-### 2. Anti-Leak
-- Question payloads never include:
-  - `answer_choice`
-  - `answer_text`
+### 2. Anti-Leak ✅ (ENHANCED)
+- **Strict whitelist query**: Only safe fields returned (id, stem, section, type, options, difficulty)
+- Question payloads **never** include:
+  - `answer_choice` / `answer` / `answerChoice`
+  - `answer_text` / `answerText`
   - `explanation`
+  - `classification` (removed - could contain AI-generated answer hints)
+- Server uses explicit SELECT statements to prevent accidental leakage
+- Type-safe interfaces ensure no sensitive fields in response payload
 - Answers only revealed after module submit (future enhancement)
 
 ### 3. Server-Authoritative Timing
@@ -122,7 +131,11 @@ These thresholds are defined in `apps/api/src/services/fullLengthExam.ts` as con
 - Validates Origin/Referer headers
 - Consistent with existing practice endpoints
 
-### 5. Idempotent Operations ✅
+### 5. Idempotent Operations ✅ (ENHANCED)
+- **Session creation**: Returns existing active session instead of creating duplicate
+  - Checks for sessions with status: 'not_started' or 'in_progress'
+  - Prevents multiple concurrent exam sessions per user
+  - Safe to call repeatedly
 - **Answer submission**: Uses upsert with unique constraint (session_id, module_id, question_id)
   - Same answer submitted twice updates existing record
   - No duplicate rows created
@@ -182,22 +195,33 @@ These thresholds are defined in `apps/api/src/services/fullLengthExam.ts` as con
 
 **Session Management:**
 - URL-based session ID for refresh support (`?sessionId=...`)
+- **Resume support ✅**: Answer state restoration on page refresh
+  - Client tracks `lastQuestionId` to prevent clearing on poll
+  - Server returns `submittedAnswer` in current question payload
+  - UI restores selected/freeResponse answers from server
+  - Answers only cleared when question changes AND no submitted answer exists
 - Automatic session state restoration
 - Resume in progress exams
 - Handle all state transitions (not_started → in_progress → break → completed)
 
 ### Components Added
-- `client/src/components/full-length-exam/ExamRunner.tsx` - Main exam runner (new)
+- `client/src/components/full-length-exam/ExamRunner.tsx` - Main exam runner (enhanced)
 
 ## Testing
 
-### Test Coverage ✅
+### Test Coverage ✅ (ENHANCED)
 - `tests/full-length-exam.ci.test.ts` - 32 CI tests passing
   - Auth enforcement on all endpoints ✅
   - CSRF protection validation ✅
   - Input validation (UUID format, required params) ✅
   - Route structure verification ✅
   - Response format validation ✅
+- `apps/api/src/services/__tests__/fullLengthExam.test.ts` - 5 service tests **NEW**
+  - Session creation idempotency ✅
+  - Returns existing active session instead of creating duplicate ✅
+  - Only checks not_started/in_progress statuses ✅
+  - Answer state restoration type safety ✅
+  - Anti-leak type verification ✅
   
 ### Test Categories
 1. **Authentication & Authorization** - 5 tests
@@ -215,6 +239,12 @@ These thresholds are defined in `apps/api/src/services/fullLengthExam.ts` as con
 4. **Route Structure** - 7 tests
    - Verifies all endpoints exist
    - Returns appropriate HTTP codes
+
+5. **Service-Level Tests (NEW)** - 5 tests
+   - Session creation idempotency
+   - Active session detection
+   - Answer state restoration
+   - Type safety validation
 
 5. **Response Structure** - 2 tests
    - Returns JSON errors
@@ -341,11 +371,26 @@ The migration will create the 4 new tables in the Supabase database.
 - [x] Cookie-only auth (no Bearer tokens)
 - [x] CSRF protection on all POSTs
 - [x] User ID from auth only (IDOR prevention)
-- [x] No answer leakage in question payloads
+- [x] **No answer leakage in question payloads** ✅ ENHANCED
+  - [x] Strict whitelist query (only safe fields)
+  - [x] Removed classification field from response
+  - [x] Type-safe interfaces prevent accidental leakage
 - [x] Server-authoritative timing
-- [x] Idempotent operations
+- [x] **Idempotent operations** ✅ ENHANCED
+  - [x] Session creation returns existing active session
+  - [x] Answer submission uses upsert with unique constraint
+  - [x] Module submit returns cached result
 - [x] Input validation (Zod schemas)
 - [x] Session ownership validation
+- [x] **Resume flow with answer state restoration** ✅ NEW
+  - [x] Server returns submitted answers for current question
+  - [x] Client restores UI state without wiping on every poll
+  - [x] Only clears inputs when question changes AND no submitted answer
+- [x] **Type safety - removed all `any` usage** ✅ NEW
+  - [x] fullLengthExam.ts: Replaced any with proper types
+  - [x] full-length-exam-routes.ts: All error handlers use `unknown`
+  - [x] ExamRunner.tsx: All error handlers use `unknown`
+  - [x] full-test.tsx: No any usage found
 - [ ] Rate limiting (future - use existing practice limits)
 - [ ] Question pool exhaustion handling
 
