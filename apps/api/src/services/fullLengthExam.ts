@@ -645,54 +645,27 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     isCorrect = params.freeResponseAnswer.trim().toLowerCase() === (question.answer_text || "").trim().toLowerCase();
   }
 
-  // Check if response already exists (idempotent)
-  const { data: existingResponse, error: checkError } = await supabase
-    .from("full_length_exam_responses")
-    .select("id")
-    .eq("session_id", params.sessionId)
-    .eq("module_id", currentModule.id)
-    .eq("question_id", params.questionId)
-    .maybeSingle();
-
-  if (checkError) {
-    throw new Error(`Failed to check existing response: ${checkError.message}`);
-  }
-
+  // Upsert response (idempotent with unique constraint)
   const now = new Date().toISOString();
+  
+  const { error: upsertError } = await supabase
+    .from("full_length_exam_responses")
+    .upsert({
+      session_id: params.sessionId,
+      module_id: currentModule.id,
+      question_id: params.questionId,
+      selected_answer: params.selectedAnswer,
+      free_response_answer: params.freeResponseAnswer,
+      is_correct: isCorrect,
+      answered_at: now,
+      updated_at: now,
+    }, {
+      onConflict: 'session_id,module_id,question_id',
+      ignoreDuplicates: false,
+    });
 
-  if (existingResponse) {
-    // Update existing response (idempotent)
-    const { error: updateError } = await supabase
-      .from("full_length_exam_responses")
-      .update({
-        selected_answer: params.selectedAnswer,
-        free_response_answer: params.freeResponseAnswer,
-        is_correct: isCorrect,
-        answered_at: now,
-        updated_at: now,
-      })
-      .eq("id", existingResponse.id);
-
-    if (updateError) {
-      throw new Error(`Failed to update response: ${updateError.message}`);
-    }
-  } else {
-    // Insert new response
-    const { error: insertError } = await supabase
-      .from("full_length_exam_responses")
-      .insert({
-        session_id: params.sessionId,
-        module_id: currentModule.id,
-        question_id: params.questionId,
-        selected_answer: params.selectedAnswer,
-        free_response_answer: params.freeResponseAnswer,
-        is_correct: isCorrect,
-        answered_at: now,
-      });
-
-    if (insertError) {
-      throw new Error(`Failed to insert response: ${insertError.message}`);
-    }
+  if (upsertError) {
+    throw new Error(`Failed to upsert response: ${upsertError.message}`);
   }
 }
 
@@ -731,8 +704,51 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Current module not found");
   }
 
+  // If module already submitted, return cached result (idempotent)
   if (currentModule.status === "submitted") {
-    throw new Error("Module already submitted");
+    // Re-compute the result to return
+    const { data: responses } = await supabase
+      .from("full_length_exam_responses")
+      .select("is_correct")
+      .eq("module_id", currentModule.id);
+    
+    const correctCount = responses?.filter((r) => r.is_correct).length || 0;
+    const totalCount = responses?.length || 0;
+    
+    const currentSection = session.current_section as SectionType;
+    const currentModuleIndex = session.current_module as ModuleIndex;
+    
+    let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+    let isBreak = false;
+    
+    if (currentModuleIndex === 1) {
+      // Get Module 2 difficulty that was set
+      const { data: module2 } = await supabase
+        .from("full_length_exam_modules")
+        .select("difficulty_bucket")
+        .eq("session_id", params.sessionId)
+        .eq("section", currentSection)
+        .eq("module_index", 2)
+        .single();
+      
+      nextModule = { 
+        section: currentSection, 
+        moduleIndex: 2, 
+        difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
+      };
+    } else if (currentSection === "rw") {
+      isBreak = true;
+    } else {
+      nextModule = null;
+    }
+    
+    return {
+      moduleId: currentModule.id,
+      correctCount,
+      totalCount,
+      nextModule,
+      isBreak,
+    };
   }
 
   // Mark module as submitted
