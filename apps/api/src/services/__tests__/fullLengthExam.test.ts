@@ -6,14 +6,18 @@
  * - Answer state restoration
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import * as fullLengthExamService from '../fullLengthExam';
+
+// Type for Supabase client mock
+interface MockSupabaseClient {
+  from: Mock;
+}
 
 // Mock the Supabase admin client
 vi.mock('../../lib/supabase-admin', () => ({
-  getSupabaseAdmin: vi.fn(() => ({
-    from: vi.fn(),
-  })),
+  getSupabaseAdmin: vi.fn(),
 }));
 
 describe('Full-Length Exam Service', () => {
@@ -29,7 +33,7 @@ describe('Full-Length Exam Service', () => {
         created_at: new Date().toISOString(),
       };
 
-      const mockSupabase = {
+      const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
           if (table === 'full_length_exam_sessions') {
             return {
@@ -61,7 +65,7 @@ describe('Full-Length Exam Service', () => {
         }),
       };
 
-      vi.mocked(getSupabaseAdmin).mockReturnValue(mockSupabase as any);
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
       const result = await fullLengthExamService.createExamSession({
         userId: 'user-456',
@@ -86,7 +90,7 @@ describe('Full-Length Exam Service', () => {
         created_at: new Date().toISOString(),
       };
 
-      const mockSupabase = {
+      const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
           if (table === 'full_length_exam_sessions') {
             return {
@@ -124,7 +128,7 @@ describe('Full-Length Exam Service', () => {
         }),
       };
 
-      vi.mocked(getSupabaseAdmin).mockReturnValue(mockSupabase as any);
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
       const result = await fullLengthExamService.createExamSession({
         userId: 'user-456',
@@ -140,7 +144,7 @@ describe('Full-Length Exam Service', () => {
       
       let capturedStatuses: string[] = [];
 
-      const mockSupabase = {
+      const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
           if (table === 'full_length_exam_sessions') {
             return {
@@ -183,7 +187,7 @@ describe('Full-Length Exam Service', () => {
         }),
       };
 
-      vi.mocked(getSupabaseAdmin).mockReturnValue(mockSupabase as any);
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
       await fullLengthExamService.createExamSession({ userId: 'user-123' });
 
@@ -198,11 +202,21 @@ describe('Full-Length Exam Service', () => {
     it('should include submitted answers in current question payload', async () => {
       // This is tested via integration tests with actual database
       // For now, we verify the type structure is correct
+      const mockSession: fullLengthExamService.GetCurrentSessionResult['session'] = {
+        id: 'session-123',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'math',
+        current_module: 1,
+        seed: 'test-seed',
+        started_at: new Date().toISOString(),
+        completed_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
       const mockResult: fullLengthExamService.GetCurrentSessionResult = {
-        session: {
-          id: 'session-123',
-          status: 'in_progress',
-        } as any,
+        session: mockSession,
         currentModule: null,
         currentQuestion: {
           id: 'q1',
