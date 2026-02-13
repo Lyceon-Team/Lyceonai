@@ -264,8 +264,30 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .select()
     .single();
 
-  if (sessionError || !session) {
-    throw new Error(`Failed to create exam session: ${sessionError?.message || "Unknown error"}`);
+  // If insert failed due to unique constraint (race condition),
+  // re-select the active session that was created by the concurrent request
+  if (sessionError) {
+    // Check if it's a unique constraint violation (code 23505)
+    if (sessionError.code === '23505' || sessionError.message?.includes('duplicate') || sessionError.message?.includes('unique')) {
+      const { data: racedSession } = await supabase
+        .from("full_length_exam_sessions")
+        .select("*")
+        .eq("user_id", params.userId)
+        .in("status", ["not_started", "in_progress"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (racedSession) {
+        return racedSession;
+      }
+    }
+    
+    throw new Error(`Failed to create exam session: ${sessionError.message || "Unknown error"}`);
+  }
+
+  if (!session) {
+    throw new Error("Failed to create exam session: No session returned");
   }
 
   // Create all 4 modules (but don't select questions yet)
@@ -838,19 +860,39 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     // Moving to Module 2 of same section
     const difficulty = determineModule2Difficulty(currentSection, correctCount);
     
-    // Update Module 2 difficulty
-    const { error: difficultyError } = await supabase
+    // Update Module 2 difficulty - single-write guarantee
+    // Only set difficulty_bucket if it's currently NULL to prevent overwrites
+    const { data: updatedModules, error: difficultyError } = await supabase
       .from("full_length_exam_modules")
       .update({ difficulty_bucket: difficulty })
       .eq("session_id", params.sessionId)
       .eq("section", currentSection)
-      .eq("module_index", 2);
+      .eq("module_index", 2)
+      .is("difficulty_bucket", null)
+      .select();
+
+    // If no rows were updated, difficulty_bucket was already set
+    // Fetch the existing value
+    let finalDifficulty: DifficultyBucket = difficulty;
+    if (!updatedModules || updatedModules.length === 0) {
+      const { data: existingModule } = await supabase
+        .from("full_length_exam_modules")
+        .select("difficulty_bucket")
+        .eq("session_id", params.sessionId)
+        .eq("section", currentSection)
+        .eq("module_index", 2)
+        .single();
+      
+      if (existingModule?.difficulty_bucket) {
+        finalDifficulty = existingModule.difficulty_bucket as DifficultyBucket;
+      }
+    }
 
     if (difficultyError) {
       throw new Error(`Failed to set Module 2 difficulty: ${difficultyError.message}`);
     }
 
-    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: difficulty };
+    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: finalDifficulty };
 
     // Update session
     await supabase
@@ -982,8 +1024,115 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
+  // Idempotency: if already completed, return existing result
   if (session.status === "completed") {
-    throw new Error("Exam already completed");
+    // Re-compute and return the existing result
+    const { data: modules, error: modulesError } = await supabase
+      .from("full_length_exam_modules")
+      .select("id, section, module_index")
+      .eq("session_id", params.sessionId)
+      .order("section", { ascending: true })
+      .order("module_index", { ascending: true });
+
+    if (modulesError || !modules) {
+      throw new Error("Failed to fetch modules");
+    }
+
+    // Get responses for each module
+    const moduleScores: Record<string, { correct: number; total: number }> = {};
+
+    for (const module of modules) {
+      const { data: responses, error: responsesError } = await supabase
+        .from("full_length_exam_responses")
+        .select("is_correct")
+        .eq("module_id", module.id);
+
+      if (responsesError) {
+        throw new Error(`Failed to fetch responses for module ${module.id}`);
+      }
+
+      const correct = responses?.filter((r) => r.is_correct).length || 0;
+      const total = responses?.length || 0;
+
+      const key = `${module.section}_${module.module_index}`;
+      moduleScores[key] = { correct, total };
+    }
+
+    // Compute scores
+    const rwModule1 = moduleScores["rw_1"] || { correct: 0, total: 0 };
+    const rwModule2 = moduleScores["rw_2"] || { correct: 0, total: 0 };
+    const mathModule1 = moduleScores["math_1"] || { correct: 0, total: 0 };
+    const mathModule2 = moduleScores["math_2"] || { correct: 0, total: 0 };
+
+    const rwTotalCorrect = rwModule1.correct + rwModule2.correct;
+    const rwTotalQuestions = rwModule1.total + rwModule2.total;
+
+    const mathTotalCorrect = mathModule1.correct + mathModule2.correct;
+    const mathTotalQuestions = mathModule1.total + mathModule2.total;
+
+    const overallTotalCorrect = rwTotalCorrect + mathTotalCorrect;
+    const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
+    const percentageCorrect = overallTotalQuestions > 0 
+      ? (overallTotalCorrect / overallTotalQuestions) * 100 
+      : 0;
+
+    return {
+      sessionId: params.sessionId,
+      rwScore: {
+        module1: rwModule1,
+        module2: rwModule2,
+        totalCorrect: rwTotalCorrect,
+        totalQuestions: rwTotalQuestions,
+      },
+      mathScore: {
+        module1: mathModule1,
+        module2: mathModule2,
+        totalCorrect: mathTotalCorrect,
+        totalQuestions: mathTotalQuestions,
+      },
+      overallScore: {
+        totalCorrect: overallTotalCorrect,
+        totalQuestions: overallTotalQuestions,
+        percentageCorrect,
+      },
+      completedAt: new Date(session.completed_at!),
+    };
+  }
+
+  // Terminal-state guard: enforce preconditions for completion
+  // - session.status must be "in_progress"
+  // - session.current_section must be "math"
+  // - session.current_module must be 2
+  // - Math Module 2 must exist
+  // - Math Module 2 status must be "submitted"
+  
+  if (session.status !== "in_progress") {
+    throw new Error("Invalid exam state");
+  }
+
+  if (session.current_section !== "math") {
+    throw new Error("Invalid exam state");
+  }
+
+  if (session.current_module !== 2) {
+    throw new Error("Invalid exam state");
+  }
+
+  // Verify Math Module 2 exists and is submitted
+  const { data: mathMod2, error: mathMod2Error } = await supabase
+    .from("full_length_exam_modules")
+    .select("*")
+    .eq("session_id", params.sessionId)
+    .eq("section", "math")
+    .eq("module_index", 2)
+    .single();
+
+  if (mathMod2Error || !mathMod2) {
+    throw new Error("Invalid exam state");
+  }
+
+  if (mathMod2.status !== "submitted") {
+    throw new Error("Invalid exam state");
   }
 
   // Get all modules
