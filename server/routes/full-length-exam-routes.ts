@@ -10,9 +10,9 @@
  */
 
 import { Router, Request, Response } from "express";
-import { requireSupabaseAuth } from "../../../server/middleware/supabase-auth";
-import { csrfGuard } from "../../../server/middleware/csrf";
-import * as fullLengthExamService from "../services/fullLengthExam";
+import { requireSupabaseAuth } from "../middleware/supabase-auth";
+import { csrfGuard } from "../middleware/csrf";
+import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { z } from "zod";
 
 const router = Router();

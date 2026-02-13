@@ -455,7 +455,11 @@ export const fullLengthExamResponses = pgTable("full_length_exam_responses", {
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // Unique constraint for idempotent answer submission
+  // Ensures one response per question per module per session
+  { uniqueSessionModuleQuestion: sql`UNIQUE(${table.sessionId}, ${table.moduleId}, ${table.questionId})` }
+]);
 
 // DEPRECATED: batch_jobs tables removed - use ingestion_runs instead
 // See ingestionRuns table below for current ingestion tracking

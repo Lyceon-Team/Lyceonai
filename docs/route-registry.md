@@ -32,7 +32,7 @@ This document is the single authoritative registry of:
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection`, `/api/calendar/profile`, `/api/calendar/month` | ACTIVE |
 | `/calendar` | student, admin | free | CalendarPage | `/api/calendar/month`, `/api/calendar/profile` | ACTIVE |
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
-| `/full-test` | student, admin | free | FullTest | None (UI-disabled stub; not implemented yet) | ACTIVE |
+| `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
 | `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -112,6 +112,17 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/me/mastery/skills` | GET | Yes | student/admin | free | Mastery statistics |
 | `/api/me/weakness/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
+
+### Full-Length Exam Endpoints (Bluebook SAT)
+| Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
+|----------|--------|--------------|------|-------------|---------|
+| `/api/full-length/sessions` | POST | Yes | student/admin | free | Create new exam session |
+| `/api/full-length/sessions/current` | GET | Yes | student/admin | free | Get current session state |
+| `/api/full-length/sessions/:id/start` | POST | Yes | student/admin | free | Start exam (begin RW Module 1) |
+| `/api/full-length/sessions/:id/answer` | POST | Yes | student/admin | free | Submit answer to question (idempotent) |
+| `/api/full-length/sessions/:id/module/submit` | POST | Yes | student/admin | free | End module, compute score, set adaptive difficulty |
+| `/api/full-length/sessions/:id/break/continue` | POST | Yes | student/admin | free | Continue from break to Math Module 1 |
+| `/api/full-length/sessions/:id/complete` | POST | Yes | student/admin | free | Complete exam, get final results |
 
 ### Guardian Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
