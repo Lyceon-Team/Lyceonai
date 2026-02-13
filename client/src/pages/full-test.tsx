@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Tag } from "@/components/common/tag";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Clock, FileText, Users, Info, TrendingUp, Play, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
