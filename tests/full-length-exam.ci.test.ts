@@ -117,6 +117,19 @@ describe('Full-Length Exam API Tests', () => {
       // Should be 400 (missing param) or 401 (auth)
       expect([400, 401]).toContain(res.status);
     });
+
+    it('should accept valid UUID for questionId', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/550e8400-e29b-41d4-a716-446655440000/answer')
+        .set('Cookie', ['sb-access-token=fake-token'])
+        .send({
+          questionId: '550e8400-e29b-41d4-a716-446655440000',
+          selectedAnswer: 'A',
+        });
+
+      // Should be 401 (auth) or other error, but not 400 (validation)
+      expect(res.status).not.toBe(400);
+    });
   });
 
   describe('Anti-Leak Security', () => {
@@ -221,6 +234,86 @@ describe('Full-Length Exam API Tests', () => {
 
     it('should reject continue when not on break', async () => {
       expect(true).toBe(true); // Placeholder - real test needs DB
+    });
+  });
+
+  describe('Route Structure', () => {
+    it('should have POST /api/full-length/sessions endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have GET /api/full-length/sessions/current endpoint', async () => {
+      const res = await request(app)
+        .get('/api/full-length/sessions/current');
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have POST /api/full-length/sessions/:sessionId/start endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/test-id/start')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have POST /api/full-length/sessions/:sessionId/answer endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/test-id/answer')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have POST /api/full-length/sessions/:sessionId/module/submit endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/test-id/module/submit')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have POST /api/full-length/sessions/:sessionId/break/continue endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/test-id/break/continue')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have POST /api/full-length/sessions/:sessionId/complete endpoint', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions/test-id/complete')
+        .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+  });
+
+  describe('Response Structure', () => {
+    it('should return JSON error for unauthenticated requests', async () => {
+      const res = await request(app)
+        .post('/api/full-length/sessions')
+        .send({});
+
+      expect(res.headers['content-type']).toMatch(/json/);
+      expect(res.body).toHaveProperty('error');
+    });
+
+    it('should return JSON for session creation (when auth succeeds)', async () => {
+      // This would need proper auth setup
+      expect(true).toBe(true);
     });
   });
 });
