@@ -66,10 +66,14 @@ interface ExamQuestion {
   type: "mc" | "fr";
   options: Array<{ key: string; text: string }> | null;
   difficulty: string | null;
-  classification: any;
   orderIndex: number;
   moduleQuestionCount: number;
   answeredCount: number;
+  // Previously submitted answer (for resume support)
+  submittedAnswer?: {
+    selectedAnswer?: string;
+    freeResponseAnswer?: string;
+  };
 }
 
 interface SessionState {
@@ -139,6 +143,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const lastSyncRef = useRef<number>(Date.now());
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Track last question ID to avoid clearing answers when re-fetching same question
+  const lastQuestionIdRef = useRef<string | null>(null);
+  
   // ============================================================================
   // SESSION MANAGEMENT
   // ============================================================================
@@ -162,19 +169,36 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         lastSyncRef.current = Date.now();
       }
       
-      // Clear current answers if switching questions
+      // Handle answer state restoration
       if (data.currentQuestion) {
-        setSelectedAnswer(null);
-        setFreeResponseAnswer("");
+        const currentQuestionId = data.currentQuestion.id;
+        const questionChanged = lastQuestionIdRef.current !== currentQuestionId;
+        
+        if (questionChanged) {
+          // Question changed - restore submitted answer if it exists, otherwise clear
+          lastQuestionIdRef.current = currentQuestionId;
+          
+          if (data.currentQuestion.submittedAnswer) {
+            // Resume: restore previously submitted answer
+            setSelectedAnswer(data.currentQuestion.submittedAnswer.selectedAnswer || null);
+            setFreeResponseAnswer(data.currentQuestion.submittedAnswer.freeResponseAnswer || "");
+          } else {
+            // New question: clear inputs
+            setSelectedAnswer(null);
+            setFreeResponseAnswer("");
+          }
+        }
+        // If same question, keep current UI state (don't wipe on every poll)
       }
       
       setLoading(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to fetch session state:", error);
+      const message = error instanceof Error ? error.message : "Failed to load exam session";
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to load exam session",
+        description: message,
       });
       setLoading(false);
     }
@@ -247,12 +271,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       // Refresh session state to get next question
       await fetchSessionState();
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to submit answer:", error);
+      const message = error instanceof Error ? error.message : "Failed to submit answer";
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to submit answer",
+        description: message,
       });
     } finally {
       setSubmitting(false);
@@ -288,12 +313,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       // Refresh session state
       await fetchSessionState();
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to submit module:", error);
+      const message = error instanceof Error ? error.message : "Failed to submit module";
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to submit module",
+        description: message,
       });
     } finally {
       setSubmitting(false);
@@ -327,12 +353,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       // Refresh session state
       await fetchSessionState();
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to continue from break:", error);
+      const message = error instanceof Error ? error.message : "Failed to continue from break";
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to continue from break",
+        description: message,
       });
     } finally {
       setSubmitting(false);
@@ -366,12 +393,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         description: `Overall: ${result.overallScore.percentageCorrect.toFixed(1)}% correct`,
       });
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to complete exam:", error);
+      const message = error instanceof Error ? error.message : "Failed to complete exam";
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "Failed to complete exam",
+        description: message,
       });
     } finally {
       setSubmitting(false);
