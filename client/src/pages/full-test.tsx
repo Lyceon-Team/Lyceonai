@@ -7,15 +7,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Clock, FileText, Users, Info, TrendingUp, Play, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import ExamRunner from "@/components/full-length-exam/ExamRunner";
 
 export default function FullTest() {
   const { user, authLoading } = useSupabaseAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isStarted, setIsStarted] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get('sessionId');
+    if (sid) {
+      setActiveSessionId(sid);
+      setIsStarted(true);
+    }
+  }, []);
 
   // Mutation to create a new exam session
   const createSessionMutation = useMutation({
@@ -65,8 +77,11 @@ export default function FullTest() {
       
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, sid) => {
       setIsStarted(true);
+      setActiveSessionId(sid);
+      // Update URL to include sessionId for refresh support
+      window.history.pushState({}, '', `/full-test?sessionId=${sid}`);
       toast({
         title: "Exam Started",
         description: "Good luck! Begin with Reading & Writing Module 1.",
@@ -91,6 +106,13 @@ export default function FullTest() {
     }
   };
 
+  const handleExitExam = () => {
+    setIsStarted(false);
+    setActiveSessionId(null);
+    setSessionId(null);
+    window.history.pushState({}, '', '/full-test');
+  };
+
   // If not authenticated, show login prompt
   if (!authLoading && !user) {
     return (
@@ -112,36 +134,9 @@ export default function FullTest() {
     );
   }
 
-  // If exam is started, redirect to exam interface (placeholder for now)
-  if (isStarted && sessionId) {
-    return (
-      <AppShell>
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-          <div className="text-center py-12">
-            <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />
-            <h1 className="text-3xl font-bold text-foreground mb-4">Exam Started!</h1>
-            <p className="text-muted-foreground mb-8">
-              Exam interface coming soon. Your session ID: {sessionId}
-            </p>
-            <p className="text-sm text-muted-foreground mb-4">
-              The exam will include:
-            </p>
-            <ul className="text-sm text-muted-foreground list-disc list-inside mb-8">
-              <li>Reading & Writing Module 1 (32 minutes, 27 questions)</li>
-              <li>Reading & Writing Module 2 (32 minutes, 27 questions, adaptive)</li>
-              <li>10 minute break</li>
-              <li>Math Module 1 (35 minutes, 22 questions)</li>
-              <li>Math Module 2 (35 minutes, 22 questions, adaptive)</li>
-            </ul>
-            <Button asChild variant="outline">
-              <Link href="/dashboard">
-                Return to Dashboard
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </AppShell>
-    );
+  // If exam is started, show exam runner
+  if (isStarted && activeSessionId) {
+    return <ExamRunner sessionId={activeSessionId} onExit={handleExitExam} />;
   }
 
   // If session created but not started, show start screen
