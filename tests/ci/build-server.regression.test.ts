@@ -32,6 +32,8 @@ function isBareImport(path: string): boolean {
   if (/^[A-Za-z]:[/\\]/.test(path)) return false;
   // Any path with backslashes is a Windows path
   if (path.includes("\\")) return false;
+  // Node.js built-in modules should not be externalized
+  if (path.startsWith("node:")) return false;
   return true;
 }
 
@@ -83,8 +85,9 @@ describe('Build Server Regression Tests', () => {
 
     it('should handle edge cases', () => {
       expect(isBareImport('')).toBe(false);
-      expect(isBareImport('node:fs')).toBe(true); // Node.js built-in with protocol
-      expect(isBareImport('node:path')).toBe(true);
+      // Node.js built-ins with protocol should NOT be externalized
+      expect(isBareImport('node:fs')).toBe(false);
+      expect(isBareImport('node:path')).toBe(false);
     });
   });
 

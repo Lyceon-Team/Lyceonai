@@ -11,9 +11,8 @@
  */
 
 import * as esbuild from 'esbuild-wasm';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
-import { createRequire } from 'module';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -26,6 +25,7 @@ const rootDir = resolve(__dirname, '..');
  * - Absolute paths (starting with /)
  * - Windows absolute paths (C:\ or C:/, D:\ or D:/, etc.)
  * - Paths containing backslashes (Windows paths)
+ * - Node.js built-in modules (starting with node:)
  */
 function isBareImport(path) {
   if (!path) return false;
@@ -37,6 +37,8 @@ function isBareImport(path) {
   if (/^[A-Za-z]:[/\\]/.test(path)) return false;
   // Any path with backslashes is a Windows path
   if (path.includes("\\")) return false;
+  // Node.js built-in modules should not be externalized
+  if (path.startsWith("node:")) return false;
   return true;
 }
 
