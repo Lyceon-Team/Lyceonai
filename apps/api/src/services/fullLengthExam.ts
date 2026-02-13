@@ -264,8 +264,30 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .select()
     .single();
 
-  if (sessionError || !session) {
-    throw new Error(`Failed to create exam session: ${sessionError?.message || "Unknown error"}`);
+  // If insert failed due to unique constraint (race condition),
+  // re-select the active session that was created by the concurrent request
+  if (sessionError) {
+    // Check if it's a unique constraint violation (code 23505)
+    if (sessionError.code === '23505' || sessionError.message?.includes('duplicate') || sessionError.message?.includes('unique')) {
+      const { data: racedSession } = await supabase
+        .from("full_length_exam_sessions")
+        .select("*")
+        .eq("user_id", params.userId)
+        .in("status", ["not_started", "in_progress"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (racedSession) {
+        return racedSession;
+      }
+    }
+    
+    throw new Error(`Failed to create exam session: ${sessionError.message || "Unknown error"}`);
+  }
+
+  if (!session) {
+    throw new Error("Failed to create exam session: No session returned");
   }
 
   // Create all 4 modules (but don't select questions yet)
@@ -838,19 +860,39 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     // Moving to Module 2 of same section
     const difficulty = determineModule2Difficulty(currentSection, correctCount);
     
-    // Update Module 2 difficulty
-    const { error: difficultyError } = await supabase
+    // Update Module 2 difficulty - single-write guarantee
+    // Only set difficulty_bucket if it's currently NULL to prevent overwrites
+    const { data: updatedModules, error: difficultyError } = await supabase
       .from("full_length_exam_modules")
       .update({ difficulty_bucket: difficulty })
       .eq("session_id", params.sessionId)
       .eq("section", currentSection)
-      .eq("module_index", 2);
+      .eq("module_index", 2)
+      .is("difficulty_bucket", null)
+      .select();
+
+    // If no rows were updated, difficulty_bucket was already set
+    // Fetch the existing value
+    let finalDifficulty: DifficultyBucket = difficulty;
+    if (!updatedModules || updatedModules.length === 0) {
+      const { data: existingModule } = await supabase
+        .from("full_length_exam_modules")
+        .select("difficulty_bucket")
+        .eq("session_id", params.sessionId)
+        .eq("section", currentSection)
+        .eq("module_index", 2)
+        .single();
+      
+      if (existingModule?.difficulty_bucket) {
+        finalDifficulty = existingModule.difficulty_bucket as DifficultyBucket;
+      }
+    }
 
     if (difficultyError) {
       throw new Error(`Failed to set Module 2 difficulty: ${difficultyError.message}`);
     }
 
-    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: difficulty };
+    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: finalDifficulty };
 
     // Update session
     await supabase
