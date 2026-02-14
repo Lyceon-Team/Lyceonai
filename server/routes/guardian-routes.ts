@@ -5,10 +5,8 @@ import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
 import { DateTime } from 'luxon';
-import { csrfGuard } from '../middleware/csrf';
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
 
@@ -73,7 +71,7 @@ router.get('/students', requireSupabaseAuth, requireGuardianRole, async (req: Re
   }
 });
 
-router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, durableRateLimiter, async (req: Request, res: Response) => {
+router.post('/link', requireSupabaseAuth, requireGuardianRole, durableRateLimiter, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;
@@ -134,7 +132,7 @@ router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, d
   }
 });
 
-router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, csrfProtection, async (req: Request, res: Response) => {
+router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;

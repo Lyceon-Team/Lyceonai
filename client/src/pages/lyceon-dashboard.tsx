@@ -9,10 +9,11 @@ import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar, Target, TrendingUp, Clock, BookOpen, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
+import QuestionUpload from "@/components/student/QuestionUpload";
+import { FocusAreasCard } from "@/components/mastery/FocusAreasCard";
 import { ScoreProjectionCard } from "@/components/progress/ScoreProjectionCard";
 import { getCalendarMonth, getCalendarProfile, StudyProfile, StudyPlanDay } from "@/lib/calendarApi";
 import { DateTime } from "luxon";
@@ -58,18 +59,18 @@ export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
   const [, navigate] = useLocation();
   
-  // Progress and activity data removed - endpoints not implemented
-  // const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
-  //   queryKey: ['/api/progress'],
-  //   enabled: !!user,
-  // });
-  // const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
-  //   queryKey: ['/api/recent-activity'],
-  //   enabled: !!user,
-  // });
+  const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
+    queryKey: ['/api/progress'],
+    enabled: !!user,
+  });
+
+  const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
+    queryKey: ['/api/recent-activity'],
+    enabled: !!user,
+  });
 
   // Calendar profile query (provides timezone, baseline, target, exam date)
-  const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<StudyProfile | null>({
+  const { data: profileData, isLoading: profileLoading } = useQuery<StudyProfile | null>({
     queryKey: ['calendar-profile'],
     queryFn: getCalendarProfile,
     enabled: !!user,
@@ -80,7 +81,7 @@ export default function LyceonDashboard() {
   const userTimezone = profileData?.timezone || 'America/Chicago';
   const todayISO = DateTime.now().setZone(userTimezone).toISODate()!;
 
-  const { data: calendarData, isLoading: streakLoading, error: calendarError } = useQuery({
+  const { data: calendarData, isLoading: streakLoading } = useQuery({
     queryKey: ['calendar-month', userTimezone],
     queryFn: async () => {
       const now = DateTime.now().setZone(userTimezone);
@@ -113,15 +114,15 @@ export default function LyceonDashboard() {
     };
   }
   
-  const { data: kpiData, isLoading: kpiLoading, error: kpiError } = useQuery<KpiResponse>({
+  const { data: kpiData, isLoading: kpiLoading } = useQuery<KpiResponse>({
     queryKey: ['/api/progress/kpis'],
     enabled: !!user,
     refetchInterval: 60000,
   });
 
-  // Derive focus areas from weakest competencies (removed - API not implemented)
-  // const focusAreas = progressData?.weakestCompetencies ?? [];
-  // const hasFocusAreas = !!focusAreas && focusAreas.length > 0;
+  // Derive focus areas from weakest competencies
+  const focusAreas = progressData?.weakestCompetencies ?? [];
+  const hasFocusAreas = !!focusAreas && focusAreas.length > 0;
 
   // Derive values from calendar profile (deterministic)
   const baselineScore = profileData?.baseline_score ?? 400;
@@ -160,14 +161,6 @@ export default function LyceonDashboard() {
             }
           </p>
         </div>
-
-        {(profileError || calendarError || kpiError) && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>
-              Some dashboard data failed to load. Please refresh the page or try again later.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {/* FlowCards Featured Hero */}
         <Card className="relative overflow-hidden border-0 bg-background from-purple-900 via-pink-900 to-indigo-900 mb-8" data-testid="card-flowcards-hero">
@@ -271,11 +264,6 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-12 w-full" />
                   <Skeleton className="h-12 w-full" />
                 </div>
-              ) : profileData === null ? (
-                <EmptyState
-                  title="Set up your study plan"
-                  description="Add your baseline score and test date to see your personalized plan."
-                />
               ) : (
                 <div className="space-y-6">
                   {/* Score Overview + Streak */}
@@ -355,6 +343,12 @@ export default function LyceonDashboard() {
 
             {/* Score Projection */}
             <ScoreProjectionCard />
+
+            {/* Current Focus Areas */}
+            <FocusAreasCard />
+
+            {/* Ask AI About My Question - Student Upload */}
+            <QuestionUpload className="border-2 border-primary/20 shadow-lg" />
           </div>
 
           {/* Right Column (1/3 width) */}
@@ -393,12 +387,58 @@ export default function LyceonDashboard() {
               </div>
             </PageCard>
 
-            {/* Focus Areas - Temporarily Disabled */}
+            {/* Focus Areas - Weakest Competencies */}
             <PageCard title="Focus Areas">
-              <EmptyState
-                title="Coming Soon"
-                description="Detailed progress tracking is being rebuilt. Continue practicing and we'll show your focus areas soon!"
-              />
+              {progressLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-5 w-3/4" />
+                  <Skeleton className="h-5 w-1/2" />
+                </div>
+              ) : !hasFocusAreas ? (
+                <EmptyState
+                  title="No focus areas yet"
+                  description="As you practice more, we'll highlight the skills that need your attention here."
+                />
+              ) : (
+                <div className="space-y-3">
+                  {focusAreas.map((c) => {
+                    const score = c.score ?? 0;
+                    let label = 'Watch list';
+                    if (score >= 5) label = 'High priority';
+                    else if (score >= 2) label = 'Needs review';
+
+                    return (
+                      <div
+                        key={c.key}
+                        className="flex items-start justify-between gap-3 rounded-lg border bg-muted/40 p-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{c.key}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(c.section || 'General') + ' · ' + label}
+                          </p>
+                        </div>
+                        {typeof c.incorrectCount === 'number' && c.incorrectCount > 0 && (
+                          <Tag variant="warning" className="shrink-0">
+                            {c.incorrectCount} wrong
+                          </Tag>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className="pt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => navigate('/practice/random?mode=weak_areas')}
+                    >
+                      Practice my weak areas
+                    </Button>
+                  </div>
+                </div>
+              )}
             </PageCard>
 
             {/* Next Topic */}
@@ -433,38 +473,26 @@ export default function LyceonDashboard() {
 
             {/* Quick Stats */}
             <PageCard title="This Week">
-              {kpiLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-full" />
-                  <Skeleton className="h-6 w-full" />
-                  <Skeleton className="h-6 w-full" />
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <span className="text-sm text-muted-foreground min-w-0 truncate">Practice Sessions</span>
+                  <span className="text-2xl font-bold shrink-0">
+                    {kpiLoading ? "—" : (kpiData?.week?.practiceSessions ?? 0)}
+                  </span>
                 </div>
-              ) : kpiError ? (
-                <div className="text-sm text-destructive">Unable to load weekly stats.</div>
-              ) : !kpiData ? (
-                <div className="text-sm text-muted-foreground">No weekly stats yet.</div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Practice Sessions</span>
-                    <span className="text-2xl font-bold shrink-0">
-                      {kpiData.week?.practiceSessions ?? 0}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Questions Solved</span>
-                    <span className="text-2xl font-bold shrink-0">
-                      {kpiData.week?.questionsSolved ?? 0}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Accuracy</span>
-                    <span className="text-2xl font-bold text-green-600 shrink-0">
-                      {kpiData.week?.questionsSolved === 0 ? "—" : `${kpiData.week?.accuracy ?? 0}%`}
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <span className="text-sm text-muted-foreground min-w-0 truncate">Questions Solved</span>
+                  <span className="text-2xl font-bold shrink-0">
+                    {kpiLoading ? "—" : (kpiData?.week?.questionsSolved ?? 0)}
+                  </span>
                 </div>
-              )}
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <span className="text-sm text-muted-foreground min-w-0 truncate">Accuracy</span>
+                  <span className="text-2xl font-bold text-green-600 shrink-0">
+                    {kpiLoading ? "—" : (kpiData?.week?.questionsSolved === 0 ? "—" : `${kpiData?.week?.accuracy ?? 0}%`)}
+                  </span>
+                </div>
+              </div>
             </PageCard>
           </div>
         </div>

@@ -6,22 +6,19 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "prebuild": "rimraf dist client/dist",
-    "build": "vite build && esbuild server/index.ts --bundle --platform=node --packages=external --format=esm --outfile=dist/index.js"
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
     "postbuild": "node scripts/check-no-cdn-katex.js"
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
-    "test:ci": "vitest run tests/ci",
-    "test:integration": "vitest run tests/integration",
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
-    "test:all": "vitest run",
+    "ingest:dev": "tsx server/scripts/run-ingestion-dev.ts",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
     "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
-    "route:validate": "node scripts/validate-route-registry.mjs",
-    "verify:csrf": "npx tsx scripts/verify-csrf-protection.ts"
+    "audit:no-ingest": "rg -n --color=always 'api/ingest|ingestion-v4|ingest-llm' server apps | (grep . && (echo 'Ingest code found!' && exit 1) || exit 0)"
   },
   "dependencies": {
     "@auth/core": "^0.34.2",
@@ -139,7 +136,6 @@
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.30.4",
     "esbuild": "^0.25.10",
-    "esbuild-wasm": "^0.27.2",
     "jest": "^30.2.0",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.6",

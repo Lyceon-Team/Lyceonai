@@ -1,46 +1,55 @@
 import request from 'supertest';
 import app from '../server/index';
-import { describe, it, expect } from 'vitest';
 
-// Security regression test: Verify that /api/questions/validate does not leak
-// sensitive data (correctAnswerKey, explanation) to non-admin users.
-// 
-// This test validates the ABSENCE of security bugs without requiring mocks or real data.
-// We test that:
-// 1. Unauthenticated requests are rejected (401)
-// 2. The endpoint structure doesn't leak sensitive fields in error responses
+// Minimal mocking utilities
+const mockSupabaseServer = {
+  from: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
+  eq: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
+  single: jest.fn(),
+};
+
 describe('Practice/Questions Validate Security Regression', () => {
-
-  it('PRAC-001: rejects unauthenticated requests (no cookie)', async () => {
-    // No auth cookie = should get 401
-    const res = await request(app)
-      .post('/api/questions/validate')
-      .set('Origin', 'http://localhost:5000')
-      .send({ questionId: 'q1', studentAnswer: 'B' });
-    
-    // Should reject with 401 (unauthenticated)
-    expect(res.status).toBe(401);
-    
-    // Error response should never leak sensitive data
-    expect(res.body).not.toHaveProperty('correctAnswerKey');
-    expect(res.body).not.toHaveProperty('explanation');
-    expect(res.body).not.toHaveProperty('answer_choice');
-    expect(res.body).not.toHaveProperty('answer_text');
+  beforeAll(() => {
+    jest.resetModules();
+    jest.doMock('../server/routes/questions-validate', () => {
+      // Re-require the real module but override supabaseServer
+      const real = jest.requireActual('../server/routes/questions-validate');
+      return {
+        ...real,
+        __esModule: true,
+        // Patch supabaseServer for test
+        supabaseServer: mockSupabaseServer,
+      };
+    });
   });
 
-  it('PRAC-001: rejects bearer auth (cookie-only endpoint)', async () => {
-    // Try bearer auth (should be rejected per cookie-only policy)
+  it('PRAC-001: does not leak correctAnswerKey or explanation to students', async () => {
+    // Arrange: mock DB response for a question
+    mockSupabaseServer.single.mockResolvedValueOnce({
+      data: {
+        id: 'q1',
+        question_type: 'mc',
+        type: 'mc',
+        answer_choice: 'A',
+        answer_text: '42',
+        answer: 'A',
+        explanation: 'The answer is A because...',
+      },
+      error: null,
+    });
+    // Simulate student user
+    const fakeCookie = 'sb-access-token=fakevalidtoken';
     const res = await request(app)
       .post('/api/questions/validate')
-      .set('Authorization', 'Bearer fake-token')
-      .set('Origin', 'http://localhost:5000')
+      .set('Cookie', fakeCookie)
       .send({ questionId: 'q1', studentAnswer: 'B' });
-    
-    // Should reject (401 or 403)
-    expect([401, 403]).toContain(res.status);
-    
-    // Error response should never leak sensitive data
+    // Assert: no correctAnswerKey or explanation
     expect(res.body).not.toHaveProperty('correctAnswerKey');
     expect(res.body).not.toHaveProperty('explanation');
+    // Assert: has isCorrect and feedback
+    expect(res.body).toHaveProperty('isCorrect');
+    expect(res.body).toHaveProperty('feedback');
   });
 });

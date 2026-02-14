@@ -10,14 +10,14 @@ export default function ProgressSidebar() {
   // Progress stats API - DISABLED (endpoint not implemented)
   const { data: progressStats } = useQuery<ProgressStats>({
     queryKey: ['/api/progress'],
-    enabled: false, // Disabled - endpoint not implemented
+    enabled: false, // Disable until endpoint is implemented
   });
   
   // Check if user is authenticated for admin access
   const { data: authData } = useQuery({
-    queryKey: ['/api/auth/user'],
+    queryKey: ['/auth/user'],
     queryFn: async () => {
-      const response = await fetch('/api/auth/user');
+      const response = await fetch('/auth/user');
       return response.json();
     }
   });

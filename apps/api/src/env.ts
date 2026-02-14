@@ -55,6 +55,10 @@ export const env = {
   MATHPIX_API_ID: process.env.MATHPIX_API_ID,
   MATHPIX_API_KEY_ONLY: process.env.MATHPIX_API_KEY_ONLY,
   
+  // Auth tokens (required for secure endpoints)
+  INGEST_ADMIN_TOKEN: process.env.INGEST_ADMIN_TOKEN,
+  API_USER_TOKEN: process.env.API_USER_TOKEN,
+  
   // RAG configuration
   TOP_K: parseInt(process.env.TOP_K ?? '8'),
 };
@@ -89,6 +93,8 @@ export function validateEnvironment() {
     'SUPABASE_SERVICE_ROLE_KEY': env.SUPABASE_SERVICE_ROLE_KEY,
     'SUPABASE_ANON_KEY': env.SUPABASE_ANON_KEY,
     'GEMINI_API_KEY': env.GEMINI_API_KEY,
+    'INGEST_ADMIN_TOKEN': env.INGEST_ADMIN_TOKEN,
+    'API_USER_TOKEN': env.API_USER_TOKEN,
   };
   
   let missingCritical = false;

@@ -239,26 +239,21 @@ export function useAdaptivePractice({ section, mode = 'balanced', enabled = true
   const endSession = useCallback(async () => {
     if (!sessionId) return null;
     
-    // NOTE: /api/practice/end-session endpoint is not implemented yet
-    // For now, we just invalidate the queries locally
-    queryClient.invalidateQueries({ queryKey: ['practice-session', section] });
+    try {
+      const response = await apiRequest('/api/practice/end-session', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        queryClient.invalidateQueries({ queryKey: ['practice-session', section] });
+        return data;
+      }
+    } catch (err) {
+      console.error('[AdaptivePractice] Error ending session:', err);
+    }
     return null;
-    
-    // try {
-    //   const response = await apiRequest('/api/practice/end-session', {
-    //     method: 'POST',
-    //     body: JSON.stringify({ sessionId }),
-    //   });
-    //   
-    //   if (response.ok) {
-    //     const data = await response.json();
-    //     queryClient.invalidateQueries({ queryKey: ['practice-session', section] });
-    //     return data;
-    //   }
-    // } catch (err) {
-    //   console.error('[AdaptivePractice] Error ending session:', err);
-    // }
-    // return null;
   }, [sessionId, queryClient, section]);
 
   return {

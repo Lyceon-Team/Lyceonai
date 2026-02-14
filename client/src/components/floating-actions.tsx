@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { MessageCircle, X } from "lucide-react";
+import { MessageCircle, Upload, X } from "lucide-react";
 import { Link } from "wouter";
 import ChatInterface from "@/components/chat-interface";
+import PDFUpload from "@/components/pdf-upload";
 
 export default function FloatingActions() {
   const [showChat, setShowChat] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
 
   return (
     <>
@@ -20,6 +22,17 @@ export default function FloatingActions() {
           data-testid="button-floating-chat"
         >
           <MessageCircle className="h-6 w-6" />
+        </Button>
+
+        {/* Upload Button */}
+        <Button
+          size="lg"
+          variant="secondary"
+          className="rounded-full w-14 h-14 shadow-lg hover:shadow-xl transition-all"
+          onClick={() => setShowUpload(true)}
+          data-testid="button-floating-upload"
+        >
+          <Upload className="h-6 w-6" />
         </Button>
       </div>
 
@@ -51,6 +64,31 @@ export default function FloatingActions() {
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             <ChatInterface />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Dialog */}
+      <Dialog open={showUpload} onOpenChange={setShowUpload}>
+        <DialogContent className="max-w-2xl" aria-describedby="upload-dialog-description">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle>Upload SAT Materials</DialogTitle>
+              <p id="upload-dialog-description" className="sr-only">
+                Upload PDF files containing SAT practice questions and tests for processing
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowUpload(false)}
+                data-testid="button-close-upload"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="mt-4">
+            <PDFUpload />
           </div>
         </DialogContent>
       </Dialog>

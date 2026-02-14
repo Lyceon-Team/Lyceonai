@@ -58,8 +58,6 @@ function mergeStats(
 
 export function useCanonicalPractice(section: PracticeSectionParam) {
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [freeResponseAnswer, setFreeResponseAnswer] = useState("");
@@ -101,8 +99,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   }, []);
 
   const fetchNextQuestion = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    setIsSubmitting(true);
     try {
       const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}`, {
         method: "GET",
@@ -124,14 +121,8 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       }
 
       resetPerQuestionState();
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load question";
-      setError(message);
-      setQuestion(null);
-      return null;
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   }, [resetPerQuestionState, section]);
 
@@ -140,7 +131,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       if (!question) return;
 
       setIsSubmitting(true);
-      setError(null);
       try {
         const elapsedMs = Math.max(0, nowMs() - questionStartMs.current);
 
@@ -199,11 +189,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setCorrectAnswerKey(data.correctAnswerKey ?? null);
         setExplanation(data.explanation ?? null);
         setShowResult(true);
-        return data;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit answer";
-        setError(message);
-        return null;
       } finally {
         setIsSubmitting(false);
       }
@@ -222,14 +207,12 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   }, [question, submitAnswer]);
 
   useEffect(() => {
-    fetchNextQuestion();
+    fetchNextQuestion().catch(() => setQuestion(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
     question,
-    isLoading,
-    error,
 
     selectedAnswer,
     setSelectedAnswer,
