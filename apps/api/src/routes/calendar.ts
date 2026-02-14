@@ -4,8 +4,17 @@ import { supabaseServer } from "../lib/supabase-server";
 import { decode } from "jsonwebtoken";
 import { getWeakestSkills, getMasterySummary } from "../services/studentMastery";
 import { z } from "zod";
+import { generateJson, isV4GeminiEnabled } from "../ingestion_v4/services/gemini";
 import { DateTime } from "luxon";
-import type { SupabaseUser } from '../../../../server/middleware/supabase-auth';
+
+interface SupabaseUser {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: 'student' | 'admin' | 'guardian';
+  isAdmin: boolean;
+  isGuardian?: boolean;
+}
 
 interface AuthenticatedRequest extends Request {
   supabase?: SupabaseClient;
@@ -17,6 +26,29 @@ export const calendarRouter = Router();
 function isIsoDate(value: unknown): value is string {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
+
+const StudyBlockSchema = z.object({
+  type: z.enum(["practice", "review", "flashcards", "full_test"]),
+  minutes: z.number().int().min(5).max(180),
+  skills: z.array(z.string()),
+  instructions: z.string(),
+});
+
+const StudyDaySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  planned_minutes: z.number().int().min(0).max(600),
+  focus_skills: z.array(z.string()),
+  blocks: z.array(StudyBlockSchema),
+});
+
+const LLMStudyPlanSchema = z.object({
+  plan_version: z.string(),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  days: z.array(StudyDaySchema),
+});
+
+type LLMStudyPlan = z.infer<typeof LLMStudyPlanSchema>;
 
 function getLocalDayBounds(timezone: string, localDate: string): { utcStart: string; utcEnd: string } {
   try {
@@ -438,8 +470,82 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
     const endDt = startDt.plus({ days: days - 1 });
     const endDateStr = endDt.toISODate()!;
 
-    // LLM-based calendar generation has been removed (ingestion no longer supported)
-    // Calendar now uses heuristic-only approach
+    let llmPlan: LLMStudyPlan | null = null;
+    const useLLM = isV4GeminiEnabled();
+
+    if (useLLM) {
+      try {
+        const masteryVector = masterySummary.map(s => ({
+          section: s.section,
+          accuracy: Math.round(s.overallAccuracy * 100),
+          domains: s.domainBreakdown.map(d => ({
+            name: d.domain,
+            accuracy: Math.round(d.accuracy * 100),
+            attempts: d.attempts,
+          })),
+        }));
+
+        const weakSkillsList = weaknesses.slice(0, 8).map(w => ({
+          skill: w.skill,
+          section: w.section,
+          domain: w.domain,
+          accuracy: Math.round(w.accuracy * 100),
+        }));
+
+        const llmPrompt = `You are an SAT study plan generator. Create a structured study plan.
+
+INPUTS:
+- Exam: Digital SAT
+- Current Score: ${baselineScore}
+- Target Score: ${targetScore}
+- Daily Available Minutes: ${dailyMinutes}
+- Plan Start Date: ${start_date}
+- Plan End Date: ${endDateStr}
+- Number of Days: ${days}
+- Cadence: 6 study days per week, 1 rest day (Sunday)
+
+MASTERY DATA:
+${JSON.stringify(masteryVector, null, 2)}
+
+WEAKEST SKILLS (prioritize these):
+${JSON.stringify(weakSkillsList, null, 2)}
+
+RULES:
+1. Each day must have focus_skills based on weak areas
+2. Block types: "practice" (new questions), "review" (missed questions), "flashcards" (concepts), "full_test" (timed section)
+3. Rest days (Sundays) should have 0 planned_minutes and empty blocks
+4. Distribute practice across both Math and Reading & Writing sections
+5. Prioritize skills with lowest accuracy
+6. Each block's minutes must sum to planned_minutes for that day
+
+OUTPUT FORMAT (strict JSON only, no markdown):
+{
+  "plan_version": "llm-v1-${new Date().toISOString().split('T')[0]}",
+  "start_date": "${start_date}",
+  "end_date": "${endDateStr}",
+  "days": [
+    {
+      "date": "YYYY-MM-DD",
+      "planned_minutes": number,
+      "focus_skills": ["skill1", "skill2"],
+      "blocks": [
+        {
+          "type": "practice",
+          "minutes": number,
+          "skills": ["skill1"],
+          "instructions": "Brief instruction"
+        }
+      ]
+    }
+  ]
+}`;
+
+        llmPlan = await generateJson(llmPrompt, LLMStudyPlanSchema, "gemini-2.0-flash");
+        console.log("[calendar] LLM generated study plan:", JSON.stringify({ days: llmPlan.days.length }, null, 2));
+      } catch (llmError: any) {
+        console.warn("[calendar] LLM plan generation failed, falling back to heuristic:", llmError?.message);
+      }
+    }
 
     const { data: existingDays } = await supabaseServer
       .from("student_study_plan_days")
@@ -466,13 +572,71 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
       generated_at: string;
     }> = [];
 
-    // LLM-based plan generation removed - using heuristic approach only
-    // Always use heuristic plan generation
+    if (llmPlan && llmPlan.days.length > 0) {
+      for (const llmDay of llmPlan.days) {
+        const existingVersion = existingVersionMap.get(llmDay.date) ?? 0;
+        const newVersion = existingVersion + 1;
 
-    let focus: Array<{ section: string; competencies?: string[]; weight: number }> = [];
-    let tasks: Array<{ type: string; section: string; mode: string; minutes: number }> = [];
+        const mathSkills = llmDay.focus_skills.filter(s => 
+          s.toLowerCase().includes('algebra') || 
+          s.toLowerCase().includes('geometry') || 
+          s.toLowerCase().includes('math') ||
+          s.toLowerCase().includes('problem_solving') ||
+          s.toLowerCase().includes('advanced_math')
+        );
+        const rwSkills = llmDay.focus_skills.filter(s => !mathSkills.includes(s));
 
-    if (weaknesses.length > 0) {
+        const totalSkills = llmDay.focus_skills.length || 1;
+        const mathWeight = mathSkills.length / totalSkills;
+        const rwWeight = rwSkills.length / totalSkills;
+
+        const focus: Array<{ section: string; competencies: string[]; weight: number }> = [];
+        if (mathSkills.length > 0) {
+          focus.push({ section: "Math", competencies: mathSkills, weight: mathWeight || 0.5 });
+        }
+        if (rwSkills.length > 0) {
+          focus.push({ section: "Reading & Writing", competencies: rwSkills, weight: rwWeight || 0.5 });
+        }
+        if (focus.length === 0) {
+          focus.push({ section: "Math", competencies: [], weight: 0.6 });
+          focus.push({ section: "Reading & Writing", competencies: [], weight: 0.4 });
+        }
+
+        const tasks = llmDay.blocks.map(block => {
+          const blockMathSkills = block.skills.filter(s => 
+            s.toLowerCase().includes('algebra') || 
+            s.toLowerCase().includes('geometry') || 
+            s.toLowerCase().includes('math') ||
+            s.toLowerCase().includes('problem_solving') ||
+            s.toLowerCase().includes('advanced_math')
+          );
+          const isMath = blockMathSkills.length > block.skills.length / 2;
+          
+          return {
+            type: block.type,
+            section: isMath ? 'Math' : 'Reading & Writing',
+            mode: block.type === 'review' ? 'review' : (block.type === 'flashcards' ? 'concept' : 'weakness'),
+            minutes: block.minutes,
+            instructions: block.instructions,
+            skills: block.skills,
+          };
+        });
+
+        planDays.push({
+          user_id: userId,
+          day_date: llmDay.date,
+          planned_minutes: llmDay.planned_minutes,
+          focus,
+          tasks,
+          plan_version: newVersion,
+          generated_at: now,
+        });
+      }
+    } else {
+      let focus: Array<{ section: string; competencies?: string[]; weight: number }> = [];
+      let tasks: Array<{ type: string; section: string; mode: string; minutes: number }> = [];
+
+      if (weaknesses.length > 0) {
         const mathWeaknesses = weaknesses.filter(w => 
           w.section?.toLowerCase() === 'math' || w.skill?.startsWith('math.')
         );
@@ -540,6 +704,7 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
           generated_at: now,
         });
       }
+    }
 
     const { error: upsertError } = await supabaseServer
       .from("student_study_plan_days")
@@ -554,7 +719,7 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
       start_date, 
       end_date: endDateStr, 
       days: planDays.length,
-      usedLLM: false,
+      usedLLM: !!llmPlan,
     });
 
     return res.json({
@@ -562,7 +727,7 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
         start_date,
         end_date: endDateStr,
         days: planDays.length,
-        used_llm: false,
+        used_llm: !!llmPlan,
       },
     });
   } catch (err: any) {

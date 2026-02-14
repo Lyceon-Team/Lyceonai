@@ -3,7 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Sparkles, FileText, Info, MessageSquare } from "lucide-react";
+import { Send, Sparkles, FileText, Info } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -24,7 +24,15 @@ interface ChatMessage {
 
 export default function Chat() {
   const { user } = useSupabaseAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      type: 'tutor',
+      content: "Hi! I'm your SAT AI Tutor. I can help you understand questions, explain concepts, and provide personalized study guidance. What would you like to work on today?",
+      timestamp: new Date(),
+      provider: 'gemini'
+    }
+  ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -161,22 +169,7 @@ export default function Chat() {
             className="h-[500px] overflow-y-auto p-6 space-y-6"
             data-testid="chat-messages-container"
           >
-            {messages.length === 0 && !isLoading ? (
-              // Empty state when no messages
-              <div className="h-full flex flex-col items-center justify-center text-center px-4">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <MessageSquare className="h-8 w-8 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Start a conversation
-                </h3>
-                <p className="text-muted-foreground max-w-md">
-                  Hi! I'm your SAT AI Tutor. I can help you understand questions, explain concepts, and provide personalized study guidance. Ask me anything to get started!
-                </p>
-              </div>
-            ) : (
-              <>
-                {messages.map((message) => (
+            {messages.map((message) => (
               <div 
                 key={message.id}
                 className={`flex gap-3 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
@@ -273,8 +266,6 @@ export default function Chat() {
             )}
             
             <div ref={messagesEndRef} />
-            </>
-            )}
           </div>
 
           {/* Input Area */}

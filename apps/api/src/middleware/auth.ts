@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import type { SupabaseUser } from '../../../../server/middleware/supabase-auth';
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
@@ -29,7 +28,19 @@ export interface ApiAuthenticatedRequest extends Request {
     username?: string;
     isAdmin?: boolean;
   };
-  user?: SupabaseUser;
+  user?: {
+    id: string;
+    email?: string | null;
+    display_name?: string | null;
+    role?: 'student' | 'admin' | 'guardian';
+    isAdmin?: boolean;
+    isGuardian?: boolean;
+    is_under_13?: boolean;
+    guardian_consent?: boolean;
+    jwt?: string;
+    username?: string;
+    name?: string;
+  };
 }
 
 export type AuthenticatedRequest = ApiAuthenticatedRequest;

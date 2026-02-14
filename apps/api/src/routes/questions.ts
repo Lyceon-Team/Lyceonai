@@ -165,13 +165,6 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
 
     if (error) {
       console.error('Error fetching recent questions (Supabase HTTP):', error);
-      
-      // In test mode, return empty array instead of error
-      const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
-      if (isTestEnv) {
-        return res.json([]);
-      }
-      
       return res.status(500).json({
         error: 'Failed to fetch questions',
         detail: error.message,
@@ -185,12 +178,6 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
 
     const message =
       error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
-
-    // In test mode, return empty array instead of error
-    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
-    if (isTestEnv) {
-      return res.json([]);
-    }
 
     res.status(500).json({
       error: 'Failed to fetch questions',

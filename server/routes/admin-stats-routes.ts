@@ -10,25 +10,43 @@ const csrfProtection = csrfGuard();
 
 /**
  * GET /api/admin/stats
- * Get admin dashboard statistics (Supabase only)
+ * Get admin dashboard statistics (Supabase only - no batch_jobs)
  */
 router.get('/stats', requireSupabaseAdmin, async (req: Request, res: Response) => {
   try {
     const [
       questionsResult,
+      ingestionRunsResult,
       needsReviewResult,
       recentSessionsResult
     ] = await Promise.all([
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }),
+      supabaseServer.from('ingestion_runs').select('id', { count: 'exact', head: true }),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('needs_review', true),
       supabaseServer.from('practice_sessions').select('id', { count: 'exact', head: true })
         .gte('started_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    ]);
+
+    const [
+      pendingJobsResult,
+      completedJobsResult,
+      failedJobsResult
+    ] = await Promise.all([
+      supabaseServer.from('ingestion_runs').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabaseServer.from('ingestion_runs').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+      supabaseServer.from('ingestion_runs').select('id', { count: 'exact', head: true }).eq('status', 'failed')
     ]);
 
     res.json({
       questions: {
         total: Number(questionsResult.count ?? 0),
         needsReview: Number(needsReviewResult.count ?? 0)
+      },
+      ingestion: {
+        total: Number(ingestionRunsResult.count ?? 0),
+        pending: Number(pendingJobsResult.count ?? 0),
+        completed: Number(completedJobsResult.count ?? 0),
+        failed: Number(failedJobsResult.count ?? 0)
       },
       practice: {
         recentSessions: Number(recentSessionsResult.count ?? 0)
@@ -42,7 +60,7 @@ router.get('/stats', requireSupabaseAdmin, async (req: Request, res: Response) =
 
 /**
  * GET /api/admin/kpis
- * Get detailed KPIs - shows Supabase question counts
+ * Get detailed KPIs for ingestion monitoring - shows Supabase question counts
  */
 router.get('/kpis', requireSupabaseAdmin, async (req: Request, res: Response) => {
   try {
@@ -58,7 +76,7 @@ router.get('/kpis', requireSupabaseAdmin, async (req: Request, res: Response) =>
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Math'),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Reading and Writing'),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('needs_review', true),
-      supabaseServer.from('questions').select('created_at, source_pdf').order('created_at', { ascending: false }).limit(1),
+      supabaseServer.from('questions').select('created_at, ingestion_run_id, source_pdf').order('created_at', { ascending: false }).limit(1),
     ]);
 
     // Get question type breakdown
@@ -79,8 +97,9 @@ router.get('/kpis', requireSupabaseAdmin, async (req: Request, res: Response) =>
         multipleChoice: Number(mcCountResult.count ?? 0),
         freeResponse: Number(frCountResult.count ?? 0),
       },
-      latestQuestion: {
-        createdAt: latestQuestion?.created_at ?? null,
+      latestIngestion: {
+        questionCreatedAt: latestQuestion?.created_at ?? null,
+        ingestionRunId: latestQuestion?.ingestion_run_id ?? null,
         sourcePdf: latestQuestion?.source_pdf ?? null,
       },
       timestamp: new Date().toISOString(),
@@ -106,6 +125,7 @@ router.get('/database/schema', requireSupabaseAdmin, async (req: Request, res: R
       message: 'Schema is managed via Supabase. Please use Supabase dashboard for schema inspection.',
       tables: [
         'questions',
+        'ingestion_runs',
         'practice_sessions',
         'answer_attempts',
         'notifications',

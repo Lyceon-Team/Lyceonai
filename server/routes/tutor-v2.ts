@@ -6,10 +6,8 @@ import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
 import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { csrfGuard } from "../middleware/csrf";
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 // userId must NOT be accepted from body; always derive from req.user.id
 const TutorV2RequestSchema = z.object({
@@ -161,7 +159,7 @@ THE STUDENT ASKS:
 Now respond as the tutor in a warm, helpful tone:`;
 }
 
-router.post("/", csrfProtection, async (req: Request, res: Response) => {
+router.post("/", async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
     // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)

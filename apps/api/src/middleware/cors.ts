@@ -17,8 +17,7 @@ export function corsMiddleware() {
       // Non-browser requests (curl without Origin) should be allowed
       if (!origin) return cb(null, true);
 
-      // Allow all origins in dev or test environment
-      if (isDev || process.env.NODE_ENV === 'test') return cb(null, true);
+      if (isDev) return cb(null, true);
 
       const o = normalizeOrigin(origin);
       const ok = normalized.has(o);
@@ -29,8 +28,7 @@ export function corsMiddleware() {
           normalized: o,
           allowPreview: Array.from(normalized).slice(0, 8),
         });
-        // Return false without error to avoid 500 - let CSRF middleware handle rejection
-        return cb(null, false);
+        return cb(new Error("CORS blocked"), false);
       }
 
       return cb(null, true);

@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
+import { Tag } from "@/components/common/tag";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,29 +26,26 @@ interface QuestionStats {
   recentlyAdded: number;
 }
 
-interface PracticeTopics {
-  sections?: Array<{
-    section: string;
-    label: string;
-    domains?: Array<{
-      domain: string;
-      skills: string[];
-    }>;
-  }>;
-}
+const MATH_TOPICS = [
+  { id: 'algebra', name: 'Algebra', count: 45 },
+  { id: 'geometry', name: 'Geometry', count: 32 },
+  { id: 'statistics', name: 'Statistics', count: 28 },
+  { id: 'functions', name: 'Functions', count: 38 },
+];
+
+const READING_TOPICS = [
+  { id: 'reading-comp', name: 'Reading Comprehension', count: 52 },
+  { id: 'grammar', name: 'Grammar', count: 41 },
+  { id: 'vocabulary', name: 'Vocabulary', count: 35 },
+  { id: 'rhetoric', name: 'Rhetoric', count: 29 },
+];
 
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
   
-  const { data: stats, isLoading: statsLoading, isError: statsError, error: statsErrorObj, refetch: refetchStats } = useQuery<QuestionStats>({
+  const { data: stats, isLoading: statsLoading } = useQuery<QuestionStats>({
     queryKey: ['/api/questions/stats'],
-    enabled: !!user && !authLoading,
-  });
-
-  // Fetch practice topics from the new endpoint
-  const { data: topicsData, isLoading: topicsLoading, isError: topicsError, error: topicsErrorObj, refetch: refetchTopics } = useQuery<PracticeTopics>({
-    queryKey: ['/api/practice/topics'],
     enabled: !!user && !authLoading,
   });
 
@@ -67,13 +65,13 @@ function Practice() {
     };
   }
   
-  const { data: kpiData, isLoading: kpiLoading, isError: kpiError, error: kpiErrorObj, refetch: refetchKpis } = useQuery<KpiResponse>({
+  const { data: kpiData, isLoading: kpiLoading } = useQuery<KpiResponse>({
     queryKey: ['/api/progress/kpis'],
     enabled: !!user && !authLoading,
   });
 
   // Streak query (from calendar month)
-  const { data: calendarData, isLoading: streakLoading, isError: streakError, error: streakErrorObj, refetch: refetchStreak } = useQuery({
+  const { data: calendarData, isLoading: streakLoading } = useQuery({
     queryKey: ['calendar-streak-practice'],
     queryFn: async () => {
       const now = DateTime.local();
@@ -87,11 +85,6 @@ function Practice() {
   const streakCurrent = calendarData?.streak?.current ?? 0;
   const weekSessions = kpiData?.week?.practiceSessions ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
-  const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
-  const mathDomains = topicsData?.sections?.find((s: any) => s.section === 'math')?.domains ?? [];
-  const readingDomains = topicsData?.sections?.find((s: any) => s.section === 'reading_writing')?.domains ?? [];
-  const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
-  const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
 
   return (
     <AppShell showFooter>
@@ -144,7 +137,7 @@ function Practice() {
                         <div className="flex-1 text-left">
                           <div className="font-semibold text-base">Math</div>
                           <div className="text-xs opacity-90">
-                            {statsLoading ? '--' : statsError ? '—' : stats?.math || 0} questions
+                            {statsLoading ? '--' : stats?.math || 0} questions
                           </div>
                         </div>
                       </div>
@@ -166,133 +159,76 @@ function Practice() {
                         <div className="flex-1 text-left">
                           <div className="font-semibold text-base">Reading & Writing</div>
                           <div className="text-xs text-muted-foreground">
-                            {statsLoading
-                              ? '--'
-                              : statsError
-                              ? '—'
-                              : (Number(stats?.reading || 0) + Number(stats?.writing || 0))} questions
+                            {statsLoading ? '--' : (Number(stats?.reading || 0) + Number(stats?.writing || 0))} questions
                           </div>
                         </div>
                       </div>
                     </Link>
                   </Button>
                 </div>
-                {statsError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    <p className="font-medium">We couldn’t load question totals.</p>
-                    <p className="mt-1">{(statsErrorObj as Error)?.message ?? "Please try again."}</p>
-                    <Button className="mt-3" variant="outline" size="sm" onClick={() => refetchStats()}>
-                      Retry
-                    </Button>
-                  </div>
-                )}
               </div>
             </PageCard>
 
             {/* Browse by Topic - Math */}
-            <PageCard title="Browse Math Topics" description="Topic-specific practice available through section practice">
-              {topicsLoading ? (
+            <PageCard title="Browse Math Topics">
+              {statsLoading ? (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : topicsError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn’t load math topics.</p>
-                  <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
-                  <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : mathDomains.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  <p className="font-medium">No math topics available yet.</p>
-                  <p className="mt-1">Check back soon for curated topic sets.</p>
-                </div>
               ) : (
-                <div>
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {mathDomains.map((domain: any) => (
-                      <div
-                        key={domain.domain}
-                        className="p-4 rounded-lg border text-left bg-muted/20"
-                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">
-                            {domain.domain}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {domain.skills?.length || 0} skills
-                        </p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {MATH_TOPICS.map((topic) => (
+                    <button
+                      key={topic.id}
+                      className="p-4 rounded-lg border text-left hover:bg-muted/50 hover:border-primary/50 transition-all group"
+                      data-testid={`topic-${topic.id}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-sm group-hover:text-primary transition-colors">
+                          {topic.name}
+                        </span>
+                        <Tag variant="muted">{topic.count}</Tag>
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-center">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/practice/topics">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        Browse & Filter All Topics
-                      </Link>
-                    </Button>
-                  </div>
+                      <p className="text-xs text-muted-foreground">
+                        Click to practice {topic.name.toLowerCase()}
+                      </p>
+                    </button>
+                  ))}
                 </div>
               )}
             </PageCard>
 
             {/* Browse by Topic - Reading & Writing */}
-            <PageCard title="Browse Reading & Writing Topics" description="Topic-specific practice available through section practice">
-              {topicsLoading ? (
+            <PageCard title="Browse Reading & Writing Topics">
+              {statsLoading ? (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
-              ) : topicsError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn’t load reading &amp; writing topics.</p>
-                  <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
-                  <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : readingDomains.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  <p className="font-medium">No reading &amp; writing topics available yet.</p>
-                  <p className="mt-1">Check back soon for curated topic sets.</p>
-                </div>
               ) : (
-                <div>
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {readingDomains.map((domain: any) => (
-                      <div
-                        key={domain.domain}
-                        className="p-4 rounded-lg border text-left bg-muted/20"
-                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">
-                            {domain.domain}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {domain.skills?.length || 0} skills
-                        </p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {READING_TOPICS.map((topic) => (
+                    <button
+                      key={topic.id}
+                      className="p-4 rounded-lg border text-left hover:bg-muted/50 hover:border-primary/50 transition-all group"
+                      data-testid={`topic-${topic.id}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-sm group-hover:text-primary transition-colors">
+                          {topic.name}
+                        </span>
+                        <Tag variant="muted">{topic.count}</Tag>
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-center">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/practice/topics">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        Browse & Filter All Topics
-                      </Link>
-                    </Button>
-                  </div>
+                      <p className="text-xs text-muted-foreground">
+                        Click to practice {topic.name.toLowerCase()}
+                      </p>
+                    </button>
+                  ))}
                 </div>
               )}
             </PageCard>
@@ -347,29 +283,13 @@ function Practice() {
             {/* Stats Card */}
             <PageCard title="Your Stats">
               <div className="space-y-4">
-                {(kpiError || streakError) && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                    <p className="font-medium">We couldn’t load your stats.</p>
-                    <p className="mt-1">
-                      {(kpiErrorObj as Error)?.message || (streakErrorObj as Error)?.message || "Please try again."}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" onClick={() => refetchKpis()}>
-                        Retry KPIs
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => refetchStreak()}>
-                        Retry Streak
-                      </Button>
-                    </div>
-                  </div>
-                )}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Flame className="h-5 w-5 text-foreground" />
                     <span className="text-sm text-muted-foreground">Streak</span>
                   </div>
                   <span className="text-2xl font-bold">
-                    {streakLoading ? "—" : streakError ? "—" : streakEmpty ? "0" : streakCurrent}
+                    {streakLoading ? "—" : streakCurrent}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -378,7 +298,7 @@ function Practice() {
                     <span className="text-sm text-muted-foreground">This Week</span>
                   </div>
                   <span className="text-2xl font-bold">
-                    {kpiLoading ? "—" : kpiError ? "—" : kpiEmpty ? "0" : weekSessions}
+                    {kpiLoading ? "—" : weekSessions}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -387,45 +307,21 @@ function Practice() {
                     <span className="text-sm text-muted-foreground">Accuracy</span>
                   </div>
                   <span className="text-2xl font-bold text-foreground">
-                    {kpiLoading
-                      ? "—"
-                      : kpiError
-                      ? "—"
-                      : kpiData?.week?.questionsSolved === 0
-                      ? "—"
-                      : `${weekAccuracy}%`}
+                    {kpiLoading ? "—" : (kpiData?.week?.questionsSolved === 0 ? "—" : `${weekAccuracy}%`)}
                   </span>
                 </div>
-                {kpiEmpty && (
-                  <p className="text-xs text-muted-foreground">No weekly activity recorded yet.</p>
-                )}
-                {streakEmpty && (
-                  <p className="text-xs text-muted-foreground">No practice streak yet.</p>
-                )}
               </div>
             </PageCard>
 
             {/* Total Questions */}
             <PageCard>
               <div className="text-center py-4">
-                {statsError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    <p className="font-medium">Unable to load totals.</p>
-                    <p className="mt-1">{(statsErrorObj as Error)?.message ?? "Please try again."}</p>
-                    <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchStats()}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-4xl font-bold text-primary mb-2">
-                      {statsLoading ? '--' : stats?.total || 0}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {statsEmpty ? "No questions available yet" : "Total Questions Available"}
-                    </p>
-                  </>
-                )}
+                <div className="text-4xl font-bold text-primary mb-2">
+                  {statsLoading ? '--' : stats?.total || 0}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Total Questions Available
+                </p>
               </div>
             </PageCard>
 

@@ -1,23 +1,27 @@
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageCard } from '@/components/common/page-card';
-import { EmptyState } from '@/components/common/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 import { 
   User, Settings, CreditCard, Bell, Shield, LogOut, 
-  Calendar,
+  Edit3, Save, Camera, Mail, Phone, MapPin, Calendar,
   Trophy, Target, BookOpen, Clock, TrendingUp, Star,
-  AlertCircle, CheckCircle,
-  Copy, Users
+  Download, Upload, RefreshCw, AlertCircle, CheckCircle,
+  Eye, EyeOff, Trash2, RotateCcw, FileText, Copy, Users
 } from 'lucide-react';
+import { AdminPDFUpload } from '@/components/admin/AdminPDFUpload';
+import { apiRequest } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
@@ -33,26 +37,92 @@ interface UserProfile {
   lastLoginAt?: string;
 }
 
-// Note: UserStats are not currently tracked by backend
-// Progress tracking uses /api/progress/kpis and /api/progress/projection
-// These features are temporarily disabled and shown as placeholders
+interface UserStats {
+  totalQuestions: number;
+  correctAnswers: number;
+  averageScore: number;
+  studyTime: number;
+  streak: number;
+  mathProgress: number;
+  readingProgress: number;
+  writingProgress: number;
+}
+
+interface NotificationSettings {
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  studyReminders: boolean;
+  progressUpdates: boolean;
+  weeklyReports: boolean;
+}
 
 export default function UserProfile() {
   const [activeTab, setActiveTab] = useState('profile');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<Partial<UserProfile>>({});
+  const [showPassword, setShowPassword] = useState(false);
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user, signOut } = useSupabaseAuth();
 
-  // Get user profile from canonical endpoint
-  const {
-    data: userProfile,
-    isLoading: profileLoading,
-    isError: profileError,
-    error: profileErrorObj,
-    refetch: refetchProfile,
-  } = useQuery<{ user: UserProfile; authenticated: boolean }>({
-    queryKey: ['/api/profile'],
+  // Get user stats
+  const { data: userProfile, isLoading: profileLoading } = useQuery<{ user: UserProfile; authenticated: boolean }>({
+    queryKey: ['/api/auth/user'],
     enabled: !!user,
+  });
+
+  // Get user stats
+  const { data: userStats } = useQuery<UserStats>({
+    queryKey: ['/api/progress/detailed'],
+    enabled: !!userProfile?.authenticated,
+  });
+
+  // Get notification settings
+  const { data: notificationSettings, isLoading: settingsLoading } = useQuery<NotificationSettings>({
+    queryKey: ['/api/user/notification-settings'],
+    enabled: !!userProfile?.authenticated,
+  });
+
+  // Update profile mutation
+  const updateProfileMutation = useMutation({
+    mutationFn: async (updates: Partial<UserProfile>) => {
+      return apiRequest('/api/user/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      setIsEditing(false);
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been successfully updated.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Update Failed",
+        description: "Failed to update your profile. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update notification settings mutation
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (settings: NotificationSettings) => {
+      return apiRequest('/api/user/notification-settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/user/notification-settings'] });
+      toast({
+        title: "Settings Updated",
+        description: "Your notification preferences have been saved.",
+      });
+    },
   });
 
   // Logout handler
@@ -74,61 +144,27 @@ export default function UserProfile() {
     }
   };
 
+  useEffect(() => {
+    if (userProfile?.user) {
+      setEditedProfile(userProfile.user);
+    }
+  }, [userProfile]);
+
+  const handleProfileSave = () => {
+    updateProfileMutation.mutate(editedProfile);
+  };
+
+  const handleNotificationChange = (key: keyof NotificationSettings, value: boolean) => {
+    if (!notificationSettings) return;
+    
+    const updatedSettings = {
+      ...notificationSettings,
+      [key]: value,
+    };
+    updateNotificationsMutation.mutate(updatedSettings);
+  };
+
   const profileUser = userProfile?.user;
-
-  if (profileLoading) {
-    return (
-      <AppShell>
-        <div className="min-h-[60vh] flex items-center justify-center">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-foreground border-t-transparent mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Loading your profile...</p>
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
-  if (profileError) {
-    return (
-      <AppShell>
-        <div className="min-h-[60vh] flex items-center justify-center px-4">
-          <Card className="max-w-md w-full text-center">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <AlertCircle className="h-5 w-5 text-red-500" />
-                Unable to load profile
-              </CardTitle>
-              <CardDescription>
-                {(profileErrorObj as Error)?.message ?? "Please try again."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => refetchProfile()}>Retry</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </AppShell>
-    );
-  }
-
-  // Empty state when no profile data
-  if (!profileUser) {
-    return (
-      <AppShell>
-        <div className="min-h-[60vh] flex items-center justify-center px-4">
-          <EmptyState
-            title="No Profile Data"
-            description="Your profile information could not be found. Please try refreshing or contact support if the issue persists."
-            action={{
-              label: "Refresh",
-              onClick: () => refetchProfile()
-            }}
-          />
-        </div>
-      </AppShell>
-    );
-  }
 
   return (
     <AppShell>
@@ -153,6 +189,14 @@ export default function UserProfile() {
                     {profileUser.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                   </AvatarFallback>
                 </Avatar>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full"
+                  data-testid="button-change-avatar"
+                >
+                  <Camera className="h-4 w-4" />
+                </Button>
               </div>
               <div className="flex-1">
                 <h2 className="text-2xl font-bold mb-1" data-testid="text-profile-name">
@@ -242,10 +286,32 @@ export default function UserProfile() {
           <TabsContent value="profile" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
-                <CardDescription>
-                  Your profile information (editing coming soon)
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Personal Information</CardTitle>
+                    <CardDescription>
+                      Manage your personal details and account information
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant={isEditing ? "default" : "outline"}
+                    onClick={isEditing ? handleProfileSave : () => setIsEditing(true)}
+                    disabled={updateProfileMutation.isPending}
+                    data-testid={isEditing ? "button-save" : "button-edit"}
+                  >
+                    {isEditing ? (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        {updateProfileMutation.isPending ? 'Saving...' : 'Save'}
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Edit
+                      </>
+                    )}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -253,8 +319,9 @@ export default function UserProfile() {
                     <Label htmlFor="name">Full Name</Label>
                     <Input
                       id="name"
-                      value={profileUser?.name || ''}
-                      disabled
+                      value={isEditing ? editedProfile.name || '' : profileUser?.name || ''}
+                      onChange={(e) => setEditedProfile(prev => ({ ...prev, name: e.target.value }))}
+                      disabled={!isEditing}
                       data-testid="input-name"
                     />
                   </div>
@@ -262,8 +329,9 @@ export default function UserProfile() {
                     <Label htmlFor="username">Username</Label>
                     <Input
                       id="username"
-                      value={profileUser?.username || ''}
-                      disabled
+                      value={isEditing ? editedProfile.username || '' : profileUser?.username || ''}
+                      onChange={(e) => setEditedProfile(prev => ({ ...prev, username: e.target.value }))}
+                      disabled={!isEditing}
                       data-testid="input-username"
                     />
                   </div>
@@ -318,14 +386,6 @@ export default function UserProfile() {
 
           {/* Progress Tab */}
           <TabsContent value="progress" className="space-y-6">
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Detailed progress tracking is currently being rebuilt. 
-                Visit the Dashboard for your current stats and progress insights.
-              </AlertDescription>
-            </Alert>
-            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card>
                 <CardHeader>
@@ -336,9 +396,9 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-overall-score">
-                    —
+                    {userStats?.averageScore || 0}%
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">Average performance</p>
                 </CardContent>
               </Card>
 
@@ -351,10 +411,10 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-questions-total">
-                    —
+                    {userStats?.totalQuestions || 0}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Check Dashboard
+                    {userStats?.correctAnswers || 0} correct
                   </p>
                 </CardContent>
               </Card>
@@ -368,9 +428,9 @@ export default function UserProfile() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-primary" data-testid="text-study-time">
-                    —
+                    {Math.round((userStats?.studyTime || 0) / 60)}h
                   </div>
-                  <p className="text-sm text-muted-foreground">Check Dashboard</p>
+                  <p className="text-sm text-muted-foreground">Total practice time</p>
                 </CardContent>
               </Card>
             </div>
@@ -383,10 +443,27 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <EmptyState
-                  title="Coming Soon"
-                  description="Subject-specific progress tracking will be available soon. Keep practicing!"
-                />
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Math</span>
+                    <span>{userStats?.mathProgress || 0}%</span>
+                  </div>
+                  <Progress value={userStats?.mathProgress || 0} className="h-2" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Reading</span>
+                    <span>{userStats?.readingProgress || 0}%</span>
+                  </div>
+                  <Progress value={userStats?.readingProgress || 0} className="h-2" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Writing</span>
+                    <span>{userStats?.writingProgress || 0}%</span>
+                  </div>
+                  <Progress value={userStats?.writingProgress || 0} className="h-2" />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -404,12 +481,28 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Notification settings are coming soon. We'll let you know when this feature is available!
-                  </AlertDescription>
-                </Alert>
+                {notificationSettings && Object.entries(notificationSettings).map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor={key} className="text-sm font-medium">
+                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {key === 'emailNotifications' && 'Receive notifications via email'}
+                        {key === 'pushNotifications' && 'Receive browser push notifications'}
+                        {key === 'studyReminders' && 'Get reminders to study'}
+                        {key === 'progressUpdates' && 'Receive progress milestone updates'}
+                        {key === 'weeklyReports' && 'Get weekly progress reports'}
+                      </p>
+                    </div>
+                    <Switch
+                      id={key}
+                      checked={value}
+                      onCheckedChange={(checked) => handleNotificationChange(key as keyof NotificationSettings, checked)}
+                      data-testid={`switch-${key.toLowerCase()}`}
+                    />
+                  </div>
+                ))}
               </CardContent>
             </Card>
 
@@ -421,14 +514,51 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Data management features (export, reset, delete) are coming soon.
-                  </AlertDescription>
-                </Alert>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Export Your Data</p>
+                    <p className="text-sm text-muted-foreground">
+                      Download all your practice data and progress
+                    </p>
+                  </div>
+                  <Button variant="outline" data-testid="button-export-data">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Reset Progress</p>
+                    <p className="text-sm text-muted-foreground">
+                      Clear all practice history and start fresh
+                    </p>
+                  </div>
+                  <Button variant="outline" data-testid="button-reset-progress">
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset
+                  </Button>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-destructive">Delete Account</p>
+                    <p className="text-sm text-muted-foreground">
+                      Permanently delete your account and all data
+                    </p>
+                  </div>
+                  <Button variant="destructive" data-testid="button-delete-account">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
               </CardContent>
             </Card>
+
+            {/* Admin-only PDF Ingestion */}
+            {profileUser?.isAdmin && (
+              <AdminPDFUpload />
+            )}
           </TabsContent>
 
           {/* Billing Tab */}
@@ -459,10 +589,52 @@ export default function UserProfile() {
                 <Alert>
                   <Star className="h-4 w-4" />
                   <AlertDescription>
-                    Premium subscriptions coming soon! Upgrade to unlock unlimited practice tests, 
-                    detailed analytics, and personalized study plans.
+                    Upgrade to Premium for unlimited practice tests, detailed analytics, 
+                    and personalized study plans.
                   </AlertDescription>
                 </Alert>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Premium Monthly</CardTitle>
+                      <CardDescription>Best for short-term intensive study</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">$19.99/month</div>
+                      <ul className="mt-4 space-y-1 text-sm">
+                        <li>✓ Unlimited practice tests</li>
+                        <li>✓ Detailed performance analytics</li>
+                        <li>✓ Personalized study plans</li>
+                        <li>✓ Priority support</li>
+                      </ul>
+                      <Button className="w-full mt-4" data-testid="button-upgrade-monthly">
+                        Choose Monthly
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Premium Annual</CardTitle>
+                      <CardDescription>Save 40% with annual billing</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">$11.99/month</div>
+                      <div className="text-sm text-muted-foreground">Billed annually at $143.88</div>
+                      <ul className="mt-4 space-y-1 text-sm">
+                        <li>✓ Everything in Monthly</li>
+                        <li>✓ Save 40% annually</li>
+                        <li>✓ Free SAT prep book (PDF)</li>
+                        <li>✓ Exclusive webinars</li>
+                      </ul>
+                      <Button className="w-full mt-4" data-testid="button-upgrade-annual">
+                        Choose Annual
+                        <Badge variant="secondary" className="ml-2">Best Value</Badge>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

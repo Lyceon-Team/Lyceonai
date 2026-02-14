@@ -38,6 +38,7 @@ Backend → Frontend { user: { id, email, role } }
 ### Protected Endpoints
 * **GET /api/profile** → `requireSupabaseAuth` (any authenticated user)
 * **POST /api/practice/sessions** → `requireSupabaseAuth` + `requireConsentCompliance` (FERPA)
+* **POST /api/documents/upload** → `requireSupabaseAdmin` (admin only)
 * **POST /api/documents/process-and-ingest** → `requireSupabaseAdmin` (admin only)
 * **GET /api/admin/questions/needs-review** → `requireSupabaseAdmin` (admin only)
 
@@ -200,7 +201,7 @@ curl -H "Cookie: sb-access-token=..." http://localhost:5000/api/profile
 # Expected: 200 OK with profile data
 
 # Non-admin accessing admin route
-curl -H "Cookie: sb-access-token=..." http://localhost:5000/api/admin/questions/needs-review
+curl -H "Cookie: sb-access-token=..." http://localhost:5000/api/documents/upload
 # Expected: 403 Forbidden (if not admin)
 ```
 

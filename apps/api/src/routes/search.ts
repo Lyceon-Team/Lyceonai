@@ -95,20 +95,6 @@ export const searchQuestions = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in semantic search:', error);
-    
-    // In test mode, return empty results instead of error
-    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
-    if (isTestEnv) {
-      const query = req.query.q as string;
-      const section = req.query.section as string | undefined;
-      return res.json({
-        results: [],
-        total: 0,
-        query: query || '',
-        section: section || null,
-      });
-    }
-    
     res.status(500).json({ 
       error: 'Search failed',
       message: error instanceof Error ? error.message : 'Unknown error'

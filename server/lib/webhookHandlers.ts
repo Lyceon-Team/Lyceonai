@@ -304,8 +304,6 @@ export class WebhookHandlers {
       throw handlerError;
     }
 
-    // TODO: Restore when getStripeSync is implemented
-    /*
     try {
       const sync = await getStripeSync();
       await sync.processWebhook(payload, signature);
@@ -316,7 +314,6 @@ export class WebhookHandlers {
         requestId,
       });
     }
-    */
 
     logger.info('WEBHOOK', 'completed', 'Event processed successfully', { 
       eventId: event.id, 

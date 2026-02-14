@@ -52,9 +52,14 @@ export default function HomePage() {
   };
 
   const trackCtaClick = (ctaText: string) => {
-    // Debug logging for A/B test variant tracking
     console.debug("hero_cta_click", { variant, ctaText });
     console.debug("[A/B Test] Current localStorage:", window.localStorage.getItem("landing_hero_variant"));
+    if (typeof window !== 'undefined' && (window as any).analytics) {
+      (window as any).analytics.track("hero_cta_click", {
+        variant,
+        ctaText,
+      });
+    }
   };
 
   return (
