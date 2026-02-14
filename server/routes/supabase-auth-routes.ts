@@ -329,6 +329,7 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
 /**
  * GET /api/auth/user
  * Get current authenticated user
+ * Returns 200 with {user: null} for anonymous requests
  */
 router.get('/user', async (req: Request, res: Response) => {
   const isProd = process.env.NODE_ENV === 'production';
@@ -340,7 +341,8 @@ router.get('/user', async (req: Request, res: Response) => {
     const token = req.cookies['sb-access-token'];
 
     if (!token) {
-      return res.status(401).json({ error: 'No access token' });
+      // Return 200 with null user for anonymous requests
+      return res.status(200).json({ user: null });
     }
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -419,7 +421,7 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
     
     let { data: profile, error: profileError } = await userSupabase
       .from('profiles')
-      .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code')
+      .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code, first_name, last_name, profile_completed_at')
       .eq('id', user.id)
       .single();
 
@@ -444,7 +446,7 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
           display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
           role: user.user_metadata?.role || 'student'
         })
-        .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code')
+        .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code, first_name, last_name, profile_completed_at')
         .single();
       
       if (createError || !newProfile) {
@@ -472,9 +474,9 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
         display_name: profile.display_name,
         name: normalizedName,
         username: normalizedUsername,
-        firstName: null,
-        lastName: null,
-        profileCompletedAt: null,
+        firstName: profile.first_name || null,
+        lastName: profile.last_name || null,
+        profileCompletedAt: profile.profile_completed_at || null,
         lastLoginAt: null,
         role: profile.role,
         isAdmin: profile.role === 'admin',
@@ -535,6 +537,47 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
   } catch (error) {
     logger.error('AUTH', 'consent_error', 'Consent endpoint error', error);
     res.status(500).json({ error: 'Failed to update consent' });
+  }
+});
+
+/**
+ * POST /api/auth/exchange-session
+ * Exchange tokens for a session (set httpOnly cookies)
+ * CSRF_EXEMPT_REASON: Programmatic token exchange for mobile/API clients - uses Bearer tokens not cookies
+ */
+router.post('/exchange-session', async (req: Request, res: Response) => {
+  try {
+    const { access_token, refresh_token } = req.body;
+
+    if (!access_token || !refresh_token) {
+      return res.status(400).json({ error: 'Missing access_token or refresh_token' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    
+    // Verify the access token is valid
+    const { data: { user }, error: authError } = await supabase.auth.getUser(access_token);
+
+    if (authError || !user) {
+      return res.status(401).json({ error: 'Invalid tokens' });
+    }
+
+    const isProd = process.env.NODE_ENV === 'production';
+    
+    // Set session cookies
+    setAuthCookies(res, {
+      access_token,
+      refresh_token,
+      expires_in: 3600 // Default to 1 hour
+    }, isProd);
+
+    res.json({
+      success: true,
+      message: 'Session established successfully'
+    });
+  } catch (error) {
+    logger.error('AUTH', 'exchange_session_error', 'Session exchange error', error);
+    res.status(500).json({ error: 'Failed to exchange session' });
   }
 });
 

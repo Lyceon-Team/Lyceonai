@@ -22,6 +22,7 @@ const Practice = lazy(() => import("@/pages/practice"));
 const MathPractice = lazy(() => import("@/pages/math-practice"));
 const ReadingWritingPractice = lazy(() => import("@/pages/reading-writing-practice"));
 const RandomPractice = lazy(() => import("@/pages/random-practice"));
+const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const FlowCards = lazy(() => import("@/pages/flow-cards"));
 const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
@@ -62,6 +63,9 @@ function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={Login} />
+        
+        {/* Signup redirects to login page (signup happens via modal/form on login page) */}
+        <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
                 
         {/* SEO Content Pages */}
         <Route path="/digital-sat" component={DigitalSAT} />
@@ -84,6 +88,7 @@ function Router() {
         <Route path="/chat" component={() => <RequireRole allow={['student', 'admin']}><Chat /></RequireRole>} />
         <Route path="/full-test" component={() => <RequireRole allow={['student', 'admin']}><FullTest /></RequireRole>} />
         <Route path="/practice" component={() => <RequireRole allow={['student', 'admin']}><Practice /></RequireRole>} />
+        <Route path="/practice/topics" component={() => <RequireRole allow={['student', 'admin']}><BrowseTopics /></RequireRole>} />
         <Route path="/practice/math" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/practice/reading-writing" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/practice/random" component={() => <RequireRole allow={['student', 'admin']}><RandomPractice /></RequireRole>} />
@@ -107,13 +112,10 @@ function Router() {
         
         {/* Legacy admin routes - redirect to canonical /admin */}
         <Route path="/admin-dashboard">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-pdf-monitor">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-system-config">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-questions">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-review">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-ingest-jobs">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-portal">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-ingest">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-review-v2">{() => <Redirect to="/admin" replace />}</Route>
         
         {/* 404 */}

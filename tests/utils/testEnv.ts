@@ -5,7 +5,6 @@ export const TEST = {
   PDF_PATH: process.env.PDF_PATH || '',
   QA_LLM_ENABLED: process.env.QA_LLM_ENABLED === 'true',
   VECTORS_ENABLED: process.env.VECTORS_ENABLED === 'true',
-  INGEST_TIMEOUT_MS: Number(process.env.INGEST_TIMEOUT_MS || 180000),
   STAGE_WARN_MS: {
     upload: Number(process.env.STAGE_WARN_MS_upload || 10000),
     ocr: Number(process.env.STAGE_WARN_MS_ocr || 60000),

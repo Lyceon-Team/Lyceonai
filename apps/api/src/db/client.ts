@@ -33,17 +33,13 @@ export const initializeDb = async () => {
 
 export const getDbStats = async () => {
   try {
-    const [questionsResult, ingestionRunsResult] = await Promise.all([
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }),
-      supabaseServer.from('ingestion_runs').select('id', { count: 'exact', head: true }),
-    ]);
+    const questionsResult = await supabaseServer.from('questions').select('id', { count: 'exact', head: true });
     
     return {
       questions: Number(questionsResult.count ?? 0),
-      ingestionRuns: Number(ingestionRunsResult.count ?? 0),
     };
   } catch (error) {
     console.error('Error getting database stats:', error);
-    return { questions: 0, ingestionRuns: 0 };
+    return { questions: 0 };
   }
 };

@@ -23,8 +23,17 @@ An AI-powered SAT practice application with RAG (Retrieval-Augmented Generation)
 ### Prerequisites
 
 - Node.js 18+ or 20+
+- **pnpm** (this project uses pnpm, not npm or yarn)
 - PostgreSQL database (Neon, Supabase, or self-hosted)
 - API keys for Gemini and OpenAI (optional for local development)
+
+**Install pnpm:**
+```bash
+# Recommended: Standalone installer
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+# or via npm (if already installed)
+npm install -g pnpm
+```
 
 ### Environment Variables
 
@@ -53,21 +62,23 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5000  # CORS origins (com
 
 ### Installation
 
+**Important:** This project uses **pnpm** exclusively. Do not use `npm install` or `yarn install`.
+
 ```bash
-npm install
+pnpm install
 ```
 
 ### Running the Application
 
 Development mode:
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Production build:
 ```bash
-npm run build
-npm run preview
+pnpm run build
+pnpm run preview
 ```
 
 The app will be available at http://localhost:5000
@@ -181,10 +192,10 @@ Never write SQL migrations manually. Use Drizzle's schema push:
 
 ```bash
 # Safe schema sync
-npm run db:push
+pnpm run db:push
 
 # Force sync (if data loss warning)
-npm run db:push --force
+pnpm run db:push --force
 ```
 
 ### Embeddings Backfill
@@ -222,7 +233,6 @@ To enable vector search in Supabase, run:
 - `POST /api/ingest/run` - Process ingestion batch
 - `GET /api/ingest/status/:jobId` - Check job status
 - `GET /api/ingest/jobs` - List all jobs
-- `POST /api/documents/upload` - Upload PDF
 - `POST /api/documents/process-and-ingest` - Process and ingest PDF
 
 ### Auth Routes
@@ -254,9 +264,9 @@ The application uses structured logging with multiple channels:
 ### Deployment Steps
 1. Set `NODE_ENV=production`
 2. Configure all required environment variables
-3. Run database migrations: `npm run db:push`
+3. Run database migrations: `pnpm run db:push`
 4. Run Supabase vector setup script
-5. Build and start: `npm run build && npm run preview`
+5. Build and start: `pnpm run build && pnpm run preview`
 6. Monitor `/healthz` endpoint for health status
 
 ### Container Deployment
@@ -292,7 +302,7 @@ curl -f http://localhost:5000/healthz || exit 1
 1. Update schema in `shared/schema.ts`
 2. Add API routes in `apps/api/src/routes/`
 3. Create frontend components in `client/src/`
-4. Test with playwright: `npm run test:e2e`
+4. Test with playwright: `pnpm run test:e2e`
 
 ## Troubleshooting
 

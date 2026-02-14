@@ -5,8 +5,10 @@ import { billingStorage } from '../lib/billingStorage';
 import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
+import { csrfGuard } from '../middleware/csrf';
 
 const router = Router();
+const csrfProtection = csrfGuard();
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
   const requestId = req.requestId;
@@ -65,7 +67,7 @@ function resolvePriceIdAndPlan(input: { plan?: string; priceId?: string }): { pl
   return { plan, priceId: input.priceId };
 }
 
-router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const userId = req.user?.id;
@@ -117,13 +119,12 @@ router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response
     const supabaseAdmin = getSupabaseAdmin();
     let accountId: string | null = null;
     let linkedStudentId: string | null = null;
-    const normalizedRole = role === 'parent' ? 'guardian' : role;
 
-    if (normalizedRole === 'admin') {
+    if (role === 'admin') {
       return res.status(403).json({ error: 'Admins cannot initiate checkout', requestId });
-    } else if (normalizedRole === 'student') {
+    } else if (role === 'student') {
       accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
-    } else if (normalizedRole === 'guardian') {
+    } else if (role === 'guardian') {
       const link = await getPrimaryGuardianLink(userId);
       if (!link?.student_user_id) {
         return res.status(400).json({ error: 'Guardian has no linked student. Link a student before subscribing.', requestId });
@@ -169,7 +170,7 @@ if (!customerId) {
     metadata: {
       account_id: accountId,
       payer_user_id: userId,
-      payer_role: normalizedRole, // "student" | "guardian"
+      payer_role: role, // "student" | "guardian"
     },
   });
 
@@ -185,7 +186,7 @@ if (!customerId) {
     userId,
     accountId,
     customerId,
-    role: normalizedRole,
+    role: role,
     requestId,
   });
 } else {
@@ -193,7 +194,7 @@ if (!customerId) {
     userId,
     accountId,
     customerId,
-    role: normalizedRole,
+    role: role,
     requestId,
   });
 }
@@ -505,7 +506,7 @@ router.get('/portal', (req, res) => {
 });
 
 
-router.post('/portal', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post('/portal', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const userId = req.user!.id;

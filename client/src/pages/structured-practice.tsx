@@ -33,7 +33,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     autoStart: false,
     onExpire: () => {
       if (isSessionActive) {
-        handleEndSession();
+        handleExitSession();
       }
     }
   });
@@ -51,7 +51,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     submitAnswer,
     skipQuestion,
     startSession,
-    endSession,
+    resetSession,
   } = useAdaptivePractice({
     section: sectionNormalized,
     mode: 'structured',
@@ -97,43 +97,16 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
 
   const handleSkip = async () => {
     if (!currentQuestion || !sessionId) return;
-
-    setIsValidating(true);
-    try {
-      await apiRequest(`/api/practice/answer`, {
-        method: "POST",
-        body: JSON.stringify({
-          sessionId,
-          questionId: currentQuestion.id,
-          skipped: true,
-          selectedAnswer: null,
-          freeResponseAnswer: null,
-          elapsedMs: 0,
-        }),
-      });
-
-      setScore(prev => ({
-        ...prev,
-        skipped: prev.skipped + 1,
-        total: prev.total + 1,
-        streak: 0,
-      }));
-    } catch (e) {
-      console.error("Error skipping question:", e);
-      // still let them move on, but repetition risk remains if backend doesn't record skip
-    } finally {
-      setIsValidating(false);
-      await handleNext();
-    }
+    await skipQuestion();
   };
 
-  const handleEndSession = async () => {
+  const handleExitSession = async () => {
     timer.pause();
     setIsSessionActive(false);
-    await endSession();
+    resetSession();
     toast({
-      title: "Session Complete!",
-      description: `You answered ${score.correct} out of ${score.total} questions correctly.`
+      title: "Session ended",
+      description: "This session was ended locally. Your stats reflect the answers submitted so far."
     });
   };
 
@@ -266,8 +239,8 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
               <span className="font-medium text-[#0F2E48]">{score.correct}/{score.total}</span>
             </div>
             
-            <Button variant="outline" size="sm" onClick={handleEndSession}>
-              <Flag className="w-4 h-4 mr-1" /> End
+            <Button variant="outline" size="sm" onClick={handleExitSession}>
+              <Flag className="w-4 h-4 mr-1" /> Exit Session
             </Button>
           </div>
         </div>
@@ -295,14 +268,14 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
             <CardContent className="space-y-6">
               <QuestionRenderer
                 question={currentQuestion}
-                questionIndex={score.total}
                 selectedAnswer={selectedAnswer}
                 freeResponseAnswer={freeResponseAnswer}
-                onAnswerSelect={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
-                onFreeResponseChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
+                onSelectAnswer={(answer) => { if (!isAnswered) setSelectedAnswer(answer); }}
+                onFreeResponseAnswerChange={(answer) => { if (!isAnswered) setFreeResponseAnswer(answer); }}
                 showResult={showExplanation}
-                validationResult={validationResult}
-                hideActions={true}
+                isCorrect={validationResult?.isCorrect}
+                correctAnswerKey={validationResult?.correctAnswerKey ?? undefined}
+                explanation={validationResult?.explanation ?? undefined}
               />
 
               {showExplanation && validationResult && (

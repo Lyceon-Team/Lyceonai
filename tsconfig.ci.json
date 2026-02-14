@@ -1,0 +1,55 @@
+{
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo.ci",
+    "target": "ES2020",
+    "noEmit": true,
+    "module": "ESNext",
+    "strict": true,
+    "lib": ["ES2020", "dom", "dom.iterable"],
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "bundler",
+    "downlevelIteration": true,
+    "baseUrl": ".",
+    "types": ["node", "vite/client"],
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "paths": {
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": [
+    "client/src/**/*",
+    "client/*.d.ts",
+    "shared/**/*",
+    "types/**/*",
+    "server/middleware/**/*",
+    "server/routes/**/*",
+    "server/services/**/*",
+    "server/lib/**/*",
+    "server/index.ts",
+    "server/logger.ts",
+    "server/seo-content.ts",
+    "apps/api/src/config.ts",
+    "apps/api/src/db/**/*",
+    "apps/api/src/env.ts",
+    "apps/api/src/lib/**/*",
+    "apps/api/src/middleware/**/*",
+    "apps/api/src/routes/**/*",
+    "apps/api/src/services/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "client/src/test/setupTests.ts",
+    "client/src/__tests__/**/*",
+    "apps/api/scripts/**/*"
+  ]
+}

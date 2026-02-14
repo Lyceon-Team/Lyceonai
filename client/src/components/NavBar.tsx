@@ -81,7 +81,7 @@ export default function NavBar() {
               {isAdmin && (
                 <>
                   <DropdownMenuSeparator className="bg-muted" />
-                  <DropdownMenuItem onClick={() => navigate('/admin-dashboard')} data-testid="menu-admin" className="hover:bg-secondary focus:bg-secondary">
+                  <DropdownMenuItem onClick={() => navigate('/admin')} data-testid="menu-admin" className="hover:bg-secondary focus:bg-secondary">
                     Admin Dashboard
                   </DropdownMenuItem>
                 </>

@@ -360,6 +360,107 @@ export const examSections = pgTable("exam_sections", {
   status: text("status").notNull().default("pending"), // 'pending', 'in_progress', 'completed', 'timed_out'
 });
 
+// ============================================================================
+// FULL-LENGTH SAT EXAM TABLES (Bluebook-style adaptive testing)
+// ============================================================================
+
+/**
+ * Full-length exam sessions - tracks complete SAT exam attempts
+ * Supports Bluebook-style adaptive testing with deterministic question selection
+ */
+export const fullLengthExamSessions = pgTable("full_length_exam_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  
+  // Session state
+  status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'completed', 'abandoned'
+  currentSection: text("current_section"), // 'rw' | 'math' | 'break' | null
+  currentModule: integer("current_module"), // 1 | 2 | null
+  
+  // Deterministic selection
+  seed: text("seed").notNull(), // For reproducible question selection
+  
+  // Timestamps
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Exam modules - tracks individual modules within a full-length exam
+ * Each exam has 4 modules: RW Module 1, RW Module 2, Math Module 1, Math Module 2
+ */
+export const fullLengthExamModules = pgTable("full_length_exam_modules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
+  
+  // Module identification
+  section: text("section").notNull(), // 'rw' | 'math'
+  moduleIndex: integer("module_index").notNull(), // 1 | 2
+  
+  // Adaptive difficulty (determined by Module 1 performance for Module 2)
+  difficultyBucket: text("difficulty_bucket"), // 'easy' | 'medium' | 'hard' | null (null for module 1, set after module 1 submit)
+  
+  // Timing (server-authoritative)
+  targetDurationMs: integer("target_duration_ms").notNull(), // RW: 32min (1920000ms), Math: 35min (2100000ms)
+  startedAt: timestamp("started_at"),
+  endsAt: timestamp("ends_at"), // Computed: startedAt + targetDurationMs
+  submittedAt: timestamp("submitted_at"),
+  
+  // State
+  status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'submitted', 'expired'
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Exam module questions - deterministic mapping of questions to modules
+ * Stores which questions were presented in which order
+ */
+export const fullLengthExamQuestions = pgTable("full_length_exam_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  moduleId: varchar("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
+  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
+  
+  // Ordering
+  orderIndex: integer("order_index").notNull(), // 0-based index within module
+  
+  // Presentation tracking
+  presentedAt: timestamp("presented_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Exam responses - student answers to exam questions
+ * Supports idempotent submission and tracks correctness server-side
+ */
+export const fullLengthExamResponses = pgTable("full_length_exam_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
+  moduleId: varchar("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
+  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
+  
+  // Answer
+  selectedAnswer: text("selected_answer"), // For MC questions
+  freeResponseAnswer: text("free_response_answer"), // For FR questions
+  
+  // Correctness (computed server-side, never sent to client before submit)
+  isCorrect: boolean("is_correct"),
+  
+  // Timestamps
+  answeredAt: timestamp("answered_at"),
+  submittedAt: timestamp("submitted_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  // Unique constraint for idempotent answer submission
+  // Ensures one response per question per module per session
+  { uniqueSessionModuleQuestion: sql`UNIQUE(${table.sessionId}, ${table.moduleId}, ${table.questionId})` }
+]);
+
 // DEPRECATED: batch_jobs tables removed - use ingestion_runs instead
 // See ingestionRuns table below for current ingestion tracking
 
@@ -560,6 +661,29 @@ export const insertExamSectionSchema = createInsertSchema(examSections).omit({
   id: true,
 });
 
+// Full-length exam insert schemas
+export const insertFullLengthExamSessionSchema = createInsertSchema(fullLengthExamSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFullLengthExamModuleSchema = createInsertSchema(fullLengthExamModules).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFullLengthExamQuestionSchema = createInsertSchema(fullLengthExamQuestions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFullLengthExamResponseSchema = createInsertSchema(fullLengthExamResponses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertQuestionSchema = createInsertSchema(questions).omit({
   id: true,
   createdAt: true,
@@ -677,6 +801,19 @@ export type ExamAttempt = typeof examAttempts.$inferSelect;
 
 export type InsertExamSection = z.infer<typeof insertExamSectionSchema>;
 export type ExamSection = typeof examSections.$inferSelect;
+
+// Full-length exam types
+export type InsertFullLengthExamSession = z.infer<typeof insertFullLengthExamSessionSchema>;
+export type FullLengthExamSession = typeof fullLengthExamSessions.$inferSelect;
+
+export type InsertFullLengthExamModule = z.infer<typeof insertFullLengthExamModuleSchema>;
+export type FullLengthExamModule = typeof fullLengthExamModules.$inferSelect;
+
+export type InsertFullLengthExamQuestion = z.infer<typeof insertFullLengthExamQuestionSchema>;
+export type FullLengthExamQuestion = typeof fullLengthExamQuestions.$inferSelect;
+
+export type InsertFullLengthExamResponse = z.infer<typeof insertFullLengthExamResponseSchema>;
+export type FullLengthExamResponse = typeof fullLengthExamResponses.$inferSelect;
 
 // DEPRECATED: BatchJob and BatchFileProgress types removed - use IngestionRun instead
 

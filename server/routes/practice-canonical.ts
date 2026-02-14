@@ -6,11 +6,13 @@ import { csrfGuard } from "../middleware/csrf";
 import { recordCompetencyEvent } from "../../apps/api/src/routes/progress";
 import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
-import { getQuestionMetadataForAttempt, logAttemptAndUpdateMastery } from "../../apps/api/src/services/studentMastery";
+import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
+import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 
 
 
 const router = Router();
+const csrfProtection = csrfGuard();
 
 /**
  * DB truth (from your questions_rows (6).csv):
@@ -303,7 +305,7 @@ const AnswerBodySchema = z.object({
   elapsedMs: z.number().optional().nullable(),
 });
 
-router.post("/answer", requireSupabaseAuth, async (req, res) => {
+router.post("/answer", requireSupabaseAuth, csrfProtection, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -425,16 +427,18 @@ router.post("/answer", requireSupabaseAuth, async (req, res) => {
   }
 
   // Log to student_question_attempts + update mastery rollups
+  // MASTERY V1.0: Use PRACTICE_SUBMIT event type for proper weighting
   try {
     const metadata = await getQuestionMetadataForAttempt(questionId);
     if (metadata.canonicalId) {
-      await logAttemptAndUpdateMastery({
+      await applyMasteryUpdate({
         userId,
         questionCanonicalId: metadata.canonicalId,
         sessionId,
         isCorrect,
         selectedChoice: qType === "mc" ? (selectedAnswer ?? null) : null,
         timeSpentMs: clampedTimeSpentMs,
+        eventType: MasteryEventType.PRACTICE_SUBMIT,
         metadata: {
           exam: metadata.exam,
           section: metadata.section,

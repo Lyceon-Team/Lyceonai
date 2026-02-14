@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Progress } from "@/components/ui/progress";
-import { BookOpen, AlertCircle, User, MapPin, Phone, Calendar, Globe, CheckCircle, ExternalLink, Shield } from "lucide-react";
+import { BookOpen, AlertCircle, User, MapPin, Phone, Calendar, Globe, CheckCircle, ExternalLink, Shield, RefreshCw } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -52,6 +52,18 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 
+interface AuthUserResponse {
+  user?: {
+    profileCompletedAt?: string;
+    [key: string]: any;
+  } | null;
+  authenticated?: boolean;
+}
+
+function isAuthUserResponse(data: unknown): data is AuthUserResponse {
+  return typeof data === 'object' && data !== null;
+}
+
 export default function ProfileComplete() {
   const [location, navigate] = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
@@ -62,7 +74,7 @@ export default function ProfileComplete() {
   const progress = (currentStep / totalSteps) * 100;
 
   // Check if user is authenticated
-  const { data: userProfile, isLoading: authLoading } = useQuery({
+  const { data: userProfile, isLoading: authLoading, error: authError, refetch: refetchUser } = useQuery<AuthUserResponse>({
     queryKey: ['/api/auth/user'],
     retry: false
   });
@@ -96,10 +108,12 @@ export default function ProfileComplete() {
   // Profile completion mutation
   const completeProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
-      const response = await apiRequest('/auth/complete-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+      const response = await apiRequest('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       return response;
     },
@@ -118,13 +132,56 @@ export default function ProfileComplete() {
   });
 
   // Redirect if not authenticated
-  if (!authLoading && !(userProfile as any)?.authenticated) {
+  if (!authLoading && !authError && !userProfile?.authenticated) {
     navigate('/login');
     return null;
   }
 
+  // Show error state if auth check failed
+  if (authError && !authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Authentication Error
+            </CardTitle>
+            <CardDescription>
+              Failed to verify your authentication status
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {authError instanceof Error ? authError.message : 'Unable to connect to authentication service'}
+              </AlertDescription>
+            </Alert>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => refetchUser()}
+                className="flex-1"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/login')}
+                className="flex-1"
+              >
+                Back to Login
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Redirect if profile already completed
-  if ((userProfile as any)?.user?.profileCompletedAt) {
+  if (userProfile?.user?.profileCompletedAt) {
     navigate('/');
     return null;
   }
@@ -136,6 +193,43 @@ export default function ProfileComplete() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="mt-2 text-muted-foreground">Loading...</p>
         </div>
+      </div>
+    );
+  }
+
+  // Empty state when no auth payload
+  if (!userProfile || !userProfile?.user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full text-center">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              No Profile Data
+            </CardTitle>
+            <CardDescription>
+              Unable to load your profile information. Please sign in to continue.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => refetchUser()}
+                className="flex-1"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/login')}
+                className="flex-1"
+              >
+                Back to Login
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -191,7 +285,8 @@ export default function ProfileComplete() {
       console.error('Failed to record legal acceptances:', err);
     }
 
-    completeProfileMutation.mutate(data);
+    // Call the profile completion mutation
+    await completeProfileMutation.mutateAsync(data);
   };
 
   const nextStep = () => {
