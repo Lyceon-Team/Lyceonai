@@ -687,6 +687,14 @@ if (isMainModule) {
     console.log(`  GET    /api/notifications/unread-count`);
     console.log(`  PATCH  /api/notifications/:id/read`);
     console.log(`  PATCH  /api/notifications/mark-all-read`);
+    console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
+    console.log(`  POST   /api/full-length/sessions`);
+    console.log(`  GET    /api/full-length/sessions/current`);
+    console.log(`  POST   /api/full-length/sessions/:sessionId/start`);
+    console.log(`  POST   /api/full-length/sessions/:sessionId/answer`);
+    console.log(`  POST   /api/full-length/sessions/:sessionId/module/submit`);
+    console.log(`  POST   /api/full-length/sessions/:sessionId/break/continue`);
+    console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
   });
 
   // Graceful shutdown
