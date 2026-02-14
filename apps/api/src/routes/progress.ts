@@ -433,15 +433,26 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
   }
 };
 
-// ============================================================================
-// GET /api/progress/projection - Score Projection with College Board Weights
-// ============================================================================
+/**
+ * GET /api/progress/projection - Score Projection with College Board Weights
+ * 
+ * READ ONLY: Fetches STORED mastery data and computes DERIVED SAT score projection.
+ * 
+ * Does NOT:
+ * - Recalculate mastery_score (uses stored values from student_skill_mastery)
+ * - Apply decay to stored values (decay is applied only for projection display)
+ * - Mutate any mastery state
+ * 
+ * SOURCE OF TRUTH: student_skill_mastery table
+ * DERIVED COMPUTATION: score-projection.ts (applies decay and weighting for display)
+ */
 export const getScoreProjection = async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    // READ ONLY: Fetch stored mastery scores from authoritative table
     const { data: masteryRows, error: masteryError } = await supabaseServer
       .from('student_skill_mastery')
       .select('section, domain, skill, mastery_score, attempts, updated_at')
@@ -507,6 +518,8 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
       });
     }
     
+    // DERIVED COMPUTATION: Project SAT score from stored mastery data
+    // This does NOT recalculate mastery_score, only applies weighting and decay for display
     const projection: ScoreProjection = calculateScore(masteryArray, totalQuestions);
 
     res.json({

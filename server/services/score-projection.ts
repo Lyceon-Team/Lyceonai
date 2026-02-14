@@ -1,8 +1,26 @@
 /**
- * Score Projection Engine
+ * Score Projection Engine - Sprint 3 True Half-Life
+ * 
+ * DERIVED COMPUTATION MODULE - READ ONLY
+ * 
+ * This module computes DERIVED SAT score projections from STORED mastery data.
+ * It does NOT:
+ * - Write to mastery tables
+ * - Recalculate mastery_score (uses stored values from student_skill_mastery)
+ * - Mutate any mastery state
+ * 
+ * WHAT IT DOES:
+ * - Normalizes mastery_score from [0-100] to [0-1] for SAT calculation
+ * - Weights domains using College Board weights
+ * - Projects SAT scores with confidence intervals
+ * 
+ * SOURCE OF TRUTH: student_skill_mastery table (written by mastery-write.ts)
+ * 
+ * NOTE: Decay is now PERSISTED in the database via True Half-Life formula.
+ * No additional client-side decay is applied.
  * 
  * Implements College Board domain weights for SAT score projection
- * with recency decay and cube root confidence intervals.
+ * with cube root confidence intervals.
  */
 
 const SCORING_MODEL = {
@@ -24,8 +42,6 @@ const SCORING_MODEL = {
     }
   }
 };
-
-const DECAY_RATE = 0.95;
 
 export interface DomainMastery {
   domain: string;
@@ -59,25 +75,16 @@ interface DomainBreakdown {
 }
 
 /**
- * Apply recency decay to mastery score based on weeks inactive
- * Decay_Factor = 0.95 ^ Weeks_Inactive
+ * Normalize mastery_score from [0-100] to [0-1] for SAT calculation
+ * 
+ * Sprint 3: mastery_score is stored on [0-100] scale in the database.
+ * SAT score formula expects probability p in [0-1] range.
+ * 
+ * @param masteryScore - Stored mastery_score (0-100 scale)
+ * @returns Normalized probability p (0-1 scale)
  */
-function applyRecencyDecay(mastery: number, lastActivity: Date | string | null | undefined): number {
-  if (!lastActivity) {
-    return mastery;
-  }
-  
-  const lastDate = typeof lastActivity === 'string' ? new Date(lastActivity) : lastActivity;
-  const now = new Date();
-  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
-  const weeksInactive = Math.floor((now.getTime() - lastDate.getTime()) / msPerWeek);
-  
-  if (weeksInactive <= 0) {
-    return mastery;
-  }
-  
-  const decayFactor = Math.pow(DECAY_RATE, weeksInactive);
-  return mastery * decayFactor;
+function normalizeMasteryScore(masteryScore: number): number {
+  return masteryScore / 100.0;
 }
 
 /**
@@ -94,11 +101,17 @@ function calculateVariance(totalQuestions: number): number {
 /**
  * Calculate projected SAT score from mastery data
  * 
+ * DERIVED COMPUTATION: Projects SAT score from STORED mastery data.
+ * Does NOT recalculate or mutate stored mastery_score values.
+ * 
  * Algorithm:
- * 1. Group mastery by domain with recency decay applied
- * 2. Apply College Board weights: Section_Mastery = Sum(Domain_Mastery * Domain_Weight)
+ * 1. Normalize mastery_score from [0-100] to [0-1] for probability p
+ * 2. Apply College Board weights: Section_Mastery = Sum(Domain_p * Domain_Weight)
  * 3. Calculate raw score: Projected = 200 + (600 * Section_Mastery)
  * 4. Apply cube root variance for confidence intervals
+ * 
+ * NOTE: Decay is already PERSISTED in mastery_score via True Half-Life formula.
+ * No additional client-side decay is needed.
  */
 export function calculateScore(masteryData: DomainMastery[], totalQuestions: number): ScoreProjection {
   const mathBreakdown: DomainBreakdown[] = [];
@@ -117,10 +130,9 @@ export function calculateScore(masteryData: DomainMastery[], totalQuestions: num
     const domainData = masteryData.find(m => m.section === 'math' && m.domain === domain);
     
     const rawMastery = domainData?.mastery_score ?? 0;
-    const decayedMastery = domainData 
-      ? applyRecencyDecay(rawMastery, domainData.last_activity)
-      : 0;
-    const contribution = decayedMastery * weight;
+    // Normalize from [0-100] to [0-1] - decay already persisted in rawMastery
+    const normalizedMastery = normalizeMasteryScore(rawMastery);
+    const contribution = normalizedMastery * weight;
     
     mathWeightedSum += contribution;
     mathTotalWeight += weight;
@@ -129,7 +141,7 @@ export function calculateScore(masteryData: DomainMastery[], totalQuestions: num
       domain,
       weight,
       rawMastery,
-      decayedMastery,
+      decayedMastery: normalizedMastery, // Keep field name for compatibility
       contribution
     });
   }
@@ -139,10 +151,9 @@ export function calculateScore(masteryData: DomainMastery[], totalQuestions: num
     const domainData = masteryData.find(m => m.section === 'rw' && m.domain === domain);
     
     const rawMastery = domainData?.mastery_score ?? 0;
-    const decayedMastery = domainData 
-      ? applyRecencyDecay(rawMastery, domainData.last_activity)
-      : 0;
-    const contribution = decayedMastery * weight;
+    // Normalize from [0-100] to [0-1] - decay already persisted in rawMastery
+    const normalizedMastery = normalizeMasteryScore(rawMastery);
+    const contribution = normalizedMastery * weight;
     
     rwWeightedSum += contribution;
     rwTotalWeight += weight;
@@ -151,7 +162,7 @@ export function calculateScore(masteryData: DomainMastery[], totalQuestions: num
       domain,
       weight,
       rawMastery,
-      decayedMastery,
+      decayedMastery: normalizedMastery, // Keep field name for compatibility
       contribution
     });
   }
@@ -188,4 +199,4 @@ export function calculateScore(masteryData: DomainMastery[], totalQuestions: num
   };
 }
 
-export { SCORING_MODEL, DECAY_RATE };
+export { SCORING_MODEL };

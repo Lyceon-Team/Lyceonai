@@ -24,6 +24,7 @@ import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
 import { legalRouter } from "./routes/legal-routes.js";
+import fullLengthExamRouter from "./routes/full-length-exam-routes";
 import {
   getQuestions,
   getRandomQuestions,
@@ -62,6 +63,7 @@ import { csrfGuard } from "./middleware/csrf";
 import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
 import { weaknessRouter } from "../apps/api/src/routes/weakness";
 import { masteryRouter } from "../apps/api/src/routes/mastery";
+import { diagnosticRouter } from "../apps/api/src/routes/diagnostic";
 import { calendarRouter } from "../apps/api/src/routes/calendar";
 import { getScoreProjection, getRecencyKpis } from "../apps/api/src/routes/progress";
 import guardianRoutes from "./routes/guardian-routes";
@@ -323,6 +325,7 @@ app.use("/api/notifications", notificationRoutes);
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
+app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
@@ -483,6 +486,10 @@ app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, g
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
 app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+
+// Full-Length Exam Routes (Bluebook-style SAT exams)
+// All routes require Supabase auth and are student-only
+app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
