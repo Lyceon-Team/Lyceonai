@@ -14,3 +14,7 @@ replit.nix
 *.bak
 package-lock.json
 *.tsbuildinfo
+
+# Data exports - prevent leaking question answers
+*.csv
+!docs/samples/*.csv
