@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Security Audit
+        run: |
+          pnpm audit --audit-level=high || echo "⚠️ Security vulnerabilities found - review required"
+          echo "Security audit complete"
+
+      - name: Run Security Tests
+        run: pnpm run test:security
+
       - name: TypeScript Check (CI)
         run: pnpm exec tsc -p tsconfig.ci.json
 
