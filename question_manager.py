@@ -2,21 +2,30 @@
 """
 SAT Question Manager - Simple command-line tool for managing questions
 Usage: python3 question_manager.py [command] [options]
+
+Environment variables:
+- LYCEON_API_URL: API base URL (default: http://localhost:5000)
+- LYCEON_API_TOKEN: API authentication token (optional)
 """
 
 import json
 import requests
 import sys
 import argparse
+import os
 from typing import Optional, Dict, Any
 
-BASE_URL = "http://localhost:5000"
+BASE_URL = os.getenv("LYCEON_API_URL", "http://localhost:5000")
 
 
 class QuestionManager:
 
-    def __init__(self):
-        self.base_url = BASE_URL
+    def __init__(self, api_url: Optional[str] = None, auth_token: Optional[str] = None):
+        self.base_url = api_url or BASE_URL
+        self.auth_token = auth_token or os.getenv("LYCEON_API_TOKEN")
+        self.headers = {}
+        if self.auth_token:
+            self.headers["Authorization"] = f"Bearer {self.auth_token}"
 
     def get_all_questions(self,
                           limit: int = 50,
@@ -27,7 +36,7 @@ class QuestionManager:
             params['includeUnvalidated'] = 'true'
 
         response = requests.get(f"{self.base_url}/api/admin/questions",
-                                params=params)
+                                params=params, headers=self.headers)
         response.raise_for_status()
         return response.json()
 
@@ -40,13 +49,15 @@ class QuestionManager:
                                                               Any]) -> bool:
         """Update a question"""
         response = requests.put(
-            f"{self.base_url}/api/admin/questions/{question_id}", json=updates)
+            f"{self.base_url}/api/admin/questions/{question_id}", 
+            json=updates, headers=self.headers)
         return response.status_code == 200 and response.json().get('success')
 
     def delete_question(self, question_id: str) -> bool:
         """Delete a question"""
         response = requests.delete(
-            f"{self.base_url}/api/admin/questions/{question_id}")
+            f"{self.base_url}/api/admin/questions/{question_id}",
+            headers=self.headers)
         return response.status_code == 200 and response.json().get('success')
 
     def list_questions_formatted(self, limit: int = 10):
