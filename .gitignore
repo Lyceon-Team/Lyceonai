@@ -13,3 +13,4 @@ replit.nix
 *.backup
 *.bak
 package-lock.json
+*.tsbuildinfo
