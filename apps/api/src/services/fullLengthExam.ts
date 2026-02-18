@@ -210,6 +210,86 @@ function determineModule2Difficulty(
 }
 
 /**
+ * Format a score rollup DB row as a CompleteExamResult
+ */
+function formatRollupAsResult(
+  rollup: {
+    session_id: string;
+    rw_correct: number;
+    rw_total: number;
+    math_correct: number;
+    math_total: number;
+    overall_score: number;
+  },
+  completedAt: Date
+): CompleteExamResult {
+  // Note: We don't have module-level breakdown in rollup, so we return aggregated values
+  // This is acceptable as the rollup stores the final computed totals
+  return {
+    sessionId: rollup.session_id,
+    rwScore: {
+      module1: { correct: 0, total: 0 }, // Not stored in rollup
+      module2: { correct: 0, total: 0 }, // Not stored in rollup
+      totalCorrect: rollup.rw_correct,
+      totalQuestions: rollup.rw_total,
+    },
+    mathScore: {
+      module1: { correct: 0, total: 0 }, // Not stored in rollup
+      module2: { correct: 0, total: 0 }, // Not stored in rollup
+      totalCorrect: rollup.math_correct,
+      totalQuestions: rollup.math_total,
+    },
+    overallScore: {
+      totalCorrect: rollup.overall_score,
+      totalQuestions: rollup.rw_total + rollup.math_total,
+      percentageCorrect:
+        rollup.rw_total + rollup.math_total > 0
+          ? (rollup.overall_score / (rollup.rw_total + rollup.math_total)) * 100
+          : 0,
+    },
+    completedAt,
+  };
+}
+
+/**
+ * Compute exam scores from modules and responses, then persist to rollups table
+ */
+async function computeAndPersistExamScores(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  userId: string,
+  completedAt: Date
+): Promise<CompleteExamResult> {
+  // First compute scores from responses
+  const result = await computeExamScores(supabase, sessionId, completedAt);
+
+  // Persist to rollups table (upsert to handle race conditions)
+  const { error: insertError } = await supabase
+    .from("full_length_exam_score_rollups")
+    .upsert(
+      {
+        session_id: sessionId,
+        user_id: userId,
+        rw_correct: result.rwScore.totalCorrect,
+        rw_total: result.rwScore.totalQuestions,
+        math_correct: result.mathScore.totalCorrect,
+        math_total: result.mathScore.totalQuestions,
+        overall_score: result.overallScore.totalCorrect,
+        created_at: completedAt.toISOString(),
+      },
+      {
+        onConflict: "session_id",
+      }
+    );
+
+  if (insertError) {
+    throw new Error(`Failed to persist score rollup: ${insertError.message}`);
+  }
+
+  return result;
+}
+
+/**
  * Compute exam scores from modules and responses
  * Used for both initial completion and idempotent re-computation
  */
@@ -1106,14 +1186,21 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return existing result
+  // Idempotency: if already completed, return existing rollup from DB
   if (session.status === "completed") {
-    // Re-compute and return the existing result using helper
-    return await computeExamScores(
-      supabase,
-      params.sessionId,
-      new Date(session.completed_at!)
-    );
+    // Fetch existing rollup from database (deterministic)
+    const { data: existingRollup, error: rollupError } = await supabase
+      .from("full_length_exam_score_rollups")
+      .select("*")
+      .eq("session_id", params.sessionId)
+      .single();
+
+    if (rollupError || !existingRollup) {
+      throw new Error("Score rollup not found for completed session");
+    }
+
+    // Return rollup data in CompleteExamResult format
+    return formatRollupAsResult(existingRollup, new Date(session.completed_at!));
   }
 
   // Terminal-state guard: enforce preconditions for completion
@@ -1186,17 +1273,28 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      // Session was completed by concurrent request - return existing result using helper
-      return await computeExamScores(
-        supabase,
-        params.sessionId,
-        new Date(completedSession.completed_at!)
-      );
+      // Session was completed by concurrent request - return existing rollup from DB
+      const { data: existingRollup, error: rollupError } = await supabase
+        .from("full_length_exam_score_rollups")
+        .select("*")
+        .eq("session_id", params.sessionId)
+        .single();
+
+      if (rollupError || !existingRollup) {
+        throw new Error("Score rollup not found for completed session");
+      }
+
+      return formatRollupAsResult(existingRollup, new Date(completedSession.completed_at!));
     } else {
       throw new Error("Invalid exam state");
     }
   }
 
-  // Success: compute and return scores using helper
-  return await computeExamScores(supabase, params.sessionId, completedAt);
+  // Success: compute scores, persist rollup, and return
+  return await computeAndPersistExamScores(
+    supabase,
+    params.sessionId,
+    params.userId,
+    completedAt
+  );
 }
