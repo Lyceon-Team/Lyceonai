@@ -215,36 +215,44 @@ function determineModule2Difficulty(
 function formatRollupAsResult(
   rollup: {
     session_id: string;
-    rw_correct: number;
-    rw_total: number;
-    math_correct: number;
-    math_total: number;
+    rw_module1_correct: number;
+    rw_module1_total: number;
+    rw_module2_correct: number;
+    rw_module2_total: number;
+    math_module1_correct: number;
+    math_module1_total: number;
+    math_module2_correct: number;
+    math_module2_total: number;
     overall_score: number;
   },
   completedAt: Date
 ): CompleteExamResult {
-  // Note: We don't have module-level breakdown in rollup, so we return aggregated values
-  // This is acceptable as the rollup stores the final computed totals
+  const rwTotalCorrect = rollup.rw_module1_correct + rollup.rw_module2_correct;
+  const rwTotalQuestions = rollup.rw_module1_total + rollup.rw_module2_total;
+  const mathTotalCorrect = rollup.math_module1_correct + rollup.math_module2_correct;
+  const mathTotalQuestions = rollup.math_module1_total + rollup.math_module2_total;
+  const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
+
   return {
     sessionId: rollup.session_id,
     rwScore: {
-      module1: { correct: 0, total: 0 }, // Not stored in rollup
-      module2: { correct: 0, total: 0 }, // Not stored in rollup
-      totalCorrect: rollup.rw_correct,
-      totalQuestions: rollup.rw_total,
+      module1: { correct: rollup.rw_module1_correct, total: rollup.rw_module1_total },
+      module2: { correct: rollup.rw_module2_correct, total: rollup.rw_module2_total },
+      totalCorrect: rwTotalCorrect,
+      totalQuestions: rwTotalQuestions,
     },
     mathScore: {
-      module1: { correct: 0, total: 0 }, // Not stored in rollup
-      module2: { correct: 0, total: 0 }, // Not stored in rollup
-      totalCorrect: rollup.math_correct,
-      totalQuestions: rollup.math_total,
+      module1: { correct: rollup.math_module1_correct, total: rollup.math_module1_total },
+      module2: { correct: rollup.math_module2_correct, total: rollup.math_module2_total },
+      totalCorrect: mathTotalCorrect,
+      totalQuestions: mathTotalQuestions,
     },
     overallScore: {
       totalCorrect: rollup.overall_score,
-      totalQuestions: rollup.rw_total + rollup.math_total,
+      totalQuestions: overallTotalQuestions,
       percentageCorrect:
-        rollup.rw_total + rollup.math_total > 0
-          ? (rollup.overall_score / (rollup.rw_total + rollup.math_total)) * 100
+        overallTotalQuestions > 0
+          ? (rollup.overall_score / overallTotalQuestions) * 100
           : 0,
     },
     completedAt,
@@ -270,12 +278,15 @@ async function computeAndPersistExamScores(
       {
         session_id: sessionId,
         user_id: userId,
-        rw_correct: result.rwScore.totalCorrect,
-        rw_total: result.rwScore.totalQuestions,
-        math_correct: result.mathScore.totalCorrect,
-        math_total: result.mathScore.totalQuestions,
+        rw_module1_correct: result.rwScore.module1.correct,
+        rw_module1_total: result.rwScore.module1.total,
+        rw_module2_correct: result.rwScore.module2.correct,
+        rw_module2_total: result.rwScore.module2.total,
+        math_module1_correct: result.mathScore.module1.correct,
+        math_module1_total: result.mathScore.module1.total,
+        math_module2_correct: result.mathScore.module2.correct,
+        math_module2_total: result.mathScore.module2.total,
         overall_score: result.overallScore.totalCorrect,
-        created_at: completedAt.toISOString(),
       },
       {
         onConflict: "session_id",

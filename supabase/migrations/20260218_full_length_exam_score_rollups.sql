@@ -16,13 +16,17 @@ CREATE TABLE IF NOT EXISTS public.full_length_exam_score_rollups (
     session_id VARCHAR NOT NULL REFERENCES public.full_length_exam_sessions(id) ON DELETE CASCADE,
     user_id VARCHAR NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     
-    -- Section scores (Reading & Writing combined as RW)
-    rw_correct INT NOT NULL,
-    rw_total INT NOT NULL,
+    -- Section scores (Reading & Writing combined as RW) - Module level
+    rw_module1_correct INT NOT NULL,
+    rw_module1_total INT NOT NULL,
+    rw_module2_correct INT NOT NULL,
+    rw_module2_total INT NOT NULL,
     
-    -- Section scores (Math)
-    math_correct INT NOT NULL,
-    math_total INT NOT NULL,
+    -- Section scores (Math) - Module level
+    math_module1_correct INT NOT NULL,
+    math_module1_total INT NOT NULL,
+    math_module2_correct INT NOT NULL,
+    math_module2_total INT NOT NULL,
     
     -- Overall score (raw correct count)
     overall_score INT NOT NULL,

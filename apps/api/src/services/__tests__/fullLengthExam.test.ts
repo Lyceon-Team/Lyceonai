@@ -468,10 +468,14 @@ describe('Full-Length Exam Service', () => {
         id: 'rollup-123',
         session_id: 'session-123',
         user_id: 'user-456',
-        rw_correct: 40,
-        rw_total: 54,
-        math_correct: 30,
-        math_total: 44,
+        rw_module1_correct: 20,
+        rw_module1_total: 27,
+        rw_module2_correct: 20,
+        rw_module2_total: 27,
+        math_module1_correct: 15,
+        math_module1_total: 22,
+        math_module2_correct: 15,
+        math_module2_total: 22,
         overall_score: 70,
         created_at: completedAt.toISOString(),
       };
@@ -535,7 +539,11 @@ describe('Full-Length Exam Service', () => {
       
       // Verify scores match the rollup
       expect(result1.rwScore.totalCorrect).toBe(40);
+      expect(result1.rwScore.module1.correct).toBe(20);
+      expect(result1.rwScore.module2.correct).toBe(20);
       expect(result1.mathScore.totalCorrect).toBe(30);
+      expect(result1.mathScore.module1.correct).toBe(15);
+      expect(result1.mathScore.module2.correct).toBe(15);
       expect(result1.overallScore.totalCorrect).toBe(70);
     });
 
@@ -585,10 +593,14 @@ describe('Full-Length Exam Service', () => {
         id: 'rollup-789',
         session_id: 'session-789',
         user_id: 'user-456',
-        rw_correct: 35,
-        rw_total: 54,
-        math_correct: 25,
-        math_total: 44,
+        rw_module1_correct: 18,
+        rw_module1_total: 27,
+        rw_module2_correct: 17,
+        rw_module2_total: 27,
+        math_module1_correct: 13,
+        math_module1_total: 22,
+        math_module2_correct: 12,
+        math_module2_total: 22,
         overall_score: 60,
         created_at: completedAt.toISOString(),
       };
