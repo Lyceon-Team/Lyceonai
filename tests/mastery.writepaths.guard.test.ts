@@ -39,6 +39,20 @@ function normalizePath(filePath: string): string {
 // Canonical choke point module (only this file should have mastery writes)
 const CHOKE_POINT_MODULE = "apps/api/src/services/mastery-write.ts";
 
+// Normalized choke point path computed once for efficient comparison
+let NORMALIZED_CHOKE_POINT: string;
+
+/**
+ * Initialize the normalized choke point path.
+ * This is computed lazily on first use to ensure repoRoot is available.
+ */
+function getNormalizedChokePoint(repoRoot: string): string {
+  if (!NORMALIZED_CHOKE_POINT) {
+    NORMALIZED_CHOKE_POINT = normalizePath(path.join(repoRoot, CHOKE_POINT_MODULE));
+  }
+  return NORMALIZED_CHOKE_POINT;
+}
+
 // Canonical mastery tables
 const MASTERY_TABLES = ["student_skill_mastery", "student_cluster_mastery"];
 
@@ -124,7 +138,7 @@ function checkFileForViolations(
 
   // Normalize both paths for OS-agnostic comparison
   const normalizedFilePath = normalizePath(filePath);
-  const normalizedChokePoint = normalizePath(path.join(repoRoot, CHOKE_POINT_MODULE));
+  const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
 
   // Skip the choke point module itself
   if (normalizedFilePath === normalizedChokePoint) {
@@ -262,7 +276,7 @@ describe("Mastery Write Paths Guard", () => {
         
         // Normalize both paths for OS-agnostic comparison
         const normalizedFilePath = normalizePath(file);
-        const normalizedChokePoint = normalizePath(path.join(repoRoot, CHOKE_POINT_MODULE));
+        const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
         
         // Skip the choke point module itself
         if (normalizedFilePath === normalizedChokePoint) {
