@@ -22,6 +22,7 @@
     "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
     "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
     "route:validate": "node scripts/validate-route-registry.mjs",
+    "audit:ci": "pnpm audit --json > audit-output.json",
     "verify:csrf": "npx tsx scripts/verify-csrf-protection.ts"
   },
   "dependencies": {
