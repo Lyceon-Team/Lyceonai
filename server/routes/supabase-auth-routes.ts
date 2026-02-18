@@ -312,7 +312,7 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
     clearAuthCookies(res, isProd);
 
     logger.info('AUTH', 'signout_success', 'User signed out', {
-      userId: req.user?.id
+      userId: data.user.id
     });
 
     res.json({
@@ -421,7 +421,7 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
     
     let { data: profile, error: profileError } = await userSupabase
       .from('profiles')
-      .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code, first_name, last_name, profile_completed_at')
+      .select('id, role, is_under_13, guardian_consent, student_link_code')
       .eq('id', user.id)
       .single();
 
@@ -446,7 +446,7 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
           display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
           role: user.user_metadata?.role || 'student'
         })
-        .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code, first_name, last_name, profile_completed_at')
+        .select('id, role, is_under_13, guardian_consent, student_link_code')
         .single();
       
       if (createError || !newProfile) {
@@ -460,24 +460,10 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
       profile = newProfile;
     }
 
-    const rawDisplayName = profile.display_name;
-    const fallbackUsername = profile.email ? profile.email.split('@')[0] : null;
-    
-    const normalizedName = rawDisplayName || fallbackUsername || 'Student';
-    const normalizedUsername = fallbackUsername || null;
-
     res.json({
       authenticated: true,
       user: {
         id: profile.id,
-        email: profile.email,
-        display_name: profile.display_name,
-        name: normalizedName,
-        username: normalizedUsername,
-        firstName: profile.first_name || null,
-        lastName: profile.last_name || null,
-        profileCompletedAt: profile.profile_completed_at || null,
-        lastLoginAt: null,
         role: profile.role,
         isAdmin: profile.role === 'admin',
         isGuardian: profile.role === 'guardian',
