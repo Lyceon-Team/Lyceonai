@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
+    setupFiles: ['./vitest.setup.ts'],
     // Use threads pool instead of forks for stability (prevents worker crashes)
     pool: 'threads',
     poolOptions: {
