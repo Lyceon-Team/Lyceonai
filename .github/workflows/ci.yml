@@ -44,11 +44,12 @@ jobs:
         run: |
           node -e "
             cosnt fs = require('fs');
-            const data - JSON.parse(fs.readFileSync('audit-output.json','utf8'));
+            const data = JSON.parse(fs.readFileSync('audit-output.json','utf8'));
             const v = data?.vulnerabilities || {};
             const bad = Object.values(v).some(x => ['high','critical'].includes(String(x?.severity || '').toLowerCase()));
             if (bad) { console.error('High/Critical vulnerabilities found.'); process.exit(1); }
             console.log('No High/Critical vulnerabilities found.');
+          "
 
       - name: Run Security Tests
         run: pnpm run test:security
