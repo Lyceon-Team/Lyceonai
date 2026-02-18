@@ -7,7 +7,7 @@
  * 3. Test setup provides placeholder values to prevent boot failures
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 
 describe('Supabase Environment Configuration', () => {
   describe('Test Environment Safety', () => {
