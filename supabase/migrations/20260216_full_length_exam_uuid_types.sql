@@ -389,8 +389,6 @@ CREATE UNIQUE INDEX idx_one_active_exam_session_per_user
 ON public.full_length_exam_sessions(user_id)
 WHERE status IN ('not_started', 'in_progress', 'break');
 
-RAISE NOTICE 'Recreated partial unique index: idx_one_active_exam_session_per_user';
-
 -- ============================================================================
 -- PART G: Update RLS Policies to Remove ::text Casts
 -- ============================================================================
