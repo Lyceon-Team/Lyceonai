@@ -140,11 +140,6 @@ function checkFileForViolations(
   const normalizedFilePath = normalizePath(filePath);
   const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
 
-  // Skip the choke point module itself
-  if (normalizedFilePath === normalizedChokePoint) {
-    return violations;
-  }
-
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
 
@@ -278,11 +273,6 @@ describe("Mastery Write Paths Guard", () => {
         const normalizedFilePath = normalizePath(file);
         const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
         
-        // Skip the choke point module itself
-        if (normalizedFilePath === normalizedChokePoint) {
-          continue;
-        }
-
         const content = fs.readFileSync(file, "utf-8");
         const lines = content.split("\n");
 
