@@ -140,6 +140,11 @@ function checkFileForViolations(
   const normalizedFilePath = normalizePath(filePath);
   const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
 
+  // Skip the choke point module itself - it's allowed to have mastery writes
+  if (normalizedFilePath === normalizedChokePoint) {
+    return [];
+  }
+
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
 
@@ -272,6 +277,11 @@ describe("Mastery Write Paths Guard", () => {
         // Normalize both paths for OS-agnostic comparison
         const normalizedFilePath = normalizePath(file);
         const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
+        
+        // Skip the choke point module itself - it's allowed to call mastery RPCs
+        if (normalizedFilePath === normalizedChokePoint) {
+          continue;
+        }
         
         const content = fs.readFileSync(file, "utf-8");
         const lines = content.split("\n");
