@@ -43,7 +43,7 @@ jobs:
       - name: Fail on High/Critical Vulnerabilities
         run: |
           node -e "
-            cosnt fs = require('fs');
+            const fs = require('fs');
             const data = JSON.parse(fs.readFileSync('audit-output.json','utf8'));
             const v = data?.vulnerabilities || {};
             const bad = Object.values(v).some(x => ['high','critical'].includes(String(x?.severity || '').toLowerCase()));
