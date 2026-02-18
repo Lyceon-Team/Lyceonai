@@ -21,8 +21,37 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
+/**
+ * Normalize file paths to be OS-agnostic for comparison.
+ * - Resolves to absolute path
+ * - Converts backslashes to forward slashes
+ * - Lowercases on Windows for case-insensitive comparison
+ */
+function normalizePath(filePath: string): string {
+  // Resolve path to handle any relative components
+  const resolved = path.resolve(filePath);
+  // Convert backslashes to forward slashes
+  const normalized = resolved.replace(/\\/g, "/");
+  // Lowercase on Windows for case-insensitive comparison
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
 // Canonical choke point module (only this file should have mastery writes)
 const CHOKE_POINT_MODULE = "apps/api/src/services/mastery-write.ts";
+
+// Normalized choke point path computed once for efficient comparison
+let NORMALIZED_CHOKE_POINT: string;
+
+/**
+ * Initialize the normalized choke point path.
+ * This is computed lazily on first use to ensure repoRoot is available.
+ */
+function getNormalizedChokePoint(repoRoot: string): string {
+  if (!NORMALIZED_CHOKE_POINT) {
+    NORMALIZED_CHOKE_POINT = normalizePath(path.join(repoRoot, CHOKE_POINT_MODULE));
+  }
+  return NORMALIZED_CHOKE_POINT;
+}
 
 // Canonical mastery tables
 const MASTERY_TABLES = ["student_skill_mastery", "student_cluster_mastery"];
@@ -107,8 +136,12 @@ function checkFileForViolations(
   const violations: FileViolation[] = [];
   const relativePath = path.relative(repoRoot, filePath);
 
+  // Normalize both paths for OS-agnostic comparison
+  const normalizedFilePath = normalizePath(filePath);
+  const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
+
   // Skip the choke point module itself
-  if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
+  if (normalizedFilePath === normalizedChokePoint) {
     return violations;
   }
 
@@ -241,8 +274,12 @@ describe("Mastery Write Paths Guard", () => {
       for (const file of files) {
         const relativePath = path.relative(repoRoot, file);
         
+        // Normalize both paths for OS-agnostic comparison
+        const normalizedFilePath = normalizePath(file);
+        const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
+        
         // Skip the choke point module itself
-        if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
+        if (normalizedFilePath === normalizedChokePoint) {
           continue;
         }
 
