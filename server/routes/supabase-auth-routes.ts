@@ -4,7 +4,7 @@ import { logger } from '../logger.js';
 import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
 import { csrfGuard } from '../middleware/csrf.js';
 import { BUILD } from '../lib/build.js';
-import { clearAuthCookies } from '../lib/auth-cookies.js';
+import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
 
 const router = Router();
 
@@ -13,39 +13,6 @@ const csrfProtection = csrfGuard();
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
-
-/**
- * Shared cookie helpers - CRITICAL: Always use path: '/' to ensure cookies
- * are sent to all routes, not just the route that set them.
- */
-function setAuthCookies(res: any, session: any, isProd: boolean) {
-  clearAuthCookies(res, isProd);
-  const accessMaxAgeMs =
-    typeof session?.expires_in === 'number'
-      ? session.expires_in * 1000
-      : 60 * 60 * 1000; // fallback 1h (JWT default)
-
-  const refreshMaxAgeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
-
-  const base = {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
-    path: '/', // CRITICAL - ensures cookies sent to all routes
-    ...(isProd && { domain: '.lyceon.ai' })
-  };
-
-  res.cookie('sb-access-token', session.access_token, {
-    ...base,
-    maxAge: accessMaxAgeMs,
-  });
-
-  res.cookie('sb-refresh-token', session.refresh_token, {
-    ...base,
-    maxAge: refreshMaxAgeMs,
-  });
-}
-
 
 /**
  * LEGACY COOKIE CLEANUP - Delete any stale auth cookies that might interfere
@@ -523,47 +490,6 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
   } catch (error) {
     logger.error('AUTH', 'consent_error', 'Consent endpoint error', error);
     res.status(500).json({ error: 'Failed to update consent' });
-  }
-});
-
-/**
- * POST /api/auth/exchange-session
- * Exchange tokens for a session (set httpOnly cookies)
- * CSRF_EXEMPT_REASON: Programmatic token exchange for mobile/API clients - uses Bearer tokens not cookies
- */
-router.post('/exchange-session', async (req: Request, res: Response) => {
-  try {
-    const { access_token, refresh_token } = req.body;
-
-    if (!access_token || !refresh_token) {
-      return res.status(400).json({ error: 'Missing access_token or refresh_token' });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    
-    // Verify the access token is valid
-    const { data: { user }, error: authError } = await supabase.auth.getUser(access_token);
-
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Invalid tokens' });
-    }
-
-    const isProd = process.env.NODE_ENV === 'production';
-    
-    // Set session cookies
-    setAuthCookies(res, {
-      access_token,
-      refresh_token,
-      expires_in: 3600 // Default to 1 hour
-    }, isProd);
-
-    res.json({
-      success: true,
-      message: 'Session established successfully'
-    });
-  } catch (error) {
-    logger.error('AUTH', 'exchange_session_error', 'Session exchange error', error);
-    res.status(500).json({ error: 'Failed to exchange session' });
   }
 });
 
