@@ -38,7 +38,7 @@ jobs:
 
       - name: Security Audit
         run: |
-          pnpm audit:ci
+          pnpm run audit:ci
 
       - name: Fail on High/Critical Vulnerabilities
         run: |
