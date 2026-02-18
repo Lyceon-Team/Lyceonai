@@ -114,34 +114,42 @@ describe('Build Server Regression Tests', () => {
   });
 
   describe('Build Configuration Validation', () => {
-    it('should use absWorkingDir for deterministic builds', async () => {
-      // This test validates the build configuration has absWorkingDir set
-      const buildScriptPath = join(rootDir, 'scripts', 'build-server.mjs');
+    it('should use esbuild with --packages=external flag', async () => {
+      // This test validates the build configuration uses esbuild directly
+      const packageJsonPath = join(rootDir, 'package.json');
       const { readFileSync } = await import('fs');
-      const buildScript = readFileSync(buildScriptPath, 'utf-8');
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       
-      // Validate that absWorkingDir is set in the build config
-      expect(buildScript).toContain('absWorkingDir: rootDir');
+      // Validate that build script uses esbuild with correct flags
+      expect(packageJson.scripts.build).toContain('esbuild');
+      expect(packageJson.scripts.build).toContain('--packages=external');
+      expect(packageJson.scripts.build).toContain('--bundle');
+      expect(packageJson.scripts.build).toContain('--platform=node');
+      expect(packageJson.scripts.build).toContain('--format=esm');
+      expect(packageJson.scripts.build).toContain('--outfile=dist/index.js');
     });
 
-    it('should initialize esbuild-wasm before building', async () => {
-      // This test validates the build script calls initialize
-      const buildScriptPath = join(rootDir, 'scripts', 'build-server.mjs');
+    it('should build server from server/index.ts entry point', async () => {
+      // This test validates the entry point is server/index.ts
+      const packageJsonPath = join(rootDir, 'package.json');
       const { readFileSync } = await import('fs');
-      const buildScript = readFileSync(buildScriptPath, 'utf-8');
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       
-      // Validate that initialize is called
-      expect(buildScript).toContain('await esbuild.initialize()');
+      // Validate that the entry point is server/index.ts
+      expect(packageJson.scripts.build).toContain('server/index.ts');
     });
 
-    it('should have entry-point detection in the plugin', async () => {
-      // This test validates the plugin checks for entry-point kind
-      const buildScriptPath = join(rootDir, 'scripts', 'build-server.mjs');
-      const { readFileSync } = await import('fs');
-      const buildScript = readFileSync(buildScriptPath, 'utf-8');
+    it('should externalize npm packages while bundling local files', async () => {
+      // The --packages=external flag externalizes all npm packages
+      // while bundling local application files.
+      // This prevents the "entry point cannot be marked as external" error on Windows.
       
-      // Validate that the plugin checks for entry-point kind
-      expect(buildScript).toContain("args.kind === 'entry-point'");
+      const packageJsonPath = join(rootDir, 'package.json');
+      const { readFileSync } = await import('fs');
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+      
+      // Verify the build uses --packages=external
+      expect(packageJson.scripts.build).toContain('--packages=external');
     });
   });
 });
