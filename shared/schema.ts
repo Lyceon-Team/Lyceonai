@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp, boolean, real } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, uuid, integer, jsonb, timestamp, boolean, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -369,8 +369,8 @@ export const examSections = pgTable("exam_sections", {
  * Supports Bluebook-style adaptive testing with deterministic question selection
  */
 export const fullLengthExamSessions = pgTable("full_length_exam_sessions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   
   // Session state
   status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'completed', 'abandoned'
@@ -392,8 +392,8 @@ export const fullLengthExamSessions = pgTable("full_length_exam_sessions", {
  * Each exam has 4 modules: RW Module 1, RW Module 2, Math Module 1, Math Module 2
  */
 export const fullLengthExamModules = pgTable("full_length_exam_modules", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
   
   // Module identification
   section: text("section").notNull(), // 'rw' | 'math'
@@ -419,9 +419,9 @@ export const fullLengthExamModules = pgTable("full_length_exam_modules", {
  * Stores which questions were presented in which order
  */
 export const fullLengthExamQuestions = pgTable("full_length_exam_questions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  moduleId: varchar("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  moduleId: uuid("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
+  questionId: uuid("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
   
   // Ordering
   orderIndex: integer("order_index").notNull(), // 0-based index within module
@@ -437,10 +437,10 @@ export const fullLengthExamQuestions = pgTable("full_length_exam_questions", {
  * Supports idempotent submission and tracks correctness server-side
  */
 export const fullLengthExamResponses = pgTable("full_length_exam_responses", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
-  moduleId: varchar("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
+  moduleId: uuid("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
+  questionId: uuid("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
   
   // Answer
   selectedAnswer: text("selected_answer"), // For MC questions
