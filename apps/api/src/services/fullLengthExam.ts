@@ -210,6 +210,97 @@ function determineModule2Difficulty(
 }
 
 /**
+ * Format a score rollup DB row as a CompleteExamResult
+ */
+function formatRollupAsResult(
+  rollup: {
+    session_id: string;
+    rw_module1_correct: number;
+    rw_module1_total: number;
+    rw_module2_correct: number;
+    rw_module2_total: number;
+    math_module1_correct: number;
+    math_module1_total: number;
+    math_module2_correct: number;
+    math_module2_total: number;
+    overall_score: number;
+  },
+  completedAt: Date
+): CompleteExamResult {
+  const rwTotalCorrect = rollup.rw_module1_correct + rollup.rw_module2_correct;
+  const rwTotalQuestions = rollup.rw_module1_total + rollup.rw_module2_total;
+  const mathTotalCorrect = rollup.math_module1_correct + rollup.math_module2_correct;
+  const mathTotalQuestions = rollup.math_module1_total + rollup.math_module2_total;
+  const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
+
+  return {
+    sessionId: rollup.session_id,
+    rwScore: {
+      module1: { correct: rollup.rw_module1_correct, total: rollup.rw_module1_total },
+      module2: { correct: rollup.rw_module2_correct, total: rollup.rw_module2_total },
+      totalCorrect: rwTotalCorrect,
+      totalQuestions: rwTotalQuestions,
+    },
+    mathScore: {
+      module1: { correct: rollup.math_module1_correct, total: rollup.math_module1_total },
+      module2: { correct: rollup.math_module2_correct, total: rollup.math_module2_total },
+      totalCorrect: mathTotalCorrect,
+      totalQuestions: mathTotalQuestions,
+    },
+    overallScore: {
+      totalCorrect: rollup.overall_score,
+      totalQuestions: overallTotalQuestions,
+      percentageCorrect:
+        overallTotalQuestions > 0
+          ? (rollup.overall_score / overallTotalQuestions) * 100
+          : 0,
+    },
+    completedAt,
+  };
+}
+
+/**
+ * Compute exam scores from modules and responses, then persist to rollups table
+ */
+async function computeAndPersistExamScores(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  userId: string,
+  completedAt: Date
+): Promise<CompleteExamResult> {
+  // First compute scores from responses
+  const result = await computeExamScores(supabase, sessionId, completedAt);
+
+  // Persist to rollups table (upsert to handle race conditions)
+  const { error: insertError } = await supabase
+    .from("full_length_exam_score_rollups")
+    .upsert(
+      {
+        session_id: sessionId,
+        user_id: userId,
+        rw_module1_correct: result.rwScore.module1.correct,
+        rw_module1_total: result.rwScore.module1.total,
+        rw_module2_correct: result.rwScore.module2.correct,
+        rw_module2_total: result.rwScore.module2.total,
+        math_module1_correct: result.mathScore.module1.correct,
+        math_module1_total: result.mathScore.module1.total,
+        math_module2_correct: result.mathScore.module2.correct,
+        math_module2_total: result.mathScore.module2.total,
+        overall_score: result.overallScore.totalCorrect,
+      },
+      {
+        onConflict: "session_id",
+      }
+    );
+
+  if (insertError) {
+    throw new Error(`Failed to persist score rollup: ${insertError.message}`);
+  }
+
+  return result;
+}
+
+/**
  * Compute exam scores from modules and responses
  * Used for both initial completion and idempotent re-computation
  */
@@ -1106,14 +1197,21 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return existing result
+  // Idempotency: if already completed, return existing rollup from DB
   if (session.status === "completed") {
-    // Re-compute and return the existing result using helper
-    return await computeExamScores(
-      supabase,
-      params.sessionId,
-      new Date(session.completed_at!)
-    );
+    // Fetch existing rollup from database (deterministic)
+    const { data: existingRollup, error: rollupError } = await supabase
+      .from("full_length_exam_score_rollups")
+      .select("*")
+      .eq("session_id", params.sessionId)
+      .single();
+
+    if (rollupError || !existingRollup) {
+      throw new Error("Score rollup not found for completed session");
+    }
+
+    // Return rollup data in CompleteExamResult format
+    return formatRollupAsResult(existingRollup, new Date(session.completed_at!));
   }
 
   // Terminal-state guard: enforce preconditions for completion
@@ -1186,17 +1284,28 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      // Session was completed by concurrent request - return existing result using helper
-      return await computeExamScores(
-        supabase,
-        params.sessionId,
-        new Date(completedSession.completed_at!)
-      );
+      // Session was completed by concurrent request - return existing rollup from DB
+      const { data: existingRollup, error: rollupError } = await supabase
+        .from("full_length_exam_score_rollups")
+        .select("*")
+        .eq("session_id", params.sessionId)
+        .single();
+
+      if (rollupError || !existingRollup) {
+        throw new Error("Score rollup not found for completed session");
+      }
+
+      return formatRollupAsResult(existingRollup, new Date(completedSession.completed_at!));
     } else {
       throw new Error("Invalid exam state");
     }
   }
 
-  // Success: compute and return scores using helper
-  return await computeExamScores(supabase, params.sessionId, completedAt);
+  // Success: compute scores, persist rollup, and return
+  return await computeAndPersistExamScores(
+    supabase,
+    params.sessionId,
+    params.userId,
+    completedAt
+  );
 }
