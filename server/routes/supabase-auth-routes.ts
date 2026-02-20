@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '../logger.js';
 import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
@@ -7,6 +8,16 @@ import { BUILD } from '../lib/build.js';
 import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
 
 const router = Router();
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Too many authentication attempts. Please try again later.',
+  },
+});
 
 // CSRF protection - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
@@ -108,7 +119,7 @@ function clearLegacyCookies(req: any, res: any, isProd: boolean) {
  * POST /api/auth/signup
  * Sign up with email and password
  */
-router.post('/signup', csrfProtection, async (req: Request, res: Response) => {
+router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
   try {
     const { email, password, displayName, isUnder13, guardianEmail, role: requestedRole } = req.body;
 
@@ -213,7 +224,7 @@ router.post('/signup', csrfProtection, async (req: Request, res: Response) => {
  * POST /api/auth/signin
  * Sign in with email and password
  */
-router.post('/signin', csrfProtection, async (req: Request, res: Response) => {
+router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
