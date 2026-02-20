@@ -1439,14 +1439,14 @@ function projectSafeQuestionFields(
     id: question.id as string,
     stem: question.stem as string,
     section: question.section as string,
-    type: (question.type as string | null) ?? null,
-    options: (question.options as Array<{ key: string; text: string }> | null) ?? null,
-    difficulty: (question.difficulty as string | null) ?? null,
-    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level) as number | null ?? null,
-    unitTag: (question.unitTag ?? question.unit_tag) as string | null ?? null,
-    tags: (question.tags as string[] | null) ?? null,
-    questionNumber: (question.questionNumber ?? question.question_number) as number | null ?? null,
-    pageNumber: (question.pageNumber ?? question.page_number) as number | null ?? null,
+    type: (question.type ?? null) as string | null,
+    options: (question.options ?? null) as Array<{ key: string; text: string }> | null,
+    difficulty: (question.difficulty ?? null) as string | null,
+    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level ?? null) as number | null,
+    unitTag: (question.unitTag ?? question.unit_tag ?? null) as string | null,
+    tags: (question.tags ?? null) as string[] | null,
+    questionNumber: (question.questionNumber ?? question.question_number ?? null) as number | null,
+    pageNumber: (question.pageNumber ?? question.page_number ?? null) as number | null,
   };
   return result;
 }
@@ -1461,9 +1461,9 @@ function projectFullQuestionFields(
   return {
     ...safeFields,
     answer: question.answer as string,
-    answerChoice: (question.answerChoice ?? question.answer_choice) as string | null ?? null,
-    answerText: (question.answerText ?? question.answer_text) as string | null ?? null,
-    explanation: question.explanation as string | null ?? null,
+    answerChoice: (question.answerChoice ?? question.answer_choice ?? null) as string | null,
+    answerText: (question.answerText ?? question.answer_text ?? null) as string | null,
+    explanation: (question.explanation ?? null) as string | null,
     classification: question.classification ?? null,
   };
 }
