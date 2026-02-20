@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { buildAllowedOrigins, normalizeOrigin } from "./origin-utils";
+import { buildAllowedOrigins, isAllowedRequestOrigin } from "./origin-utils";
 
 export function csrfGuard() {
   const { isDev, normalized, raw } = buildAllowedOrigins({
@@ -15,37 +15,23 @@ export function csrfGuard() {
     // Tests need to verify CSRF behavior works correctly
     if (isDev) return next();
 
-    const method = (req.method || "").toUpperCase();
-    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
+    if (isAllowedRequestOrigin(req, normalized)) return next();
 
-    const origin = req.headers.origin ? String(req.headers.origin) : "";
-    const referer = req.headers.referer ? String(req.headers.referer) : "";
-
-    const originNorm = origin ? normalizeOrigin(origin) : "";
-    const refererNorm = referer ? normalizeOrigin(referer) : "";
-
-    const ok =
-      (originNorm && normalized.has(originNorm)) ||
-      (refererNorm && normalized.has(refererNorm));
-
-    if (ok) return next();
+    const origin = (req.headers.origin as string) || "";
+    const referer = (req.headers.referer as string) || "";
 
     console.warn("[CSRF] blocked", {
-      method,
+      method: req.method,
       origin,
       referer,
-      originNorm,
-      refererNorm,
+      originNorm: origin,
+      refererNorm: referer,
       allowCount: normalized.size,
       allowPreview: Array.from(normalized).slice(0, 8),
     });
 
     return res.status(403).json({
       error: "csrf_blocked",
-      message: origin || referer
-        ? "Cross-site request blocked by CSRF protection"
-        : "Cross-site request blocked: missing Origin/Referer headers",
-      origin: origin || null,
     });
   };
 }

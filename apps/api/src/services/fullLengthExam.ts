@@ -1573,7 +1573,9 @@ export async function getExamReview(
       throw new Error(`Failed to fetch questions: ${questionsError.message}`);
     }
 
-    questions = questionsData || [];
+    if (Array.isArray(questionsData) && questionsData.every((q) => typeof q === "object")) {
+      questions = questionsData as unknown as Record<string, unknown>[];
+    }
   }
 
   // Load user responses
