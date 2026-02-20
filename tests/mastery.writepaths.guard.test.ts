@@ -240,6 +240,8 @@ describe("Mastery Write Paths Guard", () => {
 
       for (const file of files) {
         const relativePath = path.relative(repoRoot, file);
+        // Normalize Windows paths so allowlist comparisons are stable across OSes.
+        const normalizedPath = relativePath.split(path.sep).join("/");
         
         // Skip the choke point module itself
         if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
@@ -257,7 +259,7 @@ describe("Mastery Write Paths Guard", () => {
           for (const rpcCall of MASTERY_RPC_CALLS) {
             if (line.includes(rpcCall)) {
               violations.push({
-                file: relativePath,
+                file: normalizedPath,
                 table: "rpc_violation",  // Not a real table - indicates RPC call violation
                 writePattern: rpcCall,
                 lineNumber,
