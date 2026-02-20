@@ -9,6 +9,11 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     // Use threads pool instead of forks for stability (prevents worker crashes)
     pool: 'threads',
+   
+        // Limit concurrency to prevent worker pool instability in CI
+        minThreads: 1,
+        maxThreads: 1,
+  
             // Limit concurrency to prevent worker pool instability in CI
         minThreads: 1,
         maxThreads: 1,

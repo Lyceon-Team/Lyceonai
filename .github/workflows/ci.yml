@@ -38,8 +38,18 @@ jobs:
 
       - name: Security Audit
         run: |
-          pnpm audit --audit-level=high || echo "⚠️ Security vulnerabilities found - review required"
-          echo "Security audit complete"
+          pnpm run audit:ci
+
+      - name: Fail on High/Critical Vulnerabilities
+        run: |
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('audit-output.json','utf8'));
+            const v = data?.vulnerabilities || {};
+            const bad = Object.values(v).some(x => ['high','critical'].includes(String(x?.severity || '').toLowerCase()));
+            if (bad) { console.error('High/Critical vulnerabilities found.'); process.exit(1); }
+            console.log('No High/Critical vulnerabilities found.');
+          "
 
       - name: Run Security Tests
         run: pnpm run test:security
@@ -48,7 +58,7 @@ jobs:
         run: pnpm exec tsc -p tsconfig.ci.json
 
       - name: Validate Route Registry
-        run: npm run route:validate
+        run: pnpm run route:validate
 
       - name: Run Tests (Deterministic CI Suite)
         run: pnpm test:ci
