@@ -1364,6 +1364,19 @@ export const ANSWER_FIELDS_POST_COMPLETION = [
 ] as const;
 
 /**
+ * Supabase select string for pre-completion question queries.
+ * Only fetches safe fields — answer/explanation never leave the DB pre-completion.
+ */
+const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.join(",");
+
+/**
+ * Supabase select string for post-completion question queries.
+ * Fetches safe fields plus answer/explanation fields.
+ */
+const SAFE_QUESTION_SELECT_POST_COMPLETION =
+  [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
+
+/**
  * Safe question type for pre-completion review.
  * Contains only fields from SAFE_QUESTION_FIELDS_PRE_COMPLETION.
  */
@@ -1540,12 +1553,20 @@ export async function getExamReview(
 
   const questionIds = (moduleQuestions || []).map((mq) => mq.question_id);
 
-  // Fetch questions - always fetch all fields, then project based on status
+  // Determine if session is completed (needed for query projection below)
+  const isCompleted = session.status === "completed";
+
+  // Fetch questions - use query-level projection to prevent answer/explanation
+  // from ever leaving the DB pre-completion (stronger than output-only projection).
+  const questionSelectFields = isCompleted
+    ? SAFE_QUESTION_SELECT_POST_COMPLETION
+    : SAFE_QUESTION_SELECT_PRE_COMPLETION;
+
   let questions: Record<string, unknown>[] = [];
   if (questionIds.length > 0) {
     const { data: questionsData, error: questionsError } = await supabase
       .from("questions")
-      .select("*")
+      .select(questionSelectFields)
       .in("id", questionIds);
 
     if (questionsError) {
@@ -1564,9 +1585,6 @@ export async function getExamReview(
   if (responsesError) {
     throw new Error(`Failed to fetch responses: ${responsesError.message}`);
   }
-
-  // Determine if session is completed
-  const isCompleted = session.status === "completed";
 
   // Project questions based on completion status using allowlist
   const projectedQuestions = questions.map((q) =>
