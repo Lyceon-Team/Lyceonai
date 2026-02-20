@@ -79,6 +79,68 @@ describe('Full-Length Exam Service', () => {
       expect(mockSupabase.from).toHaveBeenCalledWith('full_length_exam_sessions');
     });
 
+    it('should NOT call insert when an active session exists', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+      
+      const mockExistingSession = {
+        id: 'existing-session-456',
+        user_id: 'user-789',
+        status: 'in_progress',
+        seed: 'user-789_1234567890',
+        created_at: new Date().toISOString(),
+      };
+
+      let insertWasCalled = false;
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  in: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => ({
+                        maybeSingle: vi.fn(async () => ({
+                          data: mockExistingSession,
+                          error: null,
+                        })),
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+              insert: vi.fn(() => {
+                insertWasCalled = true;
+                return {
+                  select: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: null,
+                      error: new Error('Should not be called'),
+                    })),
+                  })),
+                };
+              }),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      const result = await fullLengthExamService.createExamSession({
+        userId: 'user-789',
+      });
+
+      // Should return existing session
+      expect(result.id).toBe('existing-session-456');
+      expect(result.status).toBe('in_progress');
+      
+      // CRITICAL: insert should NOT have been called since active session exists
+      expect(insertWasCalled).toBe(false);
+    });
+
     it('should create new session when no active session exists', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
       
@@ -139,7 +201,7 @@ describe('Full-Length Exam Service', () => {
       expect(result.status).toBe('not_started');
     });
 
-    it('should only check for not_started and in_progress sessions (not completed)', async () => {
+    it('should check for active statuses: not_started, in_progress, and break (not completed)', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
       
       let capturedStatuses: string[] = [];
@@ -191,8 +253,8 @@ describe('Full-Length Exam Service', () => {
 
       await fullLengthExamService.createExamSession({ userId: 'user-123' });
 
-      // Verify it only checks for active statuses
-      expect(capturedStatuses).toEqual(['not_started', 'in_progress']);
+      // Verify it checks for all active statuses including break
+      expect(capturedStatuses).toEqual(['not_started', 'in_progress', 'break']);
       expect(capturedStatuses).not.toContain('completed');
       expect(capturedStatuses).not.toContain('abandoned');
     });

@@ -413,7 +413,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .from("full_length_exam_sessions")
     .select("*")
     .eq("user_id", params.userId)
-    .in("status", ["not_started", "in_progress"])
+    .in("status", ["not_started", "in_progress", "break"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -446,7 +446,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
         .from("full_length_exam_sessions")
         .select("*")
         .eq("user_id", params.userId)
-        .in("status", ["not_started", "in_progress"])
+        .in("status", ["not_started", "in_progress", "break"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
