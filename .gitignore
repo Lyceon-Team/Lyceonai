@@ -18,3 +18,6 @@ package-lock.json
 # Data exports - prevent leaking question answers
 *.csv
 !docs/samples/*.csv
+
+# Audit outputs
+audit-output.json

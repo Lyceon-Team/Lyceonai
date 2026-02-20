@@ -210,6 +210,97 @@ function determineModule2Difficulty(
 }
 
 /**
+ * Format a score rollup DB row as a CompleteExamResult
+ */
+function formatRollupAsResult(
+  rollup: {
+    session_id: string;
+    rw_module1_correct: number;
+    rw_module1_total: number;
+    rw_module2_correct: number;
+    rw_module2_total: number;
+    math_module1_correct: number;
+    math_module1_total: number;
+    math_module2_correct: number;
+    math_module2_total: number;
+    overall_score: number;
+  },
+  completedAt: Date
+): CompleteExamResult {
+  const rwTotalCorrect = rollup.rw_module1_correct + rollup.rw_module2_correct;
+  const rwTotalQuestions = rollup.rw_module1_total + rollup.rw_module2_total;
+  const mathTotalCorrect = rollup.math_module1_correct + rollup.math_module2_correct;
+  const mathTotalQuestions = rollup.math_module1_total + rollup.math_module2_total;
+  const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
+
+  return {
+    sessionId: rollup.session_id,
+    rwScore: {
+      module1: { correct: rollup.rw_module1_correct, total: rollup.rw_module1_total },
+      module2: { correct: rollup.rw_module2_correct, total: rollup.rw_module2_total },
+      totalCorrect: rwTotalCorrect,
+      totalQuestions: rwTotalQuestions,
+    },
+    mathScore: {
+      module1: { correct: rollup.math_module1_correct, total: rollup.math_module1_total },
+      module2: { correct: rollup.math_module2_correct, total: rollup.math_module2_total },
+      totalCorrect: mathTotalCorrect,
+      totalQuestions: mathTotalQuestions,
+    },
+    overallScore: {
+      totalCorrect: rollup.overall_score,
+      totalQuestions: overallTotalQuestions,
+      percentageCorrect:
+        overallTotalQuestions > 0
+          ? (rollup.overall_score / overallTotalQuestions) * 100
+          : 0,
+    },
+    completedAt,
+  };
+}
+
+/**
+ * Compute exam scores from modules and responses, then persist to rollups table
+ */
+async function computeAndPersistExamScores(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  userId: string,
+  completedAt: Date
+): Promise<CompleteExamResult> {
+  // First compute scores from responses
+  const result = await computeExamScores(supabase, sessionId, completedAt);
+
+  // Persist to rollups table (upsert to handle race conditions)
+  const { error: insertError } = await supabase
+    .from("full_length_exam_score_rollups")
+    .upsert(
+      {
+        session_id: sessionId,
+        user_id: userId,
+        rw_module1_correct: result.rwScore.module1.correct,
+        rw_module1_total: result.rwScore.module1.total,
+        rw_module2_correct: result.rwScore.module2.correct,
+        rw_module2_total: result.rwScore.module2.total,
+        math_module1_correct: result.mathScore.module1.correct,
+        math_module1_total: result.mathScore.module1.total,
+        math_module2_correct: result.mathScore.module2.correct,
+        math_module2_total: result.mathScore.module2.total,
+        overall_score: result.overallScore.totalCorrect,
+      },
+      {
+        onConflict: "session_id",
+      }
+    );
+
+  if (insertError) {
+    throw new Error(`Failed to persist score rollup: ${insertError.message}`);
+  }
+
+  return result;
+}
+
+/**
  * Compute exam scores from modules and responses
  * Used for both initial completion and idempotent re-computation
  */
@@ -322,7 +413,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .from("full_length_exam_sessions")
     .select("*")
     .eq("user_id", params.userId)
-    .in("status", ["not_started", "in_progress"])
+    .in("status", ["not_started", "in_progress", "break"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -355,7 +446,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
         .from("full_length_exam_sessions")
         .select("*")
         .eq("user_id", params.userId)
-        .in("status", ["not_started", "in_progress"])
+        .in("status", ["not_started", "in_progress", "break"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -858,59 +949,75 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Current module not found");
   }
 
-  // If module already submitted, return cached result (idempotent)
-  if (currentModule.status === "submitted") {
-    // Re-compute the result to return
-    const { data: responses } = await supabase
-      .from("full_length_exam_responses")
-      .select("is_correct")
-      .eq("module_id", currentModule.id);
-    
-    const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-    const totalCount = responses?.length || 0;
-    
-    const currentSection = session.current_section as SectionType;
-    const currentModuleIndex = session.current_module as ModuleIndex;
-    
-    let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
-    let isBreak = false;
-    
-    if (currentModuleIndex === 1) {
-      // Get Module 2 difficulty that was set
-      const { data: module2 } = await supabase
-        .from("full_length_exam_modules")
-        .select("difficulty_bucket")
-        .eq("session_id", params.sessionId)
-        .eq("section", currentSection)
-        .eq("module_index", 2)
-        .single();
-      
-      nextModule = { 
-        section: currentSection, 
-        moduleIndex: 2, 
-        difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
-      };
-    } else if (currentSection === "rw") {
-      isBreak = true;
-    } else {
-      nextModule = null;
-    }
-    
-    return {
-      moduleId: currentModule.id,
-      correctCount,
-      totalCount,
-      nextModule,
-      isBreak,
-    };
+  // Deterministic rule 1: Module must be started (ends_at must be set)
+  if (!currentModule.ends_at) {
+    throw new Error("Module must be started before submitting");
   }
 
-  // Mark module as submitted
+  // Deterministic rule 2: Module must be in_progress to submit
+  if (currentModule.status !== "in_progress") {
+    // If already submitted, return cached result (idempotent)
+    if (currentModule.status === "submitted") {
+      // Re-compute the result to return
+      const { data: responses } = await supabase
+        .from("full_length_exam_responses")
+        .select("is_correct")
+        .eq("module_id", currentModule.id);
+      
+      const correctCount = responses?.filter((r) => r.is_correct).length || 0;
+      const totalCount = responses?.length || 0;
+      
+      const currentSection = session.current_section as SectionType;
+      const currentModuleIndex = session.current_module as ModuleIndex;
+      
+      let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+      let isBreak = false;
+      
+      if (currentModuleIndex === 1) {
+        // Get Module 2 difficulty that was set
+        const { data: module2 } = await supabase
+          .from("full_length_exam_modules")
+          .select("difficulty_bucket")
+          .eq("session_id", params.sessionId)
+          .eq("section", currentSection)
+          .eq("module_index", 2)
+          .single();
+        
+        nextModule = { 
+          section: currentSection, 
+          moduleIndex: 2, 
+          difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
+        };
+      } else if (currentSection === "rw") {
+        isBreak = true;
+      } else {
+        nextModule = null;
+      }
+      
+      return {
+        moduleId: currentModule.id,
+        correctCount,
+        totalCount,
+        nextModule,
+        isBreak,
+      };
+    }
+    // Otherwise reject - module must be in_progress
+    throw new Error("Module must be in progress to submit");
+  }
+
+  // Deterministic rule 3: Determine if submission is late (server-side time comparison)
+  const now = new Date();
+  const endsAt = new Date(currentModule.ends_at);
+  const isLate = now > endsAt;
+
+  // Mark module as submitted with server-side timestamp and late flag
   const { error: updateError } = await supabase
     .from("full_length_exam_modules")
     .update({
       status: "submitted",
-      submitted_at: new Date().toISOString(),
+      submitted_at: now.toISOString(),
+      submitted_late: isLate,
     })
     .eq("id", currentModule.id);
 
@@ -1106,14 +1213,21 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return existing result
+  // Idempotency: if already completed, return existing rollup from DB
   if (session.status === "completed") {
-    // Re-compute and return the existing result using helper
-    return await computeExamScores(
-      supabase,
-      params.sessionId,
-      new Date(session.completed_at!)
-    );
+    // Fetch existing rollup from database (deterministic)
+    const { data: existingRollup, error: rollupError } = await supabase
+      .from("full_length_exam_score_rollups")
+      .select("*")
+      .eq("session_id", params.sessionId)
+      .single();
+
+    if (rollupError || !existingRollup) {
+      throw new Error("Score rollup not found for completed session");
+    }
+
+    // Return rollup data in CompleteExamResult format
+    return formatRollupAsResult(existingRollup, new Date(session.completed_at!));
   }
 
   // Terminal-state guard: enforce preconditions for completion
@@ -1186,17 +1300,330 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      // Session was completed by concurrent request - return existing result using helper
-      return await computeExamScores(
-        supabase,
-        params.sessionId,
-        new Date(completedSession.completed_at!)
-      );
+      // Session was completed by concurrent request - return existing rollup from DB
+      const { data: existingRollup, error: rollupError } = await supabase
+        .from("full_length_exam_score_rollups")
+        .select("*")
+        .eq("session_id", params.sessionId)
+        .single();
+
+      if (rollupError || !existingRollup) {
+        throw new Error("Score rollup not found for completed session");
+      }
+
+      return formatRollupAsResult(existingRollup, new Date(completedSession.completed_at!));
     } else {
       throw new Error("Invalid exam state");
     }
   }
 
-  // Success: compute and return scores using helper
-  return await computeExamScores(supabase, params.sessionId, completedAt);
+  // Success: compute scores, persist rollup, and return
+  return await computeAndPersistExamScores(
+    supabase,
+    params.sessionId,
+    params.userId,
+    completedAt
+  );
+}
+
+// ============================================================================
+// EXAM REVIEW - Safe Question Projection
+// ============================================================================
+
+/**
+ * Allowlist of question fields safe to expose BEFORE session completion.
+ * These fields do NOT reveal correct answers or explanations.
+ * 
+ * SECURITY: This is an explicit allowlist. Any field not listed here
+ * will NOT be included in pre-completion review responses.
+ */
+export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
+  'id',
+  'stem',
+  'section',
+  'type',
+  'options',
+  'difficulty',
+  'difficultyLevel',
+  'unitTag',
+  'tags',
+  'questionNumber',
+  'pageNumber',
+] as const;
+
+/**
+ * Additional fields to include when session is completed.
+ * These fields reveal correct answers and explanations.
+ */
+export const ANSWER_FIELDS_POST_COMPLETION = [
+  'answer',
+  'answerChoice',
+  'answerText',
+  'explanation',
+  'classification',
+] as const;
+
+/**
+ * Supabase select string for pre-completion question queries.
+ * Only fetches safe fields — answer/explanation never leave the DB pre-completion.
+ */
+const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.join(",");
+
+/**
+ * Supabase select string for post-completion question queries.
+ * Fetches safe fields plus answer/explanation fields.
+ */
+const SAFE_QUESTION_SELECT_POST_COMPLETION =
+  [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
+
+/**
+ * Safe question type for pre-completion review.
+ * Contains only fields from SAFE_QUESTION_FIELDS_PRE_COMPLETION.
+ */
+export interface SafeQuestionPreCompletion {
+  id: string;
+  stem: string;
+  section: string;
+  type: string | null;
+  options: Array<{ key: string; text: string }> | null;
+  difficulty: string | null;
+  difficultyLevel: number | null;
+  unitTag: string | null;
+  tags: string[] | null;
+  questionNumber: number | null;
+  pageNumber: number | null;
+}
+
+/**
+ * Full question type for post-completion review.
+ * Includes answer and explanation fields.
+ */
+export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
+  answer: string;
+  answerChoice: string | null;
+  answerText: string | null;
+  explanation: string | null;
+  classification: unknown | null;
+}
+
+/**
+ * Module with questions for exam review
+ */
+export interface ExamReviewModule {
+  id: string;
+  section: string;
+  moduleIndex: number;
+  status: string;
+  difficultyBucket: string | null;
+  startedAt: string | null;
+  submittedAt: string | null;
+}
+
+/**
+ * User response for exam review
+ */
+export interface ExamReviewResponse {
+  questionId: string;
+  moduleId: string;
+  selectedAnswer: string | null;
+  freeResponseAnswer: string | null;
+  isCorrect: boolean | null;
+  answeredAt: string | null;
+}
+
+/**
+ * Result type for getExamReview
+ */
+export interface GetExamReviewResult {
+  session: {
+    id: string;
+    status: string;
+    currentSection: string | null;
+    currentModule: number | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string;
+  };
+  modules: ExamReviewModule[];
+  questions: SafeQuestionPreCompletion[] | FullQuestionPostCompletion[];
+  responses: ExamReviewResponse[];
+}
+
+/**
+ * Parameters for getExamReview
+ */
+export interface GetExamReviewParams {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sessionId: string;
+}
+
+/**
+ * Apply safe projection to a question object.
+ * Uses an explicit allowlist to ensure only safe fields are included.
+ */
+function projectSafeQuestionFields(
+  question: Record<string, unknown>
+): SafeQuestionPreCompletion {
+  const result: SafeQuestionPreCompletion = {
+    id: question.id as string,
+    stem: question.stem as string,
+    section: question.section as string,
+    type: (question.type ?? null) as string | null,
+    options: (question.options ?? null) as Array<{ key: string; text: string }> | null,
+    difficulty: (question.difficulty ?? null) as string | null,
+    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level ?? null) as number | null,
+    unitTag: (question.unitTag ?? question.unit_tag ?? null) as string | null,
+    tags: (question.tags ?? null) as string[] | null,
+    questionNumber: (question.questionNumber ?? question.question_number ?? null) as number | null,
+    pageNumber: (question.pageNumber ?? question.page_number ?? null) as number | null,
+  };
+  return result;
+}
+
+/**
+ * Project full question fields including answers (for completed sessions).
+ */
+function projectFullQuestionFields(
+  question: Record<string, unknown>
+): FullQuestionPostCompletion {
+  const safeFields = projectSafeQuestionFields(question);
+  return {
+    ...safeFields,
+    answer: question.answer as string,
+    answerChoice: (question.answerChoice ?? question.answer_choice ?? null) as string | null,
+    answerText: (question.answerText ?? question.answer_text ?? null) as string | null,
+    explanation: (question.explanation ?? null) as string | null,
+    classification: question.classification ?? null,
+  };
+}
+
+/**
+ * Get exam review data with safe question field projection.
+ * 
+ * SECURITY GUARDRAIL:
+ * - If session.status != 'completed': Returns questions with ONLY safe fields
+ *   (no correct_answer, no explanation, no solution fields)
+ * - If session.status == 'completed': Returns full question details including
+ *   correct answers and explanations
+ * 
+ * @param params.supabase - Supabase client instance
+ * @param params.sessionId - The session ID to retrieve review for
+ * @returns Exam review data with appropriately projected question fields
+ */
+export async function getExamReview(
+  params: GetExamReviewParams
+): Promise<GetExamReviewResult> {
+  const { supabase, sessionId } = params;
+
+  // Load session by ID (RLS enforces user ownership, but we verify existence)
+  const { data: session, error: sessionError } = await supabase
+    .from("full_length_exam_sessions")
+    .select("id, user_id, status, current_section, current_module, seed, started_at, completed_at, created_at")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error("Session not found or access denied");
+  }
+
+  // Load all modules for this session
+  const { data: modules, error: modulesError } = await supabase
+    .from("full_length_exam_modules")
+    .select("id, section, module_index, status, difficulty_bucket, started_at, submitted_at")
+    .eq("session_id", sessionId)
+    .order("section", { ascending: true })
+    .order("module_index", { ascending: true });
+
+  if (modulesError) {
+    throw new Error(`Failed to fetch modules: ${modulesError.message}`);
+  }
+
+  // Load all module questions with their question data
+  const moduleIds = (modules || []).map((m) => m.id);
+  
+  // Get question IDs from module questions
+  const { data: moduleQuestions, error: mqError } = await supabase
+    .from("full_length_exam_questions")
+    .select("question_id, module_id, order_index")
+    .in("module_id", moduleIds.length > 0 ? moduleIds : ['__none__']);
+
+  if (mqError) {
+    throw new Error(`Failed to fetch module questions: ${mqError.message}`);
+  }
+
+  const questionIds = (moduleQuestions || []).map((mq) => mq.question_id);
+
+  // Determine if session is completed (needed for query projection below)
+  const isCompleted = session.status === "completed";
+
+  // Fetch questions - use query-level projection to prevent answer/explanation
+  // from ever leaving the DB pre-completion (stronger than output-only projection).
+  const questionSelectFields = isCompleted
+    ? SAFE_QUESTION_SELECT_POST_COMPLETION
+    : SAFE_QUESTION_SELECT_PRE_COMPLETION;
+
+  let questions: Record<string, unknown>[] = [];
+  if (questionIds.length > 0) {
+    const { data: questionsData, error: questionsError } = await supabase
+      .from("questions")
+      .select(questionSelectFields)
+      .in("id", questionIds);
+
+    if (questionsError) {
+      throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+    }
+
+    questions = questionsData || [];
+  }
+
+  // Load user responses
+  const { data: responses, error: responsesError } = await supabase
+    .from("full_length_exam_responses")
+    .select("question_id, module_id, selected_answer, free_response_answer, is_correct, answered_at")
+    .eq("session_id", sessionId);
+
+  if (responsesError) {
+    throw new Error(`Failed to fetch responses: ${responsesError.message}`);
+  }
+
+  // Project questions based on completion status using allowlist
+  const projectedQuestions = questions.map((q) =>
+    isCompleted ? projectFullQuestionFields(q) : projectSafeQuestionFields(q)
+  );
+
+  // Format modules
+  const formattedModules: ExamReviewModule[] = (modules || []).map((m) => ({
+    id: m.id,
+    section: m.section,
+    moduleIndex: m.module_index,
+    status: m.status,
+    difficultyBucket: m.difficulty_bucket,
+    startedAt: m.started_at,
+    submittedAt: m.submitted_at,
+  }));
+
+  // Format responses
+  const formattedResponses: ExamReviewResponse[] = (responses || []).map((r) => ({
+    questionId: r.question_id,
+    moduleId: r.module_id,
+    selectedAnswer: r.selected_answer,
+    freeResponseAnswer: r.free_response_answer,
+    isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
+    answeredAt: r.answered_at,
+  }));
+
+  return {
+    session: {
+      id: session.id,
+      status: session.status,
+      currentSection: session.current_section,
+      currentModule: session.current_module,
+      startedAt: session.started_at,
+      completedAt: session.completed_at,
+      createdAt: session.created_at,
+    },
+    modules: formattedModules,
+    questions: projectedQuestions,
+    responses: formattedResponses,
+  };
 }

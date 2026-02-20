@@ -13,6 +13,7 @@ export default defineConfig({
         // Limit concurrency to prevent worker pool instability in CI
         minThreads: 1,
         maxThreads: 1,
+     
   
             // Limit concurrency to prevent worker pool instability in CI
         minThreads: 1,
