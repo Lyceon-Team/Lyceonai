@@ -1309,3 +1309,287 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     completedAt
   );
 }
+
+// ============================================================================
+// EXAM REVIEW - Safe Question Projection
+// ============================================================================
+
+/**
+ * Allowlist of question fields safe to expose BEFORE session completion.
+ * These fields do NOT reveal correct answers or explanations.
+ * 
+ * SECURITY: This is an explicit allowlist. Any field not listed here
+ * will NOT be included in pre-completion review responses.
+ */
+export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
+  'id',
+  'stem',
+  'section',
+  'type',
+  'options',
+  'difficulty',
+  'difficultyLevel',
+  'unitTag',
+  'tags',
+  'questionNumber',
+  'pageNumber',
+] as const;
+
+/**
+ * Additional fields to include when session is completed.
+ * These fields reveal correct answers and explanations.
+ */
+export const ANSWER_FIELDS_POST_COMPLETION = [
+  'answer',
+  'answerChoice',
+  'answerText',
+  'explanation',
+  'classification',
+] as const;
+
+/**
+ * Safe question type for pre-completion review.
+ * Contains only fields from SAFE_QUESTION_FIELDS_PRE_COMPLETION.
+ */
+export interface SafeQuestionPreCompletion {
+  id: string;
+  stem: string;
+  section: string;
+  type: string | null;
+  options: Array<{ key: string; text: string }> | null;
+  difficulty: string | null;
+  difficultyLevel: number | null;
+  unitTag: string | null;
+  tags: string[] | null;
+  questionNumber: number | null;
+  pageNumber: number | null;
+}
+
+/**
+ * Full question type for post-completion review.
+ * Includes answer and explanation fields.
+ */
+export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
+  answer: string;
+  answerChoice: string | null;
+  answerText: string | null;
+  explanation: string | null;
+  classification: unknown | null;
+}
+
+/**
+ * Module with questions for exam review
+ */
+export interface ExamReviewModule {
+  id: string;
+  section: string;
+  moduleIndex: number;
+  status: string;
+  difficultyBucket: string | null;
+  startedAt: string | null;
+  submittedAt: string | null;
+}
+
+/**
+ * User response for exam review
+ */
+export interface ExamReviewResponse {
+  questionId: string;
+  moduleId: string;
+  selectedAnswer: string | null;
+  freeResponseAnswer: string | null;
+  isCorrect: boolean | null;
+  answeredAt: string | null;
+}
+
+/**
+ * Result type for getExamReview
+ */
+export interface GetExamReviewResult {
+  session: {
+    id: string;
+    status: string;
+    currentSection: string | null;
+    currentModule: number | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    createdAt: string;
+  };
+  modules: ExamReviewModule[];
+  questions: SafeQuestionPreCompletion[] | FullQuestionPostCompletion[];
+  responses: ExamReviewResponse[];
+}
+
+/**
+ * Parameters for getExamReview
+ */
+export interface GetExamReviewParams {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sessionId: string;
+}
+
+/**
+ * Apply safe projection to a question object.
+ * Uses an explicit allowlist to ensure only safe fields are included.
+ */
+function projectSafeQuestionFields(
+  question: Record<string, unknown>
+): SafeQuestionPreCompletion {
+  const result: SafeQuestionPreCompletion = {
+    id: question.id as string,
+    stem: question.stem as string,
+    section: question.section as string,
+    type: (question.type ?? null) as string | null,
+    options: (question.options ?? null) as Array<{ key: string; text: string }> | null,
+    difficulty: (question.difficulty ?? null) as string | null,
+    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level ?? null) as number | null,
+    unitTag: (question.unitTag ?? question.unit_tag ?? null) as string | null,
+    tags: (question.tags ?? null) as string[] | null,
+    questionNumber: (question.questionNumber ?? question.question_number ?? null) as number | null,
+    pageNumber: (question.pageNumber ?? question.page_number ?? null) as number | null,
+  };
+  return result;
+}
+
+/**
+ * Project full question fields including answers (for completed sessions).
+ */
+function projectFullQuestionFields(
+  question: Record<string, unknown>
+): FullQuestionPostCompletion {
+  const safeFields = projectSafeQuestionFields(question);
+  return {
+    ...safeFields,
+    answer: question.answer as string,
+    answerChoice: (question.answerChoice ?? question.answer_choice ?? null) as string | null,
+    answerText: (question.answerText ?? question.answer_text ?? null) as string | null,
+    explanation: (question.explanation ?? null) as string | null,
+    classification: question.classification ?? null,
+  };
+}
+
+/**
+ * Get exam review data with safe question field projection.
+ * 
+ * SECURITY GUARDRAIL:
+ * - If session.status != 'completed': Returns questions with ONLY safe fields
+ *   (no correct_answer, no explanation, no solution fields)
+ * - If session.status == 'completed': Returns full question details including
+ *   correct answers and explanations
+ * 
+ * @param params.supabase - Supabase client instance
+ * @param params.sessionId - The session ID to retrieve review for
+ * @returns Exam review data with appropriately projected question fields
+ */
+export async function getExamReview(
+  params: GetExamReviewParams
+): Promise<GetExamReviewResult> {
+  const { supabase, sessionId } = params;
+
+  // Load session by ID (RLS enforces user ownership, but we verify existence)
+  const { data: session, error: sessionError } = await supabase
+    .from("full_length_exam_sessions")
+    .select("id, user_id, status, current_section, current_module, seed, started_at, completed_at, created_at")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error("Session not found or access denied");
+  }
+
+  // Load all modules for this session
+  const { data: modules, error: modulesError } = await supabase
+    .from("full_length_exam_modules")
+    .select("id, section, module_index, status, difficulty_bucket, started_at, submitted_at")
+    .eq("session_id", sessionId)
+    .order("section", { ascending: true })
+    .order("module_index", { ascending: true });
+
+  if (modulesError) {
+    throw new Error(`Failed to fetch modules: ${modulesError.message}`);
+  }
+
+  // Load all module questions with their question data
+  const moduleIds = (modules || []).map((m) => m.id);
+  
+  // Get question IDs from module questions
+  const { data: moduleQuestions, error: mqError } = await supabase
+    .from("full_length_exam_questions")
+    .select("question_id, module_id, order_index")
+    .in("module_id", moduleIds.length > 0 ? moduleIds : ['__none__']);
+
+  if (mqError) {
+    throw new Error(`Failed to fetch module questions: ${mqError.message}`);
+  }
+
+  const questionIds = (moduleQuestions || []).map((mq) => mq.question_id);
+
+  // Fetch questions - always fetch all fields, then project based on status
+  let questions: Record<string, unknown>[] = [];
+  if (questionIds.length > 0) {
+    const { data: questionsData, error: questionsError } = await supabase
+      .from("questions")
+      .select("*")
+      .in("id", questionIds);
+
+    if (questionsError) {
+      throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+    }
+
+    questions = questionsData || [];
+  }
+
+  // Load user responses
+  const { data: responses, error: responsesError } = await supabase
+    .from("full_length_exam_responses")
+    .select("question_id, module_id, selected_answer, free_response_answer, is_correct, answered_at")
+    .eq("session_id", sessionId);
+
+  if (responsesError) {
+    throw new Error(`Failed to fetch responses: ${responsesError.message}`);
+  }
+
+  // Determine if session is completed
+  const isCompleted = session.status === "completed";
+
+  // Project questions based on completion status using allowlist
+  const projectedQuestions = questions.map((q) =>
+    isCompleted ? projectFullQuestionFields(q) : projectSafeQuestionFields(q)
+  );
+
+  // Format modules
+  const formattedModules: ExamReviewModule[] = (modules || []).map((m) => ({
+    id: m.id,
+    section: m.section,
+    moduleIndex: m.module_index,
+    status: m.status,
+    difficultyBucket: m.difficulty_bucket,
+    startedAt: m.started_at,
+    submittedAt: m.submitted_at,
+  }));
+
+  // Format responses
+  const formattedResponses: ExamReviewResponse[] = (responses || []).map((r) => ({
+    questionId: r.question_id,
+    moduleId: r.module_id,
+    selectedAnswer: r.selected_answer,
+    freeResponseAnswer: r.free_response_answer,
+    isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
+    answeredAt: r.answered_at,
+  }));
+
+  return {
+    session: {
+      id: session.id,
+      status: session.status,
+      currentSection: session.current_section,
+      currentModule: session.current_module,
+      startedAt: session.started_at,
+      completedAt: session.completed_at,
+      createdAt: session.created_at,
+    },
+    modules: formattedModules,
+    questions: projectedQuestions,
+    responses: formattedResponses,
+  };
+}
