@@ -49,11 +49,11 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
   }
 }
 
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function dateToDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
@@ -67,16 +67,16 @@ function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; d
   for (let i = 0; i < startWeekday; i++) {
     const prevDate = new Date(year, month, -startWeekday + i + 1);
     grid.push({
-      dateKey: formatDateKey(prevDate),
+      dateKey: dateToDateKey(prevDate),
       day: prevDate.getDate(),
       isCurrentMonth: false,
     });
   }
 
-  for (let d = 1; d <= daysInMonth; d++) {
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
     grid.push({
-      dateKey: formatDateKey(new Date(year, month, d)),
-      day: d,
+      dateKey: dateToDateKey(new Date(year, month, dayNum)),
+      day: dayNum,
       isCurrentMonth: true,
     });
   }
@@ -85,7 +85,7 @@ function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; d
   for (let i = 1; i <= remaining; i++) {
     const nextDate = new Date(year, month + 1, i);
     grid.push({
-      dateKey: formatDateKey(nextDate),
+      dateKey: dateToDateKey(nextDate),
       day: nextDate.getDate(),
       isCurrentMonth: false,
     });
@@ -114,8 +114,8 @@ export default function CalendarPage() {
 
   const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
 
-  const gridStartDate = monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
-  const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? formatDateKey(new Date(year, month + 1, 0));
+  const gridStartDate = monthGrid[0]?.dateKey ?? dateToDateKey(new Date(year, month, 1));
+  const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? dateToDateKey(new Date(year, month + 1, 0));
 
   useEffect(() => {
     setProfileLoading(true);
@@ -389,7 +389,7 @@ function MonthGrid({
   selectedDateKey: string | null;
   onSelectDay: (dateKey: string) => void;
 }) {
-  const today = formatDateKey(new Date());
+  const today = dateToDateKey(new Date());
 
   return (
     <div className="bg-card rounded-lg border border-border p-4">
