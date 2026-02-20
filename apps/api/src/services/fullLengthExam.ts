@@ -949,59 +949,75 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Current module not found");
   }
 
-  // If module already submitted, return cached result (idempotent)
-  if (currentModule.status === "submitted") {
-    // Re-compute the result to return
-    const { data: responses } = await supabase
-      .from("full_length_exam_responses")
-      .select("is_correct")
-      .eq("module_id", currentModule.id);
-    
-    const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-    const totalCount = responses?.length || 0;
-    
-    const currentSection = session.current_section as SectionType;
-    const currentModuleIndex = session.current_module as ModuleIndex;
-    
-    let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
-    let isBreak = false;
-    
-    if (currentModuleIndex === 1) {
-      // Get Module 2 difficulty that was set
-      const { data: module2 } = await supabase
-        .from("full_length_exam_modules")
-        .select("difficulty_bucket")
-        .eq("session_id", params.sessionId)
-        .eq("section", currentSection)
-        .eq("module_index", 2)
-        .single();
-      
-      nextModule = { 
-        section: currentSection, 
-        moduleIndex: 2, 
-        difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
-      };
-    } else if (currentSection === "rw") {
-      isBreak = true;
-    } else {
-      nextModule = null;
-    }
-    
-    return {
-      moduleId: currentModule.id,
-      correctCount,
-      totalCount,
-      nextModule,
-      isBreak,
-    };
+  // Deterministic rule 1: Module must be started (ends_at must be set)
+  if (!currentModule.ends_at) {
+    throw new Error("Module must be started before submitting");
   }
 
-  // Mark module as submitted
+  // Deterministic rule 2: Module must be in_progress to submit
+  if (currentModule.status !== "in_progress") {
+    // If already submitted, return cached result (idempotent)
+    if (currentModule.status === "submitted") {
+      // Re-compute the result to return
+      const { data: responses } = await supabase
+        .from("full_length_exam_responses")
+        .select("is_correct")
+        .eq("module_id", currentModule.id);
+      
+      const correctCount = responses?.filter((r) => r.is_correct).length || 0;
+      const totalCount = responses?.length || 0;
+      
+      const currentSection = session.current_section as SectionType;
+      const currentModuleIndex = session.current_module as ModuleIndex;
+      
+      let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+      let isBreak = false;
+      
+      if (currentModuleIndex === 1) {
+        // Get Module 2 difficulty that was set
+        const { data: module2 } = await supabase
+          .from("full_length_exam_modules")
+          .select("difficulty_bucket")
+          .eq("session_id", params.sessionId)
+          .eq("section", currentSection)
+          .eq("module_index", 2)
+          .single();
+        
+        nextModule = { 
+          section: currentSection, 
+          moduleIndex: 2, 
+          difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
+        };
+      } else if (currentSection === "rw") {
+        isBreak = true;
+      } else {
+        nextModule = null;
+      }
+      
+      return {
+        moduleId: currentModule.id,
+        correctCount,
+        totalCount,
+        nextModule,
+        isBreak,
+      };
+    }
+    // Otherwise reject - module must be in_progress
+    throw new Error("Module must be in progress to submit");
+  }
+
+  // Deterministic rule 3: Determine if submission is late (server-side time comparison)
+  const now = new Date();
+  const endsAt = new Date(currentModule.ends_at);
+  const isLate = now > endsAt;
+
+  // Mark module as submitted with server-side timestamp and late flag
   const { error: updateError } = await supabase
     .from("full_length_exam_modules")
     .update({
       status: "submitted",
-      submitted_at: new Date().toISOString(),
+      submitted_at: now.toISOString(),
+      submitted_late: isLate,
     })
     .eq("id", currentModule.id);
 

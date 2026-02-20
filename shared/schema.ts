@@ -407,6 +407,7 @@ export const fullLengthExamModules = pgTable("full_length_exam_modules", {
   startedAt: timestamp("started_at"),
   endsAt: timestamp("ends_at"), // Computed: startedAt + targetDurationMs
   submittedAt: timestamp("submitted_at"),
+  submittedLate: boolean("submitted_late").notNull().default(false), // true if submitted after ends_at
   
   // State
   status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'submitted', 'expired'
