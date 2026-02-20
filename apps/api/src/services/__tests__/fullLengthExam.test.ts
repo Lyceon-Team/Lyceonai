@@ -851,6 +851,352 @@ describe('Full-Length Exam Service', () => {
     });
   });
 
+  describe('submitModule - Deterministic Timing Rules', () => {
+    it('should reject submission if ends_at is null (module not started)', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const mockSession = {
+        id: 'session-123',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'rw',
+        current_module: 1,
+        seed: 'test-seed',
+      };
+
+      const mockCurrentModule = {
+        id: 'module-rw-1',
+        session_id: 'session-123',
+        section: 'rw',
+        module_index: 1,
+        status: 'in_progress',
+        ends_at: null, // Module not started - ends_at is null
+        started_at: null,
+        submitted_late: false,
+      };
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: mockSession,
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      single: vi.fn(async () => ({
+                        data: mockCurrentModule,
+                        error: null,
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      await expect(
+        fullLengthExamService.submitModule({
+          sessionId: 'session-123',
+          userId: 'user-456',
+        })
+      ).rejects.toThrow('Module must be started before submitting');
+    });
+
+    it('should set submitted_late=true when ends_at is in the past', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const mockSession = {
+        id: 'session-123',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'rw',
+        current_module: 1,
+        seed: 'test-seed',
+      };
+
+      // Set ends_at to the past (expired)
+      const pastTime = new Date(Date.now() - 60000).toISOString(); // 1 minute ago
+      const mockCurrentModule = {
+        id: 'module-rw-1',
+        session_id: 'session-123',
+        section: 'rw',
+        module_index: 1,
+        status: 'in_progress',
+        ends_at: pastTime,
+        started_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+        submitted_late: false,
+      };
+
+      let capturedUpdate: Record<string, unknown> | null = null;
+
+      // Helper to create chainable eq mock
+      const createChainableEq = (finalValue: () => unknown) => {
+        const chainableEq = vi.fn((): unknown => ({
+          eq: chainableEq,
+          is: vi.fn(() => ({
+            select: vi.fn(async () => ({ data: [], error: null })),
+          })),
+          single: finalValue,
+          select: vi.fn(async () => ({ data: [], error: null })),
+        }));
+        return chainableEq;
+      };
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: mockSession,
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+              update: vi.fn(() => ({
+                eq: vi.fn(() => Promise.resolve({ error: null })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: createChainableEq(vi.fn(async () => ({
+                  data: mockCurrentModule,
+                  error: null,
+                }))),
+              })),
+              update: vi.fn((updateData: Record<string, unknown>) => {
+                // Only capture the first update (module submit, not difficulty update)
+                if (!capturedUpdate && updateData.status === 'submitted') {
+                  capturedUpdate = updateData;
+                }
+                return {
+                  eq: createChainableEq(vi.fn(async () => ({ error: null }))),
+                };
+              }),
+            };
+          } else if (table === 'full_length_exam_responses') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [],
+                  error: null,
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      await fullLengthExamService.submitModule({
+        sessionId: 'session-123',
+        userId: 'user-456',
+      });
+
+      // Verify that submitted_late was set to true
+      expect(capturedUpdate).not.toBeNull();
+      expect(capturedUpdate?.submitted_late).toBe(true);
+      expect(capturedUpdate?.status).toBe('submitted');
+      expect(capturedUpdate?.submitted_at).toBeDefined();
+    });
+
+    it('should set submitted_late=false when submitting on time', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const mockSession = {
+        id: 'session-123',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'rw',
+        current_module: 1,
+        seed: 'test-seed',
+      };
+
+      // Set ends_at to the future (still have time)
+      const futureTime = new Date(Date.now() + 60000).toISOString(); // 1 minute from now
+      const mockCurrentModule = {
+        id: 'module-rw-1',
+        session_id: 'session-123',
+        section: 'rw',
+        module_index: 1,
+        status: 'in_progress',
+        ends_at: futureTime,
+        started_at: new Date().toISOString(),
+        submitted_late: false,
+      };
+
+      let capturedUpdate: Record<string, unknown> | null = null;
+
+      // Helper to create chainable eq mock
+      const createChainableEq = (finalValue: () => unknown) => {
+        const chainableEq = vi.fn((): unknown => ({
+          eq: chainableEq,
+          is: vi.fn(() => ({
+            select: vi.fn(async () => ({ data: [], error: null })),
+          })),
+          single: finalValue,
+          select: vi.fn(async () => ({ data: [], error: null })),
+        }));
+        return chainableEq;
+      };
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: mockSession,
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+              update: vi.fn(() => ({
+                eq: vi.fn(() => Promise.resolve({ error: null })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: createChainableEq(vi.fn(async () => ({
+                  data: mockCurrentModule,
+                  error: null,
+                }))),
+              })),
+              update: vi.fn((updateData: Record<string, unknown>) => {
+                // Only capture the first update (module submit, not difficulty update)
+                if (!capturedUpdate && updateData.status === 'submitted') {
+                  capturedUpdate = updateData;
+                }
+                return {
+                  eq: createChainableEq(vi.fn(async () => ({ error: null }))),
+                };
+              }),
+            };
+          } else if (table === 'full_length_exam_responses') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [],
+                  error: null,
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      await fullLengthExamService.submitModule({
+        sessionId: 'session-123',
+        userId: 'user-456',
+      });
+
+      // Verify that submitted_late was set to false
+      expect(capturedUpdate).not.toBeNull();
+      expect(capturedUpdate?.submitted_late).toBe(false);
+      expect(capturedUpdate?.status).toBe('submitted');
+      expect(capturedUpdate?.submitted_at).toBeDefined();
+    });
+
+    it('should reject submission if module status is not in_progress', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const mockSession = {
+        id: 'session-123',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'rw',
+        current_module: 1,
+        seed: 'test-seed',
+      };
+
+      const mockCurrentModule = {
+        id: 'module-rw-1',
+        session_id: 'session-123',
+        section: 'rw',
+        module_index: 1,
+        status: 'not_started', // Not in_progress
+        ends_at: new Date(Date.now() + 60000).toISOString(),
+        started_at: null,
+        submitted_late: false,
+      };
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: mockSession,
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      single: vi.fn(async () => ({
+                        data: mockCurrentModule,
+                        error: null,
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      await expect(
+        fullLengthExamService.submitModule({
+          sessionId: 'session-123',
+          userId: 'user-456',
+        })
+      ).rejects.toThrow('Module must be in progress to submit');
+    });
+  });
+
   describe('getExamReview - Safe Question Field Projection', () => {
     const mockQuestionWithAnswers = {
       id: 'q1',
