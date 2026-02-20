@@ -8,13 +8,11 @@ export default defineConfig({
     globals: true,
     // Use threads pool instead of forks for stability (prevents worker crashes)
     pool: 'threads',
-    poolOptions: {
-      threads: {
+   
         // Limit concurrency to prevent worker pool instability in CI
         minThreads: 1,
         maxThreads: 1,
-      },
-    },
+     
     environmentMatchGlobs: [
       ['apps/api/**/*.test.ts', 'node'],
       ['client/**/*.test.{ts,tsx}', 'jsdom'],
