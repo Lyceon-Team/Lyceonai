@@ -106,9 +106,11 @@ function checkFileForViolations(
 ): FileViolation[] {
   const violations: FileViolation[] = [];
   const relativePath = path.relative(repoRoot, filePath);
+// Normalize Windows paths so allowlist comparisons are stable across OSes.
+  const normalizedPath = relativePath.split(path.sep).join("/");
 
   // Skip the choke point module itself
-  if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
+  if (normalizedPath === CHOKE_POINT_MODULE || normalizedPath.endsWith("/" + path.basename(CHOKE_POINT_MODULE))) {
     return violations;
   }
 
@@ -141,7 +143,7 @@ function checkFileForViolations(
         for (const table of MASTERY_TABLES) {
           if (contextLines.includes(table)) {
             violations.push({
-              file: relativePath,
+              file: normalizedPath,
               table,
               writePattern,
               lineNumber,
@@ -244,7 +246,7 @@ describe("Mastery Write Paths Guard", () => {
         const normalizedPath = relativePath.split(path.sep).join("/");
         
         // Skip the choke point module itself
-        if (relativePath === CHOKE_POINT_MODULE || relativePath.endsWith(CHOKE_POINT_MODULE)) {
+        if (normalizedPath === CHOKE_POINT_MODULE || normalizedPath.endsWith("/" + path.basename(CHOKE_POINT_MODULE))) {
           continue;
         }
 
