@@ -4,6 +4,14 @@ import path from "path";
 const ROOTS = ["dist", "public", "client/dist"];
 const TARGET = "cdn.jsdelivr.net/npm/katex";
 
+/**
+ * Recursively walks the given directory and returns a flat list of file paths.
+ *
+ * If the directory does not exist, an empty array is returned.
+ *
+ * @param {string} dir - The root directory to traverse.
+ * @returns {string[]} An array of absolute (or joined) file paths found under the directory.
+ */
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -25,7 +33,9 @@ for (const root of ROOTS) {
         console.error(`FOUND CDN KATEX IN: ${file}`);
         found = true;
       }
-    } catch {}
+    } catch (err) {
+      console.error(`WARNING: Failed to read file "${file}": ${err && err.message ? err.message : err}`);
+    }
   }
 }
 
