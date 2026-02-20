@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+import { PUBLIC_ROUTES, PROTECTED_ROUTES, ADMIN_ROUTES } from '../../apps/api/src/routes/registry';
 
 describe('CI Routes Tests', () => {
   let app: Express;
@@ -32,16 +33,11 @@ describe('CI Routes Tests', () => {
   });
 
   describe('Public Routes - No Auth Required', () => {
-    const publicRoutes = [
-      { path: '/api/health', method: 'get', name: 'Health check' },
-      { path: '/api/questions/recent?limit=5', method: 'get', name: 'Recent questions' },
-      { path: '/api/questions/search?q=test', method: 'get', name: 'Search questions' },
-      { path: '/api/auth/user', method: 'get', name: 'Get auth user' },
-    ];
-
-    publicRoutes.forEach(({ path, method, name }) => {
+    PUBLIC_ROUTES.forEach(({ path, method }) => {
+      const methodName = method.toLowerCase();
+      const name = `${method.toUpperCase()} ${path}`;
       it(`${name} (${method.toUpperCase()} ${path}) should be accessible without auth`, async () => {
-        const res = await request(app)[method](path);
+        const res = await (request(app) as any)[methodName](path);
         
         // Should not return 401 (unauthorized)
         expect(res.status).not.toBe(401);
@@ -58,84 +54,32 @@ describe('CI Routes Tests', () => {
   });
 
   describe('Protected Routes - Auth Required', () => {
-    const protectedRoutes = [
-      { 
-        path: '/api/profile', 
-        method: 'get', 
-        name: 'User profile',
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: false,
-      },
-      { 
-        path: '/api/rag', 
-        method: 'post', 
-        name: 'RAG endpoint',
-        body: { question: 'What is calculus?' },
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: true,
-      },
-      { 
-        path: '/api/rag/v2', 
-        method: 'post', 
-        name: 'RAG v2 endpoint',
-        body: { question: 'What is calculus?' },
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: true,
-      },
-      { 
-        path: '/api/tutor/v2', 
-        method: 'post', 
-        name: 'Tutor v2',
-        body: { message: 'Help me with math' },
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: true,
-      },
-      { 
-        path: '/api/practice/sessions', 
-        method: 'post', 
-        name: 'Practice sessions',
-        body: { mode: 'flow', section: 'math' },
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: true,
-      },
-    ];
+    PROTECTED_ROUTES.forEach(({ path, method }) => {
+      const methodName = method.toLowerCase();
+      it(`${method.toUpperCase()} ${path} should require authentication`, async () => {
+        const needsOrigin = methodName === 'post';
+        const req = (request(app) as any)[methodName](path);
 
-    protectedRoutes.forEach(({ path, method, name, body, requiresAuth, needsOrigin }) => {
-      if (requiresAuth) {
-        it(`${name} (${method.toUpperCase()} ${path}) should require authentication`, async () => {
-          const req = request(app)[method](path);
-          
-          // Add Origin for POST requests to pass CSRF check
-          if (needsOrigin) {
-            req.set('Origin', 'http://localhost:5000');
-          }
-          
-          if (body) {
-            req.send(body);
-          }
+        if (needsOrigin) {
+          req.set('Origin', 'http://localhost:5000');
+        }
 
-          const res = await req;
-          expect(res.status).toBe(401);
-          expect(res.body).toHaveProperty('error');
-        });
-      }
+        if (methodName === 'post') {
+          req.send({ mode: 'flow', section: 'math' });
+        }
+
+        const res = await req;
+        expect(res.status).toBe(401);
+        expect(res.body).toHaveProperty('error');
+      });
     });
   });
 
   describe('Admin Routes - Admin Auth Required', () => {
-    const adminRoutes = [
-      { path: '/api/admin/questions/needs-review', method: 'get', name: 'Questions needing review' },
-      { path: '/api/admin/health', method: 'get', name: 'Admin health endpoint' },
-    ];
-
-    adminRoutes.forEach(({ path, method, name }) => {
-      it(`${name} (${method.toUpperCase()} ${path}) should require authentication`, async () => {
-        const res = await request(app)[method](path);
+    ADMIN_ROUTES.forEach(({ path, method }) => {
+      const methodName = method.toLowerCase();
+      it(`${method.toUpperCase()} ${path} should require authentication`, async () => {
+        const res = await (request(app) as any)[methodName](path);
         expect(res.status).toBe(401);
         expect(res.body).toHaveProperty('error');
       });

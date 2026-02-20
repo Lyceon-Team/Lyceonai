@@ -21,7 +21,7 @@ export function corsMiddleware() {
       if (isDev || process.env.NODE_ENV === 'test') return cb(null, true);
 
       const o = normalizeOrigin(origin);
-      const ok = normalized.has(o);
+      const ok = o ? normalized.has(o) : false;
 
       if (!ok) {
         console.warn("[CORS] blocked", {

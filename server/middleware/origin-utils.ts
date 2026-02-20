@@ -1,29 +1,28 @@
 // server/middleware/origin-utils.ts
-export function normalizeOrigin(input: string): string {
+export function parseAllowedOrigins(envValue?: string): URL[] {
+  return (envValue || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((value) => {
+      try {
+        return new URL(value);
+      } catch {
+        return null;
+      }
+    })
+    .filter((u): u is URL => !!u);
+}
+
+export function normalizeOrigin(input: string): string | null {
   try {
     const u = new URL(input);
     const protocol = u.protocol.toLowerCase();
-    const hostname = u.hostname.toLowerCase();
-    let port = u.port;
-
-    // Strip default ports
-    if ((protocol === "https:" && port === "443") || (protocol === "http:" && port === "80")) {
-      port = "";
-    }
-
-    return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
+    const host = u.host.toLowerCase();
+    return `${protocol}//${host}`;
   } catch {
-    // If it's not a URL, return trimmed raw
-    return String(input || "").trim();
+    return null;
   }
-}
-
-function splitCsv(csv?: string): string[] {
-  if (!csv) return [];
-  return csv
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 export function buildAllowedOrigins(opts: {
@@ -35,26 +34,44 @@ export function buildAllowedOrigins(opts: {
   const isDev = nodeEnv === "development";
   const isTest = nodeEnv === "test";
 
-  // Hard defaults for production safety
-  const DEFAULTS = [
-    "https://lyceon.ai",
-    "https://www.lyceon.ai",
+  const defaults = [
+    ...parseAllowedOrigins("https://lyceon.ai,https://www.lyceon.ai"),
+    ...(isTest ? parseAllowedOrigins("http://localhost:5000,http://localhost:3000,http://localhost:3001") : []),
   ];
-  
-  // In test mode, add localhost origins for testing
-  const TEST_DEFAULTS = isTest ? [
-    "http://localhost:5000",
-    "http://localhost:3000",
-    "http://localhost:3001",
-  ] : [];
 
-  const fromCors = splitCsv(opts.corsOriginsCsv);
-  const fromCsrf = splitCsv(opts.csrfOriginsCsv);
+  const envOrigins = [
+    ...parseAllowedOrigins(opts.corsOriginsCsv),
+    ...parseAllowedOrigins(opts.csrfOriginsCsv),
+  ];
 
-  // Combine all origins
-  const raw = Array.from(new Set([...DEFAULTS, ...TEST_DEFAULTS, ...fromCors, ...fromCsrf]));
-
-  const normalized = new Set(raw.map(normalizeOrigin));
+  const raw = Array.from(new Set([...defaults, ...envOrigins].map((u) => u.href)));
+  const normalized = new Set(
+    raw
+      .map((r) => normalizeOrigin(r))
+      .filter((v): v is string => !!v)
+  );
 
   return { isDev, raw, normalized };
+}
+
+export function isAllowedRequestOrigin(
+  req: { method?: string; headers: Record<string, string | string[] | undefined> },
+  allowed: Set<string>
+): boolean {
+  const method = (req.method || "").toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return true;
+
+  const originHeader = req.headers.origin ?? req.headers.Origin;
+  const refererHeader = req.headers.referer ?? req.headers.Referer;
+
+  const origin = typeof originHeader === "string" ? originHeader : Array.isArray(originHeader) ? originHeader[0] : "";
+  const referer = typeof refererHeader === "string" ? refererHeader : Array.isArray(refererHeader) ? refererHeader[0] : "";
+
+  const originNorm = origin ? normalizeOrigin(origin) : null;
+  const refererNorm = referer ? normalizeOrigin(referer) : null;
+
+  if (originNorm && allowed.has(originNorm)) return true;
+  if (refererNorm && allowed.has(refererNorm)) return true;
+
+  return false;
 }
