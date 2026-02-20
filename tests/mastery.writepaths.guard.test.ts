@@ -106,7 +106,7 @@ function checkFileForViolations(
 ): FileViolation[] {
   const violations: FileViolation[] = [];
   const relativePath = path.relative(repoRoot, filePath);
-// Normalize Windows paths so allowlist comparisons are stable across OSes.
+  // Normalize Windows paths so allowlist comparisons are stable across OSes.
   const normalizedPath = relativePath.split(path.sep).join("/");
 
   // Skip the choke point module itself
