@@ -850,4 +850,283 @@ describe('Full-Length Exam Service', () => {
       expect(true).toBe(true);
     });
   });
+
+  describe('getExamReview - Safe Question Field Projection', () => {
+    const mockQuestionWithAnswers = {
+      id: 'q1',
+      stem: 'What is 2 + 2?',
+      section: 'Math',
+      type: 'mc',
+      options: [{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }],
+      difficulty: 'easy',
+      difficulty_level: 1,
+      unit_tag: 'Arithmetic',
+      tags: ['addition', 'basic'],
+      question_number: 1,
+      page_number: 5,
+      // Answer fields that should NOT appear pre-completion
+      answer: 'B',
+      answer_choice: 'B',
+      answer_text: null,
+      explanation: 'Two plus two equals four.',
+      classification: { topic: 'arithmetic', skill: 'addition' },
+    };
+
+    const mockSession = {
+      id: 'session-review-123',
+      user_id: 'user-456',
+      status: 'in_progress',
+      current_section: 'math',
+      current_module: 1,
+      seed: 'test-seed',
+      started_at: new Date().toISOString(),
+      completed_at: null,
+      created_at: new Date().toISOString(),
+    };
+
+    const mockCompletedSession = {
+      ...mockSession,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    };
+
+    const mockModule = {
+      id: 'module-1',
+      section: 'math',
+      module_index: 1,
+      status: 'in_progress',
+      difficulty_bucket: null,
+      started_at: new Date().toISOString(),
+      submitted_at: null,
+    };
+
+    const mockModuleQuestion = {
+      question_id: 'q1',
+      module_id: 'module-1',
+      order_index: 0,
+    };
+
+    const mockResponse = {
+      question_id: 'q1',
+      module_id: 'module-1',
+      selected_answer: 'B',
+      free_response_answer: null,
+      is_correct: true,
+      answered_at: new Date().toISOString(),
+    };
+
+    it('should NOT include answer/explanation fields for not-completed session', async () => {
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: mockSession,
+                    error: null,
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(async () => ({
+                      data: [mockModule],
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({
+                  data: [mockModuleQuestion],
+                  error: null,
+                })),
+              })),
+            };
+          } else if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({
+                  data: [mockQuestionWithAnswers],
+                  error: null,
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_responses') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [mockResponse],
+                  error: null,
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      } as unknown as ReturnType<typeof import('../../lib/supabase-admin').getSupabaseAdmin>;
+
+      const result = await fullLengthExamService.getExamReview({
+        supabase: mockSupabase,
+        sessionId: 'session-review-123',
+      });
+
+      // Verify session is not completed
+      expect(result.session.status).toBe('in_progress');
+
+      // Verify questions returned
+      expect(result.questions.length).toBe(1);
+      const question = result.questions[0];
+
+      // Verify safe fields ARE present
+      expect(question.id).toBe('q1');
+      expect(question.stem).toBe('What is 2 + 2?');
+      expect(question.section).toBe('Math');
+      expect(question.type).toBe('mc');
+      expect(question.options).toEqual([{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }]);
+      expect(question.difficulty).toBe('easy');
+
+      // Verify answer/explanation fields are NOT present (allowlist enforcement)
+      const questionAsAny = question as Record<string, unknown>;
+      expect(questionAsAny.answer).toBeUndefined();
+      expect(questionAsAny.answerChoice).toBeUndefined();
+      expect(questionAsAny.answerText).toBeUndefined();
+      expect(questionAsAny.answer_choice).toBeUndefined();
+      expect(questionAsAny.answer_text).toBeUndefined();
+      expect(questionAsAny.explanation).toBeUndefined();
+      expect(questionAsAny.classification).toBeUndefined();
+
+      // Verify is_correct is hidden for responses when not completed
+      expect(result.responses[0].isCorrect).toBeNull();
+    });
+
+    it('should include answer/explanation fields for completed session', async () => {
+      const mockSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: mockCompletedSession,
+                    error: null,
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(async () => ({
+                      data: [mockModule],
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({
+                  data: [mockModuleQuestion],
+                  error: null,
+                })),
+              })),
+            };
+          } else if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({
+                  data: [mockQuestionWithAnswers],
+                  error: null,
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_responses') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [mockResponse],
+                  error: null,
+                })),
+              })),
+            };
+          }
+          return { select: vi.fn() };
+        }),
+      } as unknown as ReturnType<typeof import('../../lib/supabase-admin').getSupabaseAdmin>;
+
+      const result = await fullLengthExamService.getExamReview({
+        supabase: mockSupabase,
+        sessionId: 'session-review-123',
+      });
+
+      // Verify session is completed
+      expect(result.session.status).toBe('completed');
+
+      // Verify questions returned
+      expect(result.questions.length).toBe(1);
+      const question = result.questions[0] as fullLengthExamService.FullQuestionPostCompletion;
+
+      // Verify safe fields ARE present
+      expect(question.id).toBe('q1');
+      expect(question.stem).toBe('What is 2 + 2?');
+      expect(question.section).toBe('Math');
+      expect(question.type).toBe('mc');
+      expect(question.options).toEqual([{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }]);
+      expect(question.difficulty).toBe('easy');
+
+      // Verify answer/explanation fields ARE present for completed session
+      expect(question.answer).toBe('B');
+      expect(question.answerChoice).toBe('B');
+      expect(question.explanation).toBe('Two plus two equals four.');
+      expect(question.classification).toEqual({ topic: 'arithmetic', skill: 'addition' });
+
+      // Verify is_correct is revealed for responses when completed
+      expect(result.responses[0].isCorrect).toBe(true);
+    });
+
+    it('should verify allowlist constant contains only safe fields', () => {
+      // Verify the allowlist does NOT contain answer/explanation fields
+      const safeFields = fullLengthExamService.SAFE_QUESTION_FIELDS_PRE_COMPLETION;
+      
+      expect(safeFields).not.toContain('answer');
+      expect(safeFields).not.toContain('answerChoice');
+      expect(safeFields).not.toContain('answerText');
+      expect(safeFields).not.toContain('answer_choice');
+      expect(safeFields).not.toContain('answer_text');
+      expect(safeFields).not.toContain('explanation');
+      expect(safeFields).not.toContain('classification');
+
+      // Verify safe fields ARE present
+      expect(safeFields).toContain('id');
+      expect(safeFields).toContain('stem');
+      expect(safeFields).toContain('section');
+      expect(safeFields).toContain('type');
+      expect(safeFields).toContain('options');
+      expect(safeFields).toContain('difficulty');
+    });
+
+    it('should verify answer fields constant contains the right fields', () => {
+      const answerFields = fullLengthExamService.ANSWER_FIELDS_POST_COMPLETION;
+      
+      // Verify answer fields ARE present
+      expect(answerFields).toContain('answer');
+      expect(answerFields).toContain('answerChoice');
+      expect(answerFields).toContain('answerText');
+      expect(answerFields).toContain('explanation');
+      expect(answerFields).toContain('classification');
+    });
+  });
 });
