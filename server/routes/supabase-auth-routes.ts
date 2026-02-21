@@ -290,7 +290,7 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
     clearAuthCookies(res, isProd);
 
     logger.info('AUTH', 'signout_success', 'User signed out', {
-      userId: data.user.id
+      userId: (req as any).user?.id || null
     });
 
     res.json({
@@ -650,6 +650,81 @@ router.get('/debug', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('AUTH', 'debug_error', 'Debug endpoint error', error);
     res.status(500).json({ error: 'Debug endpoint failed' });
+  }
+});
+
+/**
+ * POST /exchange-session - Exchange external tokens for httpOnly cookies
+ * 
+ * Accepts access_token and refresh_token from request body (e.g., from OAuth flow)
+ * and sets them as httpOnly cookies for subsequent requests.
+ * 
+ * Security: CSRF protection applied
+ */
+router.post('/exchange-session', csrfProtection, async (req: Request, res: Response) => {
+  const { access_token, refresh_token } = req.body;
+  
+  // Validate required tokens
+  if (!access_token || !refresh_token) {
+    logger.warn('AUTH', 'exchange_session_missing_tokens', 'Missing required tokens', {});
+    return res.status(400).json({ 
+      error: 'Missing required tokens',
+      details: 'Both access_token and refresh_token are required' 
+    });
+  }
+  
+  // Validate token format (basic check - they should be non-empty strings)
+  if (typeof access_token !== 'string' || typeof refresh_token !== 'string') {
+    logger.warn('AUTH', 'exchange_session_invalid_format', 'Invalid token format', {});
+    return res.status(400).json({ 
+      error: 'Invalid token format',
+      details: 'Tokens must be strings' 
+    });
+  }
+  
+  // Validate the access token by trying to get user
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error } = await supabase.auth.getUser(access_token);
+    
+    if (error || !user) {
+      logger.warn('AUTH', 'exchange_session_invalid_token', 'Invalid access token', {
+        error: error?.message
+      });
+      return res.status(401).json({ 
+        error: 'Invalid tokens',
+        details: 'Token validation failed' 
+      });
+    }
+    
+    // Tokens are valid, set cookies
+    const isProd = process.env.NODE_ENV === 'production';
+    const session = {
+      access_token,
+      refresh_token,
+      expires_in: 3600 // Default 1 hour
+    };
+    
+    setAuthCookies(res, session, isProd);
+    
+    logger.info('AUTH', 'exchange_session_success', 'Session exchanged successfully', {
+      userId: user.id
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Session exchanged successfully',
+      user: {
+        id: user.id,
+        email: user.email
+      }
+    });
+  } catch (error: any) {
+    logger.error('AUTH', 'exchange_session_error', 'Exchange session error', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: 'Failed to exchange session' 
+    });
   }
 });
 
