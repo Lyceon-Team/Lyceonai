@@ -325,6 +325,114 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
     expect(session.userId).toBeDefined();
   });
 
+  test('should enforce rate limit on practice answer submissions', async ({ request }) => {
+    // Create a new session for rate limit testing
+    const sessionResponse = await request.post('/api/practice/sessions', {
+      headers: {
+        'Cookie': `sb-access-token=${user1Token}`,
+      },
+      data: {
+        mode: 'flow',
+        section: 'Math',
+        difficulty: 'medium',
+      },
+    });
+    expect(sessionResponse.ok()).toBeTruthy();
+    const session = await sessionResponse.json();
+    const testSessionId = session.id;
+
+    // Make requests up to the limit (30 requests per minute)
+    const maxRequests = 30;
+    for (let i = 0; i < maxRequests; i++) {
+      const response = await request.post('/api/practice/answer', {
+        headers: {
+          'Cookie': `sb-access-token=${user1Token}`,
+        },
+        data: {
+          sessionId: testSessionId,
+          questionId: `test-question-rate-limit-${i}`,
+          selectedAnswer: 'A',
+          isCorrect: true,
+          timeSpentMs: 1000,
+        },
+      });
+      
+      // All requests within limit should succeed or fail with expected errors (not 429)
+      expect([200, 400, 403, 404, 422].includes(response.status())).toBeTruthy();
+    }
+
+    // The next request should be rate limited
+    const rateLimitedResponse = await request.post('/api/practice/answer', {
+      headers: {
+        'Cookie': `sb-access-token=${user1Token}`,
+      },
+      data: {
+        sessionId: testSessionId,
+        questionId: 'test-question-rate-limit-over',
+        selectedAnswer: 'A',
+        isCorrect: true,
+        timeSpentMs: 1000,
+      },
+    });
+
+    expect(rateLimitedResponse.status()).toBe(429);
+    const body = await rateLimitedResponse.json();
+    expect(body.error).toBe('rate_limited');
+    expect(body.message).toContain('Too many practice submissions');
+  });
+
+  test('should not process request body when rate limited', async ({ request }) => {
+    // Create a new session for this test
+    const sessionResponse = await request.post('/api/practice/sessions', {
+      headers: {
+        'Cookie': `sb-access-token=${user2Token}`,
+      },
+      data: {
+        mode: 'flow',
+        section: 'Math',
+        difficulty: 'medium',
+      },
+    });
+    expect(sessionResponse.ok()).toBeTruthy();
+    const session = await sessionResponse.json();
+    const testSessionId = session.id;
+
+    // Exhaust the rate limit for user 2
+    const maxRequests = 30;
+    for (let i = 0; i < maxRequests; i++) {
+      await request.post('/api/practice/answer', {
+        headers: {
+          'Cookie': `sb-access-token=${user2Token}`,
+        },
+        data: {
+          sessionId: testSessionId,
+          questionId: `test-question-no-write-${i}`,
+          selectedAnswer: 'A',
+          isCorrect: true,
+          timeSpentMs: 1000,
+        },
+      });
+    }
+
+    // Send a request with invalid data that would normally cause a 400 error
+    // If rate limited properly, we should get 429 instead of 400 (meaning the handler didn't run)
+    const rateLimitedResponse = await request.post('/api/practice/answer', {
+      headers: {
+        'Cookie': `sb-access-token=${user2Token}`,
+      },
+      data: {
+        // Invalid data: missing required fields
+        invalidField: 'invalid',
+      },
+    });
+
+    // Should get 429 (rate limited) instead of 400 (validation error)
+    // This proves the handler body didn't run
+    expect(rateLimitedResponse.status()).toBe(429);
+    const body = await rateLimitedResponse.json();
+    expect(body.error).toBe('rate_limited');
+  });
+
   test.afterAll(async ({ request }) => {
     // Clean up: sign out users
     await request.post('/api/auth/signout', {
