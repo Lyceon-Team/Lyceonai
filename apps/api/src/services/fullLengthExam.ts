@@ -14,7 +14,8 @@ import type {
   FullLengthExamSession, 
   FullLengthExamModule,
   FullLengthExamQuestion,
-  FullLengthExamResponse
+  FullLengthExamResponse,
+  Question
 } from "../../../../shared/schema";
 
 // ============================================================================
@@ -1377,6 +1378,27 @@ const SAFE_QUESTION_SELECT_POST_COMPLETION =
   [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
 
 /**
+ * Type-safe question row from Supabase for pre-completion queries.
+ * Only includes safe fields that don't leak answers/explanations.
+ */
+type QuestionRowPreCompletion = Pick<
+  Question,
+  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
+  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber'
+>;
+
+/**
+ * Type-safe question row from Supabase for post-completion queries.
+ * Includes all safe fields plus answer/explanation fields.
+ */
+type QuestionRowPostCompletion = Pick<
+  Question,
+  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
+  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber' |
+  'answer' | 'answerChoice' | 'answerText' | 'explanation' | 'classification'
+>;
+
+/**
  * Safe question type for pre-completion review.
  * Contains only fields from SAFE_QUESTION_FIELDS_PRE_COMPLETION.
  */
@@ -1564,16 +1586,31 @@ export async function getExamReview(
 
   let questions: Record<string, unknown>[] = [];
   if (questionIds.length > 0) {
-    const { data: questionsData, error: questionsError } = await supabase
-      .from("questions")
-      .select(questionSelectFields)
-      .in("id", questionIds);
+    if (isCompleted) {
+      const { data: questionsData, error: questionsError } = await supabase
+        .from("questions")
+        .select(questionSelectFields)
+        .in("id", questionIds)
+        .returns<QuestionRowPostCompletion[]>();
 
-    if (questionsError) {
-      throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+      if (questionsError) {
+        throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+      }
+
+      questions = questionsData ?? [];
+    } else {
+      const { data: questionsData, error: questionsError } = await supabase
+        .from("questions")
+        .select(questionSelectFields)
+        .in("id", questionIds)
+        .returns<QuestionRowPreCompletion[]>();
+
+      if (questionsError) {
+        throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+      }
+
+      questions = questionsData ?? [];
     }
-
-    questions = (questionsData || []) as unknown as Record<string, unknown>[];
   }
 
   // Load user responses
