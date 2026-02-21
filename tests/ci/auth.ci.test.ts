@@ -183,6 +183,7 @@ describe('CI Auth Tests', () => {
     it('should require tokens in exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
+        .set('Origin', 'http://localhost:5000')
         .send({});
       
       expect([400, 401]).toContain(res.status);
@@ -191,6 +192,7 @@ describe('CI Auth Tests', () => {
     it('should validate token format in exchange-session', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
+        .set('Origin', 'http://localhost:5000')
         .send({
           access_token: 'invalid',
           refresh_token: 'invalid'
@@ -211,6 +213,7 @@ describe('CI Auth Tests', () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Content-Type', 'application/json')
+        .set('Origin', 'http://localhost:5000')
         .send('{ invalid json }');
       
       expect([400, 500]).toContain(res.status);
