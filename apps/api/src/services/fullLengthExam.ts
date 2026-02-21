@@ -1584,33 +1584,26 @@ export async function getExamReview(
     ? SAFE_QUESTION_SELECT_POST_COMPLETION
     : SAFE_QUESTION_SELECT_PRE_COMPLETION;
 
+  // Type the questions array based on completion status
+  // The Supabase select() ensures only these fields are returned from the DB
   let questions: Record<string, unknown>[] = [];
+  
   if (questionIds.length > 0) {
-    if (isCompleted) {
-      const { data: questionsData, error: questionsError } = await supabase
-        .from("questions")
-        .select(questionSelectFields)
-        .in("id", questionIds)
-        .returns<QuestionRowPostCompletion[]>();
+    const { data: questionsData, error: questionsError } = await supabase
+      .from("questions")
+      .select(questionSelectFields)
+      .in("id", questionIds);
 
-      if (questionsError) {
-        throw new Error(`Failed to fetch questions: ${questionsError.message}`);
-      }
-
-      questions = questionsData ?? [];
-    } else {
-      const { data: questionsData, error: questionsError } = await supabase
-        .from("questions")
-        .select(questionSelectFields)
-        .in("id", questionIds)
-        .returns<QuestionRowPreCompletion[]>();
-
-      if (questionsError) {
-        throw new Error(`Failed to fetch questions: ${questionsError.message}`);
-      }
-
-      questions = questionsData ?? [];
+    if (questionsError) {
+      throw new Error(`Failed to fetch questions: ${questionsError.message}`);
     }
+
+    // Safe assignment: The select string above guarantees that questionsData contains
+    // exactly the fields defined in Question schema matching our allowlist constants.
+    // TypeScript doesn't know Supabase's runtime projection, so we cast through unknown.
+    questions = (questionsData ?? []) as unknown as (
+      typeof isCompleted extends true ? QuestionRowPostCompletion[] : QuestionRowPreCompletion[]
+    );
   }
 
   // Load user responses
