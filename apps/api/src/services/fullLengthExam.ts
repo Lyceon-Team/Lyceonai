@@ -1573,7 +1573,7 @@ export async function getExamReview(
       throw new Error(`Failed to fetch questions: ${questionsError.message}`);
     }
 
-    questions = questionsData || [];
+    questions = (questionsData || []) as unknown as Record<string, unknown>[];
   }
 
   // Load user responses
