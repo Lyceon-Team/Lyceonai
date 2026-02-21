@@ -1600,10 +1600,9 @@ export async function getExamReview(
 
     // Safe assignment: The select string above guarantees that questionsData contains
     // exactly the fields defined in Question schema matching our allowlist constants.
+    // Based on isCompleted, this will be either QuestionRowPreCompletion[] or QuestionRowPostCompletion[].
     // TypeScript doesn't know Supabase's runtime projection, so we cast through unknown.
-    questions = (questionsData ?? []) as unknown as (
-      typeof isCompleted extends true ? QuestionRowPostCompletion[] : QuestionRowPreCompletion[]
-    );
+    questions = (questionsData ?? []) as unknown as (QuestionRowPreCompletion | QuestionRowPostCompletion)[];
   }
 
   // Load user responses
