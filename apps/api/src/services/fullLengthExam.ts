@@ -14,7 +14,8 @@ import type {
   FullLengthExamSession, 
   FullLengthExamModule,
   FullLengthExamQuestion,
-  FullLengthExamResponse
+  FullLengthExamResponse,
+  Question
 } from "../../../../shared/schema";
 
 // ============================================================================
@@ -1377,6 +1378,27 @@ const SAFE_QUESTION_SELECT_POST_COMPLETION =
   [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
 
 /**
+ * Type-safe question row from Supabase for pre-completion queries.
+ * Only includes safe fields that don't leak answers/explanations.
+ */
+type QuestionRowPreCompletion = Pick<
+  Question,
+  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
+  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber'
+>;
+
+/**
+ * Type-safe question row from Supabase for post-completion queries.
+ * Includes all safe fields plus answer/explanation fields.
+ */
+type QuestionRowPostCompletion = Pick<
+  Question,
+  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
+  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber' |
+  'answer' | 'answerChoice' | 'answerText' | 'explanation' | 'classification'
+>;
+
+/**
  * Safe question type for pre-completion review.
  * Contains only fields from SAFE_QUESTION_FIELDS_PRE_COMPLETION.
  */
@@ -1562,7 +1584,10 @@ export async function getExamReview(
     ? SAFE_QUESTION_SELECT_POST_COMPLETION
     : SAFE_QUESTION_SELECT_PRE_COMPLETION;
 
+  // Type the questions array based on completion status
+  // The Supabase select() ensures only these fields are returned from the DB
   let questions: Record<string, unknown>[] = [];
+  
   if (questionIds.length > 0) {
     const { data: questionsData, error: questionsError } = await supabase
       .from("questions")
@@ -1573,7 +1598,13 @@ export async function getExamReview(
       throw new Error(`Failed to fetch questions: ${questionsError.message}`);
     }
 
-    questions = questionsData || [];
+    // Safe assignment: The select string above guarantees that questionsData contains
+    // exactly the fields defined in Question schema matching our allowlist constants.
+    // We cast to the specific type based on completion status for better type precision.
+    // TypeScript doesn't know Supabase's runtime projection, so we cast through unknown.
+    questions = isCompleted
+      ? (questionsData ?? []) as unknown as QuestionRowPostCompletion[]
+      : (questionsData ?? []) as unknown as QuestionRowPreCompletion[];
   }
 
   // Load user responses
