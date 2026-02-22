@@ -1,5 +1,6 @@
 // server/routes/practice-canonical.ts
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
@@ -13,6 +14,20 @@ import { MasteryEventType } from "../../apps/api/src/services/mastery-constants"
 
 const router = Router();
 const csrfProtection = csrfGuard();
+
+// Rate limiter for practice answer submissions
+const practiceAnswerRateLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute window
+  max: 30, // max 30 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: "rate_limited",
+      message: "Too many practice submissions. Please slow down."
+    });
+  },
+});
 
 /**
  * DB truth (from your questions_rows (6).csv):
@@ -305,7 +320,7 @@ const AnswerBodySchema = z.object({
   elapsedMs: z.number().optional().nullable(),
 });
 
-router.post("/answer", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;

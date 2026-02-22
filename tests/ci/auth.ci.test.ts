@@ -213,6 +213,7 @@ describe('CI Auth Tests', () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Content-Type', 'application/json')
+        .set('Origin', 'http://localhost:5000')
         .send('{ invalid json }');
       
       expect([400, 500]).toContain(res.status);

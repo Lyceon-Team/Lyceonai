@@ -21,3 +21,4 @@ package-lock.json
 
 # Audit outputs
 audit-output.json
+test-results/
