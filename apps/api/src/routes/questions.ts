@@ -25,7 +25,7 @@ export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
     id: q.id,
     stem: q.stem,
     section: q.section,
-    explanation: q.explanation ?? null,
+    explanation: null,
     source: {
       mapping: q.source_mapping ?? q.sourceMapping ?? null,
       page: q.page_number ?? q.pageNumber ?? null,
@@ -86,13 +86,10 @@ export const getQuestions = async (req: Request, res: Response) => {
         stem,
         options,
         section,
-        explanation,
         source_mapping,
         page_number,
         tags,
-        type,
-        answer_choice,
-        answer_text
+        type
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -148,7 +145,6 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
         stem,
         options,
         section,
-        explanation,
         source_mapping,
         page_number,
         tags,
@@ -237,13 +233,10 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
                 stem,
                 options,
                 section,
-                explanation,
                 source_mapping,
                 page_number,
                 tags,
-                type,
-                answer_choice,
-                answer_text
+                type
               `)
               .limit(limit * 3);
 
@@ -323,13 +316,10 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
         stem,
         options,
         section,
-        explanation,
         source_mapping,
         page_number,
         tags,
-        type,
-        answer_choice,
-        answer_text
+        type
       `)
       .range(randomOffset, randomOffset + limit - 1);
 
@@ -476,14 +466,11 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
         stem,
         options,
         section,
-        explanation,
         source_mapping,
         page_number,
         tags,
         created_at,
-        type,
-        answer_choice,
-        answer_text
+        type
       `)
       .order('created_at', { ascending: false })
       .limit(limit + 1);
@@ -674,7 +661,6 @@ export const getQuestionById = async (req: Request, res: Response) => {
         stem,
         options,
         section,
-        explanation,
         source_mapping,
         page_number,
         tags,
@@ -869,7 +855,6 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
         section,
         unit_tag,
         difficulty_level,
-        explanation,
         type,
         tags
       `)
@@ -895,7 +880,7 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
       type: q.type || 'mc',
       options: q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : [],
       tags: q.tags ? (typeof q.tags === 'string' ? q.tags.split(',').map((t: string) => t.trim()) : q.tags) : [],
-      explanation: q.explanation,
+      explanation: null,
     }));
 
     res.json({
@@ -936,7 +921,6 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
         section,
         unit_tag,
         difficulty_level,
-        explanation,
         type,
         tags
       `)
@@ -962,7 +946,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
       type: q.type || 'mc',
       options: q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : [],
       tags: q.tags ? (typeof q.tags === 'string' ? q.tags.split(',').map((t: string) => t.trim()) : q.tags) : [],
-      explanation: q.explanation,
+      explanation: null,
     }));
 
     res.json({

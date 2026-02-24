@@ -289,9 +289,7 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
     const isProd = process.env.NODE_ENV === 'production';
     clearAuthCookies(res, isProd);
 
-    logger.info('AUTH', 'signout_success', 'User signed out', {
-      userId: data.user.id
-    });
+    logger.info('AUTH', 'signout_success', 'User signed out');
 
     res.json({
       success: true,
