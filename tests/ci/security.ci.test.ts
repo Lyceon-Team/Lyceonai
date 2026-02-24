@@ -57,6 +57,9 @@ describe('CI Security Tests - CSRF', () => {
       expect(res.status).toBe(404);
       expect(res.status).not.toBe(200);
       expect(res.status).not.toBe(201);
+      // Endpoint is deprecated and removed - must return 404 (not found)
+      // It must not succeed (200/201) and must not exist
+      expect(res.status).toBe(404);
     });
   });
 

@@ -181,6 +181,8 @@ describe('CI Auth Tests', () => {
 
   describe('Session Exchange Endpoint (Deprecated)', () => {
     it('should return 404 for deprecated exchange-session endpoint (no body)', async () => {
+  describe('Session Exchange Endpoint - Deprecated (Must Return 404)', () => {
+    it('should return 404 for exchange-session endpoint (deprecated)', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Origin', 'http://localhost:5000')
@@ -191,15 +193,21 @@ describe('CI Auth Tests', () => {
     });
 
     it('should return 404 for deprecated exchange-session endpoint (with tokens)', async () => {
+      // Endpoint is deprecated and removed - must return 404
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for exchange-session with tokens (endpoint removed)', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Origin', 'http://localhost:5000')
         .send({
-          access_token: 'invalid',
-          refresh_token: 'invalid'
+          access_token: 'test-token',
+          refresh_token: 'test-refresh'
         });
       
       // Endpoint must not exist (deprecated under httpOnly cookie auth)
+      // Endpoint is deprecated and removed - must return 404
       expect(res.status).toBe(404);
     });
   });
