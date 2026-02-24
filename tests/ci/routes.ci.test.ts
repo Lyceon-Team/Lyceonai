@@ -227,10 +227,13 @@ describe('CI Routes Tests', () => {
       // Field validation (400) happens after auth, so we cannot test it in CI
       // without mocking authenticated sessions (out of scope for this CI test)
       const res = await request(app)
+        .post('/api/auth/signin')
         .post('/api/practice/answer')
         .set('Origin', 'http://localhost:5000')
-        .send({}); // Missing required fields
+        .send({}); // Missing required fields (email, password)
       
+      // Should fail validation with 400 (bad request)
+      expect(res.status).toBe(400);
       // Should require authentication (401) since endpoint is protected
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');

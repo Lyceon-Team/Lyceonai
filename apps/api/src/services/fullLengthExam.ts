@@ -1598,6 +1598,7 @@ export async function getExamReview(
       throw new Error(`Failed to fetch questions: ${questionsError.message}`);
     }
 
+    questions = (questionsData as unknown as Record<string, unknown>[]) || [];
     // Safe assignment: The select string above guarantees that questionsData contains
     // exactly the fields defined in Question schema matching our allowlist constants.
     // We cast to the specific type based on completion status for better type precision.

@@ -52,6 +52,11 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test-refresh'
         });
       
+      // Endpoint must not exist (deprecated under httpOnly cookie auth)
+      // The important part is that it doesn't succeed (200/201)
+      expect(res.status).toBe(404);
+      expect(res.status).not.toBe(200);
+      expect(res.status).not.toBe(201);
       // Endpoint is deprecated and removed - must return 404 (not found)
       // It must not succeed (200/201) and must not exist
       expect(res.status).toBe(404);
@@ -231,6 +236,35 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+    });
+  });
+
+  describe('Forbidden Routes Invariant - Deprecated Endpoints', () => {
+    it('should return 404 for POST /api/auth/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/auth/exchange_session (underscore variant)', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange_session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
     });
   });
 });

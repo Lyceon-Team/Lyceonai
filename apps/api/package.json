@@ -2,15 +2,14 @@
   "name": "@sat-copilot/api",
   "version": "1.0.0",
   "type": "module",
-  "main": "./src/index.js",
   "scripts": {
-    "dev": "NODE_ENV=development tsx src/index.ts",
-    "build": "esbuild src/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "dev": "NODE_ENV=development pnpm -s exec tsx src/index.ts",
+    "build": "pnpm -s exec esbuild src/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "next:dev": "next dev --port 3001",
     "next:build": "next build",
     "next:start": "next start --port 3001",
-    "seed:dev-question": "tsx scripts/seed-dev-question.ts"
+    "seed:dev-question": "pnpm -s exec tsx scripts/seed-dev-question.ts"
   },
   "dependencies": {
     "zod": "^3.24.2"
