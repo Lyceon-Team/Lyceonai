@@ -52,8 +52,8 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test-refresh'
         });
       
-      // Endpoint is deprecated and removed - must return 404
-      // It must not succeed (200/201) and must not exist (404)
+      // Endpoint is deprecated and removed - must return 404 (not found)
+      // It must not succeed (200/201) and must not exist
       expect(res.status).toBe(404);
     });
   });

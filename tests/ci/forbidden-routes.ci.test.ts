@@ -103,8 +103,8 @@ describe('CI Forbidden Routes - Permanent Invariants', () => {
       
       // Should return generic 404, not detailed error messages
       expect(res.status).toBe(404);
-      // Should not contain implementation details
-      const body = JSON.stringify(res.body);
+      // Should not contain implementation details (case-insensitive check)
+      const body = JSON.stringify(res.body).toLowerCase();
       expect(body).not.toContain('deprecated');
       expect(body).not.toContain('removed');
       expect(body).not.toContain('exchange');

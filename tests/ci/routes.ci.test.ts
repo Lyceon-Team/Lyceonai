@@ -223,15 +223,15 @@ describe('CI Routes Tests', () => {
   describe('Request Validation', () => {
     it('should validate required fields in POST requests', async () => {
       // Test with a real mounted endpoint: /api/practice/answer
-      // This endpoint requires authentication, so without auth we get 401
-      // We cannot test field validation without auth in CI harness
+      // This endpoint requires authentication first, so without auth we get 401
+      // Field validation (400) happens after auth, so we cannot test it in CI
+      // without mocking authenticated sessions (out of scope for this CI test)
       const res = await request(app)
         .post('/api/practice/answer')
         .set('Origin', 'http://localhost:5000')
         .send({}); // Missing required fields
       
       // Should require authentication (401) since endpoint is protected
-      // Cannot test field validation (400) without being authenticated
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');
     });
