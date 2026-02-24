@@ -44,7 +44,7 @@ describe('CI Security Tests - CSRF', () => {
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
     });
 
-    it('should block POST to exchange-session without Origin/Referer', async () => {
+    it('should return 404 for deprecated exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .send({
@@ -52,12 +52,9 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test-refresh'
         });
       
-      // Should block with 403 (CSRF) or may return 500 if route has internal error
-      // The important part is that it doesn't succeed (200/201)
-      expect([403, 500]).toContain(res.status);
-      if (res.status === 403) {
-        expect(res.body).toHaveProperty('error', 'csrf_blocked');
-      }
+      // Endpoint is deprecated and removed - must return 404
+      // It must not succeed (200/201) and must not exist (404)
+      expect(res.status).toBe(404);
     });
   });
 

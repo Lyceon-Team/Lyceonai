@@ -179,27 +179,28 @@ describe('CI Auth Tests', () => {
     });
   });
 
-  describe('Session Exchange Endpoint', () => {
-    it('should require tokens in exchange-session endpoint', async () => {
+  describe('Session Exchange Endpoint - Deprecated (Must Return 404)', () => {
+    it('should return 404 for exchange-session endpoint (deprecated)', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Origin', 'http://localhost:5000')
         .send({});
       
-      expect([400, 401]).toContain(res.status);
+      // Endpoint is deprecated and removed - must return 404
+      expect(res.status).toBe(404);
     });
 
-    it('should validate token format in exchange-session', async () => {
+    it('should return 404 for exchange-session with tokens (endpoint removed)', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .set('Origin', 'http://localhost:5000')
         .send({
-          access_token: 'invalid',
-          refresh_token: 'invalid'
+          access_token: 'test-token',
+          refresh_token: 'test-refresh'
         });
       
-      // Should fail validation or auth check
-      expect([400, 401, 500]).toContain(res.status);
+      // Endpoint is deprecated and removed - must return 404
+      expect(res.status).toBe(404);
     });
   });
 
