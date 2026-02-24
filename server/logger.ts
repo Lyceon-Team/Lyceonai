@@ -5,6 +5,56 @@
  * for the SAT Learning Copilot application.
  */
 
+const REDACTION_STRING = '[REDACTED]';
+
+function shouldRedactKey(key: string) {
+  const lower = key.toLowerCase();
+  return lower.includes('authorization') || lower.includes('cookie') || lower.includes('token');
+}
+
+export function redactSensitive<T>(input: T): T {
+  const seen = new WeakMap<object, any>();
+
+  const clone = (value: any): any => {
+    if (value === null || value === undefined) return value;
+    if (typeof value !== 'object') return value;
+    if (value instanceof Date) return value;
+    if (seen.has(value)) return seen.get(value);
+
+    if (value instanceof Error) {
+      const target: any = {
+        name: value.name,
+        message: value.message,
+        stack: value.stack
+      };
+      seen.set(value, target);
+      for (const key of Object.keys(value)) {
+        target[key] = shouldRedactKey(key) ? REDACTION_STRING : clone((value as any)[key]);
+      }
+      return target;
+    }
+
+    if (Array.isArray(value)) {
+      const arr: any[] = [];
+      seen.set(value, arr);
+      for (let i = 0; i < value.length; i++) {
+        arr[i] = clone(value[i]);
+      }
+      return arr;
+    }
+
+    const result: Record<string, any> = {};
+    seen.set(value, result);
+    for (const key of Object.keys(value)) {
+      const val = (value as any)[key];
+      result[key] = shouldRedactKey(key) ? REDACTION_STRING : clone(val);
+    }
+    return result;
+  };
+
+  return clone(input);
+}
+
 export interface LogEntry {
   timestamp: string;
   level: 'debug' | 'info' | 'warn' | 'error';
@@ -56,14 +106,24 @@ class OperationalLogger {
     duration?: number,
     context?: { userId?: string; requestId?: string; ip?: string }
   ): LogEntry {
+    let safeData: any;
+    if (data !== undefined) {
+      safeData = typeof data === 'object' ? redactSensitive(data) : { value: data };
+    }
+
+    let safeError: any;
+    if (error !== undefined) {
+      safeError = this.serializeError(error);
+    }
+
     return {
       timestamp: new Date().toISOString(),
       level,
       component,
       operation,
       message,
-      data: data ? (typeof data === 'object' ? data : { value: data }) : undefined,
-      error: error ? this.serializeError(error) : undefined,
+      data: safeData,
+      error: safeError,
       duration,
       userId: context?.userId,
       requestId: context?.requestId,
@@ -75,15 +135,7 @@ class OperationalLogger {
    * Serialize error objects for logging
    */
   private serializeError(error: any) {
-    if (error instanceof Error) {
-      return {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        ...(error as any) // Capture additional properties
-      };
-    }
-    return error;
+    return redactSensitive(error);
   }
 
   /**
@@ -115,39 +167,40 @@ class OperationalLogger {
    * Output log entry
    */
   private output(entry: LogEntry) {
-    const formatted = this.formatForConsole(entry);
+    const safeEntry = redactSensitive(entry) as LogEntry;
+    const formatted = this.formatForConsole(safeEntry);
     
-    switch (entry.level) {
+    switch (safeEntry.level) {
       case 'error':
         console.error(`🚨 ${formatted}`);
-        if (entry.error) {
-          console.error('   Error details:', entry.error);
+        if (safeEntry.error) {
+          console.error('   Error details:', safeEntry.error);
         }
-        if (entry.data) {
-          console.error('   Context:', entry.data);
+        if (safeEntry.data) {
+          console.error('   Context:', safeEntry.data);
         }
         this.trackError();
         break;
       
       case 'warn':
         console.warn(`⚠️  ${formatted}`);
-        if (entry.data) {
-          console.warn('   Data:', entry.data);
+        if (safeEntry.data) {
+          console.warn('   Data:', safeEntry.data);
         }
         break;
       
       case 'info':
         console.log(`ℹ️  ${formatted}`);
-        if (entry.data && Object.keys(entry.data).length > 0) {
-          console.log('   Data:', entry.data);
+        if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
+          console.log('   Data:', safeEntry.data);
         }
         break;
       
       case 'debug':
         if (process.env.NODE_ENV === 'development') {
           console.log(`🐛 ${formatted}`);
-          if (entry.data && Object.keys(entry.data).length > 0) {
-            console.log('   Debug data:', entry.data);
+          if (safeEntry.data && Object.keys(safeEntry.data).length > 0) {
+            console.log('   Debug data:', safeEntry.data);
           }
         }
         break;
