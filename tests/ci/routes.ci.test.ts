@@ -223,12 +223,12 @@ describe('CI Routes Tests', () => {
   describe('Request Validation', () => {
     it('should validate required fields in POST requests', async () => {
       const res = await request(app)
-        .post('/api/auth/exchange-session')
+        .post('/api/auth/signin')
         .set('Origin', 'http://localhost:5000')
-        .send({}); // Missing required fields
+        .send({}); // Missing required fields (email, password)
       
-      // Should fail validation
-      expect([400, 401]).toContain(res.status);
+      // Should fail validation with 400 (bad request)
+      expect(res.status).toBe(400);
     });
   });
 

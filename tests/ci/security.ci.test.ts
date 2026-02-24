@@ -44,7 +44,7 @@ describe('CI Security Tests - CSRF', () => {
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
     });
 
-    it('should block POST to exchange-session without Origin/Referer', async () => {
+    it('should return 404 for deprecated exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .send({
@@ -52,12 +52,11 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test-refresh'
         });
       
-      // Should block with 403 (CSRF) or may return 500 if route has internal error
+      // Endpoint must not exist (deprecated under httpOnly cookie auth)
       // The important part is that it doesn't succeed (200/201)
-      expect([403, 500]).toContain(res.status);
-      if (res.status === 403) {
-        expect(res.body).toHaveProperty('error', 'csrf_blocked');
-      }
+      expect(res.status).toBe(404);
+      expect(res.status).not.toBe(200);
+      expect(res.status).not.toBe(201);
     });
   });
 
@@ -234,6 +233,35 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+    });
+  });
+
+  describe('Forbidden Routes Invariant - Deprecated Endpoints', () => {
+    it('should return 404 for POST /api/auth/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/auth/exchange_session (underscore variant)', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange_session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
     });
   });
 });
