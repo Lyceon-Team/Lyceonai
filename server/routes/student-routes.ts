@@ -57,29 +57,27 @@ export const analyzeQuestion: RequestHandler[] = [
   async (req: Request, res: Response): Promise<void> => {
     try {
       const file = req.file;
-      
+
       if (!file) {
-        res.status(400).json({ 
+        res.status(400).json({
           error: 'No file uploaded',
-          message: 'Please upload an image or PDF of your SAT question.' 
+          message: 'Please upload an image or PDF of your SAT question.'
         });
         return;
       }
 
       const additionalContext = req.body.context || '';
-      
+
       const client = getGeminiClient();
-      
+
       const base64Data = file.buffer.toString('base64');
       const mimeType = file.mimetype;
 
-      let userPrompt = SAT_TUTOR_PROMPT;
-      if (additionalContext) {
-        userPrompt += `\n\nStudent's additional context/question: "${additionalContext}"`;
-      }
-
       const response = await client.models.generateContent({
         model: "gemini-2.0-flash",
+        config: {
+          systemInstruction: SAT_TUTOR_PROMPT,
+        },
         contents: [
           {
             role: "user",
@@ -90,9 +88,7 @@ export const analyzeQuestion: RequestHandler[] = [
                   data: base64Data
                 }
               },
-              {
-                text: userPrompt
-              }
+              ...(additionalContext ? [{ text: `Student's additional context/question: "${additionalContext}"` }] : [])
             ]
           }
         ],
@@ -111,20 +107,20 @@ export const analyzeQuestion: RequestHandler[] = [
       });
     } catch (error) {
       console.error('[Student Route] Question analysis error:', error);
-      
+
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       if (errorMessage.includes('Invalid file type')) {
-        res.status(400).json({ 
+        res.status(400).json({
           error: 'Invalid file type',
-          message: errorMessage 
+          message: errorMessage
         });
         return;
       }
 
-      res.status(500).json({ 
+      res.status(500).json({
         error: 'Analysis failed',
-        message: 'Failed to analyze your question. Please try again with a clearer image.' 
+        message: 'Failed to analyze your question. Please try again with a clearer image.'
       });
     }
   }
@@ -133,9 +129,9 @@ export const analyzeQuestion: RequestHandler[] = [
 function extractQuestionFromResponse(text: string): string {
   const lines = text.split('\n');
   for (const line of lines) {
-    if (line.toLowerCase().includes('question:') || 
-        line.toLowerCase().includes('the question asks') ||
-        line.toLowerCase().includes('the question is')) {
+    if (line.toLowerCase().includes('question:') ||
+      line.toLowerCase().includes('the question asks') ||
+      line.toLowerCase().includes('the question is')) {
       return line.replace(/^.*?(question:?\s*)/i, '').trim().substring(0, 200);
     }
   }

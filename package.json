@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "NODE_ENV=development tsx --env-file=.env server/index.ts",
     "prebuild": "rimraf dist client/dist",
     "build": "vite build && pnpm -s exec esbuild server/index.ts --bundle --platform=node --packages=external --format=esm --outfile=dist/index.js",
     "postbuild": "node scripts/check-no-cdn-katex.js",

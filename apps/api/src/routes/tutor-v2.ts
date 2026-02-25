@@ -55,13 +55,13 @@ interface TutorV2Response {
 function mapExplanationLevel(level: number | null): string {
   if (level === null) return "Use a normal high school level explanation.";
   switch (level) {
-    case 1: 
+    case 1:
       return "Explain very simply with small numbers and concrete steps, as if to a younger student. Use basic vocabulary and short sentences.";
-    case 2: 
+    case 2:
       return "Use a normal high school level explanation with clear reasoning.";
-    case 3: 
+    case 3:
       return "Provide more detailed reasoning, consider showing a second approach if applicable, and include extra checks or verification steps.";
-    default: 
+    default:
       return "Use a normal high school level explanation.";
   }
 }
@@ -69,7 +69,7 @@ function mapExplanationLevel(level: number | null): string {
 function summarizeQuestionNaturally(q: QuestionContext): string {
   const stem = q.stem || "";
   const shortStem = stem.length > 150 ? stem.slice(0, 150) + "..." : stem;
-  
+
   let summary = `The question asks: "${shortStem}"`;
   if (q.options && q.options.length > 0) {
     const optionList = q.options.map(o => `${o.key}) ${o.text}`).join(", ");
@@ -104,13 +104,18 @@ function mapStyleToInstruction(style: string | null): string {
   }
 }
 
+interface TutorPromptParts {
+  systemInstruction: string;
+  userContents: any[];
+}
+
 function buildTutorPrompt(
   message: string,
   primaryQuestion: QuestionContext | null,
   supportingQuestions: QuestionContext[],
   studentProfile: StudentProfile | null,
   competencyContext: { studentWeakAreas: string[]; studentStrongAreas: string[]; competencyLabels: string[] }
-): string {
+): TutorPromptParts {
   const explanationLevelText = mapExplanationLevel(studentProfile?.explanationLevel || null);
   const primaryStyleInstruction = mapStyleToInstruction(studentProfile?.primaryStyle || null);
 
@@ -134,7 +139,7 @@ ${bullets}
   let studentContext = "";
   const levelDescriptions: Record<number, string> = {
     1: "beginner",
-    2: "developing", 
+    2: "developing",
     3: "intermediate",
     4: "proficient",
     5: "advanced"
@@ -146,7 +151,7 @@ ${bullets}
     studentContext = `
 ABOUT THIS STUDENT:
 - Skill level: ${levelDesc} (${levelNum}/5)`;
-    
+
     if (studentProfile.primaryStyle) {
       studentContext += `\n- The student prefers ${studentProfile.primaryStyle} explanations.`;
     }
@@ -169,7 +174,7 @@ ${explanationLevelText}`;
     styleSection += `\n${primaryStyleInstruction}`;
   }
 
-  return `You are a friendly, clear SAT tutor for high school students.
+  const systemInstruction = `You are a friendly, clear SAT tutor for high school students.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 - Always explain step by step in plain language.
@@ -188,11 +193,19 @@ RESPONSE STRUCTURE:
 3. **Why this works** — The key concept in 1-3 sentences
 4. **Try this next** — One helpful follow-up the student could try
 ${styleSection}
-${questionContext}${supportingContext}${studentContext}
-THE STUDENT ASKS:
-"${message}"
+`;
 
-Now respond as the tutor in a warm, helpful tone:`;
+  const userContents = [
+    {
+      role: "user",
+      parts: [
+        { text: `Context information: ${questionContext}${supportingContext}${studentContext}` },
+        { text: `THE STUDENT ASKS: "${message}"` },
+        { text: `Now respond as the tutor in a warm, helpful tone:` },
+      ]
+    }
+  ];
+  return { systemInstruction, userContents };
 }
 
 router.post("/", async (req: Request, res: Response) => {
@@ -201,9 +214,9 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const parsed = TutorV2RequestSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ 
-        error: "Invalid request", 
-        details: parsed.error.flatten() 
+      return res.status(400).json({
+        error: "Invalid request",
+        details: parsed.error.flatten()
       });
     }
 
@@ -261,19 +274,19 @@ router.post("/", async (req: Request, res: Response) => {
       competencyContext
     );
 
-    console.log(`🎓 [TUTOR-V2] Calling LLM with ${prompt.length} char prompt`);
-    const answer = await callLlm(prompt);
+    console.log(`🎓 [TUTOR-V2] Calling LLM with ${prompt.userContents.length + prompt.systemInstruction.length} char prompt`);
+    const answer = await callLlm(prompt.userContents, prompt.systemInstruction);
 
     const currentSecondary = studentProfile?.secondaryStyle || null;
     const currentExplanationLevel = studentProfile?.explanationLevel || 2;
-    
+
     let newSecondaryStyle: string | undefined;
     let newExplanationLevel: number | undefined;
-    
+
     if (mode === "concept" && !currentSecondary) {
       newSecondaryStyle = "example-based";
     }
-    
+
     if (mode === "question" && currentExplanationLevel < 3) {
       newExplanationLevel = Math.min(currentExplanationLevel + 1, 3) as 1 | 2 | 3;
     }
