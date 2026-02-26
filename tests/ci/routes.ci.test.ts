@@ -228,6 +228,11 @@ describe('CI Routes Tests', () => {
       // without mocking authenticated sessions (out of scope for this CI test)
       const res = await request(app)
         .post('/api/auth/signin')
+        .set('Origin', 'http://localhost:5000')
+        .send({}); // Missing required fields (email, password)
+      
+      // Should fail validation with 400
+      expect(res.status).toBe(400);
         .post('/api/practice/answer')
         .set('Origin', 'http://localhost:5000')
         .send({}); // Missing required fields (email, password)

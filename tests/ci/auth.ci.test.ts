@@ -188,6 +188,7 @@ describe('CI Auth Tests', () => {
         .set('Origin', 'http://localhost:5000')
         .send({});
       
+      // Endpoint must not exist (deprecated in favor of httpOnly cookie auth)
       // Endpoint must not exist (deprecated under httpOnly cookie auth)
       expect(res.status).toBe(404);
     });
@@ -206,6 +207,7 @@ describe('CI Auth Tests', () => {
           refresh_token: 'test-refresh'
         });
       
+      // Endpoint must not exist (deprecated in favor of httpOnly cookie auth)
       // Endpoint must not exist (deprecated under httpOnly cookie auth)
       // Endpoint is deprecated and removed - must return 404
       expect(res.status).toBe(404);

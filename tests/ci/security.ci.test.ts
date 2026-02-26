@@ -44,6 +44,7 @@ describe('CI Security Tests - CSRF', () => {
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
     });
 
+    it('should return 404 for deprecated exchange-session endpoint (CSRF bypass attempt)', async () => {
     it('should return 404 for deprecated exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
@@ -52,6 +53,8 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test-refresh'
         });
       
+      // Endpoint must not exist (deprecated in favor of httpOnly cookie auth)
+      // This ensures attackers cannot exploit it regardless of CSRF headers
       // Endpoint must not exist (deprecated under httpOnly cookie auth)
       // The important part is that it doesn't succeed (200/201)
       expect(res.status).toBe(404);
@@ -239,6 +242,21 @@ describe('CI Security Tests - CSRF', () => {
     });
   });
 
+  describe('Forbidden Routes - Deprecated Endpoints', () => {
+    /**
+     * SECURITY INVARIANT: exchange-session endpoints must NEVER exist.
+     * These were deprecated in favor of httpOnly cookie authentication.
+     * This test ensures they cannot be reintroduced accidentally.
+     */
+    it('should return 404 for POST /api/auth/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange-session')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          access_token: 'test',
+          refresh_token: 'test'
+        });
+      
   describe('Forbidden Routes Invariant - Deprecated Endpoints', () => {
     it('should return 404 for POST /api/auth/exchange-session', async () => {
       const res = await request(app)
@@ -252,6 +270,24 @@ describe('CI Security Tests - CSRF', () => {
     it('should return 404 for POST /api/auth/exchange_session (underscore variant)', async () => {
       const res = await request(app)
         .post('/api/auth/exchange_session')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          access_token: 'test',
+          refresh_token: 'test'
+        });
+      
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/exchange-session (alternative path)', async () => {
+      const res = await request(app)
+        .post('/api/exchange-session')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          access_token: 'test',
+          refresh_token: 'test'
+        });
+      
         .send({});
       
       // Must not exist - deprecated under httpOnly cookie auth
