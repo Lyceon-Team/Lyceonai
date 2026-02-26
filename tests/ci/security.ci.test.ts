@@ -45,6 +45,7 @@ describe('CI Security Tests - CSRF', () => {
     });
 
     it('should return 404 for deprecated exchange-session endpoint (CSRF bypass attempt)', async () => {
+    it('should return 404 for deprecated exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .send({
@@ -54,6 +55,13 @@ describe('CI Security Tests - CSRF', () => {
       
       // Endpoint must not exist (deprecated in favor of httpOnly cookie auth)
       // This ensures attackers cannot exploit it regardless of CSRF headers
+      // Endpoint must not exist (deprecated under httpOnly cookie auth)
+      // The important part is that it doesn't succeed (200/201)
+      expect(res.status).toBe(404);
+      expect(res.status).not.toBe(200);
+      expect(res.status).not.toBe(201);
+      // Endpoint is deprecated and removed - must return 404 (not found)
+      // It must not succeed (200/201) and must not exist
       expect(res.status).toBe(404);
     });
   });
@@ -249,6 +257,13 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test'
         });
       
+  describe('Forbidden Routes Invariant - Deprecated Endpoints', () => {
+    it('should return 404 for POST /api/auth/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/auth/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
       expect(res.status).toBe(404);
     });
 
@@ -273,6 +288,18 @@ describe('CI Security Tests - CSRF', () => {
           refresh_token: 'test'
         });
       
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 for POST /api/exchange-session', async () => {
+      const res = await request(app)
+        .post('/api/exchange-session')
+        .send({});
+      
+      // Must not exist - deprecated under httpOnly cookie auth
       expect(res.status).toBe(404);
     });
   });

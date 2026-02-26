@@ -290,6 +290,9 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
     clearAuthCookies(res, isProd);
 
     logger.info('AUTH', 'signout_success', 'User signed out');
+    logger.info('AUTH', 'signout_success', 'User signed out', {
+      userId: (req as any).user?.id || null
+    });
 
     res.json({
       success: true,
@@ -650,5 +653,18 @@ router.get('/debug', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Debug endpoint failed' });
   }
 });
+
+/**
+ * POST /exchange-session - DEPRECATED & REMOVED
+ * 
+ * This endpoint has been deprecated in favor of server-only httpOnly cookie auth.
+ * It is permanently removed and will return 404.
+ * 
+ * Historical context: This endpoint exchanged external tokens for httpOnly cookies,
+ * but is no longer needed with the current auth architecture.
+ * 
+ * CI hardening: Tests must verify this endpoint returns 404 (not 400/401/403/500).
+ */
+// REMOVED: exchange-session endpoint - see comment above for rationale
 
 export default router;
