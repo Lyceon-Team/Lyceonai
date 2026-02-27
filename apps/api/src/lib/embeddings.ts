@@ -52,13 +52,29 @@ export async function embeddings(text: string): Promise<number[]> {
 /**
  * Lightweight text generation wrapper for Gemini.
  * Used by rag.ts, tutor-v2.ts, etc.
+ * 
+ * @param contents - Simple string or structured content parts/roles
+ * @param systemInstruction - Optional system instruction to guide the model
  */
-export async function callLlm(prompt: string): Promise<string> {
+export async function callLlm(
+  contents: string | any[],
+  systemInstruction?: string
+): Promise<string> {
   const client = getGeminiClient();
-  const response: any = await (client as any).models.generateContent({
+
+  const body: any = {
     model: "gemini-2.0-flash",
-    contents: prompt,
-  });
+    contents: typeof contents === "string" ? [{ role: "user", parts: [{ text: contents }] }] : contents,
+  };
+
+  if (systemInstruction) {
+    body.config = {
+      ...body.config,
+      systemInstruction: systemInstruction,
+    };
+  }
+
+  const response: any = await (client as any).models.generateContent(body);
 
   // Older @google/genai helpers often expose `.text`
   if (typeof response?.text === "string") {

@@ -71,13 +71,18 @@ function mapStyleToInstruction(style: string | null): string {
   }
 }
 
+interface TutorPromptParts {
+  systemInstruction: string;
+  userContents: any[];
+}
+
 function buildTutorPrompt(
   message: string,
   primaryQuestion: QuestionContext | null,
   supportingQuestions: QuestionContext[],
   studentProfile: StudentProfile | null,
   competencyContext: { studentWeakAreas: string[]; studentStrongAreas: string[]; competencyLabels: string[] }
-): string {
+): TutorPromptParts {
   const explanationLevelText = mapExplanationLevel(studentProfile?.explanationLevel || null);
   const primaryStyleInstruction = mapStyleToInstruction(studentProfile?.primaryStyle || null);
 
@@ -135,7 +140,7 @@ ${explanationLevelText}`;
     styleSection += `\n${primaryStyleInstruction}`;
   }
 
-  return `You are a friendly, clear SAT tutor for high school students.
+  const systemInstruction = `You are a friendly, clear SAT tutor for high school students.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 - Always explain step by step in plain language.
@@ -154,11 +159,26 @@ RESPONSE STRUCTURE:
 3. **Why this works** — The key concept in 1-3 sentences
 4. **Try this next** — One helpful follow-up the student could try
 ${styleSection}
-${questionContext}${supportingContext}${studentContext}
-THE STUDENT ASKS:
-"${message}"
+`;
 
-Now respond as the tutor in a warm, helpful tone:`;
+  // ${questionContext}${supportingContext}${studentContext}
+  // THE STUDENT ASKS:
+  // "${message}"
+
+  // Now respond as the tutor in a warm, helpful tone:`;
+
+  const userContents = [
+    {
+      role: "user",
+      parts: [
+        { text: `Context information: ${questionContext}${supportingContext}${studentContext}` },
+        { text: `The student asks: "${message}"` },
+        { text: `Now respond as the tutor in a warm, helpful tone:` }
+      ]
+    }
+  ]
+
+  return { systemInstruction, userContents };
 }
 
 router.post("/", csrfProtection, async (req: Request, res: Response) => {
@@ -223,7 +243,7 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
       studentProfile,
       competencyContext
     );
-    const answer = await callLlm(prompt);
+    const answer = await callLlm(prompt.userContents, prompt.systemInstruction);
     const currentSecondary = studentProfile?.secondaryStyle || null;
     const currentExplanationLevel = studentProfile?.explanationLevel || 2;
     let newSecondaryStyle: string | undefined;
@@ -258,7 +278,7 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
         message,
         answer,
       });
-    } catch (err) {}
+    } catch (err) { }
     const processingTimeMs = Date.now() - startTime;
     const response = {
       answer,
