@@ -10,6 +10,8 @@
     "postbuild": "node scripts/check-no-cdn-katex.js",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
+    "typecheck": "npm run check",
+    "lint": "echo 'No linting configured'",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
     "test:ci": "vitest run tests/ci",

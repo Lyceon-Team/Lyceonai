@@ -151,8 +151,8 @@ async function pickRandomQuestion(args: {
   sessionId?: string | null;
 }): Promise<
   | {
-      question: SafeQuestionDTO;
-    }
+    question: SafeQuestionDTO;
+  }
   | { error: string }
 > {
   // Strategy:
@@ -318,6 +318,7 @@ const AnswerBodySchema = z.object({
   freeResponseAnswer: z.string().optional().nullable(),
   skipped: z.boolean().optional(),
   elapsedMs: z.number().optional().nullable(),
+  idempotencyKey: z.string().max(128).optional().nullable(),
 });
 
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
@@ -334,7 +335,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
   }
 
-  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs } = parsed.data;
+  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs, idempotencyKey } = parsed.data;
 
   // --- ENFORCE SESSION OWNERSHIP ---
   // Load session and verify user_id matches authenticated user
@@ -394,8 +395,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   const outcome = skipped ? "skipped" : isCorrect ? "correct" : "incorrect";
 
   // Clamp time_spent_ms to 0-30 minutes for data integrity
-  const clampedTimeSpentMs = typeof elapsedMs === "number" 
-    ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000) 
+  const clampedTimeSpentMs = typeof elapsedMs === "number"
+    ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000)
     : null;
 
   // Insert answer attempt (MUST include user_id for RLS + FK auth.users)
@@ -415,11 +416,34 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     outcome,
     time_spent_ms: clampedTimeSpentMs,
     attempted_at: now,
+    client_attempt_id: idempotencyKey ?? null,
   });
 
-  // If unique(session_id,question_id) hits because user answered twice, we still return grade.
-  // But we want deterministic behavior, so we won't fail the UI.
-  if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
+  // If unique(user_id, client_attempt_id) or unique(session_id, question_id) hits because user answered twice, 
+  // we still return grade. But we want deterministic behavior, so we won't fail the UI.
+  if (insErr && String(insErr.message || "").toLowerCase().includes("duplicate")) {
+    if (idempotencyKey) {
+      // It's a true idempotent retry. Fetch the previous outcome and return exactly that.
+      const { data: existing } = await supabaseServer
+        .from("answer_attempts")
+        .select("is_correct, outcome")
+        .eq("user_id", userId)
+        .eq("client_attempt_id", idempotencyKey)
+        .single();
+
+      if (existing) {
+        return res.json({
+          isCorrect: existing.is_correct,
+          mode: qType,
+          correctAnswerKey: correctAnswerKey ?? null,
+          explanation,
+          feedback: existing.is_correct ? "Correct" : existing.outcome === "skipped" ? "Skipped" : "Incorrect",
+          stats: await getSessionStats(sessionId, userId),
+          idempotentRetried: true,
+        });
+      }
+    }
+  } else if (insErr) {
     // non-blocking insert failure
     console.error("[practice] answer_attempts insert failed", { requestId, message: insErr.message });
   }
