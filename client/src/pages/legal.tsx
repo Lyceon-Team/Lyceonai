@@ -3,13 +3,13 @@ import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Shield, 
-  Users, 
-  Lock, 
-  Award, 
-  FileText, 
-  UserCheck, 
+import {
+  Shield,
+  Users,
+  Lock,
+  Award,
+  FileText,
+  UserCheck,
   ExternalLink,
   Mail,
   ChevronRight
@@ -68,7 +68,7 @@ export default function LegalHub() {
                   <div className="flex-1">
                     <CardTitle className="text-xl mb-2">Trust & Safety at Lyceon</CardTitle>
                     <CardDescription className="text-base">
-                      At Lyceon, we believe technology should strengthen learning, not replace it. 
+                      At Lyceon, we believe technology should strengthen learning, not replace it.
                       We've built the platform with a safety-first, integrity-driven foundation.
                     </CardDescription>
                   </div>
@@ -99,15 +99,17 @@ export default function LegalHub() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Link href="/legal/trust-and-safety">
-                    <Button variant="outline" size="sm">
-                      Read Full Policy
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </Link>
-                  <a 
-                    href={trustDoc.pdfPath} 
-                    target="_blank" 
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/legal/trust-and-safety">
+                      <a className="inline-flex items-center gap-1">
+                        Read Full Policy
+                        <ChevronRight className="h-4 w-4" />
+                      </a>
+                    </Link>
+                  </Button>
+                  <a
+                    href={trustDoc.pdfPath}
+                    target="_blank"
                     rel="noopener noreferrer"
                   >
                     <Button variant="ghost" size="sm">
@@ -146,15 +148,17 @@ export default function LegalHub() {
                 </CardHeader>
                 <CardContent className="pt-0 mt-auto">
                   <div className="flex flex-wrap gap-2">
-                    <Link href={`/legal/${doc.slug}`}>
-                      <Button variant="outline" size="sm" className="flex-1">
-                        Read
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
-                    </Link>
-                    <a 
-                      href={doc.pdfPath} 
-                      target="_blank" 
+                    <Button asChild variant="outline" size="sm" className="flex-1">
+                      <Link href={`/legal/${doc.slug}`}>
+                        <a className="inline-flex items-center gap-1">
+                          Read
+                          <ChevronRight className="h-4 w-4" />
+                        </a>
+                      </Link>
+                    </Button>
+                    <a
+                      href={doc.pdfPath}
+                      target="_blank"
                       rel="noopener noreferrer"
                     >
                       <Button variant="ghost" size="sm">
