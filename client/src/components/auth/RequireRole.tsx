@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import { Redirect } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 
 type UserRole = 'student' | 'guardian' | 'admin';
 
@@ -9,10 +10,26 @@ interface RequireRoleProps {
   children: ReactNode;
 }
 
+interface AuthUserResponse {
+  authenticated?: boolean;
+  user?: {
+    profileCompletedAt?: string | null;
+    [key: string]: any;
+  } | null;
+}
+
 export function RequireRole({ allow, children }: RequireRoleProps) {
   const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
+  const [location] = useLocation();
 
-  if (authLoading) {
+  // Fetch profile completion status from /api/auth/user
+  const { data: authData, isLoading: profileLoading } = useQuery<AuthUserResponse>({
+    queryKey: ['/api/auth/user'],
+    retry: false,
+    enabled: !!user, // only fetch when user is authenticated
+  });
+
+  if (authLoading || (user && profileLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
@@ -43,7 +60,17 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     return <Redirect to="/dashboard" replace />;
   }
 
+  // Enforce profile completion (includes terms acceptance) for non-admin users.
+  // Skip this check if we're already on /profile/complete to avoid redirect loops.
+  const isProfileCompletePage = location === '/profile/complete';
+  const profileCompletedAt = authData?.user?.profileCompletedAt;
+
+  if (!isAdmin && !isProfileCompletePage && !profileCompletedAt) {
+    return <Redirect to="/profile/complete" replace />;
+  }
+
   return <>{children}</>;
 }
 
 export default RequireRole;
+

@@ -37,6 +37,7 @@ const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
+const TrustHub = lazy(() => import("@/pages/trust"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
@@ -63,25 +64,26 @@ function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={Login} />
-        
+
         {/* Signup redirects to login page (signup happens via modal/form on login page) */}
         <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
-                
+
         {/* SEO Content Pages */}
         <Route path="/digital-sat" component={DigitalSAT} />
         <Route path="/digital-sat/math" component={DigitalSATMath} />
         <Route path="/digital-sat/reading-writing" component={DigitalSATReadingWriting} />
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
-        
-        {/* Legal pages - public */}
+
+        {/* Trust & Legal pages - public */}
+        <Route path="/trust" component={TrustHub} />
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
-        
+
         {/* Legacy legal redirects */}
         <Route path="/privacy">{() => <Redirect to="/legal/privacy-policy" replace />}</Route>
         <Route path="/terms">{() => <Redirect to="/legal/student-terms" replace />}</Route>
-        
+
         {/* Student-only routes - require student or admin role */}
         <Route path="/dashboard" component={() => <RequireRole allow={['student', 'admin']}><LyceonDashboard /></RequireRole>} />
         <Route path="/calendar" component={() => <RequireRole allow={['student', 'admin']}><CalendarPage /></RequireRole>} />
@@ -98,18 +100,18 @@ function Router() {
         <Route path="/review-errors" component={() => <RequireRole allow={['student', 'admin']}><ReviewErrors /></RequireRole>} />
         <Route path="/flow-cards" component={() => <RequireRole allow={['student', 'admin']}><FlowCards /></RequireRole>} />
         <Route path="/structured-practice" component={() => <RequireRole allow={['student', 'admin']}><StructuredPractice /></RequireRole>} />
-        
+
         {/* Profile routes - allow all authenticated roles */}
         <Route path="/profile" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UserProfile /></RequireRole>} />
         <Route path="/profile/complete" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><ProfileComplete /></RequireRole>} />
-        
+
         {/* Guardian routes - require guardian or admin role */}
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
-        
+
         {/* Consolidated Admin route - AdminPortal already has AdminGuard internally */}
         <Route path="/admin" component={AdminPortal} />
-        
+
         {/* Legacy admin routes - redirect to canonical /admin */}
         <Route path="/admin-dashboard">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-system-config">{() => <Redirect to="/admin" replace />}</Route>
@@ -117,7 +119,7 @@ function Router() {
         <Route path="/admin-review">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-portal">{() => <Redirect to="/admin" replace />}</Route>
         <Route path="/admin-review-v2">{() => <Redirect to="/admin" replace />}</Route>
-        
+
         {/* 404 */}
         <Route component={NotFound} />
       </Switch>
