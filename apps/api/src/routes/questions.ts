@@ -20,7 +20,7 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 // ============================================================================
 export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
   const type = q.type ?? (q.options ? 'mc' : 'fr');
-  
+
   const base = {
     id: q.id,
     stem: q.stem,
@@ -124,11 +124,11 @@ export const getQuestions = async (req: Request, res: Response) => {
     }
 
     const formatted: StudentQuestion[] = (data ?? []).map(mapDbQuestionToStudentQuestion);
-    
+
     if (DEBUG_QUESTIONS) {
       console.log('[DEBUG_QUESTIONS] GET /api/questions returned', formatted.length, 'questions');
     }
-    
+
     res.json(formatted);
   } catch (error) {
     console.error('Error fetching questions:', error);
@@ -175,12 +175,12 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
       if (!isTestEnv) {
         console.error('Error fetching recent questions (Supabase HTTP):', error);
       }
-      
+
       // In test mode, return empty array instead of error
       if (isTestEnv) {
         return res.json([]);
       }
-      
+
       return res.status(500).json({
         error: 'Failed to fetch questions',
         detail: error.message,
@@ -328,7 +328,7 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
     }
 
     const totalCount = count ?? 0;
-    
+
     // If we need fewer questions than available, use random offset
     // Otherwise just get all available
     const maxOffset = Math.max(0, totalCount - limit);
@@ -366,10 +366,16 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
       });
     }
 
-    // Shuffle the results for better randomness
-    const shuffled = (data ?? []).sort(() => Math.random() - 0.5);
+    // Shuffle the results for better randomness using Fisher-Yates
+    const formatted: StudentQuestion[] = fisherYatesShuffle(data ?? []).map(mapDbQuestionToStudentQuestion);
 
-    const formatted: StudentQuestion[] = shuffled.map(mapDbQuestionToStudentQuestion);
+    // perform fisher yates on multiple choice options
+    formatted.forEach((question) => {
+      if (question.type === 'mc') {
+        question.options = fisherYatesShuffle(question.options);
+      }
+    });
+
     res.json(formatted);
   } catch (error) {
     console.error('Error fetching questions:', error);
@@ -794,7 +800,7 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
     const incorrectCount = attempts.filter(a => a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')).length;
 
     // Filter to incorrect attempts (exclude skipped)
-    const incorrectRaw = attempts.filter(a => 
+    const incorrectRaw = attempts.filter(a =>
       a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')
     );
 
@@ -996,31 +1002,31 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const userId = authReq.user?.id;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
+
     const { questionId, sentiment, comment } = req.body;
-    
+
     if (!questionId) {
       return res.status(400).json({ error: 'questionId is required' });
     }
-    
+
     if (!sentiment || !['up', 'down'].includes(sentiment)) {
       return res.status(400).json({ error: 'sentiment must be "up" or "down"' });
     }
-    
+
     const { data: question, error: questionError } = await supabaseServer
       .from('questions')
       .select('id')
       .eq('id', questionId)
       .single();
-    
+
     if (questionError || !question) {
       return res.status(404).json({ error: 'Question not found' });
     }
-    
+
     const { error: insertError } = await supabaseServer
       .from('question_feedback')
       .upsert({
@@ -1032,12 +1038,12 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
       }, {
         onConflict: 'question_id,user_id',
       });
-    
+
     if (insertError) {
       console.error('[FEEDBACK] Insert error:', insertError.message);
       return res.status(500).json({ error: 'Failed to save feedback' });
     }
-    
+
     res.json({ success: true, message: 'Feedback submitted' });
   } catch (error) {
     console.error('[FEEDBACK] Error:', error);

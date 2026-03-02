@@ -192,15 +192,15 @@ export default function QuestionRenderer({
             <div className="mt-3 text-slate-700">
               <div className="font-medium text-slate-900 mb-1">Explanation</div>
               <div className="whitespace-pre-wrap">
-                {(explanation ?? question.explanation ?? "").trim().length > 0
-                  ? (explanation ?? question.explanation)
+                {(explanation ?? "").trim().length > 0
+                  ? explanation
                   : "Explanation is not available for this question yet."}
               </div>
             </div>
-          ) : (explanation ?? question.explanation) ? (
+          ) : (explanation) ? (
             <div className="mt-3 text-slate-700">
               <div className="font-medium text-slate-900 mb-1">Explanation</div>
-              <div className="whitespace-pre-wrap">{explanation ?? question.explanation}</div>
+              <div className="whitespace-pre-wrap">{explanation}</div>
             </div>
           ) : null}
         </div>
