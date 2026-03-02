@@ -36,7 +36,7 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
  */
 const ALLOWED_COOKIES = new Set([
   'sb-access-token',
-  'sb-refresh-token', 
+  'sb-refresh-token',
   'sidebar:state',      // UI state, not auth
   'google_oauth_state', // OAuth flow, temporary
   'csrf-token',         // CSRF protection, must not be deleted!
@@ -44,7 +44,7 @@ const ALLOWED_COOKIES = new Set([
 
 const LEGACY_AUTH_PATTERNS = [
   'access-token',
-  'auth-token', 
+  'auth-token',
   'session',
   'token',
   'guardian',
@@ -55,7 +55,7 @@ const LEGACY_AUTH_PATTERNS = [
 function clearLegacyCookies(req: any, res: any, isProd: boolean) {
   const cookies = req.cookies || {};
   const cookieNames = Object.keys(cookies);
-  
+
   for (const name of cookieNames) {
     // Special-case: allow current sb-* cookies, but always clear any legacy '/api' path variants
     // without touching the canonical '/' cookie.
@@ -81,23 +81,23 @@ function clearLegacyCookies(req: any, res: any, isProd: boolean) {
 
     // Skip allowed cookies
     if (ALLOWED_COOKIES.has(name)) continue;
-    
+
     // Check if cookie name matches legacy auth patterns
     const lowerName = name.toLowerCase();
-    const isLegacyAuth = LEGACY_AUTH_PATTERNS.some(pattern => 
+    const isLegacyAuth = LEGACY_AUTH_PATTERNS.some(pattern =>
       lowerName.includes(pattern)
     );
-    
+
     // Also delete any sb-* cookies that aren't our exact allowed ones
     const isUnknownSbCookie = lowerName.startsWith('sb-') && !ALLOWED_COOKIES.has(name);
-    
+
     if (isLegacyAuth || isUnknownSbCookie) {
       // Delete with multiple path/domain combinations to ensure cleanup
       const deleteOptions = [
         { path: '/', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
         { path: '/api', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
       ];
-      
+
       // In production, also delete from both domain variants
       if (isProd) {
         deleteOptions.push(
@@ -105,11 +105,11 @@ function clearLegacyCookies(req: any, res: any, isProd: boolean) {
           { path: '/', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: '.lyceon.ai' } as any,
         );
       }
-      
+
       for (const opts of deleteOptions) {
         res.clearCookie(name, opts);
       }
-      
+
       logger.info('AUTH', 'legacy_cookie_cleared', `Cleared legacy cookie: ${name}`, {});
     }
   }
@@ -124,15 +124,15 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
     const { email, password, displayName, isUnder13, guardianEmail, role: requestedRole } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email and password are required' 
+      return res.status(400).json({
+        error: 'Email and password are required'
       });
     }
 
     // Under-13 validation
     if (isUnder13 && !guardianEmail) {
-      return res.status(400).json({ 
-        error: 'Guardian email is required for users under 13' 
+      return res.status(400).json({
+        error: 'Guardian email is required for users under 13'
       });
     }
 
@@ -156,14 +156,14 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
 
     if (signupError) {
       logger.error('AUTH', 'signup_failed', 'Supabase signup failed', { error: signupError });
-      return res.status(400).json({ 
-        error: signupError.message 
+      return res.status(400).json({
+        error: signupError.message
       });
     }
 
     if (!authData.user) {
-      return res.status(500).json({ 
-        error: 'Failed to create user account' 
+      return res.status(500).json({
+        error: 'Failed to create user account'
       });
     }
 
@@ -171,22 +171,22 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
     // Update profile with role and under-13 info if needed
     const admin = getSupabaseAdmin();
     const profileUpdate: Record<string, any> = { role: validRole };
-    
+
     if (isUnder13) {
       profileUpdate.is_under_13 = true;
       profileUpdate.guardian_email = guardianEmail;
       profileUpdate.guardian_consent = false;
     }
-    
+
     const { error: updateError } = await admin
       .from('profiles')
       .update(profileUpdate)
       .eq('id', authData.user.id);
 
     if (updateError) {
-      logger.error('AUTH', 'profile_update_failed', 'Failed to update profile', { 
-        userId: authData.user.id, 
-        error: updateError 
+      logger.error('AUTH', 'profile_update_failed', 'Failed to update profile', {
+        userId: authData.user.id,
+        error: updateError
       });
       // Don't fail the signup - profile exists
     }
@@ -204,8 +204,8 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
 
     res.status(201).json({
       success: true,
-      message: isUnder13 
-        ? 'Account created. Guardian consent required to continue.' 
+      message: isUnder13
+        ? 'Account created. Guardian consent required to continue.'
         : 'Account created successfully',
       user: {
         id: authData.user.id,
@@ -229,8 +229,8 @@ router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email and password are required' 
+      return res.status(400).json({
+        error: 'Email and password are required'
       });
     }
 
@@ -244,14 +244,14 @@ router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res
 
     if (error) {
       logger.warn('AUTH', 'signin_failed', 'Sign in failed', { email, error: error.message });
-      return res.status(401).json({ 
-        error: 'Invalid email or password' 
+      return res.status(401).json({
+        error: 'Invalid email or password'
       });
     }
 
     if (!data.session) {
-      return res.status(500).json({ 
-        error: 'Failed to create session' 
+      return res.status(500).json({
+        error: 'Failed to create session'
       });
     }
 
@@ -312,10 +312,10 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
  */
 router.get('/user', async (req: Request, res: Response) => {
   const isProd = process.env.NODE_ENV === 'production';
-  
+
   // PHASE 1: Clean up any legacy cookies on every /user request
   clearLegacyCookies(req, res, isProd);
-  
+
   try {
     const token = req.cookies['sb-access-token'];
 
@@ -325,23 +325,23 @@ router.get('/user', async (req: Request, res: Response) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    
+
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
       // Try to refresh if we have a refresh token
       const refreshToken = req.cookies?.['sb-refresh-token'];
       const hint = (authError as any)?.message || '';
-      
+
       const shouldTryRefresh =
         refreshToken &&
         (hint.includes('JWT expired') ||
-         hint.toLowerCase().includes('invalid') ||
-         hint.toLowerCase().includes('expired'));
+          hint.toLowerCase().includes('invalid') ||
+          hint.toLowerCase().includes('expired'));
 
       if (shouldTryRefresh) {
         logger.info('AUTH', 'auto_refresh', 'Attempting automatic token refresh', {});
-        
+
         const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession({
           refresh_token: refreshToken,
         });
@@ -355,7 +355,7 @@ router.get('/user', async (req: Request, res: Response) => {
 
           if (!userAgainErr && userAgain?.user) {
             logger.info('AUTH', 'auto_refresh_success', 'Token refreshed successfully', { userId: userAgain.user.id });
-            
+
             // Continue with the refreshed user - fall through to profile fetch below
             // by reassigning to a mutable binding
             return handleUserFetch(req, res, userAgain.user, refreshed.session.access_token, isProd);
@@ -371,13 +371,13 @@ router.get('/user', async (req: Request, res: Response) => {
       // No refresh token available - clear and return 401
       clearAuthCookies(res, isProd);
       const requestId = crypto.randomUUID().slice(0, 8);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Invalid or expired token',
         requestId,
         hint: 'Access token invalid and no refresh token available.'
       });
     }
-    
+
     return handleUserFetch(req, res, user, token, isProd);
   } catch (error) {
     logger.error('AUTH', 'get_user_error', 'Get user endpoint error', error);
@@ -397,24 +397,24 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
         }
       }
     });
-    
+
     let { data: profile, error: profileError } = await userSupabase
       .from('profiles')
-      .select('id, role, is_under_13, guardian_consent, student_link_code')
+      .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
       .eq('id', user.id)
       .single();
 
     if (profileError) {
-      logger.error('AUTH', 'profile_fetch', 'Failed to fetch user profile', { 
-        userId: user.id, 
-        error: profileError 
+      logger.error('AUTH', 'profile_fetch', 'Failed to fetch user profile', {
+        userId: user.id,
+        error: profileError
       });
     }
 
     // Handle missing profile gracefully - auto-create if needed
     if (!profile) {
       logger.warn('AUTH', 'profile_missing', 'User has no profile row - creating one', { userId: user.id });
-      
+
       // Auto-create profile (should have been created by trigger, but handle edge case)
       const admin = getSupabaseAdmin();
       const { data: newProfile, error: createError } = await admin
@@ -425,17 +425,17 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
           display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
           role: user.user_metadata?.role || 'student'
         })
-        .select('id, role, is_under_13, guardian_consent, student_link_code')
+        .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
         .single();
-      
+
       if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_creation_failed', 'Failed to auto-create profile', { 
-          userId: user.id, 
-          error: createError 
+        logger.error('AUTH', 'profile_creation_failed', 'Failed to auto-create profile', {
+          userId: user.id,
+          error: createError
         });
         return res.status(500).json({ error: 'Profile initialization failed' });
       }
-      
+
       profile = newProfile;
     }
 
@@ -448,7 +448,8 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
         isGuardian: profile.role === 'guardian',
         is_under_13: profile.is_under_13,
         guardian_consent: profile.guardian_consent,
-        student_link_code: profile.student_link_code
+        student_link_code: profile.student_link_code,
+        profileCompletedAt: profile.profile_completed_at || null
       }
     });
   } catch (error) {
@@ -466,8 +467,8 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
     const { guardianConsent, guardianEmail } = req.body;
 
     if (!req.user?.is_under_13) {
-      return res.status(400).json({ 
-        error: 'Consent is only required for users under 13' 
+      return res.status(400).json({
+        error: 'Consent is only required for users under 13'
       });
     }
 
@@ -483,9 +484,9 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
       .eq('id', req.user.id);
 
     if (error) {
-      logger.error('AUTH', 'consent_update_failed', 'Failed to update consent', { 
-        userId: req.user.id, 
-        error 
+      logger.error('AUTH', 'consent_update_failed', 'Failed to update consent', {
+        userId: req.user.id,
+        error
       });
       return res.status(500).json({ error: 'Failed to update consent' });
     }
@@ -527,7 +528,7 @@ router.post('/refresh', csrfProtection, async (req: Request, res: Response) => {
     });
 
     const isProd = process.env.NODE_ENV === 'production';
-    
+
     if (error || !data.session) {
       clearAuthCookies(res, isProd);
       return res.status(401).json({ error: 'Failed to refresh session' });
@@ -554,18 +555,18 @@ router.post('/refresh', csrfProtection, async (req: Request, res: Response) => {
  */
 router.get('/debug', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
-  
+
   try {
     // Use SHARED helper for token resolution (same as practice endpoints)
     const tokenResult = resolveTokenFromRequest(req);
     const refreshToken = req.cookies['sb-refresh-token'];
-    
+
     let resolvedUserId: string | null = null;
     let resolvedRole: string | null = null;
     let serviceRoleCanReadUser: boolean | null = null;
     let serviceRoleUserLookupError: string | null = null;
     let tokenValidationError: string | null = null;
-    
+
     if (tokenResult.token) {
       try {
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -575,7 +576,7 @@ router.get('/debug', async (req: Request, res: Response) => {
         }
         if (!error && user) {
           resolvedUserId = user.id;
-          
+
           const admin = getSupabaseAdmin();
           const { data: profile } = await admin
             .from('profiles')
@@ -588,13 +589,13 @@ router.get('/debug', async (req: Request, res: Response) => {
         tokenValidationError = e?.message || 'exception';
       }
     }
-    
+
     // Service role key validation: can it read the user from auth.users?
     if (resolvedUserId) {
       try {
         const admin = getSupabaseAdmin();
         const { data, error } = await admin.auth.admin.getUserById(resolvedUserId);
-        
+
         if (error || !data?.user) {
           serviceRoleCanReadUser = false;
           serviceRoleUserLookupError = error?.message || 'user_not_found';
@@ -606,10 +607,10 @@ router.get('/debug', async (req: Request, res: Response) => {
         serviceRoleUserLookupError = e?.message || 'exception';
       }
     }
-    
+
     const publicSiteUrl = process.env.PUBLIC_SITE_URL || '';
     const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
-    
+
     res.json({
       build: BUILD,
       environment: {

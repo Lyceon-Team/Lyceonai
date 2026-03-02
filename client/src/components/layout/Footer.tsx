@@ -14,6 +14,7 @@ export default function Footer() {
       { label: "Blog", href: "/blog" },
     ],
     legal: [
+      { label: "Trust & Safety", href: "/trust" },
       { label: "Legal Hub", href: "/legal" },
       { label: "Privacy Policy", href: "/legal/privacy-policy" },
       { label: "Terms of Use", href: "/legal/student-terms" },
