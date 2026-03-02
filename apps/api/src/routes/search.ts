@@ -78,7 +78,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
         type: question.type || 'mc',
         options: question.options ? (typeof question.options === 'string' ? JSON.parse(question.options) : question.options) : [],
         tags: question.tags ? (typeof question.tags === 'string' ? question.tags.split(',').map((t: string) => t.trim()) : question.tags) : [],
-        explanation: question.explanation,
+        explanation: null,
         similarity: match?.similarity || 0,
       };
     });
