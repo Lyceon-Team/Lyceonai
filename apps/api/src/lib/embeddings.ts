@@ -7,9 +7,22 @@ import { GoogleGenAI } from "@google/genai";
 
 let _geminiClient: GoogleGenAI | null = null;
 
-function getGeminiClient(): GoogleGenAI {
+function isTestEnv(): boolean {
+  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+}
+
+function getGeminiClient(): GoogleGenAI | null {
   if (_geminiClient) return _geminiClient;
   if (!process.env.GEMINI_API_KEY) {
+    if (isTestEnv()) {
+      // During CI we purposely don't have a key; return null so callers can
+      // handle the missing API without crashing. Logging at debug to avoid
+      // cluttering CI output.
+      console.debug('[EMBEDDINGS] GEMINI_API_KEY missing in test mode, using stub');
+      return null;
+    }
+    // In development/production we want a hard failure so the absence of the
+    // key is obvious during startup.
     throw new Error("Missing GEMINI_API_KEY - required for embeddings and LLM");
   }
   _geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -22,6 +35,10 @@ function getGeminiClient(): GoogleGenAI {
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const client = getGeminiClient();
+  if (!client) {
+    // no API key / stub client: return deterministic empty vector
+    return [];
+  }
   const clean = (text || "").trim();
   if (!clean) return [];
 
@@ -61,6 +78,10 @@ export async function callLlm(
   systemInstruction?: string
 ): Promise<string> {
   const client = getGeminiClient();
+  if (!client) {
+    // no key available in test env; return empty string rather than throw
+    return '';
+  }
 
   const body: any = {
     model: "gemini-2.0-flash",

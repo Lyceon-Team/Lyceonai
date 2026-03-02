@@ -3,7 +3,7 @@ import type { Request } from "express";
 import { buildAllowedOrigins, normalizeOrigin } from "../../../../server/middleware/origin-utils";
 
 export function corsMiddleware() {
-  const { isDev, raw, normalized } = buildAllowedOrigins({
+  const { raw, normalized } = buildAllowedOrigins({
     nodeEnv: process.env.NODE_ENV,
     corsOriginsCsv: process.env.CORS_ORIGINS,
     csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
@@ -14,11 +14,8 @@ export function corsMiddleware() {
   return cors({
     credentials: true,
     origin: (origin, cb) => {
-      // Non-browser requests (curl without Origin) should be allowed
-      if (!origin) return cb(null, true);
-
-      // Allow all origins in dev or test environment
-      if (isDev || process.env.NODE_ENV === 'test') return cb(null, true);
+      // If no origin header, don't set CORS headers (server-to-server communication)
+      if (!origin) return cb(null, false);
 
       const o = normalizeOrigin(origin);
       const ok = normalized.has(o);
@@ -29,11 +26,12 @@ export function corsMiddleware() {
           normalized: o,
           allowPreview: Array.from(normalized).slice(0, 8),
         });
-        // Return false without error to avoid 500 - let CSRF middleware handle rejection
+        // Return false to deny CORS
         return cb(null, false);
       }
 
-      return cb(null, true);
+      // Origin is allowlisted: echo back exactly that origin with credentials
+      return cb(null, origin);
     },
   });
 }
