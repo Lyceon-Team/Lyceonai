@@ -40,6 +40,33 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     // Import app
     const serverModule = await import('../../server/index');
     app = serverModule.default;
+
+    // ------------------------------------------------------------------
+    // TEST-ONLY ROUTES
+    // ------------------------------------------------------------------
+    // Create new endpoints that bypass the authentication middleware so the
+    // anti-leak tests can exercise the question handlers directly. These
+    // routes are only used by the tests and do not exist in production.
+    const { getRandomQuestions, getQuestions } = await import(
+      '../../apps/api/src/routes/questions'
+    );
+
+    function registerNoAuthPath(path: string, handler: any) {
+      app.get(path, async (req, res) => {
+        // Wrap array responses the same way the real server does
+        const originalJson = res.json.bind(res);
+        res.json = function (data: any) {
+          if (Array.isArray(data)) {
+            return originalJson.call(res, { questions: data, meta: { total: data.length } });
+          }
+          return originalJson.call(res, data);
+        };
+        return handler(req, res);
+      });
+    }
+
+    registerNoAuthPath('/__test/questions/random', getRandomQuestions);
+    registerNoAuthPath('/__test/questions', getQuestions);
   });
 
   afterAll(() => {
@@ -106,10 +133,16 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
   describe('GET /api/questions/random - Anti-Leak Protection', () => {
     it('should never leak explanation field to students (must be null)', async () => {
-      // Note: This endpoint requires authentication
+      // Note: This endpoint requires authentication; use the test-only
+      // bypass route to exercise the handler.
       const res = await request(app)
+<<<<<<< HEAD
         .get('/api/questions/random?limit=5');
 
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
       // May return 401 if auth is required
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -135,8 +168,13 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
     it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
       const res = await request(app)
+<<<<<<< HEAD
         .get('/api/questions/random?limit=5');
 
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
       // Only test anti-leak if we get a successful response
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -164,10 +202,16 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
   describe('GET /api/questions - Anti-Leak Protection', () => {
     it('should never leak explanation field to students (must be null)', async () => {
-      // This endpoint requires authentication
+      // This endpoint requires authentication; use the test-only bypass
+      // route so we can hit it in CI
       const res = await request(app)
+<<<<<<< HEAD
         .get('/api/questions?limit=5');
 
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
       // Expect auth requirement
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -190,8 +234,13 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
     it('should never leak correct answer fields', async () => {
       const res = await request(app)
+<<<<<<< HEAD
         .get('/api/questions?limit=5');
 
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
