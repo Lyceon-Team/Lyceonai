@@ -14,3 +14,8 @@ Node: v22.19.0
 pnpm: 10.28.1
 
 HealthCheck: 200 {"status":"ok"}
+
+FixProofs
+- signout missing Origin/Referer -> status:403
+- signout evil origin -> status:403; ACAO:; ACAC:
+- health evil origin ACAO -> 
