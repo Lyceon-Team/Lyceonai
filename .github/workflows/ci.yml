@@ -66,6 +66,9 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Check No Test Routes in Dist
+        run: node scripts/ci/check-no-test-routes-dist.mjs
+
   # Optional integration tests - only runs when secrets are available
   # This job is not required for PR merge
   integration:
