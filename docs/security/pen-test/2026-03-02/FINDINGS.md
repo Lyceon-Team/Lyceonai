@@ -6,45 +6,21 @@
 - Medium: 0
 - Low: 0
 
-## Findings (details)
-(Record each finding with: title, severity, repro steps, expected vs actual, impact, fix, verification.)
+## Closure
 
-## FINDING 001 — CSRF bypass on signout (POST /api/auth/signout)
-Severity: HIGH (state-changing endpoint succeeds without Origin/Referer)
+### FINDING 001 — CSRF bypass on signout (POST /api/auth/signout)
+Status: FIXED
+Fix commit: e653484
+Verification:
+- POST /api/auth/signout with no Origin/Referer -> 403
+- POST /api/auth/signout with Origin:https://evil.com -> 403 and no ACAO/ACAC headers
+- pnpm -s run test -> 281/281 passing
 
-Repro (PowerShell):
-- iwr -Method POST http://localhost:5000/api/auth/signout -UseBasicParsing
-
-Observed:
-- HTTP 200
-
-Expected:
-- HTTP 403 when Origin and Referer are missing (CSRF protection)
-
-Notes:
-- This endpoint clears session cookies and should be CSRF-protected.
-
-
-## FINDING 002 — CORS reflects arbitrary Origin
-Severity: HIGH if present on credentialed endpoints; needs confirmation across /api/*
-
-Repro (PowerShell):
--  = @{ Origin = "https://evil.com" }
--  = iwr http://localhost:5000/api/health -Headers  -UseBasicParsing
-- .Headers["Access-Control-Allow-Origin"]
-
-Observed:
-- Access-Control-Allow-Origin: https://evil.com
-
-Expected:
-- No reflection; Origin should be validated against allowlist.
-
-Notes:
-- Prior responses include Access-Control-Allow-Credentials: true. If both apply on auth routes, this is a serious risk.
-
-
-### Proof (captured)
-- GET /api/profile with Origin:https://evil.com -> 401 + ACAO:https://evil.com + ACAC:true
-- POST /api/auth/signout with Origin:https://evil.com -> 200 + ACAO:https://evil.com + ACAC:true
-- POST /api/auth/signout with no Origin/Referer -> 200
+### FINDING 002 — CORS reflects arbitrary Origin
+Status: FIXED
+Fix commit: e653484
+Verification:
+- GET /api/health with Origin:https://evil.com -> no Access-Control-Allow-Origin
+- GET/POST protected endpoints with Origin:https://evil.com -> no ACAO/ACAC headers
+- pnpm -s run test -> 281/281 passing
 
