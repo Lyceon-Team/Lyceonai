@@ -11,8 +11,8 @@ export const searchQuestions = async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
 
     if (!query || query.trim().length === 0) {
-      return res.status(400).json({ 
-        error: 'Query parameter "q" is required and must not be empty' 
+      return res.status(400).json({
+        error: 'Query parameter "q" is required and must not be empty'
       });
     }
 
@@ -20,9 +20,9 @@ export const searchQuestions = async (req: Request, res: Response) => {
     try {
       getSupabaseClient();
     } catch (error) {
-      return res.status(503).json({ 
+      return res.status(503).json({
         error: 'Vector search not available',
-        message: 'Supabase credentials not configured' 
+        message: 'Supabase credentials not configured'
       });
     }
 
@@ -59,7 +59,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[SEARCH] Error fetching question details:', error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'Search failed',
         message: error.message
       });
@@ -77,7 +77,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
         type: question.type || 'mc',
         options: question.options ? (typeof question.options === 'string' ? JSON.parse(question.options) : question.options) : [],
         tags: question.tags ? (typeof question.tags === 'string' ? question.tags.split(',').map((t: string) => t.trim()) : question.tags) : [],
-        explanation: question.explanation,
+        explanation: null,
         similarity: match?.similarity || 0,
       };
     });
@@ -95,7 +95,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in semantic search:', error);
-    
+
     // In test mode, return empty results instead of error
     const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
     if (isTestEnv) {
@@ -108,8 +108,8 @@ export const searchQuestions = async (req: Request, res: Response) => {
         section: section || null,
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Search failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -154,7 +154,7 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     // Process in batches
     for (let i = 0; i < questionsToEmbed.length; i += batchSize) {
       const batch = questionsToEmbed.slice(i, i + batchSize);
-      
+
       try {
         // Generate embeddings for this batch
         const texts = batch.map(q => q.stem);
@@ -203,7 +203,7 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     });
   } catch (error) {
     console.error('Error generating question embeddings:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate embeddings',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
