@@ -5,6 +5,7 @@ import { searchSimilarQuestions, getSupabaseClient } from '../lib/supabase';
 
 // GET /api/questions/search?q=<query> - AI-powered semantic search using vector embeddings
 export const searchQuestions = async (req: Request, res: Response) => {
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
   try {
     const query = req.query.q as string;
     const section = req.query.section as string | undefined;
@@ -27,12 +28,12 @@ export const searchQuestions = async (req: Request, res: Response) => {
     }
 
     // Generate embedding for the query
-    console.log(`🔍 Generating embedding for query: "${query}"`);
+    if (!isTestEnv) console.log(`🔍 Generating embedding for query: "${query}"`);
     const embeddingResult = await generateEmbedding(query);
-    console.log(`✅ Embedding generated (${embeddingResult.length} dimensions)`);
+    if (!isTestEnv) console.log(`✅ Embedding generated (${embeddingResult.length} dimensions)`);
 
     // Search for similar questions using vector similarity
-    console.log(`🔎 Searching Supabase for similar questions (limit: ${limit}, section: ${section || 'all'})`);
+    if (!isTestEnv) console.log(`🔎 Searching Supabase for similar questions (limit: ${limit}, section: ${section || 'all'})`);
     const similarQuestions = await searchSimilarQuestions(
       embeddingResult,
       limit,
@@ -50,7 +51,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     // Fetch full question details using Supabase HTTP
     const questionIds = similarQuestions.map(q => q.question_id);
-    console.log(`📚 Fetching ${questionIds.length} question details from database`);
+    if (!isTestEnv) console.log(`📚 Fetching ${questionIds.length} question details from database`);
 
     const { data: questionDetails, error } = await supabaseServer
       .from('questions')
@@ -85,7 +86,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
     // Sort by similarity (highest first)
     results.sort((a, b) => b.similarity - a.similarity);
 
-    console.log(`✅ Search complete: ${results.length} results returned`);
+    if (!isTestEnv) console.log(`✅ Search complete: ${results.length} results returned`);
 
     res.json({
       results,
@@ -94,10 +95,9 @@ export const searchQuestions = async (req: Request, res: Response) => {
       section: section || null,
     });
   } catch (error) {
-    console.error('Error in semantic search:', error);
+    if (!isTestEnv) console.error('Error in semantic search:', error);
     
     // In test mode, return empty results instead of error
-    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
     if (isTestEnv) {
       const query = req.query.q as string;
       const section = req.query.section as string | undefined;
