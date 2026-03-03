@@ -139,10 +139,15 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 <<<<<<< HEAD
         .get('/api/questions/random?limit=5');
 
+<<<<<<< HEAD
 =======
         .get('/__test/questions/random?limit=5');
       
 >>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // May return 401 if auth is required
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -171,10 +176,15 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 <<<<<<< HEAD
         .get('/api/questions/random?limit=5');
 
+<<<<<<< HEAD
 =======
         .get('/__test/questions/random?limit=5');
       
 >>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // Only test anti-leak if we get a successful response
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -208,10 +218,15 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 <<<<<<< HEAD
         .get('/api/questions?limit=5');
 
+<<<<<<< HEAD
 =======
         .get('/__test/questions?limit=5');
       
 >>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // Expect auth requirement
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
@@ -237,10 +252,15 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 <<<<<<< HEAD
         .get('/api/questions?limit=5');
 
+<<<<<<< HEAD
 =======
         .get('/__test/questions?limit=5');
       
 >>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
