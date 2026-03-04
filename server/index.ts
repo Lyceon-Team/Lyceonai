@@ -20,8 +20,8 @@ import rateLimit from "express-rate-limit";
 //   - /api/questions/validate
 //   - /api/tutor/v2
 //   - auth token resolution / requireSupabaseAuth
-import { rag } from "../apps/api/src/routes/rag";
-import ragV2Router from "../apps/api/src/routes/rag-v2";
+import { rag } from "./routes/legacy/rag";
+import ragV2Router from "./routes/legacy/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
 import { legalRouter } from "./routes/legal-routes.js";
 import fullLengthExamRouter from "./routes/full-length-exam-routes";
@@ -35,8 +35,8 @@ import {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
-} from "../apps/api/src/routes/questions";
-import { searchQuestions } from "../apps/api/src/routes/search";
+} from "./routes/legacy/questions";
+import { searchQuestions } from "./routes/legacy/search";
 import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
@@ -61,11 +61,11 @@ import adminStatsRoutes from "./routes/admin-stats-routes";
 import adminProofRoutes from "./routes/admin-proof-routes";
 import { csrfGuard } from "./middleware/csrf";
 import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
-import { weaknessRouter } from "../apps/api/src/routes/weakness";
-import { masteryRouter } from "../apps/api/src/routes/mastery";
-import { diagnosticRouter } from "../apps/api/src/routes/diagnostic";
-import { calendarRouter } from "../apps/api/src/routes/calendar";
-import { getScoreProjection, getRecencyKpis } from "../apps/api/src/routes/progress";
+import { weaknessRouter } from "./routes/legacy/weakness";
+import { masteryRouter } from "./routes/legacy/mastery";
+import { diagnosticRouter } from "./routes/legacy/diagnostic";
+import { calendarRouter } from "./routes/legacy/calendar";
+import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
