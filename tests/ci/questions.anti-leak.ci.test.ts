@@ -135,9 +135,10 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     it('should never leak explanation field to students (must be null)', async () => {
       // Note: This endpoint requires authentication; use the test-only
       // bypass route to exercise the handler.
-      const res = await request(app)
+      const randomRes = await request(app)
         .get('/api/questions/random?limit=5');
 
+      const randomTestRes = await request(app)
         .get('/__test/questions/random?limit=5');
       
       // May return 401 if auth is required
