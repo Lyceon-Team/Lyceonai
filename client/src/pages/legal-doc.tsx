@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  ChevronLeft, 
-  Download, 
-  ExternalLink, 
-  Search, 
+import {
+  ChevronLeft,
+  Download,
+  ExternalLink,
+  Search,
   Menu,
   X,
   Calendar
@@ -29,9 +29,9 @@ export default function LegalDocPage() {
   const filteredSections = useMemo(() => {
     if (!doc) return [];
     if (!searchQuery.trim()) return doc.sections;
-    
+
     const query = searchQuery.toLowerCase();
-    return doc.sections.filter(section => 
+    return doc.sections.filter(section =>
       section.title.toLowerCase().includes(query) ||
       section.content.toLowerCase().includes(query)
     );
@@ -47,14 +47,14 @@ export default function LegalDocPage() {
     const handleScroll = () => {
       const sections = document.querySelectorAll('[data-section-id]');
       let current = '';
-      
+
       sections.forEach((section) => {
         const rect = section.getBoundingClientRect();
         if (rect.top <= 150) {
           current = section.getAttribute('data-section-id') || '';
         }
       });
-      
+
       if (current) {
         setActiveSection(current);
       }
@@ -77,10 +77,10 @@ export default function LegalDocPage() {
 
   const highlightText = (text: string) => {
     if (!searchQuery.trim()) return text;
-    
+
     const parts = text.split(new RegExp(`(${searchQuery})`, 'gi'));
-    return parts.map((part, i) => 
-      part.toLowerCase() === searchQuery.toLowerCase() 
+    return parts.map((part, i) =>
+      part.toLowerCase() === searchQuery.toLowerCase()
         ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">{part}</mark>
         : part
     );
@@ -107,7 +107,7 @@ export default function LegalDocPage() {
 
     lines.forEach((line, index) => {
       const trimmed = line.trim();
-      
+
       if (trimmed.startsWith('- ')) {
         currentList.push(trimmed.substring(2));
       } else if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
@@ -121,15 +121,15 @@ export default function LegalDocPage() {
         flushList();
         const formatted = trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         elements.push(
-          <p 
-            key={index} 
+          <p
+            key={index}
             className="text-muted-foreground mb-3"
-            dangerouslySetInnerHTML={{ 
-              __html: searchQuery.trim() 
+            dangerouslySetInnerHTML={{
+              __html: searchQuery.trim()
                 ? formatted.replace(
-                    new RegExp(`(${searchQuery})`, 'gi'),
-                    '<mark class="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">$1</mark>'
-                  )
+                  new RegExp(`(${searchQuery})`, 'gi'),
+                  '<mark class="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">$1</mark>'
+                )
                 : formatted
             }}
           />
@@ -165,13 +165,15 @@ export default function LegalDocPage() {
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <Link href="/legal">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <ChevronLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Back to Legal Hub</span>
-                <span className="sm:hidden">Back</span>
-              </Button>
-            </Link>
+            <Button asChild variant="ghost" size="sm" className="gap-2">
+              <Link href="/legal">
+                <a className="inline-flex items-center gap-2">
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="hidden sm:inline">Back to Legal Hub</span>
+                  <span className="sm:hidden">Back</span>
+                </a>
+              </Link>
+            </Button>
 
             <div className="flex items-center gap-2">
               <a href={doc.pdfPath} target="_blank" rel="noopener noreferrer">
@@ -186,9 +188,9 @@ export default function LegalDocPage() {
                   <span className="hidden sm:inline">Download</span>
                 </Button>
               </a>
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="lg:hidden"
                 onClick={() => setTocOpen(!tocOpen)}
               >
@@ -207,16 +209,16 @@ export default function LegalDocPage() {
               lg:block lg:relative lg:z-auto lg:p-0 lg:bg-transparent
             `}>
               {tocOpen && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="absolute top-4 right-4 lg:hidden"
                   onClick={() => setTocOpen(false)}
                 >
                   <X className="h-4 w-4" />
                 </Button>
               )}
-              
+
               <div className="lg:sticky lg:top-24">
                 <div className="mb-4">
                   <div className="relative">
@@ -235,15 +237,15 @@ export default function LegalDocPage() {
                   <nav className="space-y-1">
                     {doc.sections.map((section) => {
                       const isFiltered = searchQuery.trim() && !filteredSections.some(s => s.id === section.id);
-                      
+
                       return (
                         <button
                           key={section.id}
                           onClick={() => scrollToSection(section.id)}
                           className={`
                             w-full text-left px-3 py-2 text-sm rounded-md transition-colors
-                            ${activeSection === section.id 
-                              ? 'bg-primary/10 text-primary font-medium' 
+                            ${activeSection === section.id
+                              ? 'bg-primary/10 text-primary font-medium'
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                             }
                             ${isFiltered ? 'opacity-40' : ''}
@@ -276,8 +278,8 @@ export default function LegalDocPage() {
 
               <div className="space-y-8">
                 {(searchQuery.trim() ? filteredSections : doc.sections).map((section) => (
-                  <Card 
-                    key={section.id} 
+                  <Card
+                    key={section.id}
                     data-section-id={section.id}
                     className="scroll-mt-24"
                   >

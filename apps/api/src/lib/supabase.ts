@@ -127,6 +127,7 @@ export async function searchSimilarQuestions(
   section?: string
 ): Promise<Array<QuestionEmbedding & { similarity: number }>> {
   const supabase = getSupabaseClient();
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
 
   try {
     // Use Supabase's RPC for vector similarity search
@@ -143,13 +144,13 @@ export async function searchSimilarQuestions(
     const { data, error } = await query;
 
     if (error) {
-      console.error('Vector search error:', error);
+      if (!isTestEnv) console.error('Vector search error:', error);
       throw new Error(`Vector search failed: ${error.message}`);
     }
 
     return data || [];
   } catch (err) {
-    console.error('Search similar questions error:', err);
+    if (!isTestEnv) console.error('Search similar questions error:', err);
     return [];
   }
 }

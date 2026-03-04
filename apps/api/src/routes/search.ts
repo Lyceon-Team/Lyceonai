@@ -5,14 +5,15 @@ import { searchSimilarQuestions, getSupabaseClient } from '../lib/supabase';
 
 // GET /api/questions/search?q=<query> - AI-powered semantic search using vector embeddings
 export const searchQuestions = async (req: Request, res: Response) => {
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
   try {
     const query = req.query.q as string;
     const section = req.query.section as string | undefined;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
 
     if (!query || query.trim().length === 0) {
-      return res.status(400).json({ 
-        error: 'Query parameter "q" is required and must not be empty' 
+      return res.status(400).json({
+        error: 'Query parameter "q" is required and must not be empty'
       });
     }
 
@@ -20,19 +21,19 @@ export const searchQuestions = async (req: Request, res: Response) => {
     try {
       getSupabaseClient();
     } catch (error) {
-      return res.status(503).json({ 
+      return res.status(503).json({
         error: 'Vector search not available',
-        message: 'Supabase credentials not configured' 
+        message: 'Supabase credentials not configured'
       });
     }
 
     // Generate embedding for the query
-    console.log(`🔍 Generating embedding for query: "${query}"`);
+    if (!isTestEnv) console.log(`🔍 Generating embedding for query: "${query}"`);
     const embeddingResult = await generateEmbedding(query);
-    console.log(`✅ Embedding generated (${embeddingResult.length} dimensions)`);
+    if (!isTestEnv) console.log(`✅ Embedding generated (${embeddingResult.length} dimensions)`);
 
     // Search for similar questions using vector similarity
-    console.log(`🔎 Searching Supabase for similar questions (limit: ${limit}, section: ${section || 'all'})`);
+    if (!isTestEnv) console.log(`🔎 Searching Supabase for similar questions (limit: ${limit}, section: ${section || 'all'})`);
     const similarQuestions = await searchSimilarQuestions(
       embeddingResult,
       limit,
@@ -50,7 +51,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     // Fetch full question details using Supabase HTTP
     const questionIds = similarQuestions.map(q => q.question_id);
-    console.log(`📚 Fetching ${questionIds.length} question details from database`);
+    if (!isTestEnv) console.log(`📚 Fetching ${questionIds.length} question details from database`);
 
     const { data: questionDetails, error } = await supabaseServer
       .from('questions')
@@ -59,7 +60,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     if (error) {
       console.error('[SEARCH] Error fetching question details:', error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'Search failed',
         message: error.message
       });
@@ -77,7 +78,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
         type: question.type || 'mc',
         options: question.options ? (typeof question.options === 'string' ? JSON.parse(question.options) : question.options) : [],
         tags: question.tags ? (typeof question.tags === 'string' ? question.tags.split(',').map((t: string) => t.trim()) : question.tags) : [],
-        explanation: question.explanation,
+        explanation: null,
         similarity: match?.similarity || 0,
       };
     });
@@ -85,7 +86,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
     // Sort by similarity (highest first)
     results.sort((a, b) => b.similarity - a.similarity);
 
-    console.log(`✅ Search complete: ${results.length} results returned`);
+    if (!isTestEnv) console.log(`✅ Search complete: ${results.length} results returned`);
 
     res.json({
       results,
@@ -95,9 +96,10 @@ export const searchQuestions = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error in semantic search:', error);
+
+    if (!isTestEnv) console.error('Error in semantic search:', error);
     
     // In test mode, return empty results instead of error
-    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
     if (isTestEnv) {
       const query = req.query.q as string;
       const section = req.query.section as string | undefined;
@@ -108,8 +110,8 @@ export const searchQuestions = async (req: Request, res: Response) => {
         section: section || null,
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Search failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -154,7 +156,7 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     // Process in batches
     for (let i = 0; i < questionsToEmbed.length; i += batchSize) {
       const batch = questionsToEmbed.slice(i, i + batchSize);
-      
+
       try {
         // Generate embeddings for this batch
         const texts = batch.map(q => q.stem);
@@ -203,7 +205,7 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     });
   } catch (error) {
     console.error('Error generating question embeddings:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate embeddings',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
