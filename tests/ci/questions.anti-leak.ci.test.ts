@@ -213,7 +213,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // Auth required - verify error response doesn't leak
-        expect([401, 403]).toContain(res.status);
+        expect([401, 403]).toContain(randomRes.status);
       }
     });
 
@@ -236,7 +236,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // Auth required
-        expect([401, 403]).toContain(res.status);
+        expect([401, 403]).toContain(randomRes.status);
       }
     });
   });
