@@ -95,18 +95,10 @@ export const searchQuestions = async (req: Request, res: Response) => {
       section: section || null,
     });
   } catch (error) {
-<<<<<<< HEAD
     console.error('Error in semantic search:', error);
 
-<<<<<<< HEAD
-=======
     if (!isTestEnv) console.error('Error in semantic search:', error);
     
->>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
-=======
-    if (!isTestEnv) console.error('Error in semantic search:', error);
-    
->>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
     // In test mode, return empty results instead of error
     if (isTestEnv) {
       const query = req.query.q as string;
