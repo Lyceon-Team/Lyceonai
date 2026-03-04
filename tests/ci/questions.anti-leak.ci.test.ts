@@ -36,7 +36,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     // Set test environment
     process.env.VITEST = 'true';
     process.env.NODE_ENV = 'test';
-    
+
     // Import app
     const serverModule = await import('../../server/index');
     app = serverModule.default;
@@ -77,14 +77,14 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     it('should never leak explanation field to students (must be null)', async () => {
       const res = await request(app)
         .get('/api/questions/recent?limit=5');
-      
+
       // Should succeed
       expect(res.status).toBe(200);
-      
+
       // Extract questions array (tolerant to both array and {questions:[...]} formats)
       const questions = extractQuestions(res.body);
       expect(Array.isArray(questions)).toBe(true);
-      
+
       // If there are questions returned, verify they don't leak explanation
       if (questions.length > 0) {
         questions.forEach((question: any) => {
@@ -98,13 +98,13 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
       const res = await request(app)
         .get('/api/questions/recent?limit=5');
-      
+
       expect(res.status).toBe(200);
-      
+
       // Extract questions array (tolerant to both array and {questions:[...]} formats)
       const questions = extractQuestions(res.body);
       expect(Array.isArray(questions)).toBe(true);
-      
+
       // If there are questions returned, verify they don't leak answers
       if (questions.length > 0) {
         questions.forEach((question: any) => {
@@ -120,10 +120,10 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     it('should handle empty results gracefully (no crash on 0 questions)', async () => {
       const res = await request(app)
         .get('/api/questions/recent?limit=5');
-      
+
       // Should succeed even if empty
       expect(res.status).toBe(200);
-      
+
       // Extract questions array (tolerant to both array and {questions:[...]} formats)
       const questions = extractQuestions(res.body);
       expect(Array.isArray(questions)).toBe(true);
@@ -136,14 +136,24 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       // Note: This endpoint requires authentication; use the test-only
       // bypass route to exercise the handler.
       const res = await request(app)
+<<<<<<< HEAD
+        .get('/api/questions/random?limit=5');
+
+<<<<<<< HEAD
+=======
         .get('/__test/questions/random?limit=5');
       
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // May return 401 if auth is required
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
         expect(Array.isArray(questions)).toBe(true);
-        
+
         // If there are questions returned, verify they don't leak explanation
         if (questions.length > 0) {
           questions.forEach((question: any) => {
@@ -163,14 +173,24 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
     it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
       const res = await request(app)
+<<<<<<< HEAD
+        .get('/api/questions/random?limit=5');
+
+<<<<<<< HEAD
+=======
         .get('/__test/questions/random?limit=5');
       
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions/random?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // Only test anti-leak if we get a successful response
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
         expect(Array.isArray(questions)).toBe(true);
-        
+
         // If there are questions returned, verify they don't leak answers
         if (questions.length > 0) {
           questions.forEach((question: any) => {
@@ -195,14 +215,24 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       // This endpoint requires authentication; use the test-only bypass
       // route so we can hit it in CI
       const res = await request(app)
+<<<<<<< HEAD
+        .get('/api/questions?limit=5');
+
+<<<<<<< HEAD
+=======
         .get('/__test/questions?limit=5');
       
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       // Expect auth requirement
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
         expect(Array.isArray(questions)).toBe(true);
-        
+
         // If there are questions returned, verify they don't leak explanation
         if (questions.length > 0) {
           questions.forEach((question: any) => {
@@ -219,13 +249,23 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
     it('should never leak correct answer fields', async () => {
       const res = await request(app)
+<<<<<<< HEAD
+        .get('/api/questions?limit=5');
+
+<<<<<<< HEAD
+=======
         .get('/__test/questions?limit=5');
       
+>>>>>>> 9fb8c77 (feat(tests): enhance CI environment handling and security tests for question endpoints)
+=======
+        .get('/__test/questions?limit=5');
+      
+>>>>>>> d55bf52a260b4889eebc2d5e80818cbd0dac3365
       if (res.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
         const questions = extractQuestions(res.body);
         expect(Array.isArray(questions)).toBe(true);
-        
+
         // If there are questions returned, verify they don't leak answers
         if (questions.length > 0) {
           questions.forEach((question: any) => {
@@ -237,6 +277,44 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       } else {
         // Auth required
         expect([401, 403]).toContain(res.status);
+      }
+    });
+  });
+
+  describe('GET /api/questions/search - Anti-Leak Protection', () => {
+    it('should never leak explanation field to students (must be null)', async () => {
+      const res = await request(app)
+        .get('/api/questions/search?q=test&limit=5');
+
+      expect(res.status).toBe(200);
+
+      const questions = res.body?.results || [];
+      expect(Array.isArray(questions)).toBe(true);
+
+      if (questions.length > 0) {
+        questions.forEach((question: any) => {
+          expect(question).toHaveProperty('explanation');
+          expect(question.explanation).toBeNull();
+        });
+      }
+    });
+
+    it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
+      const res = await request(app)
+        .get('/api/questions/search?q=test&limit=5');
+
+      expect(res.status).toBe(200);
+
+      const questions = res.body?.results || [];
+      expect(Array.isArray(questions)).toBe(true);
+
+      if (questions.length > 0) {
+        questions.forEach((question: any) => {
+          expect(question).not.toHaveProperty('answer_choice');
+          expect(question).not.toHaveProperty('answer_text');
+          expect(question).not.toHaveProperty('answer');
+          expect(question).not.toHaveProperty('correctAnswerKey');
+        });
       }
     });
   });
