@@ -138,7 +138,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       const randomRes = await request(app)
         .get('/__test/questions/random?limit=5');
 
-      const testRandomRes = await request(app).get('/__test/questions/random?limit=5');
+      const testRandomRes = await request(app)
+        .get('/__test/questions/random?limit=5');
       
       // May return 401 if auth is required
       if (res.status === 200) {
