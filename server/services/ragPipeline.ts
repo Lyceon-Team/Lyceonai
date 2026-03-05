@@ -6,8 +6,26 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { generateEmbedding } from '../../apps/api/src/lib/embeddings';
-import type { ParsedQuestion } from './satParser';
 import type { QuestionDoc } from './questionTypes';
+
+// Local type definition for ParsedQuestion (missing module; deterministic CI fix)
+interface ParsedQuestionOption {
+  key: string;
+  text: string;
+}
+
+interface ParsedQuestion {
+  questionId: string;
+  stem: string;
+  options: ParsedQuestionOption[];
+  answer: string;
+  explanation?: string;
+  section?: string;
+  difficulty?: string;
+  confidence: number;
+  pageNumber?: number;
+  bbox?: number[];
+}
 
 export interface RAGChunks {
   questionId: string;
