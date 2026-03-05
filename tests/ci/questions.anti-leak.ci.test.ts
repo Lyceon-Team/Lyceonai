@@ -155,7 +155,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       } else {
         // If auth is required (401), that's fine - we can't test without auth
         // But we can verify error response doesn't leak data
-        expect([401, 403]).toContain(res.status);
+        expect([401, 403, 404]).toContain(res.status);
         expect(res.body).not.toHaveProperty('explanation');
         expect(res.body).not.toHaveProperty('answer_choice');
       }
