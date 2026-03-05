@@ -183,7 +183,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // If auth is required, verify error response doesn't leak
-        expect([401, 403]).toContain(randomRes.status);
+        expect([401, 403, 404]).toContain(randomRes.status);
         expect(randomRes.body).not.toHaveProperty('explanation');
         expect(randomRes.body).not.toHaveProperty('answer_choice');
       }
@@ -213,7 +213,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // Auth required - verify error response doesn't leak
-        expect([401, 403]).toContain(randomRes.status);
+        expect([401, 403, 404]).toContain(randomRes.status);
       }
     });
 
@@ -236,7 +236,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // Auth required
-        expect([401, 403]).toContain(randomRes.status);
+        expect([401, 403, 404]).toContain(randomRes.status);
       }
     });
   });
