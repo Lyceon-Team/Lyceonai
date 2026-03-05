@@ -127,7 +127,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       // Extract questions array (tolerant to both array and {questions:[...]} formats)
       const questions = extractQuestions(res.body);
       expect(Array.isArray(questions)).toBe(true);
-      // No assertion on length - could be 0 or more
+    
+// No assertion on length - could be 0 or more
     });
   });
 
@@ -138,13 +139,10 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       const randomRes = await request(app)
         .get('/__test/questions/random?limit=5');
 
-      const testRandomRes = await request(app)
-        .get('/__test/questions/random?limit=5');
-      
       // May return 401 if auth is required
-      if (res.status === 200) {
+      if (randomRes.status === 200) {
         // Extract questions array (tolerant to both array and {questions:[...]} formats)
-        const questions = extractQuestions(res.body);
+        const questions = extractQuestions(randomRes.body);
         expect(Array.isArray(questions)).toBe(true);
 
         // If there are questions returned, verify they don't leak explanation
@@ -157,6 +155,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         }
       } else {
         // If auth is required (401), that's fine - we can't test without auth
+
+        
         // But we can verify error response doesn't leak data
         expect([401, 403, 404]).toContain(res.status);
         expect(res.body).not.toHaveProperty('explanation');
