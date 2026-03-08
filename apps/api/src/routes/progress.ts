@@ -21,9 +21,9 @@ export function getCompetencyDelta(source: 'practice' | 'review', eventType: 'co
 // ============================================================================
 // COMPETENCY MAPPING: Question -> Competency Tags
 // ============================================================================
-export function getCompetencyTags(question: { 
-  competencies?: string[] | null; 
-  tags?: string[] | string | null; 
+export function getCompetencyTags(question: {
+  competencies?: string[] | null;
+  tags?: string[] | string | null;
   unit_tag?: string | null;
   section?: string | null;
 }): string[] {
@@ -31,9 +31,9 @@ export function getCompetencyTags(question: {
     return question.competencies;
   }
   if (question.tags) {
-    const tagArray = Array.isArray(question.tags) 
-      ? question.tags 
-      : typeof question.tags === 'string' 
+    const tagArray = Array.isArray(question.tags)
+      ? question.tags
+      : typeof question.tags === 'string'
         ? question.tags.split(',').map(t => t.trim()).filter(Boolean)
         : [];
     if (tagArray.length > 0) {
@@ -165,7 +165,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
           question_id,
           is_correct,
           outcome,
-          attempted_at,
+          answered_at,
           practice_sessions!inner (
             user_id
           ),
@@ -175,7 +175,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
             section
           )
         `)
-        .order('attempted_at', { ascending: false })
+        .order('answered_at', { ascending: false })
         .limit(50);
 
       if (attemptsError) {
@@ -190,7 +190,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         section: a.questions?.section || 'Unknown',
         result: a.outcome || (a.is_correct ? 'correct' : 'incorrect'),
         source: 'practice',
-        occurredAt: a.attempted_at,
+        occurredAt: a.answered_at,
       }));
 
       return res.json(fallbackData);
@@ -204,7 +204,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
           question_id,
           is_correct,
           outcome,
-          attempted_at,
+          answered_at,
           session_id,
           practice_sessions!inner (
             user_id
@@ -215,11 +215,11 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
             section
           )
         `)
-        .order('attempted_at', { ascending: false })
+        .order('answered_at', { ascending: false })
         .limit(20);
 
       const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id);
-      
+
       const fallbackData = userAttempts.map((a: any) => ({
         id: a.id,
         questionId: a.question_id,
@@ -227,7 +227,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         section: a.questions?.section || 'Unknown',
         result: a.outcome || (a.is_correct ? 'correct' : 'incorrect'),
         source: 'practice',
-        occurredAt: a.attempted_at,
+        occurredAt: a.answered_at,
       }));
 
       return res.json(fallbackData);
@@ -302,14 +302,14 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
         .select(`
           is_correct,
           outcome,
-          attempted_at,
+          answered_at,
           session_id,
           practice_sessions!inner (
             user_id,
             section
           )
         `)
-        .gte('attempted_at', sevenDaysAgo.toISOString());
+        .gte('answered_at', sevenDaysAgo.toISOString());
 
       const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id);
 
@@ -423,7 +423,7 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
       question
     );
 
-    res.json({ 
+    res.json({
       success: true,
       delta: getCompetencyDelta('review', eventType as 'correct' | 'incorrect' | 'skipped'),
     });
@@ -490,7 +490,7 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
 
       if (row.updated_at) {
         const rowDate = new Date(row.updated_at);
-        const existingDate = domainMastery[key].last_activity 
+        const existingDate = domainMastery[key].last_activity
           ? new Date(domainMastery[key].last_activity as string)
           : null;
         if (!existingDate || rowDate > existingDate) {
@@ -500,7 +500,7 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
     }
 
     const masteryArray = Object.values(domainMastery);
-    
+
     if (totalQuestions === 0) {
       return res.json({
         projection: {
@@ -517,7 +517,7 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
         // TODO: implement assessment-based baseline scoring
       });
     }
-    
+
     // DERIVED COMPUTATION: Project SAT score from stored mastery data
     // This does NOT recalculate mastery_score, only applies weighting and decay for display
     const projection: ScoreProjection = calculateScore(masteryArray, totalQuestions);
@@ -548,14 +548,14 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
       .select('timezone')
       .eq('user_id', req.user.id)
       .maybeSingle();
-    
+
     const timezone = profile?.timezone || 'America/Chicago';
-    
+
     // Compute week range: last 7 local days (today inclusive)
     const nowLocal = DateTime.now().setZone(timezone);
     const endLocal = nowLocal.endOf('day');
     const startLocal = endLocal.minus({ days: 6 }).startOf('day');
-    
+
     // Convert to UTC ISO for DB queries
     const weekStartUtc = startLocal.toUTC().toISO();
     const weekEndUtc = endLocal.toUTC().toISO();
@@ -578,8 +578,8 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
       .from('student_question_attempts')
       .select('is_correct')
       .eq('user_id', req.user.id)
-      .gte('attempted_at', weekStartUtc)
-      .lte('attempted_at', weekEndUtc);
+      .gte('answered_at', weekStartUtc)
+      .lte('answered_at', weekEndUtc);
 
     if (weekAttemptsError) {
       console.error('[KPIs] Error fetching weekly attempts:', weekAttemptsError.message);
@@ -587,16 +587,16 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
 
     const weekQuestionsSolved = weekAttempts?.length || 0;
     const weekCorrect = weekAttempts?.filter(a => a.is_correct).length || 0;
-    const weekAccuracy = weekQuestionsSolved > 0 
+    const weekAccuracy = weekQuestionsSolved > 0
       ? Math.round((weekCorrect / weekQuestionsSolved) * 100)
       : 0;
 
     // ---- RECENCY KPIs (last 200 attempts) ----
     const { data: recencyAttempts, error: recencyError } = await supabaseServer
       .from('student_question_attempts')
-      .select('is_correct, time_spent_ms, attempted_at')
+      .select('is_correct, time_spent_ms, answered_at')
       .eq('user_id', req.user.id)
-      .order('attempted_at', { ascending: false })
+      .order('answered_at', { ascending: false })
       .limit(200);
 
     if (recencyError) {
@@ -614,7 +614,7 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     if (recencyAttempts && recencyAttempts.length > 0) {
       const correctCount = recencyAttempts.filter(a => a.is_correct).length;
       const totalTimeMs = recencyAttempts.reduce((sum, a) => sum + (a.time_spent_ms || 0), 0);
-      
+
       recency = {
         window: 200,
         totalAttempts: recencyAttempts.length,
@@ -623,9 +623,9 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
       };
     }
 
-    console.log('[KPIs] Weekly:', { 
-      sessions: sessionCount, 
-      questions: weekQuestionsSolved, 
+    console.log('[KPIs] Weekly:', {
+      sessions: sessionCount,
+      questions: weekQuestionsSolved,
       accuracy: weekAccuracy,
       range: `${startLocal.toISODate()} to ${endLocal.toISODate()}`
     });
