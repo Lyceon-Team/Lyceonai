@@ -78,7 +78,7 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
  */
 export async function resolveUserIdFromToken(token: string | null): Promise<string | null> {
   if (!token) return null;
-  
+
   try {
     const supabaseAnon = createClient(
       process.env.SUPABASE_URL!,
@@ -104,6 +104,7 @@ export interface SupabaseUser {
   jwt?: string;
   username?: string;
   name?: string;
+  student_link_code?: string | null;
 }
 
 declare global {
@@ -132,7 +133,7 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
     if (!_supabaseAdmin) {
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      
+
       if (!url || !key) {
         if (isTestEnvironment()) {
           // In test environment, return placeholder client
@@ -161,7 +162,7 @@ const supabaseAnon = new Proxy({} as SupabaseClient, {
     if (!_supabaseAnon) {
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_ANON_KEY;
-      
+
       if (!url || !key) {
         if (isTestEnvironment()) {
           // In test environment, return placeholder client
@@ -222,7 +223,7 @@ export async function supabaseAuthMiddleware(
         }
       }
     );
-    
+
     const { data: fetchedProfile, error: profileError } = await userSupabase
       .from('profiles')
       .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
@@ -231,22 +232,22 @@ export async function supabaseAuthMiddleware(
 
     // Auto-create profile if missing (resilient profile loading)
     let profile = fetchedProfile;
-    
+
     if (profileError || !fetchedProfile) {
       // Profile doesn't exist - auto-create with safe defaults
-      logger.warn('AUTH', 'profile_missing', 'Profile not found, auto-creating', { 
+      logger.warn('AUTH', 'profile_missing', 'Profile not found, auto-creating', {
         userId: user.id,
-        email: user.email 
+        email: user.email
       });
-      
+
       // Determine role from user metadata (if set during signup)
       // SECURITY: Only allow guardian role from metadata. Admin cannot be auto-assigned.
       // Admin role must be manually assigned by DB admin or existing admin user.
       const metadataRole = user.user_metadata?.role as string | undefined;
       const allowedAutoRoles = ['student', 'guardian'] as const;
-      const defaultRole: 'student' | 'guardian' = 
+      const defaultRole: 'student' | 'guardian' =
         metadataRole === 'guardian' ? 'guardian' : 'student';
-      
+
       // Log if someone tried to auto-create as admin (potential abuse attempt)
       if (metadataRole === 'admin') {
         logger.warn('AUTH', 'admin_role_blocked', 'Blocked attempt to auto-create admin profile', {
@@ -255,7 +256,7 @@ export async function supabaseAuthMiddleware(
           requestId: req.requestId
         });
       }
-      
+
       const { data: newProfile, error: createError } = await supabaseAdmin
         .from('profiles')
         .insert({
@@ -269,24 +270,24 @@ export async function supabaseAuthMiddleware(
         })
         .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
         .single();
-      
+
       if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_create_failed', 'Failed to auto-create profile', { 
-          userId: user.id, 
-          error: createError 
+        logger.error('AUTH', 'profile_create_failed', 'Failed to auto-create profile', {
+          userId: user.id,
+          error: createError
         });
         return res.status(500).json({ error: 'Failed to load user profile' });
       }
-      
+
       logger.info('AUTH', 'profile_auto_created', 'Profile auto-created successfully', {
         userId: newProfile.id,
         role: newProfile.role,
         requestId: req.requestId
       });
-      
+
       profile = newProfile;
     }
-    
+
     if (!profile) {
       logger.error('AUTH', 'profile_null', 'Profile is null after fetch/create', { userId: user.id });
       return res.status(500).json({ error: 'Failed to load user profile' });
@@ -303,6 +304,7 @@ export async function supabaseAuthMiddleware(
       is_under_13: profile.is_under_13,
       guardian_consent: profile.guardian_consent,
       jwt: token, // Store raw JWT for RLS database context
+      student_link_code: profile.student_link_code,
       // Legacy fields for backward compatibility with old auth
       username: profile.email.split('@')[0], // Use email prefix as username
       name: profile.display_name || profile.email.split('@')[0]
@@ -344,19 +346,19 @@ export async function supabaseAuthMiddleware(
       const { error: upsertError } = await supabaseAdmin
         .from('users')
         .upsert(
-          { 
-            id: req.user.id, 
-            email: req.user.email 
+          {
+            id: req.user.id,
+            email: req.user.email
           },
           { onConflict: 'id' }
         );
-      
+
       if (upsertError) {
         // Retry with just id if email column doesn't exist or other schema issue
         const { error: retryError } = await supabaseAdmin
           .from('users')
           .upsert({ id: req.user.id }, { onConflict: 'id' });
-        
+
         if (retryError) {
           logger.warn('AUTH', 'users_upsert_failed', 'Failed to upsert public.users', {
             userId: req.user.id,

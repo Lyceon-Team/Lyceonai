@@ -289,13 +289,13 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
+
     // Return complete user profile with all fields needed by frontend
     // This matches the structure of /api/auth/user for compatibility
     const fallbackUsername = req.user.email ? req.user.email.split('@')[0] : null;
     const normalizedName = req.user.display_name || fallbackUsername || 'Student';
-    
-    return res.json({ 
+
+    return res.json({
       authenticated: true,
       user: {
         id: req.user.id,
@@ -308,6 +308,7 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
         isGuardian: req.user.isGuardian,
         is_under_13: req.user.is_under_13,
         guardian_consent: req.user.guardian_consent,
+        studentLinkCode: req.user.student_link_code,
         profileCompletedAt: (req.user as any).profile_completed_at || null,
       }
     });

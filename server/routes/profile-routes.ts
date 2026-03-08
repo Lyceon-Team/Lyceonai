@@ -39,9 +39,9 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid profile data',
-        details: validation.error.errors 
+        details: validation.error.errors
       });
     }
 
@@ -82,8 +82,8 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to fetch updated profile' });
     }
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       profile: {
         id: profile.id,
         email: profile.email,
@@ -97,6 +97,7 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
         preferredLanguage: profile.preferred_language,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
+        studentLinkCode: profile.student_link_code,
         role: profile.role
       }
     });

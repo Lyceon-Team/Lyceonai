@@ -57,7 +57,7 @@ interface RecentActivity {
 export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
   const [, navigate] = useLocation();
-  
+
   // Progress and activity data removed - endpoints not implemented
   // const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
   //   queryKey: ['/api/progress'],
@@ -112,7 +112,7 @@ export default function LyceonDashboard() {
       avgSecondsPerQuestion: number;
     };
   }
-  
+
   const { data: kpiData, isLoading: kpiLoading, error: kpiError } = useQuery<KpiResponse>({
     queryKey: ['/api/progress/kpis'],
     enabled: !!user,
@@ -128,10 +128,10 @@ export default function LyceonDashboard() {
   const targetScore = profileData?.target_score ?? null;
   const examDateStr = profileData?.exam_date ?? null;
   const examDate = examDateStr ? DateTime.fromISO(examDateStr) : null;
-  const daysUntilTest = examDate 
-    ? Math.ceil(examDate.diff(DateTime.now(), 'days').days) 
+  const daysUntilTest = examDate
+    ? Math.ceil(examDate.diff(DateTime.now(), 'days').days)
     : null;
-  
+
   // Today's plan progress
   const plannedMinutes = todayPlan?.planned_minutes ?? 0;
   const completedMinutes = todayPlan?.completed_minutes ?? 0;
@@ -151,10 +151,10 @@ export default function LyceonDashboard() {
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-            {getGreeting()}, {user?.email?.split('@')[0] || 'Student'}
+            {getGreeting()}, {user?.display_name || 'Student'}
           </h1>
           <p className="text-muted-foreground">
-            {daysUntilTest !== null && daysUntilTest > 0 
+            {daysUntilTest !== null && daysUntilTest > 0
               ? `Your test is in ${daysUntilTest} days. Let's keep the momentum going!`
               : "Ready to ace your SAT? Let's practice!"
             }
@@ -205,8 +205,8 @@ export default function LyceonDashboard() {
                   </div>
                 </div>
                 <div className="flex flex-wrap justify-center lg:justify-start gap-3">
-                  <Button 
-                    size="lg" 
+                  <Button
+                    size="lg"
                     className="bg-white text-purple-900 hover:bg-white/90 font-semibold"
                     data-testid="button-start-flowcards"
                     asChild
@@ -216,9 +216,9 @@ export default function LyceonDashboard() {
                       Start FlowCards
                     </Link>
                   </Button>
-                  <Button 
-                    size="lg" 
-                    variant="outline" 
+                  <Button
+                    size="lg"
+                    variant="outline"
                     className="border-white/30 text-white hover:bg-white/10 hover:text-white"
                     data-testid="button-flowcards-math"
                     asChild
@@ -230,7 +230,7 @@ export default function LyceonDashboard() {
                   </Button>
                 </div>
               </div>
-              
+
               {/* Right: Preview Card Stack (hidden on mobile) */}
               <div className="hidden lg:block relative w-48 h-64">
                 <div className="absolute top-3 left-3 w-full h-full bg-white/10 rounded-2xl transform rotate-6"></div>
@@ -260,7 +260,7 @@ export default function LyceonDashboard() {
           {/* Left Column (2/3 width) */}
           <div className="lg:col-span-2 space-y-6 min-w-0">
             {/* Today's Focus Card */}
-            <PageCard 
+            <PageCard
               title="Today's Focus"
               description="Your personalized practice plan for today"
               className="border-2 border-primary/20 shadow-lg"
