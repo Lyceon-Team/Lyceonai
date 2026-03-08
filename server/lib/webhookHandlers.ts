@@ -40,22 +40,7 @@ async function extractAccountIdStrict(
     } catch {
     }
   }
-  
-  if (session?.subscription) {
-    try {
-      const stripe = await getUncachableStripeClient();
-      const subId = typeof session.subscription === 'string' 
-        ? session.subscription 
-        : session.subscription.id;
-      const sub = await stripe.subscriptions.retrieve(subId);
-      const accountId = requireAccountIdFromStripeObject(sub);
-      const userId = sub.metadata?.payer_user_id || sub.metadata?.user_id || null;
-      return { accountId, userId };
-    } catch (err) {
-      logger.warn('WEBHOOK', 'extractAccountIdStrict', 'Failed to retrieve subscription', { error: (err as Error).message });
-    }
-  }
-  
+
   throw new Error('Missing account_id on Stripe object metadata/client_reference_id');
 }
 
@@ -66,12 +51,10 @@ async function handleSubscriptionEvent(
   checkoutSession?: Stripe.Checkout.Session
 ): Promise<void> {
   let accountId: string;
-  let userId: string | null;
-  
+
   try {
     const extracted = await extractAccountIdStrict(checkoutSession || null, subscription);
     accountId = extracted.accountId;
-    userId = extracted.userId;
   } catch (err) {
     logger.error('WEBHOOK', 'subscription', 'Missing account_id on Stripe object metadata/client_reference_id', {
       subscriptionId: subscription.id,
@@ -79,7 +62,7 @@ async function handleSubscriptionEvent(
       eventId,
       error: (err as Error).message,
     });
-    return;
+    throw err;
   }
 
   const { plan, status } = mapStripeStatusToEntitlement(subscription.status);
@@ -135,10 +118,27 @@ async function tryInsertWebhookEventGate(eventId: string, eventType: string): Pr
     if (error.code === "23505") {
       return false; // Duplicate event, already processed
     }
-    throw new Error(`Failed to insert webhook event: ${error.message}`);
+    logger.warn('WEBHOOK', 'idempotency_gate_insert', 'Failed to write idempotency gate; processing event anyway', {
+      eventId,
+      eventType,
+      error: error.message,
+      code: error.code,
+    });
+    return true;
   }
 
   return true;
+}
+
+async function rollbackWebhookEventGate(eventId: string): Promise<void> {
+  const { error } = await supabaseServer.from("stripe_webhook_events").delete().eq('id', eventId);
+  if (error) {
+    logger.warn('WEBHOOK', 'idempotency_gate_rollback', 'Failed to rollback idempotency gate', {
+      eventId,
+      error: error.message,
+      code: error.code,
+    });
+  }
 }
 
 export class WebhookHandlers {
@@ -180,26 +180,6 @@ export class WebhookHandlers {
       requestId,
     });
 
-    // Ensure account_id exists for specific event types
-    if ( [
-      'checkout.session.completed',
-      'customer.subscription.created',
-      'customer.subscription.updated',
-      'customer.subscription.deleted',
-    ].includes(event.type)) {
-      const object = event.data.object;
-      try {
-        requireAccountIdFromStripeObject(object);
-      } catch (err) {
-        logger.error('WEBHOOK', 'missing_account_id', 'Missing account_id for event', {
-          eventId: event.id,
-          eventType: event.type,
-          error: (err as Error).message,
-        });
-        throw new Error(`Missing account_id for event ${event.type}`);
-      }
-    }
-
     // Attempt to insert the event into the idempotency gate
     const isNewEvent = await tryInsertWebhookEventGate(event.id, event.type);
     if (!isNewEvent) {
@@ -239,6 +219,7 @@ export class WebhookHandlers {
           });
       }
     } catch (handlerError: any) {
+      await rollbackWebhookEventGate(event.id);
       logger.error('WEBHOOK', 'handler_error', 'Event handler failed', { 
         eventId: event.id,
         eventType: event.type,
