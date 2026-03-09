@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type PracticeSectionParam = "math" | "reading-writing" | "random";
+export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
 export type PracticeQuestion = {
   id: string;

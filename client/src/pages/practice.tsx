@@ -15,8 +15,7 @@ import { DateTime } from "luxon";
 interface QuestionStats {
   total: number;
   math: number;
-  reading: number;
-  writing: number;
+  reading_writing: number;
   byDifficulty: {
     easy: number;
     medium: number;
@@ -39,7 +38,7 @@ interface PracticeTopics {
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
-  
+
   const { data: stats, isLoading: statsLoading, isError: statsError, error: statsErrorObj, refetch: refetchStats } = useQuery<QuestionStats>({
     queryKey: ['/api/questions/stats'],
     enabled: !!user && !authLoading,
@@ -66,7 +65,7 @@ function Practice() {
       avgSecondsPerQuestion: number;
     };
   }
-  
+
   const { data: kpiData, isLoading: kpiLoading, isError: kpiError, error: kpiErrorObj, refetch: refetchKpis } = useQuery<KpiResponse>({
     queryKey: ['/api/progress/kpis'],
     enabled: !!user && !authLoading,
@@ -130,9 +129,9 @@ function Practice() {
 
                 {/* Section Buttons */}
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <Button 
-                    asChild 
-                    size="lg" 
+                  <Button
+                    asChild
+                    size="lg"
                     className="h-auto py-6 flex-col items-start gap-2"
                     data-testid="button-practice-math"
                   >
@@ -151,9 +150,9 @@ function Practice() {
                     </Link>
                   </Button>
 
-                  <Button 
-                    asChild 
-                    size="lg" 
+                  <Button
+                    asChild
+                    size="lg"
                     variant="outline"
                     className="h-auto py-6 flex-col items-start gap-2"
                     data-testid="button-practice-reading"
@@ -169,8 +168,8 @@ function Practice() {
                             {statsLoading
                               ? '--'
                               : statsError
-                              ? '—'
-                              : (Number(stats?.reading || 0) + Number(stats?.writing || 0))} questions
+                                ? '—'
+                                : (Number(stats?.reading_writing || 0))} questions
                           </div>
                         </div>
                       </div>
@@ -179,7 +178,7 @@ function Practice() {
                 </div>
                 {statsError && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    <p className="font-medium">We couldn’t load question totals.</p>
+                    <p className="font-medium">We couldn't load question totals.</p>
                     <p className="mt-1">{(statsErrorObj as Error)?.message ?? "Please try again."}</p>
                     <Button className="mt-3" variant="outline" size="sm" onClick={() => refetchStats()}>
                       Retry
@@ -200,7 +199,7 @@ function Practice() {
                 </div>
               ) : topicsError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn’t load math topics.</p>
+                  <p className="font-medium">We couldn't load math topics.</p>
                   <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
                   <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
                     Retry
@@ -254,7 +253,7 @@ function Practice() {
                 </div>
               ) : topicsError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn’t load reading &amp; writing topics.</p>
+                  <p className="font-medium">We couldn't load reading &amp; writing topics.</p>
                   <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
                   <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
                     Retry
@@ -300,9 +299,9 @@ function Practice() {
             {/* Other Options */}
             <PageCard title="More Practice Modes">
               <div className="grid sm:grid-cols-3 gap-4">
-                <Button 
-                  asChild 
-                  variant="outline" 
+                <Button
+                  asChild
+                  variant="outline"
                   className="h-auto py-4 flex-col gap-2"
                   data-testid="button-random-practice"
                 >
@@ -312,9 +311,9 @@ function Practice() {
                   </Link>
                 </Button>
 
-                <Button 
-                  asChild 
-                  variant="outline" 
+                <Button
+                  asChild
+                  variant="outline"
                   className="h-auto py-4 flex-col gap-2"
                   data-testid="button-flow-cards"
                 >
@@ -327,9 +326,9 @@ function Practice() {
                   </Link>
                 </Button>
 
-                <Button 
-                  asChild 
-                  variant="outline" 
+                <Button
+                  asChild
+                  variant="outline"
                   className="h-auto py-4 flex-col gap-2"
                   data-testid="button-review-errors"
                 >
@@ -349,7 +348,7 @@ function Practice() {
               <div className="space-y-4">
                 {(kpiError || streakError) && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                    <p className="font-medium">We couldn’t load your stats.</p>
+                    <p className="font-medium">We couldn't load your stats.</p>
                     <p className="mt-1">
                       {(kpiErrorObj as Error)?.message || (streakErrorObj as Error)?.message || "Please try again."}
                     </p>
@@ -390,10 +389,10 @@ function Practice() {
                     {kpiLoading
                       ? "—"
                       : kpiError
-                      ? "—"
-                      : kpiData?.week?.questionsSolved === 0
-                      ? "—"
-                      : `${weekAccuracy}%`}
+                        ? "—"
+                        : kpiData?.week?.questionsSolved === 0
+                          ? "—"
+                          : `${weekAccuracy}%`}
                   </span>
                 </div>
                 {kpiEmpty && (
