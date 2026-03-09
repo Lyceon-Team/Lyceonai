@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type PracticeSectionParam = "math" | "reading-writing" | "random";
+export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
 export type PracticeQuestion = {
   id: string;
@@ -11,6 +11,7 @@ export type PracticeQuestion = {
 };
 
 export type PracticeNextResponse = {
+  sessionId?: string;
   question: PracticeQuestion | null;
   totalQuestions?: number;
   currentIndex?: number;
@@ -58,6 +59,7 @@ function mergeStats(
 
 export function useCanonicalPractice(section: PracticeSectionParam) {
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,6 +117,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       const data = (await res.json()) as PracticeNextResponse;
 
       setQuestion(data.question ?? null);
+      if (data.sessionId) setSessionId(data.sessionId);
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
 
@@ -145,6 +148,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         const elapsedMs = Math.max(0, nowMs() - questionStartMs.current);
 
         const payload = {
+          sessionId,
           questionId: question.id,
           selectedAnswer: question.type === "mc" ? (opts.skipped ? null : selectedAnswer) : null,
           freeResponseAnswer: question.type === "fr" ? (opts.skipped ? "" : freeResponseAnswer) : "",
@@ -208,7 +212,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setIsSubmitting(false);
       }
     },
-    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer]
+    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer, sessionId]
   );
 
   const nextQuestion = useCallback(async () => {

@@ -113,12 +113,17 @@ function isValidMcQuestion(row: any): boolean {
 }
 
 function normalizeSectionParam(section?: string | null): string | null {
-  if (!section) return null;
+  if (!section) return "Random";
   const s = section.trim().toLowerCase();
+
+  // Math variations
   if (s === "math") return "Math";
-  if (s === "reading" || s === "rw" || s === "reading-writing") return "Reading";
+
+  // Reading & Writing variations
+  if (s === "rw" || s === "reading_writing" || s === "reading" || s === "writing") return "RW";
+
   if (s === "random") return "Random";
-  return null;
+  return "Random"; // Default to Random instead of null to avoid type issues
 }
 
 async function getSessionStats(sessionId: string, userId: string): Promise<{ correct: number; total: number; streak: number }> {
@@ -146,7 +151,7 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{ cor
 }
 
 async function pickRandomQuestion(args: {
-  section: "Math" | "Reading" | "Random";
+  section: "Math" | "RW" | "Random";
   userId: string;
   sessionId?: string | null;
 }): Promise<
@@ -169,7 +174,7 @@ async function pickRandomQuestion(args: {
 
   let q = baseQuery;
   if (args.section === "Math") q = q.eq("section", "Math");
-  if (args.section === "Reading") q = q.eq("section", "Reading");
+  if (args.section === "RW") q = q.eq("section", "RW");
   // Random => no section filter
 
   const { data: pool, error } = await q;
@@ -243,15 +248,17 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
   }
 
   const sectionParam = normalizeSectionParam(String(req.query.section ?? "random"));
-  const section: "Math" | "Reading" | "Random" =
-    sectionParam === "Math" ? "Math" : sectionParam === "Reading" ? "Reading" : "Random";
+  const section: "Math" | "RW" | "Random" =
+    sectionParam === "Math" ? "Math" : sectionParam === "RW" ? "RW" : "Random";
+  const mode = String(req.query.mode ?? "balanced");
 
-  // Find existing in_progress session for this user+section (best effort)
+  // Find existing in_progress session for this user+section+mode (best effort)
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")
     .select("id, status")
     .eq("user_id", userId)
     .eq("section", section)
+    .eq("mode", mode)
     .eq("status", "in_progress")
     .order("started_at", { ascending: false })
     .limit(1)
@@ -266,8 +273,10 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
       .insert({
         user_id: userId, // must match users(id) FK in your DB
         section,
+        mode,
         status: "in_progress",
         started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .select("id")
       .single();

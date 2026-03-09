@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
-import { AuthUser, SupabaseProfile } from '@/lib/supabase';
+import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface SupabaseAuthContextType {
-  user: AuthUser | null;
+  user: SupabaseProfile | null;
   isLoading: boolean;
   authLoading: boolean;
   isAuthenticated: boolean;
@@ -21,19 +21,19 @@ interface SupabaseAuthContextType {
 const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(undefined);
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<SupabaseProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true); // Default true as requested
   const queryClient = useQueryClient();
   const isInitializing = useRef(true); // Flag to prevent auth state changes during init
 
   // Fetch user profile from backend
-  const fetchUserFromBackend = async (): Promise<AuthUser | null> => {
+  const fetchUserFromBackend = async (): Promise<SupabaseProfile | null> => {
     try {
-      const tryFetchUser = async (): Promise<Response> => {
-        return fetch('/api/auth/user', { credentials: 'include' });
+      const tryFetchUserProfile = async (): Promise<Response> => {
+        return fetch('/api/profile', { credentials: 'include' });
       };
 
-      let response = await tryFetchUser();
+      let response = await tryFetchUserProfile();
 
       // If access token expired, attempt one server-side refresh using httpOnly cookie
       if (response.status === 401 || response.status === 403) {
@@ -47,7 +47,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
         if (refreshResp.ok) {
           console.log('[AUTH] Token refreshed, retrying user fetch');
-          response = await tryFetchUser();
+          response = await tryFetchUserProfile();
         }
       }
 
@@ -69,11 +69,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         email: backendUser.email,
         display_name: backendUser.display_name,
         role: backendUser.role,
-        isAdmin: backendUser.isAdmin === true,
-        isGuardian: backendUser.isGuardian === true || backendUser.role === 'guardian',
         is_under_13: backendUser.is_under_13,
         guardian_consent: backendUser.guardian_consent,
         student_link_code: backendUser.student_link_code,
+        created_at: backendUser.created_at,
+        last_login_at: backendUser.last_login_at,
+        guardian_email: backendUser.guardian_email,
+        updated_at: backendUser.updated_at,
       };
     } catch (error) {
       console.error('[AUTH] Network error fetching user from backend:', error);
@@ -87,10 +89,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       console.log('[AUTH] Starting initialization');
-      
+
       // First try to get user from backend (if cookies exist from previous session)
       const backendUser = await fetchUserFromBackend();
-      
+
       if (mounted && backendUser) {
         console.log('[AUTH] Found user from backend cookies');
         setUser(backendUser);
@@ -115,8 +117,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const signUp = async (
-    email: string, 
-    password: string, 
+    email: string,
+    password: string,
     displayName?: string,
     isUnder13: boolean = false,
     guardianEmail?: string,
@@ -213,7 +215,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.warn('[AUTH] Backend signout failed:', err);
       }
-      
+
       setUser(null);
       queryClient.invalidateQueries();
     } catch (error: any) {
@@ -267,8 +269,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isLoading: authLoading,
     authLoading,
     isAuthenticated: !!user,
-    isAdmin: user?.isAdmin === true,
-    isGuardian: user?.isGuardian === true || user?.role === 'guardian',
+    isAdmin: user?.role === 'admin',
+    isGuardian: user?.role === 'guardian',
     requiresConsent: !!(user?.is_under_13 && !user?.guardian_consent),
     signUp,
     signIn,
