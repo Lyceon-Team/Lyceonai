@@ -342,6 +342,25 @@ async function calculateStreakForStudent(userId: string, timezone: string): Prom
 }
 
 
+type GuardianSafeExamReport = Pick<
+  fullLengthExamService.CompleteExamResult,
+  'sessionId' | 'rawScore' | 'scaledScore' | 'domainBreakdown' | 'skillDiagnostics' | 'rwScore' | 'mathScore' | 'overallScore' | 'completedAt'
+>;
+
+function toGuardianSafeExamReport(report: fullLengthExamService.CompleteExamResult): GuardianSafeExamReport {
+  return {
+    sessionId: report.sessionId,
+    rawScore: report.rawScore,
+    scaledScore: report.scaledScore,
+    domainBreakdown: report.domainBreakdown,
+    skillDiagnostics: report.skillDiagnostics,
+    rwScore: report.rwScore,
+    mathScore: report.mathScore,
+    overallScore: report.overallScore,
+    completedAt: report.completedAt,
+  };
+}
+
 // ============================================================================
 // GUARDIAN FULL-LENGTH EXAM REPORTING
 // ============================================================================
@@ -380,7 +399,7 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
     return res.json({
       studentId,
       sessionId,
-      report,
+      report: toGuardianSafeExamReport(report),
       requestId,
     });
   } catch (err: unknown) {

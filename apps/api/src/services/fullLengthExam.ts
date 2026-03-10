@@ -488,33 +488,6 @@ function buildCompleteExamResult(input: BuildCompleteExamResultInput): CompleteE
 }
 
 /**
- * Format a score rollup DB row as a CompleteExamResult
- */
-function formatRollupAsResult(
-  rollup: {
-    session_id: string;
-    rw_module1_correct: number;
-    rw_module1_total: number;
-    rw_module2_correct: number;
-    rw_module2_total: number;
-    math_module1_correct: number;
-    math_module1_total: number;
-    math_module2_correct: number;
-    math_module2_total: number;
-    overall_score: number;
-  },
-  completedAt: Date
-): CompleteExamResult {
-  return buildCompleteExamResult({
-    sessionId: rollup.session_id,
-    completedAt,
-    rwModule1: { correct: rollup.rw_module1_correct, total: rollup.rw_module1_total },
-    rwModule2: { correct: rollup.rw_module2_correct, total: rollup.rw_module2_total },
-    mathModule1: { correct: rollup.math_module1_correct, total: rollup.math_module1_total },
-    mathModule2: { correct: rollup.math_module2_correct, total: rollup.math_module2_total },
-  });
-}
-/**
  * Compute exam scores from modules and responses, then persist to rollups table
  */
 async function computeAndPersistExamScores(
@@ -716,6 +689,18 @@ async function computeExamScores(
     mathModule2,
     diagnosticRows,
   });
+}
+
+/**
+ * Canonical scoring/reporting path for all completed-session outputs.
+ * This is the single source for raw/scaled/domain/skill result shape.
+ */
+async function computeCanonicalExamReport(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  completedAt: Date
+): Promise<CompleteExamResult> {
+  return computeExamScores(supabase, sessionId, completedAt);
 }
 /**
  * Calculate time remaining for a module
@@ -1262,6 +1247,24 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found in current module");
   }
 
+  // Idempotent write contract: first accepted submission wins.
+  // Duplicate submissions for the same session/module/question are treated as no-ops.
+  const { data: existingResponse, error: existingResponseError } = await supabase
+    .from("full_length_exam_responses")
+    .select("id")
+    .eq("session_id", params.sessionId)
+    .eq("module_id", currentModule.id)
+    .eq("question_id", params.questionId)
+    .maybeSingle();
+
+  if (existingResponseError) {
+    throw new Error(`Failed to check existing response: ${existingResponseError.message}`);
+  }
+
+  if (existingResponse) {
+    return;
+  }
+
   // Get question to check correctness
   const { data: question, error: questionError } = await supabase
     .from("questions")
@@ -1282,12 +1285,12 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     isCorrect = params.freeResponseAnswer.trim().toLowerCase() === (question.answer_text || "").trim().toLowerCase();
   }
 
-  // Upsert response (idempotent with unique constraint)
+  // Insert response once; duplicate-key races are accepted as idempotent no-ops.
   const now = new Date().toISOString();
-  
-  const { error: upsertError } = await supabase
+
+  const { error: insertError } = await supabase
     .from("full_length_exam_responses")
-    .upsert({
+    .insert({
       session_id: params.sessionId,
       module_id: currentModule.id,
       question_id: params.questionId,
@@ -1296,13 +1299,14 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       is_correct: isCorrect,
       answered_at: now,
       updated_at: now,
-    }, {
-      onConflict: 'session_id,module_id,question_id',
-      ignoreDuplicates: false,
     });
 
-  if (upsertError) {
-    throw new Error(`Failed to upsert response: ${upsertError.message}`);
+  if (insertError) {
+    const message = insertError.message || "";
+    if (insertError.code === "23505" || message.toLowerCase().includes("duplicate")) {
+      return;
+    }
+    throw new Error(`Failed to insert response: ${insertError.message}`);
   }
 }
 
@@ -1612,21 +1616,13 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return existing rollup from DB
+  // Idempotency: if already completed, return canonical computed report.
   if (session.status === "completed") {
-    // Fetch existing rollup from database (deterministic)
-    const { data: existingRollup, error: rollupError } = await supabase
-      .from("full_length_exam_score_rollups")
-      .select("*")
-      .eq("session_id", params.sessionId)
-      .single();
-
-    if (rollupError || !existingRollup) {
-      throw new Error("Score rollup not found for completed session");
-    }
-
-    // Return rollup data in CompleteExamResult format
-    return formatRollupAsResult(existingRollup, new Date(session.completed_at!));
+    return computeCanonicalExamReport(
+      supabase,
+      params.sessionId,
+      new Date(session.completed_at || new Date().toISOString())
+    );
   }
 
   // Terminal-state guard: enforce preconditions for completion
@@ -1699,18 +1695,11 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      // Session was completed by concurrent request - return existing rollup from DB
-      const { data: existingRollup, error: rollupError } = await supabase
-        .from("full_length_exam_score_rollups")
-        .select("*")
-        .eq("session_id", params.sessionId)
-        .single();
-
-      if (rollupError || !existingRollup) {
-        throw new Error("Score rollup not found for completed session");
-      }
-
-      return formatRollupAsResult(existingRollup, new Date(completedSession.completed_at!));
+      return computeCanonicalExamReport(
+        supabase,
+        params.sessionId,
+        new Date(completedSession.completed_at || completedAt.toISOString())
+      );
     } else {
       throw new Error("Invalid exam state");
     }
@@ -1745,22 +1734,7 @@ export async function getExamReport(params: CompleteExamParams): Promise<Complet
   }
 
   const completedAt = session.completed_at ? new Date(session.completed_at) : new Date();
-
-  try {
-    return await computeExamScores(supabase, params.sessionId, completedAt);
-  } catch {
-    const { data: rollup, error: rollupError } = await supabase
-      .from("full_length_exam_score_rollups")
-      .select("*")
-      .eq("session_id", params.sessionId)
-      .single();
-
-    if (rollupError || !rollup) {
-      throw new Error("Score report unavailable");
-    }
-
-    return formatRollupAsResult(rollup, completedAt);
-  }
+  return computeCanonicalExamReport(supabase, params.sessionId, completedAt);
 }
 
 export async function getExamReviewAfterCompletion(params: CompleteExamParams): Promise<GetExamReviewResult> {
