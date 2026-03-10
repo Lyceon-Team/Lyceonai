@@ -337,15 +337,15 @@ describe('Full-Length Exam Service', () => {
       // For now, we verify the type structure is correct
       const mockSession: fullLengthExamService.GetCurrentSessionResult['session'] = {
         id: 'session-123',
-        user_id: 'user-456',
+        userId: 'user-456',
         status: 'in_progress',
-        current_section: 'math',
-        current_module: 1,
+        currentSection: 'math',
+        currentModule: 1,
         seed: 'test-seed',
-        started_at: new Date().toISOString(),
-        completed_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        startedAt: new Date(),
+        completedAt: null as any,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
 
       const mockResult: fullLengthExamService.GetCurrentSessionResult = {
@@ -899,6 +899,7 @@ describe('Full-Length Exam Service', () => {
         module_index: 1,
         status: 'in_progress',
         difficulty_bucket: null,
+        ends_at: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
       };
 
       const mockResponses = [
@@ -978,7 +979,7 @@ describe('Full-Length Exam Service', () => {
         userId: 'user-456',
       });
 
-     expect(updateCallCount).toBe(1);
+      expect(updateCallCount).toBe(1);
     });
   });
 
@@ -1472,7 +1473,7 @@ describe('Full-Length Exam Service', () => {
       expect(question.difficulty).toBe('easy');
 
       // Verify answer/explanation fields are NOT present (allowlist enforcement)
-      const questionAsAny = question as Record<string, unknown>;
+      const questionAsAny = question as unknown as Record<string, unknown>;
       expect(questionAsAny.answer).toBeUndefined();
       expect(questionAsAny.answerChoice).toBeUndefined();
       expect(questionAsAny.answerText).toBeUndefined();
