@@ -1,0 +1,207 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+
+const resolvePaidKpiAccessForUser = vi.fn();
+const buildCanonicalPracticeKpiSnapshot = vi.fn();
+const buildStudentKpiView = vi.fn();
+const getExamReport = vi.fn();
+const supabaseFrom = vi.fn();
+
+vi.mock('../../server/services/kpi-access', () => ({
+  resolvePaidKpiAccessForUser,
+}));
+
+vi.mock('../../server/services/kpi-truth-layer', () => ({
+  KPI_TRUTH_LAYER_VERSION: 'kpi_truth_v1',
+  buildCanonicalPracticeKpiSnapshot,
+  buildStudentKpiView,
+  buildFullTestKpis: vi.fn(() => []),
+  fullTestMeasurementModel: vi.fn(() => ({ official: ['official_sat_score'], weighted: [], diagnostic: [] })),
+}));
+
+vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+  supabaseServer: {
+    from: supabaseFrom,
+  },
+}));
+
+vi.mock('../../server/middleware/supabase-auth', () => ({
+  requireSupabaseAuth: (req: any, _res: any, next: any) => {
+    req.user = { id: 'student-1', role: 'student' };
+    next();
+  },
+}));
+
+vi.mock('../../server/middleware/csrf', () => ({
+  csrfGuard: () => (_req: any, _res: any, next: any) => next(),
+}));
+
+vi.mock('../../apps/api/src/services/fullLengthExam', () => ({
+  createExamSession: vi.fn(),
+  getCurrentSession: vi.fn(),
+  startExam: vi.fn(),
+  submitAnswer: vi.fn(),
+  submitModule: vi.fn(),
+  continueFromBreak: vi.fn(),
+  completeExam: vi.fn(),
+  getExamReport,
+  getExamReviewAfterCompletion: vi.fn(),
+}));
+
+vi.mock('../../apps/api/src/lib/supabase-admin', () => ({
+  getSupabaseAdmin: vi.fn(() => ({ from: vi.fn() })),
+}));
+
+function createRes() {
+  const json = vi.fn();
+  const status = vi.fn(() => ({ json }));
+  return { status, json };
+}
+
+describe('KPI Gating Contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: false,
+      accountId: 'acc-free',
+      plan: 'free',
+      status: 'inactive',
+      currentPeriodEnd: null,
+      reason: 'Student entitlement is free/inactive/expired for premium KPI surfaces.',
+    });
+
+    buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
+      modelVersion: 'kpi_truth_v1',
+      timezone: 'America/Chicago',
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      currentWeek: {
+        practiceSessions: 2,
+        practiceMinutes: 45,
+        questionsSolved: 24,
+        accuracyPercent: 58,
+        avgSecondsPerQuestion: 87.5,
+      },
+      previousWeek: {
+        practiceSessions: 1,
+        practiceMinutes: 20,
+        questionsSolved: 10,
+        accuracyPercent: 50,
+        avgSecondsPerQuestion: 95,
+      },
+      recency200: {
+        totalAttempts: 24,
+        accuracyPercent: 58,
+        avgSecondsPerQuestion: 87.5,
+      },
+    });
+
+    buildStudentKpiView.mockReturnValue({
+      modelVersion: 'kpi_truth_v1',
+      timezone: 'America/Chicago',
+      week: {
+        practiceSessions: 2,
+        questionsSolved: 24,
+        accuracy: 58,
+        explanations: {
+          week_sessions: {
+            whatThisMeans: 'Sessions in 7 days',
+            whyThisChanged: 'Increased by 1',
+            whatToDoNext: 'Add one more short session',
+            ruleId: 'RULE_WEEK_SESSIONS',
+          },
+          week_questions: {
+            whatThisMeans: 'Questions attempted in 7 days',
+            whyThisChanged: 'Increased by 14',
+            whatToDoNext: 'Keep review time fixed',
+            ruleId: 'RULE_WEEK_QUESTIONS',
+          },
+          week_accuracy: {
+            whatThisMeans: 'Correct percent in 7 days',
+            whyThisChanged: 'Up by 8 pts',
+            whatToDoNext: 'Focus next set on weakest skill',
+            ruleId: 'RULE_WEEK_ACCURACY',
+          },
+        },
+      },
+      recency: null,
+      metrics: [],
+      gating: {
+        historicalTrends: {
+          allowed: false,
+          requiredPlan: 'paid',
+          reason: 'Historical trend KPIs require an active paid entitlement.',
+        },
+      },
+      measurementModel: {
+        official: [],
+        weighted: [],
+        diagnostic: ['week_sessions', 'week_questions', 'week_accuracy'],
+      },
+    });
+  });
+
+  it('denies free-tier mastery projection (mastery hexagon surface)', async () => {
+    const { getScoreProjection } = await import('../../server/routes/legacy/progress');
+
+    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-1' };
+    const res = createRes();
+
+    await getScoreProjection(req, res as any);
+
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.status.mock.calls[0][0]).toBe(402);
+    expect(res.status().json).toBeDefined;
+  });
+
+  it('hides historical trends for free-tier KPI view', async () => {
+    const { getRecencyKpis } = await import('../../server/routes/legacy/progress');
+
+    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-2' };
+    const res = createRes();
+
+    await getRecencyKpis(req, res as any);
+
+    expect(res.json).toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.recency).toBeNull();
+    expect(payload.gating.historicalTrends.allowed).toBe(false);
+    expect(payload.week.explanations.week_sessions.whatThisMeans).toBeTruthy();
+    expect(payload.week.explanations.week_sessions.whyThisChanged).toBeTruthy();
+    expect(payload.week.explanations.week_sessions.whatToDoNext).toBeTruthy();
+  });
+
+  it('denies free-tier full-test analytics report route', async () => {
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app).get('/api/full-length/sessions/session-free-1/report');
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.feature).toBe('full_test_analytics');
+    expect(getExamReport).not.toHaveBeenCalled();
+  });
+
+  it('denies free-tier mastery skills route (mastery hexagon)', async () => {
+    const { masteryRouter } = await import('../../apps/api/src/routes/mastery');
+
+    const app = express();
+    app.use((req: any, _res, next) => {
+      req.user = { id: 'student-1', role: 'student' };
+      next();
+    });
+    app.use('/api/me/mastery', masteryRouter);
+
+    const res = await request(app).get('/api/me/mastery/skills');
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.feature).toBe('mastery_hexagon');
+  });
+});
+

@@ -4,6 +4,7 @@ import { getMasterySummary, getWeakestSkills } from '../services/studentMastery'
 import { getSupabaseAdmin } from '../lib/supabase-admin';
 import { getMasteryStatus } from '../services/mastery-projection';
 import { DateTime } from 'luxon';
+import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
 
 const SAT_TAXONOMY = {
   math: {
@@ -195,6 +196,16 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
+    if (!access.hasPaidAccess) {
+      return res.status(402).json({
+        error: 'Premium KPI feature required',
+        code: 'PREMIUM_KPI_REQUIRED',
+        feature: 'mastery_hexagon',
+        message: 'Upgrade to an active paid plan to unlock mastery KPI surfaces.',
+        reason: access.reason,
+      });
+    }
     const userId = req.user.id;
     const supabase = getSupabaseAdmin();
 
@@ -412,3 +423,4 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
 });
 
 export const masteryRouter = router;
+

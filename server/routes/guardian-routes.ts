@@ -9,6 +9,7 @@ import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks } from '../lib/account';
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
+import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
 
 const router = Router();
 const csrfProtection = csrfGuard();
@@ -203,7 +204,6 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianR
     const guardianId = req.user!.id;
     const { studentId } = req.params;
 
-    // CANONICAL: Verify link via guardian_links (requireGuardianEntitlement already checks)
     const linked = await isGuardianLinkedToStudent(guardianId, studentId);
     if (!linked && req.user!.role !== 'admin') {
       logger.warn('GUARDIAN', 'summary_access_denied', 'Student not found or not linked to guardian', { guardianId, studentId, requestId });
@@ -221,70 +221,26 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianR
       return res.status(404).json({ error: 'Student not found', requestId });
     }
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
+    const guardianView = buildGuardianSummaryKpiView(snapshot);
 
-    const { data: sessions, error: sessionsError } = await supabaseServer
-      .from('practice_sessions')
-      .select('id, created_at, finished_at, actual_duration_ms, question_ids')
-      .eq('user_id', studentId)
-      .gte('created_at', sevenDaysAgo.toISOString());
-
-    let practiceMinutes = 0;
-    let totalQuestions = 0;
-    if (sessions && !sessionsError) {
-      for (const session of sessions) {
-        if (session.actual_duration_ms) {
-          practiceMinutes += Math.round(session.actual_duration_ms / 60000);
-        } else if (session.finished_at && session.created_at) {
-          const start = new Date(session.created_at).getTime();
-          const end = new Date(session.finished_at).getTime();
-          practiceMinutes += Math.round((end - start) / 60000);
-        }
-        if (session.question_ids && Array.isArray(session.question_ids)) {
-          totalQuestions += session.question_ids.length;
-        }
-      }
-    }
-
-    let correctCount = 0;
-    let totalAttempts = 0;
-
-    const sessionIds = sessions?.map(s => s.id).filter(Boolean) || [];
-    if (sessionIds.length > 0) {
-      const { data: recentAttempts, error: attemptsError } = await supabaseServer
-        .from('answer_attempts')
-        .select('is_correct, attempted_at')
-        .in('session_id', sessionIds)
-        .order('attempted_at', { ascending: false })
-        .limit(50);
-
-      if (recentAttempts && !attemptsError) {
-        totalAttempts = recentAttempts.length;
-        correctCount = recentAttempts.filter(a => a.is_correct).length;
-      }
-    }
-
-    res.json({
+    return res.json({
       student: {
         id: student.id,
         displayName: student.display_name,
-        email: student.email
+        email: student.email,
       },
-      progress: {
-        practiceMinutesLast7Days: practiceMinutes,
-        sessionsLast7Days: sessions?.length || 0,
-        questionsAttempted: totalQuestions,
-        accuracy: totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : null
-      },
-      requestId
+      progress: guardianView.progress,
+      metrics: guardianView.metrics,
+      measurementModel: guardianView.measurementModel,
+      modelVersion: snapshot.modelVersion,
+      requestId,
     });
   } catch (err) {
     logger.error('GUARDIAN', 'student_summary', 'Error', { err, requestId });
-    res.status(500).json({ error: 'Internal server error', requestId });
+    return res.status(500).json({ error: 'Internal server error', requestId });
   }
 });
-
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -342,22 +298,35 @@ async function calculateStreakForStudent(userId: string, timezone: string): Prom
 }
 
 
-type GuardianSafeExamReport = Pick<
-  fullLengthExamService.CompleteExamResult,
-  'sessionId' | 'rawScore' | 'scaledScore' | 'domainBreakdown' | 'skillDiagnostics' | 'rwScore' | 'mathScore' | 'overallScore' | 'completedAt'
->;
+type GuardianSafeExamReport = {
+  sessionId: string;
+  estimatedScore: {
+    rw: number;
+    math: number;
+    total: number;
+  };
+  completedAt: Date;
+  kpis: ExplainedKpiMetric[];
+  measurementModel: ReturnType<typeof fullTestMeasurementModel>;
+};
 
 function toGuardianSafeExamReport(report: fullLengthExamService.CompleteExamResult): GuardianSafeExamReport {
   return {
     sessionId: report.sessionId,
-    rawScore: report.rawScore,
-    scaledScore: report.scaledScore,
-    domainBreakdown: report.domainBreakdown,
-    skillDiagnostics: report.skillDiagnostics,
-    rwScore: report.rwScore,
-    mathScore: report.mathScore,
-    overallScore: report.overallScore,
+    estimatedScore: {
+      rw: report.scaledScore.rw,
+      math: report.scaledScore.math,
+      total: report.scaledScore.total,
+    },
     completedAt: report.completedAt,
+    kpis: buildFullTestKpis({
+      scaledTotal: report.scaledScore.total,
+      scaledRw: report.scaledScore.rw,
+      scaledMath: report.scaledScore.math,
+      totalCorrect: report.rawScore.total.correct,
+      totalQuestions: report.rawScore.total.total,
+    }),
+    measurementModel: fullTestMeasurementModel(),
   };
 }
 
@@ -560,7 +529,6 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, r
       correct: s.correct,
       incorrect: s.incorrect,
       skipped: s.skipped,
-      mastery_score: Math.round((s.masteryScore100 / 100) * 100) / 100,
       weakness_score: s.weaknessScore,
       updated_at: s.updatedAt,
     }));
