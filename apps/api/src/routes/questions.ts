@@ -21,7 +21,7 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 // ============================================================================
 export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
   const type = q.type ?? (q.options ? 'mc' : 'fr');
-  
+
   const base = {
     id: q.id,
     stem: q.stem,
@@ -125,11 +125,11 @@ export const getQuestions = async (req: Request, res: Response) => {
     }
 
     const formatted: StudentQuestion[] = (data ?? []).map(mapDbQuestionToStudentQuestion);
-    
+
     if (DEBUG_QUESTIONS) {
       console.log('[DEBUG_QUESTIONS] GET /api/questions returned', formatted.length, 'questions');
     }
-    
+
     res.json(formatted);
   } catch (error) {
     console.error('Error fetching questions:', error);
@@ -176,12 +176,12 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
       if (!isTestEnv) {
         console.error('Error fetching recent questions (Supabase HTTP):', error);
       }
-      
+
       // In test mode, return empty array instead of error
       if (isTestEnv) {
         return res.json([]);
       }
-      
+
       return res.status(500).json({
         error: 'Failed to fetch questions',
         detail: error.message,
@@ -425,11 +425,9 @@ export const getQuestionStats = async (req: Request, res: Response) => {
     }
 
     // Get counts by section using separate queries
-    const [mathResult, readingResult, writingResult, rwResult] = await Promise.all([
+    const [mathResult, rwResult] = await Promise.all([
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Math'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Reading'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Writing'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Reading and Writing'),
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'RW'),
     ]);
 
     // Get counts by difficulty
@@ -451,8 +449,7 @@ export const getQuestionStats = async (req: Request, res: Response) => {
     const stats = {
       total: Number(totalCount ?? 0),
       math: Number(mathResult.count ?? 0),
-      reading: Number(readingResult.count ?? 0) + Number(rwResult.count ?? 0),
-      writing: Number(writingResult.count ?? 0),
+      reading_writing: Number(rwResult.count ?? 0),
       byDifficulty: {
         easy: Number(easyResult.count ?? 0),
         medium: Number(mediumResult.count ?? 0),
@@ -499,7 +496,7 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
       .order('created_at', { ascending: false })
       .limit(limit + 1);
 
-    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+    if (section && ['Math', 'RW'].includes(section)) {
       query = query.eq('section', section);
     }
 
@@ -793,7 +790,7 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
     const incorrectCount = attempts.filter(a => a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')).length;
 
     // Filter to incorrect attempts (exclude skipped)
-    const incorrectRaw = attempts.filter(a => 
+    const incorrectRaw = attempts.filter(a =>
       a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')
     );
 
@@ -995,31 +992,31 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
   try {
     const authReq = req as AuthenticatedRequest;
     const userId = authReq.user?.id;
-    
+
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    
+
     const { questionId, sentiment, comment } = req.body;
-    
+
     if (!questionId) {
       return res.status(400).json({ error: 'questionId is required' });
     }
-    
+
     if (!sentiment || !['up', 'down'].includes(sentiment)) {
       return res.status(400).json({ error: 'sentiment must be "up" or "down"' });
     }
-    
+
     const { data: question, error: questionError } = await supabaseServer
       .from('questions')
       .select('id')
       .eq('id', questionId)
       .single();
-    
+
     if (questionError || !question) {
       return res.status(404).json({ error: 'Question not found' });
     }
-    
+
     const { error: insertError } = await supabaseServer
       .from('question_feedback')
       .upsert({
@@ -1031,12 +1028,12 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
       }, {
         onConflict: 'question_id,user_id',
       });
-    
+
     if (insertError) {
       console.error('[FEEDBACK] Insert error:', insertError.message);
       return res.status(500).json({ error: 'Failed to save feedback' });
     }
-    
+
     res.json({ success: true, message: 'Feedback submitted' });
   } catch (error) {
     console.error('[FEEDBACK] Error:', error);

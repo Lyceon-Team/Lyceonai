@@ -5,7 +5,7 @@ export default function ReadingWritingPracticePage() {
     <CanonicalPracticePage
       title="Reading & Writing Practice"
       badgeLabel="Reading & Writing"
-      section="reading-writing"
+      section="reading_writing"
     />
   );
 }

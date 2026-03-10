@@ -334,6 +334,7 @@ export async function incrementUsage(accountId: string, type: 'practice' | 'ai_c
       .from('usage_daily')
       .update({
         [column]: (existing[column] || 0) + 1,
+        updated_at: new Date().toISOString(),
       })
       .eq('account_id', accountId)
       .eq('day', today)
@@ -351,6 +352,7 @@ export async function incrementUsage(accountId: string, type: 'practice' | 'ai_c
       day: today,
       practice_questions_used: type === 'practice' ? 1 : 0,
       ai_messages_used: type === 'ai_chat' ? 1 : 0,
+      updated_at: new Date().toISOString(),
     })
     .select('practice_questions_used, ai_messages_used')
     .single();

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type PracticeSectionParam = "math" | "reading-writing" | "random";
+export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
 export type PracticeQuestion = {
   id: string;
@@ -63,6 +63,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,6 +123,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
       if (data.sessionId) setSessionId(data.sessionId);
       setQuestion(data.question ?? null);
+      if (data.sessionId) setSessionId(data.sessionId);
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
 
@@ -218,7 +220,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setIsSubmitting(false);
       }
     },
-    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer]
+    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer, sessionId]
   );
 
   const nextQuestion = useCallback(async () => {

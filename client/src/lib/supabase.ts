@@ -13,15 +13,3 @@ export interface SupabaseProfile {
   updated_at: string;
   last_login_at: string | null;
 }
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  display_name: string | null;
-  role: 'student' | 'admin' | 'guardian';
-  isAdmin: boolean;
-  isGuardian: boolean;
-  is_under_13?: boolean;
-  guardian_consent?: boolean;
-  student_link_code?: string | null;
-}
