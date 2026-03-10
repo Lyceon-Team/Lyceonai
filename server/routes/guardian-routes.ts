@@ -133,7 +133,7 @@ router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, d
       return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
     }
 
-    // CANONICAL: Create link in guardian_links (also syncs profiles.guardian_profile_id)
+    // CANONICAL: Create link in guardian_links
     try {
       await createGuardianLink(guardianId, student.id);
     } catch (linkError: any) {
@@ -166,7 +166,7 @@ router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, csrf
       return res.status(403).json({ error: 'Not authorized to unlink this student', requestId });
     }
 
-    // CANONICAL: Revoke link in guardian_links (also clears profiles.guardian_profile_id)
+    // CANONICAL: Revoke link in guardian_links
     try {
       await revokeGuardianLink(guardianId, studentId);
     } catch (revokeError: any) {

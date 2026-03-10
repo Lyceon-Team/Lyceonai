@@ -145,17 +145,56 @@ export interface CompleteExamParams {
   userId: string;
 }
 
+export interface SectionRawScore {
+  correct: number;
+  total: number;
+}
+
+export interface DomainBreakdownItem {
+  domain: string;
+  correct: number;
+  total: number;
+  accuracy: number;
+}
+
+export interface SkillDiagnosticItem {
+  domain: string;
+  skill: string;
+  correct: number;
+  total: number;
+  accuracy: number;
+  performanceBand: "strength" | "developing" | "needs_focus";
+}
+
 export interface CompleteExamResult {
   sessionId: string;
+  rawScore: {
+    rw: SectionRawScore;
+    math: SectionRawScore;
+    total: SectionRawScore;
+  };
+  scaledScore: {
+    rw: number;
+    math: number;
+    total: number;
+  };
+  domainBreakdown: {
+    rw: DomainBreakdownItem[];
+    math: DomainBreakdownItem[];
+  };
+  skillDiagnostics: {
+    rw: SkillDiagnosticItem[];
+    math: SkillDiagnosticItem[];
+  };
   rwScore: {
-    module1: { correct: number; total: number };
-    module2: { correct: number; total: number };
+    module1: SectionRawScore;
+    module2: SectionRawScore;
     totalCorrect: number;
     totalQuestions: number;
   };
   mathScore: {
-    module1: { correct: number; total: number };
-    module2: { correct: number; total: number };
+    module1: SectionRawScore;
+    module2: SectionRawScore;
     totalCorrect: number;
     totalQuestions: number;
   };
@@ -163,6 +202,7 @@ export interface CompleteExamResult {
     totalCorrect: number;
     totalQuestions: number;
     percentageCorrect: number;
+    scaledTotal: number;
   };
   completedAt: Date;
 }
