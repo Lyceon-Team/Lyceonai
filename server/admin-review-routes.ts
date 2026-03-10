@@ -1,6 +1,61 @@
 import { Request, Response } from 'express';
 import { supabaseServer } from '../apps/api/src/lib/supabase-server';
 
+
+
+type QuestionMutabilityCheck = {
+  ok: boolean;
+  status?: number;
+  body?: Record<string, unknown>;
+};
+
+async function assertQuestionMutable(questionId: string): Promise<QuestionMutabilityCheck> {
+  const { data: row, error } = await supabaseServer
+    .from('questions')
+    .select('id, canonical_id, needs_review, reviewed_at, version')
+    .eq('id', questionId)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        success: false,
+        error: 'Failed to load question state',
+        detail: error.message,
+      },
+    };
+  }
+
+  if (!row) {
+    return {
+      ok: false,
+      status: 404,
+      body: {
+        success: false,
+        error: 'Question not found',
+      },
+    };
+  }
+
+  const isPublished = row.needs_review === false && !!row.reviewed_at;
+  if (isPublished) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        success: false,
+        error: 'published_content_immutable',
+        message: 'Published questions are immutable. Create a new version and re-run QA.',
+        canonicalId: row.canonical_id ?? null,
+        version: row.version ?? null,
+      },
+    };
+  }
+
+  return { ok: true };
+}
 /**
  * GET /api/admin/questions/needs-review
  * Get all questions that need admin review (confidence < 0.8 or needsReview = true)
@@ -68,6 +123,11 @@ export async function approveQuestion(req: Request, res: Response) {
       });
     }
     
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
     // Update question to approve it
     const { data: updated, error } = await supabaseServer
       .from('questions')
@@ -128,6 +188,11 @@ export async function rejectQuestion(req: Request, res: Response) {
       });
     }
     
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
     // Delete the question
     const { data: deleted, error } = await supabaseServer
       .from('questions')
@@ -275,6 +340,11 @@ export async function updateQuestion(req: Request, res: Response) {
       });
     }
     
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
     // Build update object with only provided fields
     const updateData: any = {
       needs_review: false,

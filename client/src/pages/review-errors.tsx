@@ -126,25 +126,43 @@ function ReviewErrors() {
 
   const handleSubmit = async () => {
     if (!fullQuestion || isValidating || !currentItem) return;
-    
+
     setIsValidating(true);
+    setRecordError(null);
+
     try {
       const isMc = fullQuestion.type === 'mc';
-      const studentAnswer = isMc ? selectedAnswer : freeResponseAnswer.trim();
-      
-      const response = await apiRequest('/api/questions/validate', {
+      const response = await apiRequest('/api/review-errors/attempt', {
         method: 'POST',
         body: JSON.stringify({
-          questionId: fullQuestion.id,
-          studentAnswer,
+          question_id: currentItem.questionId,
+          selected_answer: isMc ? selectedAnswer : null,
+          free_response_answer: isMc ? null : freeResponseAnswer.trim(),
+          source_context: 'review_errors',
+          client_attempt_id: `${currentItem.questionId}-${Date.now()}`,
         }),
       });
-      
-      const result: ValidationResult = await response.json();
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setRecordError(payload.error || 'Failed to validate attempt');
+        setShowResult(true);
+        return;
+      }
+
+      const isCorrect = Boolean(payload.verified_is_correct);
+      const result: ValidationResult = {
+        isCorrect,
+        mode: isMc ? 'mc' : 'fr',
+        correctAnswerKey: payload.correctAnswerKey ?? null,
+        feedback: isCorrect ? 'Correct!' : 'Incorrect.',
+        explanation: payload.explanation ?? null,
+      };
+
       setValidationResult(result);
       setShowResult(true);
-      
-      const reviewOutcome = result.isCorrect ? 'correct' : 'incorrect';
+
+      const reviewOutcome = isCorrect ? 'correct' : 'incorrect';
       setReviewResults(prev => ({
         ...prev,
         [currentItem.questionId]: {
@@ -152,37 +170,15 @@ function ReviewErrors() {
           validatedAt: new Date(),
         },
       }));
-      
-      try {
-        const recordResponse = await apiRequest('/api/review-errors/attempt', {
-          method: 'POST',
-          body: JSON.stringify({
-            question_id: currentItem.questionId,
-            selected_answer: fullQuestion.type === 'mc' ? selectedAnswer : freeResponseAnswer.trim(),
-            is_correct: result.isCorrect,
-            seconds_spent: null,
-            source_context: 'review_errors',
-            client_attempt_id: `${currentItem.questionId}-${Date.now()}`,
-          }),
-        });
-        
-        if (!recordResponse.ok) {
-          const errorData = await recordResponse.json().catch(() => ({}));
-          setRecordError(errorData.error || 'Failed to record attempt');
-        }
-      } catch (compError: unknown) {
-        console.warn('Failed to record review competency event:', compError);
-        const errorMessage = compError instanceof Error ? compError.message : 'Failed to record attempt';
-        setRecordError(errorMessage);
-      }
     } catch (error) {
       console.error('Error validating answer:', error);
+      const message = error instanceof Error ? error.message : 'Failed to validate answer';
+      setRecordError(message);
       setShowResult(true);
     } finally {
       setIsValidating(false);
     }
   };
-
   const handleSkip = useCallback(async () => {
     if (!currentItem) return;
     setReviewResults(prev => ({
@@ -444,11 +440,11 @@ function ReviewErrors() {
                         <strong>Correct Answer:</strong> {validationResult.correctAnswerKey}
                       </p>
                     )}
-                    {fullQuestion.explanation && (
+                    {validationResult.explanation && (
                       <div className="text-sm text-muted-foreground mt-2">
                         <strong>Explanation:</strong>
                         <div className="mt-1">
-                          <MathRenderer content={fullQuestion.explanation} displayMode={false} />
+                          <MathRenderer content={validationResult.explanation} displayMode={false} />
                         </div>
                       </div>
                     )}
@@ -727,3 +723,4 @@ function ReviewErrors() {
 }
 
 export default ReviewErrors;
+

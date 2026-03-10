@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
 import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
+import { isValidCanonicalId } from "../../apps/api/src/lib/canonicalId";
 
 
 
@@ -47,8 +48,8 @@ type SafeQuestionDTO = {
   id: string;
   section: string;
   stem: string;
-  type: "mc" | "fr";
-  options: McOption[] | null;
+  type: "mc";
+  options: McOption[];
   difficulty: string | null;
   classification: any;
   correct_answer: null;
@@ -60,8 +61,8 @@ function toSafeQuestionDTO(q: any): SafeQuestionDTO {
     id: q.id,
     section: q.section,
     stem: q.stem,
-    type: q.type,
-    options: q.type === "mc" ? (q.options ?? null) : null,
+    type: "mc",
+    options: Array.isArray(q.options) ? q.options : [],
     difficulty: q.difficulty ?? null,
     classification: q.classification ?? null,
     correct_answer: null,
@@ -171,7 +172,8 @@ async function pickRandomQuestion(args: {
 
   const baseQuery = supabaseServer
     .from("questions")
-    .select("id, section, stem, type, options, difficulty, classification, answer_choice")
+    .select("id, canonical_id, section, stem, type, options, difficulty, classification, answer_choice")
+    .eq("type", "mc")
     .order("created_at", { ascending: false }) // stable-ish base order
     .limit(400); // cheap pool to sample from
 
@@ -199,27 +201,20 @@ async function pickRandomQuestion(args: {
 
   // Filter invalid MC questions + build candidates (no explanation - secure DTO)
   const candidates = pool
-    .map((row: any) => {
-      const type = row?.type === "fr" ? "fr" : "mc";
-      const options = type === "mc" ? safeParseOptions(row?.options) : null;
-      return {
-        id: row.id,
-        section: row.section,
-        stem: row.stem,
-        type,
-        options,
-        difficulty: row.difficulty ?? null,
-        classification: row.classification ?? null,
-        _answer_choice: row.answer_choice,
-      };
-    })
+    .map((row: any) => ({
+      id: row.id,
+      canonical_id: row.canonical_id,
+      section: row.section,
+      stem: row.stem,
+      type: "mc" as const,
+      options: safeParseOptions(row?.options),
+      difficulty: row.difficulty ?? null,
+      classification: row.classification ?? null,
+      _answer_choice: row.answer_choice,
+    }))
     .filter((row: any) => {
-      if (row.type === "mc") {
-        // hard reject invalid MC
-        return isValidMcQuestion({ answer_choice: row._answer_choice, options: row.options });
-      }
-      // FR allowed even if no answer_choice
-      return true;
+      if (!isValidCanonicalId(String(row.canonical_id || ""))) return false;
+      return isValidMcQuestion({ answer_choice: row._answer_choice, options: row.options });
     });
 
   if (candidates.length === 0) return { error: "no_valid_questions_available" };
@@ -321,17 +316,22 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
 
       const { data: resumeQ } = await supabaseServer
         .from("questions")
-        .select("id, section, stem, type, options, difficulty, classification, answer_choice")
+        .select("id, canonical_id, section, stem, type, options, difficulty, classification, answer_choice")
+        .eq("type", "mc")
         .eq("id", sessionMeta.active_question_id)
         .single();
 
-      if (resumeQ) {
+      if (
+        resumeQ &&
+        resumeQ.type === "mc" &&
+        isValidCanonicalId(String(resumeQ.canonical_id || "")) &&
+        isValidMcQuestion({ answer_choice: resumeQ.answer_choice, options: resumeQ.options })
+      ) {
         return res.json({
           sessionId,
           question: toSafeQuestionDTO({
             ...resumeQ,
-            type: resumeQ.type === "fr" ? "fr" : "mc",
-            _answer_choice: resumeQ.answer_choice
+            options: safeParseOptions(resumeQ.options),
           }),
           stats: await getSessionStats(sessionId, userId),
         });
@@ -398,7 +398,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
   }
 
-  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs, idempotencyKey, client_instance_id } = parsed.data;
+  const { sessionId, questionId, selectedAnswer, skipped, elapsedMs, idempotencyKey, client_instance_id } = parsed.data;
 
   // --- ENFORCE SESSION OWNERSHIP ---
   // Load session and verify user_id matches authenticated user
@@ -439,7 +439,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   // Fetch canonical answer + explanation from DB
   const { data: qRow, error: qErr } = await supabaseServer
     .from("questions")
-    .select("id, type, answer_choice, answer_text, explanation, options")
+    .select("id, canonical_id, type, answer_choice, explanation, options")
     .eq("id", questionId)
     .single();
 
@@ -447,14 +447,36 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     return res.status(404).json({ error: "question_not_found", message: qErr?.message ?? "Not found", requestId });
   }
 
-  const qType: "mc" | "fr" = qRow.type === "fr" ? "fr" : "mc";
-  const correctAnswerKeyRaw = qType === "mc" ? qRow.answer_choice : qRow.answer_text;
-  const correctAnswerKey = normalizeKey(correctAnswerKeyRaw); // IMPORTANT normalization
+  if (!isValidCanonicalId(String(qRow.canonical_id || ""))) {
+    return res.status(422).json({
+      error: "invalid_question_data",
+      message: "Question canonical ID is invalid.",
+      requestId,
+    });
+  }
+
+  if (qRow.type !== "mc") {
+    return res.status(422).json({
+      error: "invalid_question_data",
+      message: "Only MC questions are supported in canonical practice.",
+      requestId,
+    });
+  }
+
+  const parsedOptions = safeParseOptions(qRow.options);
+  if (!isValidMcQuestion({ answer_choice: qRow.answer_choice, options: parsedOptions })) {
+    return res.status(422).json({
+      error: "invalid_question_data",
+      message: "This question has invalid MC schema and cannot be graded.",
+      requestId,
+    });
+  }
+
+  const qType: "mc" = "mc";
+  const correctAnswerKey = normalizeKey(qRow.answer_choice);
   const explanation: string | null = typeof qRow.explanation === "string" && qRow.explanation.trim() ? qRow.explanation : null;
 
-  // Hard rule: do not allow MC grading if answer_choice missing.
-  // Also: do not show these questions in /next, but this protects older sessions.
-  if (qType === "mc" && !correctAnswerKey) {
+  if (!correctAnswerKey) {
     return res.status(422).json({
       error: "invalid_question_data",
       message: "This question is missing an answer key and cannot be graded.",
@@ -462,20 +484,31 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     });
   }
 
-  // Determine chosen value
-  const chosenRaw = skipped ? null : qType === "mc" ? selectedAnswer ?? null : freeResponseAnswer ?? null;
-  const chosen = normalizeKey(chosenRaw);
+  const allowedKeys = new Set(parsedOptions.map((opt) => normalizeKey(opt.key)).filter(Boolean));
+  if (!skipped) {
+    const selected = normalizeKey(selectedAnswer ?? null);
+    if (!selected) {
+      return res.status(400).json({
+        error: "invalid_answer",
+        message: "selectedAnswer is required for non-skipped MC submissions.",
+        requestId,
+      });
+    }
 
-  let isCorrect = false;
-  if (skipped) {
-    isCorrect = false;
-  } else if (qType === "mc") {
-    isCorrect = !!chosen && !!correctAnswerKey && chosen === correctAnswerKey;
-  } else {
-    // FR: simple normalized string compare (upgrade later)
-    isCorrect = !!chosen && !!correctAnswerKey && chosen === correctAnswerKey;
+    if (!allowedKeys.has(selected)) {
+      return res.status(400).json({
+        error: "invalid_answer",
+        message: "selectedAnswer must be one of the configured option keys.",
+        requestId,
+      });
+    }
   }
 
+  // Determine chosen value
+  const chosenRaw = skipped ? null : selectedAnswer ?? null;
+  const chosen = normalizeKey(chosenRaw);
+
+  const isCorrect = !!chosen && chosen === correctAnswerKey;
   const outcome = skipped ? "skipped" : isCorrect ? "correct" : "incorrect";
 
   // Clamp time_spent_ms to 0-30 minutes for data integrity
@@ -493,8 +526,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     user_id: userId,
     session_id: sessionId,
     question_id: questionId,
-    selected_answer: qType === "mc" ? (selectedAnswer ?? null) : null,
-    free_response_answer: qType === "fr" ? (freeResponseAnswer ?? null) : null,
+    selected_answer: selectedAnswer ?? null,
+    free_response_answer: null,
     chosen: chosenRaw ?? null,
     is_correct: isCorrect,
     outcome,
@@ -559,7 +592,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
         questionCanonicalId: metadata.canonicalId,
         sessionId,
         isCorrect,
-        selectedChoice: qType === "mc" ? (selectedAnswer ?? null) : null,
+        selectedChoice: selectedAnswer ?? null,
         timeSpentMs: clampedTimeSpentMs,
         eventType: MasteryEventType.PRACTICE_SUBMIT,
         metadata: {
@@ -591,4 +624,3 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 });
 
 export default router;
-
