@@ -645,7 +645,6 @@ describe('Full-Length Exam Service', () => {
                 eq: vi.fn(() => ({
                   single: vi.fn(async () => {
                     // No rollup fetch should happen on completion
-                    // rollupFetchCount++;
                     return { data: null, error: null };
                   }),
                 })),
@@ -841,7 +840,6 @@ describe('Full-Length Exam Service', () => {
                 eq: vi.fn(() => ({
                   single: vi.fn(async () => {
                     // No rollup fetch should happen on completion
-                    // rollupFetchCount++;
                     return {
                       data: mockRollup,
                       error: null,
