@@ -366,10 +366,16 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
       });
     }
 
-    // Shuffle the results for better randomness
-    const shuffled = (data ?? []).sort(() => Math.random() - 0.5);
+    // Shuffle the results for better randomness using Fisher-Yates
+    const formatted: StudentQuestion[] = fisherYatesShuffle(data ?? []).map(mapDbQuestionToStudentQuestion);
 
-    const formatted: StudentQuestion[] = shuffled.map(mapDbQuestionToStudentQuestion);
+    // perform fisher yates on multiple choice options
+    formatted.forEach((question) => {
+      if (question.type === 'mc') {
+        question.options = fisherYatesShuffle(question.options);
+      }
+    });
+
     res.json(formatted);
   } catch (error) {
     console.error('Error fetching questions:', error);
