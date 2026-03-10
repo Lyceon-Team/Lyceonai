@@ -31,7 +31,7 @@ async function extractAccountIdStrict(
     } catch {
     }
   }
-  
+
   if (subscription) {
     try {
       const accountId = requireAccountIdFromStripeObject(subscription);
@@ -45,7 +45,7 @@ async function extractAccountIdStrict(
 }
 
 async function handleSubscriptionEvent(
-  subscription: Stripe.Subscription,
+  subscriptionPayload: Stripe.Subscription,
   eventType: string,
   eventId: string,
   checkoutSession?: Stripe.Checkout.Session
@@ -53,11 +53,11 @@ async function handleSubscriptionEvent(
   let accountId: string;
 
   try {
-    const extracted = await extractAccountIdStrict(checkoutSession || null, subscription);
+    const extracted = await extractAccountIdStrict(checkoutSession || null, subscriptionPayload);
     accountId = extracted.accountId;
   } catch (err) {
     logger.error('WEBHOOK', 'subscription', 'Missing account_id on Stripe object metadata/client_reference_id', {
-      subscriptionId: subscription.id,
+      subscriptionId: subscriptionPayload.id,
       eventType,
       eventId,
       error: (err as Error).message,
@@ -65,17 +65,21 @@ async function handleSubscriptionEvent(
     throw err;
   }
 
+  // Handle out-of-order events: always fetch the latest subscription state from Stripe
+  const stripe = await getUncachableStripeClient();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionPayload.id);
+
   const { plan, status } = mapStripeStatusToEntitlement(subscription.status);
   const periodEnd = (subscription as any).current_period_end;
-  const currentPeriodEnd = periodEnd 
+  const currentPeriodEnd = periodEnd
     ? new Date(periodEnd * 1000).toISOString()
     : null;
 
   await upsertEntitlement(accountId, {
     plan,
     status,
-    stripe_customer_id: typeof subscription.customer === 'string' 
-      ? subscription.customer 
+    stripe_customer_id: typeof subscription.customer === 'string'
+      ? subscription.customer
       : subscription.customer.id,
     stripe_subscription_id: subscription.id,
     current_period_end: currentPeriodEnd,
@@ -96,7 +100,7 @@ async function handleCheckoutCompleted(
   eventId: string
 ): Promise<void> {
   if (session.mode !== 'subscription' || !session.subscription) {
-    logger.info('WEBHOOK', 'checkout', 'Checkout is not a subscription, skipping', { 
+    logger.info('WEBHOOK', 'checkout', 'Checkout is not a subscription, skipping', {
       sessionId: session.id,
       eventId,
     });
@@ -166,15 +170,15 @@ export class WebhookHandlers {
     try {
       event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
     } catch (err: any) {
-      logger.error('WEBHOOK', 'signature_failed', 'Signature verification failed', { 
+      logger.error('WEBHOOK', 'signature_failed', 'Signature verification failed', {
         error: err.message,
         requestId,
       });
       throw new Error(`Webhook signature verification failed: ${err.message}`);
     }
 
-    logger.info('WEBHOOK', 'received', `Event received: ${event.type}`, { 
-      eventId: event.id, 
+    logger.info('WEBHOOK', 'received', `Event received: ${event.type}`, {
+      eventId: event.id,
       eventType: event.type,
       livemode: event.livemode,
       requestId,
@@ -183,8 +187,8 @@ export class WebhookHandlers {
     // Attempt to insert the event into the idempotency gate
     const isNewEvent = await tryInsertWebhookEventGate(event.id, event.type);
     if (!isNewEvent) {
-      logger.info('WEBHOOK', 'idempotent_skip', 'Event already processed', { 
-        eventId: event.id, 
+      logger.info('WEBHOOK', 'idempotent_skip', 'Event already processed', {
+        eventId: event.id,
         eventType: event.type,
         requestId,
       });
@@ -205,7 +209,7 @@ export class WebhookHandlers {
 
         case 'invoice.payment_failed':
         case 'invoice.paid':
-          logger.info('WEBHOOK', event.type, 'Invoice event received', { 
+          logger.info('WEBHOOK', event.type, 'Invoice event received', {
             invoiceId: (event.data.object as any).id,
             eventId: event.id,
             requestId,
@@ -213,14 +217,14 @@ export class WebhookHandlers {
           break;
 
         default:
-          logger.info('WEBHOOK', 'unhandled', `Unhandled event type: ${event.type}`, { 
+          logger.info('WEBHOOK', 'unhandled', `Unhandled event type: ${event.type}`, {
             eventId: event.id,
             requestId,
           });
       }
     } catch (handlerError: any) {
       await rollbackWebhookEventGate(event.id);
-      logger.error('WEBHOOK', 'handler_error', 'Event handler failed', { 
+      logger.error('WEBHOOK', 'handler_error', 'Event handler failed', {
         eventId: event.id,
         eventType: event.type,
         error: handlerError.message,
@@ -229,8 +233,8 @@ export class WebhookHandlers {
       throw handlerError;
     }
 
-    logger.info('WEBHOOK', 'completed', 'Event processed successfully', { 
-      eventId: event.id, 
+    logger.info('WEBHOOK', 'completed', 'Event processed successfully', {
+      eventId: event.id,
       eventType: event.type,
       requestId,
     });

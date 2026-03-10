@@ -1,8 +1,8 @@
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
 
-export type TestCode = "SAT" | "ACT" | "AP" | "MCAT" | "LSAT";
-export type SectionCode = "M" | "R" | "W" | "S";
+export type TestCode = "SAT";
+export type SectionCode = "M" | "RW";
 export type SourceCode = "1" | "2";
 
 const UNIQUE_LENGTH = 6;
@@ -27,7 +27,7 @@ export function generateCanonicalId(
 }
 
 export function isValidCanonicalId(id: string): boolean {
-  const pattern = /^(SAT|ACT|AP|MCAT|LSAT)[MRWS][12][A-Z0-9]{6}$/;
+  const pattern = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
   return pattern.test(id);
 }
 
@@ -38,36 +38,35 @@ export function parseCanonicalId(id: string): {
   unique: string;
 } | null {
   if (!isValidCanonicalId(id)) return null;
-  
-  const testCodes = ["MCAT", "LSAT", "SAT", "ACT", "AP"];
-  let test = "";
-  let rest = id;
-  
-  for (const tc of testCodes) {
-    if (id.startsWith(tc)) {
-      test = tc;
-      rest = id.slice(tc.length);
-      break;
-    }
-  }
-  
-  if (!test) return null;
-  
+
+  const test = "SAT";
+  const rest = id.slice(3);
+  const section = rest.startsWith("RW") ? "RW" : "M";
+  const source = section === "RW" ? rest[2] : rest[1];
+  const unique = section === "RW" ? rest.slice(3) : rest.slice(2);
+
   return {
     test,
-    section: rest[0],
-    source: rest[1],
-    unique: rest.slice(2),
+    section,
+    source,
+    unique,
   };
 }
 
 export function mapSectionToCode(section: string): SectionCode {
   const normalized = section.toLowerCase();
   if (normalized === "math") return "M";
-  if (normalized === "reading") return "R";
-  if (normalized === "writing") return "W";
-  if (normalized === "science") return "S";
-  return "R";
+  if (normalized === "rw") return "RW";
+  if (
+    normalized === "reading" ||
+    normalized === "writing" ||
+    normalized === "reading_writing" ||
+    normalized === "reading and writing" ||
+    normalized === "reading & writing"
+  ) {
+    return "RW";
+  }
+  return "RW";
 }
 
 export interface InsertWithRetryOptions<T> {
@@ -83,31 +82,31 @@ export async function insertWithCanonicalIdRetry<T>(
   options: InsertWithRetryOptions<T>
 ): Promise<{ canonicalId: string; data: any }> {
   const { generateRow, insertFn, test, section, source, maxRetries = 5 } = options;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const canonicalId = generateCanonicalId(test, section, source);
     const row = generateRow(canonicalId);
-    
+
     const { error, data } = await insertFn(row);
-    
+
     if (!error) {
       return { canonicalId, data };
     }
-    
-    const isDuplicateError = 
+
+    const isDuplicateError =
       error.code === "23505" ||
       error.message?.includes("duplicate key") ||
       error.message?.includes("unique constraint") ||
       error.message?.includes("canonical_id");
-    
+
     if (isDuplicateError) {
       console.warn(`[CQID] Collision on attempt ${attempt + 1}, retrying...`);
       continue;
     }
-    
+
     throw new Error(`Insert failed: ${error.message}`);
   }
-  
+
   throw new Error(`Failed to generate unique canonical_id after ${maxRetries} retries`);
 }
 
@@ -118,7 +117,7 @@ export async function upsertQuestionWithCanonicalId(
   source: SourceCode
 ): Promise<{ canonicalId: string; questionId: string }> {
   const supabase = getSupabaseAdmin();
-  
+
   const result = await insertWithCanonicalIdRetry({
     test,
     section,
@@ -136,7 +135,7 @@ export async function upsertQuestionWithCanonicalId(
       return { data, error };
     },
   });
-  
+
   return {
     canonicalId: result.canonicalId,
     questionId: result.data.id,
