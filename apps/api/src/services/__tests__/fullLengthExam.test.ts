@@ -863,7 +863,7 @@ describe('Full-Length Exam Service', () => {
         userId: 'user-456',
       });
 
-      // Second call: should fetch existing rollup
+      // Second call: should recompute canonical report
       const result2 = await fullLengthExamService.completeExam({
         sessionId: 'session-789',
         userId: 'user-456',
@@ -975,10 +975,12 @@ describe('Full-Length Exam Service', () => {
 
       (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
-      // This test verifies the single-write logic is in place
-      // The actual behavior is tested via integration tests with real DB
-      // For now, we verify the code path is exercised
-      expect(true).toBe(true);
+      await fullLengthExamService.submitModule({
+        sessionId: 'session-123',
+        userId: 'user-456',
+      });
+
+     expect(updateCallCount).toBe(1);
     });
   });
 
