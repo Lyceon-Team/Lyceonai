@@ -11,8 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { 
-  User, Settings, CreditCard, Bell, Shield, LogOut, 
+import {
+  User, Settings, CreditCard, Bell, Shield, LogOut,
   Calendar,
   Trophy, Target, BookOpen, Clock, TrendingUp, Star,
   AlertCircle, CheckCircle,
@@ -31,6 +31,7 @@ interface UserProfile {
   isAdmin?: boolean;
   createdAt?: string;
   lastLoginAt?: string;
+  studentLinkCode?: string | null;
 }
 
 // Note: UserStats are not currently tracked by backend
@@ -173,7 +174,7 @@ export default function UserProfile() {
                     Member since {new Date(profileUser.createdAt || '').toLocaleDateString()}
                   </Badge>
                 </div>
-                {user?.role === 'student' && user?.student_link_code && (
+                {user?.role === 'student' && profileUser?.studentLinkCode && (
                   <div className="mt-4 p-3 bg-muted rounded-lg">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                       <Users className="h-4 w-4" />
@@ -181,13 +182,13 @@ export default function UserProfile() {
                     </div>
                     <div className="flex items-center gap-2">
                       <code className="text-lg font-mono font-bold tracking-wider">
-                        {user.student_link_code}
+                        {profileUser.studentLinkCode}
                       </code>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          navigator.clipboard.writeText(user.student_link_code || '');
+                          navigator.clipboard.writeText(profileUser.studentLinkCode || '');
                           toast({
                             title: "Copied!",
                             description: "Link code copied to clipboard",
@@ -308,7 +309,7 @@ export default function UserProfile() {
                 <Alert>
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Your account is protected by Google's security infrastructure. 
+                    Your account is protected by Google's security infrastructure.
                     You can manage your password and 2FA settings in your Google account.
                   </AlertDescription>
                 </Alert>
@@ -321,11 +322,11 @@ export default function UserProfile() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Detailed progress tracking is currently being rebuilt. 
+                Detailed progress tracking is currently being rebuilt.
                 Visit the Dashboard for your current stats and progress insights.
               </AlertDescription>
             </Alert>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Card>
                 <CardHeader>
@@ -455,11 +456,11 @@ export default function UserProfile() {
                     <Badge variant="secondary">Current Plan</Badge>
                   </div>
                 </div>
-                
+
                 <Alert>
                   <Star className="h-4 w-4" />
                   <AlertDescription>
-                    Premium subscriptions coming soon! Upgrade to unlock unlimited practice tests, 
+                    Premium subscriptions coming soon! Upgrade to unlock unlimited practice tests,
                     detailed analytics, and personalized study plans.
                   </AlertDescription>
                 </Alert>
