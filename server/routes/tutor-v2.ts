@@ -10,6 +10,7 @@ import { csrfGuard } from "../middleware/csrf";
 
 const router = Router();
 const csrfProtection = csrfGuard();
+const ACTIVE_FULL_TEST_STATUSES = ["in_progress", "break"] as const;
 
 // userId must NOT be accepted from body; always derive from req.user.id
 const TutorV2RequestSchema = z.object({
@@ -49,7 +50,7 @@ function summarizeQuestionNaturally(q: QuestionContext): string {
 function describeSupportingQuestion(q: QuestionContext, index: number): string {
   const stem = q.stem || "";
   const shortDesc = stem.length > 80 ? stem.slice(0, 80) + "..." : stem;
-  const topic = q.competencies?.length ? q.competencies.map(c => typeof c === 'string' ? c : c.raw || c.code).join(", ") : "general SAT skills";
+  const topic = q.competencies?.length ? q.competencies.map(c => typeof c === "string" ? c : c.raw || c.code).join(", ") : "general SAT skills";
   return `- Similar question ${index + 1}: "${shortDesc}" (related to ${topic})`;
 }
 
@@ -74,6 +75,36 @@ function mapStyleToInstruction(style: string | null): string {
 interface TutorPromptParts {
   systemInstruction: string;
   userContents: any[];
+}
+
+async function hasActiveFullLengthExam(userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseServer
+      .from("full_length_exam_sessions")
+      .select("id")
+      .eq("user_id", userId)
+      .in("status", [...ACTIVE_FULL_TEST_STATUSES])
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      // Fail closed: if we cannot verify exam state, suppress question-specific tutoring.
+      console.warn("[tutor-v2] failed to verify full-length exam state, forcing strategy mode", {
+        userId,
+        message: error.message,
+        code: error.code,
+      });
+      return true;
+    }
+
+    return Boolean(data);
+  } catch (error: any) {
+    console.warn("[tutor-v2] full-length exam state check threw, forcing strategy mode", {
+      userId,
+      message: error?.message,
+    });
+    return true;
+  }
 }
 
 function buildTutorPrompt(
@@ -151,21 +182,15 @@ ABSOLUTE RULES (NEVER BREAK THESE):
 - Never help the student cheat on live exams.
 - Never invent SAT questions or fabricate answer choices.
 - If you don't know something, say so honestly.
-- Talk naturally about "this question" or "this kind of problem" — never use technical terms like "stem", "canonicalId", etc.
+- Talk naturally about "this question" or "this kind of problem" - never use technical terms like "stem", "canonicalId", etc.
 
 RESPONSE STRUCTURE:
-1. **Quick answer** — The main point in one clear sentence
-2. **Step-by-step** — Numbered steps showing exactly how to solve it (keep each step short)
-3. **Why this works** — The key concept in 1-3 sentences
-4. **Try this next** — One helpful follow-up the student could try
+1. **Quick answer** - The main point in one clear sentence
+2. **Step-by-step** - Numbered steps showing exactly how to solve it (keep each step short)
+3. **Why this works** - The key concept in 1-3 sentences
+4. **Try this next** - One helpful follow-up the student could try
 ${styleSection}
 `;
-
-  // ${questionContext}${supportingContext}${studentContext}
-  // THE STUDENT ASKS:
-  // "${message}"
-
-  // Now respond as the tutor in a warm, helpful tone:`;
 
   const userContents = [
     {
@@ -176,7 +201,7 @@ ${styleSection}
         { text: `Now respond as the tutor in a warm, helpful tone:` }
       ]
     }
-  ]
+  ];
 
   return { systemInstruction, userContents };
 }
@@ -187,6 +212,7 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
+
     const parsed = TutorV2RequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -194,46 +220,80 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
         details: parsed.error.flatten()
       });
     }
+
     const { message, mode, canonicalQuestionId, testCode, sectionCode } = parsed.data;
+    const hasActiveFullTest = await hasActiveFullLengthExam(userId);
+    const effectiveMode = hasActiveFullTest ? "strategy" : mode;
+    const effectiveCanonicalQuestionId = hasActiveFullTest ? undefined : canonicalQuestionId;
+
     const ragService = getRagService();
     const ragRequest: RagQueryRequest = {
       userId,
       message,
-      mode,
-      canonicalQuestionId,
+      mode: effectiveMode,
+      canonicalQuestionId: effectiveCanonicalQuestionId,
       testCode,
       sectionCode,
     };
+
     const ragResult = await ragService.handleRagQuery(ragRequest);
     const { context } = ragResult;
     let { primaryQuestion, supportingQuestions, competencyContext, studentProfile } = context;
 
     // ========== REVEAL POLICY ENFORCEMENT ========== //
-    // Only allow answer/explanation if admin or verified submission exists
+    // Only allow answer/explanation if server-verified admin OR verified prior submission.
+    // During active full-length exam, always suppress answer/explanation leakage.
     let canReveal = false;
-    let isAdmin = false;
-    if (userId && (userId === 'admin' || userId.startsWith('admin|'))) {
-      isAdmin = true;
+    const isAdmin = Boolean(req.user?.isAdmin);
+
+    if (hasActiveFullTest) {
+      canReveal = false;
+    } else if (isAdmin) {
       canReveal = true;
     } else if (userId && primaryQuestion?.canonicalId) {
-      const { data: attempt } = await supabaseServer
-        .from('answer_attempts')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('question_id', primaryQuestion.canonicalId)
-        .limit(1)
-        .single();
-      if (attempt) {
-        canReveal = true;
+      try {
+        const { data: attempt, error: attemptError } = await supabaseServer
+          .from("answer_attempts")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("question_id", primaryQuestion.canonicalId)
+          .limit(1)
+          .maybeSingle();
+
+        if (attemptError) {
+          console.warn("[tutor-v2] verified submission check failed, suppressing reveal", {
+            userId,
+            questionId: primaryQuestion.canonicalId,
+            message: attemptError.message,
+            code: attemptError.code,
+          });
+        } else if (attempt) {
+          canReveal = true;
+        }
+      } catch (attemptLookupError: any) {
+        console.warn("[tutor-v2] verified submission check threw, suppressing reveal", {
+          userId,
+          questionId: primaryQuestion.canonicalId,
+          message: attemptLookupError?.message,
+        });
       }
     }
-    // Remove answer/explanation if not allowed
+
     if (primaryQuestion && !canReveal) {
       primaryQuestion = { ...primaryQuestion, answer: null, explanation: null };
     }
+
     if (!canReveal) {
       supportingQuestions = supportingQuestions.map(q => ({ ...q, answer: null, explanation: null }));
     }
+
+    const sanitizedContext = {
+      ...context,
+      primaryQuestion,
+      supportingQuestions,
+      competencyContext,
+      studentProfile,
+    };
     // ========== END REVEAL POLICY ========== //
 
     const prompt = buildTutorPrompt(
@@ -248,12 +308,15 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     const currentExplanationLevel = studentProfile?.explanationLevel || 2;
     let newSecondaryStyle: string | undefined;
     let newExplanationLevel: number | undefined;
-    if (mode === "concept" && !currentSecondary) {
+
+    if (effectiveMode === "concept" && !currentSecondary) {
       newSecondaryStyle = "example-based";
     }
-    if (mode === "question" && currentExplanationLevel < 3) {
+
+    if (effectiveMode === "question" && currentExplanationLevel < 3) {
       newExplanationLevel = Math.min(currentExplanationLevel + 1, 3) as 1 | 2 | 3;
     }
+
     let applied = false;
     if (newSecondaryStyle || newExplanationLevel) {
       try {
@@ -265,12 +328,14 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
         // Logging only
       }
     }
+
     const finalSecondary = newSecondaryStyle || currentSecondary;
     const finalExplanationLevel = newExplanationLevel || currentExplanationLevel;
+
     try {
       await logTutorInteraction({
         userId,
-        mode,
+        mode: effectiveMode,
         canonicalIdsUsed: ragResult.metadata.canonicalIdsUsed,
         primaryStyle: studentProfile?.primaryStyle || null,
         secondaryStyle: finalSecondary,
@@ -279,10 +344,11 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
         answer,
       });
     } catch (err) { }
+
     const processingTimeMs = Date.now() - startTime;
     const response = {
       answer,
-      ragContext: context,
+      ragContext: sanitizedContext,
       styleUsed: {
         primary: studentProfile?.primaryStyle || null,
         secondary: finalSecondary,
@@ -294,11 +360,14 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
         applied,
       },
       metadata: {
-        mode,
+        mode: effectiveMode,
+        requestedMode: mode,
+        fullTestStrategyEnforced: hasActiveFullTest,
         canonicalIdsUsed: ragResult.metadata.canonicalIdsUsed,
         processingTimeMs,
       },
     };
+
     res.json(response);
   } catch (error: any) {
     res.status(500).json({

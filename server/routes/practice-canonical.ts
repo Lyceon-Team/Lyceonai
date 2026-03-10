@@ -4,7 +4,6 @@ import rateLimit from "express-rate-limit";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
-import { recordCompetencyEvent } from "../../apps/api/src/routes/progress";
 import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
 import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
@@ -52,6 +51,8 @@ type SafeQuestionDTO = {
   options: McOption[] | null;
   difficulty: string | null;
   classification: any;
+  correct_answer: null;
+  explanation: null;
 };
 
 function toSafeQuestionDTO(q: any): SafeQuestionDTO {
@@ -63,6 +64,8 @@ function toSafeQuestionDTO(q: any): SafeQuestionDTO {
     options: q.type === "mc" ? (q.options ?? null) : null,
     difficulty: q.difficulty ?? null,
     classification: q.classification ?? null,
+    correct_answer: null,
+    explanation: null,
   };
 }
 
@@ -252,10 +255,13 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
     sectionParam === "Math" ? "Math" : sectionParam === "RW" ? "RW" : "Random";
   const mode = String(req.query.mode ?? "balanced");
 
+  const clientInstanceId = String(req.query.client_instance_id || "fallback-client");
+
+  // Find existing in_progress session for this user+section (best effort)
   // Find existing in_progress session for this user+section+mode (best effort)
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")
-    .select("id, status")
+    .select("id, status, metadata")
     .eq("user_id", userId)
     .eq("section", section)
     .eq("mode", mode)
@@ -265,6 +271,7 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
     .maybeSingle();
 
   let sessionId = existingSession?.id ?? null;
+  let sessionMeta = (existingSession?.metadata as any) || {};
 
   if (!sessionId) {
     // Create new session
@@ -276,6 +283,7 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
         mode,
         status: "in_progress",
         started_at: new Date().toISOString(),
+        metadata: { client_instance_id: clientInstanceId },
         updated_at: new Date().toISOString(),
       })
       .select("id")
@@ -290,12 +298,57 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
     }
 
     sessionId = newSession.id;
+    sessionMeta = { client_instance_id: clientInstanceId };
+  }
+
+  // REFRESH / RESUME logic: if there is an active question, return it
+  if (sessionMeta.active_question_id) {
+    const { data: attempt } = await supabaseServer
+      .from("answer_attempts")
+      .select("id")
+      .eq("session_id", sessionId)
+      .eq("question_id", sessionMeta.active_question_id)
+      .maybeSingle();
+
+    if (!attempt) {
+      // It has not been answered yet! Resume it safely without picking a new one.
+
+      // Multi-tab takeover updates identity
+      if (sessionMeta.client_instance_id !== clientInstanceId) {
+        sessionMeta.client_instance_id = clientInstanceId;
+        await supabaseServer.from("practice_sessions").update({ metadata: sessionMeta }).eq("id", sessionId);
+      }
+
+      const { data: resumeQ } = await supabaseServer
+        .from("questions")
+        .select("id, section, stem, type, options, difficulty, classification, answer_choice")
+        .eq("id", sessionMeta.active_question_id)
+        .single();
+
+      if (resumeQ) {
+        return res.json({
+          sessionId,
+          question: toSafeQuestionDTO({
+            ...resumeQ,
+            type: resumeQ.type === "fr" ? "fr" : "mc",
+            _answer_choice: resumeQ.answer_choice
+          }),
+          stats: await getSessionStats(sessionId, userId),
+        });
+      }
+    }
   }
 
   const picked = await pickRandomQuestion({ section, userId, sessionId });
   if ("error" in picked) {
     return res.status(500).json({ error: "question_pick_failed", detail: picked.error, requestId });
   }
+
+  sessionMeta.active_question_id = picked.question.id;
+  sessionMeta.client_instance_id = clientInstanceId;
+
+  // Persist the assigned question and client_instance_id
+  await supabaseServer.from("practice_sessions").update({ metadata: sessionMeta }).eq("id", sessionId);
 
   // Log practice_event (non-blocking)
   try {
@@ -328,6 +381,7 @@ const AnswerBodySchema = z.object({
   skipped: z.boolean().optional(),
   elapsedMs: z.number().optional().nullable(),
   idempotencyKey: z.string().max(128).optional().nullable(),
+  client_instance_id: z.string().max(128).optional().nullable(),
 });
 
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
@@ -344,13 +398,13 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
   }
 
-  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs, idempotencyKey } = parsed.data;
+  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs, idempotencyKey, client_instance_id } = parsed.data;
 
   // --- ENFORCE SESSION OWNERSHIP ---
   // Load session and verify user_id matches authenticated user
   const { data: sessionRow, error: sessionErr } = await supabaseServer
     .from("practice_sessions")
-    .select("id, user_id")
+    .select("id, user_id, metadata")
     .eq("id", sessionId)
     .single();
   if (sessionErr || !sessionRow) {
@@ -358,6 +412,27 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   }
   if (sessionRow.user_id !== userId) {
     return res.status(403).json({ error: "forbidden", message: "Session does not belong to this user", requestId });
+  }
+
+  // Enforce Multi-Tab Safety: If another tab took over the session, reject this answer submission
+  const sessionMeta = (sessionRow.metadata as any) || {};
+  if (client_instance_id && sessionMeta.client_instance_id && sessionMeta.client_instance_id !== client_instance_id) {
+    // If idempotency key matches an existing successful attempt, we still allow it so retry succeeds gracefully
+    const { data: existing } = await supabaseServer
+      .from("answer_attempts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("client_attempt_id", idempotencyKey || "NO_MATCH")
+      .maybeSingle();
+
+    if (!existing) {
+      return res.status(409).json({
+        error: "conflict",
+        message: "Session was taken over by another tab.",
+        client_instance_id,
+        requestId
+      });
+    }
   }
   // --- END SESSION OWNERSHIP CHECK ---
 
@@ -516,3 +591,4 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 });
 
 export default router;
+

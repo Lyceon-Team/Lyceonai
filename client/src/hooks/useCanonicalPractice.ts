@@ -58,6 +58,10 @@ function mergeStats(
 }
 
 export function useCanonicalPractice(section: PracticeSectionParam) {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [clientInstanceId] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -99,6 +103,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     setIsCorrect(null);
     setCorrectAnswerKey(null);
     setExplanation(null);
+    setIdempotencyKey(crypto.randomUUID());
     questionStartMs.current = nowMs();
   }, []);
 
@@ -106,7 +111,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}`, {
+      const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}&client_instance_id=${encodeURIComponent(clientInstanceId)}`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -116,6 +121,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
       const data = (await res.json()) as PracticeNextResponse;
 
+      if (data.sessionId) setSessionId(data.sessionId);
       setQuestion(data.question ?? null);
       if (data.sessionId) setSessionId(data.sessionId);
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
@@ -154,6 +160,8 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           freeResponseAnswer: question.type === "fr" ? (opts.skipped ? "" : freeResponseAnswer) : "",
           elapsedMs,
           skipped: opts.skipped,
+          client_instance_id: clientInstanceId,
+          idempotencyKey,
         };
 
         const res = await fetch("/api/practice/answer", {

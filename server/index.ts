@@ -696,6 +696,8 @@ if (isMainModule) {
     console.log(`  POST   /api/full-length/sessions/:sessionId/module/submit`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/break/continue`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
+    console.log(`  GET    /api/full-length/sessions/:sessionId/report`);
+    console.log(`  GET    /api/full-length/sessions/:sessionId/review`);
   });
 
   // Graceful shutdown
@@ -711,3 +713,4 @@ if (isMainModule) {
 }
 
 export default app;
+
