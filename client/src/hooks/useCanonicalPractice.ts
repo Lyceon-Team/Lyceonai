@@ -63,7 +63,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
