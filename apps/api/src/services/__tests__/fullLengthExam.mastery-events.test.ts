@@ -139,4 +139,91 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
     expect(masteryCalls[0][0].eventType).toBe(MasteryEventType.FULL_LENGTH_SUBMIT);
     expect(masteryCalls[0][0].questionCanonicalId).toBe('cq-1');
   });
+
+  it('does not emit duplicate mastery events when module submission is replayed', async () => {
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: () => ({
+              eq: (_k1: string, _v1: string) => ({
+                eq: (_k2: string, _v2: string) => ({
+                  single: async () => ({
+                    data: {
+                      id: 'session-2',
+                      user_id: 'user-2',
+                      status: 'in_progress',
+                      current_section: 'math',
+                      current_module: 2,
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_modules') {
+          return {
+            select: () => ({
+              eq: (_k1: string, _v1: string) => ({
+                eq: (_k2: string, _v2: string) => ({
+                  eq: (_k3: string, _v3: number) => ({
+                    single: async () => ({
+                      data: {
+                        id: 'module-2',
+                        status: 'submitted',
+                        section: 'math',
+                        module_index: 2,
+                        ends_at: new Date(Date.now() + 60_000).toISOString(),
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_responses') {
+          return {
+            select: () => ({
+              eq: async () => ({
+                data: [
+                  { question_id: 'q-2', is_correct: true },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_questions') {
+          return {
+            select: () => ({
+              eq: async () => ({
+                data: [{ id: 'mq-2' }],
+                error: null,
+              }),
+            }),
+          };
+        }
+
+        throw new Error('Unexpected table: ' + table);
+      }),
+    };
+
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase as any);
+
+    const result = await submitModule({
+      sessionId: 'session-2',
+      userId: 'user-2',
+    });
+
+    expect(result.moduleId).toBe('module-2');
+    expect(result.nextModule).toBeNull();
+    expect((applyMasteryUpdate as unknown as Mock).mock.calls.length).toBe(0);
+  });
 });

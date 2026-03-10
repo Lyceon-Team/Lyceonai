@@ -17,7 +17,6 @@ import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
 // SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, embeddings, etc.).
 // apps/api MUST NOT be mounted for user-facing routes:
-//   - /api/questions/validate
 //   - /api/tutor/v2
 //   - auth token resolution / requireSupabaseAuth
 import { rag } from "./routes/legacy/rag";
@@ -37,7 +36,6 @@ import {
   submitQuestionFeedback,
 } from "./routes/legacy/questions";
 import { searchQuestions } from "./routes/legacy/search";
-import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
   approveQuestion,
@@ -425,7 +423,6 @@ app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getRev
 app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
-app.post("/api/questions/validate", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, validateAnswer);
 
 // Question feedback endpoint (thumbs up/down)
 app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
@@ -673,7 +670,6 @@ if (isMainModule) {
     console.log(`  GET    /api/questions`);
     console.log(`  GET    /api/questions/recent`);
     console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/validate`);
     console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  GET    /api/practice/next`);
@@ -713,4 +709,5 @@ if (isMainModule) {
 }
 
 export default app;
+
 

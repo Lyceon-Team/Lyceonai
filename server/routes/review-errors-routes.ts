@@ -80,7 +80,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
     // Load canonical question details and server-verify correctness.
     const { data: question, error: questionError } = await supabaseServer
       .from("questions")
-      .select("id, canonical_id, type, answer_choice, answer_text")
+      .select("id, canonical_id, type, answer_choice, answer_text, explanation")
       .eq("id", question_id)
       .single();
 
@@ -89,6 +89,13 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
     }
 
     const verifiedIsCorrect = gradeReviewAnswer(question, selected_answer, free_response_answer);
+    const mode: "mc" | "fr" = (question.type || "mc").toLowerCase() === "fr" ? "fr" : "mc";
+    const correctAnswerKey = mode === "mc"
+      ? ((question.answer_choice || "").trim().toUpperCase() || null)
+      : null;
+    const explanation = typeof (question as any).explanation === "string" && (question as any).explanation.trim()
+      ? (question as any).explanation
+      : null;
 
     // Prepare insert data
     const insertData = {
@@ -131,6 +138,9 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
           idempotent: true,
           verified_is_correct: existing?.is_correct ?? verifiedIsCorrect,
           masteryApplied: false,
+          mode,
+          correctAnswerKey,
+          explanation,
         });
       }
 
@@ -192,6 +202,9 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       masteryApplied,
       masteryEvent: masteryApplied ? MasteryEventType.TUTOR_RETRY_SUBMIT : null,
       masteryError,
+      mode,
+      correctAnswerKey,
+      explanation,
     });
   } catch (error: any) {
     console.error("[review-errors/attempt] Unexpected error:", error);

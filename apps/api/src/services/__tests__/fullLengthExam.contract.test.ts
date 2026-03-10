@@ -270,6 +270,135 @@ describe('Full-Length Exam Contract Closure', () => {
     expect(sumMathSkills).toBe(result.rawScore.math.total);
   });
 
+  it('duplicate answer submission is idempotent (first write wins)', async () => {
+    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+    let responseLookupCount = 0;
+    let insertCount = 0;
+
+    const mockSupabase: MockSupabaseClient = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: {
+                      id: 'session-idempotent-1',
+                      status: 'in_progress',
+                      current_section: 'rw',
+                      current_module: 1,
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_modules') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: {
+                        id: 'module-rw-1',
+                        status: 'in_progress',
+                      },
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: { id: 'mq-1' },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_responses') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn(async () => {
+                      responseLookupCount += 1;
+                      if (responseLookupCount === 1) {
+                        return { data: null, error: null };
+                      }
+                      return { data: { id: 'existing-response' }, error: null };
+                    }),
+                  })),
+                })),
+              })),
+            })),
+            insert: vi.fn(async () => {
+              insertCount += 1;
+              return { error: null };
+            }),
+          };
+        }
+
+        if (table === 'questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: {
+                    id: 'q-1',
+                    type: 'mc',
+                    answer_choice: 'A',
+                    answer_text: null,
+                  },
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+
+        return { select: vi.fn() };
+      }),
+    };
+
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+    await fullLengthExamService.submitAnswer({
+      sessionId: 'session-idempotent-1',
+      userId: 'student-1',
+      questionId: '11111111-1111-4111-8111-111111111111',
+      selectedAnswer: 'A',
+    });
+
+    await fullLengthExamService.submitAnswer({
+      sessionId: 'session-idempotent-1',
+      userId: 'student-1',
+      questionId: '11111111-1111-4111-8111-111111111111',
+      selectedAnswer: 'B',
+    });
+
+    expect(responseLookupCount).toBe(2);
+    expect(insertCount).toBe(1);
+  });
+
   it('review remains locked until completion', async () => {
     const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
 

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { 
-  generateUniqueToken, 
-  generateCanonicalId, 
-  isValidCanonicalId, 
+import {
+  generateUniqueToken,
+  generateCanonicalId,
+  isValidCanonicalId,
   parseCanonicalId,
-  mapSectionToCode 
+  mapSectionToCode
 } from "../canonicalId";
 
 describe("canonicalId", () => {
@@ -29,14 +29,14 @@ describe("canonicalId", () => {
   });
 
   describe("generateCanonicalId", () => {
-    it("generates valid format: {TEST}{SECTION}{SOURCE}{UNIQUE}", () => {
+    it("generates SAT-M format", () => {
       const id = generateCanonicalId("SAT", "M", "1");
       expect(id).toMatch(/^SATM1[A-Z0-9]{6}$/);
     });
 
-    it("works with different test codes", () => {
-      expect(generateCanonicalId("ACT", "S", "2")).toMatch(/^ACTS2[A-Z0-9]{6}$/);
-      expect(generateCanonicalId("MCAT", "R", "1")).toMatch(/^MCATR1[A-Z0-9]{6}$/);
+    it("generates SAT-RW format", () => {
+      const id = generateCanonicalId("SAT", "RW", "2");
+      expect(id).toMatch(/^SATRW2[A-Z0-9]{6}$/);
     });
 
     it("generates unique IDs", () => {
@@ -49,37 +49,24 @@ describe("canonicalId", () => {
   });
 
   describe("isValidCanonicalId", () => {
-    it("validates correct SAT IDs", () => {
+    it("validates SAT canonical IDs", () => {
       expect(isValidCanonicalId("SATM1ABC123")).toBe(true);
-      expect(isValidCanonicalId("SATR2XYZ789")).toBe(true);
-      expect(isValidCanonicalId("SATW1QWERTY")).toBe(true);
-    });
-
-    it("validates correct ACT IDs", () => {
-      expect(isValidCanonicalId("ACTS1ABCD12")).toBe(true);
-    });
-
-    it("validates correct MCAT/LSAT IDs", () => {
-      expect(isValidCanonicalId("MCATM1ABCD12")).toBe(true);
-      expect(isValidCanonicalId("LSATR2ZYXWVU")).toBe(true);
+      expect(isValidCanonicalId("SATRW2XYZ789")).toBe(true);
     });
 
     it("rejects invalid formats", () => {
       expect(isValidCanonicalId("sat-m-1-abc123")).toBe(false);
-      expect(isValidCanonicalId("syn_rw_v1_001")).toBe(false);
-      expect(isValidCanonicalId("v4:uuid-here")).toBe(false);
+      expect(isValidCanonicalId("SATW1ABC123")).toBe(false);
+      expect(isValidCanonicalId("SATR2ABC123")).toBe(false);
+      expect(isValidCanonicalId("ACTM1ABCD12")).toBe(false);
       expect(isValidCanonicalId("")).toBe(false);
       expect(isValidCanonicalId("SAT")).toBe(false);
       expect(isValidCanonicalId("SATM1AB")).toBe(false);
     });
-
-    it("rejects lowercase", () => {
-      expect(isValidCanonicalId("satm1abc123")).toBe(false);
-    });
   });
 
   describe("parseCanonicalId", () => {
-    it("parses valid SAT IDs", () => {
+    it("parses SAT-M IDs", () => {
       const parsed = parseCanonicalId("SATM1ABC123");
       expect(parsed).toEqual({
         test: "SAT",
@@ -89,11 +76,11 @@ describe("canonicalId", () => {
       });
     });
 
-    it("parses longer test codes", () => {
-      const parsed = parseCanonicalId("MCATR2XYZ789");
+    it("parses SAT-RW IDs", () => {
+      const parsed = parseCanonicalId("SATRW2XYZ789");
       expect(parsed).toEqual({
-        test: "MCAT",
-        section: "R",
+        test: "SAT",
+        section: "RW",
         source: "2",
         unique: "XYZ789",
       });
@@ -101,7 +88,7 @@ describe("canonicalId", () => {
 
     it("returns null for invalid IDs", () => {
       expect(parseCanonicalId("invalid")).toBeNull();
-      expect(parseCanonicalId("syn_rw_v1_001")).toBeNull();
+      expect(parseCanonicalId("SATR2ABC123")).toBeNull();
     });
   });
 
@@ -109,26 +96,18 @@ describe("canonicalId", () => {
     it("maps math to M", () => {
       expect(mapSectionToCode("math")).toBe("M");
       expect(mapSectionToCode("Math")).toBe("M");
-      expect(mapSectionToCode("MATH")).toBe("M");
     });
 
-    it("maps reading to R", () => {
-      expect(mapSectionToCode("reading")).toBe("R");
-      expect(mapSectionToCode("Reading")).toBe("R");
+    it("maps reading/writing variants to RW", () => {
+      expect(mapSectionToCode("rw")).toBe("RW");
+      expect(mapSectionToCode("reading")).toBe("RW");
+      expect(mapSectionToCode("writing")).toBe("RW");
+      expect(mapSectionToCode("reading_writing")).toBe("RW");
     });
 
-    it("maps writing to W", () => {
-      expect(mapSectionToCode("writing")).toBe("W");
-      expect(mapSectionToCode("Writing")).toBe("W");
-    });
-
-    it("maps science to S", () => {
-      expect(mapSectionToCode("science")).toBe("S");
-    });
-
-    it("defaults to R for unknown", () => {
-      expect(mapSectionToCode("unknown")).toBe("R");
-      expect(mapSectionToCode("")).toBe("R");
+    it("defaults unknown to RW", () => {
+      expect(mapSectionToCode("unknown")).toBe("RW");
+      expect(mapSectionToCode("")).toBe("RW");
     });
   });
 });

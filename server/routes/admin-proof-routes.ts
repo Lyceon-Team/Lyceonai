@@ -1,6 +1,6 @@
 /**
  * Admin Proof Routes - "No More Lying" Layer
- * 
+ *
  * These endpoints verify Supabase is actually receiving data.
  * All queries use the service role key to bypass RLS.
  */
@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { csrfGuard } from '../middleware/csrf';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/lib/question-validation';
+import { generateCanonicalId } from '../../apps/api/src/lib/canonicalId';
 
 const router = Router();
 
@@ -18,7 +19,6 @@ function getSupabaseProjectRef(): string {
   return match ? match[1] : 'unknown';
 }
 
-
 // All routes are now protected by requireSupabaseAdmin upstream. No bearer or isAuthorized logic remains.
 const csrfProtection = csrfGuard();
 
@@ -26,9 +26,7 @@ const csrfProtection = csrfGuard();
  * GET /api/admin/proof/questions
  * Returns proof that questions exist in Supabase
  */
-
 router.get('/questions', async (_req: Request, res: Response) => {
-
   try {
     const { count, error: countError } = await supabaseServer
       .from('questions')
@@ -79,17 +77,16 @@ router.get('/questions', async (_req: Request, res: Response) => {
  * POST /api/admin/proof/insert-smoke
  * Insert ONE smoke test row to verify write path works
  */
-
 router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response) => {
-
   try {
-    const timestamp = Date.now();
-    const uniqueChars = Math.random().toString(36).slice(2, 8).toUpperCase();
+    const canonicalId = generateCanonicalId('SAT', 'M', '2');
+
     const smokeRow = {
-      canonical_id: `SATM2SMOKE${uniqueChars}`,
+      canonical_id: canonicalId,
       section: 'Math',
       stem: `Smoke test question inserted at ${new Date().toISOString()}`,
       question_type: 'multiple_choice',
+      type: 'mc',
       options: [
         { key: 'A', text: 'Smoke option A' },
         { key: 'B', text: 'Smoke option B' },
@@ -97,6 +94,7 @@ router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response
         { key: 'D', text: 'Smoke option D' },
       ],
       answer: 'A',
+      answer_choice: 'A',
       exam: 'SAT',
       test_code: 'SAT',
       section_code: 'M',
@@ -150,9 +148,7 @@ router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response
  * DELETE /api/admin/proof/cleanup-smoke
  * Delete smoke test rows (optional cleanup)
  */
-
 router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Response) => {
-
   try {
     const { data, error } = await supabaseServer
       .from('questions')

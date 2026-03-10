@@ -28,7 +28,7 @@ Server runtime source of truth for full-length SAT exam flow:
 3. Reporting surfaces
 - Student report: `GET /api/full-length/sessions/:sessionId/report`
 - Completion response: `POST /api/full-length/sessions/:sessionId/complete`
-- Both return raw/scaled/domain/skill outputs.
+- Both return results from `computeCanonicalExamReport()` (re-computation from raw responses, not from rollups) to maintain strict parity. Rollups exist only for persistence/audit.
 
 ## Review Unlock Rule
 Review is locked until session completion.

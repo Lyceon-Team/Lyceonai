@@ -83,5 +83,57 @@ describe('Guardian Full-Length Report Visibility Contract', () => {
     expect(res.body.error).toBe('Not authorized to view this student');
     expect(reportServiceMocks.getExamReport).not.toHaveBeenCalled();
   });
+
+  it('never includes question-level dumps in guardian report payload', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+
+    reportServiceMocks.getExamReport.mockResolvedValue({
+      sessionId: 'session-safe-1',
+      rawScore: {
+        rw: { correct: 20, total: 54 },
+        math: { correct: 18, total: 44 },
+        total: { correct: 38, total: 98 },
+      },
+      scaledScore: { rw: 560, math: 540, total: 1100 },
+      domainBreakdown: { rw: [], math: [] },
+      skillDiagnostics: { rw: [], math: [] },
+      rwScore: {
+        module1: { correct: 10, total: 27 },
+        module2: { correct: 10, total: 27 },
+        totalCorrect: 20,
+        totalQuestions: 54,
+      },
+      mathScore: {
+        module1: { correct: 9, total: 22 },
+        module2: { correct: 9, total: 22 },
+        totalCorrect: 18,
+        totalQuestions: 44,
+      },
+      overallScore: {
+        totalCorrect: 38,
+        totalQuestions: 98,
+        percentageCorrect: 38.8,
+        scaledTotal: 1100,
+      },
+      completedAt: '2026-01-02T00:00:00.000Z',
+      questions: [{ id: 'q-should-not-leak' }],
+      responses: [{ questionId: 'q-should-not-leak', selectedAnswer: 'A' }],
+      rawQuestionDump: { should: 'never leak' },
+    });
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/guardian', router);
+
+    const res = await request(app).get('/api/guardian/students/student-1/exams/full-length/session-safe-1/report');
+
+    expect(res.status).toBe(200);
+    expect(res.body.report.sessionId).toBe('session-safe-1');
+    expect(res.body.report.rawScore).toBeDefined();
+    expect(res.body.report.questions).toBeUndefined();
+    expect(res.body.report.responses).toBeUndefined();
+    expect(res.body.report.rawQuestionDump).toBeUndefined();
+  });
 });
 

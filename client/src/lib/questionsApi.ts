@@ -87,16 +87,26 @@ export async function validateAnswer(
   answer: string,
   sessionId?: string
 ): Promise<{ isCorrect: boolean; correctAnswerKey?: string; feedback?: string; mode?: 'mc' | 'fr' }> {
-  const response = await apiRequest('/api/questions/validate', {
+  if (!sessionId) {
+    throw new Error('sessionId is required. Use /api/practice/answer for canonical validation.');
+  }
+
+  const response = await apiRequest('/api/practice/answer', {
     method: 'POST',
     body: JSON.stringify({
+      sessionId,
       questionId,
-      answer,
-      practiceSessionId: sessionId,
+      selectedAnswer: answer,
     }),
   });
-  
-  return response.json();
+
+  const payload = await response.json();
+  return {
+    isCorrect: Boolean(payload.isCorrect),
+    correctAnswerKey: payload.correctAnswerKey ?? undefined,
+    feedback: payload.feedback,
+    mode: payload.mode,
+  };
 }
 
 export async function fetchQuestionsStats(): Promise<{
