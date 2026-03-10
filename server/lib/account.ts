@@ -29,7 +29,6 @@ export async function isGuardianLinkedToStudent(guardianProfileId: string, stude
 
 /**
  * Create a new guardian↔student link in the canonical guardian_links table.
- * Also sets profiles.guardian_profile_id for backward compatibility (deprecated path).
  */
 export async function createGuardianLink(
   guardianProfileId: string,
@@ -58,18 +57,12 @@ export async function createGuardianLink(
     throw new Error(`Failed to create guardian link: ${error.message}`);
   }
 
-  // COMPAT: Also set profiles.guardian_profile_id (deprecated, kept in sync during transition)
-  await supabaseServer
-    .from('profiles')
-    .update({ guardian_profile_id: guardianProfileId })
-    .eq('id', studentId);
 
   return data;
 }
 
 /**
  * Revoke a guardian↔student link. Sets status='revoked' in guardian_links.
- * Also clears profiles.guardian_profile_id for backward compatibility.
  * Immediately revokes guardian visibility without affecting student data.
  */
 export async function revokeGuardianLink(
@@ -89,12 +82,6 @@ export async function revokeGuardianLink(
     throw new Error(`Failed to revoke guardian link: ${error.message}`);
   }
 
-  // COMPAT: Clear profiles.guardian_profile_id (deprecated path)
-  await supabaseServer
-    .from('profiles')
-    .update({ guardian_profile_id: null })
-    .eq('id', studentId)
-    .eq('guardian_profile_id', guardianProfileId);
 }
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -422,9 +409,8 @@ export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ 
     .maybeSingle();
 
   if (error && error.code !== 'PGRST116') {
-    // If guardian_links table doesn't exist yet (pre-migration), fall back to profiles
-    console.warn('[Account] guardian_links query failed, falling back to profiles:', error.message);
-    return getPrimaryGuardianLinkLegacy(guardianUserId);
+    console.error('[Account] Failed to get primary guardian link:', error);
+    throw new Error(`Failed to get primary guardian link: ${error.message}`);
   }
 
   if (data?.student_user_id) {
@@ -434,25 +420,6 @@ export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ 
   return null;
 }
 
-/**
- * @deprecated Legacy fallback — reads from profiles.guardian_profile_id.
- * Only used as fallback if guardian_links table doesn't exist yet.
- * Will be removed after migration is confirmed applied.
- */
-export async function getPrimaryGuardianLinkLegacy(guardianUserId: string): Promise<{ student_user_id: string } | null> {
-  const { data, error } = await supabaseServer
-    .from('profiles')
-    .select('id')
-    .eq('role', 'student')
-    .eq('guardian_profile_id', guardianUserId)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) return null;
-  if (!data?.id) return null;
-
-  return { student_user_id: data.id };
-}
 
 /**
  * Get ALL active student links for a guardian.
@@ -495,3 +462,4 @@ export function mapStripeStatusToEntitlement(stripeStatus: string): {
 }
 
 export { FREE_TIER_LIMITS };
+
