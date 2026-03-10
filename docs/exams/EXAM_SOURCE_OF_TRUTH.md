@@ -38,6 +38,7 @@ Single authoritative computation path:
    - domain breakdown (`domainBreakdown`)
    - skill diagnostics (`skillDiagnostics`)
 4. `getExamReport()` and completed-session idempotent returns also use `computeExamScores()` via `computeCanonicalExamReport()`.
+   - **Note**: Runtime returns do NOT read rollups for response shaping; they re-compute the canonical report from raw responses to maintain exact parity with the first-completion result. Rollups are persisted for audit and storage only.
 
 Invariant: raw, scaled, domain, and skill outputs are emitted from the same computation path.
 
