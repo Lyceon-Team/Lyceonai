@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
 import { StudentQuestion, StudentMcQuestion, StudentFrQuestion, QuestionOption } from '../../../../shared/schema';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { getDerivedWeaknessSignals } from '../services/mastery-derived';
 
 // ============================================================================
 // FISHER-YATES SHUFFLE HELPER: In-place randomization with O(n) complexity
@@ -235,62 +236,61 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
     // ========================================================================
     if (focus === 'weak' && userId) {
       try {
-        // Load top weak competencies for this user (higher score = weaker)
-        const { data: weakCompetencies, error: weakError } = await supabaseServer
-          .from('user_competencies')
-          .select('competency_key, score, attempt_count')
-          .eq('user_id', userId)
-          .order('score', { ascending: false })
-          .limit(30);
+        // Canonical weakness source: student_skill_mastery-derived signals.
+        const weakSignals = await getDerivedWeaknessSignals(userId, {
+          minAttempts: 3,
+          limit: 30,
+        });
 
-        if (!weakError && weakCompetencies && weakCompetencies.length > 0) {
-          // Filter to rows where score > 0 and attempt_count >= 3
-          const weakKeys = weakCompetencies
-            .filter((c: any) => c.score > 0 && c.attempt_count >= 3)
-            .map((c: any) => c.competency_key);
+        const weakKeys = Array.from(
+          new Set(
+            weakSignals
+              .filter((s) => s.masteryScore100 < 70)
+              .flatMap((s) => s.aliases)
+          )
+        );
 
-          if (weakKeys.length > 0) {
-            // Query questions that match weak competencies via tags overlap
-            let adaptiveQuery = supabaseServer
-              .from('questions')
-              .select(`
-                id,
-                stem,
-                options,
-                section,
-                source_mapping,
-                page_number,
-                tags,
-                type
-              `)
-              .limit(limit * 3);
+        if (weakKeys.length > 0) {
+          // Query questions that match weak competencies via tags overlap
+          let adaptiveQuery = supabaseServer
+            .from('questions')
+            .select(`
+              id,
+              stem,
+              options,
+              section,
+              source_mapping,
+              page_number,
+              tags,
+              type
+            `)
+            .limit(limit * 3);
 
-            // Apply section/type filters
-            if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
-              adaptiveQuery = adaptiveQuery.eq('section', section);
-            }
-            if (type && ['mc', 'fr'].includes(type)) {
-              adaptiveQuery = adaptiveQuery.eq('type', type);
-            }
+          // Apply section/type filters
+          if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+            adaptiveQuery = adaptiveQuery.eq('section', section);
+          }
+          if (type && ['mc', 'fr'].includes(type)) {
+            adaptiveQuery = adaptiveQuery.eq('type', type);
+          }
 
-            // Filter by weak competencies via tags overlap
-            // Use .overlaps for array containment check, fallback to .contains
-            try {
-              adaptiveQuery = adaptiveQuery.overlaps('tags', weakKeys);
-            } catch {
-              // Fallback: filter by first weak key if overlaps not available
-              adaptiveQuery = adaptiveQuery.contains('tags', [weakKeys[0]]);
-            }
+          // Filter by weak competencies via tags overlap
+          // Use .overlaps for array containment check, fallback to .contains
+          try {
+            adaptiveQuery = adaptiveQuery.overlaps('tags', weakKeys);
+          } catch {
+            // Fallback: filter by first weak key if overlaps not available
+            adaptiveQuery = adaptiveQuery.contains('tags', [weakKeys[0]]);
+          }
 
-            const { data: adaptiveData, error: adaptiveError } = await adaptiveQuery;
+          const { data: adaptiveData, error: adaptiveError } = await adaptiveQuery;
 
-            if (!adaptiveError && adaptiveData && adaptiveData.length > 0) {
-              // Shuffle candidates and take up to limit
-              const shuffled = fisherYatesShuffle(adaptiveData);
-              const selected = shuffled.slice(0, limit);
-              const formatted: StudentQuestion[] = selected.map(mapDbQuestionToStudentQuestion);
-              return res.json(formatted);
-            }
+          if (!adaptiveError && adaptiveData && adaptiveData.length > 0) {
+            // Shuffle candidates and take up to limit
+            const shuffled = fisherYatesShuffle(adaptiveData);
+            const selected = shuffled.slice(0, limit);
+            const formatted: StudentQuestion[] = selected.map(mapDbQuestionToStudentQuestion);
+            return res.json(formatted);
           }
         }
         // If adaptive query fails or returns nothing, fall through to random
@@ -328,7 +328,7 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
     }
 
     const totalCount = count ?? 0;
-    
+
     // If we need fewer questions than available, use random offset
     // Otherwise just get all available
     const maxOffset = Math.max(0, totalCount - limit);
@@ -383,7 +383,6 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
     });
   }
 };
-
 // GET /api/questions/count - Quick question count for visibility verification
 export const getQuestionCount = async (req: Request, res: Response) => {
   try {
@@ -1044,3 +1043,7 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to submit feedback' });
   }
 };
+
+
+
+

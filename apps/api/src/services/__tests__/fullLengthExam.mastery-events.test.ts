@@ -1,0 +1,142 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
+
+vi.mock('../../lib/supabase-admin', () => ({
+  getSupabaseAdmin: vi.fn(),
+}));
+
+vi.mock('../mastery-write', () => ({
+  applyMasteryUpdate: vi.fn().mockResolvedValue({
+    attemptId: 'm-1',
+    rollupUpdated: true,
+    error: undefined,
+  }),
+}));
+
+import { getSupabaseAdmin } from '../../lib/supabase-admin';
+import { applyMasteryUpdate } from '../mastery-write';
+import { submitModule } from '../fullLengthExam';
+import { MasteryEventType } from '../mastery-constants';
+
+describe('Full-Length -> Canonical Mastery Event Bridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('emits FULL_LENGTH_SUBMIT event on module submission', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: () => ({
+              eq: (_k1: string, _v1: string) => ({
+                eq: (_k2: string, _v2: string) => ({
+                  single: async () => ({
+                    data: {
+                      id: 'session-1',
+                      user_id: 'user-1',
+                      status: 'in_progress',
+                      current_section: 'math',
+                      current_module: 2,
+                    },
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_modules') {
+          return {
+            select: () => ({
+              eq: (_k1: string, _v1: string) => ({
+                eq: (_k2: string, _v2: string) => ({
+                  eq: (_k3: string, _v3: number) => ({
+                    single: async () => ({
+                      data: {
+                        id: 'module-1',
+                        status: 'in_progress',
+                        section: 'math',
+                        module_index: 2,
+                        ends_at: future,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+            update: () => ({
+              eq: async () => ({ error: null }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_responses') {
+          return {
+            select: () => ({
+              eq: async () => ({
+                data: [
+                  { question_id: 'q-1', is_correct: true },
+                ],
+                error: null,
+              }),
+            }),
+          };
+        }
+
+        if (table === 'full_length_exam_questions') {
+          return {
+            select: () => ({
+              eq: async () => ({
+                data: [{ id: 'mq-1' }],
+                error: null,
+              }),
+            }),
+          };
+        }
+
+        if (table === 'questions') {
+          return {
+            select: () => ({
+              in: async () => ({
+                data: [{
+                  id: 'q-1',
+                  canonical_id: 'cq-1',
+                  exam: 'SAT',
+                  section: 'Math',
+                  domain: 'algebra',
+                  skill: 'linear_equations',
+                  subskill: null,
+                  difficulty_bucket: 'medium',
+                  structure_cluster_id: null,
+                }],
+                error: null,
+              }),
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase as any);
+
+    const result = await submitModule({
+      sessionId: 'session-1',
+      userId: 'user-1',
+    });
+
+    expect(result.moduleId).toBe('module-1');
+    expect(result.nextModule).toBeNull();
+
+    const masteryCalls = (applyMasteryUpdate as unknown as Mock).mock.calls;
+    expect(masteryCalls.length).toBe(1);
+    expect(masteryCalls[0][0].eventType).toBe(MasteryEventType.FULL_LENGTH_SUBMIT);
+    expect(masteryCalls[0][0].questionCanonicalId).toBe('cq-1');
+  });
+});

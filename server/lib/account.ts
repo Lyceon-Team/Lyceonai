@@ -1,6 +1,7 @@
 /**
- * Get guardian link for a specific studentId
- * Returns { account_id, student_user_id } if linked, else null
+ * Get guardian link for a specific studentId from canonical guardian_links table.
+ * Only returns ACTIVE links.
+ * Returns { account_id, student_user_id } if linked, else null.
  */
 export async function getGuardianLinkForStudent(guardianProfileId: string, studentId: string): Promise<{ account_id: string, student_user_id: string } | null> {
   const { data, error } = await supabaseServer
@@ -8,12 +9,92 @@ export async function getGuardianLinkForStudent(guardianProfileId: string, stude
     .select('account_id, student_user_id')
     .eq('guardian_profile_id', guardianProfileId)
     .eq('student_user_id', studentId)
+    .eq('status', 'active')
     .single();
   if (error && error.code !== 'PGRST116') {
     console.error('[Account] Failed to get guardian link for student:', error);
     throw new Error(`Failed to get guardian link: ${error.message}`);
   }
   return data || null;
+}
+
+/**
+ * Check if a guardian is actively linked to a specific student.
+ * Canonical check: guardian_links WHERE status = 'active'.
+ */
+export async function isGuardianLinkedToStudent(guardianProfileId: string, studentId: string): Promise<boolean> {
+  const link = await getGuardianLinkForStudent(guardianProfileId, studentId);
+  return link !== null;
+}
+
+/**
+ * Create a new guardian↔student link in the canonical guardian_links table.
+ * Also sets profiles.guardian_profile_id for backward compatibility (deprecated path).
+ */
+export async function createGuardianLink(
+  guardianProfileId: string,
+  studentId: string,
+  accountId?: string
+): Promise<{ id: string; guardian_profile_id: string; student_user_id: string }> {
+  // Insert into canonical table
+  const { data, error } = await supabaseServer
+    .from('guardian_links')
+    .upsert(
+      {
+        guardian_profile_id: guardianProfileId,
+        student_user_id: studentId,
+        account_id: accountId || null,
+        status: 'active',
+        linked_at: new Date().toISOString(),
+        revoked_at: null,
+      },
+      { onConflict: 'guardian_profile_id,student_user_id' }
+    )
+    .select('id, guardian_profile_id, student_user_id')
+    .single();
+
+  if (error) {
+    console.error('[Account] Failed to create guardian link:', error);
+    throw new Error(`Failed to create guardian link: ${error.message}`);
+  }
+
+  // COMPAT: Also set profiles.guardian_profile_id (deprecated, kept in sync during transition)
+  await supabaseServer
+    .from('profiles')
+    .update({ guardian_profile_id: guardianProfileId })
+    .eq('id', studentId);
+
+  return data;
+}
+
+/**
+ * Revoke a guardian↔student link. Sets status='revoked' in guardian_links.
+ * Also clears profiles.guardian_profile_id for backward compatibility.
+ * Immediately revokes guardian visibility without affecting student data.
+ */
+export async function revokeGuardianLink(
+  guardianProfileId: string,
+  studentId: string
+): Promise<void> {
+  // Revoke in canonical table
+  const { error } = await supabaseServer
+    .from('guardian_links')
+    .update({ status: 'revoked', revoked_at: new Date().toISOString() })
+    .eq('guardian_profile_id', guardianProfileId)
+    .eq('student_user_id', studentId)
+    .eq('status', 'active');
+
+  if (error) {
+    console.error('[Account] Failed to revoke guardian link:', error);
+    throw new Error(`Failed to revoke guardian link: ${error.message}`);
+  }
+
+  // COMPAT: Clear profiles.guardian_profile_id (deprecated path)
+  await supabaseServer
+    .from('profiles')
+    .update({ guardian_profile_id: null })
+    .eq('id', studentId)
+    .eq('guardian_profile_id', guardianProfileId);
 }
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -264,7 +345,7 @@ export async function incrementUsage(accountId: string, type: 'practice' | 'ai_c
   if (existing) {
     const { data, error } = await supabaseServer
       .from('usage_daily')
-      .update({ 
+      .update({
         [column]: (existing[column] || 0) + 1,
       })
       .eq('account_id', accountId)
@@ -300,7 +381,7 @@ export async function checkUsageLimit(
   type: 'practice' | 'ai_chat'
 ): Promise<{ allowed: boolean; current: number; limit: number; resetAt: string }> {
   const entitlement = await getEntitlement(accountId);
-  const isPaid = entitlement?.plan === 'paid' && 
+  const isPaid = entitlement?.plan === 'paid' &&
     (entitlement.status === 'active' || entitlement.status === 'trialing');
 
   if (isPaid) {
@@ -326,11 +407,39 @@ export async function checkUsageLimit(
 
 /**
  * Get the primary linked student for a guardian.
- * Guardians link to students via profiles.guardian_profile_id field.
+ * CANONICAL: Reads from guardian_links WHERE status='active'.
  * Returns the first linked student's user_id.
  */
 export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ student_user_id: string } | null> {
-  // Find the student who points to this guardian
+  // Canonical path: query guardian_links
+  const { data, error } = await supabaseServer
+    .from('guardian_links')
+    .select('student_user_id')
+    .eq('guardian_profile_id', guardianUserId)
+    .eq('status', 'active')
+    .order('linked_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    // If guardian_links table doesn't exist yet (pre-migration), fall back to profiles
+    console.warn('[Account] guardian_links query failed, falling back to profiles:', error.message);
+    return getPrimaryGuardianLinkLegacy(guardianUserId);
+  }
+
+  if (data?.student_user_id) {
+    return { student_user_id: data.student_user_id };
+  }
+
+  return null;
+}
+
+/**
+ * @deprecated Legacy fallback — reads from profiles.guardian_profile_id.
+ * Only used as fallback if guardian_links table doesn't exist yet.
+ * Will be removed after migration is confirmed applied.
+ */
+export async function getPrimaryGuardianLinkLegacy(guardianUserId: string): Promise<{ student_user_id: string } | null> {
   const { data, error } = await supabaseServer
     .from('profiles')
     .select('id')
@@ -343,6 +452,26 @@ export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ 
   if (!data?.id) return null;
 
   return { student_user_id: data.id };
+}
+
+/**
+ * Get ALL active student links for a guardian.
+ * CANONICAL: Reads from guardian_links WHERE status='active'.
+ */
+export async function getAllGuardianStudentLinks(guardianUserId: string): Promise<Array<{ student_user_id: string; linked_at: string }>> {
+  const { data, error } = await supabaseServer
+    .from('guardian_links')
+    .select('student_user_id, linked_at')
+    .eq('guardian_profile_id', guardianUserId)
+    .eq('status', 'active')
+    .order('linked_at', { ascending: true });
+
+  if (error) {
+    console.error('[Account] Failed to get guardian student links:', error);
+    return [];
+  }
+
+  return data || [];
 }
 
 export function mapStripeStatusToEntitlement(stripeStatus: string): {

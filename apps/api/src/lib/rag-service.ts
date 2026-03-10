@@ -4,10 +4,10 @@
  * per PRP — RAG Retrieval v2 specifications
  */
 
-import { questions, userProgress } from '../../../../shared/schema';
 import { generateEmbedding } from './embeddings';
 import { matchSimilar, MatchResult } from './vector';
 import { supabaseServer } from './supabase-server';
+import { buildCompetencyMapFromMasteryRows, MasterySkillRow } from '../services/mastery-derived';
 import {
   RagMode,
   RagContext,
@@ -472,7 +472,7 @@ export class RagService {
 
   /**
    * Load student profile from Supabase profiles table (HTTP client)
-   * Also aggregates competency map from user_progress table
+   * Also derives competency map from canonical student_skill_mastery
    */
   async loadStudentProfile(userId: string): Promise<StudentProfile | null> {
     try {
@@ -498,48 +498,23 @@ export class RagService {
         });
       }
 
-      // Calculate competency map from user_progress (aggregated stats)
+      // Canonical competency map source: student_skill_mastery (derived reader).
       let competencyMap: Record<string, { correct: number; incorrect: number; total: number }> = {};
-      
-      try {
-        // Use Supabase RPC or direct query for user progress aggregation
-        const { data: progressData, error: progressError } = await supabaseServer
-          .from('user_progress')
-          .select(`
-            is_correct,
-            questions!inner(section, unit_tag)
-          `)
-          .eq('user_id', userId);
 
-        if (!progressError && progressData) {
-          // Aggregate progress manually since Supabase doesn't support GROUP BY
-          const aggregated: Record<string, { correct: number; incorrect: number; total: number }> = {};
-          
-          for (const row of progressData) {
-            const question = (row as any).questions;
-            const sectionCode = question?.section?.toLowerCase().includes('math') ? 'M' : 'RW';
-            const unitCode = question?.unit_tag?.replace(/\s+/g, '_').toUpperCase() || 'GENERAL';
-            const competencyCode = `${sectionCode}.${unitCode}`;
-            
-            if (!aggregated[competencyCode]) {
-              aggregated[competencyCode] = { correct: 0, incorrect: 0, total: 0 };
-            }
-            
-            aggregated[competencyCode].total += 1;
-            if (row.is_correct) {
-              aggregated[competencyCode].correct += 1;
-            } else {
-              aggregated[competencyCode].incorrect += 1;
-            }
-          }
-          
-          competencyMap = aggregated;
+      try {
+        const { data: masteryRows, error: masteryError } = await supabaseServer
+          .from('student_skill_mastery')
+          .select('section, domain, skill, attempts, correct, mastery_score, updated_at')
+          .eq('user_id', userId)
+          .gte('attempts', 1);
+
+        if (!masteryError && masteryRows) {
+          competencyMap = buildCompetencyMapFromMasteryRows(masteryRows as MasterySkillRow[]);
         }
-      } catch (progressError: any) {
-        console.warn(`⚠️ [RAG-V2] Failed to load user progress for ${userId}: ${progressError.message}`);
+      } catch (masteryReadError: any) {
+        console.warn(`⚠️ [RAG-V2] Failed to load canonical mastery rows for ${userId}: ${masteryReadError.message}`);
         // Continue with empty competency map
       }
-
       // Merge DB competency_map with calculated one (DB takes precedence if exists)
       if (profileRow?.competency_map && typeof profileRow.competency_map === 'object') {
         competencyMap = { ...competencyMap, ...(profileRow.competency_map as Record<string, any>) };
@@ -552,7 +527,7 @@ export class RagService {
         secondaryStyle: profileRow?.secondary_style ?? undefined,
         explanationLevel: profileRow?.explanation_level ?? 2,
         competencyMap,
-        recentQuestions: [], // TODO: Load from recent user_progress entries
+        recentQuestions: [], // TODO: Load from recent student_question_attempts entries
         personaTags: Array.isArray(profileRow?.persona_tags) ? profileRow.persona_tags : [],
       };
 
@@ -1099,3 +1074,6 @@ export function getRagService(): RagService {
   }
   return ragServiceInstance;
 }
+
+
+

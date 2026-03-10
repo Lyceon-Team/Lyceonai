@@ -3,6 +3,7 @@ import { supabaseServer } from '../lib/supabase-server';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { calculateScore, DomainMastery, ScoreProjection } from '../../../../server/services/score-projection';
 import { DateTime } from 'luxon';
+import { getDerivedWeaknessSignals } from '../services/mastery-derived';
 
 // ============================================================================
 // COMPETENCY SCORING WEIGHTS (LOCKED)
@@ -63,6 +64,7 @@ export async function recordCompetencyEvent(
     const competencyTags = getCompetencyTags(question);
     const now = new Date().toISOString();
 
+    // Reporting-only trail. Canonical learning state is student_skill_mastery.
     const { error: eventError } = await supabaseServer
       .from('competency_events')
       .insert({
@@ -81,58 +83,10 @@ export async function recordCompetencyEvent(
     if (eventError) {
       console.warn('Failed to insert competency event:', eventError.message);
     }
-
-    for (const competencyKey of competencyTags) {
-      const { data: existing } = await supabaseServer
-        .from('user_competencies')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('competency_key', competencyKey)
-        .single();
-
-      if (existing) {
-        const updates: Record<string, any> = {
-          score: (existing.score || 0) + delta,
-          last_event_at: now,
-          attempt_count: (existing.attempt_count || 0) + 1,
-          updated_at: now,
-        };
-        if (eventType === 'incorrect') {
-          updates.incorrect_count = (existing.incorrect_count || 0) + 1;
-          if (source === 'review') {
-            updates.review_incorrect_count = (existing.review_incorrect_count || 0) + 1;
-          }
-        } else if (eventType === 'skipped') {
-          updates.skipped_count = (existing.skipped_count || 0) + 1;
-        }
-
-        await supabaseServer
-          .from('user_competencies')
-          .update(updates)
-          .eq('user_id', userId)
-          .eq('competency_key', competencyKey);
-      } else {
-        await supabaseServer
-          .from('user_competencies')
-          .insert({
-            user_id: userId,
-            competency_key: competencyKey,
-            section: question.section || null,
-            score: delta,
-            last_event_at: now,
-            attempt_count: 1,
-            incorrect_count: eventType === 'incorrect' ? 1 : 0,
-            review_incorrect_count: eventType === 'incorrect' && source === 'review' ? 1 : 0,
-            skipped_count: eventType === 'skipped' ? 1 : 0,
-            updated_at: now,
-          });
-      }
-    }
   } catch (error) {
     console.error('Error recording competency event:', error);
   }
 }
-
 // ============================================================================
 // GET /api/recent-activity - Last 20 items for authenticated user
 // ============================================================================
@@ -329,20 +283,14 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    const { data: weakest } = await supabaseServer
-      .from('user_competencies')
-      .select('competency_key, section, score, incorrect_count')
-      .eq('user_id', req.user.id)
-      .order('score', { ascending: false })
-      .limit(5);
+    const weakestSignals = await getDerivedWeaknessSignals(req.user.id, {
+      minAttempts: 1,
+      limit: 5,
+    });
 
-    const { data: improving } = await supabaseServer
-      .from('user_competencies')
-      .select('competency_key, section, score')
-      .eq('user_id', req.user.id)
-      .order('score', { ascending: true })
-      .limit(5);
-
+    const strongestSignals = [...weakestSignals]
+      .sort((a, b) => b.masteryScore100 - a.masteryScore100)
+      .slice(0, 5);
     const accuracy = totals.correct + totals.incorrect > 0
       ? Math.round((totals.correct / (totals.correct + totals.incorrect)) * 100)
       : 0;
@@ -352,16 +300,16 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
     res.json({
       totals,
       bySection,
-      weakestCompetencies: (weakest ?? []).map(c => ({
-        key: c.competency_key,
-        section: c.section,
-        score: c.score,
-        incorrectCount: c.incorrect_count,
+      weakestCompetencies: weakestSignals.map((s) => ({
+        key: s.competencyKey,
+        section: s.section,
+        score: s.weaknessScore,
+        incorrectCount: s.incorrect,
       })),
-      improvingCompetencies: (improving ?? []).filter(c => c.score < 0).map(c => ({
-        key: c.competency_key,
-        section: c.section,
-        score: c.score,
+      improvingCompetencies: strongestSignals.map((s) => ({
+        key: s.competencyKey,
+        section: s.section,
+        score: s.masteryScore100,
       })),
       accuracy,
       currentScore,
@@ -644,3 +592,10 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     res.status(500).json({ error: 'Failed to calculate KPIs' });
   }
 };
+
+
+
+
+
+
+

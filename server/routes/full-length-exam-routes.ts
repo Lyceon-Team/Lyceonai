@@ -324,4 +324,79 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
   }
 });
 
+
+/**
+ * GET /api/full-length/sessions/:sessionId/report
+ * Get full score report (raw/scaled/domain/skill) after completion.
+ */
+router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId required" });
+    }
+
+    const result = await fullLengthExamService.getExamReport({
+      sessionId,
+      userId: req.user.id,
+    });
+
+    return res.json(result);
+  } catch (error: unknown) {
+    console.error("[FULL-LENGTH] Get report error:", error);
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("not found") || message.includes("access denied")) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (message.includes("Results locked until completion")) {
+      return res.status(423).json({ error: "Results locked until completion" });
+    }
+
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
+
+/**
+ * GET /api/full-length/sessions/:sessionId/review
+ * Review unlocks only after exam completion.
+ */
+router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId required" });
+    }
+
+    const review = await fullLengthExamService.getExamReviewAfterCompletion({
+      sessionId,
+      userId: req.user.id,
+    });
+
+    return res.json(review);
+  } catch (error: unknown) {
+    console.error("[FULL-LENGTH] Get review error:", error);
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("not found") || message.includes("access denied")) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    if (message.includes("Review locked until completion")) {
+      return res.status(423).json({ error: "Review locked until completion" });
+    }
+
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
 export default router;
+
