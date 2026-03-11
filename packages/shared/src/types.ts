@@ -1,43 +1,57 @@
-export type Choice = { key: 'A'|'B'|'C'|'D'; text: string };
+export type QuestionOptionKey = 'A' | 'B' | 'C' | 'D';
 
-// Base fields common to both MC and FR questions
-interface QAItemBase {
-  id: string;                     // canonical id: <docSlug>_p<page>_q<index>
-  rawId?: string;                 // upstream hex or source-native id
+export interface CanonicalQuestionOption {
+  key: QuestionOptionKey;
+  text: string;
+}
+
+export interface CanonicalOptionMetadata {
+  key: QuestionOptionKey;
+  text: string;
+  is_correct: boolean;
+}
+
+export interface CanonicalQuestionRecord {
+  id: string;
+  canonical_id: string;
+  status: 'draft' | 'reviewed';
+  created_at: string;
+  updated_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  section: string;
+  section_code: 'MATH' | 'RW';
+  question_type: 'multiple_choice';
   stem: string;
-  explanation: string | null;
-  section: 'Reading'|'Writing'|'Math'|null;
-  source: { path: string; page: number };
-  tags: string[];
-  version: 1;
-  createdAt: string;
-  updatedAt: string;
-  // Confidence scoring fields (from robust parser)
-  confidence?: number;            // 0.0 - 1.0 confidence score
-  needsReview?: boolean;          // true if confidence < 0.8
-  parsingMetadata?: {
-    anchorsDetected: string[];
-    patternMatches: Record<string, boolean>;
-    warnings: string[];
-    originalText?: string;
-  };
+  options: [
+    CanonicalQuestionOption,
+    CanonicalQuestionOption,
+    CanonicalQuestionOption,
+    CanonicalQuestionOption
+  ];
+  correct_answer: QuestionOptionKey;
+  answer_text: string;
+  explanation: string;
+  option_metadata: [
+    CanonicalOptionMetadata,
+    CanonicalOptionMetadata,
+    CanonicalOptionMetadata,
+    CanonicalOptionMetadata
+  ];
+  domain: string;
+  skill: string;
+  subskill: string;
+  skill_code: string;
+  difficulty: string;
+  source_type: 'synthetic' | 'official' | 'hybrid' | 'unknown';
+  test_code: string | null;
+  exam: string | null;
+  ai_generated: boolean | null;
+  diagram_present: boolean | null;
+  tags: unknown[] | null;
+  competencies: unknown[] | null;
+  provenance_chunk_ids: unknown[] | null;
 }
 
-// Multiple Choice question type - exactly 4 options (A-D) with choice answer
-export interface QAItemMC extends QAItemBase {
-  type: "mc";
-  options: Choice[];              // Must have exactly 4 options A-D  
-  answer_choice: 'A'|'B'|'C'|'D'; // Choice answer for MC
-}
-
-// Free Response question type - no options, text/number answer
-export interface QAItemFR extends QAItemBase {
-  type: "fr";
-  answer_text: string;            // Text/number answer for FR (non-empty)
-}
-
-// Discriminated union of question types
-export type QAItem = QAItemMC | QAItemFR;
-
-// Legacy type alias for backward compatibility
-export type QAItemLegacy = QAItemMC;
+export type QAItem = CanonicalQuestionRecord;
+export type QAItemLegacy = CanonicalQuestionRecord;

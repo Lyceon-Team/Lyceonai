@@ -1,8 +1,7 @@
 /**
  * QuestionVM - View Model for rendering questions in the UI
- * 
- * This is the canonical client-side type for displaying questions.
- * It abstracts away storage internals and provides a clean interface for UI components.
+ *
+ * Canonical client-side type for displaying question data from public.questions.
  */
 
 export interface QuestionOption {
@@ -15,20 +14,20 @@ export interface QuestionVM {
   canonicalId?: string | null;
   exam?: string | null;
   testCode?: string | null;
-  sectionCode?: string | null;
+  sectionCode?: 'MATH' | 'RW' | null;
   section?: string | null;
   difficulty?: string | null;
   competencies?: Array<{ code: string; raw?: string | null }> | null;
   stem: string;
   options: QuestionOption[];
-  type: 'mc' | 'fr';
+  questionType: 'multiple_choice';
   explanation?: string | null;
   tags?: string[] | null;
 }
 
 export interface ValidationResult {
   isCorrect: boolean;
-  mode?: 'mc' | 'fr';
+  mode?: 'multiple_choice';
   correctAnswerKey?: string | null;
   feedback?: string;
 }
@@ -51,7 +50,7 @@ export function toQuestionVM(apiQuestion: any): QuestionVM {
     competencies: apiQuestion.competencies || null,
     stem: apiQuestion.stem || '',
     options: normalizeOptions(apiQuestion.options),
-    type: apiQuestion.type || (apiQuestion.options?.length > 0 ? 'mc' : 'fr'),
+    questionType: 'multiple_choice',
     explanation: apiQuestion.explanation || null,
     tags: apiQuestion.tags || null,
   };
@@ -61,7 +60,7 @@ function normalizeOptions(options: any): QuestionOption[] {
   if (!options || !Array.isArray(options)) {
     return [];
   }
-  
+
   return options.map((opt: any, index: number) => {
     if (typeof opt === 'string') {
       const letter = String.fromCharCode(65 + index);

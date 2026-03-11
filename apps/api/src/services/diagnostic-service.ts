@@ -24,7 +24,7 @@ import {
 const SAT_TAXONOMY = {
   math: {
     section_name: 'Math',
-    section_code: 'M',
+    section_code: 'MATH',
     domains: [
       'algebra',
       'advanced_math',
@@ -131,11 +131,11 @@ async function selectQuestionsForDomain(
   
   const { data: candidates, error } = await supabase
     .from('questions')
-    .select('canonical_id, difficulty_bucket, id')
+    .select('canonical_id, difficulty, id')
     .eq('section', sectionName)
     .eq('domain', domain)
     .eq('needs_review', false) // Only active/servable questions
-    .order('difficulty_bucket', { ascending: true })
+    .order('difficulty', { ascending: true })
     .order('id', { ascending: true });
   
   if (error) {
@@ -422,3 +422,4 @@ export async function recordDiagnosticAnswer(
     isComplete,
   };
 }
+
