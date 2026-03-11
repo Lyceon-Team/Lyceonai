@@ -2,12 +2,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-vi.mock('../../server/middleware/supabase-auth', () => ({
-  requireSupabaseAuth: (req: any, _res: any, next: any) => {
-    req.user = { id: 'student-1', role: 'student' };
-    next();
-  },
-}));
+vi.mock('../../server/middleware/supabase-auth', async () => {
+  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
+    '../../server/middleware/supabase-auth'
+  );
+
+  return {
+    ...actual,
+    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'student-1',
+        role: 'student',
+        isGuardian: false,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-full-length-review-lock';
+      next();
+    },
+  };
+});
 
 vi.mock('../../server/middleware/csrf', () => ({
   csrfGuard: () => (_req: any, _res: any, next: any) => next(),
@@ -43,7 +56,7 @@ describe('Full-Length Review Lock Route Contract', () => {
     const res = await request(app).get('/api/full-length/sessions/session-locked/review');
 
     expect(res.status).toBe(423);
-    expect(res.body).toEqual({ error: 'Review locked until completion' });
+    expect(res.body).toMatchObject({ error: 'Review locked until completion', requestId: 'req-full-length-review-lock' });
   });
 });
 

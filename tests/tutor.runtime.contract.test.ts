@@ -155,6 +155,7 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
     if (state.currentUser) {
       req.user = { ...state.currentUser };
+      req.requestId ??= "req-tutor-runtime";
     }
     next();
   },
@@ -163,7 +164,22 @@ vi.mock("../server/middleware/supabase-auth", () => ({
       return res.status(401).json({ error: "Authentication required" });
     }
     req.user = { ...state.currentUser };
+    req.requestId ??= "req-tutor-runtime";
     return next();
+  },
+  requireRequestUser: (req: any, res: any) => {
+    if (!req.user?.id) {
+      res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });
+      return null;
+    }
+    return req.user;
+  },
+  requireRequestAuthContext: (req: any, res: any) => {
+    if (!req.user?.id) {
+      res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });
+      return null;
+    }
+    return { user: req.user, supabase: req.supabase };
   },
   requireStudentOrAdmin: (req: any, res: any, next: any) => {
     const user = req.user || state.currentUser;
@@ -178,6 +194,9 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   requireSupabaseAdmin: (_req: any, res: any) => {
     return res.status(403).json({ error: "Admin access required" });
   },
+  getSupabaseAdmin: () => ({
+    rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
+  }),
 }));
 
 const { default: app } = await import("../server/index");
@@ -301,3 +320,4 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.error).toBe("Student access required");
   });
 });
+

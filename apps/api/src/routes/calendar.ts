@@ -1,16 +1,15 @@
-import { Router, Request, Response } from "express";
-import { SupabaseClient } from "@supabase/supabase-js";
+import { Router, Response } from "express";
 import { supabaseServer } from "../lib/supabase-server";
 import { getWeakestSkills } from "../services/studentMastery";
 import { DateTime } from "luxon";
-import type { SupabaseUser } from "../../../../server/middleware/supabase-auth";
+import {
+  type AuthenticatedRequest,
+  type SupabaseUser,
+  requireRequestAuthContext,
+  requireRequestUser,
+} from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "../services/mastery-constants";
-
-interface AuthenticatedRequest extends Request {
-  supabase?: SupabaseClient;
-  user?: SupabaseUser;
-}
 
 export const calendarRouter = Router();
 
@@ -379,12 +378,13 @@ export async function syncCalendarDayFromSessions(
 
 calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
-
-    if (!userId || !supabase) {
-      return res.status(401).json({ error: "Authentication required" });
+    const auth = requireRequestAuthContext(req, res);
+    if (!auth) {
+      return;
     }
+
+    const { user, supabase } = auth;
+    const userId = user.id;
 
     const { data, error } = await supabase
       .from("student_study_profile")
@@ -411,12 +411,13 @@ calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) 
 
 calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
-
-    if (!userId || !supabase) {
-      return res.status(401).json({ error: "Authentication required" });
+    const auth = requireRequestAuthContext(req, res);
+    if (!auth) {
+      return;
     }
+
+    const { user, supabase } = auth;
+    const userId = user.id;
 
     const {
       baseline_score,
@@ -479,11 +480,12 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
 
 calendarRouter.get("/mode", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
 
     const profile = await loadStudyProfile(userId);
     return res.json({
@@ -496,10 +498,12 @@ calendarRouter.get("/mode", async (req: AuthenticatedRequest, res: Response) => 
 
 calendarRouter.put("/mode", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
 
     const plannerMode = req.body?.planner_mode;
     if (plannerMode !== "auto" && plannerMode !== "custom") {
@@ -594,12 +598,13 @@ async function calculateStreak(userId: string, timezone: string = DEFAULT_TIMEZO
 
 calendarRouter.get("/streak", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
+    const supabase = req.supabase;
 
     const { data: profile } = await (supabase || supabaseServer)
       .from("student_study_profile")
@@ -618,12 +623,13 @@ calendarRouter.get("/streak", async (req: AuthenticatedRequest, res: Response) =
 
 calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    const supabase = req.supabase;
-
-    if (!userId || !supabase) {
-      return res.status(401).json({ error: "Authentication required" });
+    const auth = requireRequestAuthContext(req, res);
+    if (!auth) {
+      return;
     }
+
+    const { user, supabase } = auth;
+    const userId = user.id;
 
     const start = req.query.start as string | undefined;
     const end = req.query.end as string | undefined;
@@ -727,12 +733,13 @@ calendarRouter.patch("/day/complete", async (_req: AuthenticatedRequest, res: Re
 
 calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { start_date, days } = req.body ?? {};
-    const userId = req.user.id;
+    const userId = user.id;
 
     if (!start_date || !isIsoDate(start_date)) {
       return res.status(400).json({ error: "start_date must be YYYY-MM-DD" });
@@ -760,17 +767,19 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
 
     const isRegeneration = (existingDays ?? []).length > 0;
     if (isRegeneration) {
-      const access = await ensurePlannerWriteAccess(req.user);
+      const access = await ensurePlannerWriteAccess(user);
       if (!access.hasPaidAccess) {
         return res.status(402).json({
           error: "Planner regeneration requires active entitlement",
           code: "PLANNER_REGEN_LOCKED",
+          feature: "calendar_regeneration",
           reason: access.reason,
           entitlement: {
             plan: access.plan,
             status: access.status,
             currentPeriodEnd: access.currentPeriodEnd,
           },
+          requestId: (req as any).requestId,
         });
       }
     }
@@ -817,11 +826,12 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
 
 calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const userId = req.user.id;
+    const userId = user.id;
     const profile = await loadStudyProfile(userId);
     if (!profile) {
       return res.status(400).json({ error: "Study profile not found. Please create a profile first." });
@@ -858,17 +868,19 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
       });
     }
 
-    const access = await ensurePlannerWriteAccess(req.user);
+    const access = await ensurePlannerWriteAccess(user);
     if (!access.hasPaidAccess) {
       return res.status(402).json({
         error: "Planner auto refresh requires active entitlement",
         code: "PLANNER_AUTO_REFRESH_LOCKED",
+        feature: "calendar_auto_refresh",
         reason: access.reason,
         entitlement: {
           plan: access.plan,
           status: access.status,
           currentPeriodEnd: access.currentPeriodEnd,
         },
+        requestId: (req as any).requestId,
       });
     }
 
@@ -908,10 +920,12 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
 
 calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
 
     const dayDate = req.params.dayDate;
     if (!isIsoDate(dayDate)) {
@@ -980,28 +994,32 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
   }
 });
 
-async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Promise<Response> {
-  const userId = req.user?.id;
-  if (!userId || !req.user) {
-    return res.status(401).json({ error: "Authentication required" });
+async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Promise<Response | void> {
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return;
   }
+
+  const userId = user.id;
 
   const dayDate = req.params.dayDate;
   if (!isIsoDate(dayDate)) {
     return res.status(400).json({ error: "dayDate path param must be YYYY-MM-DD" });
   }
 
-  const access = await ensurePlannerWriteAccess(req.user);
+  const access = await ensurePlannerWriteAccess(user);
   if (!access.hasPaidAccess) {
     return res.status(402).json({
       error: "Single-day regeneration requires active entitlement",
       code: "PLANNER_DAY_REGEN_LOCKED",
+      feature: "calendar_day_regeneration",
       reason: access.reason,
       entitlement: {
         plan: access.plan,
         status: access.status,
         currentPeriodEnd: access.currentPeriodEnd,
       },
+      requestId: (req as any).requestId,
     });
   }
 

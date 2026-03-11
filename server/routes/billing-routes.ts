@@ -1,5 +1,11 @@
 import { Request, Response, Router } from 'express';
-import { requireSupabaseAuth, getSupabaseAdmin } from '../middleware/supabase-auth';
+import {
+  getSupabaseAdmin,
+  requireRequestUser,
+  requireSupabaseAuth,
+  sendForbidden,
+  sendUnauthenticated,
+} from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
 import { billingStorage } from '../lib/billingStorage';
 import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement } from '../lib/account';
@@ -11,12 +17,16 @@ const router = Router();
 const csrfProtection = csrfGuard();
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const requestId = req.requestId;
-  if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required', requestId });
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return;
   }
-  if (req.user.role !== 'guardian' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Guardian role required', requestId });
+  if (user.role !== 'guardian' && user.role !== 'admin') {
+    return sendForbidden(res, {
+      error: 'Guardian role required',
+      message: 'You do not have permission to access guardian billing resources',
+      requestId: req.requestId,
+    });
   }
   next();
 }
@@ -74,7 +84,7 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
     const role = req.user?.role;
 
     if (!userId || !role) {
-      return res.status(401).json({ error: 'Not authenticated', requestId });
+      return sendUnauthenticated(res, requestId);
     }
 
     const validation = checkoutSchema.safeParse(req.body);

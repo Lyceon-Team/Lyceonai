@@ -1,7 +1,7 @@
 /**
  * QuestionCard - Unified component for rendering SAT practice questions
  * 
- * Clean, consistent layout without ingestion artifacts.
+ * Clean, consistent layout focused on student-facing practice.
  * Handles both multiple-choice and free-response questions.
  */
 

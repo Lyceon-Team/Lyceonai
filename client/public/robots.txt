@@ -1,18 +1,30 @@
 User-agent: *
 Allow: /
 
-# SEO-important pages
+# SEO-important public pages
 Allow: /digital-sat
 Allow: /digital-sat/math
 Allow: /digital-sat/reading-writing
 Allow: /blog
+Allow: /trust
 Allow: /legal
 
-# Disallow private routes
+# Non-public app surfaces
 Disallow: /admin
 Disallow: /auth/
 Disallow: /api/
 Disallow: /dashboard
+Disallow: /calendar
+Disallow: /chat
+Disallow: /full-test
+Disallow: /practice
+Disallow: /mastery
+Disallow: /review-errors
+Disallow: /flow-cards
+Disallow: /structured-practice
+Disallow: /guardian
 Disallow: /profile
+Disallow: /login
+Disallow: /signup
 
 Sitemap: https://lyceon.ai/sitemap.xml

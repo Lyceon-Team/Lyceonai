@@ -6,6 +6,7 @@ import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
 import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
+// Intentional runtime delegation: practice route ownership stays in server/** while mastery writes stay in apps/api services.
 import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 import { isValidCanonicalId } from "../../apps/api/src/lib/canonicalId";
@@ -236,7 +237,7 @@ async function pickRandomQuestion(args: {
  * - creates/continues practice session
  * - returns next question
  */
-router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true }), async (req, res) => {
+router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, incrementStrategy: "on_success" }), async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -252,7 +253,6 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
 
   const clientInstanceId = String(req.query.client_instance_id || "fallback-client");
 
-  // Find existing in_progress session for this user+section (best effort)
   // Find existing in_progress session for this user+section+mode (best effort)
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")
@@ -536,33 +536,79 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     client_attempt_id: idempotencyKey ?? null,
   });
 
-  // If unique(user_id, client_attempt_id) or unique(session_id, question_id) hits because user answered twice, 
-  // we still return grade. But we want deterministic behavior, so we won't fail the UI.
-  if (insErr && String(insErr.message || "").toLowerCase().includes("duplicate")) {
-    if (idempotencyKey) {
-      // It's a true idempotent retry. Fetch the previous outcome and return exactly that.
-      const { data: existing } = await supabaseServer
-        .from("answer_attempts")
-        .select("is_correct, outcome")
-        .eq("user_id", userId)
-        .eq("client_attempt_id", idempotencyKey)
-        .single();
+  // If unique(user_id, client_attempt_id) or unique(session_id, question_id) is hit,
+  // treat this as an idempotent retry and return the previously stored outcome.
+  if (insErr) {
+    const duplicateConflict = /duplicate|unique/i.test(String(insErr.message || ""));
 
-      if (existing) {
-        return res.json({
-          isCorrect: existing.is_correct,
-          mode: qType,
-          correctAnswerKey: correctAnswerKey ?? null,
-          explanation,
-          feedback: existing.is_correct ? "Correct" : existing.outcome === "skipped" ? "Skipped" : "Incorrect",
-          stats: await getSessionStats(sessionId, userId),
-          idempotentRetried: true,
+    if (duplicateConflict) {
+      let existing: { is_correct: boolean | null; outcome: string | null } | null = null;
+
+      if (idempotencyKey) {
+        const { data: existingByIdempotency, error: existingByIdempotencyError } = await supabaseServer
+          .from("answer_attempts")
+          .select("is_correct, outcome")
+          .eq("user_id", userId)
+          .eq("client_attempt_id", idempotencyKey)
+          .maybeSingle();
+
+        if (existingByIdempotencyError) {
+          console.warn("[practice] failed to load idempotent retry by key", {
+            requestId,
+            message: existingByIdempotencyError.message,
+            idempotencyKey,
+          });
+        } else if (existingByIdempotency) {
+          existing = existingByIdempotency as { is_correct: boolean | null; outcome: string | null };
+        }
+      }
+
+      if (!existing) {
+        const { data: existingBySessionQuestion, error: existingBySessionQuestionError } = await supabaseServer
+          .from("answer_attempts")
+          .select("is_correct, outcome")
+          .eq("user_id", userId)
+          .eq("session_id", sessionId)
+          .eq("question_id", questionId)
+          .maybeSingle();
+
+        if (existingBySessionQuestionError) {
+          console.warn("[practice] failed to load existing attempt after duplicate conflict", {
+            requestId,
+            message: existingBySessionQuestionError.message,
+            sessionId,
+            questionId,
+          });
+        } else if (existingBySessionQuestion) {
+          existing = existingBySessionQuestion as { is_correct: boolean | null; outcome: string | null };
+        }
+      }
+
+      if (!existing) {
+        return res.status(409).json({
+          error: "duplicate_submission",
+          message: "Answer already submitted for this question.",
+          requestId,
         });
       }
+
+      return res.json({
+        isCorrect: !!existing.is_correct,
+        mode: qType,
+        correctAnswerKey: correctAnswerKey ?? null,
+        explanation,
+        feedback: existing.is_correct ? "Correct" : existing.outcome === "skipped" ? "Skipped" : "Incorrect",
+        stats: await getSessionStats(sessionId, userId),
+        idempotentRetried: true,
+      });
     }
-  } else if (insErr) {
-    // non-blocking insert failure
+
     console.error("[practice] answer_attempts insert failed", { requestId, message: insErr.message });
+    return res.status(500).json({
+      error: "answer_submit_failed",
+      message: "Unable to record answer attempt",
+      requestId,
+    });
   }
 
   // practice_events (non-blocking)
@@ -624,3 +670,4 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 });
 
 export default router;
+

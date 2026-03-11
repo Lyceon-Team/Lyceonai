@@ -2,7 +2,7 @@
  * QuestionVM - View Model for rendering questions in the UI
  * 
  * This is the canonical client-side type for displaying questions.
- * It abstracts away ingestion internals and provides a clean interface for UI components.
+ * It abstracts away storage internals and provides a clean interface for UI components.
  */
 
 export interface QuestionOption {

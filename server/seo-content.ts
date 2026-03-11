@@ -7,7 +7,7 @@ export interface PublicPageSeo {
 
 const footerHtml = `
 <footer style="text-align: center; padding: 2rem 0; border-top: 1px solid #eee; color: #777; margin-top: 3rem;">
-  <p>&copy; 2024 Lyceon. AI-powered SAT preparation.</p>
+  <p>&copy; 2026 Lyceon. Study Smarter, Score Higher.</p>
   <nav style="margin-top: 1rem;">
     <a href="/" style="color: #0F2E48; margin: 0 0.5rem;">Home</a>
     <a href="/digital-sat" style="color: #0F2E48; margin: 0 0.5rem;">Digital SAT</a>
@@ -19,15 +19,15 @@ const footerHtml = `
 
 export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   "/": {
-    title: "Lyceon – AI SAT Tutor with Real Practice Questions",
-    description: "Lyceon is an AI SAT tutor that uses real SAT-style questions and step-by-step explanations to help you practice smarter, track progress, and boost your score.",
-    canonical: "https://lyceon.ai/",
+    title: "Lyceon | Study Smarter, Score Higher",
+    description: "Digital SAT prep with adaptive practice, full-length exams, mastery tracking, tutor chat, and guardian visibility.",
+    canonical: "https://lyceon.ai",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
-    <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Lyceon – AI SAT Tutor</h1>
+    <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Lyceon - Study Smarter, Score Higher</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 600px; margin: 0 auto;">
-      Practice SAT questions with an AI tutor that actually knows the test. 
+      Practice SAT questions with guided tutor support. 
       Get step-by-step explanations and track your progress.
     </p>
   </header>
@@ -39,7 +39,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <strong>Real SAT-Style Questions</strong> – Practice with questions modeled after the actual Digital SAT format.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>AI-Powered Tutoring</strong> – Get personalized explanations that adapt to your learning style.
+        <strong>Tutor Chat Support</strong> – Get personalized explanations that adapt to your learning pace.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Progress Tracking</strong> – See your improvement over time with detailed analytics.
@@ -55,7 +55,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <ol style="padding-left: 1.5rem; line-height: 1.8;">
       <li>Sign up for free – no credit card required</li>
       <li>Start a practice session in <a href="/digital-sat/math" style="color: #0F2E48;">Math</a> or <a href="/digital-sat/reading-writing" style="color: #0F2E48;">Reading & Writing</a></li>
-      <li>Answer questions and get instant AI feedback</li>
+      <li>Answer questions and get instant guided feedback</li>
       <li>Review your progress and target your weaknesses</li>
     </ol>
   </section>
@@ -80,8 +80,8 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat": {
-    title: "Digital SAT Practice – Free AI-Powered Prep | Lyceon",
-    description: "Master the Digital SAT with Lyceon's AI tutor. Practice real SAT-style questions in Math and Reading & Writing with personalized explanations and adaptive learning.",
+    title: "Digital SAT Practice – Study Smarter, Score Higher | Lyceon",
+    description: "Master the Digital SAT with adaptive SAT-style practice, full-length exam readiness, and focused explanations.",
     canonical: "https://lyceon.ai/digital-sat",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
@@ -89,7 +89,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
       The SAT went digital in 2024. Lyceon helps you prepare with real SAT-style questions, 
-      AI-powered explanations, and adaptive practice that focuses on your weak areas.
+      guided explanations, and adaptive practice that focuses on your weak areas.
     </p>
   </header>
   
@@ -122,7 +122,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     </p>
     <p style="color: #555; line-height: 1.7;">
       Lyceon's practice questions mirror the new Digital SAT format, so you know exactly what to expect on test day. 
-      Our AI tutor explains each question step by step, helping you understand not just the right answer, but why it's right.
+      Tutor guidance explains each question step by step so you understand not just the right answer, but why it is right.
     </p>
   </section>
   
@@ -133,7 +133,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <strong>Adaptive Practice</strong> – Our system identifies your weak areas and prioritizes questions that will help you improve fastest.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>AI Explanations</strong> – Don't just see the answer. Understand the reasoning with detailed, personalized explanations.
+        <strong>Step-by-Step Explanations</strong> – Don't just see the answer. Understand the reasoning with detailed guidance.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Progress Tracking</strong> – Watch your accuracy improve over time with clear charts and analytics.
@@ -157,15 +157,15 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/math": {
-    title: "Digital SAT Math Practice – AI Tutor | Lyceon",
-    description: "Practice Digital SAT Math with Lyceon's AI tutor. Master algebra, geometry, data analysis, and problem-solving with real SAT-style questions and step-by-step explanations.",
+    title: "Digital SAT Math Practice | Lyceon",
+    description: "Practice Digital SAT Math with adaptive question flow, algebra and geometry review, and step-by-step explanations.",
     canonical: "https://lyceon.ai/digital-sat/math",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Math Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
-      Master SAT Math with AI-powered practice. Get personalized explanations for algebra, 
+      Master SAT Math with adaptive practice. Get personalized explanations for algebra, 
       geometry, data analysis, and problem-solving questions.
     </p>
   </header>
@@ -219,7 +219,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h2 style="font-size: 1.5rem; color: #0F2E48; margin-bottom: 1rem;">Common SAT Math Mistakes to Avoid</h2>
     <p style="color: #555; line-height: 1.7; margin-bottom: 1rem;">
       Many students lose points not because they don't know the math, but because of careless errors. 
-      Lyceon's AI tutor helps you recognize these patterns: misreading negative signs, forgetting to 
+      Lyceon helps you recognize these patterns: misreading negative signs, forgetting to 
       distribute, mixing up formulas, and rushing through word problems.
     </p>
     <p style="color: #555; line-height: 1.7;">
@@ -237,15 +237,15 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/reading-writing": {
-    title: "Digital SAT Reading & Writing Practice – AI Tutor | Lyceon",
-    description: "Practice Digital SAT Reading & Writing with Lyceon's AI tutor. Master reading comprehension, grammar, vocabulary, and rhetorical analysis with personalized explanations.",
+    title: "Digital SAT Reading & Writing Practice | Lyceon",
+    description: "Practice Digital SAT Reading & Writing with adaptive drills and step-by-step explanations for comprehension and grammar.",
     canonical: "https://lyceon.ai/digital-sat/reading-writing",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Reading & Writing Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
-      Master the combined Reading and Writing section with AI-powered practice. 
+      Master the combined Reading and Writing section with focused adaptive practice. 
       Improve your comprehension, grammar, and vocabulary with personalized feedback.
     </p>
   </header>
@@ -602,7 +602,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       </p>
       <p style="margin-bottom: 1.5rem;">
         <a href="/digital-sat" style="color: #0F2E48; font-weight: 600;">Lyceon's question bank</a> includes detailed 
-        AI-powered explanations for every question, helping you learn from both correct and incorrect answers.
+        step-by-step explanations for every question, helping you learn from both correct and incorrect answers.
       </p>
     </section>
     
@@ -675,7 +675,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       </p>
       <p style="margin-bottom: 1.5rem;">
         <a href="/digital-sat/math" style="color: #0F2E48; font-weight: 600;">Practice SAT Math with Lyceon</a> – 
-        our AI tutor explains each solution step by step so you can catch and correct your error patterns.
+        our guided explanations walk each solution step by step so you can catch and correct your error patterns.
       </p>
     </section>
     
@@ -691,6 +691,103 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 </main>`
   },
 
+  "/trust": {
+    title: "Trust Center | Lyceon",
+    description: "Lyceon's trust center for security, privacy, and authorization controls, with links to policy pages and technical evidence.",
+    canonical: "https://lyceon.ai/trust",
+    bodyHtml: `
+<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
+  <header style="margin-bottom: 2rem; text-align: center;">
+    <h1 style="font-size: 2rem; margin-bottom: 0.75rem; color: #0F2E48;">Trust Center</h1>
+    <p style="color: #555; line-height: 1.6; max-width: 720px; margin: 0 auto;">
+      Privacy, security, and student safety are enforced by server-side controls. Explore policy pages and implementation evidence below.
+    </p>
+  </header>
+
+  <section style="margin-bottom: 2rem;">
+    <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+      <a href="/trust/evidence" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
+        <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Trust Evidence</h2>
+        <p style="color:#555; margin:0;">Public evidence for auth, RLS, logging redaction, and security headers.</p>
+      </a>
+      <a href="/legal" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
+        <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Legal & Policy Hub</h2>
+        <p style="color:#555; margin:0;">Privacy policy, student terms, trust and safety, and community guidelines.</p>
+      </a>
+    </div>
+  </section>
+
+  <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.4rem; color: #0F2E48; margin-bottom: 0.75rem;">Control Areas</h2>
+    <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+      <li>Cookie-backed auth enforcement in Supabase auth middleware for protected user routes.</li>
+      <li>Role-based access control on server routes for student, guardian, and admin paths.</li>
+      <li>Supabase RLS policies in migrations for practice, mastery, guardian-link, review-errors, and exam tables.</li>
+      <li>Privacy-safe logging and monitoring with redaction of tokens, cookies, and secrets.</li>
+      <li>Security response headers for browser hardening and transport protection.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.4rem; color: #0F2E48; margin-bottom: 0.75rem;">Certification Claims</h2>
+    <p style="color: #555; line-height: 1.6;">
+      Lyceon does not claim third-party security certifications on this page unless those certifications are formally obtained and published.
+    </p>
+  </section>
+  ${footerHtml}
+</main>`
+  },
+
+  "/trust/evidence": {
+    title: "Trust Evidence | Lyceon",
+    description: "Public, implementation-grounded security evidence for Lyceon authorization, Supabase RLS, privacy-safe logging, and monitoring safeguards.",
+    canonical: "https://lyceon.ai/trust/evidence",
+    bodyHtml: `
+<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
+  <article>
+    <header style="margin-bottom: 1.5rem;">
+      <nav style="margin-bottom: 0.75rem;"><a href="/trust" style="color: #0F2E48;">← Back to Trust Center</a></nav>
+      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">Trust Evidence</h1>
+      <p style="color: #555; line-height: 1.6;">Implementation-grounded evidence from current server middleware and Supabase policies.</p>
+    </header>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Authentication and Authorization</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>Endpoints using Supabase auth middleware resolve sessions from secure cookies and ignore bearer headers.</li>
+        <li>Protected routes enforce server middleware checks before business logic executes.</li>
+        <li>Role checks deny unauthorized student, guardian, or admin access at the API boundary.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Data Isolation (RLS)</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>Supabase migrations enable RLS for practice, mastery, review-errors, full-length exam, guardian-link, and legal acceptance tables.</li>
+        <li>Policies scope read/write access to <code>auth.uid()</code> for user-owned rows.</li>
+        <li>Service-role policies are explicit and limited to server-side operations.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Observability Safeguards</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>Structured logging redacts fields containing authorization, cookie, and token identifiers.</li>
+        <li>Error monitoring captures scrubbed request context and redacted error metadata.</li>
+        <li>Structured log entries are redacted before console output and monitor forwarding.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Certification Claims</h2>
+      <p style="color: #555; line-height: 1.6; margin: 0;">
+        No third-party certification claim is made here unless explicitly and verifiably published.
+      </p>
+    </section>
+  </article>
+  ${footerHtml}
+</main>`
+  },
   "/legal": {
     title: "Legal & Trust | Lyceon",
     description: "Lyceon's legal policies, terms of use, privacy policy, and trust & safety information. We're committed to protecting your data and providing a safe learning environment.",
@@ -710,7 +807,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <div style="display: grid; gap: 1rem;">
       <a href="/legal/privacy-policy" style="display: block; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; text-decoration: none; color: inherit;">
         <h3 style="font-size: 1.2rem; color: #0F2E48; margin-bottom: 0.5rem;">Privacy Policy</h3>
-        <p style="color: #555; margin: 0;">How we collect, use, and protect your personal information. Includes FERPA compliance for students under 13.</p>
+        <p style="color: #555; margin: 0;">How we collect, use, and protect your personal information, including parental-consent flows for users under 13.</p>
       </a>
       <a href="/legal/student-terms" style="display: block; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; text-decoration: none; color: inherit;">
         <h3 style="font-size: 1.2rem; color: #0F2E48; margin-bottom: 0.5rem;">Terms of Use</h3>
@@ -723,10 +820,10 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h2 style="font-size: 1.5rem; color: #0F2E48; margin-bottom: 1rem;">Our Commitment</h2>
     <ul style="list-style: none; padding: 0; display: grid; gap: 1rem;">
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>Data Protection</strong> – We use industry-standard encryption and security practices to protect your information.
+        <strong>Data Protection</strong> – We apply access controls, secure session handling, and redaction safeguards documented in our Trust Evidence page.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>Student Safety</strong> – We comply with FERPA and implement age-appropriate protections for minors.
+        <strong>Student Safety</strong> – Under-13 flows require guardian consent before protected practice access.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Transparency</strong> – We're clear about what data we collect and how we use it.
@@ -749,7 +846,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 
   "/legal/privacy-policy": {
     title: "Privacy Policy | Lyceon",
-    description: "Lyceon's privacy policy explains how we collect, use, and protect your personal information. Includes FERPA compliance details for students under 13.",
+    description: "Lyceon's privacy policy explains how we collect, use, and protect personal information, including parental-consent and student-privacy handling for users under 13.",
     canonical: "https://lyceon.ai/legal/privacy-policy",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
@@ -781,11 +878,11 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <li style="margin-bottom: 0.5rem;">Analyze usage patterns to improve our platform</li>
       </ul>
       
-      <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Student Privacy (FERPA Compliance)</h2>
+      <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Student Privacy and Parental Consent</h2>
       <p style="margin-bottom: 1.5rem;">
-        For users under 13, we require parental consent before collecting personal information. We comply with 
-        FERPA (Family Educational Rights and Privacy Act) requirements and do not share student educational records 
-        without appropriate consent. Parents can review and request deletion of their child's information at any time.
+        For users under 13, we require parental consent before enabling protected practice access. 
+        Parents can review and request deletion of their child's information at any time through support channels. 
+
       </p>
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Data Security</h2>
@@ -833,7 +930,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Description of Service</h2>
       <p style="margin-bottom: 1.5rem;">
-        Lyceon provides an AI-powered SAT preparation platform featuring practice questions, explanations, 
+        Lyceon provides a SAT preparation platform featuring practice questions, explanations, 
         progress tracking, and personalized learning recommendations. The Service is designed for educational 
         purposes only.
       </p>

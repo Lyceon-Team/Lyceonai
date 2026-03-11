@@ -1,6 +1,6 @@
 /**
  * Gemini-only embeddings and LLM client.
- * Used by RAG, search, and some legacy ingestion endpoints.
+ * Used by RAG and search services.
  */
 
 import { GoogleGenAI } from "@google/genai";
@@ -60,7 +60,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * Backwards-compatible alias used by older ingestion MVP code.
+ * Backwards-compatible alias retained for older callers.
  */
 export async function embeddings(text: string): Promise<number[]> {
   return generateEmbedding(text);

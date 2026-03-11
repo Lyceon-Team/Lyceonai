@@ -6,12 +6,32 @@
  */
 
 const REDACTION_STRING = '[REDACTED]';
+const DEFAULT_ERROR_MONITOR_TIMEOUT_MS = 1500;
+
+const SENSITIVE_KEY_PATTERNS = [
+  'authorization',
+  'cookie',
+  'token',
+  'password',
+  'secret',
+  'api_key',
+  'apikey',
+  'credential',
+  'session',
+  'email',
+];
+
+const SENSITIVE_KEY_EXACT = new Set(['body']);
 
 function shouldRedactKey(key: string) {
   const lower = key.toLowerCase();
-  return lower.includes('authorization') || lower.includes('cookie') || lower.includes('token');
-}
 
+  if (SENSITIVE_KEY_EXACT.has(lower) || lower.endsWith("_body")) {
+    return true;
+  }
+
+  return SENSITIVE_KEY_PATTERNS.some((pattern) => lower.includes(pattern));
+}
 export function redactSensitive<T>(input: T): T {
   const seen = new WeakMap<object, any>();
 
@@ -180,6 +200,7 @@ class OperationalLogger {
           console.error('   Context:', safeEntry.data);
         }
         this.trackError();
+        void this.sendErrorToMonitor(safeEntry);
         break;
       
       case 'warn':
@@ -225,6 +246,54 @@ class OperationalLogger {
     
     this.errorCount.lastHour++;
     this.errorCount.last24h++;
+  }
+
+  private shouldSendErrorMonitorEvents() {
+    return process.env.ERROR_MONITOR_ENABLED !== 'false';
+  }
+
+  private async sendErrorToMonitor(entry: LogEntry) {
+    if (!this.shouldSendErrorMonitorEvents()) return;
+
+    const endpoint = process.env.ERROR_MONITOR_WEBHOOK_URL?.trim();
+    if (!endpoint) return;
+
+    const timeoutMsRaw = Number(process.env.ERROR_MONITOR_TIMEOUT_MS || DEFAULT_ERROR_MONITOR_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
+      ? timeoutMsRaw
+      : DEFAULT_ERROR_MONITOR_TIMEOUT_MS;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const payload = redactSensitive({
+        source: 'lyceon-api',
+        level: entry.level,
+        component: entry.component,
+        operation: entry.operation,
+        message: entry.message,
+        timestamp: entry.timestamp,
+        requestId: entry.requestId || null,
+        userId: entry.userId || null,
+        ip: entry.ip || null,
+        data: entry.data || null,
+        error: entry.error || null,
+      });
+
+      await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } catch (monitorError) {
+      if (process.env.NODE_ENV !== 'test') {
+        console.error('[MONITOR] Failed to send error event', redactSensitive(monitorError));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /**
@@ -310,7 +379,6 @@ class OperationalLogger {
     requestBody?: any,
     responseSize?: number
   ) {
-    const success = statusCode < 400;
     const level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
     
     const data = {
@@ -321,18 +389,6 @@ class OperationalLogger {
       responseSize,
       requestBodySize: requestBody ? JSON.stringify(requestBody).length : 0
     };
-    
-    this.createLogEntry(
-      level,
-      'API',
-      'request',
-      `${method} ${path} ${statusCode}`,
-      data,
-      undefined,
-      duration,
-      { userId, requestId, ip }
-    );
-    
     this.output(this.createLogEntry(
       level,
       'API',
@@ -367,18 +423,7 @@ class OperationalLogger {
       success,
       timestamp: new Date().toISOString()
     };
-    
-    this.createLogEntry(
-      level,
-      'AUDIT',
-      'admin_action',
-      message,
-      data,
-      undefined,
-      undefined,
-      { userId, requestId, ip }
-    );
-    
+
     this.output(this.createLogEntry(
       level,
       'AUDIT',

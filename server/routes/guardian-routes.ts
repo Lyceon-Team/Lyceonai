@@ -1,5 +1,9 @@
 import { Request, Response, Router } from 'express';
-import { requireSupabaseAuth } from '../middleware/supabase-auth';
+import {
+  requireRequestUser,
+  requireSupabaseAuth,
+  sendForbidden,
+} from '../middleware/supabase-auth';
 import { requireGuardianEntitlement } from '../middleware/guardian-entitlement';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
@@ -7,6 +11,7 @@ import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
 import { DateTime } from 'luxon';
 import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks } from '../lib/account';
+// Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
 import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
@@ -24,13 +29,19 @@ export function isGuardianCalendarCountedEventType(eventType: string | null | un
 }
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const requestId = req.requestId;
-  if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required', requestId });
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return;
   }
-  if (req.user.role !== 'guardian' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Guardian role required', requestId });
+
+  if (user.role !== 'guardian' && user.role !== 'admin') {
+    return sendForbidden(res, {
+      error: 'Guardian role required',
+      message: 'You do not have permission to access guardian resources',
+      requestId: req.requestId,
+    });
   }
+
   next();
 }
 

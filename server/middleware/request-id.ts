@@ -10,34 +10,44 @@ declare global {
   }
 }
 
+function parseContentLength(headerValue: string | number | string[] | undefined): number {
+  if (typeof headerValue === 'number') return headerValue;
+  if (typeof headerValue === 'string') {
+    const parsed = Number(headerValue);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (Array.isArray(headerValue) && headerValue.length > 0) {
+    const parsed = Number(headerValue[0]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
   const existingId = req.headers['x-request-id'] as string;
   const requestId = existingId || uuidv4();
-  
+
   req.requestId = requestId;
   res.setHeader('X-Request-Id', requestId);
-  
+
   const startTime = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    const logData = {
-      method: req.method,
-      path: req.path,
-      status: res.statusCode,
-      duration_ms: duration,
-      request_id: requestId,
-      user_id: req.user?.id || null,
-    };
-    
-    if (res.statusCode >= 500) {
-      logger.error('HTTP', 'request', `${req.method} ${req.path} ${res.statusCode}`, logData);
-    } else if (res.statusCode >= 400) {
-      logger.warn('HTTP', 'request', `${req.method} ${req.path} ${res.statusCode}`, logData);
-    } else {
-      logger.info('HTTP', 'request', `${req.method} ${req.path} ${res.statusCode}`, logData);
-    }
+    const responseSize = parseContentLength(res.getHeader('Content-Length') as any);
+
+    logger.apiRequest(
+      req.method,
+      req.path,
+      res.statusCode,
+      duration,
+      requestId,
+      req.user?.id,
+      req.ip || req.socket?.remoteAddress,
+      undefined,
+      responseSize,
+    );
   });
-  
+
   next();
 }

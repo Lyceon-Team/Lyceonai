@@ -2,12 +2,9 @@ import { Router, Request, Response } from 'express';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger.js';
 import { requireSupabaseAdmin } from '../middleware/supabase-auth.js';
-import { csrfGuard } from '../middleware/csrf.js';
 import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView } from '../services/kpi-truth-layer';
 
 const router = Router();
-
-const csrfProtection = csrfGuard();
 
 /**
  * GET /api/admin/stats
@@ -187,4 +184,3 @@ router.get('/questions-proof', requireSupabaseAdmin, async (req: Request, res: R
 });
 
 export default router;
-

@@ -1,5 +1,5 @@
-import { Request, Response, Router } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth';
+import { Response, Router } from 'express';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
 import { getSupabaseAdmin } from '../lib/supabase-admin';
 import { getMasteryStatus } from '../services/mastery-projection';
@@ -133,21 +133,6 @@ interface SectionNode {
   avgMastery: number;
 }
 
-/**
- * DERIVED COMPUTATION: Compute mastery status from stored mastery_score
- * 
- * This function is now imported from mastery-projection.ts
- * It computes a UI-facing status label from the stored mastery_score.
- * It does NOT recalculate mastery_score itself.
- * 
- * Thresholds:
- * - not_started: attempts === 0
- * - weak: mastery_score < 40%
- * - improving: mastery_score < 70%
- * - proficient: mastery_score >= 70%
- */
-// Function moved to mastery-projection.ts - using import instead
-
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
@@ -162,13 +147,14 @@ const router = Router();
  */
 router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const section = req.query.section as string | undefined;
 
-    const summary = await getMasterySummary(req.user.id, section);
+    const summary = await getMasterySummary(user.id, section);
 
     res.json({
       ok: true,
@@ -192,11 +178,12 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
  */
 router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     if (!access.hasPaidAccess) {
       return res.status(402).json({
         error: 'Premium KPI feature required',
@@ -204,9 +191,10 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
         feature: 'mastery_hexagon',
         message: 'Upgrade to an active paid plan to unlock mastery KPI surfaces.',
         reason: access.reason,
+        requestId: (req as any).requestId,
       });
     }
-    const userId = req.user.id;
+    const userId = user.id;
     const supabase = getSupabaseAdmin();
 
     // READ ONLY: Fetch stored mastery scores
@@ -300,11 +288,12 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
  */
 router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const userId = req.user.id;
+    const userId = user.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
     const weakest = await getWeakestSkills({
@@ -333,11 +322,12 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
 
 router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const userId = req.user.id;
+    const userId = user.id;
     const { section, domain, skill, targetDate } = req.body;
 
     if (!section || !skill) {
@@ -394,4 +384,3 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
 });
 
 export const masteryRouter = router;
-

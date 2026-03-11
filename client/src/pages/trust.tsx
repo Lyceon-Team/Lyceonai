@@ -11,6 +11,7 @@ import {
     ChevronRight,
     Mail,
     Scale,
+    FileCheck2,
 } from "lucide-react";
 import Footer from "@/components/layout/Footer";
 
@@ -70,6 +71,30 @@ export default function TrustHub() {
 
                         <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
                             {/* Legal Hub */}
+                            {/* Public Evidence */}
+                            <Card className="flex flex-col hover:shadow-md transition-shadow border-primary/20 bg-primary/5">
+                                <CardHeader className="pb-3">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 rounded-lg bg-muted">
+                                            <FileCheck2 className="h-5 w-5" />
+                                        </div>
+                                    </div>
+                                    <CardTitle className="text-base">Trust Evidence</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Public implementation evidence for auth, RLS, security headers, and redaction safeguards.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="pt-0 mt-auto">
+                                    <Button asChild variant="outline" size="sm">
+                                        <Link href="/trust/evidence">
+                                            <a className="inline-flex items-center gap-1">
+                                                View Evidence
+                                                <ChevronRight className="h-4 w-4" />
+                                            </a>
+                                        </Link>
+                                    </Button>
+                                </CardContent>
+                            </Card>
                             <Card className="flex flex-col hover:shadow-md transition-shadow">
                                 <CardHeader className="pb-3">
                                     <div className="flex items-center gap-3 mb-2">
@@ -104,7 +129,7 @@ export default function TrustHub() {
                                     </div>
                                     <CardTitle className="text-base">Trust &amp; Safety</CardTitle>
                                     <CardDescription className="text-sm">
-                                        How we approach trust, safety, and responsibility in AI-powered learning.
+                                        How we approach trust, safety, and responsible technology in learning.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="pt-0 mt-auto">

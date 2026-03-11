@@ -1,17 +1,17 @@
-import { Request, Response, Router } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth';
-import { 
-  getWeakestSkills, 
-  getWeakestClusters, 
-  getMasterySummary 
+import { Response, Router } from 'express';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import {
+  getWeakestSkills,
+  getWeakestClusters,
 } from '../services/studentMastery';
 
 const router = Router();
 
 router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const section = req.query.section as string | undefined;
@@ -19,7 +19,7 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
     const skills = await getWeakestSkills({
-      userId: req.user.id,
+      userId: user.id,
       section,
       limit,
       minAttempts,
@@ -38,15 +38,16 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
 
 router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const limit = parseInt(req.query.limit as string) || 10;
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
     const clusters = await getWeakestClusters({
-      userId: req.user.id,
+      userId: user.id,
       limit,
       minAttempts,
     });

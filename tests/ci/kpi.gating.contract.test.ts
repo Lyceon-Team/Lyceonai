@@ -26,12 +26,25 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
   },
 }));
 
-vi.mock('../../server/middleware/supabase-auth', () => ({
-  requireSupabaseAuth: (req: any, _res: any, next: any) => {
-    req.user = { id: 'student-1', role: 'student' };
-    next();
-  },
-}));
+vi.mock('../../server/middleware/supabase-auth', async () => {
+  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
+    '../../server/middleware/supabase-auth'
+  );
+
+  return {
+    ...actual,
+    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'student-1',
+        role: 'student',
+        isGuardian: false,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-kpi-gating';
+      next();
+    },
+  };
+});
 
 vi.mock('../../server/middleware/csrf', () => ({
   csrfGuard: () => (_req: any, _res: any, next: any) => next(),
@@ -54,9 +67,25 @@ vi.mock('../../apps/api/src/lib/supabase-admin', () => ({
 }));
 
 function createRes() {
-  const json = vi.fn();
-  const status = vi.fn(() => ({ json }));
-  return { status, json };
+  let statusCode = 200;
+  let body: any = null;
+
+  const res: any = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      body = payload;
+      return this;
+    },
+  };
+
+  return {
+    res,
+    getStatus: () => statusCode,
+    getBody: () => body,
+  };
 }
 
 describe('KPI Gating Contract', () => {
@@ -145,31 +174,38 @@ describe('KPI Gating Contract', () => {
   it('denies free-tier mastery projection (mastery hexagon surface)', async () => {
     const { getScoreProjection } = await import('../../server/routes/legacy/progress');
 
-    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-1' };
-    const res = createRes();
+    const req: any = {
+      user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
+      requestId: 'req-1',
+    };
+    const { res, getStatus, getBody } = createRes();
 
     await getScoreProjection(req, res as any);
 
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(res.status.mock.calls[0][0]).toBe(402);
-    expect(res.status().json).toBeDefined;
+    expect(getStatus()).toBe(402);
+    const payload = getBody();
+    expect(payload.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(payload.feature).toBe('mastery_hexagon');
+    expect(payload.requestId).toBe('req-1');
   });
 
   it('hides historical trends for free-tier KPI view', async () => {
     const { getRecencyKpis } = await import('../../server/routes/legacy/progress');
 
-    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-2' };
-    const res = createRes();
+    const req: any = {
+      user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
+      requestId: 'req-2',
+    };
+    const { res, getBody } = createRes();
 
     await getRecencyKpis(req, res as any);
 
-    expect(res.json).toHaveBeenCalled();
-    const payload = res.json.mock.calls[0][0];
+    const payload = getBody();
     expect(payload.recency).toBeNull();
     expect(payload.gating.historicalTrends.allowed).toBe(false);
-    expect(payload.week.explanations.week_sessions.whatThisMeans).toBeTruthy();
-    expect(payload.week.explanations.week_sessions.whyThisChanged).toBeTruthy();
-    expect(payload.week.explanations.week_sessions.whatToDoNext).toBeTruthy();
+    expect(payload.week.explanations.week_sessions.whatThisMeans).toEqual(expect.stringMatching(/\S/));
+    expect(payload.week.explanations.week_sessions.whyThisChanged).toEqual(expect.stringMatching(/\S/));
+    expect(payload.week.explanations.week_sessions.whatToDoNext).toEqual(expect.stringMatching(/\S/));
   });
 
   it('denies free-tier full-test analytics report route', async () => {
@@ -192,7 +228,8 @@ describe('KPI Gating Contract', () => {
 
     const app = express();
     app.use((req: any, _res, next) => {
-      req.user = { id: 'student-1', role: 'student' };
+      req.user = { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false };
+      req.requestId ??= 'req-mastery-skills';
       next();
     });
     app.use('/api/me/mastery', masteryRouter);

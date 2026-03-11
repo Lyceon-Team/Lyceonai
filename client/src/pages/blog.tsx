@@ -91,7 +91,7 @@ export default function BlogPage() {
           <Card className="text-center">
             <h2 className="text-2xl font-semibold mb-4">Ready to Start Practicing?</h2>
             <p className="text-muted-foreground mb-6">
-              Put these tips into action with our AI-powered SAT practice.
+              Put these tips into action with adaptive SAT practice and guided review.
             </p>
             <Link href="/digital-sat">
               <a className="inline-block px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity">

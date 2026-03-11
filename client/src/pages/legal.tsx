@@ -54,7 +54,7 @@ export default function LegalHub() {
               Legal & Trust
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Empowering students to learn with integrity in an AI-driven world.
+              Empowering students to learn with integrity in a technology-assisted world.
             </p>
           </div>
 
@@ -93,7 +93,7 @@ export default function LegalHub() {
                   <div className="flex items-start gap-3">
                     <Badge variant="outline" className="mt-1 shrink-0">3</Badge>
                     <div>
-                      <p className="font-medium text-sm">Responsible AI</p>
+                      <p className="font-medium text-sm">Responsible Technology</p>
                       <p className="text-xs text-muted-foreground">Transparent, supervised, and safety-aware</p>
                     </div>
                   </div>
