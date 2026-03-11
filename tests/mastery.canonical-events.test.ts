@@ -84,10 +84,11 @@ describe('Canonical Mastery Event Behavior', () => {
       EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]
     );
     expect(EVENT_WEIGHTS[MasteryEventType.FULL_LENGTH_SUBMIT]).toBeGreaterThan(
-      EVENT_WEIGHTS[MasteryEventType.TUTOR_RETRY_SUBMIT]
+      EVENT_WEIGHTS[MasteryEventType.TUTOR_HELPED]
     );
     expect(EVENT_WEIGHTS[MasteryEventType.FULL_LENGTH_SUBMIT]).not.toBe(
       EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]
     );
   });
 });
+

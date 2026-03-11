@@ -817,12 +817,14 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
     const incorrectAttempts = incorrectRaw.map(formatAttempt);
     const skippedAttempts = skippedRaw.map(formatAttempt);
 
-    // Build reviewQueue: concatenated array with questionId, outcome, attemptId
+    // Build reviewQueue from prior practice misses/skips (origin context only; not review outcome taxonomy)
     // Ordered by attempted_at desc (already sorted from DB query)
     const reviewQueue = [...incorrectRaw, ...skippedRaw]
       .sort((a, b) => new Date(b.attempted_at).getTime() - new Date(a.attempted_at).getTime())
       .map(attempt => ({
         questionId: attempt.question_id,
+        originOutcome: attempt.outcome || (attempt.is_correct ? 'correct' : 'incorrect'),
+        // Backward-compatible alias for existing client reads.
         outcome: attempt.outcome || (attempt.is_correct ? 'correct' : 'incorrect'),
         attemptId: attempt.id,
       }));
@@ -1040,7 +1042,3 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to submit feedback' });
   }
 };
-
-
-
-

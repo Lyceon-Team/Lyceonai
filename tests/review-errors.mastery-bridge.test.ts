@@ -41,8 +41,33 @@ function makeRes() {
   return { res, getStatus: () => statusCode, getBody: () => body };
 }
 
-function setupSupabase(hasTutorContext: boolean) {
+function setupSupabase(options: { hasTutorContext: boolean; eligibleReviewSource: boolean }) {
+  const attemptTimestamp = '2026-03-10T10:00:00.000Z';
+
   fromMock.mockImplementation((table: string) => {
+    if (table === 'answer_attempts') {
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              or: () => ({
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: async () => ({
+                      data: options.eligibleReviewSource
+                        ? { id: 'source-1', attempted_at: attemptTimestamp, outcome: 'incorrect', is_correct: false }
+                        : null,
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+    }
+
     if (table === 'questions') {
       return {
         select: () => ({
@@ -54,6 +79,7 @@ function setupSupabase(hasTutorContext: boolean) {
                 type: 'mc',
                 answer_choice: 'A',
                 answer_text: null,
+                explanation: 'Because A is correct.',
               },
               error: null,
             }),
@@ -90,11 +116,13 @@ function setupSupabase(hasTutorContext: boolean) {
         select: () => ({
           eq: () => ({
             contains: () => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({
-                    data: hasTutorContext ? { id: 'ti-1' } : null,
-                    error: null,
+              gte: () => ({
+                order: () => ({
+                  limit: () => ({
+                    maybeSingle: async () => ({
+                      data: options.hasTutorContext ? { id: 'ti-1', created_at: '2026-03-10T10:05:00.000Z' } : null,
+                      error: null,
+                    }),
                   }),
                 }),
               }),
@@ -128,8 +156,8 @@ describe('Review Error -> Canonical Mastery Bridge', () => {
     });
   });
 
-  it('applies TUTOR_RETRY_SUBMIT when tutor context exists and retry is verified', async () => {
-    setupSupabase(true);
+  it('emits REVIEW_PASS when retry is correct without tutor context', async () => {
+    setupSupabase({ hasTutorContext: false, eligibleReviewSource: true });
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
@@ -145,18 +173,41 @@ describe('Review Error -> Canonical Mastery Bridge', () => {
 
     expect(getStatus()).toBe(200);
     expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(1);
-
-    const call = applyMasteryUpdateMock.mock.calls[0][0];
-    expect(call.eventType).toBe(MasteryEventType.TUTOR_RETRY_SUBMIT);
-    expect(call.isCorrect).toBe(true);
+    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
 
     const response = getBody();
-    expect(response.masteryApplied).toBe(true);
-    expect(response.masteryEvent).toBe(MasteryEventType.TUTOR_RETRY_SUBMIT);
+    expect(response.reviewOutcome).toBe('review_pass');
+    expect(response.tutorVerifiedRetry).toBe(false);
+    expect(response.tutorOutcome).toBeNull();
+    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_PASS]);
   });
 
-  it('does not apply mastery update when no tutor context exists', async () => {
-    setupSupabase(false);
+  it('emits REVIEW_FAIL when retry is incorrect without tutor context', async () => {
+    setupSupabase({ hasTutorContext: false, eligibleReviewSource: true });
+    const { res, getStatus, getBody } = makeRes();
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        question_id: 'q-1',
+        selected_answer: 'B',
+        source_context: 'review_errors',
+      },
+    };
+
+    await recordReviewErrorAttempt(req, res);
+
+    expect(getStatus()).toBe(200);
+    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(1);
+    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_FAIL);
+
+    const response = getBody();
+    expect(response.reviewOutcome).toBe('review_fail');
+    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_FAIL]);
+  });
+
+  it('emits paired REVIEW_PASS + TUTOR_HELPED events on verified tutor retry success', async () => {
+    setupSupabase({ hasTutorContext: true, eligibleReviewSource: true });
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
@@ -171,10 +222,63 @@ describe('Review Error -> Canonical Mastery Bridge', () => {
     await recordReviewErrorAttempt(req, res);
 
     expect(getStatus()).toBe(200);
+    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
+    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
+    expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_HELPED);
+
+    const response = getBody();
+    expect(response.reviewOutcome).toBe('review_pass');
+    expect(response.tutorVerifiedRetry).toBe(true);
+    expect(response.tutorOutcome).toBe('tutor_helped');
+    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_PASS, MasteryEventType.TUTOR_HELPED]);
+  });
+
+  it('emits paired REVIEW_FAIL + TUTOR_FAIL events on verified tutor retry failure', async () => {
+    setupSupabase({ hasTutorContext: true, eligibleReviewSource: true });
+    const { res, getStatus, getBody } = makeRes();
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        question_id: 'q-1',
+        selected_answer: 'D',
+        source_context: 'review_errors',
+      },
+    };
+
+    await recordReviewErrorAttempt(req, res);
+
+    expect(getStatus()).toBe(200);
+    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
+    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_FAIL);
+    expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_FAIL);
+
+    const response = getBody();
+    expect(response.reviewOutcome).toBe('review_fail');
+    expect(response.tutorVerifiedRetry).toBe(true);
+    expect(response.tutorOutcome).toBe('tutor_fail');
+    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_FAIL, MasteryEventType.TUTOR_FAIL]);
+  });
+
+  it('rejects mastery emission when question is not review-eligible (anti-inflation guard)', async () => {
+    setupSupabase({ hasTutorContext: true, eligibleReviewSource: false });
+    const { res, getStatus, getBody } = makeRes();
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        question_id: 'q-1',
+        selected_answer: 'A',
+        source_context: 'review_errors',
+      },
+    };
+
+    await recordReviewErrorAttempt(req, res);
+
+    expect(getStatus()).toBe(403);
     expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
 
     const response = getBody();
-    expect(response.masteryApplied).toBe(false);
-    expect(response.masteryEvent).toBeNull();
+    expect(response.error).toContain('not eligible');
   });
 });

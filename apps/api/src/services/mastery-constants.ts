@@ -1,9 +1,9 @@
 /**
  * MASTERY V1.0 CONSTANTS
- * 
+ *
  * Sprint 3: All mastery calculation constants are defined here.
  * These are FIXED values for v1.0 - do not learn/fit them.
- * 
+ *
  * This is the single source of truth for mastery algorithm parameters.
  */
 
@@ -16,7 +16,10 @@ export enum MasteryEventType {
   DIAGNOSTIC_SUBMIT = 'DIAGNOSTIC_SUBMIT',
   FULL_LENGTH_SUBMIT = 'FULL_LENGTH_SUBMIT',
   TUTOR_VIEW = 'TUTOR_VIEW',
-  TUTOR_RETRY_SUBMIT = 'TUTOR_RETRY_SUBMIT',
+  REVIEW_PASS = 'REVIEW_PASS',
+  REVIEW_FAIL = 'REVIEW_FAIL',
+  TUTOR_HELPED = 'TUTOR_HELPED',
+  TUTOR_FAIL = 'TUTOR_FAIL',
 }
 
 // ============================================================================
@@ -26,9 +29,9 @@ export enum MasteryEventType {
 /**
  * ALPHA - Global learning rate for mastery updates
  * Controls how much each new attempt influences the stored mastery score.
- * 
+ *
  * Formula: M_new = M_old + ALPHA * delta
- * 
+ *
  * Fixed at 0.20 for v1.0 (no learning/fitting)
  */
 export const ALPHA = 0.20;
@@ -36,7 +39,7 @@ export const ALPHA = 0.20;
 /**
  * base_delta - Base magnitude for mastery change per attempt
  * Each correct/incorrect attempt produces a delta of +/- base_delta (before weighting)
- * 
+ *
  * Fixed at 10.0 for v1.0
  */
 export const BASE_DELTA = 10.0;
@@ -44,7 +47,7 @@ export const BASE_DELTA = 10.0;
 /**
  * M_init - Initial mastery score for cold start (no attempts yet)
  * Starting at 50 avoids extreme pessimism before evidence.
- * 
+ *
  * Fixed at 50.0 for v1.0
  */
 export const M_INIT = 50.0;
@@ -62,13 +65,13 @@ export const M_MAX = 100;
 
 /**
  * Event weights control how impactful each attempt type is.
- * 
+ *
  * Rationale:
  * - Diagnostic is slightly stronger than ordinary practice (sets baseline faster)
  * - Full-length is strongest (higher reliability)
- * - Tutor retry is weaker than raw practice (assisted learning)
+ * - Review outcomes are baseline evidence; tutor effects are auxiliary and only emitted after verified retry
  * - Practice is baseline (1.0)
- * 
+ *
  * Fixed constants for v1.0 - do not learn/fit
  */
 export const EVENT_WEIGHTS: Record<MasteryEventType, number> = {
@@ -76,8 +79,28 @@ export const EVENT_WEIGHTS: Record<MasteryEventType, number> = {
   [MasteryEventType.DIAGNOSTIC_SUBMIT]: 1.25,
   [MasteryEventType.FULL_LENGTH_SUBMIT]: 1.50,
   [MasteryEventType.TUTOR_VIEW]: 0.00, // No mastery change
-  [MasteryEventType.TUTOR_RETRY_SUBMIT]: 0.75,
+  [MasteryEventType.REVIEW_PASS]: 1.00,
+  [MasteryEventType.REVIEW_FAIL]: 1.00,
+  [MasteryEventType.TUTOR_HELPED]: 0.25,
+  [MasteryEventType.TUTOR_FAIL]: 0.25,
 };
+
+export const REVIEW_OUTCOME_EVENTS: ReadonlyArray<MasteryEventType> = [
+  MasteryEventType.REVIEW_PASS,
+  MasteryEventType.REVIEW_FAIL,
+];
+
+export const TUTOR_EFFECT_EVENTS: ReadonlyArray<MasteryEventType> = [
+  MasteryEventType.TUTOR_HELPED,
+  MasteryEventType.TUTOR_FAIL,
+];
+
+// Canonical KPI/calendar counted attempts (exclude tutor-only auxiliary effects).
+export const KPI_CALENDAR_COUNTED_EVENTS: ReadonlyArray<MasteryEventType> = [
+  MasteryEventType.PRACTICE_SUBMIT,
+  MasteryEventType.REVIEW_PASS,
+  MasteryEventType.REVIEW_FAIL,
+];
 
 // ============================================================================
 // D. Half-Life Decay (projection-only, never persisted)
@@ -87,7 +110,7 @@ export const EVENT_WEIGHTS: Record<MasteryEventType, number> = {
  * HALF_LIFE_WEEKS - Time window for recency decay
  * After 6 weeks of inactivity, mastery estimate decays to 50%
  * After 12 weeks, decays to 25%, etc.
- * 
+ *
  * CRITICAL: Decay is computed for projections/prioritization only.
  * Never write decayed mastery back to mastery_score column.
  */

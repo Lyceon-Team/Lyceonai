@@ -10,11 +10,18 @@ import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getA
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
 import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
+import { KPI_CALENDAR_COUNTED_EVENTS } from '../../apps/api/src/services/mastery-constants';
 
 const router = Router();
 const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
+const GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
+
+export function isGuardianCalendarCountedEventType(eventType: string | null | undefined): boolean {
+  if (!eventType) return true; // Legacy rows before event_type migration
+  return GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
+}
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
   const requestId = req.requestId;
@@ -386,6 +393,7 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
     return res.status(500).json({ error: 'Internal server error', requestId });
   }
 });
+// Guardian calendar endpoint is read-only by contract.
 router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
@@ -425,7 +433,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
       supabaseServer
         .from('student_study_plan_days')
-        .select('day_date, planned_minutes, completed_minutes, status, focus, plan_version, created_at, updated_at')
+        .select('day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, created_at, updated_at, is_user_override')
         .eq('user_id', studentId)
         .gte('day_date', start)
         .lte('day_date', end)
@@ -433,7 +441,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
 
       supabaseServer
         .from('student_question_attempts')
-        .select('attempted_at, is_correct, time_spent_ms')
+        .select('attempted_at, is_correct, time_spent_ms, event_type')
         .eq('user_id', studentId)
         .gte('attempted_at', startUtc)
         .lte('attempted_at', endUtc),
@@ -449,6 +457,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const attemptsByDay = new Map<string, { attempts: number; correct: number; totalTimeMs: number }>();
 
     for (const attempt of attemptsResult.data || []) {
+      if (!isGuardianCalendarCountedEventType((attempt as any).event_type)) continue;
       if (!attempt.attempted_at) continue;
       const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
       if (!localDate) continue;
@@ -547,4 +556,3 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, r
 });
 
 export default router;
-
