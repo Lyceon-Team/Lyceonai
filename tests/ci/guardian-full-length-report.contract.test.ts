@@ -84,7 +84,7 @@ describe('Guardian Full-Length Report Visibility Contract', () => {
     expect(reportServiceMocks.getExamReport).not.toHaveBeenCalled();
   });
 
-  it('never includes question-level dumps in guardian report payload', async () => {
+  it('never includes question-level, mastery, tutor, or raw-delta internals in guardian report payload', async () => {
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
 
     reportServiceMocks.getExamReport.mockResolvedValue({
@@ -119,6 +119,9 @@ describe('Guardian Full-Length Report Visibility Contract', () => {
       questions: [{ id: 'q-should-not-leak' }],
       responses: [{ questionId: 'q-should-not-leak', selectedAnswer: 'A' }],
       rawQuestionDump: { should: 'never leak' },
+      tutorInteractions: [{ prompt: 'leak' }],
+      mastery_score: 88,
+      rawDelta: { value: 12 },
     });
 
     const router = (await import('../../server/routes/guardian-routes')).default;
@@ -130,10 +133,29 @@ describe('Guardian Full-Length Report Visibility Contract', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.report.sessionId).toBe('session-safe-1');
-    expect(res.body.report.rawScore).toBeDefined();
+    expect(res.body.report.estimatedScore).toEqual({ rw: 560, math: 540, total: 1100 });
+
+    expect(res.body.report.rawScore).toBeUndefined();
+    expect(res.body.report.domainBreakdown).toBeUndefined();
+    expect(res.body.report.skillDiagnostics).toBeUndefined();
+    expect(res.body.report.rwScore).toBeUndefined();
+    expect(res.body.report.mathScore).toBeUndefined();
+
     expect(res.body.report.questions).toBeUndefined();
     expect(res.body.report.responses).toBeUndefined();
     expect(res.body.report.rawQuestionDump).toBeUndefined();
+    expect(res.body.report.tutorInteractions).toBeUndefined();
+    expect(res.body.report.mastery_score).toBeUndefined();
+    expect(res.body.report.rawDelta).toBeUndefined();
+
+    expect(Array.isArray(res.body.report.kpis)).toBe(true);
+    expect(res.body.report.kpis.length).toBeGreaterThan(0);
+    for (const metric of res.body.report.kpis) {
+      expect(metric.explanation).toBeDefined();
+      expect(metric.explanation.whatThisMeans).toBeTruthy();
+      expect(metric.explanation.whyThisChanged).toBeTruthy();
+      expect(metric.explanation.whatToDoNext).toBeTruthy();
+    }
   });
 });
 

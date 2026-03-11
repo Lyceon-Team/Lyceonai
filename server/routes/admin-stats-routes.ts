@@ -3,6 +3,7 @@ import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger.js';
 import { requireSupabaseAdmin } from '../middleware/supabase-auth.js';
 import { csrfGuard } from '../middleware/csrf.js';
+import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView } from '../services/kpi-truth-layer';
 
 const router = Router();
 
@@ -96,6 +97,35 @@ router.get('/kpis', requireSupabaseAdmin, async (req: Request, res: Response) =>
 });
 
 /**
+ * GET /api/admin/kpis/student/:studentId
+ * Internal KPI snapshot from canonical truth-layer rules.
+ */
+router.get('/kpis/student/:studentId', requireSupabaseAdmin, async (req: Request, res: Response) => {
+  try {
+    const { studentId } = req.params;
+    if (!studentId) {
+      return res.status(400).json({ error: 'studentId required' });
+    }
+
+    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
+    const view = buildStudentKpiView(snapshot, true);
+
+    return res.json({
+      studentId,
+      modelVersion: view.modelVersion,
+      view,
+      internal: {
+        audience: 'internal',
+        includesHistoricalTrends: true,
+        note: 'Admin snapshot uses canonical student KPI rules with paid gating bypass.',
+      },
+    });
+  } catch (error: any) {
+    logger.error('ADMIN', 'student_kpis_error', 'Failed to fetch canonical student KPI snapshot', error);
+    return res.status(500).json({ error: 'Failed to fetch student KPI snapshot', detail: error?.message });
+  }
+});
+/**
  * GET /api/admin/database/schema
  * Get database schema information (minimal - just table/column names)
  */
@@ -157,3 +187,4 @@ router.get('/questions-proof', requireSupabaseAdmin, async (req: Request, res: R
 });
 
 export default router;
+

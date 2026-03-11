@@ -1,31 +1,31 @@
 /**
  * CANONICAL MASTERY WRITE CHOKE POINT
- * 
+ *
  * Sprint 3 PR-1: This module is the ONLY place in the codebase that writes to:
  * - student_skill_mastery
  * - student_cluster_mastery
- * 
+ *
  * ALL mastery updates MUST flow through applyMasteryUpdate().
- * 
+ *
  * DO NOT:
  * - Add direct .insert/.update/.upsert calls to mastery tables elsewhere
  * - Create additional RPC calls for mastery writes
  * - Bypass this choke point
- * 
+ *
  * WHY: Single choke point ensures:
  * - Consistent mastery calculation logic
  * - Easier debugging and monitoring
  * - Prevention of race conditions
  * - Single source of truth for mastery algorithm
- * 
+ *
  * ENFORCEMENT: tests/mastery.writepaths.guard.test.ts validates this invariant.
  */
 
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { 
-  MasteryEventType, 
-  EVENT_WEIGHTS, 
-  DEFAULT_QUESTION_WEIGHT 
+import {
+  MasteryEventType,
+  EVENT_WEIGHTS,
+  DEFAULT_QUESTION_WEIGHT
 } from "./mastery-constants";
 
 export interface QuestionMetadataSnapshot {
@@ -58,31 +58,32 @@ export interface AttemptResult {
 
 /**
  * applyMasteryUpdate - CANONICAL CHOKE POINT for all mastery writes
- * 
+ *
  * This function:
  * 1. Validates event type (must be in MasteryEventType enum)
  * 2. Logs the attempt to student_question_attempts
  * 3. Updates student_skill_mastery via RPC (if metadata available and event is scored)
  * 4. Updates student_cluster_mastery via RPC (if cluster ID available and event is scored)
- * 
+ *
  * CRITICAL: This is the ONLY function that should write to mastery tables.
  * All mastery updates in the application MUST call this function.
- * 
- * Mastery v1.0: Uses event-weighted delta formula with EMA-style updates.
+ *
+ * Mastery v1.0: Uses event-weighted delta formula with deterministic event taxonomy.
  * - TUTOR_VIEW does not change mastery (no-op for mastery updates)
- * - All other event types trigger mastery updates with their respective weights
- * 
+ * - REVIEW_PASS/REVIEW_FAIL are canonical review outcomes
+ * - TUTOR_HELPED/TUTOR_FAIL are auxiliary tutor effects emitted only on verified retries
+ *
  * Sprint 3 PR-4: Enhanced with difficulty weights and deterministic rounding:
  * - Per-question difficulty weights (easy=1.0, medium=1.1, hard=1.2)
  * - Deterministic rounding for E/C, accuracy, and mastery_score
  * - Event type passed as TEXT to RPC for dynamic weight lookup
- * 
+ *
  * @param input - Attempt data including user, question, correctness, event type, and metadata
  * @returns AttemptResult with attemptId and status
  */
 export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptResult> {
   const supabase = getSupabaseAdmin();
-  
+
   // Validate event type (closed set enforcement)
   if (!(input.eventType in EVENT_WEIGHTS)) {
     return {
@@ -91,18 +92,18 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.keys(EVENT_WEIGHTS).join(', ')}`,
     };
   }
-  
+
   const attemptId = crypto.randomUUID();
   let rollupUpdated = true;
   let rollupError: string | undefined;
-  
+
   // Get event weight for this event type
   const eventWeight = EVENT_WEIGHTS[input.eventType];
   const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
-  
+
   // TUTOR_VIEW is a no-op for mastery - we still log the attempt but don't update mastery
   const shouldUpdateMastery = input.eventType !== MasteryEventType.TUTOR_VIEW;
-  
+
   // Step 1: Log raw attempt (not a mastery table, but part of the write transaction)
   const { error: insertError } = await supabase
     .from("student_question_attempts")
@@ -112,6 +113,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       question_canonical_id: input.questionCanonicalId,
       session_id: input.sessionId || null,
       is_correct: input.isCorrect,
+      event_type: input.eventType,
       selected_choice: input.selectedChoice || null,
       time_spent_ms: input.timeSpentMs || null,
       exam: input.metadata.exam,
@@ -147,7 +149,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_event_type: input.eventType,
         p_difficulty_bucket: input.metadata.difficulty_bucket || null,
       });
-      
+
       if (skillError) {
         console.warn("[Mastery] Skill rollup failed:", skillError.message);
         rollupUpdated = false;
@@ -173,7 +175,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_event_type: input.eventType,
         p_difficulty_bucket: input.metadata.difficulty_bucket || null,
       });
-      
+
       if (clusterError) {
         console.warn("[Mastery] Cluster rollup failed:", clusterError.message);
         rollupUpdated = false;
@@ -195,7 +197,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
 
 /**
  * Legacy alias for backward compatibility.
- * 
+ *
  * @deprecated Use applyMasteryUpdate() instead for clarity.
  * This alias exists to minimize code changes during the Sprint 3 PR-1 refactor.
  */
