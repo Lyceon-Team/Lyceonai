@@ -180,7 +180,7 @@ SafeBoundary (catch React errors)
   - `/admin-system-config`
   - `/admin-pdf-monitor`
   - `/admin-review`
-  - `/admin-ingest-jobs`
+  - `/admin`
 
 ---
 
@@ -319,7 +319,7 @@ CREATE POLICY profiles_admin_select_all ON public.profiles
 - `/admin-system-config` → System Configuration
 - `/admin-pdf-monitor` → PDF Monitor
 - `/admin-review` → Question Review
-- `/admin-ingest-jobs` → Ingestion Jobs Dashboard
+- `/admin` → Admin dashboard
 
 **Protection Pattern**:
 ```tsx

@@ -211,7 +211,7 @@ export class RagService {
   private computeQualityBonus(match: MatchResult): number {
     let bonus = 0;
     
-    // Bonus for having canonical ID (indicates properly ingested question)
+    // Bonus for having canonical ID (indicates complete metadata)
     if (match.metadata?.canonicalId) {
       bonus += 0.05;
     }

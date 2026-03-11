@@ -1,4 +1,7 @@
 # 🔍 Production Readiness Audit Report
+
+> **HISTORICAL ARCHIVE (non-runtime):** Any ingestion references in this document describe removed systems and do not reflect current product scope.
+
 ## Lyceon AI SAT Learning Platform
 
 **Audit Date:** January 29, 2026  

@@ -135,45 +135,6 @@ test.describe('Admin Logs API', () => {
     }
   });
 
-  test('should fetch ingestion logs', async ({ request }) => {
-    try {
-      const response = await request.get(`${BASE_URL}/api/admin/logs?type=ingestion&limit=5`, {
-        headers: {
-          Cookie: authCookie || '',
-        },
-      });
-
-      if (response.status() === 200) {
-        const data = await response.json();
-        
-        // Verify ingestion-specific structure
-        const hasIngestionData = data.data?.ingestion !== undefined;
-        
-        if (hasIngestionData) {
-          reporter.addTest('Admin Logs Ingestion Type Filter', 'PASS');
-        } else {
-          reporter.addTest(
-            'Admin Logs Ingestion Type Filter',
-            'FAIL',
-            `Missing ingestion data in response`
-          );
-        }
-      } else {
-        reporter.addTest(
-          'Admin Logs Ingestion Type Filter',
-          'FAIL',
-          `Unexpected status code: ${response.status()}`
-        );
-      }
-    } catch (error) {
-      reporter.addTest(
-        'Admin Logs Ingestion Type Filter',
-        'FAIL',
-        `Request failed: ${error}`
-      );
-    }
-  });
-
   test('should fetch practice session logs', async ({ request }) => {
     try {
       const response = await request.get(`${BASE_URL}/api/admin/logs?type=practice&limit=5`, {

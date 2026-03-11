@@ -4,11 +4,11 @@ An AI-powered SAT practice application with RAG (Retrieval-Augmented Generation)
 
 ## Features
 
-- **PDF Processing**: Upload SAT practice PDFs and automatically extract questions
+- **Content Operations**: Admin-managed question review and quality controls
 - **Vector Search**: Semantic search using embeddings stored in PostgreSQL and Supabase
 - **AI Tutoring**: Retrieval-Augmented Generation for personalized assistance
 - **Practice Sessions**: Track progress and get instant feedback
-- **Admin Dashboard**: Manage questions and monitor ingestion jobs
+- **Admin Dashboard**: Manage questions, review queues, and system health
 
 ## Tech Stack
 
@@ -170,7 +170,7 @@ The app supports flexible authentication:
 
 **Rate Limiting:**
 - Auth endpoints: 5 requests per 15 minutes per IP
-- Ingestion endpoints: 10 requests per 15 minutes per IP
+- Practice write endpoints: strict per-user rate limits
 - Search endpoints: 100 requests per 15 minutes per IP
 
 **Security Headers:**
@@ -229,11 +229,9 @@ To enable vector search in Supabase, run:
 - `GET /api/questions/:id` - Get question by ID
 
 ### Protected Routes (Admin Only)
-- `POST /api/ingest/start` - Start ingestion job
-- `POST /api/ingest/run` - Process ingestion batch
-- `GET /api/ingest/status/:jobId` - Check job status
-- `GET /api/ingest/jobs` - List all jobs
-- `POST /api/documents/process-and-ingest` - Process and ingest PDF
+- `GET /api/admin/questions/needs-review` - Review queue
+- `GET /api/admin/questions/duplicates` - Duplicate detection view
+- `GET /api/admin/questions/statistics` - Question quality metrics
 
 ### Auth Routes
 - `POST /auth/login` - Local login

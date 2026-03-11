@@ -1,5 +1,5 @@
 /*
- * DEPRECATED: Being replaced by MVP ingest endpoint
+ * DEPRECATED: Legacy SAT PDF processor kept only for historical compatibility
  * Commenting out to avoid import errors during transition
  */
 
