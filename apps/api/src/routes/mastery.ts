@@ -347,78 +347,49 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
     const dayDate = targetDate || getTomorrowDate();
     const supabase = getSupabaseAdmin();
 
-    const { data: existingDay, error: fetchError } = await supabase
-      .from("student_study_plan_days")
-      .select("focus, tasks, planned_minutes")
-      .eq("user_id", userId)
-      .eq("day_date", dayDate)
-      .single();
+    const { data: profile, error: profileError } = await supabase
+      .from('student_study_profile')
+      .select('planner_mode')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    if (fetchError && fetchError.code !== "PGRST116") {
-      console.error("[Mastery] Failed to fetch day:", fetchError.message);
-      return res.status(500).json({ error: "Failed to fetch study plan day" });
+    if (profileError) {
+      console.error('[Mastery] Failed to load planner mode:', profileError.message);
+      return res.status(500).json({ error: 'Failed to load planner mode' });
     }
 
+    const plannerMode = profile?.planner_mode === 'custom' ? 'custom' : 'auto';
     const competencyId = domain ? `${domain}.${skill}` : skill;
-    const sectionLabel = section === "math" ? "Math" : "Reading & Writing";
-
-    const focus = JSON.parse(JSON.stringify(existingDay?.focus || []));
-    const tasks = JSON.parse(JSON.stringify(existingDay?.tasks || []));
-    const plannedMinutes = existingDay?.planned_minutes || 30;
-
-    const existingFocusIndex = focus.findIndex((f: any) => f.section === sectionLabel);
-    if (existingFocusIndex >= 0) {
-      const existingFocus = focus[existingFocusIndex];
-      const competencies = existingFocus.competencies || [];
-      if (!competencies.includes(competencyId)) {
-        focus[existingFocusIndex] = {
-          ...existingFocus,
-          competencies: [...competencies, competencyId],
-        };
-      }
-    } else {
-      focus.push({
-        section: sectionLabel,
-        weight: 0.5,
-        competencies: [competencyId],
-      });
-    }
-
-    const existingTaskIndex = tasks.findIndex((t: any) => t.section === sectionLabel);
-    if (existingTaskIndex < 0) {
-      tasks.push({
-        type: "practice",
-        section: sectionLabel,
-        mode: "skill-focused",
-        minutes: Math.round(plannedMinutes * 0.5),
-      });
-    }
-
-    const { error: upsertError } = await supabase
-      .from("student_study_plan_days")
-      .upsert({
-        user_id: userId,
-        day_date: dayDate,
-        focus,
-        tasks,
-        planned_minutes: plannedMinutes,
-        plan_version: 1,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: "user_id,day_date" });
-
-    if (upsertError) {
-      console.error("[Mastery] Failed to update plan:", upsertError.message);
-      return res.status(500).json({ error: "Failed to update study plan" });
-    }
+    const sectionLabel = section === 'math' ? 'Math' : 'Reading & Writing';
 
     return res.json({
       success: true,
+      applied: false,
+      planner_mode: plannerMode,
       dayDate,
       addedSkill: competencyId,
+      suggestion: {
+        type: 'skill_focus',
+        section: sectionLabel,
+        competency: competencyId,
+        reason:
+          plannerMode === 'custom'
+            ? 'Custom mode keeps planner ownership with the student, so mastery suggestions never auto-apply.'
+            : 'Planner ownership is centralized in /api/calendar day edit/regenerate flows.',
+        applyEndpoint: `/api/calendar/day/${dayDate}`,
+        suggestedPatch: {
+          focus: [
+            {
+              section: sectionLabel,
+              competencies: [competencyId],
+            },
+          ],
+        },
+      },
     });
   } catch (err: any) {
-    console.error("[Mastery] Error:", err.message);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error('[Mastery] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

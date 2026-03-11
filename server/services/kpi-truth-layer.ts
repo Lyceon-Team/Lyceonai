@@ -1,5 +1,6 @@
 import { DateTime } from "luxon";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { KPI_CALENDAR_COUNTED_EVENTS } from "../../apps/api/src/services/mastery-constants";
 
 export const KPI_TRUTH_LAYER_VERSION = "kpi_truth_v1";
 
@@ -88,12 +89,20 @@ export interface GuardianSummaryKpiView {
 interface AttemptRow {
   is_correct: boolean | null;
   time_spent_ms: number | null;
+  event_type: string | null;
 }
 
 interface SessionRow {
   actual_duration_ms: number | null;
   started_at: string | null;
   finished_at: string | null;
+}
+
+const KPI_COUNTED_EVENT_SET = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
+
+export function isCanonicalKpiAttemptEventType(eventType: string | null | undefined): boolean {
+  if (!eventType) return true; // Legacy rows before event_type migration
+  return KPI_COUNTED_EVENT_SET.has(eventType);
 }
 
 function toPercent(correct: number, attempts: number): number {
@@ -209,7 +218,7 @@ function buildExplanation(input: {
 async function fetchAttemptRows(userId: string, startUtc: string, endUtc: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("is_correct, time_spent_ms")
+    .select("is_correct, time_spent_ms, event_type")
     .eq("user_id", userId)
     .gte("attempted_at", startUtc)
     .lte("attempted_at", endUtc);
@@ -217,7 +226,7 @@ async function fetchAttemptRows(userId: string, startUtc: string, endUtc: string
   if (error) {
     throw new Error(`Failed to fetch attempts: ${error.message}`);
   }
-  return (data || []) as AttemptRow[];
+  return ((data || []) as AttemptRow[]).filter((row) => isCanonicalKpiAttemptEventType(row.event_type));
 }
 
 async function fetchSessionRows(userId: string, startUtc: string, endUtc: string): Promise<SessionRow[]> {
@@ -237,7 +246,7 @@ async function fetchSessionRows(userId: string, startUtc: string, endUtc: string
 async function fetchRecencyRows(userId: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("is_correct, time_spent_ms")
+    .select("is_correct, time_spent_ms, event_type")
     .eq("user_id", userId)
     .order("attempted_at", { ascending: false })
     .limit(200);
@@ -245,7 +254,7 @@ async function fetchRecencyRows(userId: string): Promise<AttemptRow[]> {
   if (error) {
     throw new Error(`Failed to fetch recency attempts: ${error.message}`);
   }
-  return (data || []) as AttemptRow[];
+  return ((data || []) as AttemptRow[]).filter((row) => isCanonicalKpiAttemptEventType(row.event_type));
 }
 
 async function resolveTimezone(userId: string): Promise<string> {
@@ -614,4 +623,3 @@ export function fullTestMeasurementModel() {
     diagnostic: ["diagnostic_accuracy"],
   };
 }
-
