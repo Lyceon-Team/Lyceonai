@@ -1,32 +1,32 @@
-export type StudentQuestionType = "mc" | "fr";
+export type StudentQuestionType = "multiple_choice";
 
-export function inferQuestionType(options: any): StudentQuestionType {
-  const arr = Array.isArray(options) ? options : [];
-  return arr.length > 0 ? "mc" : "fr";
+type Option = { key: "A" | "B" | "C" | "D"; text: string };
+
+function normalizeOptions(options: unknown): Option[] {
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((opt: any) => ({ key: opt?.key, text: opt?.text }))
+    .filter((opt): opt is Option => {
+      return ["A", "B", "C", "D"].includes(opt.key) && typeof opt.text === "string";
+    });
 }
 
 export function mapDbQuestionToStudentQuestion(q: any) {
-  const options = Array.isArray(q.options)
-    ? q.options
-    : typeof q.options === "string"
-      ? (() => { try { return JSON.parse(q.options); } catch { return []; } })()
-      : [];
-
-  const type = (q.type === "mc" || q.type === "fr") ? q.type : inferQuestionType(options);
-
   return {
     id: q.id,
+    canonical_id: q.canonical_id,
     section: q.section,
+    section_code: q.section_code,
+    question_type: "multiple_choice" as const,
     stem: q.stem,
-    options,
-    correct_answer: q.correct_answer,
-    explanation: q.explanation,
+    options: normalizeOptions(q.options),
     difficulty: q.difficulty ?? null,
-    unit_tag: q.unit_tag ?? null,
-    test_code: q.test_code ?? null,
-    source_pdf_url: q.source_pdf_url ?? null,
-    source_test_name: q.source_test_name ?? null,
-    classification: q.classification ?? null,
-    type,
+    domain: q.domain ?? null,
+    skill: q.skill ?? null,
+    subskill: q.subskill ?? null,
+    skill_code: q.skill_code ?? null,
+    tags: q.tags ?? null,
+    competencies: q.competencies ?? null,
+    explanation: null,
   };
 }

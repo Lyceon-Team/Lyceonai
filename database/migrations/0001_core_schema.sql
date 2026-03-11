@@ -171,40 +171,42 @@ CREATE TABLE IF NOT EXISTS embeddings (
 -- QUESTION & ASSESSMENT TABLES
 -- ============================================================================
 
--- Questions table
+-- Questions table (canonical normalized schema)
 CREATE TABLE IF NOT EXISTS questions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  course_id UUID REFERENCES courses(id) ON DELETE CASCADE,
-  document_id UUID REFERENCES documents(id),
-  question_number INTEGER,
-  internal_id TEXT UNIQUE,
-  section TEXT NOT NULL, -- 'Math', 'Reading', 'Writing'
-  stem TEXT NOT NULL,
-  question_type TEXT NOT NULL DEFAULT 'multiple_choice',
-  type TEXT, -- 'mc' | 'fr' discriminator
-  options JSONB, -- [{key: 'A', text: '...'}]
-  answer TEXT NOT NULL,
-  answer_choice TEXT, -- For MC: 'A' | 'B' | 'C' | 'D'
-  answer_text TEXT, -- For FR: free response answer
-  explanation TEXT,
-  difficulty TEXT, -- 'Easy', 'Medium', 'Hard'
-  difficulty_level INTEGER, -- 1-5 numeric
-  unit_tag TEXT,
-  tags JSONB, -- Array of strings
-  classification JSONB, -- AI categorization
-  source_mapping JSONB,
-  page_number INTEGER,
-  position JSONB, -- {x, y, width, height}
-  embedding JSONB,
-  ai_generated BOOLEAN DEFAULT FALSE NOT NULL,
-  provenance_chunk_ids JSONB, -- Array of chunk IDs
-  confidence REAL DEFAULT 1.0,
-  needs_review BOOLEAN DEFAULT FALSE NOT NULL,
-  parsing_metadata JSONB,
+  canonical_id TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  published_at TIMESTAMPTZ,
   reviewed_at TIMESTAMPTZ,
   reviewed_by UUID REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+
+  section TEXT NOT NULL,
+  section_code TEXT NOT NULL CHECK (section_code IN ('MATH', 'RW')),
+  question_type TEXT NOT NULL DEFAULT 'multiple_choice' CHECK (question_type = 'multiple_choice'),
+  stem TEXT NOT NULL,
+  options JSONB NOT NULL,
+  correct_answer TEXT NOT NULL CHECK (correct_answer IN ('A', 'B', 'C', 'D')),
+  answer_text TEXT NOT NULL,
+  explanation TEXT NOT NULL,
+  option_metadata JSONB NOT NULL,
+
+  domain TEXT NOT NULL,
+  skill TEXT NOT NULL,
+  subskill TEXT NOT NULL,
+  skill_code TEXT NOT NULL,
+  difficulty INTEGER NOT NULL CHECK (difficulty IN (1, 2, 3)),
+
+  source_type INTEGER NOT NULL DEFAULT 0 CHECK (source_type IN (0, 1, 2, 3)),
+  test_code TEXT,
+  exam TEXT,
+  ai_generated BOOLEAN,
+
+  diagram_present BOOLEAN,
+  tags JSONB,
+  competencies JSONB,
+  provenance_chunk_ids JSONB
 );
 
 -- Add FK from chunks to questions
@@ -453,10 +455,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_chunk ON embeddings(chunk_id);
 
 -- Question indexes
-CREATE INDEX IF NOT EXISTS idx_questions_course ON questions(course_id);
-CREATE INDEX IF NOT EXISTS idx_questions_document ON questions(document_id);
-CREATE INDEX IF NOT EXISTS idx_questions_section ON questions(section);
-CREATE INDEX IF NOT EXISTS idx_questions_needs_review ON questions(needs_review) WHERE needs_review = TRUE;
+CREATE INDEX IF NOT EXISTS idx_questions_section ON questions(section_code);
 
 -- Progress indexes
 CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id);
@@ -523,3 +522,8 @@ CREATE TRIGGER update_practice_sessions_updated_at BEFORE UPDATE ON practice_ses
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 COMMENT ON SCHEMA public IS 'SAT Learning Copilot - Core Schema v1';
+
+CREATE INDEX IF NOT EXISTS idx_questions_status ON questions(status);
+CREATE INDEX IF NOT EXISTS idx_questions_question_type ON questions(question_type);
+CREATE INDEX IF NOT EXISTS idx_questions_difficulty ON questions(difficulty);
+

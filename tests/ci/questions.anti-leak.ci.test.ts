@@ -42,7 +42,7 @@ function extractSearchResults(body: unknown): unknown[] {
 }
 
 function assertNoAnswerLeak(question: any) {
-  expect(question).not.toHaveProperty('answer_choice');
+  expect(question).not.toHaveProperty('correct_answer');
   expect(question).not.toHaveProperty('answer_text');
   expect(question).not.toHaveProperty('answer');
   expect(question).not.toHaveProperty('correctAnswerKey');
@@ -112,7 +112,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       });
     });
 
-    it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
+    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
       const res = await request(app).get('/api/questions/recent?limit=5');
       expect(res.status).toBe(200);
 
@@ -151,13 +151,13 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       } else {
         // If not reachable, ensure error payload doesn't leak
         expect(res.body).not.toHaveProperty('explanation');
-        expect(res.body).not.toHaveProperty('answer_choice');
+        expect(res.body).not.toHaveProperty('correct_answer');
         expect(res.body).not.toHaveProperty('answer_text');
         expect(res.body).not.toHaveProperty('answer');
       }
     });
 
-    it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
+    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
       const res = await request(app).get('/__test/questions/random?limit=5');
       expect([200, 401, 403, 404]).toContain(res.status);
 
@@ -171,7 +171,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       } else {
         // If not reachable, ensure error payload doesn't leak
         expect(res.body).not.toHaveProperty('explanation');
-        expect(res.body).not.toHaveProperty('answer_choice');
+        expect(res.body).not.toHaveProperty('correct_answer');
         expect(res.body).not.toHaveProperty('answer_text');
         expect(res.body).not.toHaveProperty('answer');
       }
@@ -222,7 +222,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       });
     });
 
-    it('should never leak correct answer fields (answer_choice, answer_text, answer)', async () => {
+    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
       const res = await request(app).get('/api/questions/search?q=test&limit=5');
       expect(res.status).toBe(200);
 
@@ -235,3 +235,4 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     });
   });
 });
+

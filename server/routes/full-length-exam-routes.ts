@@ -28,7 +28,6 @@ const csrfProtection = csrfGuard();
 const submitAnswerSchema = z.object({
   questionId: z.string().uuid(),
   selectedAnswer: z.string().optional(),
-  freeResponseAnswer: z.string().optional(),
 });
 
 function sendRouteError(
@@ -184,7 +183,6 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
       userId: user.id,
       questionId: parsed.data.questionId,
       selectedAnswer: parsed.data.selectedAnswer,
-      freeResponseAnswer: parsed.data.freeResponseAnswer,
     });
 
     return res.json({ success: true });
@@ -445,3 +443,8 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
 });
 export default router;
 
+<<<<<<< HEAD
+
+
+=======
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57

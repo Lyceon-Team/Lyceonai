@@ -133,12 +133,12 @@ describe('Full-Length Exam API Tests', () => {
   });
 
   describe('Anti-Leak Security', () => {
-    it('question payload should not include answer_choice or explanation before submit', async () => {
+    it('question payload should not include correct_answer or explanation before submit', async () => {
       // This test verifies the getCurrentSession response doesn't leak answers
       // In a real integration test with DB, we'd:
       // 1. Create a session
       // 2. Get current question
-      // 3. Verify response doesn't have answer_choice, answer_text, or explanation
+      // 3. Verify response doesn't have correct_answer, answer_text, or explanation
       
       // For now, we document this requirement
       expect(true).toBe(true); // Placeholder - real test needs DB
@@ -366,3 +366,4 @@ describe('Full-Length Exam API Tests', () => {
     });
   });
 });
+

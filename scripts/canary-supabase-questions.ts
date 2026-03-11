@@ -2,15 +2,22 @@ import { supabaseServer } from "../apps/api/src/lib/supabase-server";
 import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
 
 (async () => {
-  const canonical_id = generateCanonicalId("SAT", "R", "2");
+  const canonical_id = generateCanonicalId("SAT", "RW", 1);
 
   const row: any = {
     canonical_id,
     status: "draft",
+<<<<<<< HEAD
+    section: "Reading and Writing",
+    section_code: "RW",
+    question_type: "multiple_choice",
+    stem: "CANARY: does canonical insert work via supabaseServer?",
+=======
     section: "Reading & Writing",
     section_code: "RW",
     question_type: "multiple_choice",
     stem: "CANARY: does insert work via supabaseServer?",
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     options: [
       { key: "A", text: "A" },
       { key: "B", text: "B" },
@@ -20,6 +27,27 @@ import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
     correct_answer: "A",
     answer_text: "A",
     explanation: "canary",
+<<<<<<< HEAD
+    option_metadata: {
+      A: { role: "correct", error_taxonomy: null },
+      B: { role: "distractor", error_taxonomy: null },
+      C: { role: "distractor", error_taxonomy: null },
+      D: { role: "distractor", error_taxonomy: null },
+    },
+    domain: "Information and Ideas",
+    skill: "Central Ideas and Details",
+    subskill: "Determine central idea",
+    skill_code: "RW.INFO.CENTRAL_IDEA",
+    difficulty: 2,
+    source_type: 1,
+    test_code: "SAT",
+    exam: "SAT",
+    ai_generated: true,
+    tags: ["canary"],
+    competencies: [{ code: "RW.INFO.CENTRAL_IDEA", raw: "determine central idea" }],
+    diagram_present: false,
+    provenance_chunk_ids: null,
+=======
     option_metadata: [
       { key: "A", text: "A", is_correct: true },
       { key: "B", text: "B", is_correct: false },
@@ -39,6 +67,7 @@ import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
     tags: [],
     competencies: [],
     provenance_chunk_ids: [],
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 
   console.log("CANARY canonical_id:", canonical_id);

@@ -37,8 +37,8 @@ export async function insertExamFormAndItems(args: {
     domain: it.domain,
     skill: it.skill,
     subskill: it.subskill,
-    difficulty_bucket: it.difficultyBucket,
-    difficulty_level: it.difficultyLevel,
+    skill_code: it.skillCode,
+    difficulty: it.difficulty,
     question_type: it.questionType,
   }));
 

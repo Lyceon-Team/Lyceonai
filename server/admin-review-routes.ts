@@ -1,6 +1,15 @@
-import { Request, Response } from 'express';
-import { supabaseServer } from '../apps/api/src/lib/supabase-server';
+import { Request, Response } from "express";
+import { supabaseServer } from "../apps/api/src/lib/supabase-server";
 
+<<<<<<< HEAD
+const REVIEW_STATUSES = ["in_review", "pending_review"];
+
+<<<<<<< HEAD
+=======
+
+
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 type QuestionMutabilityCheck = {
   ok: boolean;
   status?: number;
@@ -58,12 +67,28 @@ async function assertQuestionMutable(questionId: string): Promise<QuestionMutabi
  * GET /api/admin/questions/needs-review
  * Get all draft questions that need admin review.
  */
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 export async function getNeedsReview(req: Request, res: Response) {
   try {
     const limitParam = Number(req.query.limit) || 50;
     const offset = Number(req.query.offset) || 0;
 
     const { data: reviewQuestions, error, count } = await supabaseServer
+<<<<<<< HEAD
+      .from("questions")
+      .select("*", { count: "exact" })
+      .in("status", REVIEW_STATUSES)
+      .is("reviewed_at", null)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limitParam - 1);
+
+    if (error) {
+      return res.status(500).json({ success: false, error: "Failed to fetch questions for review", detail: error.message });
+    }
+
+    const total = count || 0;
+    return res.json({
+=======
       .from('questions')
       .select('*', { count: 'exact' })
       .eq('status', 'draft')
@@ -82,6 +107,7 @@ export async function getNeedsReview(req: Request, res: Response) {
     const total = count || 0;
 
     res.json({
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       success: true,
       questions: reviewQuestions || [],
       pagination: {
@@ -90,50 +116,95 @@ export async function getNeedsReview(req: Request, res: Response) {
         offset,
         hasMore: offset + (reviewQuestions?.length || 0) < total,
       },
+<<<<<<< HEAD
+=======
     });
   } catch (error) {
     console.error('Error fetching questions for review:', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch questions for review',
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "Failed to fetch questions for review" });
   }
 }
 
+<<<<<<< HEAD
+=======
 /**
  * POST /api/admin/questions/:id/approve
  * Approve a draft question by setting status=reviewed and stamping reviewer metadata.
  */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function approveQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
 
     if (!userId) {
+<<<<<<< HEAD
+      return res.status(401).json({ success: false, error: "User not authenticated" });
+    }
+<<<<<<< HEAD
+
+    const now = new Date().toISOString();
+=======
+    
+=======
       return res.status(401).json({
         success: false,
         error: 'User not authenticated',
       });
     }
 
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
     }
 
+<<<<<<< HEAD
+    // Update question to approve it
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const { data: updated, error } = await supabaseServer
-      .from('questions')
+      .from("questions")
       .update({
+<<<<<<< HEAD
+        status: "published",
+        reviewed_at: now,
+        reviewed_by: userId,
+        published_at: now,
+        updated_at: now,
+=======
         status: 'reviewed',
         reviewed_at: new Date().toISOString(),
         reviewed_by: userId,
         updated_at: new Date().toISOString(),
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       })
-      .eq('id', id)
+      .eq("id", id)
       .select()
       .single();
 
     if (error) {
+<<<<<<< HEAD
+      if (error.code === "PGRST116") {
+        return res.status(404).json({ success: false, error: "Question not found" });
+      }
+      return res.status(500).json({ success: false, error: "Failed to approve question", detail: error.message });
+    }
+
+    return res.json({ success: true, message: "Question approved successfully", question: updated });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "Failed to approve question" });
+  }
+}
+
+=======
       if (error.code === 'PGRST116') {
         return res.status(404).json({
           success: false,
@@ -166,18 +237,38 @@ export async function approveQuestion(req: Request, res: Response) {
  * POST /api/admin/questions/:id/reject
  * Reject a draft question by deleting it.
  */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function rejectQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
 
     if (!userId) {
+<<<<<<< HEAD
+      return res.status(401).json({ success: false, error: "User not authenticated" });
+    }
+<<<<<<< HEAD
+
+    const now = new Date().toISOString();
+    const { data: updated, error } = await supabaseServer
+      .from("questions")
+      .update({
+        status: "rejected",
+        reviewed_at: now,
+        reviewed_by: userId,
+        updated_at: now,
+      })
+      .eq("id", id)
+=======
+    
+=======
       return res.status(401).json({
         success: false,
         error: 'User not authenticated',
       });
     }
 
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
@@ -186,6 +277,41 @@ export async function rejectQuestion(req: Request, res: Response) {
     const { error } = await supabaseServer
       .from('questions')
       .delete()
+<<<<<<< HEAD
+      .eq('id', id)
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return res.status(404).json({ success: false, error: "Question not found" });
+      }
+      return res.status(500).json({ success: false, error: "Failed to reject question", detail: error.message });
+    }
+
+    return res.json({ success: true, message: "Question rejected", question: updated });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "Failed to reject question" });
+  }
+}
+
+export async function getParsingStatistics(_req: Request, res: Response) {
+  try {
+    const [{ count: total }, { count: pending }, { count: published }] = await Promise.all([
+      supabaseServer.from("questions").select("id", { count: "exact", head: true }),
+      supabaseServer.from("questions").select("id", { count: "exact", head: true }).in("status", REVIEW_STATUSES),
+      supabaseServer.from("questions").select("id", { count: "exact", head: true }).eq("status", "published"),
+    ]);
+
+    return res.json({
+      success: true,
+      statistics: {
+        total: total || 0,
+        pending: pending || 0,
+        published: published || 0,
+      },
+=======
       .eq('id', id);
 
     if (error) {
@@ -255,18 +381,35 @@ export async function getParsingStatistics(_req: Request, res: Response) {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch parsing statistics',
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "Failed to fetch parsing statistics" });
   }
 }
 
+<<<<<<< HEAD
+=======
 /**
  * POST /api/admin/questions/:id/update
  * Update canonical question fields on draft records.
  */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function updateQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
+<<<<<<< HEAD
+    const { stem, options, correct_answer, explanation } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "User not authenticated" });
+    }
+<<<<<<< HEAD
+
+=======
+    
+=======
     const {
       stem,
       options,
@@ -292,17 +435,42 @@ export async function updateQuestion(req: Request, res: Response) {
       });
     }
 
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
     }
 
+<<<<<<< HEAD
+    // Build update object with only provided fields
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     const updateData: any = {
+      status: "published",
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: userId,
+=======
+    const updateData: any = {
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       updated_at: new Date().toISOString(),
     };
 
     if (stem !== undefined) updateData.stem = stem;
     if (options !== undefined) updateData.options = options;
+<<<<<<< HEAD
+    if (correct_answer !== undefined) updateData.correct_answer = correct_answer;
+    if (explanation !== undefined) updateData.explanation = explanation;
+
+    const { data: updated, error } = await supabaseServer.from("questions").update(updateData).eq("id", id).select().single();
+
+    if (error) {
+      if (error.code === "PGRST116") return res.status(404).json({ success: false, error: "Question not found" });
+      return res.status(500).json({ success: false, error: "Failed to update question", detail: error.message });
+    }
+
+    return res.json({ success: true, message: "Question updated successfully", question: updated });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || "Failed to update question" });
+=======
     if (optionMetadata !== undefined) updateData.option_metadata = optionMetadata;
     if (correctAnswer !== undefined) updateData.correct_answer = correctAnswer;
     if (answerText !== undefined) updateData.answer_text = answerText;
@@ -350,5 +518,6 @@ export async function updateQuestion(req: Request, res: Response) {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update question',
     });
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 }
