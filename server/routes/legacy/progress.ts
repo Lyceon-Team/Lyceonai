@@ -1,3 +1,8 @@
+/**
+ * Active runtime owner for /api/progress/* mounts in server/index.ts.
+ * The "legacy" path segment reflects file location history, not runtime deprecation.
+ */
+
 import { Request, Response } from "express";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { calculateScore, DomainMastery, ScoreProjection } from "../../services/score-projection";
@@ -199,4 +204,3 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Failed to calculate KPIs", requestId: req.requestId });
   }
 };
-

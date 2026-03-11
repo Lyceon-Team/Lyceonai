@@ -133,21 +133,6 @@ interface SectionNode {
   avgMastery: number;
 }
 
-/**
- * DERIVED COMPUTATION: Compute mastery status from stored mastery_score
- * 
- * This function is now imported from mastery-projection.ts
- * It computes a UI-facing status label from the stored mastery_score.
- * It does NOT recalculate mastery_score itself.
- * 
- * Thresholds:
- * - not_started: attempts === 0
- * - weak: mastery_score < 40%
- * - improving: mastery_score < 70%
- * - proficient: mastery_score >= 70%
- */
-// Function moved to mastery-projection.ts - using import instead
-
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
@@ -204,6 +189,7 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
         feature: 'mastery_hexagon',
         message: 'Upgrade to an active paid plan to unlock mastery KPI surfaces.',
         reason: access.reason,
+        requestId: (req as any).requestId,
       });
     }
     const userId = req.user.id;
@@ -394,4 +380,3 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
 });
 
 export const masteryRouter = router;
-

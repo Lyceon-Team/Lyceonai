@@ -8,6 +8,7 @@
 - Canonical full-test KPI semantics: `buildFullTestKpis(...)` + `fullTestMeasurementModel()`.
 - Runtime mounts:
   - `GET /api/progress/kpis` -> `server/routes/legacy/progress.ts`.
+  - `server/routes/legacy/progress.ts` is intentionally active runtime code despite its file path name.
   - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts`.
   - `GET /api/guardian/students/:studentId/summary` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.

@@ -765,12 +765,14 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
         return res.status(402).json({
           error: "Planner regeneration requires active entitlement",
           code: "PLANNER_REGEN_LOCKED",
+          feature: "calendar_regeneration",
           reason: access.reason,
           entitlement: {
             plan: access.plan,
             status: access.status,
             currentPeriodEnd: access.currentPeriodEnd,
           },
+          requestId: (req as any).requestId,
         });
       }
     }
@@ -863,12 +865,14 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
       return res.status(402).json({
         error: "Planner auto refresh requires active entitlement",
         code: "PLANNER_AUTO_REFRESH_LOCKED",
+        feature: "calendar_auto_refresh",
         reason: access.reason,
         entitlement: {
           plan: access.plan,
           status: access.status,
           currentPeriodEnd: access.currentPeriodEnd,
         },
+        requestId: (req as any).requestId,
       });
     }
 
@@ -996,12 +1000,14 @@ async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Pr
     return res.status(402).json({
       error: "Single-day regeneration requires active entitlement",
       code: "PLANNER_DAY_REGEN_LOCKED",
+      feature: "calendar_day_regeneration",
       reason: access.reason,
       entitlement: {
         plan: access.plan,
         status: access.status,
         currentPeriodEnd: access.currentPeriodEnd,
       },
+      requestId: (req as any).requestId,
     });
   }
 

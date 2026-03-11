@@ -12,6 +12,7 @@
 import { Router, Request, Response } from "express";
 import { requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
+// Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
 import { buildFullTestKpis, fullTestMeasurementModel } from "../services/kpi-truth-layer";
