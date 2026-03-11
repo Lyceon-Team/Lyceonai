@@ -4,13 +4,11 @@
  * Handles review error attempt submissions with canonical review/tutor event semantics.
  */
 
-import { Router, Request, Response } from "express";
+import { Request, Response } from "express";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
-
-const router = Router();
 
 type ReviewOutcome = "review_pass" | "review_fail";
 type TutorOutcome = "tutor_helped" | "tutor_fail";
@@ -73,13 +71,17 @@ function resolveTutorEventType(isCorrect: boolean): MasteryEventType {
  * - Rejects mastery emission when no prior failed/skipped practice source attempt exists.
  */
 export async function recordReviewErrorAttempt(req: Request, res: Response) {
+  const requestId = req.requestId;
+
   try {
     const validationResult = reviewErrorAttemptSchema.safeParse(req.body);
 
     if (!validationResult.success) {
       return res.status(400).json({
         error: "Invalid request body",
+        code: "INVALID_REVIEW_ATTEMPT_PAYLOAD",
         details: validationResult.error.issues,
+        requestId,
       });
     }
 
@@ -93,7 +95,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
     const userId = (req as any).user?.id;
     if (!userId) {
-      return res.status(401).json({ error: "Unauthorized - user ID not found" });
+      return res.status(401).json({ error: "Unauthorized - user ID not found", code: "AUTH_REQUIRED", requestId });
     }
 
     // Canonical anti-shortcut guard: question must come from a prior failed/skipped practice attempt.
@@ -110,13 +112,17 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
     if (reviewSourceError) {
       return res.status(500).json({
         error: "Failed to verify review eligibility",
+        code: "REVIEW_ELIGIBILITY_CHECK_FAILED",
         detail: reviewSourceError.message,
+        requestId,
       });
     }
 
     if (!reviewSourceAttempt) {
       return res.status(403).json({
         error: "Question is not eligible for review mastery updates",
+        code: "REVIEW_NOT_ELIGIBLE",
+        requestId,
       });
     }
 
@@ -127,7 +133,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       .single();
 
     if (questionError || !question) {
-      return res.status(404).json({ error: "Question not found", detail: questionError?.message });
+      return res.status(404).json({ error: "Question not found", detail: questionError?.message, requestId });
     }
 
     const verifiedIsCorrect = gradeReviewAnswer(question, selected_answer, free_response_answer);
@@ -169,7 +175,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
         if (fetchError) {
           console.error("[review-errors/attempt] Error fetching existing attempt:", fetchError);
-          return res.status(500).json({ error: "Database error", detail: fetchError.message });
+          return res.status(500).json({ error: "Database error", detail: fetchError.message, requestId });
         }
 
         const existingIsCorrect = Boolean(existing?.is_correct);
@@ -191,7 +197,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       }
 
       console.error("[review-errors/attempt] Error inserting attempt:", error);
-      return res.status(500).json({ error: "Failed to record attempt", detail: error.message });
+      return res.status(500).json({ error: "Failed to record attempt", detail: error.message, requestId });
     }
 
     const metadata = await getQuestionMetadataForAttempt(question_id);
@@ -274,8 +280,6 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
     });
   } catch (error: any) {
     console.error("[review-errors/attempt] Unexpected error:", error);
-    return res.status(500).json({ error: "Internal server error", detail: error.message });
+    return res.status(500).json({ error: "Internal server error", detail: error.message, requestId });
   }
 }
-
-export default router;

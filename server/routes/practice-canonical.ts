@@ -6,6 +6,7 @@ import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
 import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
+// Intentional runtime delegation: practice route ownership stays in server/** while mastery writes stay in apps/api services.
 import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 import { isValidCanonicalId } from "../../apps/api/src/lib/canonicalId";
@@ -252,7 +253,6 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
 
   const clientInstanceId = String(req.query.client_instance_id || "fallback-client");
 
-  // Find existing in_progress session for this user+section (best effort)
   // Find existing in_progress session for this user+section+mode (best effort)
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")

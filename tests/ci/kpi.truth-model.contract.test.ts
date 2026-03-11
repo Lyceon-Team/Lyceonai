@@ -50,10 +50,10 @@ describe('KPI Truth Model Contract', () => {
 
     expect(view.metrics.length).toBeGreaterThan(0);
     for (const metric of view.metrics) {
-      expect(metric.explanation.ruleId).toBeTruthy();
-      expect(metric.explanation.whatThisMeans).toBeTruthy();
-      expect(metric.explanation.whyThisChanged).toBeTruthy();
-      expect(metric.explanation.whatToDoNext).toBeTruthy();
+      expect(metric.explanation.ruleId).toEqual(expect.stringMatching(/\S/));
+      expect(metric.explanation.whatThisMeans).toEqual(expect.stringMatching(/\S/));
+      expect(metric.explanation.whyThisChanged).toEqual(expect.stringMatching(/\S/));
+      expect(metric.explanation.whatToDoNext).toEqual(expect.stringMatching(/\S/));
     }
 
     assertDisjoint(view.measurementModel);
@@ -90,10 +90,9 @@ describe('KPI Truth Model Contract', () => {
     for (const id of [...model.official, ...model.weighted, ...model.diagnostic]) {
       expect(metricById.has(id)).toBe(true);
       const metric = metricById.get(id)!;
-      expect(metric.explanation.whatThisMeans).toBeTruthy();
-      expect(metric.explanation.whyThisChanged).toBeTruthy();
-      expect(metric.explanation.whatToDoNext).toBeTruthy();
+      expect(metric.explanation.whatThisMeans).toEqual(expect.stringMatching(/\S/));
+      expect(metric.explanation.whyThisChanged).toEqual(expect.stringMatching(/\S/));
+      expect(metric.explanation.whatToDoNext).toEqual(expect.stringMatching(/\S/));
     }
   });
 });
-

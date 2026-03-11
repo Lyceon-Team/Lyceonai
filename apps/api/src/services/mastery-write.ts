@@ -195,10 +195,6 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
   };
 }
 
-/**
- * Legacy alias for backward compatibility.
- *
- * @deprecated Use applyMasteryUpdate() instead for clarity.
- * This alias exists to minimize code changes during the Sprint 3 PR-1 refactor.
- */
+
+// Back-compat alias consumed by studentMastery adapter paths.
 export const logAttemptAndUpdateMastery = applyMasteryUpdate;
