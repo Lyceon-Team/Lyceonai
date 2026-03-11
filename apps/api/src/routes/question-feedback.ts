@@ -1,22 +1,14 @@
 /**
  * Question Feedback API Routes
- * 
+ *
  * Handles thumbs up/down feedback from students about question quality.
  * Requires Supabase authentication.
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { z } from 'zod';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { supabaseServer } from '../lib/supabase-server';
-
-interface SupabaseUser {
-  id: string;
-  email: string;
-  display_name: string | null;
-  role: 'student' | 'admin' | 'guardian';
-  isAdmin: boolean;
-  isGuardian?: boolean;
-}
 
 const feedbackSchema = z.object({
   questionId: z.string().min(1, 'Question ID is required'),
@@ -25,15 +17,11 @@ const feedbackSchema = z.object({
   practiceSessionId: z.string().optional(),
 });
 
-/**
- * POST /api/questions/feedback
- * Submit feedback (thumbs up/down) for a question
- */
-export const submitQuestionFeedback = async (req: Request, res: Response) => {
+export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user as SupabaseUser | undefined;
+    const user = requireRequestUser(req, res);
     if (!user) {
-      return res.status(401).json({ ok: false, error: 'Authentication required' });
+      return;
     }
 
     const parseResult = feedbackSchema.safeParse(req.body);
@@ -76,11 +64,7 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * GET /api/questions/:questionId/feedback-summary
- * Get feedback summary for a question (admin only)
- */
-export const getQuestionFeedbackSummary = async (req: Request, res: Response) => {
+export const getQuestionFeedbackSummary = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { questionId } = req.params;
 

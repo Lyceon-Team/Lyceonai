@@ -10,7 +10,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { requireSupabaseAuth } from "../middleware/supabase-auth";
+import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
@@ -46,12 +46,13 @@ const submitAnswerSchema = z.object({
  */
 router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const session = await fullLengthExamService.createExamSession({
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.status(201).json({ session });
@@ -72,8 +73,9 @@ router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Reques
  */
 router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const sessionId = req.query.sessionId as string;
@@ -81,7 +83,7 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
       return res.status(400).json({ error: "sessionId query parameter required" });
     }
 
-    const result = await fullLengthExamService.getCurrentSession(sessionId, req.user.id);
+    const result = await fullLengthExamService.getCurrentSession(sessionId, user.id);
 
     return res.json(result);
   } catch (error: unknown) {
@@ -107,8 +109,9 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
  */
 router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -116,7 +119,7 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
       return res.status(400).json({ error: "sessionId required" });
     }
 
-    await fullLengthExamService.startExam(sessionId, req.user.id);
+    await fullLengthExamService.startExam(sessionId, user.id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -148,8 +151,9 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
  */
 router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -167,7 +171,7 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
 
     await fullLengthExamService.submitAnswer({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
       questionId: parsed.data.questionId,
       selectedAnswer: parsed.data.selectedAnswer,
       freeResponseAnswer: parsed.data.freeResponseAnswer,
@@ -210,8 +214,9 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
  */
 router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -221,7 +226,7 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
 
     const result = await fullLengthExamService.submitModule({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.json(result);
@@ -256,8 +261,9 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
  */
 router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -265,7 +271,7 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
       return res.status(400).json({ error: "sessionId required" });
     }
 
-    await fullLengthExamService.continueFromBreak(sessionId, req.user.id);
+    await fullLengthExamService.continueFromBreak(sessionId, user.id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -296,8 +302,9 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
  */
 router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -307,7 +314,7 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
 
     const result = await fullLengthExamService.completeExam({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.json(result);
@@ -334,8 +341,9 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
  */
 router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -343,7 +351,7 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
       return res.status(400).json({ error: "sessionId required" });
     }
 
-    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     if (!access.hasPaidAccess) {
       return res.status(402).json({
         error: "Premium KPI feature required",
@@ -357,7 +365,7 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
 
     const result = await fullLengthExamService.getExamReport({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     const kpis = buildFullTestKpis({
@@ -394,8 +402,9 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
  */
 router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
@@ -405,7 +414,7 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
 
     const review = await fullLengthExamService.getExamReviewAfterCompletion({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.json(review);

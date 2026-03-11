@@ -4,6 +4,7 @@
  */
 
 import { Request, Response } from "express";
+import { requireRequestUser } from "../../middleware/supabase-auth";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { calculateScore, DomainMastery, ScoreProjection } from "../../services/score-projection";
 import {
@@ -42,11 +43,12 @@ function premiumKpiRequired(res: Response, requestId: string | undefined, featur
  */
 export const getScoreProjection = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Authentication required", requestId: req.requestId });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     if (!access.hasPaidAccess) {
       return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
     }
@@ -54,7 +56,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
     const { data: masteryRows, error: masteryError } = await supabaseServer
       .from("student_skill_mastery")
       .select("section, domain, skill, mastery_score, attempts, updated_at")
-      .eq("user_id", req.user.id);
+      .eq("user_id", user.id);
 
     if (masteryError) {
       return res.status(500).json({ error: "Failed to fetch mastery data", requestId: req.requestId });
@@ -174,14 +176,15 @@ export const getScoreProjection = async (req: Request, res: Response) => {
  */
 export const getRecencyKpis = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Authentication required", requestId: req.requestId });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
-    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
-    const includeHistoricalTrends = req.user.role === "admin" ? true : access.hasPaidAccess;
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+    const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
 
-    const snapshot = await buildCanonicalPracticeKpiSnapshot(req.user.id);
+    const snapshot = await buildCanonicalPracticeKpiSnapshot(user.id);
     const view = buildStudentKpiView(snapshot, includeHistoricalTrends);
 
     return res.json({

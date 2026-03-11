@@ -4,31 +4,14 @@
  * Returns structured RagContext instead of raw LLM answer
  */
 
-import { Request, Response, Router } from 'express';
+import { Response, Router } from 'express';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { RagQueryRequestSchema } from '../lib/rag-types';
 import { getRagService } from '../lib/rag-service';
 
 const router = Router();
 
-/**
- * POST /api/rag/v2
- * RAG v2 endpoint - returns structured context for AI Tutor
- *
- * Body: RagQueryRequest
- * - userId: string
- * - message: string
- * - mode: 'question' | 'concept' | 'strategy'
- * - canonicalQuestionId?: string (for question mode)
- * - testCode?: string (e.g. 'SAT')
- * - sectionCode?: string (e.g. 'M', 'RW')
- * - studentProfile?: StudentProfile
- * - topK?: number
- *
- * Response: RagQueryResponse
- * - context: RagContext
- * - metadata: { canonicalIdsUsed, mode, processingTimeMs }
- */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = RagQueryRequestSchema.safeParse(req.body);
 
@@ -39,16 +22,14 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        error: 'Authentication required',
-      });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const ragService = getRagService();
     const response = await ragService.handleRagQuery({
-      userId,
+      userId: user.id,
       message: validation.data.message || '',
       mode: validation.data.mode || 'concept',
       canonicalQuestionId: validation.data.canonicalQuestionId,
@@ -56,7 +37,7 @@ router.post('/', async (req: Request, res: Response) => {
       sectionCode: validation.data.sectionCode,
       studentProfile: validation.data.studentProfile
         ? {
-            userId,
+            userId: user.id,
             overallLevel: validation.data.studentProfile.overallLevel,
             competencyMap: validation.data.studentProfile.competencyMap as Record<
               string,
@@ -78,7 +59,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     return res.json(response);
   } catch (error: any) {
-    console.error('❌ [RAG-V2] Request failed:', error);
+    console.error('[RAG-V2] Request failed:', error);
     return res.status(500).json({
       error: 'RAG v2 request failed',
       message: error.message || String(error),

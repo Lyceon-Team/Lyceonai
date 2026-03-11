@@ -48,6 +48,7 @@ import {
   requireSupabaseAuth,
   requireSupabaseAdmin,
   requireStudentOrAdmin,
+  requireRequestUser,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -285,31 +286,31 @@ app.use("/api/auth", supabaseAuthRoutes);
 // PATCH /api/profile - Complete/update user profile
 app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    // User is already attached by supabaseAuthMiddleware
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     // Return complete user profile with all fields needed by frontend
     // This matches the structure of /api/auth/user for compatibility
-    const fallbackUsername = req.user.email ? req.user.email.split('@')[0] : null;
-    const normalizedName = req.user.display_name || fallbackUsername || 'Student';
+    const fallbackUsername = user.email ? user.email.split('@')[0] : null;
+    const normalizedName = user.display_name || fallbackUsername || 'Student';
 
     return res.json({
       authenticated: true,
       user: {
-        id: req.user.id,
-        email: req.user.email,
-        display_name: req.user.display_name,
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
         name: normalizedName,
         username: fallbackUsername,
-        role: req.user.role,
-        isAdmin: req.user.isAdmin,
-        isGuardian: req.user.isGuardian,
-        is_under_13: req.user.is_under_13,
-        guardian_consent: req.user.guardian_consent,
-        studentLinkCode: req.user.student_link_code,
-        profileCompletedAt: (req.user as any).profile_completed_at || null,
+        role: user.role,
+        isAdmin: user.isAdmin,
+        isGuardian: user.isGuardian,
+        is_under_13: user.is_under_13,
+        guardian_consent: user.guardian_consent,
+        studentLinkCode: user.student_link_code,
+        profileCompletedAt: (user as any).profile_completed_at || null,
       }
     });
   } catch (error) {
