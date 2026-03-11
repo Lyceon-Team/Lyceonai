@@ -1,12 +1,9 @@
 /**
  * DIAGNOSTIC ROUTES - Mastery v1.0
- *
- * Endpoints for cold-start diagnostic assessment.
- * All endpoints require authentication and use the mastery write choke point.
  */
 
 import { Response, Router } from 'express';
-import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import { AuthenticatedRequest } from '../middleware/auth';
 import {
   startDiagnosticSession,
   getCurrentDiagnosticQuestion,
@@ -20,40 +17,27 @@ const router = Router();
 
 router.post('/start', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
-    const result = await startDiagnosticSession(user.id);
-
-    if (result.error) {
-      return res.status(500).json({ error: result.error });
-    }
+    const result = await startDiagnosticSession(req.user.id);
+    if (result.error) return res.status(500).json({ error: result.error });
 
     return res.json({
       sessionId: result.sessionId,
       totalQuestions: result.questionIds.length,
       currentIndex: result.currentIndex,
     });
-  } catch (err: any) {
-    console.error('[Diagnostic] Error starting session:', err);
+  } catch (_err) {
     return res.status(500).json({ error: 'Failed to start diagnostic session' });
   }
 });
 
 router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
     const sessionId = req.query.sessionId as string;
-
-    if (!sessionId) {
-      return res.status(400).json({ error: 'sessionId is required' });
-    }
+    if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
 
     const supabase = getSupabaseAdmin();
     const { data: session, error: sessionError } = await supabase
@@ -62,19 +46,11 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       .eq('id', sessionId)
       .single();
 
-    if (sessionError || !session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-
-    if (session.student_id !== user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    if (sessionError || !session) return res.status(404).json({ error: 'Session not found' });
+    if (session.student_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
 
     const result = await getCurrentDiagnosticQuestion(sessionId);
-
-    if (result.error) {
-      return res.status(500).json({ error: result.error });
-    }
+    if (result.error) return res.status(500).json({ error: result.error });
 
     if (result.isComplete) {
       return res.json({
@@ -92,12 +68,16 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
         stem,
         options,
         section,
-        type,
+        section_code,
+        question_type,
         domain,
         skill,
-        difficulty_bucket
+        subskill,
+        skill_code,
+        difficulty
       `)
       .eq('canonical_id', result.questionId)
+      .eq('question_type', 'multiple_choice')
       .single();
 
     if (questionError || !question) {
@@ -110,31 +90,19 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       totalQuestions: result.totalQuestions,
       isComplete: false,
     });
-  } catch (err: any) {
-    console.error('[Diagnostic] Error getting next question:', err);
+  } catch (_err) {
     return res.status(500).json({ error: 'Failed to get next question' });
   }
 });
 
 router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
+    if (!req.user) return res.status(401).json({ error: 'Authentication required' });
 
-    const {
-      sessionId,
-      questionCanonicalId,
-      selectedChoice,
-      answerText,
-      timeSpentMs,
-    } = req.body;
+    const { sessionId, questionCanonicalId, selectedChoice, timeSpentMs } = req.body;
 
     if (!sessionId || !questionCanonicalId) {
-      return res.status(400).json({
-        error: 'sessionId and questionCanonicalId are required'
-      });
+      return res.status(400).json({ error: 'sessionId and questionCanonicalId are required' });
     }
 
     const supabase = getSupabaseAdmin();
@@ -144,45 +112,34 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
       .eq('id', sessionId)
       .single();
 
-    if (sessionError || !session) {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-
-    if (session.student_id !== user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    if (sessionError || !session) return res.status(404).json({ error: 'Session not found' });
+    if (session.student_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
 
     const { data: question, error: questionError } = await supabase
       .from('questions')
       .select(`
         canonical_id,
-        answer_choice,
+        question_type,
+        correct_answer,
         answer_text,
         explanation,
         section,
         domain,
         skill,
         subskill,
-        difficulty_bucket,
-        structure_cluster_id,
-        exam,
-        type
+        skill_code,
+        difficulty,
+        exam
       `)
       .eq('canonical_id', questionCanonicalId)
+      .eq('question_type', 'multiple_choice')
       .single();
 
-    if (questionError || !question) {
-      return res.status(404).json({ error: 'Question not found' });
-    }
+    if (questionError || !question) return res.status(404).json({ error: 'Question not found' });
 
-    let isCorrect = false;
-    if (question.type === 'mc' || !question.type) {
-      isCorrect = selectedChoice === question.answer_choice;
-    } else if (question.type === 'fr') {
-      const normalizedAnswer = (answerText || '').trim().toLowerCase();
-      const normalizedCorrect = (question.answer_text || '').trim().toLowerCase();
-      isCorrect = normalizedAnswer === normalizedCorrect;
-    }
+    const normalizedSelected = String(selectedChoice ?? '').trim().toUpperCase();
+    const normalizedCorrect = String(question.correct_answer ?? '').trim().toUpperCase();
+    const isCorrect = normalizedSelected.length > 0 && normalizedSelected === normalizedCorrect;
 
     const recordResult = await recordDiagnosticAnswer(
       sessionId,
@@ -192,12 +149,10 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
       timeSpentMs || null
     );
 
-    if (!recordResult.success) {
-      return res.status(500).json({ error: recordResult.error });
-    }
+    if (!recordResult.success) return res.status(500).json({ error: recordResult.error });
 
-    const masteryResult = await applyMasteryUpdate({
-      userId: user.id,
+    await applyMasteryUpdate({
+      userId: req.user.id,
       questionCanonicalId,
       sessionId,
       isCorrect,
@@ -210,23 +165,19 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
         domain: question.domain || null,
         skill: question.skill || null,
         subskill: question.subskill || null,
-        difficulty_bucket: question.difficulty_bucket || null,
-        structure_cluster_id: question.structure_cluster_id || null,
+        skill_code: question.skill_code || null,
+        difficulty: question.difficulty || null,
       },
     });
-
-    if (masteryResult.error) {
-      console.warn('[Diagnostic] Mastery update failed:', masteryResult.error);
-    }
 
     return res.json({
       isCorrect,
       isComplete: recordResult.isComplete,
       nextQuestionId: recordResult.nextQuestionId,
       explanation: isCorrect ? null : (question.explanation || null),
+      answerText: isCorrect ? null : (question.answer_text || null),
     });
-  } catch (err: any) {
-    console.error('[Diagnostic] Error submitting answer:', err);
+  } catch (_err) {
     return res.status(500).json({ error: 'Failed to submit answer' });
   }
 });

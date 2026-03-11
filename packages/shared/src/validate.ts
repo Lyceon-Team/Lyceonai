@@ -1,50 +1,65 @@
 import { z } from 'zod';
 
-// Base fields common to both question types
-const qaBaseSchema = z.object({
-  id: z.string().min(3),
-  rawId: z.string().optional(),
-  stem: z.string().min(3),
-  explanation: z.string().nullable(),
-  section: z.enum(['Reading','Writing','Math']).nullable(),
-  source: z.object({ path: z.string(), page: z.number().int().min(1) }),
-  tags: z.array(z.string()),
-  version: z.literal(1),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+const optionKeySchema = z.enum(['A', 'B', 'C', 'D']);
+
+const canonicalOptionSchema = z.object({
+  key: optionKeySchema,
+  text: z.string().min(1),
 });
 
-// Multiple Choice schema - must have exactly 4 options (A-D) and choice answer
-export const qaMCSchema = qaBaseSchema.extend({
-  type: z.literal("mc"),
-  options: z.array(z.object({ key: z.enum(['A','B','C','D']), text: z.string().min(1) })).length(4),
-  answer_choice: z.enum(['A','B','C','D']),
+const canonicalOptionMetadataSchema = z.object({
+  key: optionKeySchema,
+  text: z.string().min(1),
+  is_correct: z.boolean(),
 });
 
-// Free Response schema - no options, text answer (non-empty)
-export const qaFRSchema = qaBaseSchema.extend({
-  type: z.literal("fr"),
-  answer_text: z.string().min(1), // Non-empty text/number answer
-});
-
-// Discriminated union schema for both types
-export const qaSchema = z.discriminatedUnion("type", [
-  qaMCSchema,
-  qaFRSchema,
+const optionsSchema = z.tuple([
+  canonicalOptionSchema,
+  canonicalOptionSchema,
+  canonicalOptionSchema,
+  canonicalOptionSchema,
 ]);
 
-// Legacy schema for backward compatibility (MC only)
-export const qaLegacySchema = z.object({
-  id: z.string().min(3),
-  rawId: z.string().optional(),
-  stem: z.string().min(3),
-  options: z.array(z.object({ key: z.enum(['A','B','C','D']), text: z.string().min(1) })).length(4),
-  answer: z.enum(['A','B','C','D']).nullable(),
-  explanation: z.string().nullable(),
-  section: z.enum(['Reading','Writing','Math']).nullable(),
-  source: z.object({ path: z.string(), page: z.number().int().min(1) }),
-  tags: z.array(z.string()),
-  version: z.literal(1),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+const optionMetadataSchema = z.tuple([
+  canonicalOptionMetadataSchema,
+  canonicalOptionMetadataSchema,
+  canonicalOptionMetadataSchema,
+  canonicalOptionMetadataSchema,
+]);
+
+export const canonicalQuestionSchema = z.object({
+  id: z.string().uuid(),
+  canonical_id: z.string().min(1),
+  status: z.enum(['draft', 'reviewed']),
+  created_at: z.string(),
+  updated_at: z.string(),
+  reviewed_at: z.string().nullable(),
+  reviewed_by: z.string().uuid().nullable(),
+  section: z.string().min(1),
+  section_code: z.enum(['MATH', 'RW']),
+  question_type: z.literal('multiple_choice'),
+  stem: z.string().min(1),
+  options: optionsSchema,
+  correct_answer: optionKeySchema,
+  answer_text: z.string(),
+  explanation: z.string(),
+  option_metadata: optionMetadataSchema,
+  domain: z.string().min(1),
+  skill: z.string().min(1),
+  subskill: z.string().min(1),
+  skill_code: z.string().min(1),
+  difficulty: z.string().min(1),
+  source_type: z.enum(['synthetic', 'official', 'hybrid', 'unknown']),
+  test_code: z.string().nullable(),
+  exam: z.string().nullable(),
+  ai_generated: z.boolean().nullable(),
+  diagram_present: z.boolean().nullable(),
+  tags: z.array(z.unknown()).nullable(),
+  competencies: z.array(z.unknown()).nullable(),
+  provenance_chunk_ids: z.array(z.unknown()).nullable(),
 });
+
+export const qaSchema = canonicalQuestionSchema;
+export const qaMCSchema = canonicalQuestionSchema;
+export const qaFRSchema = z.never();
+export const qaLegacySchema = canonicalQuestionSchema;

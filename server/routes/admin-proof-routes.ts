@@ -83,24 +83,39 @@ router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response
 
     const smokeRow = {
       canonical_id: canonicalId,
+      status: 'draft',
       section: 'Math',
+      section_code: 'MATH',
       stem: `Smoke test question inserted at ${new Date().toISOString()}`,
       question_type: 'multiple_choice',
-      type: 'mc',
       options: [
         { key: 'A', text: 'Smoke option A' },
         { key: 'B', text: 'Smoke option B' },
         { key: 'C', text: 'Smoke option C' },
         { key: 'D', text: 'Smoke option D' },
       ],
-      answer: 'A',
-      answer_choice: 'A',
-      exam: 'SAT',
+      correct_answer: 'A',
+      answer_text: 'Smoke option A',
+      explanation: 'Smoke explanation',
+      option_metadata: [
+        { key: 'A', text: 'Smoke option A', is_correct: true },
+        { key: 'B', text: 'Smoke option B', is_correct: false },
+        { key: 'C', text: 'Smoke option C', is_correct: false },
+        { key: 'D', text: 'Smoke option D', is_correct: false },
+      ],
+      domain: 'smoke',
+      skill: 'smoke skill',
+      subskill: 'smoke subskill',
+      skill_code: 'SMOKE.SKILL',
+      difficulty: 'easy',
+      source_type: 'unknown',
       test_code: 'SAT',
-      section_code: 'M',
+      exam: 'SAT',
       ai_generated: true,
-      needs_review: true,
-      confidence: 0,
+      diagram_present: false,
+      tags: [],
+      competencies: [],
+      provenance_chunk_ids: [],
     };
 
     const validation = validateQuestionRow(smokeRow);
@@ -177,3 +192,5 @@ router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Respo
 });
 
 export default router;
+
+

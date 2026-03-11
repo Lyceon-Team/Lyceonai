@@ -55,7 +55,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     const { data: questionDetails, error } = await supabaseServer
       .from('questions')
-      .select('*')
+      .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
       .in('id', questionIds);
 
     if (error) {
@@ -73,11 +73,15 @@ export const searchQuestions = async (req: Request, res: Response) => {
         id: question.id,
         stem: question.stem,
         section: question.section,
-        unitTag: question.unit_tag,
-        difficultyLevel: question.difficulty_level,
-        type: question.type || 'mc',
-        options: question.options ? (typeof question.options === 'string' ? JSON.parse(question.options) : question.options) : [],
-        tags: question.tags ? (typeof question.tags === 'string' ? question.tags.split(',').map((t: string) => t.trim()) : question.tags) : [],
+        canonicalId: question.canonical_id ?? null,
+        sectionCode: question.section_code ?? null,
+        questionType: question.question_type,
+        options: Array.isArray(question.options) ? question.options : [],
+        tags: Array.isArray(question.tags) ? question.tags : [],
+        domain: question.domain ?? null,
+        skill: question.skill ?? null,
+        subskill: question.subskill ?? null,
+        skillCode: question.skill_code ?? null,
         explanation: null,
         similarity: match?.similarity || 0,
       };
@@ -128,14 +132,14 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
       const { data } = await supabaseServer
         .from('questions')
-        .select('*')
-        .in('id', questionIds);
+        .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
+      .in('id', questionIds);
       questionsToEmbed = data || [];
     } else {
       // Fetch all questions without embeddings (limit to prevent overwhelming API)
       const { data } = await supabaseServer
         .from('questions')
-        .select('*')
+        .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
         .limit(100);
       questionsToEmbed = data || [];
     }
@@ -173,9 +177,11 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
           stem: question.stem,
           section: question.section,
           metadata: {
-            unitTag: question.unit_tag,
-            difficultyLevel: question.difficulty_level,
-            type: question.type,
+            canonicalId: question.canonical_id ?? null,
+            sectionCode: question.section_code ?? null,
+            questionType: question.question_type,
+            difficulty: question.difficulty ?? null,
+            skillCode: question.skill_code ?? null,
           },
         }));
 
@@ -211,3 +217,4 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     });
   }
 };
+

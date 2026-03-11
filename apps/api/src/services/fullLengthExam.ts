@@ -16,8 +16,7 @@ import type {
   FullLengthExamSession, 
   FullLengthExamModule,
   FullLengthExamQuestion,
-  FullLengthExamResponse,
-  Question
+  FullLengthExamResponse
 } from "../../../../shared/schema";
 
 // ============================================================================
@@ -97,18 +96,23 @@ export interface GetCurrentSessionResult {
   currentModule: FullLengthExamModule | null;
   currentQuestion: {
     id: string;
+    canonicalId: string | null;
     stem: string;
     section: string;
-    type: "mc" | "fr";
-    options: Array<{ key: string; text: string }> | null;
+    sectionCode: "MATH" | "RW" | null;
+    questionType: "multiple_choice";
+    options: Array<{ key: string; text: string }>;
     difficulty: string | null;
+    domain: string | null;
+    skill: string | null;
+    subskill: string | null;
+    skillCode: string | null;
     orderIndex: number;
     moduleQuestionCount: number;
     answeredCount: number;
     // User's previously submitted answer (for resume support)
     submittedAnswer?: {
       selectedAnswer?: string;
-      freeResponseAnswer?: string;
     };
   } | null;
   timeRemaining: number | null; // milliseconds remaining, null if module not started
@@ -313,24 +317,17 @@ function extractDomainAndSkill(
   section: SectionType,
   question: Record<string, unknown> | undefined
 ): { domain: string; skill: string } {
-  const classification = (question?.classification ?? null) as
-    | { topic?: unknown; subtopic?: unknown; skills?: unknown[] }
-    | null;
-
-  const classificationDomain = normalizeLabel(classification?.topic);
-  const unitTagDomain = normalizeLabel(question?.unit_tag) || normalizeLabel(question?.unitTag);
+  const explicitDomain = normalizeLabel(question?.domain);
   const tagsDomain = Array.isArray(question?.tags) ? normalizeLabel(question?.tags[0]) : null;
 
   const fallbackDomain = section === "math" ? "Math Overall" : "Reading and Writing Overall";
-  const domain = classificationDomain || unitTagDomain || tagsDomain || fallbackDomain;
+  const domain = explicitDomain || tagsDomain || fallbackDomain;
 
-  const classificationSkill = normalizeLabel(classification?.subtopic);
-  const classificationSkillList = Array.isArray(classification?.skills)
-    ? normalizeLabel(classification?.skills[0])
-    : null;
+  const explicitSkill = normalizeLabel(question?.skill);
+  const explicitSubskill = normalizeLabel(question?.subskill);
   const competencySkill = normalizeSkillFromCompetencies(question?.competencies);
 
-  const skill = classificationSkill || classificationSkillList || competencySkill || "General";
+  const skill = explicitSubskill || explicitSkill || competencySkill || "General";
 
   return { domain, skill };
 }
@@ -579,7 +576,7 @@ async function computeDiagnosticRows(
     if (questionIds.length > 0) {
       const { data: questionsData, error: questionsError } = await supabase
         .from("questions")
-        .select("id, classification, unit_tag, tags, competencies")
+        .select("id, domain, skill, subskill, tags, competencies")
         .in("id", questionIds);
 
       if (!questionsError && questionsData) {
@@ -732,7 +729,7 @@ async function applyFullLengthMasterySignals(
   try {
     const { data: questionRows, error: questionError } = await supabase
       .from("questions")
-      .select("id, canonical_id, exam, section, domain, skill, subskill, difficulty_bucket, structure_cluster_id")
+      .select("id, canonical_id, exam, section, domain, skill, subskill, skill_code, difficulty")
       .in("id", questionIds);
 
     if (questionError) {
@@ -759,8 +756,8 @@ async function applyFullLengthMasterySignals(
             domain: question.domain || null,
             skill: question.skill || null,
             subskill: question.subskill || null,
-            difficulty_bucket: question.difficulty_bucket || null,
-            structure_cluster_id: question.structure_cluster_id || null,
+            skill_code: question.skill_code || null,
+            difficulty: question.difficulty || null,
           },
         });
 
@@ -969,11 +966,17 @@ export async function getCurrentSession(
       order_index,
       questions (
         id,
+        canonical_id,
         stem,
         section,
-        type,
+        section_code,
+        question_type,
         options,
-        difficulty
+        difficulty,
+        domain,
+        skill,
+        subskill,
+        skill_code
       )
     `)
     .eq("module_id", currentModule.id)
@@ -986,18 +989,17 @@ export async function getCurrentSession(
   // Get responses for this module (including answer content for resume support)
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id, selected_answer, free_response_answer")
+    .select("question_id, selected_answer")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
     throw new Error(`Failed to fetch responses: ${responsesError.message}`);
   }
 
-  // Build a map of question_id -> response for quick lookup
+    // Build a map of question_id -> response for quick lookup
   const responseMap = new Map(
-    responses?.map((r) => [r.question_id, { 
-      selectedAnswer: r.selected_answer, 
-      freeResponseAnswer: r.free_response_answer 
+    responses?.map((r) => [r.question_id, {
+      selectedAnswer: r.selected_answer,
     }]) || []
   );
   const answeredQuestionIds = new Set(responses?.map((r) => r.question_id) || []);
@@ -1009,11 +1011,17 @@ export async function getCurrentSession(
     order_index: number;
     questions: {
       id: string;
+      canonical_id: string | null;
       stem: string;
       section: string;
-      type: string;
+      section_code: "MATH" | "RW" | null;
+      question_type: "multiple_choice";
       options: Array<{ key: string; text: string }> | null;
       difficulty: string | null;
+      domain: string | null;
+      skill: string | null;
+      subskill: string | null;
+      skill_code: string | null;
     } | null;
   }
 
@@ -1028,20 +1036,25 @@ export async function getCurrentSession(
       const q = target.questions;
       const submittedAnswer = responseMap.get(q.id);
       
-      currentQuestion = {
+            currentQuestion = {
         id: q.id,
+        canonicalId: q.canonical_id ?? null,
         stem: q.stem,
         section: q.section,
-        type: q.type as "mc" | "fr",
-        options: q.type === "mc" ? q.options : null,
+        sectionCode: q.section_code ?? null,
+        questionType: "multiple_choice",
+        options: Array.isArray(q.options) ? q.options : [],
         difficulty: q.difficulty,
+        domain: q.domain ?? null,
+        skill: q.skill ?? null,
+        subskill: q.subskill ?? null,
+        skillCode: q.skill_code ?? null,
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
         answeredCount: answeredQuestionIds.size,
         // Include previously submitted answer if it exists (for resume support)
         submittedAnswer: submittedAnswer ? {
           selectedAnswer: submittedAnswer.selectedAnswer || undefined,
-          freeResponseAnswer: submittedAnswer.freeResponseAnswer || undefined,
         } : undefined,
       };
     }
@@ -1146,24 +1159,24 @@ async function selectQuestionsForModule(
   // For module 2, use the adaptive difficulty bucket
   const targetDifficulty = moduleIndex === 1 ? "medium" : (difficultyBucket || "medium");
 
-  // Map section to question section names
-  const sectionFilter = section === "rw" ? ["Reading", "Writing", "Reading and Writing"] : ["Math"];
+    const sectionCode = section === "rw" ? "RW" : "MATH";
 
   // Build query
   let query = supabase
     .from("questions")
     .select("id, difficulty, canonical_id")
-    .in("section", sectionFilter)
-    .eq("type", "mc") // Only MC questions for now
-    .not("answer_choice", "is", null); // Must have an answer
+    .eq("section_code", sectionCode)
+    .eq("question_type", "multiple_choice")
+    .eq("status", "reviewed")
+    .not("correct_answer", "is", null);
 
   // Add difficulty filter
   if (targetDifficulty === "easy") {
-    query = query.in("difficulty", ["Easy", "easy", "1"]);
+    query = query.in("difficulty", ["easy", "Easy"]);
   } else if (targetDifficulty === "medium") {
-    query = query.in("difficulty", ["Medium", "medium", "2"]);
+    query = query.in("difficulty", ["medium", "Medium"]);
   } else {
-    query = query.in("difficulty", ["Hard", "hard", "3"]);
+    query = query.in("difficulty", ["hard", "Hard"]);
   }
 
   const { data: candidates, error } = await query.limit(questionCount * 3); // Get more than needed for selection
@@ -1265,10 +1278,10 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     return;
   }
 
-  // Get question to check correctness
+    // Get question to check correctness
   const { data: question, error: questionError } = await supabase
     .from("questions")
-    .select("id, type, answer_choice, answer_text")
+    .select("id, question_type, correct_answer")
     .eq("id", params.questionId)
     .single();
 
@@ -1276,13 +1289,14 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found");
   }
 
+  if (question.question_type !== "multiple_choice") {
+    throw new Error("Only multiple_choice questions are supported for full-length responses");
+  }
+
   // Determine correctness
   let isCorrect = false;
-  if (question.type === "mc" && params.selectedAnswer) {
-    isCorrect = params.selectedAnswer.toUpperCase() === (question.answer_choice || "").toUpperCase();
-  } else if (question.type === "fr" && params.freeResponseAnswer) {
-    // Simple string comparison for FR (could be enhanced)
-    isCorrect = params.freeResponseAnswer.trim().toLowerCase() === (question.answer_text || "").trim().toLowerCase();
+  if (params.selectedAnswer) {
+    isCorrect = params.selectedAnswer.toUpperCase() === (question.correct_answer || "").toUpperCase();
   }
 
   // Insert response once; duplicate-key races are accepted as idempotent no-ops.
@@ -1295,7 +1309,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       module_id: currentModule.id,
       question_id: params.questionId,
       selected_answer: params.selectedAnswer,
-      free_response_answer: params.freeResponseAnswer,
+      free_response_answer: null,
       is_correct: isCorrect,
       answered_at: now,
       updated_at: now,
@@ -1772,17 +1786,20 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
  * will NOT be included in pre-completion review responses.
  */
 export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
-  'id',
-  'stem',
-  'section',
-  'type',
-  'options',
-  'difficulty',
-  'difficultyLevel',
-  'unitTag',
-  'tags',
-  'questionNumber',
-  'pageNumber',
+  "id",
+  "canonical_id",
+  "section",
+  "section_code",
+  "question_type",
+  "stem",
+  "options",
+  "difficulty",
+  "domain",
+  "skill",
+  "subskill",
+  "skill_code",
+  "tags",
+  "competencies",
 ] as const;
 
 /**
@@ -1790,11 +1807,10 @@ export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
  * These fields reveal correct answers and explanations.
  */
 export const ANSWER_FIELDS_POST_COMPLETION = [
-  'answer',
-  'answerChoice',
-  'answerText',
-  'explanation',
-  'classification',
+  "correct_answer",
+  "answer_text",
+  "explanation",
+  "option_metadata",
 ] as const;
 
 /**
@@ -1810,26 +1826,29 @@ const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.
 const SAFE_QUESTION_SELECT_POST_COMPLETION =
   [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
 
-/**
- * Type-safe question row from Supabase for pre-completion queries.
- * Only includes safe fields that don't leak answers/explanations.
- */
-type QuestionRowPreCompletion = Pick<
-  Question,
-  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
-  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber'
->;
+interface QuestionRowPreCompletion {
+  id: string;
+  canonical_id: string | null;
+  section: string;
+  section_code: "MATH" | "RW" | null;
+  question_type: "multiple_choice";
+  stem: string;
+  options: Array<{ key: string; text: string }> | null;
+  difficulty: string | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  tags: string[] | null;
+  competencies: Array<{ code: string; raw?: string | null }> | null;
+}
 
-/**
- * Type-safe question row from Supabase for post-completion queries.
- * Includes all safe fields plus answer/explanation fields.
- */
-type QuestionRowPostCompletion = Pick<
-  Question,
-  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
-  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber' |
-  'answer' | 'answerChoice' | 'answerText' | 'explanation' | 'classification'
->;
+interface QuestionRowPostCompletion extends QuestionRowPreCompletion {
+  correct_answer: string | null;
+  answer_text: string | null;
+  explanation: string | null;
+  option_metadata: Array<{ key: string; text: string; is_correct: boolean }> | null;
+}
 
 /**
  * Safe question type for pre-completion review.
@@ -1837,16 +1856,19 @@ type QuestionRowPostCompletion = Pick<
  */
 export interface SafeQuestionPreCompletion {
   id: string;
-  stem: string;
+  canonicalId: string | null;
   section: string;
-  type: string | null;
-  options: Array<{ key: string; text: string }> | null;
+  sectionCode: "MATH" | "RW" | null;
+  questionType: "multiple_choice";
+  stem: string;
+  options: Array<{ key: string; text: string }>;
   difficulty: string | null;
-  difficultyLevel: number | null;
-  unitTag: string | null;
-  tags: string[] | null;
-  questionNumber: number | null;
-  pageNumber: number | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skillCode: string | null;
+  tags: string[];
+  competencies: Array<{ code: string; raw?: string | null }>;
 }
 
 /**
@@ -1854,11 +1876,10 @@ export interface SafeQuestionPreCompletion {
  * Includes answer and explanation fields.
  */
 export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
-  answer: string;
-  answerChoice: string | null;
+  correctAnswer: string | null;
   answerText: string | null;
   explanation: string | null;
-  classification: unknown | null;
+  optionMetadata: Array<{ key: string; text: string; is_correct: boolean }>;
 }
 
 /**
@@ -1920,20 +1941,37 @@ export interface GetExamReviewParams {
 function projectSafeQuestionFields(
   question: Record<string, unknown>
 ): SafeQuestionPreCompletion {
-  const result: SafeQuestionPreCompletion = {
+  const options = Array.isArray(question.options)
+    ? (question.options as Array<{ key: string; text: string }>)
+    : [];
+
+  const tags = Array.isArray(question.tags)
+    ? (question.tags as string[]).filter((tag): tag is string => typeof tag === "string")
+    : [];
+
+  const competencies = Array.isArray(question.competencies)
+    ? (question.competencies as Array<{ code: string; raw?: string | null }>).filter(
+        (item): item is { code: string; raw?: string | null } =>
+          !!item && typeof item === "object" && typeof (item as { code?: unknown }).code === "string"
+      )
+    : [];
+
+  return {
     id: question.id as string,
-    stem: question.stem as string,
+    canonicalId: (question.canonical_id ?? null) as string | null,
     section: question.section as string,
-    type: (question.type ?? null) as string | null,
-    options: (question.options ?? null) as Array<{ key: string; text: string }> | null,
+    sectionCode: (question.section_code ?? null) as "MATH" | "RW" | null,
+    questionType: "multiple_choice",
+    stem: question.stem as string,
+    options,
     difficulty: (question.difficulty ?? null) as string | null,
-    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level ?? null) as number | null,
-    unitTag: (question.unitTag ?? question.unit_tag ?? null) as string | null,
-    tags: (question.tags ?? null) as string[] | null,
-    questionNumber: (question.questionNumber ?? question.question_number ?? null) as number | null,
-    pageNumber: (question.pageNumber ?? question.page_number ?? null) as number | null,
+    domain: (question.domain ?? null) as string | null,
+    skill: (question.skill ?? null) as string | null,
+    subskill: (question.subskill ?? null) as string | null,
+    skillCode: (question.skill_code ?? null) as string | null,
+    tags,
+    competencies,
   };
-  return result;
 }
 
 /**
@@ -1943,13 +1981,23 @@ function projectFullQuestionFields(
   question: Record<string, unknown>
 ): FullQuestionPostCompletion {
   const safeFields = projectSafeQuestionFields(question);
+  const optionMetadata = Array.isArray(question.option_metadata)
+    ? (question.option_metadata as Array<{ key: string; text: string; is_correct: boolean }>).filter(
+        (item): item is { key: string; text: string; is_correct: boolean } =>
+          !!item &&
+          typeof item === "object" &&
+          typeof (item as { key?: unknown }).key === "string" &&
+          typeof (item as { text?: unknown }).text === "string" &&
+          typeof (item as { is_correct?: unknown }).is_correct === "boolean"
+      )
+    : [];
+
   return {
     ...safeFields,
-    answer: question.answer as string,
-    answerChoice: (question.answerChoice ?? question.answer_choice ?? null) as string | null,
-    answerText: (question.answerText ?? question.answer_text ?? null) as string | null,
+    correctAnswer: (question.correct_answer ?? null) as string | null,
+    answerText: (question.answer_text ?? null) as string | null,
     explanation: (question.explanation ?? null) as string | null,
-    classification: question.classification ?? null,
+    optionMetadata,
   };
 }
 
@@ -2078,7 +2126,7 @@ export async function getExamReview(
     questionId: r.question_id,
     moduleId: r.module_id,
     selectedAnswer: r.selected_answer,
-    freeResponseAnswer: r.free_response_answer,
+    ,
     isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
     answeredAt: r.answered_at,
   }));

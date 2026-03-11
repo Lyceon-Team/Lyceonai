@@ -12,7 +12,7 @@ async function main() {
   console.log("Looking for an existing question...");
   const { data: question, error: qError } = await supabase
     .from("questions")
-    .select("id, canonical_id, section, domain, skill, difficulty_bucket")
+    .select("id, canonical_id, section, domain, skill, difficulty")
     .not("canonical_id", "is", null)
     .limit(1)
     .single();
@@ -37,7 +37,7 @@ async function main() {
       section: question.section,
       domain: question.domain,
       skill: question.skill,
-      difficulty_bucket: question.difficulty_bucket,
+      difficulty_bucket: question.difficulty,
     });
 
   if (insertError) {
@@ -77,3 +77,4 @@ main().catch((err) => {
   console.error("Script failed:", err);
   process.exit(1);
 });
+

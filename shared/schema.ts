@@ -7,13 +7,8 @@ import { z } from "zod";
 // CANONICAL QUESTION TYPES - Shared between backend and frontend
 // ============================================================================
 
-export interface SourceMapping {
-  page?: number;
-  mapping?: Record<string, any>;
-}
-
 export interface QuestionOption {
-  key: string;
+  key: 'A' | 'B' | 'C' | 'D';
   text: string;
 }
 
@@ -22,34 +17,26 @@ export interface Competency {
   raw?: string | null;
 }
 
-export interface StudentQuestionBase {
+export interface StudentQuestion {
   id: string;
+  canonicalId?: string | null;
   stem: string;
   section: string;
+  sectionCode?: 'MATH' | 'RW' | null;
+  questionType: 'multiple_choice';
+  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
   explanation: string | null;
-  source?: {
-    mapping?: Record<string, any> | null;
-    page?: number | null;
-  };
   tags: string[];
-  type: 'mc' | 'fr';
-  canonicalId?: string;
-  testCode?: string;
-  sectionCode?: string;
-  sourceType?: 1 | 2;
+  domain?: string | null;
+  skill?: string | null;
+  subskill?: string | null;
+  skillCode?: string | null;
+  difficulty?: string | null;
   competencies?: Competency[];
 }
 
-export interface StudentMcQuestion extends StudentQuestionBase {
-  type: 'mc';
-  options: QuestionOption[];
-}
-
-export interface StudentFrQuestion extends StudentQuestionBase {
-  type: 'fr';
-}
-
-export type StudentQuestion = StudentMcQuestion | StudentFrQuestion;
+export type StudentMcQuestion = StudentQuestion;
+export type StudentFrQuestion = never;
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -844,7 +831,7 @@ export type InsertQuestionEmbedding = z.infer<typeof insertQuestionEmbeddingSche
 export type QuestionEmbedding = typeof questionEmbeddings.$inferSelect;
 
 // Additional types for API responses
-export interface QuestionOption {
+export interface ApiQuestionOption {
   key: string;
   text: string;
 }
@@ -953,3 +940,5 @@ export interface StrengthsWeaknesses {
   weaknesses: string[];
   recommendations: string[];
 }
+
+
