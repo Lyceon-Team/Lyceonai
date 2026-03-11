@@ -169,7 +169,7 @@ const legalSeoMeta: Record<string, { title: string; description: string }> = {
   },
   "trust-and-safety": {
     title: "Trust & Safety",
-    description: "How Lyceon approaches trust, safety, and responsibility in AI-powered learning.",
+    description: "How Lyceon approaches trust, safety, and responsible technology in learning.",
   },
 };
 
@@ -551,6 +551,40 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
   });
 }
 
+
+// SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
+// Keeps sitemap legal slugs indexable with canonical title/description metadata.
+app.get("/legal/:slug", (req, res, next) => {
+  const slug = String(req.params.slug || "");
+  const meta = legalSeoMeta[slug];
+  if (!meta) return next();
+
+  const canonical = `https://lyceon.ai/legal/${slug}`;
+  const bodyHtml = `
+<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
+  <article>
+    <header style="margin-bottom: 1.5rem;">
+      <nav style="margin-bottom: 0.75rem;"><a href="/legal" style="color: #0F2E48;">← Back to Legal</a></nav>
+      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">${meta.title}</h1>
+      <p style="color: #555; line-height: 1.6;">${meta.description}</p>
+    </header>
+    <section style="line-height: 1.8; color: #333;">
+      <p>This page is publicly available at <code>/legal/${slug}</code>.</p>
+      <p>Use the legal hub for complete policy navigation and PDF links.</p>
+      <p><a href="/legal" style="color: #0F2E48;">Open Legal Hub</a></p>
+    </section>
+  </article>
+</main>`;
+
+  let html = getIndexHtml();
+  html = injectMeta(html, {
+    title: `${meta.title} | Lyceon`,
+    description: meta.description,
+    canonical,
+  });
+  html = injectBodyContent(html, bodyHtml);
+  res.type("html").send(html);
+});
 app.use(express.static(staticPath));
 
 // SPA fallback - serve index.html for all non-API routes
@@ -746,4 +780,3 @@ if (isMainModule) {
 }
 
 export default app;
-

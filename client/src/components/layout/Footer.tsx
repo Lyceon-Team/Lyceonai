@@ -33,7 +33,7 @@ export default function Footer() {
               </a>
             </Link>
             <p className="text-sm text-muted-foreground">
-              AI-powered SAT tutoring for the digital age.
+              Study Smarter, Score Higher.
             </p>
           </div>
 

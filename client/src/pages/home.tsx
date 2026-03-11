@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { 
-  Brain, 
-  Target, 
-  TrendingUp, 
-  CheckCircle2, 
-  MessageSquare, 
-  BarChart3, 
+import {
+  Brain,
+  Target,
+  TrendingUp,
+  CheckCircle2,
+  MessageSquare,
+  BarChart3,
   Clock,
   Shield,
   Sparkles,
@@ -17,56 +17,50 @@ import { SEO, JsonLd, organizationJsonLd, websiteJsonLd } from "@/components/SEO
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
 
-type DemoState = 'idle' | 'thinking' | 'answered';
-type HeroVariant = 'A' | 'B';
+type DemoState = "idle" | "thinking" | "answered";
+type HeroVariant = "A" | "B";
 
 export default function HomePage() {
-  const [demoState, setDemoState] = useState<DemoState>('idle');
+  const [demoState, setDemoState] = useState<DemoState>("idle");
   const [variant, setVariant] = useState<HeroVariant | null>(null);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("landing_hero_variant");
-      console.debug("[A/B Test] Retrieved from localStorage:", saved);
       if (saved === "A" || saved === "B") {
-        console.debug("[A/B Test] Using saved variant:", saved);
         setVariant(saved);
         return;
       }
       const chosen: HeroVariant = Math.random() < 0.5 ? "A" : "B";
-      console.debug("[A/B Test] Assigned new variant:", chosen);
       window.localStorage.setItem("landing_hero_variant", chosen);
       setVariant(chosen);
-    } catch (err) {
-      console.error("[A/B Test] localStorage error:", err);
+    } catch {
       setVariant("A");
     }
   }, []);
 
   const triggerDemo = () => {
-    setDemoState('thinking');
+    setDemoState("thinking");
     setTimeout(() => {
-      setDemoState('answered');
-      setTimeout(() => setDemoState('idle'), 8000);
-    }, 2000);
+      setDemoState("answered");
+      setTimeout(() => setDemoState("idle"), 7000);
+    }, 1600);
   };
 
   const trackCtaClick = (ctaText: string) => {
-    // Debug logging for A/B test variant tracking
     console.debug("hero_cta_click", { variant, ctaText });
-    console.debug("[A/B Test] Current localStorage:", window.localStorage.getItem("landing_hero_variant"));
   };
 
   return (
     <PublicLayout>
       <SEO
-        title="Lyceon - AI SAT Tutor | Personalized Digital SAT Prep"
-        description="Master the Digital SAT with AI-powered tutoring. Get unlimited practice questions, personalized explanations, and adaptive learning. Free to start."
+        title="Lyceon | Study Smarter, Score Higher"
+        description="Digital SAT prep with adaptive practice, full-length exams, mastery tracking, tutor chat, and guardian visibility. Free plan available with daily limits."
         canonical="https://lyceon.ai"
       />
       <JsonLd data={organizationJsonLd} />
       <JsonLd data={websiteJsonLd} />
-      
+
       <Container size="full">
         <section className="py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
@@ -79,48 +73,46 @@ export default function HomePage() {
                 <div className="h-64 flex items-center justify-center">
                   <div className="text-muted-foreground">Loading...</div>
                 </div>
-              ) : variant === 'A' ? (
+              ) : variant === "A" ? (
                 <>
                   <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
-                    Lyceon · AI SAT Tutor
+                    Study Smarter, Score Higher
                   </span>
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    An AI SAT tutor that{" "}
-                    <span className="text-foreground">actually knows the test</span>
+                    Digital SAT prep built for <span className="text-foreground">real progress</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Real SAT-style questions. Step-by-step explanations. Gemini-powered reasoning.
+                    Practice SAT-style questions, review step-by-step explanations, and track mastery over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Practice smarter with an AI tutor grounded in official SAT content—not generic advice.
+                    Use quick daily sessions, full-length exams, and tutor chat in one place.
                   </p>
                 </>
               ) : (
                 <>
                   <span className="text-xs uppercase tracking-widest text-muted-foreground mb-4 block">
-                    Lyceon · AI SAT Tutor
+                    Study Smarter, Score Higher
                   </span>
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    Meet your AI SAT tutor for the{" "}
-                    <span className="text-foreground">digital SAT</span>
+                    Study Smarter, Score Higher on the <span className="text-foreground">Digital SAT</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Get step-by-step help with real SAT-style questions. Powered by Gemini for reasoning.
+                    Build consistency with adaptive practice, full-length tests, and focused review.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Master the digital SAT with an AI tutor that's grounded in official content.
+                    Students track growth. Guardians can monitor linked progress and planning.
                   </p>
                 </>
               )}
 
               <div className="flex flex-col sm:flex-row gap-4 mb-8">
                 <Link href="/practice">
-                  <a 
-                    className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center" 
+                  <a
+                    className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
                     data-testid="button-start-demo"
-                    onClick={() => trackCtaClick(variant === 'A' ? "Start a free SAT session" : "Try the SAT copilot for free")}
+                    onClick={() => trackCtaClick(variant === "A" ? "Start free practice" : "See how Lyceon works")}
                   >
-                    {variant === 'A' ? "Start a free SAT session" : "Try the SAT copilot for free"}
+                    {variant === "A" ? "Start free practice" : "See how Lyceon works"}
                   </a>
                 </Link>
                 <Link href="/login">
@@ -136,16 +128,16 @@ export default function HomePage() {
 
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-border">
                 <div>
-                  <div className="text-2xl font-bold">2,500+</div>
-                  <div className="text-sm text-muted-foreground">Questions mastered</div>
+                  <div className="text-2xl font-bold">Adaptive practice</div>
+                  <div className="text-sm text-muted-foreground">Question difficulty adjusts as you improve</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">+120</div>
-                  <div className="text-sm text-muted-foreground">Avg. score gain</div>
+                  <div className="text-2xl font-bold">Full-length exams</div>
+                  <div className="text-sm text-muted-foreground">Timed 98-question SAT simulation</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">15k</div>
-                  <div className="text-sm text-muted-foreground">Sessions this month</div>
+                  <div className="text-2xl font-bold">Mastery tracking</div>
+                  <div className="text-sm text-muted-foreground">Topic and skill-level progress visibility</div>
                 </div>
               </div>
             </motion.div>
@@ -172,13 +164,13 @@ export default function HomePage() {
                     <Brain className="w-4 h-4" />
                   </div>
                   <div className="flex-1">
-                    {demoState === 'idle' && (
+                    {demoState === "idle" && (
                       <div className="text-sm text-muted-foreground italic">
-                        Sign in to start practicing with your AI tutor
+                        Sign in to start practicing with tutor chat
                       </div>
                     )}
-                    
-                    {demoState === 'thinking' && (
+
+                    {demoState === "thinking" && (
                       <div className="bg-secondary border border-border rounded-lg p-3">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <div className="flex gap-1">
@@ -191,37 +183,42 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    {demoState === 'answered' && (
+                    {demoState === "answered" && (
                       <div className="bg-secondary border border-border rounded-lg p-4 text-sm space-y-3">
                         <p>Let me break this down step by step:</p>
                         <ol className="space-y-2">
                           <li className="flex gap-2">
                             <span className="font-medium">1.</span>
-                            <span>First, identify what the question is asking about the passage structure.</span>
+                            <span>Identify what the question asks about passage structure.</span>
                           </li>
                           <li className="flex gap-2">
                             <span className="font-medium">2.</span>
-                            <span>Notice the transition word in line 12 that signals a contrast.</span>
+                            <span>Find transition language that signals contrast.</span>
                           </li>
                           <li className="flex gap-2">
                             <span className="font-medium">3.</span>
-                            <span>Option B correctly identifies this rhetorical shift.</span>
+                            <span>Choose the option that matches that shift in logic.</span>
                           </li>
                         </ol>
-                        <div className="bg-background border border-border rounded p-2 mt-3">
-                          <p className="text-xs font-medium">
-                            Key takeaway: Look for transition words to understand passage structure.
-                          </p>
-                        </div>
                       </div>
                     )}
                   </div>
                 </div>
 
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={triggerDemo}
+                    className="text-sm px-3 py-2 bg-secondary border border-border rounded-lg hover:bg-secondary/80 transition-colors"
+                  >
+                    Preview explanation
+                  </button>
+                </div>
+
                 <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    Gemini powered
+                    Tutor chat support
                   </span>
                   <span>Grounded in SAT-style questions</span>
                 </div>
@@ -236,15 +233,15 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-6 text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start gap-3">
               <Shield className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">Grounded in official SAT-style practice content</span>
+              <span className="text-sm">Grounded in SAT-style practice content</span>
             </div>
             <div className="flex items-center justify-center md:justify-start gap-3">
               <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">Privacy first—no data selling, ever</span>
+              <span className="text-sm">Privacy first - no data selling</span>
             </div>
             <div className="flex items-center justify-center md:justify-start gap-3">
               <Brain className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">Backed by Gemini for reasoning, tuned for SAT prep</span>
+              <span className="text-sm">Tutor chat with step-by-step SAT-focused explanations</span>
             </div>
           </div>
         </Container>
@@ -267,7 +264,7 @@ export default function HomePage() {
               <Target className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Diagnose in minutes</h3>
               <p className="text-muted-foreground">
-                Take a quick diagnostic to identify your strengths and weak spots. No 3-hour commitment required.
+                Take a quick diagnostic to identify strengths and weak spots.
               </p>
             </Card>
 
@@ -276,9 +273,9 @@ export default function HomePage() {
                 2
               </div>
               <MessageSquare className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">Practice with a real tutor feel</h3>
+              <h3 className="text-xl font-semibold mb-3">Practice and review</h3>
               <p className="text-muted-foreground">
-                Get instant, personalized explanations that adapt to your learning style—just like a $100/hr tutor.
+                Use adaptive question flow and tutor chat to understand mistakes and next steps.
               </p>
             </Card>
 
@@ -287,9 +284,9 @@ export default function HomePage() {
                 3
               </div>
               <TrendingUp className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">See exactly where you're improving</h3>
+              <h3 className="text-xl font-semibold mb-3">Track and improve</h3>
               <p className="text-muted-foreground">
-                Track progress by topic, difficulty, and time. Know what to focus on before test day.
+                Monitor mastery and validate readiness with full-length SAT exam sessions.
               </p>
             </Card>
           </div>
@@ -303,29 +300,29 @@ export default function HomePage() {
               Built for the way you actually study
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Somewhere between flashcards and full-length tests
+              Daily practice plus full-length test readiness
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             <Card>
               <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Chat that's actually about the SAT</h3>
+              <h3 className="text-xl font-semibold mb-3">Tutor chat, grounded in context</h3>
               <p className="text-muted-foreground mb-4">
-                Not generic tutoring. Every explanation is grounded in real SAT question patterns and strategies.
+                Explanations stay focused on SAT-style question patterns and reasoning.
               </p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Cites specific question IDs
+                  References current question context
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  No hallucinated examples
+                  Step-by-step reasoning support
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Clear next steps after every answer
+                  Clear follow-up guidance
                 </li>
               </ul>
             </Card>
@@ -334,7 +331,7 @@ export default function HomePage() {
               <Clock className="w-10 h-10 mb-4" />
               <h3 className="text-xl font-semibold mb-3">Practice sessions that fit life</h3>
               <p className="text-muted-foreground mb-4">
-                15–60 minute sessions that adapt to your schedule. Study between classes, on the bus, or before bed.
+                15-60 minute sessions that adapt to your schedule.
               </p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
@@ -354,22 +351,22 @@ export default function HomePage() {
 
             <Card>
               <BarChart3 className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">A dashboard parents actually understand</h3>
+              <h3 className="text-xl font-semibold mb-3">Progress visibility for families</h3>
               <p className="text-muted-foreground mb-4">
-                Clear insights into progress, strengths, and what to work on next—without a PhD in test prep.
+                Clear progress snapshots and next-step priorities without overwhelming dashboards.
               </p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Topic-level breakdowns
+                  Topic and skill breakdowns
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Weekly progress reports
+                  Linked guardian summary view
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
-                  Estimated score ranges
+                  Calendar planning access
                 </li>
               </ul>
             </Card>
@@ -381,58 +378,39 @@ export default function HomePage() {
         <Section className="py-16">
           <div className="grid lg:grid-cols-2 gap-12">
             <div>
-              <h2 className="text-3xl font-bold mb-8">Real results from real students</h2>
+              <h2 className="text-3xl font-bold mb-8">What you can track today</h2>
               <div className="space-y-6">
                 <Card className="bg-secondary">
-                  <div className="text-4xl font-bold mb-2">+120</div>
-                  <div className="font-medium mb-1">Average score improvement</div>
-                  <div className="text-sm text-muted-foreground">Based on students who practiced 3x/week for 6 weeks</div>
+                  <div className="font-medium mb-1">Practice consistency</div>
+                  <div className="text-sm text-muted-foreground">Session count, time spent, and recent accuracy trends.</div>
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="text-4xl font-bold mb-2">4.2x</div>
-                  <div className="font-medium mb-1">More consistent practice</div>
-                  <div className="text-sm text-muted-foreground">Students practice more often vs. traditional methods</div>
+                  <div className="font-medium mb-1">Mastery progression</div>
+                  <div className="text-sm text-muted-foreground">Skill and domain status across Math and Reading & Writing.</div>
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="text-4xl font-bold mb-2">89%</div>
-                  <div className="font-medium mb-1">Would recommend to a friend</div>
-                  <div className="text-sm text-muted-foreground">From our post-session surveys</div>
+                  <div className="font-medium mb-1">Full-length exam outcomes</div>
+                  <div className="text-sm text-muted-foreground">Module-level results and score projection data after completion.</div>
                 </Card>
               </div>
             </div>
 
             <div>
-              <h2 className="text-3xl font-bold mb-8">What students and parents say</h2>
+              <h2 className="text-3xl font-bold mb-8">Who Lyceon is for</h2>
               <div className="space-y-6">
                 <Card className="bg-secondary">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center flex-shrink-0">
-                      <span className="text-xl">👨‍🎓</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold">Alex M., Junior</div>
-                      <div className="text-sm text-muted-foreground">1480 → 1560</div>
-                    </div>
-                  </div>
+                  <div className="font-semibold mb-2">Students</div>
                   <p>
-                    "I actually get why I got questions wrong now. The explanations aren't just 'the answer is C because...' They break down my thinking and show me the pattern. Game changer."
+                    Build a daily SAT routine with adaptive question flow, tutor chat, review cycles, and full-length test readiness.
                   </p>
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center flex-shrink-0">
-                      <span className="text-xl">👩</span>
-                    </div>
-                    <div>
-                      <div className="font-semibold">Sarah K., Parent</div>
-                      <div className="text-sm text-muted-foreground">Mother of two test-takers</div>
-                    </div>
-                  </div>
+                  <div className="font-semibold mb-2">Guardians</div>
                   <p>
-                    "Finally, a platform I can actually understand. I can see where my daughter is struggling and what she's working on—without having to decipher charts or pay for weekly tutor updates."
+                    Link student accounts to monitor progress summaries and planning signals, with expanded visibility on paid plans.
                   </p>
                 </Card>
               </div>
@@ -461,19 +439,19 @@ export default function HomePage() {
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Daily tutor sessions (fair-use)
+                  Up to 10 practice questions per day
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Core question bank access
+                  Up to 5 tutor chat messages per day
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Basic progress insights
+                  Full-length SAT exam mode
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Section-specific practice
+                  Mastery and dashboard tracking
                 </li>
               </ul>
 
@@ -498,19 +476,19 @@ export default function HomePage() {
               <ul className="space-y-3 mb-8 opacity-90">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span><strong>Unlimited</strong> tutor sessions</span>
+                  <span><strong>Unlimited</strong> practice questions</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>Advanced analytics &amp; predictions</span>
+                  <span><strong>Unlimited</strong> tutor chat messages</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>Parent/counselor dashboards</span>
+                  <span>Expanded guardian summary and calendar visibility</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span>Full question bank (2,500+ Qs)</span>
+                  <span>Priority feature access as plans roll out</span>
                 </li>
               </ul>
 
@@ -535,17 +513,15 @@ export default function HomePage() {
           <div className="space-y-4">
             <details className="bg-secondary border border-border rounded-2xl p-6 group">
               <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                Is this just ChatGPT with a different logo?
+                How is tutor chat different from a generic chatbot?
                 <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
               </summary>
               <div className="mt-4 text-muted-foreground space-y-2">
                 <p>
-                  Nope. While we use Gemini (not ChatGPT), the key difference is our tutor is <strong className="text-foreground">grounded in real SAT content</strong>. 
-                  It won't make up examples or give generic study advice.
+                  Tutor chat is built around SAT-style practice context, not open-ended generic chat.
                 </p>
                 <p>
-                  Every explanation references specific question types, patterns, and strategies that actually appear on the test. 
-                  It's like having a tutor who's taken the SAT 100 times.
+                  Explanations focus on reasoning steps, common errors, and what to do next.
                 </p>
               </div>
             </details>
@@ -557,37 +533,35 @@ export default function HomePage() {
               </summary>
               <div className="mt-4 text-muted-foreground">
                 <p>
-                  No. The free tier is truly free—no trial that auto-converts, no hidden charges. 
-                  Just sign up with your email and start practicing.
+                  No. The free tier is available without entering card details.
                 </p>
               </div>
             </details>
 
             <details className="bg-secondary border border-border rounded-2xl p-6 group">
               <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                Can parents and tutors see progress?
+                What can guardians see?
                 <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
               </summary>
               <div className="mt-4 text-muted-foreground">
                 <p>
-                  Yes. Students have a dashboard showing their progress, and parents can view the same data (with the student's permission). 
-                  Our Pro plan (coming soon) will add more detailed parent/counselor views and weekly reports.
+                  Guardians can link student accounts and view progress summaries.
+                  Student summary and calendar views are entitlement-gated for paid guardian access.
                 </p>
               </div>
             </details>
 
             <details className="bg-secondary border border-border rounded-2xl p-6 group">
               <summary className="font-semibold text-lg cursor-pointer flex items-center justify-between">
-                Does this replace full-length practice tests?
+                Do you include full-length exams and daily practice?
                 <ChevronDown className="w-5 h-5 text-muted-foreground group-open:rotate-180 transition-transform" />
               </summary>
               <div className="mt-4 text-muted-foreground">
                 <p>
-                  No, and it's not supposed to. We're designed for <strong className="text-foreground">daily practice and concept reinforcement</strong>—the stuff 
-                  you do between full-length tests.
+                  Yes. Lyceon supports both: daily adaptive practice and full-length timed SAT exams.
                 </p>
                 <p className="mt-2">
-                  Think of us as the training sessions. Official practice tests are the scrimmages. Both matter.
+                  Use daily sessions to improve weak areas, then validate progress with full-length exam runs.
                 </p>
               </div>
             </details>
@@ -599,10 +573,10 @@ export default function HomePage() {
         <Container>
           <div className="text-center">
             <h2 className="text-3xl sm:text-4xl font-bold mb-4">
-              Ready to make your next practice session actually count?
+              Study Smarter, Score Higher
             </h2>
             <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Join thousands of students who are studying smarter with AI-powered SAT prep.
+              Build momentum with adaptive practice, tutor chat, and full-length SAT simulations.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

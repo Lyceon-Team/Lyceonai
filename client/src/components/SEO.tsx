@@ -139,7 +139,7 @@ export const organizationJsonLd = {
   name: 'Lyceon',
   url: BASE_URL,
   logo: `${BASE_URL}/logo.png`,
-  description: 'AI-powered SAT tutoring platform with personalized practice and explanations.',
+  description: 'Digital SAT prep platform with adaptive practice, tutor guidance, and mastery tracking.',
   sameAs: [],
 };
 
@@ -148,7 +148,7 @@ export const websiteJsonLd = {
   '@type': 'WebSite',
   name: 'Lyceon',
   url: BASE_URL,
-  description: 'Master the Digital SAT with AI-powered tutoring, unlimited practice questions, and personalized explanations.',
+  description: 'Study Smarter, Score Higher with adaptive Digital SAT practice, full-length exams, and progress tracking.',
   potentialAction: {
     '@type': 'SearchAction',
     target: `${BASE_URL}/blog?q={search_term_string}`,

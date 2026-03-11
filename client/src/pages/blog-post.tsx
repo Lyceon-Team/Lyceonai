@@ -125,7 +125,7 @@ export default function BlogPostPage() {
           {/* Inline CTA - positioned after main content */}
           <div className="my-8 p-6 bg-secondary border border-border rounded-xl">
             <p className="text-sm text-muted-foreground mb-2">Ready to put this into practice?</p>
-            <p className="font-semibold mb-4">Start practicing SAT questions with AI-powered explanations.</p>
+            <p className="font-semibold mb-4">Start practicing SAT questions with step-by-step guided explanations.</p>
             <Link href="/practice">
               <a className="inline-block px-5 py-2.5 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
                 Start Free Practice

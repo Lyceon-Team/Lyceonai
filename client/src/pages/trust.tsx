@@ -129,7 +129,7 @@ export default function TrustHub() {
                                     </div>
                                     <CardTitle className="text-base">Trust &amp; Safety</CardTitle>
                                     <CardDescription className="text-sm">
-                                        How we approach trust, safety, and responsibility in AI-powered learning.
+                                        How we approach trust, safety, and responsible technology in learning.
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="pt-0 mt-auto">
@@ -285,4 +285,3 @@ export default function TrustHub() {
         </div>
     );
 }
-

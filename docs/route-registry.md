@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-03-11 (Wave 3 O1-O5 closure)
+**Last Updated:** 2026-03-11 (Wave 3 GROW1 public truth alignment)
 
 ---
 
@@ -63,6 +63,36 @@ This document is the single authoritative registry of:
 
 ---
 
+## Public Crawlability Inventory (GROW1)
+
+### Active + Indexable (sitemap + canonical SEO)
+- `/`
+- `/digital-sat`
+- `/digital-sat/math`
+- `/digital-sat/reading-writing`
+- `/blog`
+- `/blog/:slug` (currently: `is-digital-sat-harder`, `digital-sat-scoring-explained`, `quick-sat-study-routine`, `sat-question-bank-practice`, `common-sat-math-algebra-mistakes`)
+- `/trust`
+- `/trust/evidence`
+- `/legal`
+- `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)
+
+### Active + Non-indexable (intentional)
+- `/login`
+- `/signup`
+- `/privacy` (301 to `/legal/privacy-policy`)
+- `/terms` (301 to `/legal/student-terms`)
+- authenticated app surfaces (dashboard, practice, full-test, mastery, guardian, admin)
+
+### Dead/Stale Public Routes
+- none (legacy ingestion/admin-deprecated routes remain removed)
+
+### SEO/Sitemap Reconciliation Notes
+- `client/public/sitemap.xml` and `server/seo-content.ts` public entries are aligned for core static pages.
+- `server/index.ts` now provides legal-slug SSR metadata fallback for public legal pages not explicitly listed in `PUBLIC_SSR_ROUTES`.
+- `client/public/robots.txt` now disallows authenticated/private app routes to prevent crawl drift.
+
+---
 ## DEPRECATED Routes (Removed)
 
 The following routes have been **REMOVED** from the codebase:
