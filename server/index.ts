@@ -270,7 +270,7 @@ app.use(
 );
 
 // Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
-app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
+app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);

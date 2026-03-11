@@ -42,6 +42,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
 
     it('should return 404 for deprecated exchange-session endpoint', async () => {
@@ -103,6 +104,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
 
     it('should block subdomain impersonation via Referer', async () => {
@@ -112,6 +114,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
 
     it('should block trailing domain impersonation', async () => {
@@ -121,6 +124,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
   });
 
@@ -134,6 +138,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
 
     it('should block requests with only whitespace in Origin', async () => {
@@ -143,6 +148,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
   });
 
@@ -196,6 +202,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
   });
 
@@ -230,6 +237,7 @@ describe('CI Security Tests - CSRF', () => {
       
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      expect(res.body).toHaveProperty('requestId');
     });
   });
 
@@ -296,3 +304,4 @@ describe('CI Security Tests - CSRF', () => {
     });
   });
 });
+

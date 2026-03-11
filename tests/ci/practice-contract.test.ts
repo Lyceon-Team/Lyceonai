@@ -35,6 +35,12 @@ vi.mock('../../apps/api/src/lib/supabase-server', async (importOriginal) => {
   };
 });
 
+
+vi.mock('../../server/middleware/usage-limits', () => ({
+  checkPracticeLimit: () => (_req: any, _res: any, next: any) => next(),
+  checkAiChatLimit: () => (_req: any, _res: any, next: any) => next(),
+  FREE_TIER_LIMITS: { practice: 10, ai_chat: 5 },
+}));
 describe('Practice Runtime Contract', () => {
   let app: Express;
 
@@ -189,7 +195,7 @@ describe('Practice Runtime Contract', () => {
         builder.single.mockResolvedValue({ data: mockQuestion, error: null });
       } else if (table === 'answer_attempts') {
         builder.insert.mockResolvedValue({ error: { message: 'duplicate key value violates unique constraint' } });
-        builder.single.mockResolvedValue({ data: successfulAttempt, error: null });
+        builder.maybeSingle.mockResolvedValue({ data: successfulAttempt, error: null });
         builder.then.mockImplementation((cb: any) => Promise.resolve(cb({ data: [successfulAttempt], error: null })));
       }
       return builder;
@@ -208,6 +214,38 @@ describe('Practice Runtime Contract', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+  });
+  it('CONTRACT-004B: duplicate answer without idempotency key resolves to stored outcome', async () => {
+    const storedAttempt = { is_correct: false, outcome: 'incorrect', attempted_at: new Date().toISOString() };
+
+    (supabaseServer.from as any).mockImplementation((table: string) => {
+      const builder = createMockBuilder();
+      if (table === 'practice_sessions') {
+        builder.single.mockResolvedValue({ data: mockSession, error: null });
+      } else if (table === 'questions') {
+        builder.single.mockResolvedValue({ data: mockQuestion, error: null });
+      } else if (table === 'answer_attempts') {
+        builder.insert.mockResolvedValue({ error: { message: 'duplicate key value violates unique constraint' } });
+        builder.maybeSingle.mockResolvedValue({ data: storedAttempt, error: null });
+        builder.then.mockImplementation((cb: any) => Promise.resolve(cb({ data: [storedAttempt], error: null })));
+      }
+      return builder;
+    });
+
+    const res = await request(app)
+      .post('/api/practice/answer')
+      .set('Origin', 'http://localhost:5000')
+      .send({
+        sessionId: mockSession.id,
+        questionId: mockQuestion.id,
+        selectedAnswer: 'A',
+        client_instance_id: 'tab1',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(false);
+    expect(res.body.feedback).toBe('Incorrect');
     expect(res.body.idempotentRetried).toBe(true);
   });
 
@@ -309,3 +347,4 @@ describe('Practice Runtime Contract', () => {
     expect(res.body).not.toHaveProperty('isCorrect');
   });
 });
+
