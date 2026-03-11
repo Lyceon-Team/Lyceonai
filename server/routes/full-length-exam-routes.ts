@@ -13,6 +13,8 @@ import { Router, Request, Response } from "express";
 import { requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
+import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+import { buildFullTestKpis, fullTestMeasurementModel } from "../services/kpi-truth-layer";
 import { z } from "zod";
 
 const router = Router();
@@ -340,12 +342,36 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
       return res.status(400).json({ error: "sessionId required" });
     }
 
+    const access = await resolvePaidKpiAccessForUser(req.user.id, req.user.role);
+    if (!access.hasPaidAccess) {
+      return res.status(402).json({
+        error: "Premium KPI feature required",
+        code: "PREMIUM_KPI_REQUIRED",
+        feature: "full_test_analytics",
+        message: "Upgrade to an active paid plan to unlock full-test analytics.",
+        reason: access.reason,
+        requestId: req.requestId,
+      });
+    }
+
     const result = await fullLengthExamService.getExamReport({
       sessionId,
       userId: req.user.id,
     });
 
-    return res.json(result);
+    const kpis = buildFullTestKpis({
+      scaledTotal: result.scaledScore.total,
+      scaledRw: result.scaledScore.rw,
+      scaledMath: result.scaledScore.math,
+      totalCorrect: result.rawScore.total.correct,
+      totalQuestions: result.rawScore.total.total,
+    });
+
+    return res.json({
+      ...result,
+      kpis,
+      measurementModel: fullTestMeasurementModel(),
+    });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Get report error:", error);
     const message = error instanceof Error ? error.message : "";
@@ -361,7 +387,6 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
     return res.status(500).json({ error: "Internal error" });
   }
 });
-
 /**
  * GET /api/full-length/sessions/:sessionId/review
  * Review unlocks only after exam completion.
