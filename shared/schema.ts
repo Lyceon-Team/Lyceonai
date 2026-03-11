@@ -115,6 +115,7 @@ export const questions = pgTable("questions", {
   canonicalId: text("canonical_id").notNull().unique(),
   status: text("status").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+<<<<<<< HEAD
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   publishedAt: timestamp("published_at"),
   reviewedAt: timestamp("reviewed_at"),
@@ -145,6 +146,40 @@ export const questions = pgTable("questions", {
   tags: jsonb("tags"),
   competencies: jsonb("competencies"),
   provenanceChunkIds: jsonb("provenance_chunk_ids"),
+=======
+  
+  // CANONICAL DISCRIMINATED UNION FIELDS (new architecture):
+  type: text("type"), // "mc" | "fr" - CANONICAL type field (use this, not questionType)
+  answerChoice: text("answer_choice"), // for MC: "A" | "B" | "C" | "D" (use this instead of answer for MC)
+  answerText: text("answer_text"), // for FR: free response text answer (use this instead of answer for FR)
+  
+  // Quality assurance fields
+  confidence: real("confidence").default(1.0), // Parsing confidence 0.0-1.0
+  needsReview: boolean("needs_review").default(false).notNull(), // True if confidence < 0.8
+  parsingMetadata: jsonb("parsing_metadata").$type<{
+    anchorsDetected?: string[];
+    patternMatches?: Record<string, boolean>;
+    warnings?: string[];
+    originalText?: string;
+  }>(), // Detailed parsing metadata for review
+  reviewedAt: timestamp("reviewed_at"), // When question was reviewed
+  reviewedBy: varchar("reviewed_by").references(() => users.id), // Admin who reviewed
+  
+  // Legacy import provenance fields retained for historical data compatibility (non-runtime).
+  questionHash: text("question_hash").unique(), // Normalized hash for deduplication
+  engineUsed: text("engine_used"), // 'docai' | 'mathpix' | 'nougat' - primary OCR engine
+  engineConfidence: real("engine_confidence"), // Average confidence from OCR engine (0.0-1.0)
+  sourcePdf: text("source_pdf"), // GCS path to source PDF
+  ingestionRunId: varchar("ingestion_run_id"), // Legacy compatibility link to ingestion_runs historical records
+  
+  // Legacy canonical import metadata retained for historical rows (non-runtime).
+  canonicalId: text("canonical_id").unique(), // Stable canonical ID like SATM1****** or ACTR1******
+  testCode: text("test_code"), // e.g. "SAT", "ACT", "AP"
+  sectionCode: text("section_code"), // e.g. "M", "RW"
+  sourceType: integer("source_type"), // 1 = parsed PDF, 2 = AI generated
+  competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }>>(), // Array of {code, raw}
+  version: integer("version").default(1), // Schema version
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 });
 
 export const chatMessages = pgTable("chat_messages", {
@@ -410,8 +445,8 @@ export const fullLengthExamResponses = pgTable("full_length_exam_responses", {
   { uniqueSessionModuleQuestion: sql`UNIQUE(${table.sessionId}, ${table.moduleId}, ${table.questionId})` }
 ]);
 
-// DEPRECATED: batch_jobs tables removed - use ingestion_runs instead
-// See ingestionRuns table below for current ingestion tracking
+// DEPRECATED: historical import-run tables retained for compatibility only.
+// There is no active ingestion runtime in this repository.
 
 // Admin audit logs for tracking administrative actions
 export const adminAuditLogs = pgTable("admin_audit_logs", {
@@ -445,10 +480,10 @@ export const systemEventLogs = pgTable("system_event_logs", {
 });
 
 // ============================================================================
-// INGESTION V2 PIPELINE TABLES
+// LEGACY IMPORT-RUN TABLES (DEPRECATED, NON-RUNTIME)
 // ============================================================================
 
-// Ingestion runs - tracks each batch ingestion job with detailed metrics
+// Historical import-run records retained for audit/backfill compatibility.
 export const ingestionRuns = pgTable("ingestion_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   status: text("status").notNull().default("queued"), // 'queued', 'ocr_docai', 'ocr_mathpix_patch', 'ocr_nougat_fallback', 'parsing', 'qa', 'upsert_db', 'embed', 'done', 'failed'
@@ -571,7 +606,7 @@ export const questionEmbeddings = pgTable("question_embeddings", {
   pageNumber: integer("page_number"),
   bbox: jsonb("bbox").$type<number[]>(),
   engineUsed: text("engine_used"), // OCR engine that extracted this content
-  // Supabase vector search metadata (extended for Ingestion v2)
+  // Supabase vector search metadata (legacy import fields may appear in historical rows)
   metadata: jsonb("metadata").$type<{
     section?: string;
     difficulty?: string;
@@ -667,7 +702,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
   createdAt: true,
 });
 
-// DEPRECATED: batch job schemas removed - use ingestion_runs instead
+// DEPRECATED: legacy import-run schemas retained for compatibility only.
 
 export const insertAdminAuditLogSchema = createInsertSchema(adminAuditLogs).omit({
   id: true,
@@ -679,7 +714,7 @@ export const insertSystemEventLogSchema = createInsertSchema(systemEventLogs).om
   createdAt: true,
 });
 
-// Ingestion v2 insert schemas
+// Legacy import-run insert schemas retained for compatibility.
 export const insertIngestionRunSchema = createInsertSchema(ingestionRuns).omit({
   id: true,
   createdAt: true,
@@ -764,7 +799,7 @@ export type FullLengthExamQuestion = typeof fullLengthExamQuestions.$inferSelect
 export type InsertFullLengthExamResponse = z.infer<typeof insertFullLengthExamResponseSchema>;
 export type FullLengthExamResponse = typeof fullLengthExamResponses.$inferSelect;
 
-// DEPRECATED: BatchJob and BatchFileProgress types removed - use IngestionRun instead
+// DEPRECATED: BatchJob and BatchFileProgress types removed; IngestionRun remains legacy compatibility only.
 
 export type InsertAdminAuditLog = z.infer<typeof insertAdminAuditLogSchema>;
 export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
@@ -772,7 +807,7 @@ export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 export type InsertSystemEventLog = z.infer<typeof insertSystemEventLogSchema>;
 export type SystemEventLog = typeof systemEventLogs.$inferSelect;
 
-// Ingestion v2 types
+// Legacy import-run types retained for compatibility.
 export type InsertIngestionRun = z.infer<typeof insertIngestionRunSchema>;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 

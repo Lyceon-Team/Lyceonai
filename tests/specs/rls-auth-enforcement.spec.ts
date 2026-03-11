@@ -258,7 +258,6 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
 
   test('should require admin role for admin endpoints', async ({ request }) => {
     const adminEndpoints = [
-      '/api/ingest/jobs',
       '/api/admin/questions/needs-review',
       '/api/admin/questions/statistics',
       '/api/admin/stats',

@@ -1,5 +1,8 @@
 # Stabilize-MVP Implementation Summary
 
+> **HISTORICAL ARCHIVE (non-runtime):** Any ingestion references in this document describe removed systems and do not reflect current product scope.
+
+
 ## Overview
 
 This document summarizes the MVP stabilization work completed. The implementation creates clean, focused endpoints that remove scope drift and restore the core value proposition.

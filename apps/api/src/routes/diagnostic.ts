@@ -1,4 +1,5 @@
 /**
+<<<<<<< HEAD
  * Diagnostic routes
  */
 
@@ -17,6 +18,39 @@ router.post("/start", async (req: AuthenticatedRequest, res: Response) => {
 
     const result = await startDiagnosticSession(req.user.id);
     if (result.error) return res.status(500).json({ error: result.error });
+=======
+ * DIAGNOSTIC ROUTES - Mastery v1.0
+ *
+ * Endpoints for cold-start diagnostic assessment.
+ * All endpoints require authentication and use the mastery write choke point.
+ */
+
+import { Response, Router } from 'express';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import {
+  startDiagnosticSession,
+  getCurrentDiagnosticQuestion,
+  recordDiagnosticAnswer,
+} from '../services/diagnostic-service';
+import { applyMasteryUpdate } from '../services/mastery-write';
+import { MasteryEventType } from '../services/mastery-constants';
+import { getSupabaseAdmin } from '../lib/supabase-admin';
+
+const router = Router();
+
+router.post('/start', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const result = await startDiagnosticSession(user.id);
+
+    if (result.error) {
+      return res.status(500).json({ error: result.error });
+    }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
     return res.json({
       sessionId: result.sessionId,
@@ -28,12 +62,27 @@ router.post("/start", async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+<<<<<<< HEAD
 router.get("/next", async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
 
     const sessionId = req.query.sessionId as string;
     if (!sessionId) return res.status(400).json({ error: "sessionId is required" });
+=======
+router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const sessionId = req.query.sessionId as string;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
     const supabase = getSupabaseAdmin();
     const { data: session, error: sessionError } = await supabase
@@ -42,11 +91,27 @@ router.get("/next", async (req: AuthenticatedRequest, res: Response) => {
       .eq("id", sessionId)
       .single();
 
+<<<<<<< HEAD
     if (sessionError || !session) return res.status(404).json({ error: "Session not found" });
     if (session.student_id !== req.user.id) return res.status(403).json({ error: "Access denied" });
 
     const result = await getCurrentDiagnosticQuestion(sessionId);
     if (result.error) return res.status(500).json({ error: result.error });
+=======
+    if (sessionError || !session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (session.student_id !== user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await getCurrentDiagnosticQuestion(sessionId);
+
+    if (result.error) {
+      return res.status(500).json({ error: result.error });
+    }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
     if (result.isComplete) {
       return res.json({ isComplete: true, questionIndex: result.questionIndex, totalQuestions: result.totalQuestions });
@@ -58,14 +123,28 @@ router.get("/next", async (req: AuthenticatedRequest, res: Response) => {
       .eq("canonical_id", result.questionId)
       .single();
 
+<<<<<<< HEAD
     if (questionError || !question) return res.status(500).json({ error: "Failed to load question" });
 
     return res.json({ question, questionIndex: result.questionIndex, totalQuestions: result.totalQuestions, isComplete: false });
+=======
+    if (questionError || !question) {
+      return res.status(500).json({ error: 'Failed to load question' });
+    }
+
+    return res.json({
+      question,
+      questionIndex: result.questionIndex,
+      totalQuestions: result.totalQuestions,
+      isComplete: false,
+    });
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   } catch (err: any) {
     return res.status(500).json({ error: "Failed to get next question" });
   }
 });
 
+<<<<<<< HEAD
 router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Authentication required" });
@@ -74,6 +153,27 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
 
     if (!sessionId || !questionCanonicalId) {
       return res.status(400).json({ error: "sessionId and questionCanonicalId are required" });
+=======
+router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const {
+      sessionId,
+      questionCanonicalId,
+      selectedChoice,
+      answerText,
+      timeSpentMs,
+    } = req.body;
+
+    if (!sessionId || !questionCanonicalId) {
+      return res.status(400).json({
+        error: 'sessionId and questionCanonicalId are required'
+      });
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     }
 
     const supabase = getSupabaseAdmin();
@@ -83,8 +183,18 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
       .eq("id", sessionId)
       .single();
 
+<<<<<<< HEAD
     if (sessionError || !session) return res.status(404).json({ error: "Session not found" });
     if (session.student_id !== req.user.id) return res.status(403).json({ error: "Access denied" });
+=======
+    if (sessionError || !session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    if (session.student_id !== user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
     const { data: question, error: questionError } = await supabase
       .from("questions")
@@ -92,6 +202,7 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
       .eq("canonical_id", questionCanonicalId)
       .single();
 
+<<<<<<< HEAD
     if (questionError || !question) return res.status(404).json({ error: "Question not found" });
 
     if (question.question_type !== "multiple_choice") {
@@ -99,6 +210,20 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const isCorrect = String(selectedChoice ?? "").trim().toUpperCase() === String(question.correct_answer).trim().toUpperCase();
+=======
+    if (questionError || !question) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    let isCorrect = false;
+    if (question.type === 'mc' || !question.type) {
+      isCorrect = selectedChoice === question.answer_choice;
+    } else if (question.type === 'fr') {
+      const normalizedAnswer = (answerText || '').trim().toLowerCase();
+      const normalizedCorrect = (question.answer_text || '').trim().toLowerCase();
+      isCorrect = normalizedAnswer === normalizedCorrect;
+    }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
     const recordResult = await recordDiagnosticAnswer(
       sessionId,
@@ -113,7 +238,7 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const masteryResult = await applyMasteryUpdate({
-      userId: req.user.id,
+      userId: user.id,
       questionCanonicalId,
       sessionId,
       isCorrect,
@@ -140,7 +265,11 @@ router.post("/answer", async (req: AuthenticatedRequest, res: Response) => {
       isCorrect,
       isComplete: recordResult.isComplete,
       nextQuestionId: recordResult.nextQuestionId,
+<<<<<<< HEAD
       explanation: isCorrect ? null : question.explanation || null,
+=======
+      explanation: isCorrect ? null : (question.explanation || null),
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     });
   } catch (_err: any) {
     return res.status(500).json({ error: "Failed to submit answer" });

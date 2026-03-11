@@ -19,80 +19,6 @@ function requireAccountIdFromStripeObject(obj: any): string {
   return accountId;
 }
 
-interface EventLogEntry {
-  event_id: string;
-  type: string;
-  livemode: boolean;
-  payload: object;
-  status: 'pending' | 'processed' | 'ignored' | 'failed';
-  processed_at?: string;
-  error?: string;
-  account_id?: string;
-  user_id?: string;
-}
-
-async function checkEventIdempotency(eventId: string): Promise<{ alreadyProcessed: boolean; status?: string }> {
-  const { data, error } = await supabaseServer
-    .from('stripe_event_log')
-    .select('id, processed_at, status')
-    .eq('event_id', eventId)
-    .single();
-  
-  if (error && error.code !== 'PGRST116') {
-    logger.warn('WEBHOOK', 'idempotency_check', 'Failed to check idempotency', { eventId, error: error.message });
-  }
-
-  if (data?.processed_at) {
-    return { alreadyProcessed: true, status: data.status };
-  }
-  
-  return { alreadyProcessed: false };
-}
-
-async function recordEventStart(entry: EventLogEntry): Promise<void> {
-  const { error } = await supabaseServer
-    .from('stripe_event_log')
-    .insert({
-      event_id: entry.event_id,
-      type: entry.type,
-      livemode: entry.livemode,
-      payload: entry.payload,
-      status: 'pending',
-    });
-  
-  if (error && !error.message.includes('duplicate')) {
-    logger.warn('WEBHOOK', 'record_start', 'Failed to record event start', { 
-      eventId: entry.event_id, 
-      error: error.message 
-    });
-  }
-}
-
-async function updateEventStatus(
-  eventId: string, 
-  status: 'processed' | 'ignored' | 'failed',
-  details?: { error?: string; account_id?: string; user_id?: string }
-): Promise<void> {
-  const { error } = await supabaseServer
-    .from('stripe_event_log')
-    .update({
-      status,
-      processed_at: new Date().toISOString(),
-      error: details?.error || null,
-      account_id: details?.account_id || null,
-      user_id: details?.user_id || null,
-    })
-    .eq('event_id', eventId);
-  
-  if (error) {
-    logger.warn('WEBHOOK', 'record_update', 'Failed to update event status', { 
-      eventId, 
-      status,
-      error: error.message 
-    });
-  }
-}
-
 async function extractAccountIdStrict(
   session: Stripe.Checkout.Session | null,
   subscription: Stripe.Subscription | null
@@ -105,7 +31,7 @@ async function extractAccountIdStrict(
     } catch {
     }
   }
-  
+
   if (subscription) {
     try {
       const accountId = requireAccountIdFromStripeObject(subscription);
@@ -114,66 +40,50 @@ async function extractAccountIdStrict(
     } catch {
     }
   }
-  
-  if (session?.subscription) {
-    try {
-      const stripe = await getUncachableStripeClient();
-      const subId = typeof session.subscription === 'string' 
-        ? session.subscription 
-        : session.subscription.id;
-      const sub = await stripe.subscriptions.retrieve(subId);
-      const accountId = requireAccountIdFromStripeObject(sub);
-      const userId = sub.metadata?.payer_user_id || sub.metadata?.user_id || null;
-      return { accountId, userId };
-    } catch (err) {
-      logger.warn('WEBHOOK', 'extractAccountIdStrict', 'Failed to retrieve subscription', { error: (err as Error).message });
-    }
-  }
-  
+
   throw new Error('Missing account_id on Stripe object metadata/client_reference_id');
 }
 
 async function handleSubscriptionEvent(
-  subscription: Stripe.Subscription,
+  subscriptionPayload: Stripe.Subscription,
   eventType: string,
   eventId: string,
   checkoutSession?: Stripe.Checkout.Session
 ): Promise<void> {
   let accountId: string;
-  let userId: string | null;
-  
+
   try {
-    const extracted = await extractAccountIdStrict(checkoutSession || null, subscription);
+    const extracted = await extractAccountIdStrict(checkoutSession || null, subscriptionPayload);
     accountId = extracted.accountId;
-    userId = extracted.userId;
   } catch (err) {
     logger.error('WEBHOOK', 'subscription', 'Missing account_id on Stripe object metadata/client_reference_id', {
-      subscriptionId: subscription.id,
+      subscriptionId: subscriptionPayload.id,
       eventType,
       eventId,
       error: (err as Error).message,
     });
-    await updateEventStatus(eventId, 'failed', { error: 'Missing account_id on Stripe object metadata/client_reference_id' });
-    return;
+    throw err;
   }
+
+  // Handle out-of-order events: always fetch the latest subscription state from Stripe
+  const stripe = await getUncachableStripeClient();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionPayload.id);
 
   const { plan, status } = mapStripeStatusToEntitlement(subscription.status);
   const periodEnd = (subscription as any).current_period_end;
-  const currentPeriodEnd = periodEnd 
+  const currentPeriodEnd = periodEnd
     ? new Date(periodEnd * 1000).toISOString()
     : null;
 
   await upsertEntitlement(accountId, {
     plan,
     status,
-    stripe_customer_id: typeof subscription.customer === 'string' 
-      ? subscription.customer 
+    stripe_customer_id: typeof subscription.customer === 'string'
+      ? subscription.customer
       : subscription.customer.id,
     stripe_subscription_id: subscription.id,
     current_period_end: currentPeriodEnd,
   });
-
-  await updateEventStatus(eventId, 'processed', { account_id: accountId, user_id: userId || undefined });
 
   logger.info('WEBHOOK', eventType, 'Updated entitlement', {
     accountId,
@@ -190,11 +100,10 @@ async function handleCheckoutCompleted(
   eventId: string
 ): Promise<void> {
   if (session.mode !== 'subscription' || !session.subscription) {
-    logger.info('WEBHOOK', 'checkout', 'Checkout is not a subscription, skipping', { 
+    logger.info('WEBHOOK', 'checkout', 'Checkout is not a subscription, skipping', {
       sessionId: session.id,
       eventId,
     });
-    await updateEventStatus(eventId, 'ignored', { error: 'Not a subscription checkout' });
     return;
   }
 
@@ -206,10 +115,40 @@ async function handleCheckoutCompleted(
   await handleSubscriptionEvent(subscription, 'checkout.session.completed', eventId, session);
 }
 
+async function tryInsertWebhookEventGate(eventId: string, eventType: string): Promise<boolean> {
+  const { error } = await supabaseServer.from("stripe_webhook_events").insert({ id: eventId, type: eventType });
+
+  if (error) {
+    if (error.code === "23505") {
+      return false; // Duplicate event, already processed
+    }
+    logger.warn('WEBHOOK', 'idempotency_gate_insert', 'Failed to write idempotency gate; processing event anyway', {
+      eventId,
+      eventType,
+      error: error.message,
+      code: error.code,
+    });
+    return true;
+  }
+
+  return true;
+}
+
+async function rollbackWebhookEventGate(eventId: string): Promise<void> {
+  const { error } = await supabaseServer.from("stripe_webhook_events").delete().eq('id', eventId);
+  if (error) {
+    logger.warn('WEBHOOK', 'idempotency_gate_rollback', 'Failed to rollback idempotency gate', {
+      eventId,
+      error: error.message,
+      code: error.code,
+    });
+  }
+}
+
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string, requestId?: string): Promise<{ received: boolean; eventId?: string; status?: string }> {
     if (!Buffer.isBuffer(payload)) {
-      const errMsg = 
+      const errMsg =
         'STRIPE WEBHOOK ERROR: Payload must be a Buffer. ' +
         'Received type: ' + typeof payload + '. ' +
         'This usually means express.json() parsed the body before reaching this handler. ' +
@@ -231,38 +170,30 @@ export class WebhookHandlers {
     try {
       event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
     } catch (err: any) {
-      logger.error('WEBHOOK', 'signature_failed', 'Signature verification failed', { 
+      logger.error('WEBHOOK', 'signature_failed', 'Signature verification failed', {
         error: err.message,
         requestId,
       });
       throw new Error(`Webhook signature verification failed: ${err.message}`);
     }
 
-    logger.info('WEBHOOK', 'received', `Event received: ${event.type}`, { 
-      eventId: event.id, 
+    logger.info('WEBHOOK', 'received', `Event received: ${event.type}`, {
+      eventId: event.id,
       eventType: event.type,
       livemode: event.livemode,
       requestId,
     });
 
-    const { alreadyProcessed, status: existingStatus } = await checkEventIdempotency(event.id);
-    if (alreadyProcessed) {
-      logger.info('WEBHOOK', 'idempotent_skip', 'Event already processed', { 
-        eventId: event.id, 
+    // Attempt to insert the event into the idempotency gate
+    const isNewEvent = await tryInsertWebhookEventGate(event.id, event.type);
+    if (!isNewEvent) {
+      logger.info('WEBHOOK', 'idempotent_skip', 'Event already processed', {
+        eventId: event.id,
         eventType: event.type,
-        existingStatus,
         requestId,
       });
       return { received: true, eventId: event.id, status: 'already_processed' };
     }
-
-    await recordEventStart({
-      event_id: event.id,
-      type: event.type,
-      livemode: event.livemode,
-      payload: event.data.object as object,
-      status: 'pending',
-    });
 
     try {
       switch (event.type) {
@@ -278,48 +209,32 @@ export class WebhookHandlers {
 
         case 'invoice.payment_failed':
         case 'invoice.paid':
-          logger.info('WEBHOOK', event.type, 'Invoice event received', { 
+          logger.info('WEBHOOK', event.type, 'Invoice event received', {
             invoiceId: (event.data.object as any).id,
             eventId: event.id,
             requestId,
           });
-          await updateEventStatus(event.id, 'processed');
           break;
 
         default:
-          logger.info('WEBHOOK', 'unhandled', `Unhandled event type: ${event.type}`, { 
+          logger.info('WEBHOOK', 'unhandled', `Unhandled event type: ${event.type}`, {
             eventId: event.id,
             requestId,
           });
-          await updateEventStatus(event.id, 'ignored', { error: 'Unhandled event type' });
       }
     } catch (handlerError: any) {
-      logger.error('WEBHOOK', 'handler_error', 'Event handler failed', { 
+      await rollbackWebhookEventGate(event.id);
+      logger.error('WEBHOOK', 'handler_error', 'Event handler failed', {
         eventId: event.id,
         eventType: event.type,
         error: handlerError.message,
         requestId,
       });
-      await updateEventStatus(event.id, 'failed', { error: handlerError.message });
       throw handlerError;
     }
 
-    // TODO: Restore when getStripeSync is implemented
-    /*
-    try {
-      const sync = await getStripeSync();
-      await sync.processWebhook(payload, signature);
-    } catch (err) {
-      logger.warn('WEBHOOK', 'sync', 'StripeSync.processWebhook failed', { 
-        error: (err as Error).message,
-        eventId: event.id,
-        requestId,
-      });
-    }
-    */
-
-    logger.info('WEBHOOK', 'completed', 'Event processed successfully', { 
-      eventId: event.id, 
+    logger.info('WEBHOOK', 'completed', 'Event processed successfully', {
+      eventId: event.id,
       eventType: event.type,
       requestId,
     });

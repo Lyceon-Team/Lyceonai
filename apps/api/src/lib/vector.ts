@@ -2,12 +2,12 @@
  * Supabase-backed vector helpers (minimal, safe implementation).
  *
  * This is intentionally conservative:
- * - Exposes `supabase` for legacy ingest.ts usage.
- * - Exposes `matchSimilar` used by rag.ts.
- * - Exposes `vectorStore` used by ingest-mvp.ts.
+ * - Exposes supabase for legacy callers.
+ * - Exposes matchSimilar used by rag.ts.
+ * - Exposes vectorStore as a backward-compatible wrapper.
  *
  * If Supabase env vars are missing, functions log and return empty results
- * instead of crashing. This keeps ingestion v3 and the API server stable.
+ * instead of crashing.
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
@@ -33,7 +33,7 @@ export const supabase: SupabaseClient | null =
 /**
  * Minimal matchSimilar implementation.
  *
- * NOTE: This is deliberately simple so it cannot break ingestion:
+ * NOTE: This is deliberately simple and fail-safe:
  * - If Supabase is not configured, it returns [].
  * - If the `question_embeddings` table or query fails, it returns [].
  * - You can later wire this to your real pgvector / RPC-based search.
@@ -81,7 +81,7 @@ export async function matchSimilar(
 }
 
 /**
- * Backwards-compatible vectorStore wrapper used by ingest-mvp.ts.
+ * Backwards-compatible vectorStore wrapper retained for legacy callers.
  */
 export const vectorStore = {
   matchSimilar,

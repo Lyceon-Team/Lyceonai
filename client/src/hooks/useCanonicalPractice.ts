@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type PracticeSectionParam = "math" | "reading-writing" | "random";
+export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
 export type PracticeQuestion = {
   id: string;
@@ -13,6 +13,7 @@ export type PracticeQuestion = {
 };
 
 export type PracticeNextResponse = {
+  sessionId?: string;
   question: PracticeQuestion | null;
   totalQuestions?: number;
   currentIndex?: number;
@@ -57,6 +58,10 @@ function mergeStats(
 }
 
 export function useCanonicalPractice(section: PracticeSectionParam) {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [clientInstanceId] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +101,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     setIsCorrect(null);
     setCorrectAnswerKey(null);
     setExplanation(null);
+    setIdempotencyKey(crypto.randomUUID());
     questionStartMs.current = nowMs();
   }, []);
 
@@ -103,7 +109,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}`, {
+      const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}&client_instance_id=${encodeURIComponent(clientInstanceId)}`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -113,7 +119,9 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
       const data = (await res.json()) as PracticeNextResponse;
 
+      if (data.sessionId) setSessionId(data.sessionId);
       setQuestion(data.question ?? null);
+      if (data.sessionId) setSessionId(data.sessionId);
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
 
@@ -143,10 +151,13 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         const elapsedMs = Math.max(0, nowMs() - questionStartMs.current);
 
         const payload = {
+          sessionId,
           questionId: question.id,
           selectedAnswer: opts.skipped ? null : selectedAnswer,
           elapsedMs,
           skipped: opts.skipped,
+          client_instance_id: clientInstanceId,
+          idempotencyKey,
         };
 
         const res = await fetch("/api/practice/answer", {
@@ -202,7 +213,11 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setIsSubmitting(false);
       }
     },
+<<<<<<< HEAD
     [fetchNextQuestion, question, selectedAnswer]
+=======
+    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer, sessionId]
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   );
 
   const nextQuestion = useCallback(async () => {

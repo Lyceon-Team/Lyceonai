@@ -7,6 +7,7 @@
 import { generateEmbedding } from './embeddings';
 import { matchSimilar, MatchResult } from './vector';
 import { supabaseServer } from './supabase-server';
+import { buildCompetencyMapFromMasteryRows, MasterySkillRow } from '../services/mastery-derived';
 import {
   RagMode,
   RagContext,
@@ -210,7 +211,7 @@ export class RagService {
   private computeQualityBonus(match: MatchResult): number {
     let bonus = 0;
     
-    // Bonus for having canonical ID (indicates properly ingested question)
+    // Bonus for having canonical ID (indicates complete metadata)
     if (match.metadata?.canonicalId) {
       bonus += 0.05;
     }
@@ -468,7 +469,7 @@ export class RagService {
 
   /**
    * Load student profile from Supabase profiles table (HTTP client)
-   * Also aggregates competency map from user_progress table
+   * Also derives competency map from canonical student_skill_mastery
    */
   async loadStudentProfile(userId: string): Promise<StudentProfile | null> {
     try {
@@ -494,8 +495,9 @@ export class RagService {
         });
       }
 
-      // Calculate competency map from user_progress (aggregated stats)
+      // Canonical competency map source: student_skill_mastery (derived reader).
       let competencyMap: Record<string, { correct: number; incorrect: number; total: number }> = {};
+<<<<<<< HEAD
       
       try {
         // Use Supabase HTTP query for user progress aggregation
@@ -540,12 +542,23 @@ export class RagService {
           }
 
           competencyMap = aggregated;
+=======
+
+      try {
+        const { data: masteryRows, error: masteryError } = await supabaseServer
+          .from('student_skill_mastery')
+          .select('section, domain, skill, attempts, correct, mastery_score, updated_at')
+          .eq('user_id', userId)
+          .gte('attempts', 1);
+
+        if (!masteryError && masteryRows) {
+          competencyMap = buildCompetencyMapFromMasteryRows(masteryRows as MasterySkillRow[]);
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
         }
-      } catch (progressError: any) {
-        console.warn(`⚠️ [RAG-V2] Failed to load user progress for ${userId}: ${progressError.message}`);
+      } catch (masteryReadError: any) {
+        console.warn(`⚠️ [RAG-V2] Failed to load canonical mastery rows for ${userId}: ${masteryReadError.message}`);
         // Continue with empty competency map
       }
-
       // Merge DB competency_map with calculated one (DB takes precedence if exists)
       if (profileRow?.competency_map && typeof profileRow.competency_map === 'object') {
         competencyMap = { ...competencyMap, ...(profileRow.competency_map as Record<string, any>) };
@@ -558,7 +571,7 @@ export class RagService {
         secondaryStyle: profileRow?.secondary_style ?? undefined,
         explanationLevel: profileRow?.explanation_level ?? 2,
         competencyMap,
-        recentQuestions: [], // TODO: Load from recent user_progress entries
+        recentQuestions: [], // TODO: Load from recent student_question_attempts entries
         personaTags: Array.isArray(profileRow?.persona_tags) ? profileRow.persona_tags : [],
       };
 
@@ -1126,3 +1139,7 @@ export function getRagService(): RagService {
 }
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57

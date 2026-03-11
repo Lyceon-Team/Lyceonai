@@ -1,25 +1,47 @@
 import { Request, Response, Router } from 'express';
-import { requireSupabaseAuth } from '../middleware/supabase-auth';
+import {
+  requireRequestUser,
+  requireSupabaseAuth,
+  sendForbidden,
+} from '../middleware/supabase-auth';
 import { requireGuardianEntitlement } from '../middleware/guardian-entitlement';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
 import { DateTime } from 'luxon';
 import { csrfGuard } from '../middleware/csrf';
+import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks } from '../lib/account';
+// Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
+import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
+import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
+import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
+import { KPI_CALENDAR_COUNTED_EVENTS } from '../../apps/api/src/services/mastery-constants';
 
 const router = Router();
 const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
+const GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
+
+export function isGuardianCalendarCountedEventType(eventType: string | null | undefined): boolean {
+  if (!eventType) return true; // Legacy rows before event_type migration
+  return GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
+}
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const requestId = req.requestId;
-  if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required', requestId });
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return;
   }
-  if (req.user.role !== 'guardian' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Guardian role required', requestId });
+
+  if (user.role !== 'guardian' && user.role !== 'admin') {
+    return sendForbidden(res, {
+      error: 'Guardian role required',
+      message: 'You do not have permission to access guardian resources',
+      requestId: req.requestId,
+    });
   }
+
   next();
 }
 
@@ -55,10 +77,17 @@ router.get('/students', requireSupabaseAuth, requireGuardianRole, async (req: Re
   try {
     const guardianId = req.user!.id;
 
+    // CANONICAL: Read from guardian_links, join profiles for display info
+    const links = await getAllGuardianStudentLinks(guardianId);
+    if (links.length === 0) {
+      return res.json({ students: [], requestId });
+    }
+
+    const studentIds = links.map(l => l.student_user_id);
     const { data: students, error } = await supabaseServer
       .from('profiles')
       .select('id, email, display_name, created_at')
-      .eq('guardian_profile_id', guardianId)
+      .in('id', studentIds)
       .eq('role', 'student');
 
     if (error) {
@@ -91,7 +120,7 @@ router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, d
 
     const { data: student, error: lookupError } = await supabaseServer
       .from('profiles')
-      .select('id, email, display_name, guardian_profile_id')
+      .select('id, email, display_name')
       .eq('student_link_code', trimmedCode)
       .eq('role', 'student')
       .single();
@@ -102,25 +131,33 @@ router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, d
       return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
     }
 
-    if (student.guardian_profile_id === guardianId) {
+    // CANONICAL: Check guardian_links for existing link
+    const alreadyLinked = await isGuardianLinkedToStudent(guardianId, student.id);
+    if (alreadyLinked) {
       await auditLog(guardianId, 'link_attempt', 'success', student.id, 'already_linked', undefined, requestId);
       return res.json({ ok: true, message: 'Already linked', student: { id: student.id, display_name: student.display_name }, requestId });
     }
 
-    if (student.guardian_profile_id) {
+    // Check if student is linked to another guardian via guardian_links
+    const { data: existingLinks } = await supabaseServer
+      .from('guardian_links')
+      .select('guardian_profile_id')
+      .eq('student_user_id', student.id)
+      .eq('status', 'active')
+      .limit(1);
+
+    if (existingLinks && existingLinks.length > 0) {
       await auditLog(guardianId, 'link_attempt', 'failure', undefined, 'already_linked_other', trimmedCode.substring(0, 2), requestId);
       logger.warn('GUARDIAN', 'link_attempt_blocked', 'Student already linked to another guardian', { guardianId, requestId });
       return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
     }
 
-    const { error: updateError } = await supabaseServer
-      .from('profiles')
-      .update({ guardian_profile_id: guardianId })
-      .eq('id', student.id);
-
-    if (updateError) {
+    // CANONICAL: Create link in guardian_links
+    try {
+      await createGuardianLink(guardianId, student.id);
+    } catch (linkError: any) {
       await auditLog(guardianId, 'link_attempt', 'failure', student.id, 'update_failed', undefined, requestId);
-      logger.error('GUARDIAN', 'link_student', 'Failed to link student', { error: updateError, requestId });
+      logger.error('GUARDIAN', 'link_student', 'Failed to link student', { error: linkError.message, requestId });
       return res.status(500).json({ error: 'Failed to link student', requestId });
     }
 
@@ -140,43 +177,39 @@ router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, csrf
     const guardianId = req.user!.id;
     const { studentId } = req.params;
 
-    const { data: student, error: lookupError } = await supabaseServer
-      .from('profiles')
-      .select('id, guardian_profile_id')
-      .eq('id', studentId)
-      .eq('role', 'student')
-      .single();
+    // CANONICAL: Verify link exists in guardian_links
+    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
 
-    if (lookupError || !student) {
-      return res.status(404).json({ error: 'Student not found', requestId });
-    }
-
-    if (student.guardian_profile_id !== guardianId) {
+    if (!linked) {
       logger.warn('GUARDIAN', 'unlink_denied', 'Guardian tried to unlink non-linked student', { guardianId, studentId, requestId });
       return res.status(403).json({ error: 'Not authorized to unlink this student', requestId });
     }
 
-    const { error: updateError } = await supabaseServer
-      .from('profiles')
-      .update({ guardian_profile_id: null })
-      .eq('id', studentId)
-      .eq('guardian_profile_id', guardianId);
-
-    if (updateError) {
-      logger.error('GUARDIAN', 'unlink_student', 'Failed to unlink student', { error: updateError, requestId });
+    // CANONICAL: Revoke link in guardian_links
+    try {
+      await revokeGuardianLink(guardianId, studentId);
+    } catch (revokeError: any) {
+      logger.error('GUARDIAN', 'unlink_student', 'Failed to unlink student', { error: revokeError.message, requestId });
       return res.status(500).json({ error: 'Failed to unlink student', requestId });
     }
 
     await auditLog(guardianId, 'unlink_success', 'success', studentId, undefined, undefined, requestId);
     logger.info('GUARDIAN', 'unlink_student', 'Student unlinked successfully', { guardianId, studentId, requestId });
 
-    const { data: students } = await supabaseServer
-      .from('profiles')
-      .select('id, email, display_name, created_at')
-      .eq('guardian_profile_id', guardianId)
-      .eq('role', 'student');
+    // Return updated student list from canonical source
+    const links = await getAllGuardianStudentLinks(guardianId);
+    const studentIds = links.map(l => l.student_user_id);
+    let students: any[] = [];
+    if (studentIds.length > 0) {
+      const { data } = await supabaseServer
+        .from('profiles')
+        .select('id, email, display_name, created_at')
+        .in('id', studentIds)
+        .eq('role', 'student');
+      students = data || [];
+    }
 
-    res.json({ ok: true, students: students || [], requestId });
+    res.json({ ok: true, students, requestId });
   } catch (err) {
     logger.error('GUARDIAN', 'unlink_student', 'Error', { err, requestId });
     res.status(500).json({ error: 'Internal server error', requestId });
@@ -189,83 +222,43 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianR
     const guardianId = req.user!.id;
     const { studentId } = req.params;
 
-    const { data: student, error: studentError } = await supabaseServer
-      .from('profiles')
-      .select('id, email, display_name, guardian_profile_id, created_at')
-      .eq('id', studentId)
-      .eq('role', 'student')
-      .eq('guardian_profile_id', guardianId)
-      .single();
-
-    if (studentError || !student) {
+    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+    if (!linked && req.user!.role !== 'admin') {
       logger.warn('GUARDIAN', 'summary_access_denied', 'Student not found or not linked to guardian', { guardianId, studentId, requestId });
       return res.status(404).json({ error: 'Student not found', requestId });
     }
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const { data: student, error: studentError } = await supabaseServer
+      .from('profiles')
+      .select('id, email, display_name, created_at')
+      .eq('id', studentId)
+      .eq('role', 'student')
+      .single();
 
-    const { data: sessions, error: sessionsError } = await supabaseServer
-      .from('practice_sessions')
-      .select('id, created_at, finished_at, actual_duration_ms, question_ids')
-      .eq('user_id', studentId)
-      .gte('created_at', sevenDaysAgo.toISOString());
-
-    let practiceMinutes = 0;
-    let totalQuestions = 0;
-    if (sessions && !sessionsError) {
-      for (const session of sessions) {
-        if (session.actual_duration_ms) {
-          practiceMinutes += Math.round(session.actual_duration_ms / 60000);
-        } else if (session.finished_at && session.created_at) {
-          const start = new Date(session.created_at).getTime();
-          const end = new Date(session.finished_at).getTime();
-          practiceMinutes += Math.round((end - start) / 60000);
-        }
-        if (session.question_ids && Array.isArray(session.question_ids)) {
-          totalQuestions += session.question_ids.length;
-        }
-      }
+    if (studentError || !student) {
+      return res.status(404).json({ error: 'Student not found', requestId });
     }
 
-    let correctCount = 0;
-    let totalAttempts = 0;
-    
-    const sessionIds = sessions?.map(s => s.id).filter(Boolean) || [];
-    if (sessionIds.length > 0) {
-      const { data: recentAttempts, error: attemptsError } = await supabaseServer
-        .from('answer_attempts')
-        .select('is_correct, attempted_at')
-        .in('session_id', sessionIds)
-        .order('attempted_at', { ascending: false })
-        .limit(50);
+    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
+    const guardianView = buildGuardianSummaryKpiView(snapshot);
 
-      if (recentAttempts && !attemptsError) {
-        totalAttempts = recentAttempts.length;
-        correctCount = recentAttempts.filter(a => a.is_correct).length;
-      }
-    }
-
-    res.json({
+    return res.json({
       student: {
         id: student.id,
         displayName: student.display_name,
-        email: student.email
+        email: student.email,
       },
-      progress: {
-        practiceMinutesLast7Days: practiceMinutes,
-        sessionsLast7Days: sessions?.length || 0,
-        questionsAttempted: totalQuestions,
-        accuracy: totalAttempts > 0 ? Math.round((correctCount / totalAttempts) * 100) : null
-      },
-      requestId
+      progress: guardianView.progress,
+      metrics: guardianView.metrics,
+      measurementModel: guardianView.measurementModel,
+      modelVersion: snapshot.modelVersion,
+      requestId,
     });
   } catch (err) {
     logger.error('GUARDIAN', 'student_summary', 'Error', { err, requestId });
-    res.status(500).json({ error: 'Internal server error', requestId });
+    return res.status(500).json({ error: 'Internal server error', requestId });
   }
 });
-
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -290,7 +283,7 @@ async function calculateStreakForStudent(userId: string, timezone: string): Prom
 
   let currentStreak = 0;
   let checkDate = DateTime.fromISO(todayLocal, { zone: timezone });
-  
+
   while (completeDaysSet.has(checkDate.toISODate()!)) {
     currentStreak++;
     checkDate = checkDate.minus({ days: 1 });
@@ -317,11 +310,101 @@ async function calculateStreakForStudent(userId: string, timezone: string): Prom
     }
     prevDate = dayDate;
   }
-  
+
   longestStreak = Math.max(longestStreak, tempStreak);
   return { current: currentStreak, longest: longestStreak };
 }
 
+
+type GuardianSafeExamReport = {
+  sessionId: string;
+  estimatedScore: {
+    rw: number;
+    math: number;
+    total: number;
+  };
+  completedAt: Date;
+  kpis: ExplainedKpiMetric[];
+  measurementModel: ReturnType<typeof fullTestMeasurementModel>;
+};
+
+function toGuardianSafeExamReport(report: fullLengthExamService.CompleteExamResult): GuardianSafeExamReport {
+  return {
+    sessionId: report.sessionId,
+    estimatedScore: {
+      rw: report.scaledScore.rw,
+      math: report.scaledScore.math,
+      total: report.scaledScore.total,
+    },
+    completedAt: report.completedAt,
+    kpis: buildFullTestKpis({
+      scaledTotal: report.scaledScore.total,
+      scaledRw: report.scaledScore.rw,
+      scaledMath: report.scaledScore.math,
+      totalCorrect: report.rawScore.total.correct,
+      totalQuestions: report.rawScore.total.total,
+    }),
+    measurementModel: fullTestMeasurementModel(),
+  };
+}
+
+// ============================================================================
+// GUARDIAN FULL-LENGTH EXAM REPORTING
+// ============================================================================
+router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  try {
+    const guardianId = req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
+    const { studentId, sessionId } = req.params;
+
+    if (!isAdmin) {
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn('GUARDIAN', 'full_length_report_denied', 'Guardian tried to view non-linked student full-length report', {
+          guardianId,
+          studentId,
+          sessionId,
+          requestId,
+        });
+        return res.status(403).json({ error: 'Not authorized to view this student', requestId });
+      }
+    }
+
+    const report = await fullLengthExamService.getExamReport({
+      sessionId,
+      userId: studentId,
+    });
+
+    logger.info('GUARDIAN', 'full_length_report_view', 'Guardian viewed full-length exam report', {
+      guardianId,
+      studentId,
+      sessionId,
+      requestId,
+    });
+
+    return res.json({
+      studentId,
+      sessionId,
+      report: toGuardianSafeExamReport(report),
+      requestId,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '';
+
+    if (message.includes('not found') || message.includes('access denied')) {
+      return res.status(404).json({ error: 'Session not found', requestId });
+    }
+
+    if (message.includes('Results locked until completion')) {
+      return res.status(423).json({ error: 'Results locked until completion', requestId });
+    }
+
+    logger.error('GUARDIAN', 'full_length_report', 'Error', { err, requestId });
+    return res.status(500).json({ error: 'Internal server error', requestId });
+  }
+});
+// Guardian calendar endpoint is read-only by contract.
 router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
@@ -339,15 +422,9 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     }
 
     if (!isAdmin) {
-      const { data: student, error: studentError } = await supabaseServer
-        .from('profiles')
-        .select('id')
-        .eq('id', studentId)
-        .eq('role', 'student')
-        .eq('guardian_profile_id', guardianId)
-        .single();
-
-      if (studentError || !student) {
+      // CANONICAL: Verify link via guardian_links
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
         logger.warn('GUARDIAN', 'calendar_access_denied', 'Student not found or not linked', { guardianId, studentId, requestId });
         return res.status(404).json({ error: 'Student not found', requestId });
       }
@@ -358,7 +435,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
       .select('timezone')
       .eq('user_id', studentId)
       .maybeSingle();
-    
+
     const timezone = profile?.timezone || 'America/Chicago';
 
     const startUtc = DateTime.fromISO(start, { zone: timezone }).startOf('day').toUTC().toISO()!;
@@ -367,19 +444,19 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
       supabaseServer
         .from('student_study_plan_days')
-        .select('day_date, planned_minutes, completed_minutes, status, focus, plan_version, created_at, updated_at')
+        .select('day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, created_at, updated_at, is_user_override')
         .eq('user_id', studentId)
         .gte('day_date', start)
         .lte('day_date', end)
         .order('day_date', { ascending: true }),
-      
+
       supabaseServer
         .from('student_question_attempts')
-        .select('attempted_at, is_correct, time_spent_ms')
+        .select('attempted_at, is_correct, time_spent_ms, event_type')
         .eq('user_id', studentId)
         .gte('attempted_at', startUtc)
         .lte('attempted_at', endUtc),
-      
+
       calculateStreakForStudent(studentId, timezone),
     ]);
 
@@ -391,6 +468,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const attemptsByDay = new Map<string, { attempts: number; correct: number; totalTimeMs: number }>();
 
     for (const attempt of attemptsResult.data || []) {
+      if (!isGuardianCalendarCountedEventType((attempt as any).event_type)) continue;
       if (!attempt.attempted_at) continue;
       const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
       if (!localDate) continue;
@@ -409,8 +487,8 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
       return {
         ...day,
         attempt_count: dayStats?.attempts ?? 0,
-        accuracy: dayStats && dayStats.attempts > 0 
-          ? Math.round((dayStats.correct / dayStats.attempts) * 100) 
+        accuracy: dayStats && dayStats.attempts > 0
+          ? Math.round((dayStats.correct / dayStats.attempts) * 100)
           : null,
         avg_seconds_per_question: dayStats && dayStats.attempts > 0
           ? Math.round(dayStats.totalTimeMs / dayStats.attempts / 1000)
@@ -420,7 +498,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
 
     logger.info('GUARDIAN', 'calendar_view', 'Guardian viewed student calendar', { guardianId, studentId, start, end, requestId });
 
-    return res.json({ 
+    return res.json({
       days: enrichedDays,
       streak: streakResult,
       requestId,
@@ -440,10 +518,16 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, r
     const guardianId = req.user!.id;
     const { studentId } = req.params;
 
-    // Verify guardian-student link
+    // CANONICAL: Verify guardian-student link via guardian_links
+    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+    if (!linked && req.user!.role !== 'admin') {
+      logger.warn('GUARDIAN', 'weaknesses_denied', 'Guardian tried to view non-linked student', { guardianId, studentId, requestId });
+      return res.status(403).json({ error: 'Not authorized to view this student', requestId });
+    }
+
     const { data: student, error: studentError } = await supabaseServer
       .from('profiles')
-      .select('id, guardian_profile_id, display_name')
+      .select('id, display_name')
       .eq('id', studentId)
       .eq('role', 'student')
       .single();
@@ -452,62 +536,22 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, r
       return res.status(404).json({ error: 'Student not found', requestId });
     }
 
-    if (student.guardian_profile_id !== guardianId && req.user!.role !== 'admin') {
-      logger.warn('GUARDIAN', 'weaknesses_denied', 'Guardian tried to view non-linked student', { guardianId, studentId, requestId });
-      return res.status(403).json({ error: 'Not authorized to view this student', requestId });
-    }
-
-    // Query user_competencies for weakest areas (highest score = most weakness)
-    // Score is computed as: +1 incorrect, +0.5 skipped, -1 correct (higher = weaker)
-    // NOTE: Table may not exist if migrations haven't been run - handle gracefully
-    let competencies: any[] = [];
-    try {
-      const { data, error: compError } = await supabaseServer
-        .from('user_competencies')
-        .select('competency_key, section, score, attempt_count, incorrect_count, skipped_count, updated_at')
-        .eq('user_id', studentId)
-        .order('score', { ascending: false })
-        .order('attempt_count', { ascending: false })
-        .limit(20);
-
-      if (compError) {
-        // Table may not exist - log and return empty result gracefully
-        logger.warn('GUARDIAN', 'weaknesses_query_warning', 'Competencies query failed (table may not exist)', { 
-          error: compError.message, 
-          code: compError.code,
-          requestId 
-        });
-      } else {
-        competencies = data || [];
-      }
-    } catch (err) {
-      logger.warn('GUARDIAN', 'weaknesses_query_exception', 'Exception querying competencies', { 
-        error: (err as Error).message, 
-        requestId 
-      });
-    }
-
-    // Transform to weakness format with mastery_score (inverted: 0 = weak, 1 = strong)
-    const weakestAreas = (competencies || []).map(c => {
-      // Compute mastery: ratio of correct answers (lower score = better mastery)
-      const correctCount = (c.attempt_count || 0) - (c.incorrect_count || 0) - (c.skipped_count || 0);
-      const masteryScore = c.attempt_count > 0 
-        ? Math.max(0, Math.min(1, correctCount / c.attempt_count))
-        : 0;
-
-      return {
-        competency_key: c.competency_key,
-        section: c.section,
-        attempts: c.attempt_count,
-        correct: correctCount,
-        incorrect: c.incorrect_count,
-        skipped: c.skipped_count,
-        mastery_score: Math.round(masteryScore * 100) / 100,
-        weakness_score: c.score, // Raw weakness score
-        updated_at: c.updated_at,
-      };
+    const derivedWeakness = await getDerivedWeaknessSignals(studentId, {
+      minAttempts: 1,
+      limit: 20,
     });
 
+    // Transform canonical mastery-derived signals to guardian weakness payload.
+    const weakestAreas = derivedWeakness.map((s) => ({
+      competency_key: s.competencyKey,
+      section: s.section,
+      attempts: s.attempts,
+      correct: s.correct,
+      incorrect: s.incorrect,
+      skipped: s.skipped,
+      weakness_score: s.weaknessScore,
+      updated_at: s.updatedAt,
+    }));
     logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: weakestAreas.length, requestId });
 
     return res.json({

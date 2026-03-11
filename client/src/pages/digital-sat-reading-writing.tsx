@@ -7,23 +7,23 @@ import { Container, Breadcrumb, Card, Section } from '@/components/layout/primit
 const faqs = [
   {
     question: 'What is tested on SAT Reading and Writing?',
-    answer: 'The SAT Reading and Writing section tests four main skill areas: Craft and Structure (vocabulary, text structure, purpose), Information and Ideas (main idea, details, inferences), Standard English Conventions (grammar, punctuation), and Expression of Ideas (transitions, sentence combining, rhetorical synthesis).',
+    answer: 'The section covers Craft and Structure, Information and Ideas, Standard English Conventions, and Expression of Ideas.',
   },
   {
     question: 'How is Digital SAT Reading different from the paper test?',
-    answer: 'The Digital SAT uses shorter passages (25-150 words each) with one question per passage, unlike the paper SAT which had longer passages with multiple questions. This makes the digital version faster-paced but tests the same core reading skills.',
+    answer: 'The Digital SAT uses shorter passages with one question per passage, creating faster transitions between topics.',
   },
   {
     question: 'How many Reading and Writing questions are on the Digital SAT?',
-    answer: 'There are 54 questions total in the Reading and Writing section, split into two 27-question modules. You have 32 minutes for each module (64 minutes total).',
+    answer: 'There are 54 total questions split into two 27-question modules with 64 minutes total.',
   },
   {
     question: 'What vocabulary should I study for the SAT?',
-    answer: 'Focus on academic vocabulary and words in context rather than obscure vocabulary lists. The SAT tests your ability to understand how words are used in passages, not memorization of definitions.',
+    answer: 'Focus on academic vocabulary in context and how meaning changes with passage usage.',
   },
   {
-    question: 'How can I improve my SAT Reading speed?',
-    answer: 'Practice active reading: identify the main point quickly, pay attention to transition words, and answer based on evidence in the text rather than outside knowledge. With short passages on the Digital SAT, you can often read the entire passage in 30-45 seconds.',
+    question: 'How can I improve SAT Reading speed?',
+    answer: 'Practice evidence-based elimination, transition-word awareness, and short-passage pacing drills.',
   },
 ];
 
@@ -43,7 +43,7 @@ export default function DigitalSATReadingWritingPage() {
     <PublicLayout>
       <SEO
         title="Digital SAT Reading & Writing Prep - Vocabulary, Grammar & Comprehension"
-        description="Master SAT Reading and Writing with AI-powered practice. Cover vocabulary, grammar, comprehension, and rhetorical analysis with personalized feedback."
+        description="Master SAT Reading and Writing with adaptive practice, grammar review, and evidence-based reasoning strategies."
         canonical="https://lyceon.ai/digital-sat/reading-writing"
       />
       <JsonLd data={createBreadcrumbJsonLd([
@@ -70,7 +70,7 @@ export default function DigitalSATReadingWritingPage() {
         </div>
 
         <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-3xl">
-          The Digital SAT Reading and Writing section combines what used to be two separate tests. You'll encounter short passages covering literature, history, science, and social studies—each with a single focused question testing vocabulary, comprehension, or grammar.
+          The Digital SAT Reading and Writing section combines reading comprehension and grammar in short-passage format, requiring fast interpretation and precise evidence-based answers.
         </p>
 
         <Section title="Question Types on SAT Reading & Writing">
@@ -101,25 +101,25 @@ export default function DigitalSATReadingWritingPage() {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p><strong>Read the passage first, then the question.</strong> On the Digital SAT, passages are short enough to read quickly. Understanding the context makes answering faster.</p>
+                <p><strong>Read passage first, then question.</strong> Short passages are fast enough to scan for intent before evaluating options.</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p><strong>Look for evidence in the text.</strong> Every correct answer can be supported by specific words or phrases in the passage. If you can't point to evidence, reconsider your choice.</p>
+                <p><strong>Anchor in evidence.</strong> Every correct answer should map to explicit wording or logic in the passage.</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p><strong>Pay attention to transition words.</strong> Words like "however," "therefore," "although," and "moreover" signal relationships between ideas and often point to correct answers.</p>
+                <p><strong>Use transitions as clues.</strong> Contrast and cause-effect language often points to the strongest option.</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0 mt-0.5" />
               <div>
-                <p><strong>Eliminate wrong answers.</strong> Often easier than finding the right one. Look for answers that are too extreme, not supported by text, or only partially correct.</p>
+                <p><strong>Eliminate aggressively.</strong> Remove unsupported, extreme, or partially-correct answers first.</p>
               </div>
             </div>
           </div>
@@ -129,27 +129,27 @@ export default function DigitalSATReadingWritingPage() {
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
               <h3 className="font-semibold mb-2">Subject-Verb Agreement</h3>
-              <p className="text-sm text-muted-foreground">Singular subjects need singular verbs. Watch for phrases between subject and verb that might confuse you.</p>
+              <p className="text-sm text-muted-foreground">Singular subjects require singular verbs, even when phrases separate them.</p>
             </Card>
             <Card>
               <h3 className="font-semibold mb-2">Pronoun Clarity</h3>
-              <p className="text-sm text-muted-foreground">Pronouns must clearly refer to a specific noun. Ambiguous references are often tested.</p>
+              <p className="text-sm text-muted-foreground">Pronouns must clearly point to a specific noun reference.</p>
             </Card>
             <Card>
               <h3 className="font-semibold mb-2">Comma Usage</h3>
-              <p className="text-sm text-muted-foreground">Know when commas are required (introductory phrases, lists, nonessential clauses) and when they're incorrect.</p>
+              <p className="text-sm text-muted-foreground">Know required commas and avoid unnecessary punctuation insertions.</p>
             </Card>
             <Card>
               <h3 className="font-semibold mb-2">Verb Tense Consistency</h3>
-              <p className="text-sm text-muted-foreground">Maintain consistent verb tense within a passage unless there's a clear reason for a shift.</p>
+              <p className="text-sm text-muted-foreground">Maintain tense coherence unless the context requires a deliberate shift.</p>
             </Card>
             <Card>
               <h3 className="font-semibold mb-2">Modifier Placement</h3>
-              <p className="text-sm text-muted-foreground">Modifiers should be placed next to what they describe. Misplaced modifiers create confusing sentences.</p>
+              <p className="text-sm text-muted-foreground">Place modifiers close to what they describe to avoid ambiguity.</p>
             </Card>
             <Card>
               <h3 className="font-semibold mb-2">Parallel Structure</h3>
-              <p className="text-sm text-muted-foreground">Items in a list or comparison should follow the same grammatical pattern.</p>
+              <p className="text-sm text-muted-foreground">Lists and comparisons should follow consistent grammatical form.</p>
             </Card>
           </div>
         </Section>
@@ -186,7 +186,7 @@ export default function DigitalSATReadingWritingPage() {
             <Card className="text-center flex flex-col justify-center">
               <h3 className="font-semibold mb-3">Ready to Practice?</h3>
               <p className="text-muted-foreground text-sm mb-4">
-                Get personalized reading and writing practice with AI-powered feedback.
+                Start focused reading and writing practice with guided review.
               </p>
               <Link href="/signup">
                 <a className="inline-block px-5 py-2 bg-foreground text-background rounded-lg text-sm font-medium hover:opacity-90">

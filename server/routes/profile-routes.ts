@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { getSupabaseAdmin } from '../middleware/supabase-auth';
+import { getSupabaseAdmin, requireRequestUser } from '../middleware/supabase-auth';
 import { csrfGuard } from '../middleware/csrf';
 
 const router = Router();
@@ -31,17 +31,19 @@ const profileCompletionSchema = z.object({
  */
 router.patch('/', csrfProtection, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
 
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid profile data',
-        details: validation.error.errors 
+        details: validation.error.errors
       });
     }
 
@@ -82,8 +84,8 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Failed to fetch updated profile' });
     }
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       profile: {
         id: profile.id,
         email: profile.email,
@@ -97,6 +99,7 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
         preferredLanguage: profile.preferred_language,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
+        studentLinkCode: profile.student_link_code,
         role: profile.role
       }
     });

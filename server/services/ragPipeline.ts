@@ -1,7 +1,6 @@
 /**
- * RAG Pipeline for Ingestion v2
- * Generates Q-chunks, E-chunks, and embeddings for SAT questions
- * Stores embeddings in question_embeddings table for semantic search
+ * RAG pipeline utilities for SAT question retrieval metadata.
+ * Generates Q-chunks, E-chunks, and embeddings for SAT questions.
  */
 
 import { GoogleGenAI } from "@google/genai";
@@ -186,8 +185,8 @@ export class RAGPipeline {
 
   /**
    * Upsert embeddings to database
-   * MVP: Disabled - embeddings handled via /api/ingest → Supabase
-   * Ingestion v2: Extended metadata includes canonicalId, testCode, sectionCode, competencyCodes
+   * Disabled: embeddings are persisted by the canonical question storage flow.
+   * Extended metadata includes canonicalId, testCode, sectionCode, competencyCodes
    */
   async upsertEmbeddings(
     chunks: RAGChunks, 
@@ -205,15 +204,15 @@ export class RAGPipeline {
       questionNumber?: number;
     }
   ): Promise<void> {
-    // MVP: Embeddings are handled by /api/ingest → Supabase pipeline
+    // Embeddings are handled by the canonical question storage flow.
     // Neon question_embeddings table is not used as canonical store
     console.log(
-      `ℹ️ [RAGPipeline] Skipping Neon embedding write for question ${questionDbId}. Embeddings handled via /api/ingest → Supabase.`
+      `ℹ️ [RAGPipeline] Skipping Neon embedding write for question ${questionDbId}. Embeddings are handled by the canonical question storage flow.`
     );
   }
 
   /**
-   * Process batch of questions with Ingestion v2 canonical metadata
+   * Process a batch of questions with canonical metadata
    */
   async processBatch(
     questions: ParsedQuestion[],
@@ -239,14 +238,14 @@ export class RAGPipeline {
           continue;
         }
 
-        // Build metadata with Ingestion v2 canonical fields
+        // Build metadata with canonical fields
         const metadata = {
           sourcePdf,
           pageNumber: question.pageNumber,
           bbox: question.bbox,
           section: question.section,
           difficulty: question.difficulty,
-          // Ingestion v2 canonical metadata
+          // Canonical metadata
           canonicalId: questionDoc?.canonicalId,
           testCode: questionDoc?.testCode,
           sectionCode: questionDoc?.sectionCode,

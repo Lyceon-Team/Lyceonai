@@ -1,5 +1,12 @@
 /**
+<<<<<<< HEAD
  * Canonical client-side question type.
+=======
+ * QuestionVM - View Model for rendering questions in the UI
+ * 
+ * This is the canonical client-side type for displaying questions.
+ * It abstracts away storage internals and provides a clean interface for UI components.
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
  */
 
 export type AnswerKey = 'A' | 'B' | 'C' | 'D';

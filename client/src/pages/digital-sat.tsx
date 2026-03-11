@@ -7,27 +7,27 @@ import { Container, Hero, Card, Breadcrumb, Section } from '@/components/layout/
 const faqs = [
   {
     question: 'What is the Digital SAT?',
-    answer: 'The Digital SAT is the new computer-adaptive version of the SAT, replacing the paper-based test. It features shorter sections, adaptive difficulty, and results delivered faster. The test is approximately 2 hours long with two sections: Reading and Writing, and Math.',
+    answer: 'The Digital SAT is the computer-adaptive SAT format. It is about 2 hours long with two sections: Reading and Writing, and Math.',
   },
   {
     question: 'How is the Digital SAT different from the paper SAT?',
-    answer: 'The Digital SAT is shorter (2 hours vs 3 hours), uses a computer-adaptive format where difficulty adjusts based on your performance, allows a calculator for the entire Math section, and delivers scores within days instead of weeks.',
+    answer: 'It is shorter, adaptive by module, calculator-allowed across all Math questions, and built for digital delivery.',
   },
   {
-    question: 'What is an AI SAT tutor?',
-    answer: 'An AI SAT tutor is an intelligent tutoring system that provides personalized explanations, adapts to your learning style, and helps you understand not just the correct answer but the reasoning behind it. Unlike generic AI chatbots, a specialized AI SAT tutor is trained on actual SAT content and strategies.',
+    question: 'Does Lyceon include full-length exams?',
+    answer: 'Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.',
   },
   {
-    question: 'How many questions are on the Digital SAT?',
-    answer: 'The Digital SAT has 98 questions total: 54 questions in Reading and Writing (split into two 27-question modules) and 44 questions in Math (split into two 22-question modules). The test adapts based on your first-module performance.',
+    question: 'How does mastery tracking work in Lyceon?',
+    answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and proficiency progression over time.',
   },
   {
-    question: 'Can I use a calculator on the Digital SAT?',
-    answer: 'Yes! Unlike the paper SAT, you can use a calculator on the entire Math section of the Digital SAT. The Bluebook app also includes a built-in Desmos graphing calculator.',
+    question: 'How does tutor chat work?',
+    answer: 'Tutor chat provides step-by-step guidance tied to SAT-style question context. It is designed to support reasoning and review, not to bypass learning.',
   },
   {
-    question: 'How does adaptive practice help SAT prep?',
-    answer: 'Adaptive practice adjusts question difficulty based on your performance, ensuring you are always challenged at the right level. This leads to more efficient studying, faster score improvement, and better retention than practicing random questions.',
+    question: 'What is free vs paid?',
+    answer: 'Free includes daily limits (10 practice questions and 5 tutor chat messages). Paid plans remove those limits and expand guardian visibility features.',
   },
 ];
 
@@ -35,8 +35,8 @@ export default function DigitalSATPage() {
   return (
     <PublicLayout>
       <SEO
-        title="Digital SAT Prep - AI-Powered SAT Tutoring"
-        description="Master the Digital SAT with personalized AI tutoring. Get unlimited practice questions, adaptive learning, and step-by-step explanations. Free to start."
+        title="Digital SAT Prep - Study Smarter, Score Higher"
+        description="Prepare for the Digital SAT with adaptive practice, full-length exams, mastery tracking, and tutor chat."
         canonical="https://lyceon.ai/digital-sat"
       />
       <JsonLd data={organizationJsonLd} />
@@ -54,8 +54,8 @@ export default function DigitalSATPage() {
         ]} className="pt-8" />
 
         <Hero
-          title="Digital SAT Prep: Master the Test with AI Tutoring"
-          subtitle="The Digital SAT is here, and it requires a new approach to prep. Our AI-powered SAT tutor provides personalized practice, adaptive learning, and instant explanations—helping you improve faster than traditional methods."
+          title="Digital SAT Prep: Study Smarter, Score Higher"
+          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear mastery tracking."
         />
 
         <Section title="Choose Your Focus Area">
@@ -66,7 +66,7 @@ export default function DigitalSATPage() {
                   <Calculator className="w-10 h-10 text-foreground mb-4" />
                   <h3 className="text-xl font-semibold mb-2">SAT Math</h3>
                   <p className="text-muted-foreground mb-4">
-                    Algebra, geometry, data analysis, and advanced math. Calculator allowed for all questions.
+                    Algebra, geometry, data analysis, and advanced math with adaptive difficulty.
                   </p>
                   <span className="inline-flex items-center text-sm font-medium text-foreground">
                     Explore Math Prep <ArrowRight className="w-4 h-4 ml-1" />
@@ -80,7 +80,7 @@ export default function DigitalSATPage() {
                   <BookOpen className="w-10 h-10 text-foreground mb-4" />
                   <h3 className="text-xl font-semibold mb-2">SAT Reading & Writing</h3>
                   <p className="text-muted-foreground mb-4">
-                    Reading comprehension, grammar, vocabulary in context, and rhetorical analysis.
+                    Reading comprehension, grammar, and rhetorical analysis with targeted practice.
                   </p>
                   <span className="inline-flex items-center text-sm font-medium text-foreground">
                     Explore Reading & Writing <ArrowRight className="w-4 h-4 ml-1" />
@@ -91,27 +91,16 @@ export default function DigitalSATPage() {
           </div>
         </Section>
 
-        <Section title="Why Use an AI SAT Tutor?">
+        <Section title="What Lyceon Supports Today">
           <div className="space-y-6">
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-secondary rounded-full flex items-center justify-center">
-                <Brain className="w-5 h-5 text-foreground" />
-              </div>
-              <div>
-                <h3 className="font-semibold mb-1">Personalized Explanations</h3>
-                <p className="text-muted-foreground">
-                  Unlike answer keys that just show the correct answer, our AI tutor explains why your approach was wrong and guides you to understand the underlying concept.
-                </p>
-              </div>
-            </div>
             <div className="flex gap-4">
               <div className="flex-shrink-0 w-10 h-10 bg-secondary rounded-full flex items-center justify-center">
                 <Target className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Adaptive Difficulty</h3>
+                <h3 className="font-semibold mb-1">Adaptive Practice</h3>
                 <p className="text-muted-foreground">
-                  Practice at just the right level. Our system adjusts question difficulty based on your performance, just like the real Digital SAT.
+                  Question selection adjusts by performance so students can work at the right challenge level.
                 </p>
               </div>
             </div>
@@ -120,26 +109,35 @@ export default function DigitalSATPage() {
                 <Clock className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">24/7 Availability</h3>
+                <h3 className="font-semibold mb-1">Full-Length Exam Simulation</h3>
                 <p className="text-muted-foreground">
-                  Study whenever it fits your schedule. Get instant feedback and explanations without waiting for a human tutor.
+                  Students can run complete timed SAT sessions to validate pacing and readiness.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-10 h-10 bg-secondary rounded-full flex items-center justify-center">
+                <Brain className="w-5 h-5 text-foreground" />
+              </div>
+              <div>
+                <h3 className="font-semibold mb-1">Tutor Chat Guidance</h3>
+                <p className="text-muted-foreground">
+                  Tutor chat gives step-by-step explanations tied to SAT-style question context.
                 </p>
               </div>
             </div>
           </div>
         </Section>
 
-        <Section title="What You'll Practice">
+        <Section title="Scoring, Mastery, and Planning Clarity">
           <div className="grid sm:grid-cols-2 gap-4">
             {[
-              'Linear equations and systems',
-              'Quadratic functions and equations',
-              'Data analysis and statistics',
-              'Geometry and trigonometry',
-              'Reading comprehension',
-              'Grammar and conventions',
-              'Vocabulary in context',
-              'Rhetorical analysis',
+              'Digital SAT scoring explanation and adaptive module behavior',
+              'Skill and domain mastery status tracking',
+              'Guardian-linked visibility for student summaries',
+              'Calendar and planning views for ongoing prep',
+              'Daily limits on free plan with paid unlimited usage',
+              'Trust and policy pages with implementation-backed language',
             ].map((topic) => (
               <div key={topic} className="flex items-center gap-3 p-4 bg-secondary/50 rounded-xl">
                 <CheckCircle2 className="w-5 h-5 text-foreground flex-shrink-0" />
@@ -164,7 +162,7 @@ export default function DigitalSATPage() {
           <Card className="text-center">
             <h2 className="text-2xl font-semibold mb-4">Ready to Start Practicing?</h2>
             <p className="text-muted-foreground mb-6 max-w-lg mx-auto">
-              Join thousands of students improving their SAT scores with AI-powered tutoring.
+              Start free, track progress, and upgrade only when you need unlimited usage.
             </p>
             <Link href="/signup">
               <a className="inline-block px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity">

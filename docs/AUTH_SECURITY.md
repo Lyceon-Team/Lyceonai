@@ -38,8 +38,8 @@ Backend → Frontend { user: { id, email, role } }
 ### Protected Endpoints
 * **GET /api/profile** → `requireSupabaseAuth` (any authenticated user)
 * **POST /api/practice/sessions** → `requireSupabaseAuth` + `requireConsentCompliance` (FERPA)
-* **POST /api/documents/process-and-ingest** → `requireSupabaseAdmin` (admin only)
 * **GET /api/admin/questions/needs-review** → `requireSupabaseAdmin` (admin only)
+* **GET /api/admin/questions/statistics** → `requireSupabaseAdmin` (admin only)
 
 ### Public Endpoints
 * **GET /api/questions/recent** → No auth required

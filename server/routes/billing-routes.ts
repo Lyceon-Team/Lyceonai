@@ -1,5 +1,11 @@
 import { Request, Response, Router } from 'express';
-import { requireSupabaseAuth, getSupabaseAdmin } from '../middleware/supabase-auth';
+import {
+  getSupabaseAdmin,
+  requireRequestUser,
+  requireSupabaseAuth,
+  sendForbidden,
+  sendUnauthenticated,
+} from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
 import { billingStorage } from '../lib/billingStorage';
 import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement } from '../lib/account';
@@ -11,12 +17,16 @@ const router = Router();
 const csrfProtection = csrfGuard();
 
 function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const requestId = req.requestId;
-  if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required', requestId });
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return;
   }
-  if (req.user.role !== 'guardian' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Guardian role required', requestId });
+  if (user.role !== 'guardian' && user.role !== 'admin') {
+    return sendForbidden(res, {
+      error: 'Guardian role required',
+      message: 'You do not have permission to access guardian billing resources',
+      requestId: req.requestId,
+    });
   }
   next();
 }
@@ -61,8 +71,8 @@ function resolvePriceIdAndPlan(input: { plan?: string; priceId?: string }): { pl
 
   const plan =
     input.priceId === monthly ? 'monthly' :
-    input.priceId === quarterly ? 'quarterly' :
-    'yearly';
+      input.priceId === quarterly ? 'quarterly' :
+        'yearly';
 
   return { plan, priceId: input.priceId };
 }
@@ -74,14 +84,14 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
     const role = req.user?.role;
 
     if (!userId || !role) {
-      return res.status(401).json({ error: 'Not authenticated', requestId });
+      return sendUnauthenticated(res, requestId);
     }
 
     const validation = checkoutSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: validation.error.errors[0]?.message || 'Invalid request',
-        requestId 
+        requestId
       });
     }
 
@@ -160,44 +170,41 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
       });
     }
 
-   // Resolve stripe customer id from entitlement (account-level source of truth).
-const entitlement = await getOrCreateEntitlement(accountId);
-let customerId: string | null = entitlement?.stripe_customer_id || null;
+    // Resolve stripe customer id from entitlement (account-level source of truth).
+    const entitlement = await getOrCreateEntitlement(accountId);
+    let customerId: string | null = entitlement?.stripe_customer_id || null;
 
-if (!customerId) {
-  const customer = await stripe.customers.create({
-    email: req.user!.email,
-    metadata: {
-      account_id: accountId,
-      payer_user_id: userId,
-      payer_role: role, // "student" | "guardian"
-    },
-  });
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: req.user!.email,
+        metadata: {
+          account_id: accountId,
+          payer_user_id: userId,
+          payer_role: role, // "student" | "guardian"
+        },
+      });
 
-  customerId = customer.id;
+      customerId = customer.id;
 
-  // Persist at ENTITLEMENT level (source of truth)
-  await upsertEntitlement(accountId, { stripe_customer_id: customerId });
+      // Persist at ENTITLEMENT level (source of truth)
+      await upsertEntitlement(accountId, { stripe_customer_id: customerId });
 
-  // Optional backward compatibility only
-  await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
-
-  logger.info('BILLING', 'checkout', 'Created Stripe customer', {
-    userId,
-    accountId,
-    customerId,
-    role: role,
-    requestId,
-  });
-} else {
-  logger.info('BILLING', 'checkout', 'Reusing existing Stripe customer from entitlement', {
-    userId,
-    accountId,
-    customerId,
-    role: role,
-    requestId,
-  });
-}
+      logger.info('BILLING', 'checkout', 'Created Stripe customer', {
+        userId,
+        accountId,
+        customerId,
+        role: role,
+        requestId,
+      });
+    } else {
+      logger.info('BILLING', 'checkout', 'Reusing existing Stripe customer from entitlement', {
+        userId,
+        accountId,
+        customerId,
+        role: role,
+        requestId,
+      });
+    }
 
 
     logger.info('BILLING', 'checkout', 'Upserted entitlement stripe_customer_id', {
@@ -212,7 +219,7 @@ if (!customerId) {
       process.env.SITE_URL ||
       (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://lyceon.ai');
 
-    const successUrl = role === 'student' 
+    const successUrl = role === 'student'
       ? `${baseUrl}/dashboard?checkout=success`
       : `${baseUrl}/guardian?checkout=success`;
     const cancelUrl = role === 'student'
@@ -277,7 +284,7 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
-    
+
     if (userRole === 'guardian') {
       const link = await getPrimaryGuardianLink(userId);
       if (link?.student_user_id) {
@@ -372,7 +379,7 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
 
   const isActiveOrTrialing = status === 'active' || status === 'trialing';
   const isPastDueOrUnpaid = status === 'past_due' || status === 'unpaid';
-  
+
   let periodExpired = false;
   if (currentPeriodEnd) {
     periodExpired = new Date(currentPeriodEnd) < new Date();
@@ -431,42 +438,42 @@ async function getPricesHandler(req: Request, res: Response) {
 
     if (missing.length > 0) {
       logger.error('BILLING', 'prices', 'Missing price env vars', { missing, requestId });
-      return res.status(500).json({ 
-        error: 'Subscription prices not configured', 
+      return res.status(500).json({
+        error: 'Subscription prices not configured',
         missing,
-        requestId 
+        requestId
       });
     }
 
     const prices = [
-      { 
+      {
         id: monthlyId,
         plan: 'monthly' as const,
-        priceId: monthlyId, 
-        amount: 9900, 
+        priceId: monthlyId,
+        amount: 9900,
         currency: 'usd',
-        interval: 'month', 
+        interval: 'month',
         intervalCount: 1,
         label: 'Monthly',
       },
-      { 
+      {
         id: quarterlyId,
         plan: 'quarterly' as const,
-        priceId: quarterlyId, 
-        amount: 19900, 
+        priceId: quarterlyId,
+        amount: 19900,
         currency: 'usd',
-        interval: 'month', 
+        interval: 'month',
         intervalCount: 3,
         label: 'Quarterly',
         badge: 'Best value',
       },
-      { 
+      {
         id: yearlyId,
         plan: 'yearly' as const,
-        priceId: yearlyId, 
-        amount: 69900, 
+        priceId: yearlyId,
+        amount: 69900,
         currency: 'usd',
-        interval: 'year', 
+        interval: 'year',
         intervalCount: 1,
         label: 'Yearly',
       },
@@ -482,7 +489,8 @@ async function getPricesHandler(req: Request, res: Response) {
 router.get('/prices', getPricesHandler);
 
 router.get('/prices/authenticated', requireSupabaseAuth, getPricesHandler);
-router.get('/products/:productId/prices', requireSupabaseAuth, async (req: Request, res: Response) => {  const requestId = req.requestId;
+router.get('/products/:productId/prices', requireSupabaseAuth, async (req: Request, res: Response) => {
+  const requestId = req.requestId;
   try {
     const { productId } = req.params;
     const product = await billingStorage.getProduct(productId);
@@ -589,7 +597,7 @@ router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: R
   const monthlyId = process.env.STRIPE_PRICE_PARENT_MONTHLY || '';
   const quarterlyId = process.env.STRIPE_PRICE_PARENT_QUARTERLY || '';
   const yearlyId = process.env.STRIPE_PRICE_PARENT_YEARLY || '';
-  
+
   const keyMode = secretKey.startsWith('sk_live_') ? 'live' : secretKey.startsWith('sk_test_') ? 'test' : 'unknown';
   const usingEnvSecretKey = !!process.env.STRIPE_SECRET_KEY;
 
@@ -639,11 +647,11 @@ router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (r
 
     for (const [plan, priceId] of Object.entries(priceEnvs)) {
       const idInfo = safeIdInfo(priceId);
-      
+
       if (!priceId) {
-        results[plan] = { 
-          ok: false, 
-          error: 'Price ID not configured', 
+        results[plan] = {
+          ok: false,
+          error: 'Price ID not configured',
           priceIdPrefix: null,
           priceIdLast4: null,
           priceIdLen: 0,
@@ -652,9 +660,9 @@ router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (r
       }
 
       if (!priceId.startsWith('price_')) {
-        results[plan] = { 
-          ok: false, 
-          error: 'Invalid price ID format (must start with price_)', 
+        results[plan] = {
+          ok: false,
+          error: 'Invalid price ID format (must start with price_)',
           priceIdPrefix: idInfo.prefix,
           priceIdLast4: idInfo.last4,
           priceIdLen: idInfo.length,

@@ -78,7 +78,7 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
  */
 export async function resolveUserIdFromToken(token: string | null): Promise<string | null> {
   if (!token) return null;
-  
+
   try {
     const supabaseAnon = createClient(
       process.env.SUPABASE_URL!,
@@ -104,7 +104,20 @@ export interface SupabaseUser {
   jwt?: string;
   username?: string;
   name?: string;
+  student_link_code?: string | null;
 }
+
+export interface AuthenticatedRequest extends Request {
+  supabase?: SupabaseClient;
+  user?: SupabaseUser;
+}
+
+type DenialResponseOptions = {
+  error: string;
+  message: string;
+  requestId?: string;
+  extra?: Record<string, unknown>;
+};
 
 declare global {
   namespace Express {
@@ -120,6 +133,69 @@ declare global {
  * In test mode, placeholder clients are allowed
  * In production/dev, missing env vars must throw on first use
  */
+function sendDenial(
+  res: Response,
+  status: number,
+  options: DenialResponseOptions
+) {
+  return res.status(status).json({
+    error: options.error,
+    message: options.message,
+    requestId: options.requestId,
+    ...(options.extra ?? {}),
+  });
+}
+
+export function sendUnauthenticated(
+  res: Response,
+  requestId?: string
+) {
+  return sendDenial(res, 401, {
+    error: 'Authentication required',
+    message: 'You must be signed in to access this resource',
+    requestId,
+  });
+}
+
+export function sendForbidden(
+  res: Response,
+  options: Omit<DenialResponseOptions, 'requestId'> & { requestId?: string }
+) {
+  return sendDenial(res, 403, options);
+}
+
+export function requireRequestUser(
+  req: AuthenticatedRequest,
+  res: Response
+): SupabaseUser | null {
+  if (!req.user?.id) {
+    sendUnauthenticated(res, req.requestId);
+    return null;
+  }
+
+  return req.user;
+}
+
+export function requireRequestAuthContext(
+  req: AuthenticatedRequest,
+  res: Response
+): { user: SupabaseUser; supabase: SupabaseClient } | null {
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return null;
+  }
+
+  if (!req.supabase) {
+    sendUnauthenticated(res, req.requestId);
+    return null;
+  }
+
+  return {
+    user,
+    supabase: req.supabase,
+  };
+}
+
 function isTestEnvironment(): boolean {
   return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
 }
@@ -132,7 +208,7 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
     if (!_supabaseAdmin) {
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      
+
       if (!url || !key) {
         if (isTestEnvironment()) {
           // In test environment, return placeholder client
@@ -161,7 +237,7 @@ const supabaseAnon = new Proxy({} as SupabaseClient, {
     if (!_supabaseAnon) {
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_ANON_KEY;
-      
+
       if (!url || !key) {
         if (isTestEnvironment()) {
           // In test environment, return placeholder client
@@ -222,7 +298,7 @@ export async function supabaseAuthMiddleware(
         }
       }
     );
-    
+
     const { data: fetchedProfile, error: profileError } = await userSupabase
       .from('profiles')
       .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
@@ -231,22 +307,22 @@ export async function supabaseAuthMiddleware(
 
     // Auto-create profile if missing (resilient profile loading)
     let profile = fetchedProfile;
-    
+
     if (profileError || !fetchedProfile) {
       // Profile doesn't exist - auto-create with safe defaults
-      logger.warn('AUTH', 'profile_missing', 'Profile not found, auto-creating', { 
+      logger.warn('AUTH', 'profile_missing', 'Profile not found, auto-creating', {
         userId: user.id,
-        email: user.email 
+        email: user.email
       });
-      
+
       // Determine role from user metadata (if set during signup)
       // SECURITY: Only allow guardian role from metadata. Admin cannot be auto-assigned.
       // Admin role must be manually assigned by DB admin or existing admin user.
       const metadataRole = user.user_metadata?.role as string | undefined;
       const allowedAutoRoles = ['student', 'guardian'] as const;
-      const defaultRole: 'student' | 'guardian' = 
+      const defaultRole: 'student' | 'guardian' =
         metadataRole === 'guardian' ? 'guardian' : 'student';
-      
+
       // Log if someone tried to auto-create as admin (potential abuse attempt)
       if (metadataRole === 'admin') {
         logger.warn('AUTH', 'admin_role_blocked', 'Blocked attempt to auto-create admin profile', {
@@ -255,7 +331,7 @@ export async function supabaseAuthMiddleware(
           requestId: req.requestId
         });
       }
-      
+
       const { data: newProfile, error: createError } = await supabaseAdmin
         .from('profiles')
         .insert({
@@ -269,24 +345,24 @@ export async function supabaseAuthMiddleware(
         })
         .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
         .single();
-      
+
       if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_create_failed', 'Failed to auto-create profile', { 
-          userId: user.id, 
-          error: createError 
+        logger.error('AUTH', 'profile_create_failed', 'Failed to auto-create profile', {
+          userId: user.id,
+          error: createError
         });
         return res.status(500).json({ error: 'Failed to load user profile' });
       }
-      
+
       logger.info('AUTH', 'profile_auto_created', 'Profile auto-created successfully', {
         userId: newProfile.id,
         role: newProfile.role,
         requestId: req.requestId
       });
-      
+
       profile = newProfile;
     }
-    
+
     if (!profile) {
       logger.error('AUTH', 'profile_null', 'Profile is null after fetch/create', { userId: user.id });
       return res.status(500).json({ error: 'Failed to load user profile' });
@@ -303,6 +379,7 @@ export async function supabaseAuthMiddleware(
       is_under_13: profile.is_under_13,
       guardian_consent: profile.guardian_consent,
       jwt: token, // Store raw JWT for RLS database context
+      student_link_code: profile.student_link_code,
       // Legacy fields for backward compatibility with old auth
       username: profile.email.split('@')[0], // Use email prefix as username
       name: profile.display_name || profile.email.split('@')[0]
@@ -344,19 +421,19 @@ export async function supabaseAuthMiddleware(
       const { error: upsertError } = await supabaseAdmin
         .from('users')
         .upsert(
-          { 
-            id: req.user.id, 
-            email: req.user.email 
+          {
+            id: req.user.id,
+            email: req.user.email
           },
           { onConflict: 'id' }
         );
-      
+
       if (upsertError) {
         // Retry with just id if email column doesn't exist or other schema issue
         const { error: retryError } = await supabaseAdmin
           .from('users')
           .upsert({ id: req.user.id }, { onConflict: 'id' });
-        
+
         if (retryError) {
           logger.warn('AUTH', 'users_upsert_failed', 'Failed to upsert public.users', {
             userId: req.user.id,
@@ -410,11 +487,7 @@ export function requireSupabaseAuth(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
   return next();
 }
@@ -430,11 +503,7 @@ export function requireSupabaseAdmin(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (!req.user?.isAdmin) {
@@ -443,7 +512,7 @@ export function requireSupabaseAdmin(
       role: (req.user as any)?.role
     });
 
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Admin access required',
       message: 'You do not have permission to access this resource',
       requestId: req.requestId
@@ -464,17 +533,15 @@ export function requireConsentCompliance(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource'
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (req.user?.is_under_13 && !req.user?.guardian_consent) {
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Guardian consent required',
       message: 'Users under 13 require guardian consent to use this service',
-      consentRequired: true
+      requestId: req.requestId,
+      extra: { consentRequired: true }
     });
   }
 
@@ -492,11 +559,7 @@ export function requireStudentOrAdmin(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (req.user.isGuardian && !req.user.isAdmin) {
@@ -506,7 +569,7 @@ export function requireStudentOrAdmin(
       path: req.path
     });
 
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Student access required',
       message: 'Guardians cannot access student practice features',
       requestId: req.requestId

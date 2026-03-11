@@ -10,8 +10,15 @@
  */
 
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+<<<<<<< HEAD
 import type {
   FullLengthExamSession,
+=======
+import { applyMasteryUpdate } from "./mastery-write";
+import { MasteryEventType } from "./mastery-constants";
+import type { 
+  FullLengthExamSession, 
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   FullLengthExamModule,
   FullLengthExamQuestion,
   FullLengthExamResponse,
@@ -143,17 +150,56 @@ export interface CompleteExamParams {
   userId: string;
 }
 
+export interface SectionRawScore {
+  correct: number;
+  total: number;
+}
+
+export interface DomainBreakdownItem {
+  domain: string;
+  correct: number;
+  total: number;
+  accuracy: number;
+}
+
+export interface SkillDiagnosticItem {
+  domain: string;
+  skill: string;
+  correct: number;
+  total: number;
+  accuracy: number;
+  performanceBand: "strength" | "developing" | "needs_focus";
+}
+
 export interface CompleteExamResult {
   sessionId: string;
+  rawScore: {
+    rw: SectionRawScore;
+    math: SectionRawScore;
+    total: SectionRawScore;
+  };
+  scaledScore: {
+    rw: number;
+    math: number;
+    total: number;
+  };
+  domainBreakdown: {
+    rw: DomainBreakdownItem[];
+    math: DomainBreakdownItem[];
+  };
+  skillDiagnostics: {
+    rw: SkillDiagnosticItem[];
+    math: SkillDiagnosticItem[];
+  };
   rwScore: {
-    module1: { correct: number; total: number };
-    module2: { correct: number; total: number };
+    module1: SectionRawScore;
+    module2: SectionRawScore;
     totalCorrect: number;
     totalQuestions: number;
   };
   mathScore: {
-    module1: { correct: number; total: number };
-    module2: { correct: number; total: number };
+    module1: SectionRawScore;
+    module2: SectionRawScore;
     totalCorrect: number;
     totalQuestions: number;
   };
@@ -161,6 +207,7 @@ export interface CompleteExamResult {
     totalCorrect: number;
     totalQuestions: number;
     percentageCorrect: number;
+    scaledTotal: number;
   };
   completedAt: Date;
 }
@@ -211,52 +258,237 @@ function determineModule2Difficulty(
 }
 
 /**
- * Format a score rollup DB row as a CompleteExamResult
+ * Deterministic SAT-style scaling bounds for section scores.
  */
-function formatRollupAsResult(
-  rollup: {
-    session_id: string;
-    rw_module1_correct: number;
-    rw_module1_total: number;
-    rw_module2_correct: number;
-    rw_module2_total: number;
-    math_module1_correct: number;
-    math_module1_total: number;
-    math_module2_correct: number;
-    math_module2_total: number;
-    overall_score: number;
-  },
-  completedAt: Date
-): CompleteExamResult {
-  const rwTotalCorrect = rollup.rw_module1_correct + rollup.rw_module2_correct;
-  const rwTotalQuestions = rollup.rw_module1_total + rollup.rw_module2_total;
-  const mathTotalCorrect = rollup.math_module1_correct + rollup.math_module2_correct;
-  const mathTotalQuestions = rollup.math_module1_total + rollup.math_module2_total;
-  const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
+const MIN_SECTION_SCALED = 200;
+const MAX_SECTION_SCALED = 800;
+
+interface DiagnosticInputRow {
+  section: SectionType;
+  isCorrect: boolean;
+  domain: string;
+  skill: string;
+}
+
+interface SectionDiagnostics {
+  domains: DomainBreakdownItem[];
+  skills: SkillDiagnosticItem[];
+}
+
+/**
+ * Deterministic raw->scaled score mapping.
+ * Scales section raw score into SAT-style [200, 800] range.
+ */
+export function calculateScaledScore(rawCorrect: number, totalQuestions: number): number {
+  if (!Number.isFinite(rawCorrect) || !Number.isFinite(totalQuestions) || totalQuestions <= 0) {
+    return MIN_SECTION_SCALED;
+  }
+
+  const boundedRaw = Math.max(0, Math.min(totalQuestions, rawCorrect));
+  const ratio = boundedRaw / totalQuestions;
+  const scaled = MIN_SECTION_SCALED + Math.round(ratio * (MAX_SECTION_SCALED - MIN_SECTION_SCALED));
+  return Math.max(MIN_SECTION_SCALED, Math.min(MAX_SECTION_SCALED, scaled));
+}
+
+function toAccuracy(correct: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.round((correct / total) * 1000) / 1000;
+}
+
+function toPerformanceBand(accuracy: number): "strength" | "developing" | "needs_focus" {
+  if (accuracy >= 0.8) return "strength";
+  if (accuracy >= 0.5) return "developing";
+  return "needs_focus";
+}
+
+function normalizeLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeSkillFromCompetencies(competencies: unknown): string | null {
+  if (!Array.isArray(competencies) || competencies.length === 0) return null;
+  const first = competencies[0] as { raw?: unknown; code?: unknown } | string;
+  if (typeof first === "string") return normalizeLabel(first);
+  return normalizeLabel(first?.raw) || normalizeLabel(first?.code) || null;
+}
+
+function extractDomainAndSkill(
+  section: SectionType,
+  question: Record<string, unknown> | undefined
+): { domain: string; skill: string } {
+  const classification = (question?.classification ?? null) as
+    | { topic?: unknown; subtopic?: unknown; skills?: unknown[] }
+    | null;
+
+  const classificationDomain = normalizeLabel(classification?.topic);
+  const unitTagDomain = normalizeLabel(question?.unit_tag) || normalizeLabel(question?.unitTag);
+  const tagsDomain = Array.isArray(question?.tags) ? normalizeLabel(question?.tags[0]) : null;
+
+  const fallbackDomain = section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  const domain = classificationDomain || unitTagDomain || tagsDomain || fallbackDomain;
+
+  const classificationSkill = normalizeLabel(classification?.subtopic);
+  const classificationSkillList = Array.isArray(classification?.skills)
+    ? normalizeLabel(classification?.skills[0])
+    : null;
+  const competencySkill = normalizeSkillFromCompetencies(question?.competencies);
+
+  const skill = classificationSkill || classificationSkillList || competencySkill || "General";
+
+  return { domain, skill };
+}
+
+function buildSectionDiagnostics(
+  section: SectionType,
+  rows: DiagnosticInputRow[],
+  fallbackRaw: SectionRawScore
+): SectionDiagnostics {
+  const domainMap = new Map<string, { correct: number; total: number }>();
+  const skillMap = new Map<string, { domain: string; skill: string; correct: number; total: number }>();
+
+  for (const row of rows) {
+    if (row.section !== section) continue;
+
+    if (!domainMap.has(row.domain)) {
+      domainMap.set(row.domain, { correct: 0, total: 0 });
+    }
+    const domainAgg = domainMap.get(row.domain)!;
+    domainAgg.total += 1;
+    if (row.isCorrect) domainAgg.correct += 1;
+
+    const skillKey = `${row.domain}::${row.skill}`;
+    if (!skillMap.has(skillKey)) {
+      skillMap.set(skillKey, { domain: row.domain, skill: row.skill, correct: 0, total: 0 });
+    }
+    const skillAgg = skillMap.get(skillKey)!;
+    skillAgg.total += 1;
+    if (row.isCorrect) skillAgg.correct += 1;
+  }
+
+  const domains = Array.from(domainMap.entries())
+    .map(([domain, agg]) => ({
+      domain,
+      correct: agg.correct,
+      total: agg.total,
+      accuracy: toAccuracy(agg.correct, agg.total),
+    }))
+    .sort((a, b) => b.total - a.total || a.domain.localeCompare(b.domain));
+
+  const skills = Array.from(skillMap.values())
+    .map((agg) => {
+      const accuracy = toAccuracy(agg.correct, agg.total);
+      return {
+        domain: agg.domain,
+        skill: agg.skill,
+        correct: agg.correct,
+        total: agg.total,
+        accuracy,
+        performanceBand: toPerformanceBand(accuracy),
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.domain.localeCompare(b.domain) || a.skill.localeCompare(b.skill));
+
+  if (domains.length > 0 && skills.length > 0) {
+    return { domains, skills };
+  }
+
+  const fallbackDomain = section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  const fallbackAccuracy = toAccuracy(fallbackRaw.correct, fallbackRaw.total);
 
   return {
-    sessionId: rollup.session_id,
+    domains: [
+      {
+        domain: fallbackDomain,
+        correct: fallbackRaw.correct,
+        total: fallbackRaw.total,
+        accuracy: fallbackAccuracy,
+      },
+    ],
+    skills: [
+      {
+        domain: fallbackDomain,
+        skill: "General",
+        correct: fallbackRaw.correct,
+        total: fallbackRaw.total,
+        accuracy: fallbackAccuracy,
+        performanceBand: toPerformanceBand(fallbackAccuracy),
+      },
+    ],
+  };
+}
+
+interface BuildCompleteExamResultInput {
+  sessionId: string;
+  completedAt: Date;
+  rwModule1: SectionRawScore;
+  rwModule2: SectionRawScore;
+  mathModule1: SectionRawScore;
+  mathModule2: SectionRawScore;
+  diagnosticRows?: DiagnosticInputRow[];
+}
+
+function buildCompleteExamResult(input: BuildCompleteExamResultInput): CompleteExamResult {
+  const rwTotalCorrect = input.rwModule1.correct + input.rwModule2.correct;
+  const rwTotalQuestions = input.rwModule1.total + input.rwModule2.total;
+  const mathTotalCorrect = input.mathModule1.correct + input.mathModule2.correct;
+  const mathTotalQuestions = input.mathModule1.total + input.mathModule2.total;
+
+  const totalCorrect = rwTotalCorrect + mathTotalCorrect;
+  const totalQuestions = rwTotalQuestions + mathTotalQuestions;
+
+  const rwRaw: SectionRawScore = { correct: rwTotalCorrect, total: rwTotalQuestions };
+  const mathRaw: SectionRawScore = { correct: mathTotalCorrect, total: mathTotalQuestions };
+  const overallRaw: SectionRawScore = { correct: totalCorrect, total: totalQuestions };
+
+  const rwScaled = calculateScaledScore(rwRaw.correct, rwRaw.total);
+  const mathScaled = calculateScaledScore(mathRaw.correct, mathRaw.total);
+  const scaledTotal = rwScaled + mathScaled;
+
+  const rows = input.diagnosticRows || [];
+  const rwDiagnostics = buildSectionDiagnostics("rw", rows, rwRaw);
+  const mathDiagnostics = buildSectionDiagnostics("math", rows, mathRaw);
+
+  return {
+    sessionId: input.sessionId,
+    rawScore: {
+      rw: rwRaw,
+      math: mathRaw,
+      total: overallRaw,
+    },
+    scaledScore: {
+      rw: rwScaled,
+      math: mathScaled,
+      total: scaledTotal,
+    },
+    domainBreakdown: {
+      rw: rwDiagnostics.domains,
+      math: mathDiagnostics.domains,
+    },
+    skillDiagnostics: {
+      rw: rwDiagnostics.skills,
+      math: mathDiagnostics.skills,
+    },
     rwScore: {
-      module1: { correct: rollup.rw_module1_correct, total: rollup.rw_module1_total },
-      module2: { correct: rollup.rw_module2_correct, total: rollup.rw_module2_total },
-      totalCorrect: rwTotalCorrect,
-      totalQuestions: rwTotalQuestions,
+      module1: input.rwModule1,
+      module2: input.rwModule2,
+      totalCorrect: rwRaw.correct,
+      totalQuestions: rwRaw.total,
     },
     mathScore: {
-      module1: { correct: rollup.math_module1_correct, total: rollup.math_module1_total },
-      module2: { correct: rollup.math_module2_correct, total: rollup.math_module2_total },
-      totalCorrect: mathTotalCorrect,
-      totalQuestions: mathTotalQuestions,
+      module1: input.mathModule1,
+      module2: input.mathModule2,
+      totalCorrect: mathRaw.correct,
+      totalQuestions: mathRaw.total,
     },
     overallScore: {
-      totalCorrect: rollup.overall_score,
-      totalQuestions: overallTotalQuestions,
-      percentageCorrect:
-        overallTotalQuestions > 0
-          ? (rollup.overall_score / overallTotalQuestions) * 100
-          : 0,
+      totalCorrect: overallRaw.correct,
+      totalQuestions: overallRaw.total,
+      percentageCorrect: overallRaw.total > 0 ? (overallRaw.correct / overallRaw.total) * 100 : 0,
+      scaledTotal,
     },
-    completedAt,
+    completedAt: input.completedAt,
   };
 }
 
@@ -302,6 +534,105 @@ async function computeAndPersistExamScores(
 }
 
 /**
+ * Build diagnostic rows from responses and question metadata.
+ */
+async function computeDiagnosticRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  modules: Array<{ id: string; section: string }>
+): Promise<DiagnosticInputRow[]> {
+  try {
+    const moduleSectionById = new Map<string, SectionType>();
+    for (const module of modules) {
+      if (module.section === "rw" || module.section === "math") {
+        moduleSectionById.set(module.id, module.section);
+      }
+    }
+
+    const moduleIds = Array.from(moduleSectionById.keys());
+    if (moduleIds.length === 0) {
+      return [];
+    }
+
+    const { data: moduleQuestions, error: moduleQuestionsError } = await supabase
+      .from("full_length_exam_questions")
+      .select("module_id, question_id")
+      .in("module_id", moduleIds);
+
+    if (moduleQuestionsError || !moduleQuestions || moduleQuestions.length === 0) {
+      return [];
+    }
+
+    const { data: responseRows, error: responsesError } = await supabase
+      .from("full_length_exam_responses")
+      .select("module_id, question_id, is_correct")
+      .eq("session_id", sessionId);
+
+    if (responsesError) {
+      return [];
+    }
+
+    const responseMap = new Map<string, boolean>();
+    for (const response of responseRows || []) {
+      const key = `${response.module_id}::${response.question_id}`;
+      responseMap.set(key, Boolean(response.is_correct));
+    }
+
+    const questionIds = Array.from(new Set(moduleQuestions.map((mq) => mq.question_id).filter(Boolean)));
+    const questionMap = new Map<string, Record<string, unknown>>();
+
+    if (questionIds.length > 0) {
+      const { data: questionsData, error: questionsError } = await supabase
+        .from("questions")
+        .select("id, classification, unit_tag, tags, competencies")
+        .in("id", questionIds);
+
+      if (!questionsError && questionsData) {
+        for (const question of questionsData as Array<Record<string, unknown>>) {
+          questionMap.set(question.id as string, question);
+        }
+      }
+    }
+
+    return moduleQuestions.map((moduleQuestion) => {
+      const section = moduleSectionById.get(moduleQuestion.module_id) || "rw";
+      const question = questionMap.get(moduleQuestion.question_id);
+      const diagnostic = extractDomainAndSkill(section, question);
+      const responseKey = `${moduleQuestion.module_id}::${moduleQuestion.question_id}`;
+
+      return {
+        section,
+        isCorrect: responseMap.get(responseKey) || false,
+        domain: diagnostic.domain,
+        skill: diagnostic.skill,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+async function getModuleQuestionTotal(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  moduleId: string,
+  fallbackTotal: number
+): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from("full_length_exam_questions")
+      .select("id")
+      .eq("module_id", moduleId);
+
+    if (!error && data) {
+      return data.length;
+    }
+  } catch {
+    // Fall back to answered count when question map is unavailable.
+  }
+
+  return fallbackTotal;
+}
+
+/**
  * Compute exam scores from modules and responses
  * Used for both initial completion and idempotent re-computation
  */
@@ -323,12 +654,12 @@ async function computeExamScores(
   }
 
   // Get responses for each module
-  const moduleScores: Record<string, { correct: number; total: number }> = {};
+  const moduleScores: Record<string, SectionRawScore> = {};
 
   for (const module of modules) {
     const { data: responses, error: responsesError } = await supabase
       .from("full_length_exam_responses")
-      .select("is_correct")
+      .select("question_id, is_correct")
       .eq("module_id", module.id);
 
     if (responsesError) {
@@ -336,53 +667,46 @@ async function computeExamScores(
     }
 
     const correct = responses?.filter((r) => r.is_correct).length || 0;
-    const total = responses?.length || 0;
+    const fallbackTotal = responses?.length || 0;
+    const total = await getModuleQuestionTotal(supabase, module.id, fallbackTotal);
 
     const key = `${module.section}_${module.module_index}`;
     moduleScores[key] = { correct, total };
   }
 
-  // Compute scores
+  const diagnosticRows = await computeDiagnosticRows(
+    supabase,
+    sessionId,
+    modules as Array<{ id: string; section: string }>
+  );
+
   const rwModule1 = moduleScores["rw_1"] || { correct: 0, total: 0 };
   const rwModule2 = moduleScores["rw_2"] || { correct: 0, total: 0 };
   const mathModule1 = moduleScores["math_1"] || { correct: 0, total: 0 };
   const mathModule2 = moduleScores["math_2"] || { correct: 0, total: 0 };
 
-  const rwTotalCorrect = rwModule1.correct + rwModule2.correct;
-  const rwTotalQuestions = rwModule1.total + rwModule2.total;
-
-  const mathTotalCorrect = mathModule1.correct + mathModule2.correct;
-  const mathTotalQuestions = mathModule1.total + mathModule2.total;
-
-  const overallTotalCorrect = rwTotalCorrect + mathTotalCorrect;
-  const overallTotalQuestions = rwTotalQuestions + mathTotalQuestions;
-  const percentageCorrect = overallTotalQuestions > 0 
-    ? (overallTotalCorrect / overallTotalQuestions) * 100 
-    : 0;
-
-  return {
+  return buildCompleteExamResult({
     sessionId,
-    rwScore: {
-      module1: rwModule1,
-      module2: rwModule2,
-      totalCorrect: rwTotalCorrect,
-      totalQuestions: rwTotalQuestions,
-    },
-    mathScore: {
-      module1: mathModule1,
-      module2: mathModule2,
-      totalCorrect: mathTotalCorrect,
-      totalQuestions: mathTotalQuestions,
-    },
-    overallScore: {
-      totalCorrect: overallTotalCorrect,
-      totalQuestions: overallTotalQuestions,
-      percentageCorrect,
-    },
     completedAt,
-  };
+    rwModule1,
+    rwModule2,
+    mathModule1,
+    mathModule2,
+    diagnosticRows,
+  });
 }
 
+/**
+ * Canonical scoring/reporting path for all completed-session outputs.
+ * This is the single source for raw/scaled/domain/skill result shape.
+ */
+async function computeCanonicalExamReport(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sessionId: string,
+  completedAt: Date
+): Promise<CompleteExamResult> {
+  return computeExamScores(supabase, sessionId, completedAt);
+}
 /**
  * Calculate time remaining for a module
  * Returns null if module hasn't started, 0 if expired, positive milliseconds if active
@@ -399,6 +723,63 @@ function calculateTimeRemaining(module: FullLengthExamModule): number | null {
 }
 
 // ============================================================================
+async function applyFullLengthMasterySignals(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  sessionId: string,
+  responses: Array<{ question_id: string; is_correct: boolean | null }>
+): Promise<void> {
+  if (!responses.length) return;
+
+  const questionIds = Array.from(new Set(responses.map((r) => r.question_id).filter(Boolean)));
+  if (!questionIds.length) return;
+
+  try {
+    const { data: questionRows, error: questionError } = await supabase
+      .from("questions")
+      .select("id, canonical_id, exam, section, domain, skill, subskill, difficulty_bucket, structure_cluster_id")
+      .in("id", questionIds);
+
+    if (questionError) {
+      console.warn(`[FULL-LENGTH] Failed to load question metadata for mastery updates: ${questionError.message}`);
+      return;
+    }
+
+    const metadataByQuestionId = new Map((questionRows || []).map((q) => [q.id, q]));
+
+    for (const response of responses) {
+      const question = metadataByQuestionId.get(response.question_id);
+      if (!question?.canonical_id) continue;
+
+      try {
+        const result = await applyMasteryUpdate({
+          userId,
+          questionCanonicalId: question.canonical_id,
+          sessionId,
+          isCorrect: !!response.is_correct,
+          eventType: MasteryEventType.FULL_LENGTH_SUBMIT,
+          metadata: {
+            exam: question.exam || null,
+            section: question.section || null,
+            domain: question.domain || null,
+            skill: question.skill || null,
+            subskill: question.subskill || null,
+            difficulty_bucket: question.difficulty_bucket || null,
+            structure_cluster_id: question.structure_cluster_id || null,
+          },
+        });
+
+        if (result.error) {
+          console.warn(`[FULL-LENGTH] Canonical mastery update warning for ${question.canonical_id}: ${result.error}`);
+        }
+      } catch (masteryErr: any) {
+        console.warn(`[FULL-LENGTH] Canonical mastery update failed for ${question.canonical_id}: ${masteryErr?.message}`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${err?.message || 'unknown error'}`);
+  }
+}
 // PUBLIC API
 // ============================================================================
 
@@ -871,7 +1252,29 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found in current module");
   }
 
+<<<<<<< HEAD
   // Get question to check correctness (MC-only canonical flow)
+=======
+  // Idempotent write contract: first accepted submission wins.
+  // Duplicate submissions for the same session/module/question are treated as no-ops.
+  const { data: existingResponse, error: existingResponseError } = await supabase
+    .from("full_length_exam_responses")
+    .select("id")
+    .eq("session_id", params.sessionId)
+    .eq("module_id", currentModule.id)
+    .eq("question_id", params.questionId)
+    .maybeSingle();
+
+  if (existingResponseError) {
+    throw new Error(`Failed to check existing response: ${existingResponseError.message}`);
+  }
+
+  if (existingResponse) {
+    return;
+  }
+
+  // Get question to check correctness
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   const { data: question, error: questionError } = await supabase
     .from("questions")
     .select("id, question_type, correct_answer")
@@ -886,6 +1289,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Unsupported question type for full-length exam");
   }
 
+<<<<<<< HEAD
   // Determine correctness against canonical answer key
   const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
   const correct = String(question.correct_answer ?? "").trim().toUpperCase();
@@ -895,8 +1299,14 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
   const now = new Date().toISOString();
 
   const { error: upsertError } = await supabase
+=======
+  // Insert response once; duplicate-key races are accepted as idempotent no-ops.
+  const now = new Date().toISOString();
+
+  const { error: insertError } = await supabase
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     .from("full_length_exam_responses")
-    .upsert({
+    .insert({
       session_id: params.sessionId,
       module_id: currentModule.id,
       question_id: params.questionId,
@@ -904,13 +1314,14 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       is_correct: isCorrect,
       answered_at: now,
       updated_at: now,
-    }, {
-      onConflict: 'session_id,module_id,question_id',
-      ignoreDuplicates: false,
     });
 
-  if (upsertError) {
-    throw new Error(`Failed to upsert response: ${upsertError.message}`);
+  if (insertError) {
+    const message = insertError.message || "";
+    if (insertError.code === "23505" || message.toLowerCase().includes("duplicate")) {
+      return;
+    }
+    throw new Error(`Failed to insert response: ${insertError.message}`);
   }
 }
 
@@ -961,18 +1372,19 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       // Re-compute the result to return
       const { data: responses } = await supabase
         .from("full_length_exam_responses")
-        .select("is_correct")
+        .select("question_id, is_correct")
         .eq("module_id", currentModule.id);
-      
+
       const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-      const totalCount = responses?.length || 0;
-      
+      const answeredCount = responses?.length || 0;
+      const totalCount = await getModuleQuestionTotal(supabase, currentModule.id, answeredCount);
+
       const currentSection = session.current_section as SectionType;
       const currentModuleIndex = session.current_module as ModuleIndex;
-      
+
       let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
       let isBreak = false;
-      
+
       if (currentModuleIndex === 1) {
         // Get Module 2 difficulty that was set
         const { data: module2 } = await supabase
@@ -982,18 +1394,18 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
           .eq("section", currentSection)
           .eq("module_index", 2)
           .single();
-        
-        nextModule = { 
-          section: currentSection, 
-          moduleIndex: 2, 
-          difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium"
+
+        nextModule = {
+          section: currentSection,
+          moduleIndex: 2,
+          difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium",
         };
       } else if (currentSection === "rw") {
         isBreak = true;
       } else {
         nextModule = null;
       }
-      
+
       return {
         moduleId: currentModule.id,
         correctCount,
@@ -1002,6 +1414,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
         isBreak,
       };
     }
+
     // Otherwise reject - module must be in_progress
     throw new Error("Module must be in progress to submit");
   }
@@ -1028,7 +1441,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   // Get module responses to compute score
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("is_correct")
+    .select("question_id, is_correct")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
@@ -1036,7 +1449,15 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   }
 
   const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-  const totalCount = responses?.length || 0;
+  const answeredCount = responses?.length || 0;
+  const totalCount = await getModuleQuestionTotal(supabase, currentModule.id, answeredCount);
+
+  await applyFullLengthMasterySignals(
+    supabase,
+    params.userId,
+    params.sessionId,
+    (responses || []).map((r) => ({ question_id: r.question_id, is_correct: r.is_correct }))
+  );
 
   // Determine next module
   const currentSection = session.current_section as SectionType;
@@ -1048,7 +1469,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   if (currentModuleIndex === 1) {
     // Moving to Module 2 of same section
     const difficulty = determineModule2Difficulty(currentSection, correctCount);
-    
+
     // Update Module 2 difficulty - single-write guarantee
     // Only set difficulty_bucket if it's currently NULL to prevent overwrites
     const { data: updatedModules, error: difficultyError } = await supabase
@@ -1071,7 +1492,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
         .eq("section", currentSection)
         .eq("module_index", 2)
         .single();
-      
+
       if (existingModule?.difficulty_bucket) {
         finalDifficulty = existingModule.difficulty_bucket as DifficultyBucket;
       }
@@ -1091,7 +1512,6 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.sessionId);
-
   } else if (currentSection === "rw") {
     // Moving from RW Module 2 to break
     isBreak = true;
@@ -1104,7 +1524,6 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.sessionId);
-
   } else {
     // Completed Math Module 2 - exam is done
     nextModule = null;
@@ -1118,7 +1537,6 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     isBreak,
   };
 }
-
 /**
  * Start the exam (set status to in_progress, start RW Module 1)
  */
@@ -1213,21 +1631,13 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return existing rollup from DB
+  // Idempotency: if already completed, return canonical computed report.
   if (session.status === "completed") {
-    // Fetch existing rollup from database (deterministic)
-    const { data: existingRollup, error: rollupError } = await supabase
-      .from("full_length_exam_score_rollups")
-      .select("*")
-      .eq("session_id", params.sessionId)
-      .single();
-
-    if (rollupError || !existingRollup) {
-      throw new Error("Score rollup not found for completed session");
-    }
-
-    // Return rollup data in CompleteExamResult format
-    return formatRollupAsResult(existingRollup, new Date(session.completed_at!));
+    return computeCanonicalExamReport(
+      supabase,
+      params.sessionId,
+      new Date(session.completed_at || new Date().toISOString())
+    );
   }
 
   // Terminal-state guard: enforce preconditions for completion
@@ -1300,18 +1710,11 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      // Session was completed by concurrent request - return existing rollup from DB
-      const { data: existingRollup, error: rollupError } = await supabase
-        .from("full_length_exam_score_rollups")
-        .select("*")
-        .eq("session_id", params.sessionId)
-        .single();
-
-      if (rollupError || !existingRollup) {
-        throw new Error("Score rollup not found for completed session");
-      }
-
-      return formatRollupAsResult(existingRollup, new Date(completedSession.completed_at!));
+      return computeCanonicalExamReport(
+        supabase,
+        params.sessionId,
+        new Date(completedSession.completed_at || completedAt.toISOString())
+      );
     } else {
       throw new Error("Invalid exam state");
     }
@@ -1327,6 +1730,52 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
 }
 
 // ============================================================================
+export async function getExamReport(params: CompleteExamParams): Promise<CompleteExamResult> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: session, error: sessionError } = await supabase
+    .from("full_length_exam_sessions")
+    .select("id, user_id, status, completed_at")
+    .eq("id", params.sessionId)
+    .eq("user_id", params.userId)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error("Session not found or access denied");
+  }
+
+  if (session.status !== "completed") {
+    throw new Error("Results locked until completion");
+  }
+
+  const completedAt = session.completed_at ? new Date(session.completed_at) : new Date();
+  return computeCanonicalExamReport(supabase, params.sessionId, completedAt);
+}
+
+export async function getExamReviewAfterCompletion(params: CompleteExamParams): Promise<GetExamReviewResult> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: session, error: sessionError } = await supabase
+    .from("full_length_exam_sessions")
+    .select("id, status")
+    .eq("id", params.sessionId)
+    .eq("user_id", params.userId)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error("Session not found or access denied");
+  }
+
+  if (session.status !== "completed") {
+    throw new Error("Review locked until completion");
+  }
+
+  return getExamReview({
+    supabase,
+    sessionId: params.sessionId,
+    userId: params.userId,
+  });
+}
 // EXAM REVIEW - Safe Question Projection
 // ============================================================================
 
@@ -1503,6 +1952,7 @@ export interface GetExamReviewResult {
 export interface GetExamReviewParams {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   sessionId: string;
+  userId?: string;
 }
 
 function normalizeSectionCode(value: unknown): CanonicalSectionCode | null {
@@ -1603,14 +2053,19 @@ function projectFullQuestionFields(
 export async function getExamReview(
   params: GetExamReviewParams
 ): Promise<GetExamReviewResult> {
-  const { supabase, sessionId } = params;
+  const { supabase, sessionId, userId } = params;
 
-  // Load session by ID (RLS enforces user ownership, but we verify existence)
-  const { data: session, error: sessionError } = await supabase
+  // Load session by ID and optionally enforce explicit user ownership.
+  let sessionQuery = supabase
     .from("full_length_exam_sessions")
     .select("id, user_id, status, current_section, current_module, seed, started_at, completed_at, created_at")
-    .eq("id", sessionId)
-    .single();
+    .eq("id", sessionId);
+
+  if (userId) {
+    sessionQuery = sessionQuery.eq("user_id", userId);
+  }
+
+  const { data: session, error: sessionError } = await sessionQuery.single();
 
   if (sessionError || !session) {
     throw new Error("Session not found or access denied");
@@ -1726,3 +2181,4 @@ export async function getExamReview(
     responses: formattedResponses,
   };
 }
+

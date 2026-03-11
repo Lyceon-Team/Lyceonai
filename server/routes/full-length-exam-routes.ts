@@ -10,9 +10,12 @@
  */
 
 import { Router, Request, Response } from "express";
-import { requireSupabaseAuth } from "../middleware/supabase-auth";
+import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
+// Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
+import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+import { buildFullTestKpis, fullTestMeasurementModel } from "../services/kpi-truth-layer";
 import { z } from "zod";
 
 const router = Router();
@@ -27,6 +30,19 @@ const submitAnswerSchema = z.object({
   selectedAnswer: z.string().optional(),
 });
 
+function sendRouteError(
+  req: Request,
+  res: Response,
+  status: number,
+  error: string,
+  extra: Record<string, unknown> = {}
+) {
+  return res.status(status).json({
+    error,
+    ...extra,
+    requestId: req.requestId,
+  });
+}
 // ============================================================================
 // ROUTES
 // ============================================================================
@@ -42,18 +58,19 @@ const submitAnswerSchema = z.object({
  */
 router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const session = await fullLengthExamService.createExamSession({
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.status(201).json({ session });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Create session error:", error);
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -68,16 +85,17 @@ router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Reques
  */
 router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const sessionId = req.query.sessionId as string;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId query parameter required" });
+      return sendRouteError(req, res, 400, "sessionId query parameter required");
     }
 
-    const result = await fullLengthExamService.getCurrentSession(sessionId, req.user.id);
+    const result = await fullLengthExamService.getCurrentSession(sessionId, user.id);
 
     return res.json(result);
   } catch (error: unknown) {
@@ -85,10 +103,10 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -103,16 +121,17 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
  */
 router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId required" });
+      return sendRouteError(req, res, 400, "sessionId required");
     }
 
-    await fullLengthExamService.startExam(sessionId, req.user.id);
+    await fullLengthExamService.startExam(sessionId, user.id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -120,14 +139,14 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
     if (message.includes("already started")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -144,26 +163,24 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
  */
 router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId required" });
+      return sendRouteError(req, res, 400, "sessionId required");
     }
 
     const parsed = submitAnswerSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ 
-        error: "Invalid request body",
-        details: parsed.error.errors 
-      });
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
     }
 
     await fullLengthExamService.submitAnswer({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
       questionId: parsed.data.questionId,
       selectedAnswer: parsed.data.selectedAnswer,
     });
@@ -174,22 +191,22 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
     if (message.includes("not in progress")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
     if (message.includes("time has expired")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
     if (message.includes("not found in current module")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -205,18 +222,19 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
  */
 router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId required" });
+      return sendRouteError(req, res, 400, "sessionId required");
     }
 
     const result = await fullLengthExamService.submitModule({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.json(result);
@@ -225,18 +243,18 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
     if (message.includes("not in progress")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
     if (message.includes("already submitted")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -251,16 +269,17 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
  */
 router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId required" });
+      return sendRouteError(req, res, 400, "sessionId required");
     }
 
-    await fullLengthExamService.continueFromBreak(sessionId, req.user.id);
+    await fullLengthExamService.continueFromBreak(sessionId, user.id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -268,14 +287,14 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
     if (message.includes("Not on break")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
@@ -291,18 +310,19 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
  */
 router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    if (!req.user?.id) {
-      return res.status(401).json({ error: "Authentication required" });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { sessionId } = req.params;
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId required" });
+      return sendRouteError(req, res, 400, "sessionId required");
     }
 
     const result = await fullLengthExamService.completeExam({
       sessionId,
-      userId: req.user.id,
+      userId: user.id,
     });
 
     return res.json(result);
@@ -311,18 +331,120 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
     const message = error instanceof Error ? error.message : "";
     
     if (message.includes("not found") || message.includes("access denied")) {
-      return res.status(404).json({ error: "Session not found" });
+      return sendRouteError(req, res, 404, "Session not found");
     }
     
     if (message.includes("Invalid exam state")) {
-      return res.status(400).json({ error: "Invalid exam state" });
+      return sendRouteError(req, res, 400, "Invalid exam state");
     }
     
-    return res.status(500).json({ error: "Internal error" });
+    return sendRouteError(req, res, 500, "Internal error");
   }
 });
 
+
+/**
+ * GET /api/full-length/sessions/:sessionId/report
+ * Get full score report (raw/scaled/domain/skill) after completion.
+ */
+router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return sendRouteError(req, res, 400, "sessionId required");
+    }
+
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+    if (!access.hasPaidAccess) {
+      return res.status(402).json({
+        error: "Premium KPI feature required",
+        code: "PREMIUM_KPI_REQUIRED",
+        feature: "full_test_analytics",
+        message: "Upgrade to an active paid plan to unlock full-test analytics.",
+        reason: access.reason,
+        requestId: req.requestId,
+      });
+    }
+
+    const result = await fullLengthExamService.getExamReport({
+      sessionId,
+      userId: user.id,
+    });
+
+    const kpis = buildFullTestKpis({
+      scaledTotal: result.scaledScore.total,
+      scaledRw: result.scaledScore.rw,
+      scaledMath: result.scaledScore.math,
+      totalCorrect: result.rawScore.total.correct,
+      totalQuestions: result.rawScore.total.total,
+    });
+
+    return res.json({
+      ...result,
+      kpis,
+      measurementModel: fullTestMeasurementModel(),
+    });
+  } catch (error: unknown) {
+    console.error("[FULL-LENGTH] Get report error:", error);
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("not found") || message.includes("access denied")) {
+      return sendRouteError(req, res, 404, "Session not found");
+    }
+
+    if (message.includes("Results locked until completion")) {
+      return sendRouteError(req, res, 423, "Results locked until completion");
+    }
+
+    return sendRouteError(req, res, 500, "Internal error");
+  }
+});
+/**
+ * GET /api/full-length/sessions/:sessionId/review
+ * Review unlocks only after exam completion.
+ */
+router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return sendRouteError(req, res, 400, "sessionId required");
+    }
+
+    const review = await fullLengthExamService.getExamReviewAfterCompletion({
+      sessionId,
+      userId: user.id,
+    });
+
+    return res.json(review);
+  } catch (error: unknown) {
+    console.error("[FULL-LENGTH] Get review error:", error);
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("not found") || message.includes("access denied")) {
+      return sendRouteError(req, res, 404, "Session not found");
+    }
+
+    if (message.includes("Review locked until completion")) {
+      return sendRouteError(req, res, 423, "Review locked until completion");
+    }
+
+    return sendRouteError(req, res, 500, "Internal error");
+  }
+});
 export default router;
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57

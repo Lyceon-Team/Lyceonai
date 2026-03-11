@@ -33,6 +33,22 @@ describe('redactSensitive', () => {
     expect(result.auth.nested.deeper.token).toBe('[REDACTED]');
   });
 
+  it('redacts body, email, and password fields', () => {
+    const input = {
+      body: { answer: 'B', explanation: 'private' },
+      user: {
+        email: 'student@example.com',
+        password: 'super-secret',
+      },
+    };
+
+    const result = redactSensitive(input);
+
+    expect(result.body).toBe('[REDACTED]');
+    expect(result.user.email).toBe('[REDACTED]');
+    expect(result.user.password).toBe('[REDACTED]');
+  });
+
   it('handles arrays containing sensitive keys', () => {
     const input = [
       { token: 'abc', meta: { Authorization: 'Bearer 123' } },

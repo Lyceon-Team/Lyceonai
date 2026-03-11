@@ -1,5 +1,8 @@
 # SAT Learning Copilot - Comprehensive Project Report
 
+> **HISTORICAL ARCHIVE (non-runtime):** Any ingestion references in this document describe removed systems and do not reflect current product scope.
+
+
 **Generated:** September 27, 2025  
 **Project Status:** ✅ **COMPLETE** - Production Ready with Enhanced Hardening & Monitoring
 

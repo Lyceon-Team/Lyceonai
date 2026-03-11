@@ -1,6 +1,13 @@
 /**
+<<<<<<< HEAD
  * QuestionCard - Unified component for rendering SAT practice questions.
  * Canonical MC-only renderer.
+=======
+ * QuestionCard - Unified component for rendering SAT practice questions
+ * 
+ * Clean, consistent layout focused on student-facing practice.
+ * Handles both multiple-choice and free-response questions.
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
  */
 
 import { motion } from 'framer-motion';

@@ -40,7 +40,7 @@ export function buildAllowedOrigins(opts: {
     "https://lyceon.ai",
     "https://www.lyceon.ai",
   ];
-  
+
   // In test mode, add localhost origins for testing
   const TEST_DEFAULTS = isTest ? [
     "http://localhost:5000",
@@ -48,11 +48,16 @@ export function buildAllowedOrigins(opts: {
     "http://localhost:3001",
   ] : [];
 
+  const DEV_DEFAULTS = isDev ? [
+    "http://localhost:5173",
+    "http://localhost:5000",
+  ] : [];
+
   const fromCors = splitCsv(opts.corsOriginsCsv);
   const fromCsrf = splitCsv(opts.csrfOriginsCsv);
 
   // Combine all origins
-  const raw = Array.from(new Set([...DEFAULTS, ...TEST_DEFAULTS, ...fromCors, ...fromCsrf]));
+  const raw = Array.from(new Set([...DEFAULTS, ...TEST_DEFAULTS, ...DEV_DEFAULTS, ...fromCors, ...fromCsrf]));
 
   const normalized = new Set(raw.map(normalizeOrigin));
 

@@ -2,8 +2,13 @@ import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
 
 export type TestCode = "SAT";
+<<<<<<< HEAD
 export type SectionCode = "MATH" | "RW";
 export type SourceCode = 0 | 1 | 2 | 3;
+=======
+export type SectionCode = "M" | "RW";
+export type SourceCode = "1" | "2";
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
 const UNIQUE_LENGTH = 6;
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -27,7 +32,11 @@ export function generateCanonicalId(
 }
 
 export function isValidCanonicalId(id: string): boolean {
+<<<<<<< HEAD
   const pattern = /^SAT(MATH|RW)[0-3][A-Z0-9]{6}$/;
+=======
+  const pattern = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   return pattern.test(id);
 }
 
@@ -37,6 +46,7 @@ export function parseCanonicalId(id: string): {
   source: SourceCode;
   unique: string;
 } | null {
+<<<<<<< HEAD
   const match = id.match(/^(SAT)(MATH|RW)([0-3])([A-Z0-9]{6})$/);
   if (!match) return null;
 
@@ -45,12 +55,41 @@ export function parseCanonicalId(id: string): {
     section: match[2] as SectionCode,
     source: Number(match[3]) as SourceCode,
     unique: match[4],
+=======
+  if (!isValidCanonicalId(id)) return null;
+
+  const test = "SAT";
+  const rest = id.slice(3);
+  const section = rest.startsWith("RW") ? "RW" : "M";
+  const source = section === "RW" ? rest[2] : rest[1];
+  const unique = section === "RW" ? rest.slice(3) : rest.slice(2);
+
+  return {
+    test,
+    section,
+    source,
+    unique,
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   };
 }
 
 export function mapSectionToCode(section: string): SectionCode {
   const normalized = section.toLowerCase();
+<<<<<<< HEAD
   if (normalized.includes("math")) return "MATH";
+=======
+  if (normalized === "math") return "M";
+  if (normalized === "rw") return "RW";
+  if (
+    normalized === "reading" ||
+    normalized === "writing" ||
+    normalized === "reading_writing" ||
+    normalized === "reading and writing" ||
+    normalized === "reading & writing"
+  ) {
+    return "RW";
+  }
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   return "RW";
 }
 

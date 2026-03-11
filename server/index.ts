@@ -17,7 +17,6 @@ import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
 // SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, embeddings, etc.).
 // apps/api MUST NOT be mounted for user-facing routes:
-//   - /api/questions/validate
 //   - /api/tutor/v2
 //   - auth token resolution / requireSupabaseAuth
 import { rag } from "./routes/legacy/rag";
@@ -37,7 +36,6 @@ import {
   submitQuestionFeedback,
 } from "./routes/legacy/questions";
 import { searchQuestions } from "./routes/legacy/search";
-import { validateAnswer } from "./routes/questions-validate";
 import {
   getNeedsReview,
   approveQuestion,
@@ -50,9 +48,9 @@ import {
   requireSupabaseAuth,
   requireSupabaseAdmin,
   requireStudentOrAdmin,
+  requireRequestUser,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
-import { reqLogger } from "../apps/api/src/middleware/logging";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
@@ -72,17 +70,20 @@ import accountRoutes from "./routes/account-routes";
 import healthRoutes from "./routes/health-routes";
 import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
+import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
 import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
+import { logger } from "./logger";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
 
 const app = express();
+app.disable("x-powered-by");
 
 // Trust proxy headers (required for Replit infrastructure and rate limiting)
 // Set to 1 to trust the first proxy layer (Replit's infrastructure)
@@ -90,9 +91,9 @@ app.set("trust proxy", 1);
 
 // Request ID middleware - must be first to track all requests
 app.use(requestIdMiddleware);
+app.use(securityHeadersMiddleware());
 
 // Core middleware
-app.use(reqLogger());
 app.use(corsAllowlist());
 app.use(cookieParser());
 
@@ -168,7 +169,7 @@ const legalSeoMeta: Record<string, { title: string; description: string }> = {
   },
   "trust-and-safety": {
     title: "Trust & Safety",
-    description: "How Lyceon approaches trust, safety, and responsibility in AI-powered learning.",
+    description: "How Lyceon approaches trust, safety, and responsible technology in learning.",
   },
 };
 
@@ -269,7 +270,7 @@ app.use(
 );
 
 // Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
-app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
+app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
@@ -285,30 +286,31 @@ app.use("/api/auth", supabaseAuthRoutes);
 // PATCH /api/profile - Complete/update user profile
 app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
-    // User is already attached by supabaseAuthMiddleware
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
-    
+
     // Return complete user profile with all fields needed by frontend
     // This matches the structure of /api/auth/user for compatibility
-    const fallbackUsername = req.user.email ? req.user.email.split('@')[0] : null;
-    const normalizedName = req.user.display_name || fallbackUsername || 'Student';
-    
-    return res.json({ 
+    const fallbackUsername = user.email ? user.email.split('@')[0] : null;
+    const normalizedName = user.display_name || fallbackUsername || 'Student';
+
+    return res.json({
       authenticated: true,
       user: {
-        id: req.user.id,
-        email: req.user.email,
-        display_name: req.user.display_name,
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
         name: normalizedName,
         username: fallbackUsername,
-        role: req.user.role,
-        isAdmin: req.user.isAdmin,
-        isGuardian: req.user.isGuardian,
-        is_under_13: req.user.is_under_13,
-        guardian_consent: req.user.guardian_consent,
-        profileCompletedAt: (req.user as any).profile_completed_at || null,
+        role: user.role,
+        isAdmin: user.isAdmin,
+        isGuardian: user.isGuardian,
+        is_under_13: user.is_under_13,
+        guardian_consent: user.guardian_consent,
+        studentLinkCode: user.student_link_code,
+        profileCompletedAt: (user as any).profile_completed_at || null,
       }
     });
   } catch (error) {
@@ -424,7 +426,6 @@ app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getRev
 app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
-app.post("/api/questions/validate", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, validateAnswer);
 
 // Question feedback endpoint (thumbs up/down)
 app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
@@ -550,6 +551,40 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
   });
 }
 
+
+// SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
+// Keeps sitemap legal slugs indexable with canonical title/description metadata.
+app.get("/legal/:slug", (req, res, next) => {
+  const slug = String(req.params.slug || "");
+  const meta = legalSeoMeta[slug];
+  if (!meta) return next();
+
+  const canonical = `https://lyceon.ai/legal/${slug}`;
+  const bodyHtml = `
+<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
+  <article>
+    <header style="margin-bottom: 1.5rem;">
+      <nav style="margin-bottom: 0.75rem;"><a href="/legal" style="color: #0F2E48;">← Back to Legal</a></nav>
+      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">${meta.title}</h1>
+      <p style="color: #555; line-height: 1.6;">${meta.description}</p>
+    </header>
+    <section style="line-height: 1.8; color: #333;">
+      <p>This page is publicly available at <code>/legal/${slug}</code>.</p>
+      <p>Use the legal hub for complete policy navigation and PDF links.</p>
+      <p><a href="/legal" style="color: #0F2E48;">Open Legal Hub</a></p>
+    </section>
+  </article>
+</main>`;
+
+  let html = getIndexHtml();
+  html = injectMeta(html, {
+    title: `${meta.title} | Lyceon`,
+    description: meta.description,
+    canonical,
+  });
+  html = injectBodyContent(html, bodyHtml);
+  res.type("html").send(html);
+});
 app.use(express.static(staticPath));
 
 // SPA fallback - serve index.html for all non-API routes
@@ -561,6 +596,40 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(staticPath, "index.html"));
 });
 
+
+// Final error boundary for uncaught route errors
+app.use((err: any, req: Request, res: Response, next: any) => {
+  const requestId = (req as any).requestId || logger.generateRequestId();
+
+  logger.error(
+    'HTTP',
+    'unhandled_error',
+    `Unhandled error in ${req.method} ${req.path}`,
+    err,
+    {
+      method: req.method,
+      path: req.path,
+      statusCode: err?.status || 500,
+      hasBody: req.body !== undefined && req.body !== null,
+      hasCookieHeader: !!req.headers.cookie,
+      hasAuthorizationHeader: !!req.headers.authorization,
+    },
+    {
+      requestId,
+      userId: req.user?.id,
+      ip: req.ip,
+    }
+  );
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  return res.status(err?.status || 500).json({
+    error: 'Internal server error',
+    requestId,
+  });
+});
 // Production environment validation (warn but don't crash)
 const PORT = parseInt(process.env.PORT || "5000", 10);
 if (process.env.NODE_ENV === "production") {
@@ -602,11 +671,11 @@ if (isMainModule) {
   // Global error handlers to prevent crashes before port binding
   // NOTE: These are only set up when running as main module, not during tests
   process.on("uncaughtException", (err) => {
-    console.error("[FATAL] Uncaught exception:", (err as any)?.message);
+    logger.error("PROCESS", "uncaught_exception", "Uncaught exception", err, { fatal: true });
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
-    console.error("[FATAL] Unhandled rejection:", reason);
+    logger.error("PROCESS", "unhandled_rejection", "Unhandled promise rejection", reason, { fatal: false });
   });
 
   // Validate environment variables on startup
@@ -672,7 +741,6 @@ if (isMainModule) {
     console.log(`  GET    /api/questions`);
     console.log(`  GET    /api/questions/recent`);
     console.log(`  GET    /api/questions/random`);
-    console.log(`  POST   /api/questions/validate`);
     console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  GET    /api/practice/next`);
@@ -695,6 +763,8 @@ if (isMainModule) {
     console.log(`  POST   /api/full-length/sessions/:sessionId/module/submit`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/break/continue`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
+    console.log(`  GET    /api/full-length/sessions/:sessionId/report`);
+    console.log(`  GET    /api/full-length/sessions/:sessionId/review`);
   });
 
   // Graceful shutdown

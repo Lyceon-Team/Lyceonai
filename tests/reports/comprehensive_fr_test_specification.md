@@ -1,4 +1,7 @@
 # Comprehensive Free Response (FR) Question Test Specification
+
+> **HISTORICAL ARCHIVE (non-runtime):** Any ingestion references in this report describe removed systems and are kept only as test history.
+
 ## Task H: Tests that fail if FR isn't handled properly
 
 **Generated**: 2025-09-27  

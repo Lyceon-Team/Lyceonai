@@ -3,6 +3,68 @@ import { supabaseServer } from "../apps/api/src/lib/supabase-server";
 
 const REVIEW_STATUSES = ["in_review", "pending_review"];
 
+<<<<<<< HEAD
+=======
+
+
+type QuestionMutabilityCheck = {
+  ok: boolean;
+  status?: number;
+  body?: Record<string, unknown>;
+};
+
+async function assertQuestionMutable(questionId: string): Promise<QuestionMutabilityCheck> {
+  const { data: row, error } = await supabaseServer
+    .from('questions')
+    .select('id, canonical_id, needs_review, reviewed_at, version')
+    .eq('id', questionId)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        success: false,
+        error: 'Failed to load question state',
+        detail: error.message,
+      },
+    };
+  }
+
+  if (!row) {
+    return {
+      ok: false,
+      status: 404,
+      body: {
+        success: false,
+        error: 'Question not found',
+      },
+    };
+  }
+
+  const isPublished = row.needs_review === false && !!row.reviewed_at;
+  if (isPublished) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        success: false,
+        error: 'published_content_immutable',
+        message: 'Published questions are immutable. Create a new version and re-run QA.',
+        canonicalId: row.canonical_id ?? null,
+        version: row.version ?? null,
+      },
+    };
+  }
+
+  return { ok: true };
+}
+/**
+ * GET /api/admin/questions/needs-review
+ * Get all questions that need admin review (confidence < 0.8 or needsReview = true)
+ */
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 export async function getNeedsReview(req: Request, res: Response) {
   try {
     const limitParam = Number(req.query.limit) || 50;
@@ -44,8 +106,18 @@ export async function approveQuestion(req: Request, res: Response) {
     if (!userId) {
       return res.status(401).json({ success: false, error: "User not authenticated" });
     }
+<<<<<<< HEAD
 
     const now = new Date().toISOString();
+=======
+    
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
+    // Update question to approve it
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     const { data: updated, error } = await supabaseServer
       .from("questions")
       .update({
@@ -80,6 +152,7 @@ export async function rejectQuestion(req: Request, res: Response) {
     if (!userId) {
       return res.status(401).json({ success: false, error: "User not authenticated" });
     }
+<<<<<<< HEAD
 
     const now = new Date().toISOString();
     const { data: updated, error } = await supabaseServer
@@ -91,6 +164,19 @@ export async function rejectQuestion(req: Request, res: Response) {
         updated_at: now,
       })
       .eq("id", id)
+=======
+    
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
+    // Delete the question
+    const { data: deleted, error } = await supabaseServer
+      .from('questions')
+      .delete()
+      .eq('id', id)
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       .select()
       .single();
 
@@ -137,7 +223,17 @@ export async function updateQuestion(req: Request, res: Response) {
     if (!userId) {
       return res.status(401).json({ success: false, error: "User not authenticated" });
     }
+<<<<<<< HEAD
 
+=======
+    
+    const mutability = await assertQuestionMutable(id);
+    if (!mutability.ok) {
+      return res.status(mutability.status || 500).json(mutability.body);
+    }
+
+    // Build update object with only provided fields
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     const updateData: any = {
       status: "published",
       reviewed_at: new Date().toISOString(),

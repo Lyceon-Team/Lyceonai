@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { Router, Request, Response } from "express";
 import { csrfGuard } from "../middleware/csrf";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -13,6 +14,37 @@ function getSupabaseProjectRef(): string {
 }
 
 router.get("/questions", async (_req: Request, res: Response) => {
+=======
+/**
+ * Admin Proof Routes - "No More Lying" Layer
+ *
+ * These endpoints verify Supabase is actually receiving data.
+ * All queries use the service role key to bypass RLS.
+ */
+
+import { Router, Request, Response } from 'express';
+import { csrfGuard } from '../middleware/csrf';
+import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
+import { SUPABASE_QUESTIONS_COLUMNS, validateQuestionRow } from '../../apps/api/src/lib/question-validation';
+import { generateCanonicalId } from '../../apps/api/src/lib/canonicalId';
+
+const router = Router();
+
+function getSupabaseProjectRef(): string {
+  const url = process.env.SUPABASE_URL || '';
+  const match = url.match(/https:\/\/([^.]+)\.supabase\.co/);
+  return match ? match[1] : 'unknown';
+}
+
+// All routes are now protected by requireSupabaseAdmin upstream. No bearer or isAuthorized logic remains.
+const csrfProtection = csrfGuard();
+
+/**
+ * GET /api/admin/proof/questions
+ * Returns proof that questions exist in Supabase
+ */
+router.get('/questions', async (_req: Request, res: Response) => {
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   try {
     const { count, error: countError } = await supabaseServer.from("questions").select("id", { count: "exact", head: true });
     if (countError) {
@@ -41,6 +73,7 @@ router.get("/questions", async (_req: Request, res: Response) => {
   }
 });
 
+<<<<<<< HEAD
 router.post("/insert-smoke", csrfProtection, async (_req: Request, res: Response) => {
   try {
     const uniqueChars = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -51,12 +84,29 @@ router.post("/insert-smoke", csrfProtection, async (_req: Request, res: Response
       section_code: "MATH",
       question_type: "multiple_choice",
       stem: `Smoke test question inserted at ${new Date().toISOString()}`,
+=======
+/**
+ * POST /api/admin/proof/insert-smoke
+ * Insert ONE smoke test row to verify write path works
+ */
+router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response) => {
+  try {
+    const canonicalId = generateCanonicalId('SAT', 'M', '2');
+
+    const smokeRow = {
+      canonical_id: canonicalId,
+      section: 'Math',
+      stem: `Smoke test question inserted at ${new Date().toISOString()}`,
+      question_type: 'multiple_choice',
+      type: 'mc',
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       options: [
         { key: "A", text: "Smoke option A" },
         { key: "B", text: "Smoke option B" },
         { key: "C", text: "Smoke option C" },
         { key: "D", text: "Smoke option D" },
       ],
+<<<<<<< HEAD
       correct_answer: "A",
       answer_text: "A",
       explanation: "Smoke explanation",
@@ -74,6 +124,13 @@ router.post("/insert-smoke", csrfProtection, async (_req: Request, res: Response
       source_type: 1,
       test_code: "SAT",
       exam: "SAT",
+=======
+      answer: 'A',
+      answer_choice: 'A',
+      exam: 'SAT',
+      test_code: 'SAT',
+      section_code: 'M',
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       ai_generated: true,
       diagram_present: false,
       tags: [],
@@ -106,7 +163,15 @@ router.post("/insert-smoke", csrfProtection, async (_req: Request, res: Response
   }
 });
 
+<<<<<<< HEAD
 router.delete("/cleanup-smoke", csrfProtection, async (_req: Request, res: Response) => {
+=======
+/**
+ * DELETE /api/admin/proof/cleanup-smoke
+ * Delete smoke test rows (optional cleanup)
+ */
+router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Response) => {
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   try {
     const { data, error } = await supabaseServer
       .from("questions")
