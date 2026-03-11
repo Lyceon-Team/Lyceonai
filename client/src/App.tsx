@@ -38,6 +38,7 @@ const BlogPost = lazy(() => import("@/pages/blog-post"));
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
+const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
@@ -77,6 +78,7 @@ function Router() {
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
+        <Route path="/trust/evidence" component={TrustEvidence} />
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 
@@ -187,3 +189,4 @@ function App() {
 }
 
 export default App;
+
