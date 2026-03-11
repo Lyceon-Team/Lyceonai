@@ -26,12 +26,25 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
   },
 }));
 
-vi.mock('../../server/middleware/supabase-auth', () => ({
-  requireSupabaseAuth: (req: any, _res: any, next: any) => {
-    req.user = { id: 'student-1', role: 'student' };
-    next();
-  },
-}));
+vi.mock('../../server/middleware/supabase-auth', async () => {
+  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
+    '../../server/middleware/supabase-auth'
+  );
+
+  return {
+    ...actual,
+    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'student-1',
+        role: 'student',
+        isGuardian: false,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-kpi-gating';
+      next();
+    },
+  };
+});
 
 vi.mock('../../server/middleware/csrf', () => ({
   csrfGuard: () => (_req: any, _res: any, next: any) => next(),
@@ -161,7 +174,10 @@ describe('KPI Gating Contract', () => {
   it('denies free-tier mastery projection (mastery hexagon surface)', async () => {
     const { getScoreProjection } = await import('../../server/routes/legacy/progress');
 
-    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-1' };
+    const req: any = {
+      user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
+      requestId: 'req-1',
+    };
     const { res, getStatus, getBody } = createRes();
 
     await getScoreProjection(req, res as any);
@@ -176,7 +192,10 @@ describe('KPI Gating Contract', () => {
   it('hides historical trends for free-tier KPI view', async () => {
     const { getRecencyKpis } = await import('../../server/routes/legacy/progress');
 
-    const req: any = { user: { id: 'student-1', role: 'student' }, requestId: 'req-2' };
+    const req: any = {
+      user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
+      requestId: 'req-2',
+    };
     const { res, getBody } = createRes();
 
     await getRecencyKpis(req, res as any);
@@ -209,7 +228,8 @@ describe('KPI Gating Contract', () => {
 
     const app = express();
     app.use((req: any, _res, next) => {
-      req.user = { id: 'student-1', role: 'student' };
+      req.user = { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false };
+      req.requestId ??= 'req-mastery-skills';
       next();
     });
     app.use('/api/me/mastery', masteryRouter);
@@ -221,3 +241,4 @@ describe('KPI Gating Contract', () => {
     expect(res.body.feature).toBe('mastery_hexagon');
   });
 });
+
