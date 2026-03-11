@@ -50,7 +50,6 @@ import {
   requireStudentOrAdmin,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
-import { reqLogger } from "../apps/api/src/middleware/logging";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
@@ -70,17 +69,20 @@ import accountRoutes from "./routes/account-routes";
 import healthRoutes from "./routes/health-routes";
 import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
+import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
 import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
+import { logger } from "./logger";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
 
 const app = express();
+app.disable("x-powered-by");
 
 // Trust proxy headers (required for Replit infrastructure and rate limiting)
 // Set to 1 to trust the first proxy layer (Replit's infrastructure)
@@ -88,9 +90,9 @@ app.set("trust proxy", 1);
 
 // Request ID middleware - must be first to track all requests
 app.use(requestIdMiddleware);
+app.use(securityHeadersMiddleware());
 
 // Core middleware
-app.use(reqLogger());
 app.use(corsAllowlist());
 app.use(cookieParser());
 
@@ -559,6 +561,40 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(staticPath, "index.html"));
 });
 
+
+// Final error boundary for uncaught route errors
+app.use((err: any, req: Request, res: Response, next: any) => {
+  const requestId = (req as any).requestId || logger.generateRequestId();
+
+  logger.error(
+    'HTTP',
+    'unhandled_error',
+    `Unhandled error in ${req.method} ${req.path}`,
+    err,
+    {
+      method: req.method,
+      path: req.path,
+      statusCode: err?.status || 500,
+      hasBody: req.body !== undefined && req.body !== null,
+      hasCookieHeader: !!req.headers.cookie,
+      hasAuthorizationHeader: !!req.headers.authorization,
+    },
+    {
+      requestId,
+      userId: req.user?.id,
+      ip: req.ip,
+    }
+  );
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  return res.status(err?.status || 500).json({
+    error: 'Internal server error',
+    requestId,
+  });
+});
 // Production environment validation (warn but don't crash)
 const PORT = parseInt(process.env.PORT || "5000", 10);
 if (process.env.NODE_ENV === "production") {
@@ -600,11 +636,11 @@ if (isMainModule) {
   // Global error handlers to prevent crashes before port binding
   // NOTE: These are only set up when running as main module, not during tests
   process.on("uncaughtException", (err) => {
-    console.error("[FATAL] Uncaught exception:", (err as any)?.message);
+    logger.error("PROCESS", "uncaught_exception", "Uncaught exception", err, { fatal: true });
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
-    console.error("[FATAL] Unhandled rejection:", reason);
+    logger.error("PROCESS", "unhandled_rejection", "Unhandled promise rejection", reason, { fatal: false });
   });
 
   // Validate environment variables on startup
@@ -709,5 +745,4 @@ if (isMainModule) {
 }
 
 export default app;
-
 
