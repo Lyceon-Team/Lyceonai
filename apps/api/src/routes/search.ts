@@ -30,10 +30,16 @@ export const searchQuestions = async (req: Request, res: Response) => {
     const questionIds = similarQuestions.map((q) => q.question_id);
 
     const { data: questionDetails, error } = await supabaseServer
+<<<<<<< HEAD
       .from("questions")
       .select("id, canonical_id, stem, section, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, competencies")
       .in("id", questionIds)
       .eq("question_type", "multiple_choice");
+=======
+      .from('questions')
+      .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
+      .in('id', questionIds);
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
     if (error) {
       return res.status(500).json({ error: "Search failed", message: error.message });
@@ -46,6 +52,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
         canonical_id: question.canonical_id,
         stem: question.stem,
         section: question.section,
+<<<<<<< HEAD
         section_code: question.section_code,
         question_type: question.question_type,
         options: Array.isArray(question.options) ? question.options : [],
@@ -56,6 +63,17 @@ export const searchQuestions = async (req: Request, res: Response) => {
         skill_code: question.skill_code,
         tags: question.tags ?? null,
         competencies: question.competencies ?? null,
+=======
+        canonicalId: question.canonical_id ?? null,
+        sectionCode: question.section_code ?? null,
+        questionType: question.question_type,
+        options: Array.isArray(question.options) ? question.options : [],
+        tags: Array.isArray(question.tags) ? question.tags : [],
+        domain: question.domain ?? null,
+        skill: question.skill ?? null,
+        subskill: question.subskill ?? null,
+        skillCode: question.skill_code ?? null,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
         explanation: null,
         similarity: match?.similarity || 0,
       };
@@ -81,10 +99,24 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
 
     let questionsToEmbed;
     if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
+<<<<<<< HEAD
       const { data } = await supabaseServer.from("questions").select("id, stem, section").in("id", questionIds);
       questionsToEmbed = data || [];
     } else {
       const { data } = await supabaseServer.from("questions").select("id, stem, section").limit(100);
+=======
+      const { data } = await supabaseServer
+        .from('questions')
+        .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
+      .in('id', questionIds);
+      questionsToEmbed = data || [];
+    } else {
+      // Fetch all questions without embeddings (limit to prevent overwhelming API)
+      const { data } = await supabaseServer
+        .from('questions')
+        .select('id, canonical_id, stem, section, section_code, question_type, options, difficulty, tags, domain, skill, subskill, skill_code, competencies')
+        .limit(100);
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       questionsToEmbed = data || [];
     }
 
@@ -108,7 +140,17 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
           embedding: embeddings[idx],
           stem: question.stem,
           section: question.section,
+<<<<<<< HEAD
           metadata: {},
+=======
+          metadata: {
+            canonicalId: question.canonical_id ?? null,
+            sectionCode: question.section_code ?? null,
+            questionType: question.question_type,
+            difficulty: question.difficulty ?? null,
+            skillCode: question.skill_code ?? null,
+          },
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
         }));
 
         const { error } = await supabase.from("question_embeddings").upsert(embeddingRecords, { onConflict: "question_id" });
@@ -131,3 +173,4 @@ export const generateQuestionEmbeddings = async (req: Request, res: Response) =>
     return res.status(500).json({ error: "Failed to generate embeddings", message: error?.message || "Unknown error" });
   }
 };
+

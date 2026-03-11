@@ -57,8 +57,14 @@ router.get("/kpis", requireSupabaseAdmin, async (_req: Request, res: Response) =
       supabaseServer.from("questions").select("created_at, status").order("created_at", { ascending: false }).limit(1),
     ]);
 
+<<<<<<< HEAD
     const [mcCountResult] = await Promise.all([
       supabaseServer.from("questions").select("id", { count: "exact", head: true }).eq("question_type", "multiple_choice"),
+=======
+    // Get question type breakdown
+    const [mcCountResult] = await Promise.all([
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('question_type', 'multiple_choice'),
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     ]);
 
     const latestQuestion = latestQuestionResult.data?.[0];
@@ -71,6 +77,10 @@ router.get("/kpis", requireSupabaseAdmin, async (_req: Request, res: Response) =
         readingWriting: Number(rwQuestionsResult.count ?? 0),
         inReview: Number(inReviewResult.count ?? 0),
         multipleChoice: Number(mcCountResult.count ?? 0),
+<<<<<<< HEAD
+=======
+        freeResponse: 0,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       },
       latestQuestion: {
         createdAt: latestQuestion?.created_at ?? null,
@@ -169,3 +179,4 @@ router.get("/questions-proof", requireSupabaseAdmin, async (_req: Request, res: 
 });
 
 export default router;
+

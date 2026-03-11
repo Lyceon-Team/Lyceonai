@@ -639,6 +639,7 @@ export class RagService {
       section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
       source_type: row.source_type ?? row.sourceType ?? 0,
       stem: row.stem,
+<<<<<<< HEAD
       options: row.options,
       correct_answer: row.correct_answer ?? row.correctAnswer ?? null,
       explanation: row.explanation ?? null,
@@ -646,6 +647,15 @@ export class RagService {
       difficulty: row.difficulty ?? null,
       tags: row.tags ?? null,
     });
+=======
+      options: (row.options as Array<{ key: string; text: string }>) || [],
+      answer: row.correctAnswer || row.correct_answer || null,
+      explanation: row.explanation || null,
+      competencies: (row.competencies as Competency[]) || [],
+      difficulty: row.difficulty || null,
+      tags: (row.tags as string[]) || [],
+    };
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 
   /**
@@ -991,8 +1001,13 @@ export class RagService {
       sectionCode,
       sourceType,
       stem: row.stem,
+<<<<<<< HEAD
       options: Array.isArray(row.options) ? (row.options as Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>) : [],
       correctAnswer,
+=======
+      options: (row.options as Array<{ key: string; text: string }>) || [],
+      answer: row.correct_answer || null,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       explanation: row.explanation || null,
       competencies,
       difficulty,

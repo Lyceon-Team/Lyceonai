@@ -3,10 +3,15 @@
  * Canonical client-side question type.
 =======
  * QuestionVM - View Model for rendering questions in the UI
+<<<<<<< HEAD
  * 
  * This is the canonical client-side type for displaying questions.
  * It abstracts away storage internals and provides a clean interface for UI components.
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+ *
+ * Canonical client-side type for displaying question data from public.questions.
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
  */
 
 export type AnswerKey = 'A' | 'B' | 'C' | 'D';
@@ -34,8 +39,13 @@ export interface QuestionVM {
   id: string;
   canonical_id?: string | null;
   exam?: string | null;
+<<<<<<< HEAD
   test_code?: string | null;
   section_code?: 'MATH' | 'RW' | null;
+=======
+  testCode?: string | null;
+  sectionCode?: 'MATH' | 'RW' | null;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   section?: string | null;
   domain?: string | null;
   skill?: string | null;
@@ -45,8 +55,13 @@ export interface QuestionVM {
   source_type?: SourceType | null;
   competencies?: unknown | null;
   stem: string;
+<<<<<<< HEAD
   options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption] | QuestionOption[];
   question_type: 'multiple_choice';
+=======
+  options: QuestionOption[];
+  questionType: 'multiple_choice';
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   explanation?: string | null;
   tags?: unknown | null;
   option_metadata?: OptionMetadata | null;
@@ -54,8 +69,13 @@ export interface QuestionVM {
 
 export interface ValidationResult {
   isCorrect: boolean;
+<<<<<<< HEAD
   questionType?: 'multiple_choice';
   correctAnswerKey?: AnswerKey | null;
+=======
+  mode?: 'multiple_choice';
+  correctAnswerKey?: string | null;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   feedback?: string;
 }
 
@@ -82,10 +102,16 @@ export function toQuestionVM(apiQuestion: any): QuestionVM {
     competencies: apiQuestion.competencies ?? null,
     stem: String(apiQuestion.stem ?? ''),
     options: normalizeOptions(apiQuestion.options),
+<<<<<<< HEAD
     question_type: 'multiple_choice',
     explanation: apiQuestion.explanation ?? null,
     tags: apiQuestion.tags ?? null,
     option_metadata: normalizeOptionMetadata(apiQuestion.option_metadata),
+=======
+    questionType: 'multiple_choice',
+    explanation: apiQuestion.explanation || null,
+    tags: apiQuestion.tags || null,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
 
@@ -102,11 +128,27 @@ function normalizeOptions(options: unknown): QuestionOption[] {
     return [];
   }
 
+<<<<<<< HEAD
   return options
     .filter((opt): opt is { key: AnswerKey; text: string } => {
       return !!opt && typeof opt === 'object' && ['A', 'B', 'C', 'D'].includes((opt as any).key) && typeof (opt as any).text === 'string';
     })
     .map((opt) => ({ key: opt.key, text: opt.text }));
+=======
+  return options.map((opt: any, index: number) => {
+    if (typeof opt === 'string') {
+      const letter = String.fromCharCode(65 + index);
+      return { key: letter, text: opt };
+    }
+    if (typeof opt === 'object' && opt !== null) {
+      return {
+        key: opt.key || String.fromCharCode(65 + index),
+        text: opt.text || String(opt),
+      };
+    }
+    return { key: String.fromCharCode(65 + index), text: String(opt) };
+  });
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 }
 
 function normalizeOptionMetadata(value: unknown): OptionMetadata | null {

@@ -7,10 +7,15 @@ import { z } from "zod";
 // CANONICAL QUESTION TYPES - Shared between backend and frontend
 // ============================================================================
 
+<<<<<<< HEAD
 export type AnswerKey = "A" | "B" | "C" | "D";
 
 export interface QuestionOption {
   key: AnswerKey;
+=======
+export interface QuestionOption {
+  key: 'A' | 'B' | 'C' | 'D';
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   text: string;
 }
 
@@ -19,6 +24,7 @@ export interface Competency {
   raw?: string | null;
 }
 
+<<<<<<< HEAD
 export interface OptionMetadataEntry {
   role: "correct" | "distractor";
   error_taxonomy: string | null;
@@ -55,6 +61,28 @@ export interface StudentMcQuestion extends StudentQuestionBase {
 
 export type StudentFrQuestion = never;
 export type StudentQuestion = StudentMcQuestion;
+=======
+export interface StudentQuestion {
+  id: string;
+  canonicalId?: string | null;
+  stem: string;
+  section: string;
+  sectionCode?: 'MATH' | 'RW' | null;
+  questionType: 'multiple_choice';
+  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
+  explanation: string | null;
+  tags: string[];
+  domain?: string | null;
+  skill?: string | null;
+  subskill?: string | null;
+  skillCode?: string | null;
+  difficulty?: string | null;
+  competencies?: Competency[];
+}
+
+export type StudentMcQuestion = StudentQuestion;
+export type StudentFrQuestion = never;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -915,7 +943,10 @@ export interface StrengthsWeaknesses {
 }
 
 
+<<<<<<< HEAD
 
 
 
 
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

@@ -24,6 +24,7 @@ export function getCompetencyDelta(source: 'practice' | 'review', eventType: 'co
 // ============================================================================
 export function getCompetencyTags(question: {
 <<<<<<< HEAD
+<<<<<<< HEAD
   competencies?: unknown;
   tags?: unknown;
   domain?: string | null;
@@ -65,9 +66,23 @@ export function getCompetencyTags(question: {
     if (tagArray.length > 0) {
       return tagArray;
     }
+=======
+  competencies?: string[] | { code: string }[] | null;
+  tags?: string[] | null;
+  skill_code?: string | null;
+  section?: string | null;
+}): string[] {
+  if (question.competencies && Array.isArray(question.competencies) && question.competencies.length > 0) {
+    return question.competencies
+      .map((item) => typeof item === 'string' ? item : item?.code)
+      .filter((item): item is string => !!item);
   }
-  if (question.unit_tag) {
-    return [question.unit_tag];
+  if (question.tags && Array.isArray(question.tags) && question.tags.length > 0) {
+    return question.tags;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+  }
+  if (question.skill_code) {
+    return [question.skill_code];
   }
   const section = question.section?.toLowerCase().replace(/\s+/g, '_') || 'unknown';
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
@@ -83,7 +98,11 @@ export async function recordCompetencyEvent(
   sessionId: string | null,
   source: 'practice' | 'review',
   eventType: 'correct' | 'incorrect' | 'skipped',
+<<<<<<< HEAD
   question: { section?: string | null; domain?: string | null; skill?: string | null; subskill?: string | null; skill_code?: string | null; competencies?: unknown; tags?: unknown }
+=======
+  question: { section?: string | null; skill_code?: string | null; competencies?: string[] | { code: string }[] | null; tags?: string[] | null }
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 ): Promise<void> {
   try {
     const delta = getCompetencyDelta(source, eventType);
@@ -103,6 +122,10 @@ export async function recordCompetencyEvent(
         occurred_at: now,
         section: question.section || null,
         competency_tags: competencyTags,
+<<<<<<< HEAD
+=======
+        unit_tag: question.skill_code || null,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       });
 
     if (eventError) {
@@ -382,7 +405,11 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
 
     const { data: question, error: qError } = await supabaseServer
       .from('questions')
+<<<<<<< HEAD
       .select('id, section, domain, skill, subskill, skill_code, competencies, tags')
+=======
+      .select('id, section, skill_code, competencies, tags')
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       .eq('id', questionId)
       .single();
 
@@ -631,4 +658,9 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
 
 
 
+<<<<<<< HEAD
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+
+
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

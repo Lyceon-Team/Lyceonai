@@ -1,12 +1,15 @@
 import { Request, Response } from "express";
 import { supabaseServer } from "../apps/api/src/lib/supabase-server";
 
+<<<<<<< HEAD
 const REVIEW_STATUSES = ["in_review", "pending_review"];
 
 <<<<<<< HEAD
 =======
 
 
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 type QuestionMutabilityCheck = {
   ok: boolean;
   status?: number;
@@ -16,7 +19,7 @@ type QuestionMutabilityCheck = {
 async function assertQuestionMutable(questionId: string): Promise<QuestionMutabilityCheck> {
   const { data: row, error } = await supabaseServer
     .from('questions')
-    .select('id, canonical_id, needs_review, reviewed_at, version')
+    .select('id, canonical_id, status, reviewed_at')
     .eq('id', questionId)
     .maybeSingle();
 
@@ -43,7 +46,7 @@ async function assertQuestionMutable(questionId: string): Promise<QuestionMutabi
     };
   }
 
-  const isPublished = row.needs_review === false && !!row.reviewed_at;
+  const isPublished = row.status === 'reviewed' && !!row.reviewed_at;
   if (isPublished) {
     return {
       ok: false,
@@ -51,18 +54,18 @@ async function assertQuestionMutable(questionId: string): Promise<QuestionMutabi
       body: {
         success: false,
         error: 'published_content_immutable',
-        message: 'Published questions are immutable. Create a new version and re-run QA.',
+        message: 'Reviewed questions are immutable. Create a new draft row for edits.',
         canonicalId: row.canonical_id ?? null,
-        version: row.version ?? null,
       },
     };
   }
 
   return { ok: true };
 }
+
 /**
  * GET /api/admin/questions/needs-review
- * Get all questions that need admin review (confidence < 0.8 or needsReview = true)
+ * Get all draft questions that need admin review.
  */
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 export async function getNeedsReview(req: Request, res: Response) {
@@ -71,6 +74,7 @@ export async function getNeedsReview(req: Request, res: Response) {
     const offset = Number(req.query.offset) || 0;
 
     const { data: reviewQuestions, error, count } = await supabaseServer
+<<<<<<< HEAD
       .from("questions")
       .select("*", { count: "exact" })
       .in("status", REVIEW_STATUSES)
@@ -84,6 +88,26 @@ export async function getNeedsReview(req: Request, res: Response) {
 
     const total = count || 0;
     return res.json({
+=======
+      .from('questions')
+      .select('*', { count: 'exact' })
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limitParam - 1);
+
+    if (error) {
+      console.error('[ADMIN_REVIEW] Error fetching questions for review:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch questions for review',
+        detail: error.message,
+      });
+    }
+
+    const total = count || 0;
+
+    res.json({
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       success: true,
       questions: reviewQuestions || [],
       pagination: {
@@ -92,18 +116,35 @@ export async function getNeedsReview(req: Request, res: Response) {
         offset,
         hasMore: offset + (reviewQuestions?.length || 0) < total,
       },
+<<<<<<< HEAD
+=======
+    });
+  } catch (error) {
+    console.error('Error fetching questions for review:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch questions for review',
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || "Failed to fetch questions for review" });
   }
 }
 
+<<<<<<< HEAD
+=======
+/**
+ * POST /api/admin/questions/:id/approve
+ * Approve a draft question by setting status=reviewed and stamping reviewer metadata.
+ */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function approveQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
 
     if (!userId) {
+<<<<<<< HEAD
       return res.status(401).json({ success: false, error: "User not authenticated" });
     }
 <<<<<<< HEAD
@@ -111,27 +152,46 @@ export async function approveQuestion(req: Request, res: Response) {
     const now = new Date().toISOString();
 =======
     
+=======
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+      });
+    }
+
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
     }
 
+<<<<<<< HEAD
     // Update question to approve it
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const { data: updated, error } = await supabaseServer
       .from("questions")
       .update({
+<<<<<<< HEAD
         status: "published",
         reviewed_at: now,
         reviewed_by: userId,
         published_at: now,
         updated_at: now,
+=======
+        status: 'reviewed',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: userId,
+        updated_at: new Date().toISOString(),
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       })
       .eq("id", id)
       .select()
       .single();
 
     if (error) {
+<<<<<<< HEAD
       if (error.code === "PGRST116") {
         return res.status(404).json({ success: false, error: "Question not found" });
       }
@@ -144,12 +204,47 @@ export async function approveQuestion(req: Request, res: Response) {
   }
 }
 
+=======
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: 'Question not found',
+        });
+      }
+      console.error('[ADMIN_REVIEW] Error approving question:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to approve question',
+        detail: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Question approved successfully',
+      question: updated,
+    });
+  } catch (error) {
+    console.error('Error approving question:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to approve question',
+    });
+  }
+}
+
+/**
+ * POST /api/admin/questions/:id/reject
+ * Reject a draft question by deleting it.
+ */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function rejectQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
 
     if (!userId) {
+<<<<<<< HEAD
       return res.status(401).json({ success: false, error: "User not authenticated" });
     }
 <<<<<<< HEAD
@@ -166,15 +261,23 @@ export async function rejectQuestion(req: Request, res: Response) {
       .eq("id", id)
 =======
     
+=======
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+      });
+    }
+
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
     }
 
-    // Delete the question
-    const { data: deleted, error } = await supabaseServer
+    const { error } = await supabaseServer
       .from('questions')
       .delete()
+<<<<<<< HEAD
       .eq('id', id)
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       .select()
@@ -208,16 +311,95 @@ export async function getParsingStatistics(_req: Request, res: Response) {
         pending: pending || 0,
         published: published || 0,
       },
+=======
+      .eq('id', id);
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: 'Question not found',
+        });
+      }
+      console.error('[ADMIN_REVIEW] Error rejecting question:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to reject question',
+        detail: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Question rejected and deleted successfully',
+      questionId: id,
+    });
+  } catch (error) {
+    console.error('Error rejecting question:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reject question',
+    });
+  }
+}
+
+/**
+ * GET /api/admin/questions/statistics
+ * Get canonical review statistics.
+ */
+export async function getParsingStatistics(_req: Request, res: Response) {
+  try {
+    const { count: total, error: countError } = await supabaseServer
+      .from('questions')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      throw countError;
+    }
+
+    const { count: draft } = await supabaseServer
+      .from('questions')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'draft');
+
+    const { count: reviewed } = await supabaseServer
+      .from('questions')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'reviewed');
+
+    res.json({
+      success: true,
+      statistics: {
+        total: total || 0,
+        needsReview: draft || 0,
+        reviewed: reviewed || 0,
+        pending: draft || 0,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching parsing statistics:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch parsing statistics',
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || "Failed to fetch parsing statistics" });
   }
 }
 
+<<<<<<< HEAD
+=======
+/**
+ * POST /api/admin/questions/:id/update
+ * Update canonical question fields on draft records.
+ */
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export async function updateQuestion(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const userId = (req as any).user?.id;
+<<<<<<< HEAD
     const { stem, options, correct_answer, explanation } = req.body;
 
     if (!userId) {
@@ -227,22 +409,54 @@ export async function updateQuestion(req: Request, res: Response) {
 
 =======
     
+=======
+    const {
+      stem,
+      options,
+      optionMetadata,
+      correctAnswer,
+      answerText,
+      explanation,
+      section,
+      sectionCode,
+      difficulty,
+      domain,
+      skill,
+      subskill,
+      skillCode,
+      sourceType,
+      status,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated',
+      });
+    }
+
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const mutability = await assertQuestionMutable(id);
     if (!mutability.ok) {
       return res.status(mutability.status || 500).json(mutability.body);
     }
 
+<<<<<<< HEAD
     // Build update object with only provided fields
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     const updateData: any = {
       status: "published",
       reviewed_at: new Date().toISOString(),
       reviewed_by: userId,
+=======
+    const updateData: any = {
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       updated_at: new Date().toISOString(),
     };
 
     if (stem !== undefined) updateData.stem = stem;
     if (options !== undefined) updateData.options = options;
+<<<<<<< HEAD
     if (correct_answer !== undefined) updateData.correct_answer = correct_answer;
     if (explanation !== undefined) updateData.explanation = explanation;
 
@@ -256,5 +470,54 @@ export async function updateQuestion(req: Request, res: Response) {
     return res.json({ success: true, message: "Question updated successfully", question: updated });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || "Failed to update question" });
+=======
+    if (optionMetadata !== undefined) updateData.option_metadata = optionMetadata;
+    if (correctAnswer !== undefined) updateData.correct_answer = correctAnswer;
+    if (answerText !== undefined) updateData.answer_text = answerText;
+    if (explanation !== undefined) updateData.explanation = explanation;
+    if (section !== undefined) updateData.section = section;
+    if (sectionCode !== undefined) updateData.section_code = sectionCode;
+    if (difficulty !== undefined) updateData.difficulty = difficulty;
+    if (domain !== undefined) updateData.domain = domain;
+    if (skill !== undefined) updateData.skill = skill;
+    if (subskill !== undefined) updateData.subskill = subskill;
+    if (skillCode !== undefined) updateData.skill_code = skillCode;
+    if (sourceType !== undefined) updateData.source_type = sourceType;
+    if (status !== undefined) updateData.status = status;
+
+    const { data: updated, error } = await supabaseServer
+      .from('questions')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: 'Question not found',
+        });
+      }
+      console.error('[ADMIN_REVIEW] Error updating question:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update question',
+        detail: error.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Question updated successfully',
+      question: updated,
+    });
+  } catch (error) {
+    console.error('Error updating question:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update question',
+    });
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 }

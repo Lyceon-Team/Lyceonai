@@ -1,19 +1,13 @@
 /**
  * MASTERY V1.0 TYPE DEFINITIONS
- * 
+ *
  * Sprint 3: TypeScript types for mastery system
  */
 
 import { MasteryEventType } from '../services/mastery-constants';
 
-/**
- * Mastery status labels (derived, not stored)
- */
 export type MasteryStatus = 'not_started' | 'weak' | 'improving' | 'proficient';
 
-/**
- * Diagnostic session state
- */
 export interface DiagnosticSession {
   id: string;
   student_id: string;
@@ -25,9 +19,6 @@ export interface DiagnosticSession {
   updated_at: string;
 }
 
-/**
- * Diagnostic response (per-question answer in a session)
- */
 export interface DiagnosticResponse {
   id: string;
   session_id: string;
@@ -39,9 +30,6 @@ export interface DiagnosticResponse {
   answered_at: string;
 }
 
-/**
- * Diagnostic blueprint (deterministic question selection plan)
- */
 export interface DiagnosticBlueprint {
   total: number;
   sections: {
@@ -54,9 +42,6 @@ export interface DiagnosticBlueprint {
   }[];
 }
 
-/**
- * Mastery update parameters (extended from AttemptInput)
- */
 export interface MasteryUpdateParams {
   userId: string;
   questionCanonicalId: string;
@@ -73,8 +58,12 @@ export interface MasteryUpdateParams {
     skill: string | null;
     subskill: string | null;
     skill_code: string | null;
+<<<<<<< HEAD
     difficulty: 1 | 2 | 3 | null;
     structure_cluster_id: string | null;
+=======
+    difficulty: string | null;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
 

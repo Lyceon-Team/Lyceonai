@@ -95,17 +95,23 @@ router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response
 
     const smokeRow = {
       canonical_id: canonicalId,
+      status: 'draft',
       section: 'Math',
+      section_code: 'MATH',
       stem: `Smoke test question inserted at ${new Date().toISOString()}`,
       question_type: 'multiple_choice',
+<<<<<<< HEAD
       type: 'mc',
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       options: [
         { key: "A", text: "Smoke option A" },
         { key: "B", text: "Smoke option B" },
         { key: "C", text: "Smoke option C" },
         { key: "D", text: "Smoke option D" },
       ],
+<<<<<<< HEAD
 <<<<<<< HEAD
       correct_answer: "A",
       answer_text: "A",
@@ -131,6 +137,25 @@ router.post('/insert-smoke', csrfProtection, async (_req: Request, res: Response
       test_code: 'SAT',
       section_code: 'M',
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+      correct_answer: 'A',
+      answer_text: 'Smoke option A',
+      explanation: 'Smoke explanation',
+      option_metadata: [
+        { key: 'A', text: 'Smoke option A', is_correct: true },
+        { key: 'B', text: 'Smoke option B', is_correct: false },
+        { key: 'C', text: 'Smoke option C', is_correct: false },
+        { key: 'D', text: 'Smoke option D', is_correct: false },
+      ],
+      domain: 'smoke',
+      skill: 'smoke skill',
+      subskill: 'smoke subskill',
+      skill_code: 'SMOKE.SKILL',
+      difficulty: 'easy',
+      source_type: 'unknown',
+      test_code: 'SAT',
+      exam: 'SAT',
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       ai_generated: true,
       diagram_present: false,
       tags: [],
@@ -190,3 +215,5 @@ router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Respo
 });
 
 export default router;
+
+

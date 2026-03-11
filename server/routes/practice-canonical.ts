@@ -30,7 +30,24 @@ const practiceAnswerRateLimiter = rateLimit({
   },
 });
 
+<<<<<<< HEAD
 type Option = { key: "A" | "B" | "C" | "D"; text: string };
+=======
+/**
+ * DB truth (from your questions_rows (6).csv):
+ * questions has: id, canonical_id, section, section_code, stem, question_type, options, correct_answer, answer_text, explanation, domain, skill, subskill, skill_code, difficulty
+ *
+ * practice_sessions FK: user_id -> users(id)  (NOT auth.users)
+ * answer_attempts FK: user_id -> auth.users(id)
+ *
+ * IMPORTANT:
+ * - We must only serve MC questions if correct_answer exists.
+ * - options is stored as JSON string in DB, must be parsed to array.
+ * - correctness must be normalized to avoid whitespace/case mismatches.
+ */
+
+type McOption = { key: string; text: string };
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
 type SafeQuestionDTO = {
   id: string;
@@ -39,6 +56,7 @@ type SafeQuestionDTO = {
   section_code: "MATH" | "RW";
   question_type: "multiple_choice";
   stem: string;
+<<<<<<< HEAD
 <<<<<<< HEAD
   options: [Option, Option, Option, Option];
   difficulty: 1 | 2 | 3;
@@ -63,11 +81,11 @@ function normalizeChoice(value: unknown): "A" | "B" | "C" | "D" | null {
   return null;
 =======
   type: "mc";
+=======
+  questionType: "multiple_choice";
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   options: McOption[];
   difficulty: string | null;
-  classification: any;
-  correct_answer: null;
-  explanation: null;
 };
 
 function toSafeQuestionDTO(q: any): SafeQuestionDTO {
@@ -75,12 +93,9 @@ function toSafeQuestionDTO(q: any): SafeQuestionDTO {
     id: q.id,
     section: q.section,
     stem: q.stem,
-    type: "mc",
+    questionType: "multiple_choice",
     options: Array.isArray(q.options) ? q.options : [],
     difficulty: q.difficulty ?? null,
-    classification: q.classification ?? null,
-    correct_answer: null,
-    explanation: null,
   };
 }
 
@@ -117,8 +132,8 @@ function safeParseOptions(raw: unknown): McOption[] {
 }
 
 function isValidMcQuestion(row: any): boolean {
-  // Must have a letter key in answer_choice and >= 2 options
-  const correctKey = normalizeKey(row?.answer_choice);
+  // Must have a letter key in correct_answer and >= 2 options
+  const correctKey = normalizeKey(row?.correct_answer);
   const options = safeParseOptions(row?.options);
   if (!correctKey) return false;
   if (options.length < 2) return false;
@@ -225,20 +240,20 @@ async function pickRandomQuestion(args: {
 > {
   // Strategy:
   // - Pull a randomized slice from questions (filtered by section when needed)
-  // - Filter out invalid MC rows (missing answer_choice/options/key mismatch)
+  // - Filter out invalid MC rows (missing correct_answer/options/key mismatch)
   // - Prefer questions not attempted in this session (if sessionId exists)
   //   BUT DO NOT require attempts to exist (new students must still see questions).
 
   const baseQuery = supabaseServer
     .from("questions")
-    .select("id, canonical_id, section, stem, type, options, difficulty, classification, answer_choice")
-    .eq("type", "mc")
+    .select("id, canonical_id, section, stem, question_type, options, difficulty, correct_answer, answer_text")
+    .eq("question_type", "multiple_choice")
     .order("created_at", { ascending: false }) // stable-ish base order
     .limit(400); // cheap pool to sample from
 
   let q = baseQuery;
-  if (args.section === "Math") q = q.eq("section", "Math");
-  if (args.section === "RW") q = q.eq("section", "RW");
+  if (args.section === "Math") q = q.eq("section_code", "MATH");
+  if (args.section === "RW") q = q.eq("section_code", "RW");
   // Random => no section filter
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
@@ -265,15 +280,14 @@ async function pickRandomQuestion(args: {
       canonical_id: row.canonical_id,
       section: row.section,
       stem: row.stem,
-      type: "mc" as const,
+      question_type: "multiple_choice" as const,
       options: safeParseOptions(row?.options),
       difficulty: row.difficulty ?? null,
-      classification: row.classification ?? null,
-      _answer_choice: row.answer_choice,
+      _correct_answer: row.correct_answer,
     }))
     .filter((row: any) => {
       if (!isValidCanonicalId(String(row.canonical_id || ""))) return false;
-      return isValidMcQuestion({ answer_choice: row._answer_choice, options: row.options });
+      return isValidMcQuestion({ correct_answer: row._correct_answer, options: row.options });
     });
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
@@ -374,16 +388,16 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
 
       const { data: resumeQ } = await supabaseServer
         .from("questions")
-        .select("id, canonical_id, section, stem, type, options, difficulty, classification, answer_choice")
-        .eq("type", "mc")
+        .select("id, canonical_id, section, stem, question_type, options, difficulty, correct_answer, answer_text")
+        .eq("question_type", "multiple_choice")
         .eq("id", sessionMeta.active_question_id)
         .single();
 
       if (
         resumeQ &&
-        resumeQ.type === "mc" &&
+        resumeQ.question_type === "multiple_choice" &&
         isValidCanonicalId(String(resumeQ.canonical_id || "")) &&
-        isValidMcQuestion({ answer_choice: resumeQ.answer_choice, options: resumeQ.options })
+        isValidMcQuestion({ correct_answer: resumeQ.correct_answer, options: resumeQ.options })
       ) {
         return res.json({
           sessionId,
@@ -510,10 +524,14 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   const { data: question, error: qErr } = await supabaseServer
     .from("questions")
 <<<<<<< HEAD
+<<<<<<< HEAD
     .select("id, canonical_id, question_type, correct_answer, explanation")
 =======
     .select("id, canonical_id, type, answer_choice, explanation, options")
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+    .select("id, canonical_id, question_type, correct_answer, explanation, options")
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     .eq("id", questionId)
     .single();
 
@@ -535,7 +553,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     });
   }
 
-  if (qRow.type !== "mc") {
+  if (qRow.question_type !== "multiple_choice") {
     return res.status(422).json({
       error: "invalid_question_data",
       message: "Only MC questions are supported in canonical practice.",
@@ -544,7 +562,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   }
 
   const parsedOptions = safeParseOptions(qRow.options);
-  if (!isValidMcQuestion({ answer_choice: qRow.answer_choice, options: parsedOptions })) {
+  if (!isValidMcQuestion({ correct_answer: qRow.correct_answer, options: parsedOptions })) {
     return res.status(422).json({
       error: "invalid_question_data",
       message: "This question has invalid MC schema and cannot be graded.",
@@ -552,8 +570,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     });
   }
 
-  const qType: "mc" = "mc";
-  const correctAnswerKey = normalizeKey(qRow.answer_choice);
+  const questionType: "multiple_choice" = "multiple_choice";
+  const correctAnswerKey = normalizeKey(qRow.correct_answer);
   const explanation: string | null = typeof qRow.explanation === "string" && qRow.explanation.trim() ? qRow.explanation : null;
 
   if (!correctAnswerKey) {
@@ -676,7 +694,7 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 
       return res.json({
         isCorrect: !!existing.is_correct,
-        mode: qType,
+        mode: questionType,
         correctAnswerKey: correctAnswerKey ?? null,
         explanation,
         feedback: existing.is_correct ? "Correct" : existing.outcome === "skipped" ? "Skipped" : "Incorrect",
@@ -725,9 +743,14 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
           domain: metadata.domain,
           skill: metadata.skill,
           subskill: metadata.subskill,
+<<<<<<< HEAD
           difficulty: metadata.difficulty,
           skill_code: metadata.skill_code,
           structure_cluster_id: metadata.structure_cluster_id,
+=======
+          skill_code: metadata.skill_code,
+          difficulty: metadata.difficulty,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
         },
       });
     }
@@ -739,9 +762,15 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 
   return res.json({
     isCorrect,
+<<<<<<< HEAD
     question_type: "multiple_choice",
     correctAnswerKey: correctAnswer,
     explanation: question.explanation || null,
+=======
+    mode: questionType,
+    correctAnswerKey: correctAnswerKey ?? null,
+    explanation,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     feedback: isCorrect ? "Correct" : skipped ? "Skipped" : "Incorrect",
     stats,
   });
@@ -750,6 +779,12 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 export default router;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 =======
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+
+
+
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

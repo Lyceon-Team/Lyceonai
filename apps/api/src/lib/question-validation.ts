@@ -1,4 +1,5 @@
 /**
+<<<<<<< HEAD
  * Shared validation utilities for canonical public.questions rows
  */
 
@@ -65,25 +66,49 @@ function hasCanonicalOptionMetadata(value: unknown): boolean {
 import { isValidCanonicalId } from './canonicalId';
 
 // Expected columns in the questions table
-export const SUPABASE_QUESTIONS_COLUMNS = [
-  'id', 'canonical_id', 'section', 'stem', 'question_type', 'type', 'options',
-  'answer', 'answer_choice', 'exam', 'test_code', 'section_code', 'ai_generated',
-  'needs_review', 'confidence', 'created_at', 'updated_at', 'explanation'
-];
+=======
+ * Shared validation utilities for canonical question rows.
+ */
 
-function parseOptions(raw: unknown): Array<{ key: string; text: string }> {
-  if (Array.isArray(raw)) return raw as Array<{ key: string; text: string }>;
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
+// Canonical columns in public.questions
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+export const SUPABASE_QUESTIONS_COLUMNS = [
+  'id',
+  'canonical_id',
+  'status',
+  'created_at',
+  'updated_at',
+  'reviewed_at',
+  'reviewed_by',
+  'section',
+  'section_code',
+  'question_type',
+  'stem',
+  'options',
+  'correct_answer',
+  'answer_text',
+  'explanation',
+  'option_metadata',
+  'domain',
+  'skill',
+  'subskill',
+  'skill_code',
+  'difficulty',
+  'source_type',
+  'test_code',
+  'exam',
+  'ai_generated',
+  'diagram_present',
+  'tags',
+  'competencies',
+  'provenance_chunk_ids',
+] as const;
+
+function hasFourItems(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 4;
 }
 
+<<<<<<< HEAD
 function normalizeAnswerChoice(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toUpperCase();
@@ -102,10 +127,20 @@ export function validateQuestionRow(row: any): {
 =======
   cleanedRow?: any
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+export function validateQuestionRow(
+  row: Record<string, unknown>
+): {
+  valid: boolean;
+  errors?: string[];
+  droppedKeys?: string[];
+  cleanedRow?: Record<string, unknown>;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 } {
   const errors: string[] = [];
   const droppedKeys: string[] = [];
   const cleanedRow: Record<string, unknown> = {};
+<<<<<<< HEAD
 
 <<<<<<< HEAD
   for (const key of Object.keys(row ?? {})) {
@@ -116,44 +151,40 @@ export function validateQuestionRow(row: any): {
   } else if (!isValidCanonicalId(String(row.canonical_id))) {
     errors.push('canonical_id must match SAT{M|RW}{1|2}[A-Z0-9]{6}');
   }
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
+  if (!row.canonical_id) errors.push('canonical_id is required');
+  if (!row.status) errors.push('status is required');
   if (!row.section) errors.push('section is required');
+  if (!row.section_code) errors.push('section_code is required');
+  if (row.question_type !== 'multiple_choice') errors.push('question_type must be multiple_choice');
   if (!row.stem) errors.push('stem is required');
+  if (!row.correct_answer) errors.push('correct_answer is required');
+  if (!row.skill_code) errors.push('skill_code is required');
 
-  const normalizedType = row.type === 'mc' ? 'mc' : row.question_type === 'multiple_choice' ? 'mc' : row.type;
-  if (normalizedType !== 'mc') {
-    errors.push('Only MC questions are allowed by canonical runtime contract');
+  if (!hasFourItems(row.options)) {
+    errors.push('options must be a 4-item JSON array');
   }
 
-  const options = parseOptions(row.options);
-  if (options.length < 2) {
-    errors.push('options must contain at least two choices for MC questions');
+  if (!hasFourItems(row.option_metadata)) {
+    errors.push('option_metadata must be a 4-item JSON array');
   }
 
-  const answerChoice = normalizeAnswerChoice(row.answer_choice ?? row.answer);
-  if (!answerChoice) {
-    errors.push('answer_choice is required for MC questions');
-  } else {
-    const optionKeys = new Set(
-      options
-        .map((opt) => normalizeAnswerChoice(opt?.key))
-        .filter((k): k is string => Boolean(k))
-    );
-    if (!optionKeys.has(answerChoice)) {
-      errors.push('answer_choice must match one of the option keys');
-    }
-  }
-
-  // Copy only known columns
   for (const key of Object.keys(row)) {
+<<<<<<< HEAD
     if (SUPABASE_QUESTIONS_COLUMNS.includes(key)) {
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+=======
+    if ((SUPABASE_QUESTIONS_COLUMNS as readonly string[]).includes(key)) {
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       cleanedRow[key] = row[key];
     } else {
       droppedKeys.push(key);
     }
   }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   if (!cleanedRow.canonical_id) errors.push("canonical_id is required");
   if (!cleanedRow.status) errors.push("status is required");
@@ -203,6 +234,8 @@ export function validateQuestionRow(row: any): {
   cleanedRow.question_type = 'multiple_choice';
 >>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   return {
     valid: errors.length === 0,
     errors: errors.length ? errors : undefined,

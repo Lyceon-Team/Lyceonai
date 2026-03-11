@@ -1,39 +1,18 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import type { AttemptInput, AttemptResult, QuestionMetadataSnapshot } from "./mastery-write";
 
-/**
- * MASTERY WRITE FUNCTIONS MOVED TO mastery-write.ts
- * 
- * Sprint 3 PR-1: All mastery write operations have been moved to the canonical
- * choke point module: apps/api/src/services/mastery-write.ts
- * 
- * This file now only contains:
- * - Read operations (getWeakestSkills, getWeakestClusters, getMasterySummary)
- * - Helper functions (getQuestionMetadataForAttempt)
- * - Re-exports for backward compatibility
- * 
- * DO NOT add mastery write logic here. Use mastery-write.ts instead.
- */
-
-// Re-export write types and functions from canonical choke point
 export type { QuestionMetadataSnapshot, AttemptInput, AttemptResult };
 
 export {
   applyMasteryUpdate,
-  logAttemptAndUpdateMastery, // Legacy alias
+  logAttemptAndUpdateMastery,
 } from "./mastery-write";
 
-/**
- * getQuestionMetadataForAttempt - READ-ONLY helper for fetching question metadata
- * 
- * READ ONLY: This function fetches question metadata for logging attempts.
- * It does NOT write to mastery tables or mutate any mastery state.
- */
 export async function getQuestionMetadataForAttempt(
   questionId: string
 ): Promise<QuestionMetadataSnapshot & { canonicalId: string | null }> {
   const supabase = getSupabaseAdmin();
-  
+
   const { data, error } = await supabase
     .from("questions")
     .select(`
@@ -43,15 +22,19 @@ export async function getQuestionMetadataForAttempt(
       domain,
       skill,
       subskill,
+<<<<<<< HEAD
       difficulty,
       structure_cluster_id,
       skill_code
+=======
+      skill_code,
+      difficulty
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     `)
     .eq("id", questionId)
     .single();
 
   if (error || !data) {
-    console.warn("[Mastery] Question not found for attempt:", questionId);
     return {
       canonicalId: null,
       exam: null,
@@ -61,7 +44,10 @@ export async function getQuestionMetadataForAttempt(
       subskill: null,
       skill_code: null,
       difficulty: null,
+<<<<<<< HEAD
       structure_cluster_id: null,
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     };
   }
 
@@ -73,8 +59,12 @@ export async function getQuestionMetadataForAttempt(
     skill: data.skill || null,
     subskill: data.subskill || null,
     skill_code: data.skill_code || null,
+<<<<<<< HEAD
     difficulty: (data.difficulty === 1 || data.difficulty === 2 || data.difficulty === 3) ? data.difficulty : null,
     structure_cluster_id: data.structure_cluster_id || null,
+=======
+    difficulty: data.difficulty || null,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
 
@@ -103,17 +93,6 @@ export interface ClusterWeakness {
   mastery_score: number;
 }
 
-/**
- * getWeakestSkills - READ-ONLY query for student_skill_mastery
- * 
- * READ ONLY: This function performs SELECT operations only.
- * It does NOT:
- * - Recalculate mastery scores
- * - Apply decay or weighting
- * - Mutate any state
- * 
- * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
- */
 export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
@@ -134,24 +113,12 @@ export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakn
   const { data, error } = await q;
 
   if (error) {
-    console.error("[Mastery] Failed to get weakest skills:", error.message);
     return [];
   }
 
   return data || [];
 }
 
-/**
- * getWeakestClusters - READ-ONLY query for student_cluster_mastery
- * 
- * READ ONLY: This function performs SELECT operations only.
- * It does NOT:
- * - Recalculate mastery scores
- * - Apply decay or weighting
- * - Mutate any state
- * 
- * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
- */
 export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
@@ -166,7 +133,6 @@ export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterW
     .limit(limit);
 
   if (error) {
-    console.error("[Mastery] Failed to get weakest clusters:", error.message);
     return [];
   }
 
@@ -186,18 +152,6 @@ export interface MasterySummary {
   }[];
 }
 
-/**
- * getMasterySummary - READ-ONLY query for student_skill_mastery
- * 
- * READ ONLY: This function performs SELECT operations only.
- * It does NOT:
- * - Recalculate mastery scores
- * - Apply decay or weighting
- * - Mutate any state
- * 
- * Aggregates stored mastery data by section and domain.
- * For mastery WRITES, use applyMasteryUpdate() from mastery-write.ts
- */
 export async function getMasterySummary(
   userId: string,
   section?: string
@@ -216,7 +170,6 @@ export async function getMasterySummary(
   const { data, error } = await q;
 
   if (error || !data) {
-    console.error("[Mastery] Failed to get mastery summary:", error?.message);
     return [];
   }
 
@@ -229,26 +182,26 @@ export async function getMasterySummary(
   for (const row of data) {
     const sec = row.section;
     const dom = row.domain || "unknown";
-    
+
     if (!sectionMap.has(sec)) {
       sectionMap.set(sec, { totalAttempts: 0, totalCorrect: 0, domains: new Map() });
     }
-    
+
     const entry = sectionMap.get(sec)!;
     entry.totalAttempts += row.attempts;
     entry.totalCorrect += row.correct;
-    
+
     if (!entry.domains.has(dom)) {
       entry.domains.set(dom, { attempts: 0, correct: 0 });
     }
-    
+
     const domEntry = entry.domains.get(dom)!;
     domEntry.attempts += row.attempts;
     domEntry.correct += row.correct;
   }
 
   const result: MasterySummary[] = [];
-  
+
   for (const [sec, entry] of sectionMap) {
     const domainBreakdown = Array.from(entry.domains.entries()).map(([dom, stats]) => ({
       domain: dom,
@@ -256,7 +209,7 @@ export async function getMasterySummary(
       correct: stats.correct,
       accuracy: stats.attempts > 0 ? stats.correct / stats.attempts : 0,
     }));
-    
+
     result.push({
       section: sec,
       totalAttempts: entry.totalAttempts,

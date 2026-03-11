@@ -1,31 +1,8 @@
-/**
- * CANONICAL MASTERY WRITE CHOKE POINT
- *
- * Sprint 3 PR-1: This module is the ONLY place in the codebase that writes to:
- * - student_skill_mastery
- * - student_cluster_mastery
- *
- * ALL mastery updates MUST flow through applyMasteryUpdate().
- *
- * DO NOT:
- * - Add direct .insert/.update/.upsert calls to mastery tables elsewhere
- * - Create additional RPC calls for mastery writes
- * - Bypass this choke point
- *
- * WHY: Single choke point ensures:
- * - Consistent mastery calculation logic
- * - Easier debugging and monitoring
- * - Prevention of race conditions
- * - Single source of truth for mastery algorithm
- *
- * ENFORCEMENT: tests/mastery.writepaths.guard.test.ts validates this invariant.
- */
-
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import {
   MasteryEventType,
   EVENT_WEIGHTS,
-  DEFAULT_QUESTION_WEIGHT
+  DEFAULT_QUESTION_WEIGHT,
 } from "./mastery-constants";
 
 export interface QuestionMetadataSnapshot {
@@ -35,8 +12,12 @@ export interface QuestionMetadataSnapshot {
   skill: string | null;
   subskill: string | null;
   skill_code: string | null;
+<<<<<<< HEAD
   difficulty: 1 | 2 | 3 | null;
   structure_cluster_id: string | null;
+=======
+  difficulty: string | null;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 }
 
 export interface AttemptInput {
@@ -57,35 +38,9 @@ export interface AttemptResult {
   error?: string;
 }
 
-/**
- * applyMasteryUpdate - CANONICAL CHOKE POINT for all mastery writes
- *
- * This function:
- * 1. Validates event type (must be in MasteryEventType enum)
- * 2. Logs the attempt to student_question_attempts
- * 3. Updates student_skill_mastery via RPC (if metadata available and event is scored)
- * 4. Updates student_cluster_mastery via RPC (if cluster ID available and event is scored)
- *
- * CRITICAL: This is the ONLY function that should write to mastery tables.
- * All mastery updates in the application MUST call this function.
- *
- * Mastery v1.0: Uses event-weighted delta formula with deterministic event taxonomy.
- * - TUTOR_VIEW does not change mastery (no-op for mastery updates)
- * - REVIEW_PASS/REVIEW_FAIL are canonical review outcomes
- * - TUTOR_HELPED/TUTOR_FAIL are auxiliary tutor effects emitted only on verified retries
- *
- * Sprint 3 PR-4: Enhanced with difficulty weights and deterministic rounding:
- * - Per-question difficulty weights (easy=1.0, medium=1.1, hard=1.2)
- * - Deterministic rounding for E/C, accuracy, and mastery_score
- * - Event type passed as TEXT to RPC for dynamic weight lookup
- *
- * @param input - Attempt data including user, question, correctness, event type, and metadata
- * @returns AttemptResult with attemptId and status
- */
 export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptResult> {
   const supabase = getSupabaseAdmin();
 
-  // Validate event type (closed set enforcement)
   if (!(input.eventType in EVENT_WEIGHTS)) {
     return {
       attemptId: '',
@@ -98,14 +53,12 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
   let rollupUpdated = true;
   let rollupError: string | undefined;
 
-  // Get event weight for this event type
   const eventWeight = EVENT_WEIGHTS[input.eventType];
   const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
-
-  // TUTOR_VIEW is a no-op for mastery - we still log the attempt but don't update mastery
   const shouldUpdateMastery = input.eventType !== MasteryEventType.TUTOR_VIEW;
 
-  // Step 1: Log raw attempt (not a mastery table, but part of the write transaction)
+  const difficultyBucket = input.metadata.difficulty?.toLowerCase() || null;
+
   const { error: insertError } = await supabase
     .from("student_question_attempts")
     .insert({
@@ -114,7 +67,6 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       question_canonical_id: input.questionCanonicalId,
       session_id: input.sessionId || null,
       is_correct: input.isCorrect,
-      event_type: input.eventType,
       selected_choice: input.selectedChoice || null,
       time_spent_ms: input.timeSpentMs || null,
       exam: input.metadata.exam,
@@ -122,13 +74,16 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       domain: input.metadata.domain,
       skill: input.metadata.skill,
       subskill: input.metadata.subskill,
+<<<<<<< HEAD
       skill_code: input.metadata.skill_code,
       difficulty: input.metadata.difficulty,
       structure_cluster_id: input.metadata.structure_cluster_id,
+=======
+      difficulty_bucket: difficultyBucket,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
 
   if (insertError) {
-    console.error("[Mastery] Failed to log attempt:", insertError.message);
     return {
       attemptId,
       rollupUpdated: false,
@@ -136,9 +91,6 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
     };
   }
 
-  // Step 2: Update student_skill_mastery (CANONICAL WRITE #1)
-  // This RPC performs INSERT...ON CONFLICT DO UPDATE on student_skill_mastery
-  // Using True Half-Life formula with difficulty weights and deterministic rounding
   if (shouldUpdateMastery && input.metadata.section && input.metadata.skill) {
     try {
       const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
@@ -149,15 +101,19 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_is_correct: input.isCorrect,
         p_event_weight: eventWeight,
         p_event_type: input.eventType,
+<<<<<<< HEAD
         p_difficulty: input.metadata.difficulty || null,
+=======
+        p_difficulty_bucket: difficultyBucket,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       });
 
       if (skillError) {
-        console.warn("[Mastery] Skill rollup failed:", skillError.message);
         rollupUpdated = false;
         rollupError = skillError.message;
       }
     } catch (err: any) {
+<<<<<<< HEAD
       console.warn("[Mastery] Skill rollup error:", err.message);
       rollupUpdated = false;
       rollupError = err.message;
@@ -185,6 +141,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       }
     } catch (err: any) {
       console.warn("[Mastery] Cluster rollup error:", err.message);
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       rollupUpdated = false;
       rollupError = err.message;
     }
@@ -197,8 +155,6 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
   };
 }
 
-
-// Back-compat alias consumed by studentMastery adapter paths.
 export const logAttemptAndUpdateMastery = applyMasteryUpdate;
 
 
