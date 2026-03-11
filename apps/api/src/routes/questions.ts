@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
 import { StudentQuestion, StudentMcQuestion, StudentFrQuestion, QuestionOption } from '../../../../shared/schema';
-import { AuthenticatedRequest } from '../middleware/auth';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { getDerivedWeaknessSignals } from '../services/mastery-derived';
 
 // ============================================================================
@@ -715,11 +715,11 @@ export const getQuestionById = async (req: Request, res: Response) => {
 };
 
 // GET /api/review-errors - Get user's failed question attempts from most recent session
-export const getReviewErrors = async (req: Request & { user?: { id: string } }, res: Response) => {
+export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = req.user;
+    const user = requireRequestUser(req, res);
     if (!user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return;
     }
 
     // Step 1: Find the most recent practice session for this user
@@ -990,14 +990,14 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
   }
 };
 
-export const submitQuestionFeedback = async (req: Request, res: Response) => {
+export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
+
+    const userId = user.id;
 
     const { questionId, sentiment, comment } = req.body;
 

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
-import { AuthenticatedRequest } from '../middleware/auth';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { calculateScore, DomainMastery, ScoreProjection } from '../../../../server/services/score-projection';
 import { DateTime } from 'luxon';
 import { getDerivedWeaknessSignals } from '../services/mastery-derived';
@@ -92,8 +92,9 @@ export async function recordCompetencyEvent(
 // ============================================================================
 export const getRecentActivity = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { data: events, error } = await supabaseServer
@@ -106,7 +107,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         section,
         occurred_at
       `)
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .order('occurred_at', { ascending: false })
       .limit(20);
 
@@ -136,7 +137,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         return res.status(500).json({ error: 'Failed to fetch recent activity' });
       }
 
-      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id).slice(0, 20);
+      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === user.id).slice(0, 20);
       const fallbackData = userAttempts.map((a: any) => ({
         id: a.id,
         questionId: a.question_id,
@@ -172,7 +173,7 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
         .order('answered_at', { ascending: false })
         .limit(20);
 
-      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id);
+      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === user.id);
 
       const fallbackData = userAttempts.map((a: any) => ({
         id: a.id,
@@ -220,8 +221,9 @@ export const getRecentActivity = async (req: AuthenticatedRequest, res: Response
 // ============================================================================
 export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const sevenDaysAgo = new Date();
@@ -230,7 +232,7 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
     const { data: events, error: eventsError } = await supabaseServer
       .from('competency_events')
       .select('event_type, section, delta')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .gte('occurred_at', sevenDaysAgo.toISOString());
 
     let totals = { correct: 0, incorrect: 0, skipped: 0 };
@@ -265,7 +267,7 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
         `)
         .gte('answered_at', sevenDaysAgo.toISOString());
 
-      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === req.user?.id);
+      const userAttempts = (attempts ?? []).filter((a: any) => a.practice_sessions?.user_id === user.id);
 
       for (const a of userAttempts) {
         const outcome = a.outcome || (a.is_correct ? 'correct' : 'incorrect');
@@ -283,7 +285,7 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    const weakestSignals = await getDerivedWeaknessSignals(req.user.id, {
+    const weakestSignals = await getDerivedWeaknessSignals(user.id, {
       minAttempts: 1,
       limit: 5,
     });
@@ -326,8 +328,9 @@ export const getProgress = async (req: AuthenticatedRequest, res: Response) => {
 // ============================================================================
 export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     const { questionId, eventType, sessionId } = req.body;
@@ -347,7 +350,7 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
         .select('id, user_id')
         .eq('id', sessionId)
         .single();
-      if (sessionError || !session || session.user_id !== req.user.id) {
+      if (sessionError || !session || session.user_id !== user.id) {
         return res.status(403).json({ error: 'Forbidden: session does not belong to user' });
       }
     }
@@ -363,7 +366,7 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
     }
 
     await recordCompetencyEvent(
-      req.user.id,
+      user.id,
       questionId,
       sessionId || null,
       'review',
@@ -396,15 +399,16 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
  */
 export const getScoreProjection = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     // READ ONLY: Fetch stored mastery scores from authoritative table
     const { data: masteryRows, error: masteryError } = await supabaseServer
       .from('student_skill_mastery')
       .select('section, domain, skill, mastery_score, attempts, updated_at')
-      .eq('user_id', req.user.id);
+      .eq('user_id', user.id);
 
     if (masteryError) {
       console.error('[Projection] Error fetching mastery:', masteryError.message);
@@ -486,15 +490,16 @@ export const getScoreProjection = async (req: AuthenticatedRequest, res: Respons
 // ============================================================================
 export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
     }
 
     // Fetch user timezone from profile
     const { data: profile } = await supabaseServer
       .from('student_study_profile')
       .select('timezone')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .maybeSingle();
 
     const timezone = profile?.timezone || 'America/Chicago';
@@ -513,7 +518,7 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     const { count: sessionCount, error: sessionsError } = await supabaseServer
       .from('practice_sessions')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .gte('started_at', weekStartUtc)
       .lte('started_at', weekEndUtc);
 
@@ -525,7 +530,7 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     const { data: weekAttempts, error: weekAttemptsError } = await supabaseServer
       .from('student_question_attempts')
       .select('is_correct')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .gte('answered_at', weekStartUtc)
       .lte('answered_at', weekEndUtc);
 
@@ -543,7 +548,7 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     const { data: recencyAttempts, error: recencyError } = await supabaseServer
       .from('student_question_attempts')
       .select('is_correct, time_spent_ms, answered_at')
-      .eq('user_id', req.user.id)
+      .eq('user_id', user.id)
       .order('answered_at', { ascending: false })
       .limit(200);
 

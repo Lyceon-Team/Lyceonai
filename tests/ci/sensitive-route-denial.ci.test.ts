@@ -40,7 +40,11 @@ describe('Sensitive Route Denial', () => {
       .set('Cookie', [`sb-access-token=${'x'.repeat(64)}`]);
 
     expect(res.status).toBe(401);
-    expect(res.body).toHaveProperty('error', 'Authentication required');
+    expect(res.body).toMatchObject({
+      error: 'Authentication required',
+      message: 'You must be signed in to access this resource',
+    });
+    expect(res.body.requestId).toEqual(expect.any(String));
     expect(JSON.stringify(res.body)).not.toContain('ey.fake.jwt.token');
   });
 });

@@ -107,6 +107,18 @@ export interface SupabaseUser {
   student_link_code?: string | null;
 }
 
+export interface AuthenticatedRequest extends Request {
+  supabase?: SupabaseClient;
+  user?: SupabaseUser;
+}
+
+type DenialResponseOptions = {
+  error: string;
+  message: string;
+  requestId?: string;
+  extra?: Record<string, unknown>;
+};
+
 declare global {
   namespace Express {
     interface Request {
@@ -121,6 +133,69 @@ declare global {
  * In test mode, placeholder clients are allowed
  * In production/dev, missing env vars must throw on first use
  */
+function sendDenial(
+  res: Response,
+  status: number,
+  options: DenialResponseOptions
+) {
+  return res.status(status).json({
+    error: options.error,
+    message: options.message,
+    requestId: options.requestId,
+    ...(options.extra ?? {}),
+  });
+}
+
+export function sendUnauthenticated(
+  res: Response,
+  requestId?: string
+) {
+  return sendDenial(res, 401, {
+    error: 'Authentication required',
+    message: 'You must be signed in to access this resource',
+    requestId,
+  });
+}
+
+export function sendForbidden(
+  res: Response,
+  options: Omit<DenialResponseOptions, 'requestId'> & { requestId?: string }
+) {
+  return sendDenial(res, 403, options);
+}
+
+export function requireRequestUser(
+  req: AuthenticatedRequest,
+  res: Response
+): SupabaseUser | null {
+  if (!req.user?.id) {
+    sendUnauthenticated(res, req.requestId);
+    return null;
+  }
+
+  return req.user;
+}
+
+export function requireRequestAuthContext(
+  req: AuthenticatedRequest,
+  res: Response
+): { user: SupabaseUser; supabase: SupabaseClient } | null {
+  const user = requireRequestUser(req, res);
+  if (!user) {
+    return null;
+  }
+
+  if (!req.supabase) {
+    sendUnauthenticated(res, req.requestId);
+    return null;
+  }
+
+  return {
+    user,
+    supabase: req.supabase,
+  };
+}
+
 function isTestEnvironment(): boolean {
   return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
 }
@@ -412,11 +487,7 @@ export function requireSupabaseAuth(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
   return next();
 }
@@ -432,11 +503,7 @@ export function requireSupabaseAdmin(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (!req.user?.isAdmin) {
@@ -445,7 +512,7 @@ export function requireSupabaseAdmin(
       role: (req.user as any)?.role
     });
 
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Admin access required',
       message: 'You do not have permission to access this resource',
       requestId: req.requestId
@@ -466,17 +533,15 @@ export function requireConsentCompliance(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource'
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (req.user?.is_under_13 && !req.user?.guardian_consent) {
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Guardian consent required',
       message: 'Users under 13 require guardian consent to use this service',
-      consentRequired: true
+      requestId: req.requestId,
+      extra: { consentRequired: true }
     });
   }
 
@@ -494,11 +559,7 @@ export function requireStudentOrAdmin(
   next: NextFunction
 ) {
   if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required',
-      message: 'You must be signed in to access this resource',
-      requestId: req.requestId
-    });
+    return sendUnauthenticated(res, req.requestId);
   }
 
   if (req.user.isGuardian && !req.user.isAdmin) {
@@ -508,7 +569,7 @@ export function requireStudentOrAdmin(
       path: req.path
     });
 
-    return res.status(403).json({
+    return sendForbidden(res, {
       error: 'Student access required',
       message: 'Guardians cannot access student practice features',
       requestId: req.requestId
