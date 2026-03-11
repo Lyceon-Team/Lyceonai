@@ -332,6 +332,7 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     const finalSecondary = newSecondaryStyle || currentSecondary;
     const finalExplanationLevel = newExplanationLevel || currentExplanationLevel;
 
+    // Tutor open/interactions are logged only; mastery writes remain in review/practice canonical paths.
     try {
       await logTutorInteraction({
         userId,

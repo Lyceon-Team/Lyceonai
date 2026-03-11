@@ -45,6 +45,12 @@
 - Loss of entitlement does not delete or mutate existing plan history or override rows.
 - Calendar read endpoints remain available so prior history and override state stay visible.
 
+## Proof Commands (CAL1)
+```bash
+pnpm -s exec vitest run tests/ci/calendar.ownership.contract.test.ts
+pnpm -s exec tsc -p tsconfig.ci.json
+```
+
 ## Deprecated / Quarantined Legacy Paths
 - `server/routes/legacy/calendar.ts` is a mount shim only (no planner logic).
 - `POST /api/me/mastery/add-to-plan` no longer writes plan rows; it returns suggestions and points canonical writes to `/api/calendar/day/:dayDate`.

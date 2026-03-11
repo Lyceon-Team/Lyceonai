@@ -68,8 +68,9 @@ function resolveTutorEventType(isCorrect: boolean): MasteryEventType {
  * POST /api/review-errors/attempt
  *
  * Records a student's review attempt and emits canonical mastery events.
- * - Always emits review outcome semantics: review_pass/review_fail
- * - Emits tutor semantics only when retry is tutor-verified for the same canonical question
+ * - Always emits one canonical review outcome event: REVIEW_PASS or REVIEW_FAIL.
+ * - Emits tutor auxiliary effects only on verified retries: TUTOR_HELPED or TUTOR_FAIL.
+ * - Rejects mastery emission when no prior failed/skipped practice source attempt exists.
  */
 export async function recordReviewErrorAttempt(req: Request, res: Response) {
   try {

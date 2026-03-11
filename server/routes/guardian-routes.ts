@@ -393,6 +393,7 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
     return res.status(500).json({ error: 'Internal server error', requestId });
   }
 });
+// Guardian calendar endpoint is read-only by contract.
 router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {

@@ -45,6 +45,12 @@
 - Calendar consumption
   - `apps/api/src/routes/calendar.ts` and `server/routes/guardian-routes.ts` day-level attempt/accuracy rollups use the same canonical include/exclude policy as KPI.
 
+## Proof Commands (R1)
+```bash
+pnpm -s exec vitest run tests/review-errors.mastery-bridge.test.ts tests/mastery.canonical-events.test.ts tests/review-outcomes.kpi-calendar.contract.test.ts
+pnpm -s exec tsc -p tsconfig.ci.json
+```
+
 ## Deprecated / Quarantined Legacy Paths
 - `apps/api/src/routes/progress.ts#recordReviewAttempt`
   - Legacy competency-event writer, not mounted by `server/index.ts` for runtime review submission.
