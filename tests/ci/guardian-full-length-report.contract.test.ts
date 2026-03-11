@@ -13,12 +13,25 @@ const reportServiceMocks = {
   getExamReport: vi.fn(),
 };
 
-vi.mock('../../server/middleware/supabase-auth', () => ({
-  requireSupabaseAuth: (req: any, _res: any, next: any) => {
-    req.user = { id: 'guardian-1', role: 'guardian' };
-    next();
-  },
-}));
+vi.mock('../../server/middleware/supabase-auth', async () => {
+  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
+    '../../server/middleware/supabase-auth'
+  );
+
+  return {
+    ...actual,
+    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'guardian-1',
+        role: 'guardian',
+        isGuardian: true,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-guardian-full-length-report';
+      next();
+    },
+  };
+});
 
 vi.mock('../../server/middleware/guardian-entitlement', () => ({
   requireGuardianEntitlement: (_req: any, _res: any, next: any) => next(),

@@ -22,9 +22,8 @@ Object.entries(SECURITY_TEST_ENV).forEach(([key, value]) => {
   }
 });
 
-
 /**
- * Common mocks for security tests. 
+ * Common mocks for security tests.
  * Use this BEFORE dynamically importing the app.
  */
 export function setupSecurityMocks() {
@@ -33,13 +32,53 @@ export function setupSecurityMocks() {
   }));
 
   vi.doMock('../../server/middleware/supabase-auth', () => ({
-    supabaseAuthMiddleware: (req: any, res: any, next: any) => next(),
-    requireSupabaseAuth: (req: any, res: any, next: any) => {
-      req.user = { id: 'test-user', role: 'student' };
+    supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'test-user',
+        role: 'student',
+        isGuardian: false,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-security-test';
       next();
     },
-    requireStudentOrAdmin: (req: any, res: any, next: any) => next(),
-    requireSupabaseAdmin: (req: any, res: any, next: any) => next(),
+    requireSupabaseAuth: (req: any, _res: any, next: any) => {
+      req.user = {
+        id: 'test-user',
+        role: 'student',
+        isGuardian: false,
+        isAdmin: false,
+      };
+      req.requestId ??= 'req-security-test';
+      next();
+    },
+    requireRequestUser: (req: any, res: any) => {
+      if (!req.user?.id) {
+        res.status(401).json({
+          error: 'Authentication required',
+          message: 'You must be signed in to access this resource',
+          requestId: req.requestId,
+        });
+        return null;
+      }
+      return req.user;
+    },
+    requireRequestAuthContext: (req: any, res: any) => {
+      if (!req.user?.id) {
+        res.status(401).json({
+          error: 'Authentication required',
+          message: 'You must be signed in to access this resource',
+          requestId: req.requestId,
+        });
+        return null;
+      }
+      return { user: req.user, supabase: req.supabase };
+    },
+    requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
+    requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
+    getSupabaseAdmin: () => ({
+      rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
+    }),
   }));
 
   vi.doMock('../../server/middleware/usage-limits', () => ({
@@ -55,7 +94,4 @@ export function setupSecurityMocks() {
     }
   }));
 }
-
-
-
 
