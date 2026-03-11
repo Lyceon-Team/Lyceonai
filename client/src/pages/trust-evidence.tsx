@@ -52,7 +52,7 @@ export default function TrustEvidencePage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2"><Lock className="h-4 w-4" /> Cookie-Only Auth</CardTitle>
                 <CardDescription>
-                  User-facing API auth is resolved from secure cookies; bearer headers are rejected for user flows.
+                  For routes using Supabase auth middleware, auth is resolved from secure cookies and bearer headers are ignored.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -76,7 +76,7 @@ export default function TrustEvidencePage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Data Isolation</CardTitle>
                 <CardDescription>
-                  Supabase RLS policies are applied across user-owned tables, with policy checks tied to auth identity.
+                  Supabase migrations enable RLS on core student-data tables with policies tied to auth identity (auth.uid()).
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">
@@ -88,7 +88,7 @@ export default function TrustEvidencePage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Privacy-Safe Observability</CardTitle>
                 <CardDescription>
-                  Request/error logs and monitoring events redact cookies, tokens, authorization data, and sensitive payload fields.
+                  Server request/error logging and monitor forwarding redact cookies, tokens, authorization data, and sensitive payload fields.
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-2">

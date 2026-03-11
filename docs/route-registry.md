@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-02-02 (Sprint 2 PR-3)
+**Last Updated:** 2026-03-11 (Wave 3 O1-O5 closure)
 
 ---
 
@@ -26,6 +26,7 @@ This document is the single authoritative registry of:
 | `/blog` | public | free | Blog | N/A (static) | ACTIVE |
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
+| `/trust/evidence` | public | free | TrustEvidence | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |

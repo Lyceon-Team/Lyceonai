@@ -720,9 +720,9 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   <section style="margin-bottom: 2rem;">
     <h2 style="font-size: 1.4rem; color: #0F2E48; margin-bottom: 0.75rem;">Control Areas</h2>
     <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-      <li>Cookie-only user authentication with server-side authorization checks.</li>
+      <li>Cookie-backed auth enforcement in Supabase auth middleware for protected user routes.</li>
       <li>Role-based access control on server routes for student, guardian, and admin paths.</li>
-      <li>Supabase row-level security policies on user-owned and student data tables.</li>
+      <li>Supabase RLS policies in migrations for practice, mastery, guardian-link, review-errors, and exam tables.</li>
       <li>Privacy-safe logging and monitoring with redaction of tokens, cookies, and secrets.</li>
       <li>Security response headers for browser hardening and transport protection.</li>
     </ul>
@@ -754,7 +754,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <section style="margin-bottom: 2rem;">
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Authentication and Authorization</h2>
       <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>User-facing auth accepts secure cookies for session resolution and rejects bearer headers for user flows.</li>
+        <li>Endpoints using Supabase auth middleware resolve sessions from secure cookies and ignore bearer headers.</li>
         <li>Protected routes enforce server middleware checks before business logic executes.</li>
         <li>Role checks deny unauthorized student, guardian, or admin access at the API boundary.</li>
       </ul>
@@ -763,7 +763,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <section style="margin-bottom: 2rem;">
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Data Isolation (RLS)</h2>
       <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
-        <li>Supabase migrations enable RLS for learning, exam, guardian-link, and legal acceptance tables.</li>
+        <li>Supabase migrations enable RLS for practice, mastery, review-errors, full-length exam, guardian-link, and legal acceptance tables.</li>
         <li>Policies scope read/write access to <code>auth.uid()</code> for user-owned rows.</li>
         <li>Service-role policies are explicit and limited to server-side operations.</li>
       </ul>
@@ -774,7 +774,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
         <li>Structured logging redacts fields containing authorization, cookie, and token identifiers.</li>
         <li>Error monitoring captures scrubbed request context and redacted error metadata.</li>
-        <li>Sensitive payload content is not emitted in cleartext logs for protected routes.</li>
+        <li>Structured log entries are redacted before console output and monitor forwarding.</li>
       </ul>
     </section>
 
@@ -807,7 +807,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <div style="display: grid; gap: 1rem;">
       <a href="/legal/privacy-policy" style="display: block; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; text-decoration: none; color: inherit;">
         <h3 style="font-size: 1.2rem; color: #0F2E48; margin-bottom: 0.5rem;">Privacy Policy</h3>
-        <p style="color: #555; margin: 0;">How we collect, use, and protect your personal information. Includes FERPA compliance for students under 13.</p>
+        <p style="color: #555; margin: 0;">How we collect, use, and protect your personal information, including parental-consent flows for users under 13.</p>
       </a>
       <a href="/legal/student-terms" style="display: block; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; text-decoration: none; color: inherit;">
         <h3 style="font-size: 1.2rem; color: #0F2E48; margin-bottom: 0.5rem;">Terms of Use</h3>
@@ -820,10 +820,10 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h2 style="font-size: 1.5rem; color: #0F2E48; margin-bottom: 1rem;">Our Commitment</h2>
     <ul style="list-style: none; padding: 0; display: grid; gap: 1rem;">
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>Data Protection</strong> – We use industry-standard encryption and security practices to protect your information.
+        <strong>Data Protection</strong> – We apply access controls, secure session handling, and redaction safeguards documented in our Trust Evidence page.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>Student Safety</strong> – We comply with FERPA and implement age-appropriate protections for minors.
+        <strong>Student Safety</strong> – Under-13 flows require guardian consent before protected practice access.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Transparency</strong> – We're clear about what data we collect and how we use it.
@@ -846,7 +846,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 
   "/legal/privacy-policy": {
     title: "Privacy Policy | Lyceon",
-    description: "Lyceon's privacy policy explains how we collect, use, and protect your personal information. Includes FERPA compliance details for students under 13.",
+    description: "Lyceon's privacy policy explains how we collect, use, and protect personal information, including parental-consent and student-privacy handling for users under 13.",
     canonical: "https://lyceon.ai/legal/privacy-policy",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
@@ -878,11 +878,11 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <li style="margin-bottom: 0.5rem;">Analyze usage patterns to improve our platform</li>
       </ul>
       
-      <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Student Privacy (FERPA Compliance)</h2>
+      <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Student Privacy and Parental Consent</h2>
       <p style="margin-bottom: 1.5rem;">
-        For users under 13, we require parental consent before collecting personal information. We comply with 
-        FERPA (Family Educational Rights and Privacy Act) requirements and do not share student educational records 
-        without appropriate consent. Parents can review and request deletion of their child's information at any time.
+        For users under 13, we require parental consent before enabling protected practice access. 
+        Parents can review and request deletion of their child's information at any time through support channels. 
+
       </p>
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Data Security</h2>

@@ -379,7 +379,6 @@ class OperationalLogger {
     requestBody?: any,
     responseSize?: number
   ) {
-    const success = statusCode < 400;
     const level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info';
     
     const data = {
@@ -390,18 +389,6 @@ class OperationalLogger {
       responseSize,
       requestBodySize: requestBody ? JSON.stringify(requestBody).length : 0
     };
-    
-    this.createLogEntry(
-      level,
-      'API',
-      'request',
-      `${method} ${path} ${statusCode}`,
-      data,
-      undefined,
-      duration,
-      { userId, requestId, ip }
-    );
-    
     this.output(this.createLogEntry(
       level,
       'API',
@@ -436,18 +423,7 @@ class OperationalLogger {
       success,
       timestamp: new Date().toISOString()
     };
-    
-    this.createLogEntry(
-      level,
-      'AUDIT',
-      'admin_action',
-      message,
-      data,
-      undefined,
-      undefined,
-      { userId, requestId, ip }
-    );
-    
+
     this.output(this.createLogEntry(
       level,
       'AUDIT',
@@ -527,4 +503,3 @@ export function createLoggingContext(req: any): LogContext {
     ip: req.ip || req.connection?.remoteAddress
   };
 }
-
