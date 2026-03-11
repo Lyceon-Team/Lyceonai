@@ -7,7 +7,7 @@ export interface PublicPageSeo {
 
 const footerHtml = `
 <footer style="text-align: center; padding: 2rem 0; border-top: 1px solid #eee; color: #777; margin-top: 3rem;">
-  <p>&copy; 2024 Lyceon. AI-powered SAT preparation.</p>
+  <p>&copy; 2026 Lyceon. Study Smarter, Score Higher.</p>
   <nav style="margin-top: 1rem;">
     <a href="/" style="color: #0F2E48; margin: 0 0.5rem;">Home</a>
     <a href="/digital-sat" style="color: #0F2E48; margin: 0 0.5rem;">Digital SAT</a>
@@ -19,15 +19,15 @@ const footerHtml = `
 
 export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   "/": {
-    title: "Lyceon – AI SAT Tutor with Real Practice Questions",
-    description: "Lyceon is an AI SAT tutor that uses real SAT-style questions and step-by-step explanations to help you practice smarter, track progress, and boost your score.",
-    canonical: "https://lyceon.ai/",
+    title: "Lyceon | Study Smarter, Score Higher",
+    description: "Digital SAT prep with adaptive practice, full-length exams, mastery tracking, tutor chat, and guardian visibility.",
+    canonical: "https://lyceon.ai",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
-    <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Lyceon – AI SAT Tutor</h1>
+    <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Lyceon - Study Smarter, Score Higher</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 600px; margin: 0 auto;">
-      Practice SAT questions with an AI tutor that actually knows the test. 
+      Practice SAT questions with guided tutor support. 
       Get step-by-step explanations and track your progress.
     </p>
   </header>
@@ -39,7 +39,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <strong>Real SAT-Style Questions</strong> – Practice with questions modeled after the actual Digital SAT format.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>AI-Powered Tutoring</strong> – Get personalized explanations that adapt to your learning style.
+        <strong>Tutor Chat Support</strong> – Get personalized explanations that adapt to your learning pace.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Progress Tracking</strong> – See your improvement over time with detailed analytics.
@@ -55,7 +55,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <ol style="padding-left: 1.5rem; line-height: 1.8;">
       <li>Sign up for free – no credit card required</li>
       <li>Start a practice session in <a href="/digital-sat/math" style="color: #0F2E48;">Math</a> or <a href="/digital-sat/reading-writing" style="color: #0F2E48;">Reading & Writing</a></li>
-      <li>Answer questions and get instant AI feedback</li>
+      <li>Answer questions and get instant guided feedback</li>
       <li>Review your progress and target your weaknesses</li>
     </ol>
   </section>
@@ -80,8 +80,8 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat": {
-    title: "Digital SAT Practice – Free AI-Powered Prep | Lyceon",
-    description: "Master the Digital SAT with Lyceon's AI tutor. Practice real SAT-style questions in Math and Reading & Writing with personalized explanations and adaptive learning.",
+    title: "Digital SAT Practice – Study Smarter, Score Higher | Lyceon",
+    description: "Master the Digital SAT with adaptive SAT-style practice, full-length exam readiness, and focused explanations.",
     canonical: "https://lyceon.ai/digital-sat",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
@@ -89,7 +89,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
       The SAT went digital in 2024. Lyceon helps you prepare with real SAT-style questions, 
-      AI-powered explanations, and adaptive practice that focuses on your weak areas.
+      guided explanations, and adaptive practice that focuses on your weak areas.
     </p>
   </header>
   
@@ -122,7 +122,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     </p>
     <p style="color: #555; line-height: 1.7;">
       Lyceon's practice questions mirror the new Digital SAT format, so you know exactly what to expect on test day. 
-      Our AI tutor explains each question step by step, helping you understand not just the right answer, but why it's right.
+      Tutor guidance explains each question step by step so you understand not just the right answer, but why it is right.
     </p>
   </section>
   
@@ -133,7 +133,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <strong>Adaptive Practice</strong> – Our system identifies your weak areas and prioritizes questions that will help you improve fastest.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <strong>AI Explanations</strong> – Don't just see the answer. Understand the reasoning with detailed, personalized explanations.
+        <strong>Step-by-Step Explanations</strong> – Don't just see the answer. Understand the reasoning with detailed guidance.
       </li>
       <li style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
         <strong>Progress Tracking</strong> – Watch your accuracy improve over time with clear charts and analytics.
@@ -157,15 +157,15 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/math": {
-    title: "Digital SAT Math Practice – AI Tutor | Lyceon",
-    description: "Practice Digital SAT Math with Lyceon's AI tutor. Master algebra, geometry, data analysis, and problem-solving with real SAT-style questions and step-by-step explanations.",
+    title: "Digital SAT Math Practice | Lyceon",
+    description: "Practice Digital SAT Math with adaptive question flow, algebra and geometry review, and step-by-step explanations.",
     canonical: "https://lyceon.ai/digital-sat/math",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Math Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
-      Master SAT Math with AI-powered practice. Get personalized explanations for algebra, 
+      Master SAT Math with adaptive practice. Get personalized explanations for algebra, 
       geometry, data analysis, and problem-solving questions.
     </p>
   </header>
@@ -219,7 +219,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     <h2 style="font-size: 1.5rem; color: #0F2E48; margin-bottom: 1rem;">Common SAT Math Mistakes to Avoid</h2>
     <p style="color: #555; line-height: 1.7; margin-bottom: 1rem;">
       Many students lose points not because they don't know the math, but because of careless errors. 
-      Lyceon's AI tutor helps you recognize these patterns: misreading negative signs, forgetting to 
+      Lyceon helps you recognize these patterns: misreading negative signs, forgetting to 
       distribute, mixing up formulas, and rushing through word problems.
     </p>
     <p style="color: #555; line-height: 1.7;">
@@ -237,15 +237,15 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/reading-writing": {
-    title: "Digital SAT Reading & Writing Practice – AI Tutor | Lyceon",
-    description: "Practice Digital SAT Reading & Writing with Lyceon's AI tutor. Master reading comprehension, grammar, vocabulary, and rhetorical analysis with personalized explanations.",
+    title: "Digital SAT Reading & Writing Practice | Lyceon",
+    description: "Practice Digital SAT Reading & Writing with adaptive drills and step-by-step explanations for comprehension and grammar.",
     canonical: "https://lyceon.ai/digital-sat/reading-writing",
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
     <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #0F2E48;">Digital SAT Reading & Writing Practice</h1>
     <p style="font-size: 1.25rem; color: #555; max-width: 700px; margin: 0 auto;">
-      Master the combined Reading and Writing section with AI-powered practice. 
+      Master the combined Reading and Writing section with focused adaptive practice. 
       Improve your comprehension, grammar, and vocabulary with personalized feedback.
     </p>
   </header>
@@ -602,7 +602,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       </p>
       <p style="margin-bottom: 1.5rem;">
         <a href="/digital-sat" style="color: #0F2E48; font-weight: 600;">Lyceon's question bank</a> includes detailed 
-        AI-powered explanations for every question, helping you learn from both correct and incorrect answers.
+        step-by-step explanations for every question, helping you learn from both correct and incorrect answers.
       </p>
     </section>
     
@@ -675,7 +675,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       </p>
       <p style="margin-bottom: 1.5rem;">
         <a href="/digital-sat/math" style="color: #0F2E48; font-weight: 600;">Practice SAT Math with Lyceon</a> – 
-        our AI tutor explains each solution step by step so you can catch and correct your error patterns.
+        our guided explanations walk each solution step by step so you can catch and correct your error patterns.
       </p>
     </section>
     
@@ -930,7 +930,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       
       <h2 style="font-size: 1.4rem; color: #0F2E48; margin: 2rem 0 1rem;">Description of Service</h2>
       <p style="margin-bottom: 1.5rem;">
-        Lyceon provides an AI-powered SAT preparation platform featuring practice questions, explanations, 
+        Lyceon provides a SAT preparation platform featuring practice questions, explanations, 
         progress tracking, and personalized learning recommendations. The Service is designed for educational 
         purposes only.
       </p>
@@ -986,4 +986,3 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 export function getPublicPageSeo(path: string): PublicPageSeo | null {
   return PUBLIC_SSR_ROUTES[path] || null;
 }
-
