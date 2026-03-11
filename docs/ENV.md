@@ -81,25 +81,6 @@ RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=100
 ```
 
-## DocuPipe Integration (Optional)
-
-```bash
-# DocuPipe API Configuration
-DOCUPIPE_API_KEY=your_docupipe_api_key
-DOCUPIPE_API_BASE_URL=https://app.docupipe.ai
-DOCUPIPE_SAT_SCHEMA_ID=your_sat_schema_id
-DOCUPIPE_WEBHOOK_SECRET=your_webhook_secret
-```
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DOCUPIPE_API_KEY` | Yes* | Secret API key for DocuPipe X-API-Key header |
-| `DOCUPIPE_API_BASE_URL` | No | API base URL (default: https://app.docupipe.ai) |
-| `DOCUPIPE_SAT_SCHEMA_ID` | Yes* | Schema ID for SAT practice test extraction |
-| `DOCUPIPE_WEBHOOK_SECRET` | No | Shared secret for webhook validation |
-
-*Required only if using DocuPipe integration. See [DOCUPIPE.md](./DOCUPIPE.md) for details.
-
 ## Optional Variables
 
 ```bash

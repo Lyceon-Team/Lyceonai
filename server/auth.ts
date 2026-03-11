@@ -187,7 +187,7 @@ export function calculateLockDuration(attempts: number): number {
   return Math.min(15 * Math.pow(2, attempts - 5), 1440); // Max 24 hours
 }
 
-// Simple admin auth middleware for protecting ingest routes
+// Simple admin auth middleware for legacy bearer-protected admin routes
 
 export interface AdminAuthenticatedRequest extends Request {
   adminUser?: { id: string; username: string; isAdmin: boolean };

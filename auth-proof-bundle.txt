@@ -1,0 +1,1115 @@
+
+=== Repo root ===
+
+PS> git rev-parse --show-toplevel
+
+C:/Users/14438/projects/Lyceonai
+
+
+=== Active branch ===
+
+PS> git branch --show-current
+
+sprint-2
+
+
+=== Working tree ===
+
+PS> git status --porcelain
+
+ M CLEANUP_ACTION_PLAN.md
+ M MVP-SUMMARY.md
+ M PRODUCTION_AUDIT_REPORT.md
+ M PROJECT_REPORT.md
+ M QA_AUTH_README.md
+ M README.md
+ M apps/api/src/lib/embeddings.ts
+ M apps/api/src/lib/rag-service.ts
+ M apps/api/src/lib/vector.ts
+ D apps/api/src/middleware/rate-limit.ts
+ D apps/api/src/middleware/rateLimits.ts
+ M client/src/components/questions/QuestionCard.tsx
+ M client/src/types/question.ts
+ M docs/AUTH_SECURITY.md
+ D docs/DOCUPIPE.md
+ M docs/ENV.md
+ D docs/IMPLEMENTATION_TASK.md
+ D docs/INGESTION.md
+ D docs/INGESTION_V2_PRP.md
+ D docs/INGESTION_V3_MIGRATION.md
+ M docs/OPERATIONS.md
+ D packages/shared/src/docupipe-jobs.ts
+ D packages/shared/src/docupipe.ts
+ M packages/shared/src/index.ts
+ M scripts/smoke.sh
+ M server/.env.example
+ M server/auth.ts
+ M server/sat-pdf-processor.ts
+ M server/services/questionTypes.ts
+ M server/services/ragPipeline.ts
+ M shared/schema.ts
+ M tests/legacy/debug-sat-format.js
+ D tests/legacy/test-bulk-service-parsing.js
+ D tests/legacy/test-database-consistency.js
+ M tests/reports/comprehensive-test-summary.md
+ M tests/reports/comprehensive_fr_test_specification.md
+ M tests/specs/15_admin_logs_api.spec.ts
+ M tests/specs/rls-auth-enforcement.spec.ts
+?? auth-proof-bundle.txt
+?? docs/architecture/
+
+
+=== Canonical auth references ===
+
+PS> rg -n "server/middleware/supabase-auth|apps/api/src/middleware/auth" server apps/api -g "*.ts"
+
+server\routes\admin-health-routes.ts:100:        cookieOnlyAuth: true,  // Enforced in resolveTokenFromRequest (server/middleware/supabase-auth.ts)
+apps/api\src\middleware\auth.ts:1:import type { AuthenticatedRequest } from '../../../../server/middleware/supabase-auth';
+apps/api\src\middleware\auth.ts:2:import { requireSupabaseAdmin, requireSupabaseAuth } from '../../../../server/middleware/supabase-auth';
+apps/api\src\middleware\auth.ts:5:// server/middleware/supabase-auth.ts and this file exists only for older imports.
+apps/api\src\routes\calendar.ts:10:} from "../../../../server/middleware/supabase-auth";
+apps/api\src\routes\progress.ts:3:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\diagnostic.ts:9:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\rag-v2.ts:8:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\mastery.ts:2:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\question-feedback.ts:10:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\weakness.ts:2:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\questions.ts:4:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+
+
+=== Legacy auth imports in production code ===
+
+PS> rg -n "apps/api/src/middleware/auth|from ['""].*middleware/auth['""]" server apps/api -g "*.ts"
+
+
+
+=== Canonical auth helper usage ===
+
+PS> rg -n "requireSupabaseAuth|requireRequestUser|requireRequestAuthContext|respondAuthRequired|respondForbidden" server apps/api -g "*.ts"
+
+server\index.ts:21://   - auth token resolution / requireSupabaseAuth
+server\index.ts:48:  requireSupabaseAuth,
+server\index.ts:51:  requireRequestUser,
+server\index.ts:142:app.use("/api/legal", requireSupabaseAuth, legalRouter);
+server\index.ts:257:  requireSupabaseAuth,
+server\index.ts:267:  requireSupabaseAuth,
+server\index.ts:273:app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
+server\index.ts:287:app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
+server\index.ts:289:    const user = requireRequestUser(req, res);
+server\index.ts:322:app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+server\index.ts:328:app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+server\index.ts:329:app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
+server\index.ts:330:app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
+server\index.ts:331:app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+server\index.ts:334:app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
+server\index.ts:337:app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
+server\index.ts:349:  requireSupabaseAuth,
+server\index.ts:378:app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
+server\index.ts:401:app.get("/api/questions/random", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
+server\index.ts:412:app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQuestionCount);
+server\index.ts:413:app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
+server\index.ts:414:app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
+server\index.ts:420:app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
+server\index.ts:423:app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
+server\index.ts:426:app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
+server\index.ts:431:app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
+server\index.ts:483:app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
+server\index.ts:484:app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+server\index.ts:489:app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+server\index.ts:493:app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+server\middleware\supabase-auth.ts:167:export function requireRequestUser(
+server\middleware\supabase-auth.ts:179:export function requireRequestAuthContext(
+server\middleware\supabase-auth.ts:183:  const user = requireRequestUser(req, res);
+server\middleware\supabase-auth.ts:484:export function requireSupabaseAuth(
+server\routes\full-length-exam-routes.ts:13:import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
+server\routes\full-length-exam-routes.ts:47:router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:49:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:74:router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:76:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:110:router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:112:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:152:router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:154:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:215:router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:217:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:262:router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:264:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:303:router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:305:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:342:router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:344:    const user = requireRequestUser(req, res);
+server\routes\full-length-exam-routes.ts:403:router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\full-length-exam-routes.ts:405:    const user = requireRequestUser(req, res);
+server\routes\billing-routes.ts:4:  requireRequestUser,
+server\routes\billing-routes.ts:5:  requireSupabaseAuth,
+server\routes\billing-routes.ts:20:  const user = requireRequestUser(req, res);
+server\routes\billing-routes.ts:80:router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:276:router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:415:router.get('/products', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:491:router.get('/prices/authenticated', requireSupabaseAuth, getPricesHandler);
+server\routes\billing-routes.ts:492:router.get('/products/:productId/prices', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:517:router.post('/portal', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:591:router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+server\routes\billing-routes.ts:632:router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:3:  requireRequestUser,
+server\routes\guardian-routes.ts:4:  requireSupabaseAuth,
+server\routes\guardian-routes.ts:32:  const user = requireRequestUser(req, res);
+server\routes\guardian-routes.ts:75:router.get('/students', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:105:router.post('/link', requireSupabaseAuth, requireGuardianRole, csrfProtection, durableRateLimiter, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:174:router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, csrfProtection, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:219:router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:354:router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:408:router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server\routes\guardian-routes.ts:515:router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+apps/api\src\middleware\auth.ts:2:import { requireSupabaseAdmin, requireSupabaseAuth } from '../../../../server/middleware/supabase-auth';
+apps/api\src\middleware\auth.ts:7:export const requireAuth = requireSupabaseAuth;
+server\routes\practice-canonical.ts:8:import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
+server\routes\practice-canonical.ts:240:router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true }), async (req, res) => {
+server\routes\practice-canonical.ts:387:router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
+server\routes\profile-routes.ts:3:import { getSupabaseAdmin, requireRequestUser } from '../middleware/supabase-auth';
+server\routes\profile-routes.ts:34:    const user = requireRequestUser(req, res);
+server\routes\practice-topics-routes.ts:107: * @auth requireSupabaseAuth, requireStudentOrAdmin
+server\routes\practice-topics-routes.ts:138: * @auth requireSupabaseAuth, requireStudentOrAdmin
+server\routes\notification-routes.ts:4:import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
+server\routes\notification-routes.ts:17:router.get('/', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\notification-routes.ts:114:router.get('/unread-count', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\notification-routes.ts:169:router.patch('/:id/read', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\notification-routes.ts:231:router.patch('/mark-all-read', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\account-routes.ts:2:import { requireSupabaseAuth, getSupabaseAdmin } from '../middleware/supabase-auth';
+server\routes\account-routes.ts:19:router.get('/bootstrap', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\account-routes.ts:72:router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\account-routes.ts:153:router.post('/select', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+server\routes\supabase-auth-routes.ts:5:import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
+server\routes\supabase-auth-routes.ts:492:router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+server\routes\legacy\progress.ts:7:import { requireRequestUser } from "../../middleware/supabase-auth";
+server\routes\legacy\progress.ts:46:    const user = requireRequestUser(req, res);
+server\routes\legacy\progress.ts:179:    const user = requireRequestUser(req, res);
+apps/api\src\routes\weakness.ts:2:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\weakness.ts:12:    const user = requireRequestUser(req, res);
+apps/api\src\routes\weakness.ts:41:    const user = requireRequestUser(req, res);
+server\routes\questions-validate.ts:7:    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
+apps/api\src\routes\mastery.ts:2:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\mastery.ts:150:    const user = requireRequestUser(req, res);
+apps/api\src\routes\mastery.ts:181:    const user = requireRequestUser(req, res);
+apps/api\src\routes\mastery.ts:291:    const user = requireRequestUser(req, res);
+apps/api\src\routes\mastery.ts:325:    const user = requireRequestUser(req, res);
+apps/api\src\routes\questions.ts:4:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\questions.ts:546:    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
+apps/api\src\routes\questions.ts:720:    const user = requireRequestUser(req, res);
+apps/api\src\routes\questions.ts:995:    const user = requireRequestUser(req, res);
+apps/api\src\routes\rag-v2.ts:8:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\rag-v2.ts:25:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:8:  requireRequestAuthContext,
+apps/api\src\routes\calendar.ts:9:  requireRequestUser,
+apps/api\src\routes\calendar.ts:381:    const auth = requireRequestAuthContext(req, res);
+apps/api\src\routes\calendar.ts:414:    const auth = requireRequestAuthContext(req, res);
+apps/api\src\routes\calendar.ts:483:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:501:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:601:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:626:    const auth = requireRequestAuthContext(req, res);
+apps/api\src\routes\calendar.ts:736:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:829:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:923:    const user = requireRequestUser(req, res);
+apps/api\src\routes\calendar.ts:998:  const user = requireRequestUser(req, res);
+apps/api\src\routes\question-feedback.ts:10:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\question-feedback.ts:22:    const user = requireRequestUser(req, res);
+apps/api\src\routes\diagnostic.ts:9:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\diagnostic.ts:23:    const user = requireRequestUser(req, res);
+apps/api\src\routes\diagnostic.ts:47:    const user = requireRequestUser(req, res);
+apps/api\src\routes\diagnostic.ts:121:    const user = requireRequestUser(req, res);
+apps/api\src\routes\progress.ts:3:import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+apps/api\src\routes\progress.ts:95:    const user = requireRequestUser(req, res);
+apps/api\src\routes\progress.ts:224:    const user = requireRequestUser(req, res);
+apps/api\src\routes\progress.ts:331:    const user = requireRequestUser(req, res);
+apps/api\src\routes\progress.ts:402:    const user = requireRequestUser(req, res);
+apps/api\src\routes\progress.ts:493:    const user = requireRequestUser(req, res);
+
+
+=== Runtime mount points ===
+
+PS> rg -n "app\.use\(|router\.use\(" server/index.ts server apps/api -g "*.ts"
+
+server/index.ts:93:app.use(requestIdMiddleware);
+server/index.ts:94:app.use(securityHeadersMiddleware());
+server/index.ts:97:app.use(corsAllowlist());
+server/index.ts:98:app.use(cookieParser());
+server/index.ts:136:app.use(express.json({ limit: "50mb" }));
+server/index.ts:139:app.use(supabaseAuthMiddleware);
+server/index.ts:142:app.use("/api/legal", requireSupabaseAuth, legalRouter);
+server/index.ts:263:app.use(
+server/index.ts:273:app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
+server/index.ts:276:app.use("/api/auth/google", googleOAuthRoutes);
+server/index.ts:282:app.use("/api/auth", supabaseAuthRoutes);
+server/index.ts:322:app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+server/index.ts:325:app.use("/api/notifications", notificationRoutes);
+server/index.ts:328:app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+server/index.ts:329:app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
+server/index.ts:330:app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
+server/index.ts:331:app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+server/index.ts:340:app.use("/api/admin", adminStatsRoutes);
+server/index.ts:343:app.use("/api/admin", requireSupabaseAdmin, adminHealthRoutes);
+server/index.ts:347:app.use(
+server/index.ts:471:app.use("/api/guardian", guardianRoutes);
+server/index.ts:474:app.use("/api/billing", billingRoutes);
+server/index.ts:477:app.use("/api/account", accountRoutes);
+server/index.ts:480:app.use("/api/health", healthRoutes);
+server/index.ts:489:app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+server/index.ts:493:app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+server/index.ts:554:app.use(express.static(staticPath));
+server/index.ts:567:app.use((err: any, req: Request, res: Response, next: any) => {
+server\index.ts:93:app.use(requestIdMiddleware);
+server\index.ts:94:app.use(securityHeadersMiddleware());
+server\index.ts:97:app.use(corsAllowlist());
+server\index.ts:98:app.use(cookieParser());
+server\index.ts:136:app.use(express.json({ limit: "50mb" }));
+server\index.ts:139:app.use(supabaseAuthMiddleware);
+server\index.ts:142:app.use("/api/legal", requireSupabaseAuth, legalRouter);
+server\index.ts:263:app.use(
+server\index.ts:273:app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit(), tutorV2Router);
+server\index.ts:276:app.use("/api/auth/google", googleOAuthRoutes);
+server\index.ts:282:app.use("/api/auth", supabaseAuthRoutes);
+server\index.ts:322:app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+server\index.ts:325:app.use("/api/notifications", notificationRoutes);
+server\index.ts:328:app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+server\index.ts:329:app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
+server\index.ts:330:app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
+server\index.ts:331:app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+server\index.ts:340:app.use("/api/admin", adminStatsRoutes);
+server\index.ts:343:app.use("/api/admin", requireSupabaseAdmin, adminHealthRoutes);
+server\index.ts:347:app.use(
+server\index.ts:471:app.use("/api/guardian", guardianRoutes);
+server\index.ts:474:app.use("/api/billing", billingRoutes);
+server\index.ts:477:app.use("/api/account", accountRoutes);
+server\index.ts:480:app.use("/api/health", healthRoutes);
+server\index.ts:489:app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+server\index.ts:493:app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+server\index.ts:554:app.use(express.static(staticPath));
+server\index.ts:567:app.use((err: any, req: Request, res: Response, next: any) => {
+server\lib\webhookHandlers.ts:155:        'FIX: Ensure webhook route is registered BEFORE app.use(express.json()).';
+
+
+=== Test-only mocks ===
+
+PS> rg -n "vi\.mock\(|jest\.mock\(|mock.*supabase-auth|mock.*middleware/auth|placeholder.*supabase|fake.*auth" tests -g "*.ts"
+
+tests\entitlements.webhook.test.ts:12:vi.mock('../server/lib/stripeClient', () => {
+tests\entitlements.webhook.test.ts:30:vi.mock('../apps/api/src/lib/supabase-server', () => ({
+tests\entitlements.webhook.test.ts:39:vi.mock('../server/lib/account', () => ({
+tests\mastery.canonical-events.test.ts:4:vi.mock('../apps/api/src/lib/supabase-admin', () => ({
+tests\rag.security.test.ts:15:vi.mock('../apps/api/src/lib/embeddings', () => ({
+tests\rag.security.test.ts:20:vi.mock('../apps/api/src/lib/vector', () => ({
+tests\review-errors.mastery-bridge.test.ts:13:vi.mock('../apps/api/src/lib/supabase-server', () => ({
+tests\review-errors.mastery-bridge.test.ts:19:vi.mock('../apps/api/src/services/studentMastery', () => ({
+tests\tutor.runtime.contract.test.ts:81:vi.mock("../apps/api/src/lib/embeddings", () => ({
+tests\tutor.runtime.contract.test.ts:86:vi.mock("../apps/api/src/lib/rag-service", () => ({
+tests\tutor.runtime.contract.test.ts:92:vi.mock("../apps/api/src/lib/profile-service", () => ({
+tests\tutor.runtime.contract.test.ts:96:vi.mock("../apps/api/src/lib/tutor-log", () => ({
+tests\tutor.runtime.contract.test.ts:100:vi.mock("../apps/api/src/lib/supabase-server", () => {
+tests\tutor.runtime.contract.test.ts:142:vi.mock("../server/routes/legacy/questions", () => ({
+tests\tutor.runtime.contract.test.ts:154:vi.mock("../server/middleware/supabase-auth", () => ({
+tests\tutor_v2.security.test.ts:25:vi.mock('../apps/api/src/lib/embeddings', () => ({
+tests\tutor_v2.security.test.ts:30:vi.mock('../apps/api/src/lib/rag-service', () => ({
+tests\tutor_v2.security.test.ts:37:vi.mock('../apps/api/src/lib/profile-service', () => ({
+tests\tutor_v2.security.test.ts:40:vi.mock('../apps/api/src/lib/tutor-log', () => ({
+tests\ci\calendar.ownership.contract.test.ts:11:vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+tests\ci\calendar.ownership.contract.test.ts:17:vi.mock('../../apps/api/src/services/studentMastery', () => ({
+tests\ci\calendar.ownership.contract.test.ts:21:vi.mock('../../server/services/kpi-access', () => ({
+tests\ci\guardian.anti-leak.ci.test.ts:7:vi.mock('../../server/lib/account', () => ({
+tests\ci\guardian.anti-leak.ci.test.ts:15:vi.mock('../../server/middleware/supabase-auth', () => ({
+tests\ci\guardian.anti-leak.ci.test.ts:19:vi.mock('../../server/logger', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:16:vi.mock('../../server/middleware/supabase-auth', async () => {
+tests\ci\guardian-full-length-report.contract.test.ts:36:vi.mock('../../server/middleware/guardian-entitlement', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:40:vi.mock('../../server/middleware/csrf', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:44:vi.mock('../../server/lib/durable-rate-limiter', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:48:vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:67:vi.mock('../../server/lib/account', () => accountMocks);
+tests\ci\guardian-full-length-report.contract.test.ts:68:vi.mock('../../apps/api/src/services/fullLengthExam', () => reportServiceMocks);
+tests\ci\guardian-full-length-report.contract.test.ts:69:vi.mock('../../apps/api/src/services/mastery-derived', () => ({
+tests\ci\guardian-full-length-report.contract.test.ts:72:vi.mock('../../server/logger', () => ({
+tests\ci\full-length-review-lock.contract.test.ts:5:vi.mock('../../server/middleware/supabase-auth', async () => {
+tests\ci\full-length-review-lock.contract.test.ts:25:vi.mock('../../server/middleware/csrf', () => ({
+tests\ci\full-length-review-lock.contract.test.ts:41:vi.mock('../../apps/api/src/services/fullLengthExam', () => serviceMocks);
+tests\ci\kpi.gating.contract.test.ts:11:vi.mock('../../server/services/kpi-access', () => ({
+tests\ci\kpi.gating.contract.test.ts:15:vi.mock('../../server/services/kpi-truth-layer', () => ({
+tests\ci\kpi.gating.contract.test.ts:23:vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+tests\ci\kpi.gating.contract.test.ts:29:vi.mock('../../server/middleware/supabase-auth', async () => {
+tests\ci\kpi.gating.contract.test.ts:49:vi.mock('../../server/middleware/csrf', () => ({
+tests\ci\kpi.gating.contract.test.ts:53:vi.mock('../../apps/api/src/services/fullLengthExam', () => ({
+tests\ci\kpi.gating.contract.test.ts:65:vi.mock('../../apps/api/src/lib/supabase-admin', () => ({
+tests\ci\practice-contract.test.ts:19:vi.mock('../../apps/api/src/lib/supabase-server', async (importOriginal) => {
+tests\ci\supabase-env.ci.test.ts:82:      // Real network calls would fail with ENOTFOUND for placeholder.supabase.co
+
+
+=== Mocks outside tests ===
+
+PS> rg -n "vi\.mock\(|jest\.mock\(|placeholder|fake auth|mock auth|mock.*supabase-auth|mock.*middleware/auth" server apps/api client -g "*.ts"
+
+apps/api\src\env.ts:100:      console.warn(`G‹·n+≈ [ENV] WARNING: ${name} is set to insecure placeholder "changeme"`);
+server\middleware\supabase-auth.ts:133: * In test mode, placeholder clients are allowed
+server\middleware\supabase-auth.ts:214:          // In test environment, return placeholder client
+server\middleware\supabase-auth.ts:215:          _supabaseAdmin = createClient('https://placeholder.supabase.co', 'placeholder-key');
+server\middleware\supabase-auth.ts:243:          // In test environment, return placeholder client
+server\middleware\supabase-auth.ts:244:          _supabaseAnon = createClient('https://placeholder.supabase.co', 'placeholder-key');
+server\routes\supabase-auth-routes.ts:29:// placeholder Supabase host. In this situation we must avoid making any
+server\routes\supabase-auth-routes.ts:30:// network requests because DNS lookups for test-placeholder.supabase.co will
+server\routes\supabase-auth-routes.ts:38:    supabaseUrl.includes('test-placeholder')
+server\routes\supabase-auth-routes.ts:257:    // In CI/test with placeholder Supabase URL we can't reach the host. Return
+server\routes\admin-health-routes.ts:90:      // These initial values are placeholders - they are overwritten immediately in the try block
+server\routes\admin-health-routes.ts:179:    // These are real checks of environment variables, not derived or placeholder
+apps/api\src\services\__tests__\adaptiveSelector.test.ts:66:vi.mock('../studentMastery', () => ({
+apps/api\src\services\__tests__\adaptiveSelector.test.ts:71:vi.mock('../../lib/supabase-admin', () => ({
+apps/api\src\lib\rag-service.ts:152:    // If no similarity score, assume 1 as placeholder
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:9:vi.mock('../../lib/supabase-admin', () => ({
+apps/api\src\services\__tests__\fullLengthExam.test.ts:19:vi.mock('../../lib/supabase-admin', () => ({
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:4:vi.mock('../../lib/supabase-admin', () => ({
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:8:vi.mock('../mastery-write', () => ({
+apps/api\src\lib\supabase.ts:11:    // In test mode, return placeholder client if env vars missing
+apps/api\src\lib\supabase.ts:16:        console.log('[SUPABASE] Test mode: using placeholder client');
+apps/api\src\lib\supabase.ts:17:        supabaseClient = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+apps/api\src\lib\supabase-server.ts:26:  // In test mode, return placeholder client if env vars missing
+apps/api\src\lib\supabase-server.ts:31:      console.log('[SUPABASE-HTTP] Test mode: using placeholder client');
+apps/api\src\lib\supabase-server.ts:32:      _supabaseServer = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+apps/api\src\routes\questions.ts:78:  // placeholder Supabase host.
+apps/api\src\lib\vector.ts:52:    // Basic placeholder query: you can later replace this with a real
+
+
+=== Service-role usage ===
+
+PS> rg -n "getSupabaseAdmin|service_role|SUPABASE_SERVICE_ROLE|admin client|createClient\(.*SERVICE_ROLE" server apps/api -g "*.ts"
+
+server\index.ts:604:    "SUPABASE_SERVICE_ROLE_KEY",
+server\middleware\guardian-entitlement.ts:3:import { getSupabaseAdmin } from './supabase-auth';
+server\middleware\guardian-entitlement.ts:65:    const supabaseAdmin = getSupabaseAdmin();
+server\routes\account-routes.ts:2:import { requireSupabaseAuth, getSupabaseAdmin } from '../middleware/supabase-auth';
+server\routes\account-routes.ts:37:    const supabaseAdmin = getSupabaseAdmin();
+server\routes\admin-health-routes.ts:134:      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+server\routes\admin-health-routes.ts:141:          reason: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set in environment',
+server\scripts\cleanup-question-stems.ts:71:  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+server\scripts\cleanup-question-stems.ts:74:    console.error("G•Ó Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+server\routes\billing-routes.ts:3:  getSupabaseAdmin,
+server\routes\billing-routes.ts:129:    const supabaseAdmin = getSupabaseAdmin();
+server\routes\billing-routes.ts:286:    const supabaseAdmin = getSupabaseAdmin();
+server\routes\billing-routes.ts:524:    const supabaseAdmin = getSupabaseAdmin();
+server\services\kpi-access.ts:2:import { getSupabaseAdmin } from "../middleware/supabase-auth";
+server\services\kpi-access.ts:33:    const supabaseAdmin = getSupabaseAdmin();
+server\routes\health-routes.ts:4:import { getSupabaseAdmin, resolveTokenFromRequest } from '../middleware/supabase-auth.js';
+server\routes\health-routes.ts:46:      serviceKeySet: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+server\routes\health-routes.ts:75:          const admin = getSupabaseAdmin();
+server\routes\health-routes.ts:91:    const admin = getSupabaseAdmin();
+server\scripts\backfill-question-metadata.ts:7:const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+server\scripts\backfill-question-metadata.ts:9:if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+server\scripts\backfill-question-metadata.ts:10:  console.error('G•Ó Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+server\scripts\backfill-question-metadata.ts:62:      'apikey': SUPABASE_SERVICE_ROLE_KEY!,
+server\scripts\backfill-question-metadata.ts:63:      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+server\scripts\backfill-question-metadata.ts:81:      'apikey': SUPABASE_SERVICE_ROLE_KEY!,
+server\scripts\backfill-question-metadata.ts:82:      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+server\middleware\usage-limits.ts:3:import { getSupabaseAdmin } from './supabase-auth';
+server\middleware\usage-limits.ts:20:        const supabaseAdmin = getSupabaseAdmin();
+server\routes\legal-routes.ts:2:import { getSupabaseAdmin } from "../../apps/api/src/lib/supabase-admin.js";
+server\routes\legal-routes.ts:26:    const admin = getSupabaseAdmin();
+server\routes\legal-routes.ts:60:    const admin = getSupabaseAdmin();
+apps/api\scripts\diag-adaptive-candidates.ts:4:const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+apps/api\scripts\diag-adaptive-candidates.ts:7:if (!SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+apps/api\scripts\backfill-question-classification.ts:5:  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+apps/api\scripts\backfill-question-classification.ts:6:  process.env.SUPABASE_SERVICE_ROLE ||
+apps/api\scripts\backfill-question-classification.ts:10:if (!SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE)");
+apps/api\scripts\diag-next-question.ts:4:const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+apps/api\scripts\diag-next-question.ts:7:if (!SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+server\routes\supabase-auth-routes.ts:5:import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
+server\routes\supabase-auth-routes.ts:192:    const admin = getSupabaseAdmin();
+server\routes\supabase-auth-routes.ts:446:      const admin = getSupabaseAdmin();
+server\routes\supabase-auth-routes.ts:502:    const admin = getSupabaseAdmin();
+server\routes\supabase-auth-routes.ts:607:          const admin = getSupabaseAdmin();
+server\routes\supabase-auth-routes.ts:623:        const admin = getSupabaseAdmin();
+server\routes\profile-routes.ts:3:import { getSupabaseAdmin, requireRequestUser } from '../middleware/supabase-auth';
+server\routes\profile-routes.ts:51:    const supabase = getSupabaseAdmin();
+apps/api\src\config.ts:16:  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
+server\middleware\supabase-auth.ts:210:      const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+server\middleware\supabase-auth.ts:218:          throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in production/development');
+server\middleware\supabase-auth.ts:583: * Get Supabase admin client (bypasses RLS - use carefully!)
+server\middleware\supabase-auth.ts:585:export function getSupabaseAdmin() {
+apps/api\src\env.ts:42:  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+apps/api\src\env.ts:89:    'SUPABASE_SERVICE_ROLE_KEY': env.SUPABASE_SERVICE_ROLE_KEY,
+apps/api\src\env.ts:112:    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+apps/api\src\env.ts:113:      console.warn(`G‹·n+≈ [ENV] VECTORS_ENABLED=true but missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+apps/api\scripts\verify-questions-db.ts:5:  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+apps/api\scripts\verify-questions-db.ts:6:  process.env.SUPABASE_SERVICE_ROLE ||
+apps/api\scripts\verify-questions-db.ts:10:if (!SERVICE_KEY) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+apps/api\src\lib\canonicalId.ts:2:import { getSupabaseAdmin } from "./supabase-admin";
+apps/api\src\lib\canonicalId.ts:119:  const supabase = getSupabaseAdmin();
+apps/api\src\db\client.ts:15:    const hasSupabase = !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\db\client.ts:17:      console.warn('G‹·n+≈ SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set - database features will be unavailable');
+apps/api\src\lib\supabase-admin.ts:6:export function getSupabaseAdmin(): SupabaseClient {
+apps/api\src\lib\supabase-admin.ts:9:    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\lib\supabase-admin.ts:12:      throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+apps/api\src\lib\supabase-server.ts:24:  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\lib\supabase-server.ts:46:      throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not set');
+apps/api\src\lib\supabase.ts:9:    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\lib\supabase.ts:26:      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+apps/api\src\lib\vector.ts:26:const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\lib\vector.ts:29:  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+apps/api\src\lib\vector.ts:30:    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+apps/api\src\routes\healthz.ts:7:    const hasSupabase = !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+apps/api\src\services\fullLengthExam.ts:12:import { getSupabaseAdmin } from "../lib/supabase-admin";
+apps/api\src\services\fullLengthExam.ts:494:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:535:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:610:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:635:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:699:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:722:  supabase: ReturnType<typeof getSupabaseAdmin>,
+apps/api\src\services\fullLengthExam.ts:786:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:893:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1072:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1143:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1197:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1317:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1529:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1568:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1605:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1719:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1741:  const supabase = getSupabaseAdmin();
+apps/api\src\services\fullLengthExam.ts:1911:  supabase: ReturnType<typeof getSupabaseAdmin>;
+apps/api\src\routes\diagnostic.ts:17:import { getSupabaseAdmin } from '../lib/supabase-admin';
+apps/api\src\routes\diagnostic.ts:58:    const supabase = getSupabaseAdmin();
+apps/api\src\routes\diagnostic.ts:140:    const supabase = getSupabaseAdmin();
+apps/api\src\routes\mastery.ts:4:import { getSupabaseAdmin } from '../lib/supabase-admin';
+apps/api\src\routes\mastery.ts:198:    const supabase = getSupabaseAdmin();
+apps/api\src\routes\mastery.ts:338:    const supabase = getSupabaseAdmin();
+apps/api\src\services\diagnostic-service.ts:14:import { getSupabaseAdmin } from "../lib/supabase-admin";
+apps/api\src\services\diagnostic-service.ts:100:  const supabase = getSupabaseAdmin();
+apps/api\src\services\diagnostic-service.ts:197:  const supabase = getSupabaseAdmin();
+apps/api\src\services\diagnostic-service.ts:270:  const supabase = getSupabaseAdmin();
+apps/api\src\services\diagnostic-service.ts:334:  const supabase = getSupabaseAdmin();
+apps/api\src\services\studentMastery.ts:1:import { getSupabaseAdmin } from "../lib/supabase-admin";
+apps/api\src\services\studentMastery.ts:35:  const supabase = getSupabaseAdmin();
+apps/api\src\services\studentMastery.ts:116:  const supabase = getSupabaseAdmin();
+apps/api\src\services\studentMastery.ts:154:  const supabase = getSupabaseAdmin();
+apps/api\src\services\studentMastery.ts:203:  const supabase = getSupabaseAdmin();
+apps/api\src\services\mastery-write.ts:24:import { getSupabaseAdmin } from "../lib/supabase-admin";
+apps/api\src\services\mastery-write.ts:85:  const supabase = getSupabaseAdmin();
+apps/api\src\services\__tests__\adaptiveSelector.test.ts:72:  getSupabaseAdmin: vi.fn(() => ({
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:10:  getSupabaseAdmin: vi.fn(),
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:27:    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:242:    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:274:    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:382:    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:403:    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.contract.test.ts:426:    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:5:  getSupabaseAdmin: vi.fn(),
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:16:import { getSupabaseAdmin } from '../../lib/supabase-admin';
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:127:    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase as any);
+apps/api\src\services\__tests__\fullLengthExam.mastery-events.test.ts:218:    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase as any);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:18:// Mock the Supabase admin client
+apps/api\src\services\__tests__\fullLengthExam.test.ts:20:  getSupabaseAdmin: vi.fn(),
+apps/api\src\services\__tests__\fullLengthExam.test.ts:26:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:68:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:83:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:130:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:145:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:193:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:205:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:252:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:263:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:322:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:400:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:459:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:470:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:503:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:514:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:658:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:680:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:856:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:884:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:975:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:988:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1045:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1056:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1145:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1160:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1249:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1264:      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1321:      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1453:      } as unknown as ReturnType<typeof import('../../lib/supabase-admin').getSupabaseAdmin>;
+apps/api\src\services\__tests__\fullLengthExam.test.ts:1546:      } as unknown as ReturnType<typeof import('../../lib/supabase-admin').getSupabaseAdmin>;
+apps/api\src\services\adaptiveSelector.ts:1:import { getSupabaseAdmin } from "../lib/supabase-admin";
+apps/api\src\services\adaptiveSelector.ts:127:  const supabase = getSupabaseAdmin();
+apps/api\src\services\adaptiveSelector.ts:163:  const supabase = getSupabaseAdmin();
+apps/api\src\services\adaptiveSelector.ts:225:  const supabase = getSupabaseAdmin();
+
+
+=== Guardian/student authz surfaces ===
+
+PS> rg -n "guardian|student|isGuardian|guardianId|studentId|role" server/routes apps/api/src/routes server/middleware -g "*.ts"
+
+server/routes\admin-proof-routes.ts:5: * All queries use the service role key to bypass RLS.
+server/routes\account-routes.ts:22:  let userRole: string = req.user!.role;
+server/routes\account-routes.ts:26:      userRole = 'guardian';
+server/routes\account-routes.ts:29:    if (userRole !== 'student' && userRole !== 'guardian') {
+server/routes\account-routes.ts:31:        error: 'Unsupported role for bootstrap',
+server/routes\account-routes.ts:32:        role: req.user!.role,
+server/routes\account-routes.ts:38:    const accountId = await ensureAccountForUser(supabaseAdmin, userId, userRole as 'student' | 'guardian');
+server/routes\account-routes.ts:42:      role: userRole,
+server/routes\account-routes.ts:47:    res.json({ accountId, userId, role: userRole, requestId });
+server/routes\account-routes.ts:54:      role: userRole,
+server/routes\account-routes.ts:65:        role: req.user!.role,
+server/routes\account-routes.ts:75:  const rawRole = req.user!.role as string;
+server/routes\account-routes.ts:76:  const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+server/routes\account-routes.ts:94:    if (userRole === 'guardian') {
+server/routes\account-routes.ts:156:  const rawRole = req.user!.role as string;
+server/routes\account-routes.ts:157:  const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+server/routes\account-routes.ts:159:  if (userRole !== 'guardian') {
+server/routes\account-routes.ts:161:      error: 'Only guardians can select accounts',
+server/routes\admin-stats-routes.ts:97: * GET /api/admin/kpis/student/:studentId
+server/routes\admin-stats-routes.ts:100:router.get('/kpis/student/:studentId', requireSupabaseAdmin, async (req: Request, res: Response) => {
+server/routes\admin-stats-routes.ts:102:    const { studentId } = req.params;
+server/routes\admin-stats-routes.ts:103:    if (!studentId) {
+server/routes\admin-stats-routes.ts:104:      return res.status(400).json({ error: 'studentId required' });
+server/routes\admin-stats-routes.ts:107:    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
+server/routes\admin-stats-routes.ts:111:      studentId,
+server/routes\admin-stats-routes.ts:117:        note: 'Admin snapshot uses canonical student KPI rules with paid gating bypass.',
+server/routes\admin-stats-routes.ts:121:    logger.error('ADMIN', 'student_kpis_error', 'Failed to fetch canonical student KPI snapshot', error);
+server/routes\admin-stats-routes.ts:122:    return res.status(500).json({ error: 'Failed to fetch student KPI snapshot', detail: error?.message });
+server/middleware\guardian-entitlement.ts:23:  const userRole = req.user.role;
+server/middleware\guardian-entitlement.ts:29:  if (userRole !== 'guardian') {
+server/middleware\guardian-entitlement.ts:31:      error: 'Guardian role required',
+server/middleware\guardian-entitlement.ts:40:    let studentId = req.params?.studentId;
+server/middleware\guardian-entitlement.ts:41:    if (studentId) {
+server/middleware\guardian-entitlement.ts:42:      // Check guardian is linked to this studentId
+server/middleware\guardian-entitlement.ts:43:      link = await getGuardianLinkForStudent(userId, studentId);
+server/middleware\guardian-entitlement.ts:46:          error: 'Guardian not linked to requested student',
+server/middleware\guardian-entitlement.ts:54:      if (!link?.student_user_id) {
+server/middleware\guardian-entitlement.ts:56:          error: 'Guardian has no linked student',
+server/middleware\guardian-entitlement.ts:62:      studentId = link.student_user_id;
+server/middleware\guardian-entitlement.ts:66:    const studentAccountId = await ensureAccountForUser(supabaseAdmin, studentId, 'student');
+server/middleware\guardian-entitlement.ts:67:    if (!studentAccountId) {
+server/middleware\guardian-entitlement.ts:68:      logger.warn('GUARDIAN_ENTITLEMENT', 'no_account', 'Guardian linked student has no account', { userId, studentId, requestId });
+server/middleware\guardian-entitlement.ts:73:        redirectTo: '/guardian',
+server/middleware\guardian-entitlement.ts:79:    const accountId = studentAccountId;
+server/middleware\guardian-entitlement.ts:84:      logger.warn('GUARDIAN_ENTITLEMENT', 'no_entitlement', 'Guardian has no entitlement record for student account', { userId, accountId, studentId: link.student_user_id, requestId });
+server/middleware\guardian-entitlement.ts:89:        redirectTo: '/guardian',
+server/middleware\guardian-entitlement.ts:133:        redirectTo: '/guardian',
+server/middleware\guardian-entitlement.ts:139:    (req as any).guardianAccountId = accountId;
+server/middleware\guardian-entitlement.ts:140:    (req as any).guardianEntitlement = entitlement;
+server/routes\billing-routes.ts:24:  if (user.role !== 'guardian' && user.role !== 'admin') {
+server/routes\billing-routes.ts:26:      error: 'Guardian role required',
+server/routes\billing-routes.ts:27:      message: 'You do not have permission to access guardian billing resources',
+server/routes\billing-routes.ts:84:    const role = req.user?.role;
+server/routes\billing-routes.ts:86:    if (!userId || !role) {
+server/routes\billing-routes.ts:115:      role,
+server/routes\billing-routes.ts:133:    if (role === 'admin') {
+server/routes\billing-routes.ts:135:    } else if (role === 'student') {
+server/routes\billing-routes.ts:136:      accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
+server/routes\billing-routes.ts:137:    } else if (role === 'guardian') {
+server/routes\billing-routes.ts:139:      if (!link?.student_user_id) {
+server/routes\billing-routes.ts:140:        return res.status(400).json({ error: 'Guardian has no linked student. Link a student before subscribing.', requestId });
+server/routes\billing-routes.ts:142:      linkedStudentId = link.student_user_id;
+server/routes\billing-routes.ts:143:      accountId = await ensureAccountForUser(supabaseAdmin, linkedStudentId, 'student');
+server/routes\billing-routes.ts:145:      return res.status(403).json({ error: 'Unsupported role', requestId });
+server/routes\billing-routes.ts:183:          payer_role: role, // "student" | "guardian"
+server/routes\billing-routes.ts:196:        role: role,
+server/routes\billing-routes.ts:204:        role: role,
+server/routes\billing-routes.ts:214:      role,
+server/routes\billing-routes.ts:222:    const successUrl = role === 'student'
+server/routes\billing-routes.ts:224:      : `${baseUrl}/guardian?checkout=success`;
+server/routes\billing-routes.ts:225:    const cancelUrl = role === 'student'
+server/routes\billing-routes.ts:227:      : `${baseUrl}/guardian?checkout=cancel`;
+server/routes\billing-routes.ts:239:        payer_role: role,
+server/routes\billing-routes.ts:240:        ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
+server/routes\billing-routes.ts:249:          payer_role: role,
+server/routes\billing-routes.ts:250:          ...(linkedStudentId ? { linked_student_id: linkedStudentId } : {}),
+server/routes\billing-routes.ts:256:    logger.info('BILLING', 'checkout', 'Created checkout session', { userId, accountId, plan, role, linkedStudentId, sessionId: session.id, requestId });
+server/routes\billing-routes.ts:279:  const rawRole = req.user!.role as string;
+server/routes\billing-routes.ts:280:  const userRole = rawRole === 'parent' ? 'guardian' : (rawRole || 'student');
+server/routes\billing-routes.ts:288:    if (userRole === 'guardian') {
+server/routes\billing-routes.ts:290:      if (link?.student_user_id) {
+server/routes\billing-routes.ts:291:        accountId = await ensureAccountForUser(supabaseAdmin, link.student_user_id, 'student');
+server/routes\billing-routes.ts:293:        accountId = await ensureAccountForUser(supabaseAdmin, userId, 'guardian');
+server/routes\billing-routes.ts:296:      accountId = await ensureAccountForUser(supabaseAdmin, userId, userRole as 'student' | 'guardian' | 'admin');
+server/routes\billing-routes.ts:336:        // Prevents corruption when guardian has multiple linked students
+server/routes\billing-routes.ts:521:    const rawRole = (req.user!.role as string) || 'student';
+server/routes\billing-routes.ts:522:    const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+server/routes\billing-routes.ts:526:    // Resolve the ACCOUNT to manage (student is primary; guardian manages linked student account)
+server/routes\billing-routes.ts:529:    if (userRole === 'guardian') {
+server/routes\billing-routes.ts:531:      if (!link?.student_user_id) {
+server/routes\billing-routes.ts:532:        return res.status(400).json({ error: 'Guardian has no linked student', requestId });
+server/routes\billing-routes.ts:534:      accountId = await ensureAccountForUser(supabaseAdmin, link.student_user_id, 'student');
+server/routes\billing-routes.ts:536:      // student pays/manages their own account entitlement
+server/routes\billing-routes.ts:537:      accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
+server/routes\billing-routes.ts:556:    const returnUrl = userRole === 'guardian' ? `${baseUrl}/guardian` : `${baseUrl}/dashboard`;
+server/middleware\usage-limits.ts:10:    const userRole = req.user?.role;
+server/middleware\usage-limits.ts:19:      if (!accountId && userRole && (userRole === 'student' || userRole === 'guardian')) {
+server/routes\google-oauth-routes.ts:312:        .select('role')
+server/routes\google-oauth-routes.ts:316:      if (!profileError && profile?.role === 'guardian') {
+server/routes\google-oauth-routes.ts:317:        redirectPath = '/guardian';
+server/routes\google-oauth-routes.ts:318:        logger.info('GOOGLE_OAUTH', 'role_detected', 'Guardian role detected, redirecting to /guardian', { userId });
+server/routes\google-oauth-routes.ts:320:        logger.info('GOOGLE_OAUTH', 'role_detected', 'Student/default role, redirecting to /dashboard', { userId, role: profile?.role });
+server/routes\google-oauth-routes.ts:323:      logger.warn('GOOGLE_OAUTH', 'profile_fetch_failed', 'Could not fetch profile for role, defaulting to /dashboard', { 
+server/routes\guardian-routes.ts:7:import { requireGuardianEntitlement } from '../middleware/guardian-entitlement';
+server/routes\guardian-routes.ts:13:import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks } from '../lib/account';
+server/routes\guardian-routes.ts:14:// Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
+server/routes\guardian-routes.ts:26:export function isGuardianCalendarCountedEventType(eventType: string | null | undefined): boolean {
+server/routes\guardian-routes.ts:37:  if (user.role !== 'guardian' && user.role !== 'admin') {
+server/routes\guardian-routes.ts:39:      error: 'Guardian role required',
+server/routes\guardian-routes.ts:40:      message: 'You do not have permission to access guardian resources',
+server/routes\guardian-routes.ts:49:  guardianId: string,
+server/routes\guardian-routes.ts:52:  studentId?: string,
+server/routes\guardian-routes.ts:58:    const { error } = await supabaseServer.from('guardian_link_audit').insert({
+server/routes\guardian-routes.ts:59:      guardian_profile_id: guardianId,
+server/routes\guardian-routes.ts:60:      student_profile_id: studentId || null,
+server/routes\guardian-routes.ts:63:      student_code_prefix: codePrefix || null,
+server/routes\guardian-routes.ts:75:router.get('/students', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:78:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:80:    // CANONICAL: Read from guardian_links, join profiles for display info
+server/routes\guardian-routes.ts:81:    const links = await getAllGuardianStudentLinks(guardianId);
+server/routes\guardian-routes.ts:83:      return res.json({ students: [], requestId });
+server/routes\guardian-routes.ts:86:    const studentIds = links.map(l => l.student_user_id);
+server/routes\guardian-routes.ts:87:    const { data: students, error } = await supabaseServer
+server/routes\guardian-routes.ts:90:      .in('id', studentIds)
+server/routes\guardian-routes.ts:91:      .eq('role', 'student');
+server/routes\guardian-routes.ts:94:      logger.error('GUARDIAN', 'list_students', 'Failed to fetch linked students', { error, requestId });
+server/routes\guardian-routes.ts:95:      return res.status(500).json({ error: 'Failed to fetch students', requestId });
+server/routes\guardian-routes.ts:98:    res.json({ students: students || [], requestId });
+server/routes\guardian-routes.ts:100:    logger.error('GUARDIAN', 'list_students', 'Error', { err, requestId });
+server/routes\guardian-routes.ts:108:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:117:      await auditLog(guardianId, 'link_attempt', 'failure', undefined, 'invalid_format', trimmedCode.substring(0, 2), requestId);
+server/routes\guardian-routes.ts:121:    const { data: student, error: lookupError } = await supabaseServer
+server/routes\guardian-routes.ts:124:      .eq('student_link_code', trimmedCode)
+server/routes\guardian-routes.ts:125:      .eq('role', 'student')
+server/routes\guardian-routes.ts:128:    if (lookupError || !student) {
+server/routes\guardian-routes.ts:129:      await auditLog(guardianId, 'link_attempt', 'failure', undefined, 'code_not_found', trimmedCode.substring(0, 2), requestId);
+server/routes\guardian-routes.ts:130:      logger.warn('GUARDIAN', 'link_attempt_failed', 'Invalid code attempt', { guardianId, requestId });
+server/routes\guardian-routes.ts:131:      return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
+server/routes\guardian-routes.ts:134:    // CANONICAL: Check guardian_links for existing link
+server/routes\guardian-routes.ts:135:    const alreadyLinked = await isGuardianLinkedToStudent(guardianId, student.id);
+server/routes\guardian-routes.ts:137:      await auditLog(guardianId, 'link_attempt', 'success', student.id, 'already_linked', undefined, requestId);
+server/routes\guardian-routes.ts:138:      return res.json({ ok: true, message: 'Already linked', student: { id: student.id, display_name: student.display_name }, requestId });
+server/routes\guardian-routes.ts:141:    // Check if student is linked to another guardian via guardian_links
+server/routes\guardian-routes.ts:143:      .from('guardian_links')
+server/routes\guardian-routes.ts:144:      .select('guardian_profile_id')
+server/routes\guardian-routes.ts:145:      .eq('student_user_id', student.id)
+server/routes\guardian-routes.ts:150:      await auditLog(guardianId, 'link_attempt', 'failure', undefined, 'already_linked_other', trimmedCode.substring(0, 2), requestId);
+server/routes\guardian-routes.ts:151:      logger.warn('GUARDIAN', 'link_attempt_blocked', 'Student already linked to another guardian', { guardianId, requestId });
+server/routes\guardian-routes.ts:152:      return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
+server/routes\guardian-routes.ts:155:    // CANONICAL: Create link in guardian_links
+server/routes\guardian-routes.ts:157:      await createGuardianLink(guardianId, student.id);
+server/routes\guardian-routes.ts:159:      await auditLog(guardianId, 'link_attempt', 'failure', student.id, 'update_failed', undefined, requestId);
+server/routes\guardian-routes.ts:160:      logger.error('GUARDIAN', 'link_student', 'Failed to link student', { error: linkError.message, requestId });
+server/routes\guardian-routes.ts:161:      return res.status(500).json({ error: 'Failed to link student', requestId });
+server/routes\guardian-routes.ts:164:    await auditLog(guardianId, 'link_success', 'success', student.id, undefined, undefined, requestId);
+server/routes\guardian-routes.ts:165:    logger.info('GUARDIAN', 'link_student', 'Student linked successfully', { guardianId, studentId: student.id, requestId });
+server/routes\guardian-routes.ts:167:    res.json({ ok: true, student: { id: student.id, display_name: student.display_name }, requestId });
+server/routes\guardian-routes.ts:169:    logger.error('GUARDIAN', 'link_student', 'Error', { err, requestId });
+server/routes\guardian-routes.ts:174:router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, csrfProtection, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:177:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:178:    const { studentId } = req.params;
+server/routes\guardian-routes.ts:180:    // CANONICAL: Verify link exists in guardian_links
+server/routes\guardian-routes.ts:181:    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+server/routes\guardian-routes.ts:184:      logger.warn('GUARDIAN', 'unlink_denied', 'Guardian tried to unlink non-linked student', { guardianId, studentId, requestId });
+server/routes\guardian-routes.ts:185:      return res.status(403).json({ error: 'Not authorized to unlink this student', requestId });
+server/routes\guardian-routes.ts:188:    // CANONICAL: Revoke link in guardian_links
+server/routes\guardian-routes.ts:190:      await revokeGuardianLink(guardianId, studentId);
+server/routes\guardian-routes.ts:192:      logger.error('GUARDIAN', 'unlink_student', 'Failed to unlink student', { error: revokeError.message, requestId });
+server/routes\guardian-routes.ts:193:      return res.status(500).json({ error: 'Failed to unlink student', requestId });
+server/routes\guardian-routes.ts:196:    await auditLog(guardianId, 'unlink_success', 'success', studentId, undefined, undefined, requestId);
+server/routes\guardian-routes.ts:197:    logger.info('GUARDIAN', 'unlink_student', 'Student unlinked successfully', { guardianId, studentId, requestId });
+server/routes\guardian-routes.ts:199:    // Return updated student list from canonical source
+server/routes\guardian-routes.ts:200:    const links = await getAllGuardianStudentLinks(guardianId);
+server/routes\guardian-routes.ts:201:    const studentIds = links.map(l => l.student_user_id);
+server/routes\guardian-routes.ts:202:    let students: any[] = [];
+server/routes\guardian-routes.ts:203:    if (studentIds.length > 0) {
+server/routes\guardian-routes.ts:207:        .in('id', studentIds)
+server/routes\guardian-routes.ts:208:        .eq('role', 'student');
+server/routes\guardian-routes.ts:209:      students = data || [];
+server/routes\guardian-routes.ts:212:    res.json({ ok: true, students, requestId });
+server/routes\guardian-routes.ts:214:    logger.error('GUARDIAN', 'unlink_student', 'Error', { err, requestId });
+server/routes\guardian-routes.ts:219:router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:222:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:223:    const { studentId } = req.params;
+server/routes\guardian-routes.ts:225:    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+server/routes\guardian-routes.ts:226:    if (!linked && req.user!.role !== 'admin') {
+server/routes\guardian-routes.ts:227:      logger.warn('GUARDIAN', 'summary_access_denied', 'Student not found or not linked to guardian', { guardianId, studentId, requestId });
+server/routes\guardian-routes.ts:231:    const { data: student, error: studentError } = await supabaseServer
+server/routes\guardian-routes.ts:234:      .eq('id', studentId)
+server/routes\guardian-routes.ts:235:      .eq('role', 'student')
+server/routes\guardian-routes.ts:238:    if (studentError || !student) {
+server/routes\guardian-routes.ts:242:    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
+server/routes\guardian-routes.ts:243:    const guardianView = buildGuardianSummaryKpiView(snapshot);
+server/routes\guardian-routes.ts:246:      student: {
+server/routes\guardian-routes.ts:247:        id: student.id,
+server/routes\guardian-routes.ts:248:        displayName: student.display_name,
+server/routes\guardian-routes.ts:249:        email: student.email,
+server/routes\guardian-routes.ts:251:      progress: guardianView.progress,
+server/routes\guardian-routes.ts:252:      metrics: guardianView.metrics,
+server/routes\guardian-routes.ts:253:      measurementModel: guardianView.measurementModel,
+server/routes\guardian-routes.ts:258:    logger.error('GUARDIAN', 'student_summary', 'Error', { err, requestId });
+server/routes\guardian-routes.ts:271:    .from('student_study_plan_days')
+server/routes\guardian-routes.ts:354:router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:357:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:358:    const isAdmin = req.user!.role === 'admin';
+server/routes\guardian-routes.ts:359:    const { studentId, sessionId } = req.params;
+server/routes\guardian-routes.ts:362:      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+server/routes\guardian-routes.ts:364:        logger.warn('GUARDIAN', 'full_length_report_denied', 'Guardian tried to view non-linked student full-length report', {
+server/routes\guardian-routes.ts:365:          guardianId,
+server/routes\guardian-routes.ts:366:          studentId,
+server/routes\guardian-routes.ts:370:        return res.status(403).json({ error: 'Not authorized to view this student', requestId });
+server/routes\guardian-routes.ts:376:      userId: studentId,
+server/routes\guardian-routes.ts:380:      guardianId,
+server/routes\guardian-routes.ts:381:      studentId,
+server/routes\guardian-routes.ts:387:      studentId,
+server/routes\guardian-routes.ts:408:router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:411:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:412:    const isAdmin = req.user!.role === 'admin';
+server/routes\guardian-routes.ts:413:    const { studentId } = req.params;
+server/routes\guardian-routes.ts:425:      // CANONICAL: Verify link via guardian_links
+server/routes\guardian-routes.ts:426:      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+server/routes\guardian-routes.ts:428:        logger.warn('GUARDIAN', 'calendar_access_denied', 'Student not found or not linked', { guardianId, studentId, requestId });
+server/routes\guardian-routes.ts:434:      .from('student_study_profile')
+server/routes\guardian-routes.ts:436:      .eq('user_id', studentId)
+server/routes\guardian-routes.ts:446:        .from('student_study_plan_days')
+server/routes\guardian-routes.ts:448:        .eq('user_id', studentId)
+server/routes\guardian-routes.ts:454:        .from('student_question_attempts')
+server/routes\guardian-routes.ts:456:        .eq('user_id', studentId)
+server/routes\guardian-routes.ts:460:      calculateStreakForStudent(studentId, timezone),
+server/routes\guardian-routes.ts:471:      if (!isGuardianCalendarCountedEventType((attempt as any).event_type)) continue;
+server/routes\guardian-routes.ts:499:    logger.info('GUARDIAN', 'calendar_view', 'Guardian viewed student calendar', { guardianId, studentId, start, end, requestId });
+server/routes\guardian-routes.ts:513:// GUARDIAN WEAKNESS ROLLUPS - Shows student's weakest competency areas
+server/routes\guardian-routes.ts:515:router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement, async (req: Request, res: Response) => {
+server/routes\guardian-routes.ts:518:    const guardianId = req.user!.id;
+server/routes\guardian-routes.ts:519:    const { studentId } = req.params;
+server/routes\guardian-routes.ts:521:    // CANONICAL: Verify guardian-student link via guardian_links
+server/routes\guardian-routes.ts:522:    const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+server/routes\guardian-routes.ts:523:    if (!linked && req.user!.role !== 'admin') {
+server/routes\guardian-routes.ts:524:      logger.warn('GUARDIAN', 'weaknesses_denied', 'Guardian tried to view non-linked student', { guardianId, studentId, requestId });
+server/routes\guardian-routes.ts:525:      return res.status(403).json({ error: 'Not authorized to view this student', requestId });
+server/routes\guardian-routes.ts:528:    const { data: student, error: studentError } = await supabaseServer
+server/routes\guardian-routes.ts:531:      .eq('id', studentId)
+server/routes\guardian-routes.ts:532:      .eq('role', 'student')
+server/routes\guardian-routes.ts:535:    if (studentError || !student) {
+server/routes\guardian-routes.ts:539:    const derivedWeakness = await getDerivedWeaknessSignals(studentId, {
+server/routes\guardian-routes.ts:544:    // Transform canonical mastery-derived signals to guardian weakness payload.
+server/routes\guardian-routes.ts:555:    logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: weakestAreas.length, requestId });
+server/routes\guardian-routes.ts:558:      studentId,
+server/routes\guardian-routes.ts:559:      studentName: student.display_name,
+server/middleware\supabase-auth.ts:99:  role: 'student' | 'admin' | 'guardian';
+server/middleware\supabase-auth.ts:101:  isGuardian: boolean;
+server/middleware\supabase-auth.ts:103:  guardian_consent?: boolean;
+server/middleware\supabase-auth.ts:107:  student_link_code?: string | null;
+server/middleware\supabase-auth.ts:203:// Supabase client with service role (bypasses RLS for admin operations)
+server/middleware\supabase-auth.ts:304:      .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
+server/middleware\supabase-auth.ts:318:      // Determine role from user metadata (if set during signup)
+server/middleware\supabase-auth.ts:319:      // SECURITY: Only allow guardian role from metadata. Admin cannot be auto-assigned.
+server/middleware\supabase-auth.ts:320:      // Admin role must be manually assigned by DB admin or existing admin user.
+server/middleware\supabase-auth.ts:321:      const metadataRole = user.user_metadata?.role as string | undefined;
+server/middleware\supabase-auth.ts:322:      const allowedAutoRoles = ['student', 'guardian'] as const;
+server/middleware\supabase-auth.ts:323:      const defaultRole: 'student' | 'guardian' =
+server/middleware\supabase-auth.ts:324:        metadataRole === 'guardian' ? 'guardian' : 'student';
+server/middleware\supabase-auth.ts:328:        logger.warn('AUTH', 'admin_role_blocked', 'Blocked attempt to auto-create admin profile', {
+server/middleware\supabase-auth.ts:341:          role: defaultRole,
+server/middleware\supabase-auth.ts:343:          guardian_consent: user.user_metadata?.guardian_consent || false,
+server/middleware\supabase-auth.ts:344:          guardian_email: user.user_metadata?.guardian_email || null,
+server/middleware\supabase-auth.ts:346:        .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
+server/middleware\supabase-auth.ts:359:        role: newProfile.role,
+server/middleware\supabase-auth.ts:376:      role: profile.role,
+server/middleware\supabase-auth.ts:377:      isAdmin: profile.role === 'admin',
+server/middleware\supabase-auth.ts:378:      isGuardian: profile.role === 'guardian',
+server/middleware\supabase-auth.ts:380:      guardian_consent: profile.guardian_consent,
+server/middleware\supabase-auth.ts:382:      student_link_code: profile.student_link_code,
+server/middleware\supabase-auth.ts:415:      role: req.user.role
+server/middleware\supabase-auth.ts:452:    // Ensure user has a lyceon_account and membership (student/guardian only)
+server/middleware\supabase-auth.ts:453:    if (req.user.role === 'student' || req.user.role === 'guardian') {
+server/middleware\supabase-auth.ts:455:        const accountId = await ensureAccountForUser(supabaseAdmin, req.user.id, req.user.role);
+server/middleware\supabase-auth.ts:458:          role: req.user.role,
+server/middleware\supabase-auth.ts:465:          role: req.user.role,
+server/middleware\supabase-auth.ts:497: * Middleware to require admin role
+server/middleware\supabase-auth.ts:512:      role: (req.user as any)?.role
+server/middleware\supabase-auth.ts:528: * Returns 403 if user is under 13 without guardian consent
+server/middleware\supabase-auth.ts:539:  if (req.user?.is_under_13 && !req.user?.guardian_consent) {
+server/middleware\supabase-auth.ts:542:      message: 'Users under 13 require guardian consent to use this service',
+server/middleware\supabase-auth.ts:553: * Middleware to require student or admin role (blocks guardians)
+server/middleware\supabase-auth.ts:554: * Returns 403 if user is a guardian
+server/middleware\supabase-auth.ts:565:  if (req.user.isGuardian && !req.user.isAdmin) {
+server/middleware\supabase-auth.ts:566:    logger.warn('AUTH', 'guardian_blocked', 'Guardian attempted to access student-only route', {
+server/middleware\supabase-auth.ts:568:      role: req.user.role,
+server/middleware\supabase-auth.ts:574:      message: 'Guardians cannot access student practice features',
+server/routes\full-length-exam-routes.ts:354:    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+server/routes\legal-routes.ts:22:    if (actorType !== "student" && actorType !== "parent") {
+server/routes\legal-routes.ts:23:      return res.status(400).json({ success: false, error: "actorType must be 'student' or 'parent'" });
+apps/api/src/routes\calendar.ts:3:import { getWeakestSkills } from "../services/studentMastery";
+apps/api/src/routes\calendar.ts:186:    .from("student_study_profile")
+apps/api/src/routes\calendar.ts:216:    .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:279:  const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+apps/api/src/routes\calendar.ts:314:      reason: "Custom mode keeps ownership with the student, so this remains a suggestion.",
+apps/api/src/routes\calendar.ts:326:      .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:366:      .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:390:      .from("student_study_profile")
+apps/api/src/routes\calendar.ts:461:      .from("student_study_profile")
+apps/api/src/routes\calendar.ts:514:      .from("student_study_profile")
+apps/api/src/routes\calendar.ts:544:    .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:610:      .from("student_study_profile")
+apps/api/src/routes\calendar.ts:645:      .from("student_study_profile")
+apps/api/src/routes\calendar.ts:658:        .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:666:        .from("student_question_attempts")
+apps/api/src/routes\calendar.ts:758:      .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:800:        .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:895:        .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:953:      .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:979:      .from("student_study_plan_days")
+apps/api/src/routes\calendar.ts:1038:    .from("student_study_plan_days")
+apps/api/src/routes\weakness.ts:6:} from '../services/studentMastery';
+server/routes\questions-validate.ts:7:    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
+server/routes\questions-validate.ts:11:    const role = authUser?.role || (isAdmin ? 'admin' : 'student');
+server/routes\questions-validate.ts:12:    const isGuardian = authUser?.isGuardian || role === 'guardian';
+server/routes\questions-validate.ts:14:    // Defensive: guardians never get answers
+server/routes\questions-validate.ts:15:    if (isGuardian) {
+server/routes\questions-validate.ts:20:    const { questionId, studentAnswer } = req.body;
+server/routes\questions-validate.ts:21:    if (!questionId || studentAnswer === undefined || studentAnswer === null) {
+server/routes\questions-validate.ts:22:      return res.status(400).json({ error: 'Missing required fields: questionId and studentAnswer' });
+server/routes\questions-validate.ts:49:      isCorrect = String(studentAnswer).trim().toUpperCase() === String(question.answer_choice).trim().toUpperCase();
+server/routes\questions-validate.ts:54:      isCorrect = String(studentAnswer).trim().toLowerCase() === String(question.answer_text).trim().toLowerCase();
+server/routes\tutor-v2.ts:28:      return "Explain very simply with small numbers and concrete steps, as if to a younger student. Use basic vocabulary and short sentences.";
+server/routes\tutor-v2.ts:69:      return "Ask guiding questions to help the student discover the answer themselves.";
+server/routes\tutor-v2.ts:114:  studentProfile: StudentProfile | null,
+server/routes\tutor-v2.ts:115:  competencyContext: { studentWeakAreas: string[]; studentStrongAreas: string[]; competencyLabels: string[] }
+server/routes\tutor-v2.ts:117:  const explanationLevelText = mapExplanationLevel(studentProfile?.explanationLevel || null);
+server/routes\tutor-v2.ts:118:  const primaryStyleInstruction = mapStyleToInstruction(studentProfile?.primaryStyle || null);
+server/routes\tutor-v2.ts:137:  let studentContext = "";
+server/routes\tutor-v2.ts:145:  const levelNum = studentProfile?.overallLevel || 3;
+server/routes\tutor-v2.ts:148:  if (studentProfile) {
+server/routes\tutor-v2.ts:149:    studentContext = `
+server/routes\tutor-v2.ts:152:    if (studentProfile.primaryStyle) {
+server/routes\tutor-v2.ts:153:      studentContext += `\n- The student prefers ${studentProfile.primaryStyle} explanations.`;
+server/routes\tutor-v2.ts:155:    if (studentProfile.secondaryStyle) {
+server/routes\tutor-v2.ts:156:      studentContext += ` They also respond well to ${studentProfile.secondaryStyle} approaches.`;
+server/routes\tutor-v2.ts:158:    if (competencyContext.studentWeakAreas.length > 0) {
+server/routes\tutor-v2.ts:159:      studentContext += `\n- Areas to strengthen: ${competencyContext.studentWeakAreas.join(", ")}`;
+server/routes\tutor-v2.ts:161:    if (competencyContext.studentStrongAreas.length > 0) {
+server/routes\tutor-v2.ts:162:      studentContext += `\n- Strong areas: ${competencyContext.studentStrongAreas.join(", ")}`;
+server/routes\tutor-v2.ts:164:    studentContext += "\n";
+server/routes\tutor-v2.ts:174:  const systemInstruction = `You are a friendly, clear SAT tutor for high school students.
+server/routes\tutor-v2.ts:182:- Never help the student cheat on live exams.
+server/routes\tutor-v2.ts:191:4. **Try this next** - One helpful follow-up the student could try
+server/routes\tutor-v2.ts:197:      role: "user",
+server/routes\tutor-v2.ts:199:        { text: `Context information: ${questionContext}${supportingContext}${studentContext}` },
+server/routes\tutor-v2.ts:200:        { text: `The student asks: "${message}"` },
+server/routes\tutor-v2.ts:241:    let { primaryQuestion, supportingQuestions, competencyContext, studentProfile } = context;
+server/routes\tutor-v2.ts:295:      studentProfile,
+server/routes\tutor-v2.ts:303:      studentProfile,
+server/routes\tutor-v2.ts:307:    const currentSecondary = studentProfile?.secondaryStyle || null;
+server/routes\tutor-v2.ts:308:    const currentExplanationLevel = studentProfile?.explanationLevel || 2;
+server/routes\tutor-v2.ts:341:        primaryStyle: studentProfile?.primaryStyle || null,
+server/routes\tutor-v2.ts:354:        primary: studentProfile?.primaryStyle || null,
+server/routes\tutor-v2.ts:359:        recommendedPrimaryStyle: studentProfile?.primaryStyle || "step-by-step",
+server/routes\practice-canonical.ts:10:import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
+server/routes\practice-canonical.ts:172:  //   BUT DO NOT require attempts to exist (new students must still see questions).
+server/routes\practice-canonical.ts:585:  // Log to student_question_attempts + update mastery rollups
+server/routes\legacy\progress.ts:51:    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+server/routes\legacy\progress.ts:57:      .from("student_skill_mastery")
+server/routes\legacy\progress.ts:175: * Canonical student KPI snapshot with strict metric-kind separation.
+server/routes\legacy\progress.ts:184:    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+server/routes\legacy\progress.ts:185:    const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
+server/routes\profile-routes.ts:102:        studentLinkCode: profile.student_link_code,
+server/routes\profile-routes.ts:103:        role: profile.role
+server/routes\student-routes.ts:37:const SAT_TUTOR_PROMPT = `You are an expert SAT tutor. A student has uploaded an image of a question they need help with.
+server/routes\student-routes.ts:83:            role: "user",
+server/routes\review-errors-routes.ts:10:import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
+server/routes\review-errors-routes.ts:68: * Records a student's review attempt and emits canonical mastery events.
+server/routes\review-errors-routes.ts:152:      student_id: userId,
+server/routes\review-errors-routes.ts:172:          .eq("student_id", userId)
+server/routes\supabase-auth-routes.ts:64:  'guardian',
+server/routes\supabase-auth-routes.ts:65:  'role',
+server/routes\supabase-auth-routes.ts:138:    const { email, password, displayName, isUnder13, guardianEmail, role: requestedRole } = req.body;
+server/routes\supabase-auth-routes.ts:153:    if (isUnder13 && !guardianEmail) {
+server/routes\supabase-auth-routes.ts:162:    // Validate role (only allow student or guardian, default to student)
+server/routes\supabase-auth-routes.ts:163:    const validRole = requestedRole === 'guardian' ? 'guardian' : 'student';
+server/routes\supabase-auth-routes.ts:172:          role: validRole
+server/routes\supabase-auth-routes.ts:191:    // Update profile with role and under-13 info if needed
+server/routes\supabase-auth-routes.ts:193:    const profileUpdate: Record<string, any> = { role: validRole };
+server/routes\supabase-auth-routes.ts:197:      profileUpdate.guardian_email = guardianEmail;
+server/routes\supabase-auth-routes.ts:198:      profileUpdate.guardian_consent = false;
+server/routes\supabase-auth-routes.ts:430:      .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
+server/routes\supabase-auth-routes.ts:453:          role: user.user_metadata?.role || 'student'
+server/routes\supabase-auth-routes.ts:455:        .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
+server/routes\supabase-auth-routes.ts:473:        role: profile.role,
+server/routes\supabase-auth-routes.ts:474:        isAdmin: profile.role === 'admin',
+server/routes\supabase-auth-routes.ts:475:        isGuardian: profile.role === 'guardian',
+server/routes\supabase-auth-routes.ts:477:        guardian_consent: profile.guardian_consent,
+server/routes\supabase-auth-routes.ts:478:        student_link_code: profile.student_link_code,
+server/routes\supabase-auth-routes.ts:490: * Submit guardian consent for under-13 users
+server/routes\supabase-auth-routes.ts:494:    const { guardianConsent, guardianEmail } = req.body;
+server/routes\supabase-auth-routes.ts:507:        guardian_consent: guardianConsent,
+server/routes\supabase-auth-routes.ts:508:        guardian_email: guardianEmail,
+server/routes\supabase-auth-routes.ts:509:        consent_given_at: guardianConsent ? new Date().toISOString() : null
+server/routes\supabase-auth-routes.ts:523:      consent: guardianConsent
+server/routes\supabase-auth-routes.ts:610:            .select('role')
+server/routes\supabase-auth-routes.ts:613:          resolvedRole = profile?.role || null;
+server/routes\supabase-auth-routes.ts:620:    // Service role key validation: can it read the user from auth.users?
+apps/api/src/routes\question-feedback.ts:4: * Handles thumbs up/down feedback from students about question quality.
+apps/api/src/routes\rag-v2.ts:38:      studentProfile: validation.data.studentProfile
+apps/api/src/routes\rag-v2.ts:41:            overallLevel: validation.data.studentProfile.overallLevel,
+apps/api/src/routes\rag-v2.ts:42:            competencyMap: validation.data.studentProfile.competencyMap as Record<
+apps/api/src/routes\rag-v2.ts:46:            recentQuestions: validation.data.studentProfile.recentQuestions?.map((q) => ({
+apps/api/src/routes\rag-v2.ts:51:            primaryStyle: validation.data.studentProfile.primaryStyle,
+apps/api/src/routes\rag-v2.ts:52:            secondaryStyle: validation.data.studentProfile.secondaryStyle,
+apps/api/src/routes\rag-v2.ts:53:            explanationLevel: validation.data.studentProfile.explanationLevel,
+apps/api/src/routes\rag-v2.ts:54:            personaTags: validation.data.studentProfile.personaTags,
+apps/api/src/routes\rag.ts:49:        role: "user",
+apps/api/src/routes\diagnostic.ts:61:      .select('student_id')
+apps/api/src/routes\diagnostic.ts:69:    if (session.student_id !== user.id) {
+apps/api/src/routes\diagnostic.ts:143:      .select('student_id')
+apps/api/src/routes\diagnostic.ts:151:    if (session.student_id !== user.id) {
+apps/api/src/routes\mastery.ts:3:import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
+apps/api/src/routes\mastery.ts:186:    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+apps/api/src/routes\mastery.ts:202:      .from("student_skill_mastery")
+apps/api/src/routes\mastery.ts:341:      .from('student_study_profile')
+apps/api/src/routes\mastery.ts:367:            ? 'Custom mode keeps planner ownership with the student, so mastery suggestions never auto-apply.'
+apps/api/src/routes\progress.ts:67:    // Reporting-only trail. Canonical learning state is student_skill_mastery.
+apps/api/src/routes\progress.ts:393: * - Recalculate mastery_score (uses stored values from student_skill_mastery)
+apps/api/src/routes\progress.ts:397: * SOURCE OF TRUTH: student_skill_mastery table
+apps/api/src/routes\progress.ts:409:      .from('student_skill_mastery')
+apps/api/src/routes\progress.ts:500:      .from('student_study_profile')
+apps/api/src/routes\progress.ts:531:      .from('student_question_attempts')
+apps/api/src/routes\progress.ts:549:      .from('student_question_attempts')
+apps/api/src/routes\questions.ts:239:        // Canonical weakness source: student_skill_mastery-derived signals.
+apps/api/src/routes\questions.ts:546:    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
+apps/api/src/routes\questions.ts:550:    const role = authUser?.role || (isAdmin ? 'admin' : 'student');
+apps/api/src/routes\questions.ts:551:    const isGuardian = authUser?.isGuardian || role === 'guardian';
+apps/api/src/routes\questions.ts:553:    // Defensive: guardians never get answers
+apps/api/src/routes\questions.ts:554:    if (isGuardian) {
+apps/api/src/routes\questions.ts:559:    const { questionId, studentAnswer } = req.body;
+apps/api/src/routes\questions.ts:560:    if (!questionId || studentAnswer === undefined || studentAnswer === null) {
+apps/api/src/routes\questions.ts:561:      return res.status(400).json({ error: 'Missing required fields: questionId and studentAnswer' });
+apps/api/src/routes\questions.ts:605:      // For students, require a verified submission (answer_attempt exists for this user/question)
+apps/api/src/routes\questions.ts:630:        const studentKey = String(studentAnswer ?? '').trim().toUpperCase();
+apps/api/src/routes\questions.ts:631:        isCorrect = !!correctAnswerKey && studentKey === correctAnswerKey;
+apps/api/src/routes\questions.ts:643:        const normalizedStudent = String(studentAnswer ?? '').trim().toLowerCase();
+
+
+=== Bearer/cookie handling ===
+
+PS> rg -n "authorization|bearer|sb-access-token|cookie" server apps/api -g "*.ts"
+
+server\auth.ts:190:// Simple admin auth middleware for legacy bearer-protected admin routes
+server\auth.ts:200:    const authHeader = req.headers.authorization;
+server\index.ts:6: *   - Supabase authentication (httpOnly cookies)
+server\index.ts:15:import cookieParser from "cookie-parser";
+server\index.ts:98:app.use(cookieParser());
+server\index.ts:138:// Supabase auth middleware - extract JWT from cookies and set req.user
+server\index.ts:251:// CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
+server\index.ts:252:// RAG endpoint - cookie-only auth, no Bearer allowed
+server\index.ts:262:// RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
+server\index.ts:346:// Enforce cookie-admin only for admin-proof routes
+server\index.ts:580:      hasCookieHeader: !!req.headers.cookie,
+server\index.ts:581:      hasAuthorizationHeader: !!req.headers.authorization,
+server\logger.ts:12:  'authorization',
+server\logger.ts:13:  'cookie',
+server\routes\admin-proof-routes.ts:22:// All routes are now protected by requireSupabaseAdmin upstream. No bearer or isAuthorized logic remains.
+server\routes\auth-callback.ts:9: * Receives auth code from Google, exchanges for session, sets cookies, redirects to app
+server\routes\auth-callback.ts:25:      logger.error('AUTH', 'oauth_callback_error', 'No authorization code received');
+server\routes\admin-health-routes.ts:32:  cookieOnlyAuth: boolean;
+server\routes\admin-health-routes.ts:33:  bearerRejected: boolean;
+server\routes\admin-health-routes.ts:100:        cookieOnlyAuth: true,  // Enforced in resolveTokenFromRequest (server/middleware/supabase-auth.ts)
+server\routes\admin-health-routes.ts:101:        bearerRejected: true,  // Bearer tokens rejected for user auth routes
+server\routes\admin-health-routes.ts:186:    // Note: cookieOnlyAuth and bearerRejected are architectural invariants
+server\routes\admin-health-routes.ts:191:      cookieOnlyAuth: true,
+server\routes\admin-health-routes.ts:193:      bearerRejected: true,
+server\middleware\supabase-auth.ts:11:  tokenSource: 'bearer' | `cookie:${string}` | null;
+server\middleware\supabase-auth.ts:13:  bearerParsed: boolean;
+server\middleware\supabase-auth.ts:15:  cookieKeys: string[];
+server\middleware\supabase-auth.ts:19: * ALLOWED AUTH COOKIES - Only these exact cookie names are accepted for auth
+server\middleware\supabase-auth.ts:20: * All other cookies with auth-like names are treated as legacy and ignored
+server\middleware\supabase-auth.ts:22:const ALLOWED_AUTH_COOKIES = ['sb-access-token', 'sb-refresh-token'] as const;
+server\middleware\supabase-auth.ts:28: * SECURITY: Only accepts exact cookie names to prevent stale/legacy cookies from breaking auth
+server\middleware\supabase-auth.ts:30: * ENFORCED: For user-facing auth, tokens MUST come from httpOnly cookies only.
+server\middleware\supabase-auth.ts:32: * Internal bearer usage must NOT use this function.
+server\middleware\supabase-auth.ts:39:    bearerParsed: false,
+server\middleware\supabase-auth.ts:41:    cookieKeys: [],
+server\middleware\supabase-auth.ts:44:  // Get all cookie keys for diagnostics
+server\middleware\supabase-auth.ts:45:  const cookies = req.cookies || {};
+server\middleware\supabase-auth.ts:46:  result.cookieKeys = Object.keys(cookies);
+server\middleware\supabase-auth.ts:49:  const authHeader = req.headers.authorization || req.headers['Authorization'] as string || req.get('authorization');
+server\middleware\supabase-auth.ts:53:    if (lowerHeader.startsWith('bearer ')) {
+server\middleware\supabase-auth.ts:55:      result.bearerParsed = true;
+server\middleware\supabase-auth.ts:56:      result.tokenSource = 'bearer';
+server\middleware\supabase-auth.ts:63:  // STRICT: Only accept exactly 'sb-access-token' cookie
+server\middleware\supabase-auth.ts:64:  const accessToken = cookies['sb-access-token'];
+server\middleware\supabase-auth.ts:67:    result.tokenSource = 'cookie:sb-access-token';
+server\seo-content.ts:696:    description: "Lyceon's trust center for security, privacy, and authorization controls, with links to policy pages and technical evidence.",
+server\seo-content.ts:726:      <li>Privacy-safe logging and monitoring with redaction of tokens, cookies, and secrets.</li>
+server\seo-content.ts:743:    description: "Public, implementation-grounded security evidence for Lyceon authorization, Supabase RLS, privacy-safe logging, and monitoring safeguards.",
+server\seo-content.ts:757:        <li>Endpoints using Supabase auth middleware resolve sessions from secure cookies and ignore bearer headers.</li>
+server\seo-content.ts:775:        <li>Structured logging redacts fields containing authorization, cookie, and token identifiers.</li>
+server\lib\auth-cookies.ts:19:    path: '/', // CRITICAL - ensures cookies sent to all routes
+server\lib\auth-cookies.ts:23:  res.cookie('sb-access-token', session.access_token, {
+server\lib\auth-cookies.ts:28:  res.cookie('sb-refresh-token', session.refresh_token, {
+server\lib\auth-cookies.ts:35:  const names = ['sb-access-token', 'sb-refresh-token'] as const;
+server\middleware\logging.ts:277:          authorization: req.get('Authorization') ? 'present' : 'missing'
+server\routes\google-oauth-routes.ts:14: *   3. Server redirects to Google with state cookie
+server\routes\google-oauth-routes.ts:17: *   6. Server sets session cookies and redirects to /dashboard
+server\routes\google-oauth-routes.ts:28:import { clearAuthCookies } from '../lib/auth-cookies.js';
+server\routes\google-oauth-routes.ts:100:    path: '/', // CRITICAL - ensures cookies sent to all routes
+server\routes\google-oauth-routes.ts:104:  res.cookie('sb-access-token', session.access_token, {
+server\routes\google-oauth-routes.ts:109:  res.cookie('sb-refresh-token', session.refresh_token, {
+server\routes\google-oauth-routes.ts:177:  res.cookie(STATE_COOKIE_NAME, state, {
+server\routes\google-oauth-routes.ts:207:  const storedState = req.cookies[STATE_COOKIE_NAME];
+server\routes\google-oauth-routes.ts:229:    logger.error('GOOGLE_OAUTH', 'no_code', 'No authorization code received');
+server\routes\google-oauth-routes.ts:248:        grant_type: 'authorization_code',
+apps/api\src\middleware\bearer-auth.ts:19:    const auth = req.headers.authorization || "";
+server\routes\tutor-v2.ts:212:    // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)
+server\routes\supabase-auth-routes.ts:8:import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
+server\routes\supabase-auth-routes.ts:43: * LEGACY COOKIE CLEANUP - Delete any stale auth cookies that might interfere
+server\routes\supabase-auth-routes.ts:46: * ALLOWED COOKIES: sb-access-token, sb-refresh-token, sidebar:state, google_oauth_state
+server\routes\supabase-auth-routes.ts:47: * All other auth-like cookies are deleted
+server\routes\supabase-auth-routes.ts:52:  'sb-access-token',
+server\routes\supabase-auth-routes.ts:70:  const cookies = req.cookies || {};
+server\routes\supabase-auth-routes.ts:71:  const cookieNames = Object.keys(cookies);
+server\routes\supabase-auth-routes.ts:73:  for (const name of cookieNames) {
+server\routes\supabase-auth-routes.ts:74:    // Special-case: allow current sb-* cookies, but always clear any legacy '/api' path variants
+server\routes\supabase-auth-routes.ts:75:    // without touching the canonical '/' cookie.
+server\routes\supabase-auth-routes.ts:76:    if (name === 'sb-access-token' || name === 'sb-refresh-token') {
+server\routes\supabase-auth-routes.ts:92:      // Continue normal loop; do NOT delete the canonical '/' cookie here.
+server\routes\supabase-auth-routes.ts:96:    // Skip allowed cookies
+server\routes\supabase-auth-routes.ts:99:    // Check if cookie name matches legacy auth patterns
+server\routes\supabase-auth-routes.ts:105:    // Also delete any sb-* cookies that aren't our exact allowed ones
+server\routes\supabase-auth-routes.ts:127:      logger.info('AUTH', 'legacy_cookie_cleared', `Cleared legacy cookie: ${name}`, {});
+server\routes\supabase-auth-routes.ts:147:    // failed so that downstream logic doesn't try to set cookies.
+server\routes\supabase-auth-routes.ts:214:    // Set session cookies using helper (correct maxAge based on expires_in)
+server\routes\supabase-auth-routes.ts:235:      // SECURITY: Session tokens are stored in HTTP-only cookies, not returned in response
+server\routes\supabase-auth-routes.ts:285:    // Set session cookies using helper
+server\routes\supabase-auth-routes.ts:310: * Sign out current user (no auth required - just clears cookies)
+server\routes\supabase-auth-routes.ts:315:    // Clear cookies with path: '/' (CRITICAL - must match how they were set)
+server\routes\supabase-auth-routes.ts:343:  // PHASE 1: Clean up any legacy cookies on every /user request
+server\routes\supabase-auth-routes.ts:347:    const token = req.cookies['sb-access-token'];
+server\routes\supabase-auth-routes.ts:360:      const refreshToken = req.cookies?.['sb-refresh-token'];
+server\routes\supabase-auth-routes.ts:392:        // Refresh failed - clear cookies and return 401
+server\routes\supabase-auth-routes.ts:542:    // Accept refresh token from body OR from httpOnly cookie
+server\routes\supabase-auth-routes.ts:545:      req.cookies?.['sb-refresh-token'];
+server\routes\supabase-auth-routes.ts:564:    // Update cookies using helper (correct maxAge based on expires_in)
+server\routes\supabase-auth-routes.ts:589:    const refreshToken = req.cookies['sb-refresh-token'];
+server\routes\supabase-auth-routes.ts:658:        cookieKeys: tokenResult.cookieKeys,
+server\routes\supabase-auth-routes.ts:662:        bearerParsed: tokenResult.bearerParsed,
+server\routes\supabase-auth-routes.ts:664:      cookies: {
+server\routes\supabase-auth-routes.ts:688: * This endpoint has been deprecated in favor of server-only httpOnly cookie auth.
+server\routes\supabase-auth-routes.ts:691: * Historical context: This endpoint exchanged external tokens for httpOnly cookies,
+
+
+=== TypeScript CI ===
+
+PS> corepack pnpm -s exec tsc -p tsconfig.ci.json
+
+
+
+=== Full test suite ===
+
+PS> npx vitest run --reporter=dot --silent
+
+
+[1m[46m RUN [49m[22m [36mv4.0.17 [39m[90mC:/Users/14438/projects/Lyceonai[39m
+
+[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m[33m[39m[32m-+[39m
+
+[2m Test Files [22m [1m[32m46 passed[39m[22m[90m (46)[39m
+[2m      Tests [22m [1m[32m343 passed[39m[22m[90m (343)[39m
+[2m   Start at [22m 04:22:06
+[2m   Duration [22m 10.91s[2m (transform 9.45s, setup 1.11s, import 31.71s, tests 32.14s, environment 4.84s)[22m
+
+

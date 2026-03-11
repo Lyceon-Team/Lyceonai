@@ -1,5 +1,8 @@
 # SAT Learning Copilot - Comprehensive Test Results
 
+> **HISTORICAL ARCHIVE (non-runtime):** Any ingestion references in this report describe removed systems and are kept only as test history.
+
+
 **Test Date**: September 27, 2025  
 **Environment**: https://564b6ab6-6c10-41e3-9c31-1c7b0614b72b-00-1sx2x4owrojd1.kirk.replit.dev/  
 **Configuration**: LLM QA Enabled, Vectors Disabled  

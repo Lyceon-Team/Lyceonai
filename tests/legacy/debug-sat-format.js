@@ -45,7 +45,7 @@ async function debugSATFormat() {
     }
     console.log(`Assessment patterns: ${assessmentMatches.length}`);
     
-    // Try the same splitting logic used in the bulk ingestion
+    // Try the same splitting logic used in the legacy bulk parser
     console.log(`\n🔍 TESTING SPLITTING LOGIC:`);
     const questionBlocks = result.text.split(/(?=Question ID\s+[a-f0-9]+)/gi).filter(block => block.trim().length > 0);
     console.log(`Split into ${questionBlocks.length} blocks using Question ID pattern`);

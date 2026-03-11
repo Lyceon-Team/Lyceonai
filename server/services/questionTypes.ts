@@ -1,5 +1,5 @@
 /**
- * Ingestion v2 Canonical Question Types
+ * Canonical SAT question types used by shared runtime helpers.
  * Canonical ID generation is delegated to apps/api/src/lib/canonicalId.
  */
 
@@ -34,6 +34,8 @@ export interface QuestionDoc {
   tags: string[];
   sourcePdf?: string | null;
   pageNumber?: number | null;
+  // Legacy provenance field retained for historical data compatibility.
+  // No runtime ingestion pipeline writes to this field in the current product scope.
   ingestionRunId?: string | null;
   questionHash?: string | null;
   engineUsed?: string | null;
