@@ -10,12 +10,11 @@
  */
 
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import type { 
-  FullLengthExamSession, 
+import type {
+  FullLengthExamSession,
   FullLengthExamModule,
   FullLengthExamQuestion,
   FullLengthExamResponse,
-  Question
 } from "../../../../shared/schema";
 
 // ============================================================================
@@ -83,8 +82,11 @@ export const ADAPTIVE_THRESHOLDS = {
 export type SectionType = "rw" | "math";
 export type ModuleIndex = 1 | 2;
 export type DifficultyBucket = "easy" | "medium" | "hard";
+export type QuestionDifficulty = 1 | 2 | 3;
 export type SessionStatus = "not_started" | "in_progress" | "completed" | "abandoned";
 export type ModuleStatus = "not_started" | "in_progress" | "submitted" | "expired";
+
+type QuestionOption = { key: string; text: string };
 
 export interface CreateSessionParams {
   userId: string;
@@ -97,16 +99,15 @@ export interface GetCurrentSessionResult {
     id: string;
     stem: string;
     section: string;
-    type: "mc" | "fr";
-    options: Array<{ key: string; text: string }> | null;
-    difficulty: string | null;
+    question_type: "multiple_choice";
+    options: QuestionOption[];
+    difficulty: QuestionDifficulty | null;
     orderIndex: number;
     moduleQuestionCount: number;
     answeredCount: number;
     // User's previously submitted answer (for resume support)
     submittedAnswer?: {
       selectedAnswer?: string;
-      freeResponseAnswer?: string;
     };
   } | null;
   timeRemaining: number | null; // milliseconds remaining, null if module not started
@@ -118,7 +119,6 @@ export interface SubmitAnswerParams {
   userId: string;
   questionId: string;
   selectedAnswer?: string;
-  freeResponseAnswer?: string;
 }
 
 export interface SubmitModuleParams {
@@ -595,7 +595,7 @@ export async function getCurrentSession(
         id,
         stem,
         section,
-        type,
+        question_type,
         options,
         difficulty
       )
@@ -607,10 +607,10 @@ export async function getCurrentSession(
     throw new Error(`Failed to fetch module questions: ${questionsError.message}`);
   }
 
-  // Get responses for this module (including answer content for resume support)
+  // Get responses for this module (for resume support)
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id, selected_answer, free_response_answer")
+    .select("question_id, selected_answer")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
@@ -619,9 +619,8 @@ export async function getCurrentSession(
 
   // Build a map of question_id -> response for quick lookup
   const responseMap = new Map(
-    responses?.map((r) => [r.question_id, { 
-      selectedAnswer: r.selected_answer, 
-      freeResponseAnswer: r.free_response_answer 
+    responses?.map((r) => [r.question_id, {
+      selectedAnswer: r.selected_answer,
     }]) || []
   );
   const answeredQuestionIds = new Set(responses?.map((r) => r.question_id) || []);
@@ -635,9 +634,9 @@ export async function getCurrentSession(
       id: string;
       stem: string;
       section: string;
-      type: string;
-      options: Array<{ key: string; text: string }> | null;
-      difficulty: string | null;
+      question_type: string;
+      options: QuestionOption[] | null;
+      difficulty: number | null;
     } | null;
   }
 
@@ -647,26 +646,31 @@ export async function getCurrentSession(
     const typedQuestions = moduleQuestions as unknown as ModuleQuestionWithData[];
     const unanswered = typedQuestions.find((mq) => !answeredQuestionIds.has(mq.question_id));
     const target = unanswered || typedQuestions[0];
-    
+
     if (target?.questions) {
       const q = target.questions;
       const submittedAnswer = responseMap.get(q.id);
-      
+      const options = Array.isArray(q.options) ? q.options : [];
+      const difficulty = q.difficulty === 1 || q.difficulty === 2 || q.difficulty === 3
+        ? (q.difficulty as QuestionDifficulty)
+        : null;
+
       currentQuestion = {
         id: q.id,
         stem: q.stem,
         section: q.section,
-        type: q.type as "mc" | "fr",
-        options: q.type === "mc" ? q.options : null,
-        difficulty: q.difficulty,
+        question_type: "multiple_choice" as const,
+        options,
+        difficulty,
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
         answeredCount: answeredQuestionIds.size,
         // Include previously submitted answer if it exists (for resume support)
-        submittedAnswer: submittedAnswer ? {
-          selectedAnswer: submittedAnswer.selectedAnswer || undefined,
-          freeResponseAnswer: submittedAnswer.freeResponseAnswer || undefined,
-        } : undefined,
+        submittedAnswer: submittedAnswer
+          ? {
+              selectedAnswer: submittedAnswer.selectedAnswer || undefined,
+            }
+          : undefined,
       };
     }
   }
@@ -753,6 +757,12 @@ async function startModule(sessionId: string, moduleId: string, seed: string): P
   }
 }
 
+function difficultyBucketToNumeric(bucket: DifficultyBucket): QuestionDifficulty {
+  if (bucket === "easy") return 1;
+  if (bucket === "hard") return 3;
+  return 2;
+}
+
 /**
  * Select questions for a module deterministically
  */
@@ -766,44 +776,34 @@ async function selectQuestionsForModule(
 ): Promise<Array<{ id: string }>> {
   const supabase = getSupabaseAdmin();
 
-  // For module 1, select from medium difficulty
-  // For module 2, use the adaptive difficulty bucket
-  const targetDifficulty = moduleIndex === 1 ? "medium" : (difficultyBucket || "medium");
+  // For module 1, select medium (2). For module 2, map adaptive bucket to canonical numeric difficulty.
+  const targetDifficulty: QuestionDifficulty = moduleIndex === 1
+    ? 2
+    : difficultyBucketToNumeric(difficultyBucket || "medium");
 
-  // Map section to question section names
-  const sectionFilter = section === "rw" ? ["Reading", "Writing", "Reading and Writing"] : ["Math"];
+  const sectionCode = section === "rw" ? "RW" : "MATH";
 
-  // Build query
-  let query = supabase
+  const { data: candidates, error } = await supabase
     .from("questions")
     .select("id, difficulty, canonical_id")
-    .in("section", sectionFilter)
-    .eq("type", "mc") // Only MC questions for now
-    .not("answer_choice", "is", null); // Must have an answer
-
-  // Add difficulty filter
-  if (targetDifficulty === "easy") {
-    query = query.in("difficulty", ["Easy", "easy", "1"]);
-  } else if (targetDifficulty === "medium") {
-    query = query.in("difficulty", ["Medium", "medium", "2"]);
-  } else {
-    query = query.in("difficulty", ["Hard", "hard", "3"]);
-  }
-
-  const { data: candidates, error } = await query.limit(questionCount * 3); // Get more than needed for selection
+    .eq("section_code", sectionCode)
+    .eq("question_type", "multiple_choice")
+    .eq("status", "published")
+    .eq("difficulty", targetDifficulty)
+    .limit(questionCount * 3); // Get more than needed for selection
 
   if (error) {
     throw new Error(`Failed to fetch questions: ${error.message}`);
   }
 
   if (!candidates || candidates.length === 0) {
-    throw new Error(`No questions available for section=${section}, difficulty=${targetDifficulty}`);
+    throw new Error(`No questions available for section=${sectionCode}, difficulty=${targetDifficulty}`);
   }
 
   // Deterministically shuffle and select
   const shuffled = [...candidates];
   const seedForModule = `${seed}_${moduleId}_${section}_${moduleIndex}`;
-  
+
   // Simple deterministic shuffle
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = simpleHash(`${seedForModule}_${i}`) % (i + 1);
@@ -871,10 +871,10 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found in current module");
   }
 
-  // Get question to check correctness
+  // Get question to check correctness (MC-only canonical flow)
   const { data: question, error: questionError } = await supabase
     .from("questions")
-    .select("id, type, answer_choice, answer_text")
+    .select("id, question_type, correct_answer")
     .eq("id", params.questionId)
     .single();
 
@@ -882,18 +882,18 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found");
   }
 
-  // Determine correctness
-  let isCorrect = false;
-  if (question.type === "mc" && params.selectedAnswer) {
-    isCorrect = params.selectedAnswer.toUpperCase() === (question.answer_choice || "").toUpperCase();
-  } else if (question.type === "fr" && params.freeResponseAnswer) {
-    // Simple string comparison for FR (could be enhanced)
-    isCorrect = params.freeResponseAnswer.trim().toLowerCase() === (question.answer_text || "").trim().toLowerCase();
+  if (question.question_type !== "multiple_choice") {
+    throw new Error("Unsupported question type for full-length exam");
   }
+
+  // Determine correctness against canonical answer key
+  const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
+  const correct = String(question.correct_answer ?? "").trim().toUpperCase();
+  const isCorrect = selected.length > 0 && selected === correct;
 
   // Upsert response (idempotent with unique constraint)
   const now = new Date().toISOString();
-  
+
   const { error: upsertError } = await supabase
     .from("full_length_exam_responses")
     .upsert({
@@ -901,7 +901,6 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       module_id: currentModule.id,
       question_id: params.questionId,
       selected_answer: params.selectedAnswer,
-      free_response_answer: params.freeResponseAnswer,
       is_correct: isCorrect,
       answered_at: now,
       updated_at: now,
@@ -1339,17 +1338,22 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
  * will NOT be included in pre-completion review responses.
  */
 export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
-  'id',
-  'stem',
-  'section',
-  'type',
-  'options',
-  'difficulty',
-  'difficultyLevel',
-  'unitTag',
-  'tags',
-  'questionNumber',
-  'pageNumber',
+  "id",
+  "canonical_id",
+  "stem",
+  "section",
+  "section_code",
+  "question_type",
+  "options",
+  "domain",
+  "skill",
+  "subskill",
+  "skill_code",
+  "difficulty",
+  "source_type",
+  "diagram_present",
+  "tags",
+  "competencies",
 ] as const;
 
 /**
@@ -1357,16 +1361,15 @@ export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
  * These fields reveal correct answers and explanations.
  */
 export const ANSWER_FIELDS_POST_COMPLETION = [
-  'answer',
-  'answerChoice',
-  'answerText',
-  'explanation',
-  'classification',
+  "correct_answer",
+  "answer_text",
+  "explanation",
+  "option_metadata",
 ] as const;
 
 /**
  * Supabase select string for pre-completion question queries.
- * Only fetches safe fields — answer/explanation never leave the DB pre-completion.
+ * Only fetches safe fields - answer/explanation never leave the DB pre-completion.
  */
 const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.join(",");
 
@@ -1377,26 +1380,46 @@ const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.
 const SAFE_QUESTION_SELECT_POST_COMPLETION =
   [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
 
-/**
- * Type-safe question row from Supabase for pre-completion queries.
- * Only includes safe fields that don't leak answers/explanations.
- */
-type QuestionRowPreCompletion = Pick<
-  Question,
-  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
-  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber'
->;
+type CanonicalSectionCode = "MATH" | "RW";
+type CanonicalSourceType = 0 | 1 | 2 | 3;
 
-/**
- * Type-safe question row from Supabase for post-completion queries.
- * Includes all safe fields plus answer/explanation fields.
- */
-type QuestionRowPostCompletion = Pick<
-  Question,
-  'id' | 'stem' | 'section' | 'type' | 'options' | 'difficulty' | 
-  'difficultyLevel' | 'unitTag' | 'tags' | 'questionNumber' | 'pageNumber' |
-  'answer' | 'answerChoice' | 'answerText' | 'explanation' | 'classification'
->;
+type OptionMetadataEntry = {
+  role: "correct" | "distractor";
+  error_taxonomy: string | null;
+};
+
+type OptionMetadata = {
+  A: OptionMetadataEntry;
+  B: OptionMetadataEntry;
+  C: OptionMetadataEntry;
+  D: OptionMetadataEntry;
+};
+
+type QuestionRowPreCompletion = {
+  id: string;
+  canonical_id: string | null;
+  stem: string;
+  section: string;
+  section_code: string | null;
+  question_type: string | null;
+  options: unknown;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  difficulty: number | null;
+  source_type: number | null;
+  diagram_present: boolean | null;
+  tags: unknown;
+  competencies: unknown;
+};
+
+type QuestionRowPostCompletion = QuestionRowPreCompletion & {
+  correct_answer: string | null;
+  answer_text: string | null;
+  explanation: string | null;
+  option_metadata: unknown;
+};
 
 /**
  * Safe question type for pre-completion review.
@@ -1404,16 +1427,21 @@ type QuestionRowPostCompletion = Pick<
  */
 export interface SafeQuestionPreCompletion {
   id: string;
+  canonical_id: string | null;
   stem: string;
   section: string;
-  type: string | null;
-  options: Array<{ key: string; text: string }> | null;
-  difficulty: string | null;
-  difficultyLevel: number | null;
-  unitTag: string | null;
-  tags: string[] | null;
-  questionNumber: number | null;
-  pageNumber: number | null;
+  section_code: CanonicalSectionCode | null;
+  question_type: "multiple_choice";
+  options: QuestionOption[];
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  difficulty: QuestionDifficulty | null;
+  source_type: CanonicalSourceType | null;
+  diagram_present: boolean | null;
+  tags: unknown;
+  competencies: unknown;
 }
 
 /**
@@ -1421,11 +1449,10 @@ export interface SafeQuestionPreCompletion {
  * Includes answer and explanation fields.
  */
 export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
-  answer: string;
-  answerChoice: string | null;
-  answerText: string | null;
+  correct_answer: "A" | "B" | "C" | "D" | null;
+  answer_text: string | null;
   explanation: string | null;
-  classification: unknown | null;
+  option_metadata: OptionMetadata | null;
 }
 
 /**
@@ -1448,7 +1475,6 @@ export interface ExamReviewResponse {
   questionId: string;
   moduleId: string;
   selectedAnswer: string | null;
-  freeResponseAnswer: string | null;
   isCorrect: boolean | null;
   answeredAt: string | null;
 }
@@ -1479,6 +1505,40 @@ export interface GetExamReviewParams {
   sessionId: string;
 }
 
+function normalizeSectionCode(value: unknown): CanonicalSectionCode | null {
+  if (value === "MATH" || value === "RW") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeDifficulty(value: unknown): QuestionDifficulty | null {
+  return value === 1 || value === 2 || value === 3 ? (value as QuestionDifficulty) : null;
+}
+
+function normalizeSourceType(value: unknown): CanonicalSourceType | null {
+  return value === 0 || value === 1 || value === 2 || value === 3
+    ? (value as CanonicalSourceType)
+    : null;
+}
+
+function normalizeOptions(value: unknown): QuestionOption[] {
+  return Array.isArray(value) ? (value as QuestionOption[]) : [];
+}
+
+function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const metadata = value as Record<string, unknown>;
+  if (!("A" in metadata) || !("B" in metadata) || !("C" in metadata) || !("D" in metadata)) {
+    return null;
+  }
+
+  return metadata as unknown as OptionMetadata;
+}
+
 /**
  * Apply safe projection to a question object.
  * Uses an explicit allowlist to ensure only safe fields are included.
@@ -1486,20 +1546,24 @@ export interface GetExamReviewParams {
 function projectSafeQuestionFields(
   question: Record<string, unknown>
 ): SafeQuestionPreCompletion {
-  const result: SafeQuestionPreCompletion = {
-    id: question.id as string,
-    stem: question.stem as string,
-    section: question.section as string,
-    type: (question.type ?? null) as string | null,
-    options: (question.options ?? null) as Array<{ key: string; text: string }> | null,
-    difficulty: (question.difficulty ?? null) as string | null,
-    difficultyLevel: (question.difficultyLevel ?? question.difficulty_level ?? null) as number | null,
-    unitTag: (question.unitTag ?? question.unit_tag ?? null) as string | null,
-    tags: (question.tags ?? null) as string[] | null,
-    questionNumber: (question.questionNumber ?? question.question_number ?? null) as number | null,
-    pageNumber: (question.pageNumber ?? question.page_number ?? null) as number | null,
+  return {
+    id: String(question.id),
+    canonical_id: (question.canonical_id as string | null) ?? null,
+    stem: String(question.stem ?? ""),
+    section: String(question.section ?? ""),
+    section_code: normalizeSectionCode(question.section_code),
+    question_type: "multiple_choice",
+    options: normalizeOptions(question.options),
+    domain: (question.domain as string | null) ?? null,
+    skill: (question.skill as string | null) ?? null,
+    subskill: (question.subskill as string | null) ?? null,
+    skill_code: (question.skill_code as string | null) ?? null,
+    difficulty: normalizeDifficulty(question.difficulty),
+    source_type: normalizeSourceType(question.source_type),
+    diagram_present: (question.diagram_present as boolean | null) ?? null,
+    tags: question.tags ?? null,
+    competencies: question.competencies ?? null,
   };
-  return result;
 }
 
 /**
@@ -1509,13 +1573,17 @@ function projectFullQuestionFields(
   question: Record<string, unknown>
 ): FullQuestionPostCompletion {
   const safeFields = projectSafeQuestionFields(question);
+  const normalizedAnswer = String(question.correct_answer ?? "").toUpperCase();
+  const correctAnswer = normalizedAnswer === "A" || normalizedAnswer === "B" || normalizedAnswer === "C" || normalizedAnswer === "D"
+    ? (normalizedAnswer as "A" | "B" | "C" | "D")
+    : null;
+
   return {
     ...safeFields,
-    answer: question.answer as string,
-    answerChoice: (question.answerChoice ?? question.answer_choice ?? null) as string | null,
-    answerText: (question.answerText ?? question.answer_text ?? null) as string | null,
-    explanation: (question.explanation ?? null) as string | null,
-    classification: question.classification ?? null,
+    correct_answer: correctAnswer,
+    answer_text: (question.answer_text as string | null) ?? null,
+    explanation: (question.explanation as string | null) ?? null,
+    option_metadata: normalizeOptionMetadata(question.option_metadata),
   };
 }
 
@@ -1611,7 +1679,7 @@ export async function getExamReview(
   // Load user responses
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id, module_id, selected_answer, free_response_answer, is_correct, answered_at")
+    .select("question_id, module_id, selected_answer, is_correct, answered_at")
     .eq("session_id", sessionId);
 
   if (responsesError) {
@@ -1639,7 +1707,6 @@ export async function getExamReview(
     questionId: r.question_id,
     moduleId: r.module_id,
     selectedAnswer: r.selected_answer,
-    freeResponseAnswer: r.free_response_answer,
     isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
     answeredAt: r.answered_at,
   }));

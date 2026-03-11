@@ -129,7 +129,7 @@ function ReviewErrors() {
     
     setIsValidating(true);
     try {
-      const isMc = fullQuestion.type === 'mc';
+      const isMc = fullQuestion.question_type === 'multiple_choice';
       const studentAnswer = isMc ? selectedAnswer : freeResponseAnswer.trim();
       
       const response = await apiRequest('/api/questions/validate', {
@@ -158,7 +158,7 @@ function ReviewErrors() {
           method: 'POST',
           body: JSON.stringify({
             question_id: currentItem.questionId,
-            selected_answer: fullQuestion.type === 'mc' ? selectedAnswer : freeResponseAnswer.trim(),
+            selected_answer: selectedAnswer,
             is_correct: result.isCorrect,
             seconds_spent: null,
             source_context: 'review_errors',
@@ -369,7 +369,7 @@ function ReviewErrors() {
                   <MathRenderer content={fullQuestion.stem} displayMode={false} />
                 </div>
 
-                {fullQuestion.type === 'mc' && 'options' in fullQuestion && (fullQuestion as StudentMcQuestion).options.length > 0 ? (
+                {fullQuestion.question_type === 'multiple_choice' && 'options' in fullQuestion && (fullQuestion as StudentMcQuestion).options.length > 0 ? (
                   <div className="space-y-3">
                     {(fullQuestion as StudentMcQuestion).options.map((option, index) => {
                       const optionKey = String.fromCharCode(65 + index);
@@ -727,3 +727,4 @@ function ReviewErrors() {
 }
 
 export default ReviewErrors;
+

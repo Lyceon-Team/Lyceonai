@@ -21,29 +21,32 @@ export function getCompetencyDelta(source: 'practice' | 'review', eventType: 'co
 // ============================================================================
 // COMPETENCY MAPPING: Question -> Competency Tags
 // ============================================================================
-export function getCompetencyTags(question: { 
-  competencies?: string[] | null; 
-  tags?: string[] | string | null; 
-  unit_tag?: string | null;
+export function getCompetencyTags(question: {
+  competencies?: unknown;
+  tags?: unknown;
+  domain?: string | null;
+  skill?: string | null;
+  subskill?: string | null;
+  skill_code?: string | null;
   section?: string | null;
 }): string[] {
-  if (question.competencies && Array.isArray(question.competencies) && question.competencies.length > 0) {
-    return question.competencies;
+  if (Array.isArray(question.competencies)) {
+    const competencyCodes = question.competencies
+      .map((item: any) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && typeof item.code === "string") return item.code;
+        return null;
+      })
+      .filter((value): value is string => !!value);
+    if (competencyCodes.length > 0) return competencyCodes;
   }
-  if (question.tags) {
-    const tagArray = Array.isArray(question.tags) 
-      ? question.tags 
-      : typeof question.tags === 'string' 
-        ? question.tags.split(',').map(t => t.trim()).filter(Boolean)
-        : [];
-    if (tagArray.length > 0) {
-      return tagArray;
-    }
-  }
-  if (question.unit_tag) {
-    return [question.unit_tag];
-  }
-  const section = question.section?.toLowerCase().replace(/\s+/g, '_') || 'unknown';
+
+  if (question.skill_code) return [question.skill_code];
+
+  const fallbackParts = [question.domain, question.skill, question.subskill].filter(Boolean);
+  if (fallbackParts.length > 0) return [fallbackParts.join(".")];
+
+  const section = question.section?.toLowerCase().replace(/\s+/g, "_") || "unknown";
   return [`${section}.general`];
 }
 
@@ -56,7 +59,7 @@ export async function recordCompetencyEvent(
   sessionId: string | null,
   source: 'practice' | 'review',
   eventType: 'correct' | 'incorrect' | 'skipped',
-  question: { section?: string | null; unit_tag?: string | null; competencies?: string[] | null; tags?: string[] | string | null }
+  question: { section?: string | null; domain?: string | null; skill?: string | null; subskill?: string | null; skill_code?: string | null; competencies?: unknown; tags?: unknown }
 ): Promise<void> {
   try {
     const delta = getCompetencyDelta(source, eventType);
@@ -75,7 +78,6 @@ export async function recordCompetencyEvent(
         occurred_at: now,
         section: question.section || null,
         competency_tags: competencyTags,
-        unit_tag: question.unit_tag || null,
       });
 
     if (eventError) {
@@ -406,7 +408,7 @@ export const recordReviewAttempt = async (req: AuthenticatedRequest, res: Respon
 
     const { data: question, error: qError } = await supabaseServer
       .from('questions')
-      .select('id, section, unit_tag, competencies, tags')
+      .select('id, section, domain, skill, subskill, skill_code, competencies, tags')
       .eq('id', questionId)
       .single();
 
@@ -644,3 +646,6 @@ export const getRecencyKpis = async (req: AuthenticatedRequest, res: Response) =
     res.status(500).json({ error: 'Failed to calculate KPIs' });
   }
 };
+
+
+

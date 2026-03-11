@@ -1,124 +1,88 @@
-// server/routes/practice-canonical.ts
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
+import { z } from "zod";
+import crypto from "crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
-import { recordCompetencyEvent } from "../../apps/api/src/routes/progress";
-import { z } from "zod";
-import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
-import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
+import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
+import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
-
-
 
 const router = Router();
 const csrfProtection = csrfGuard();
 
-// Rate limiter for practice answer submissions
 const practiceAnswerRateLimiter = rateLimit({
-  windowMs: 60_000, // 1 minute window
-  max: 30, // max 30 requests per window
+  windowMs: 60_000,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => {
-    res.status(429).json({
-      error: "rate_limited",
-      message: "Too many practice submissions. Please slow down."
-    });
+  handler: (_req, res) => {
+    res.status(429).json({ error: "rate_limited", message: "Too many practice submissions. Please slow down." });
   },
 });
 
-/**
- * DB truth (from your questions_rows (6).csv):
- * questions has: id, section, stem, type, options, difficulty, classification, answer_choice, answer_text, explanation
- *
- * practice_sessions FK: user_id -> users(id)  (NOT auth.users)
- * answer_attempts FK: user_id -> auth.users(id)
- *
- * IMPORTANT:
- * - We must only serve MC questions if answer_choice exists.
- * - options is stored as JSON string in DB, must be parsed to array.
- * - correctness must be normalized to avoid whitespace/case mismatches.
- */
-
-type McOption = { key: string; text: string };
+type Option = { key: "A" | "B" | "C" | "D"; text: string };
 
 type SafeQuestionDTO = {
   id: string;
+  canonical_id: string | null;
   section: string;
+  section_code: "MATH" | "RW";
+  question_type: "multiple_choice";
   stem: string;
-  type: "mc" | "fr";
-  options: McOption[] | null;
-  difficulty: string | null;
-  classification: any;
+  options: [Option, Option, Option, Option];
+  difficulty: 1 | 2 | 3;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  tags: unknown | null;
+  competencies: unknown | null;
 };
 
-function toSafeQuestionDTO(q: any): SafeQuestionDTO {
-  return {
-    id: q.id,
-    section: q.section,
-    stem: q.stem,
-    type: q.type,
-    options: q.type === "mc" ? (q.options ?? null) : null,
-    difficulty: q.difficulty ?? null,
-    classification: q.classification ?? null,
-  };
+function normalizeSectionParam(section?: string | null): "MATH" | "RW" | "RANDOM" {
+  const s = String(section || "random").trim().toLowerCase();
+  if (s === "math" || s === "m") return "MATH";
+  if (s === "rw" || s === "reading-writing" || s === "reading" || s === "writing") return "RW";
+  return "RANDOM";
 }
 
-function normalizeKey(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  if (!s) return null;
-  return s.toUpperCase();
-}
-
-function safeParseOptions(raw: unknown): McOption[] {
-  let v: any = raw;
-
-  if (typeof v === "string") {
-    try {
-      v = JSON.parse(v);
-    } catch {
-      return [];
-    }
-  }
-
-  if (!Array.isArray(v)) return [];
-  const out: McOption[] = [];
-
-  for (const item of v) {
-    if (!item || typeof item !== "object") continue;
-    const key = typeof (item as any).key === "string" ? (item as any).key.trim() : "";
-    const text = typeof (item as any).text === "string" ? (item as any).text : "";
-    if (!key || !text) continue;
-    out.push({ key, text });
-  }
-
-  return out;
-}
-
-function isValidMcQuestion(row: any): boolean {
-  // Must have a letter key in answer_choice and >= 2 options
-  const correctKey = normalizeKey(row?.answer_choice);
-  const options = safeParseOptions(row?.options);
-  if (!correctKey) return false;
-  if (options.length < 2) return false;
-
-  // Must contain that key in options
-  const hasKey = options.some((o) => normalizeKey(o.key) === correctKey);
-  if (!hasKey) return false;
-
-  return true;
-}
-
-function normalizeSectionParam(section?: string | null): string | null {
-  if (!section) return null;
-  const s = section.trim().toLowerCase();
-  if (s === "math") return "Math";
-  if (s === "reading" || s === "rw" || s === "reading-writing") return "Reading";
-  if (s === "random") return "Random";
+function normalizeChoice(value: unknown): "A" | "B" | "C" | "D" | null {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (["A", "B", "C", "D"].includes(normalized)) return normalized as "A" | "B" | "C" | "D";
   return null;
+}
+
+function normalizeOptions(options: unknown): [Option, Option, Option, Option] | null {
+  if (!Array.isArray(options) || options.length !== 4) return null;
+  const parsed = options.map((opt: any) => ({ key: normalizeChoice(opt?.key), text: opt?.text }));
+  if (parsed.some((opt) => !opt.key || typeof opt.text !== "string" || opt.text.length === 0)) return null;
+  return parsed as [Option, Option, Option, Option];
+}
+
+function toSafeQuestion(row: any): SafeQuestionDTO | null {
+  const options = normalizeOptions(row.options);
+  const difficulty = Number(row.difficulty);
+  if (!options) return null;
+  if (difficulty !== 1 && difficulty !== 2 && difficulty !== 3) return null;
+
+  return {
+    id: row.id,
+    canonical_id: row.canonical_id ?? null,
+    section: row.section,
+    section_code: row.section_code,
+    question_type: "multiple_choice",
+    stem: row.stem,
+    options,
+    difficulty,
+    domain: row.domain ?? null,
+    skill: row.skill ?? null,
+    subskill: row.subskill ?? null,
+    skill_code: row.skill_code ?? null,
+    tags: row.tags ?? null,
+    competencies: row.competencies ?? null,
+  };
 }
 
 async function getSessionStats(sessionId: string, userId: string): Promise<{ correct: number; total: number; streak: number }> {
@@ -136,120 +100,58 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{ cor
   const total = attempts.length;
 
   let streak = 0;
-  for (const a of attempts) {
-    if ((a as any).outcome === "skipped") continue;
-    if ((a as any).is_correct) streak++;
+  for (const attempt of attempts) {
+    if (attempt.outcome === "skipped") continue;
+    if (attempt.is_correct) streak++;
     else break;
   }
 
   return { correct, total, streak };
 }
 
-async function pickRandomQuestion(args: {
-  section: "Math" | "Reading" | "Random";
-  userId: string;
-  sessionId?: string | null;
-}): Promise<
-  | {
-    question: SafeQuestionDTO;
-  }
-  | { error: string }
-> {
-  // Strategy:
-  // - Pull a randomized slice from questions (filtered by section when needed)
-  // - Filter out invalid MC rows (missing answer_choice/options/key mismatch)
-  // - Prefer questions not attempted in this session (if sessionId exists)
-  //   BUT DO NOT require attempts to exist (new students must still see questions).
-
-  const baseQuery = supabaseServer
+async function pickRandomQuestion(args: { section: "MATH" | "RW" | "RANDOM"; sessionId?: string | null }) {
+  let query = supabaseServer
     .from("questions")
-    .select("id, section, stem, type, options, difficulty, classification, answer_choice")
-    .order("created_at", { ascending: false }) // stable-ish base order
-    .limit(400); // cheap pool to sample from
+    .select("id, canonical_id, section, section_code, question_type, stem, options, correct_answer, difficulty, domain, skill, subskill, skill_code, tags, competencies")
+    .eq("status", "published")
+    .eq("question_type", "multiple_choice")
+    .order("created_at", { ascending: false })
+    .limit(400);
 
-  let q = baseQuery;
-  if (args.section === "Math") q = q.eq("section", "Math");
-  if (args.section === "Reading") q = q.eq("section", "Reading");
-  // Random => no section filter
+  if (args.section === "MATH") query = query.eq("section_code", "MATH");
+  if (args.section === "RW") query = query.eq("section_code", "RW");
 
-  const { data: pool, error } = await q;
+  const { data: pool, error } = await query;
   if (error) return { error: `questions_query_failed: ${error.message}` };
-  if (!pool || pool.length === 0) return { error: "no_questions_available" };
 
-  // Session attempts filter (soft preference)
-  let attempted = new Set<string>();
+  let attemptedIds = new Set<string>();
   if (args.sessionId) {
-    const { data: attempts, error: attemptsErr } = await supabaseServer
+    const { data: attempts } = await supabaseServer
       .from("answer_attempts")
       .select("question_id")
       .eq("session_id", args.sessionId);
-
-    if (!attemptsErr && attempts) {
-      attempted = new Set(attempts.map((a: any) => a.question_id).filter(Boolean));
-    }
+    attemptedIds = new Set((attempts || []).map((a: any) => a.question_id));
   }
 
-  // Filter invalid MC questions + build candidates (no explanation - secure DTO)
-  const candidates = pool
-    .map((row: any) => {
-      const type = row?.type === "fr" ? "fr" : "mc";
-      const options = type === "mc" ? safeParseOptions(row?.options) : null;
-      return {
-        id: row.id,
-        section: row.section,
-        stem: row.stem,
-        type,
-        options,
-        difficulty: row.difficulty ?? null,
-        classification: row.classification ?? null,
-        _answer_choice: row.answer_choice,
-      };
-    })
-    .filter((row: any) => {
-      if (row.type === "mc") {
-        // hard reject invalid MC
-        return isValidMcQuestion({ answer_choice: row._answer_choice, options: row.options });
-      }
-      // FR allowed even if no answer_choice
-      return true;
-    });
+  const candidates = (pool || []).map(toSafeQuestion).filter((q): q is SafeQuestionDTO => !!q);
+  if (!candidates.length) return { error: "no_valid_questions_available" };
 
-  if (candidates.length === 0) return { error: "no_valid_questions_available" };
-
-  // Prefer unattempted questions if possible
-  const unattempted = candidates.filter((c) => !attempted.has(c.id));
-  const pickFrom = unattempted.length > 0 ? unattempted : candidates;
-
-  // Random pick (crypto-safe not required)
-  const chosen = pickFrom[Math.floor(Math.random() * pickFrom.length)];
-
-  return {
-    question: toSafeQuestionDTO(chosen),
-  };
+  const unattempted = candidates.filter((q) => !attemptedIds.has(q.id));
+  const source = unattempted.length ? unattempted : candidates;
+  const picked = source[Math.floor(Math.random() * source.length)];
+  return { question: picked };
 }
 
-/**
- * GET /api/practice/next?section=math&mode=balanced
- * - creates/continues practice session
- * - returns next question
- */
 router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true }), async (req, res) => {
   const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required", requestId });
 
-  if (!userId) {
-    return res.status(401).json({ error: "Authentication required", message: "You must be signed in", requestId });
-  }
+  const section = normalizeSectionParam(String(req.query.section ?? "random"));
 
-  const sectionParam = normalizeSectionParam(String(req.query.section ?? "random"));
-  const section: "Math" | "Reading" | "Random" =
-    sectionParam === "Math" ? "Math" : sectionParam === "Reading" ? "Reading" : "Random";
-
-  // Find existing in_progress session for this user+section (best effort)
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")
-    .select("id, status")
+    .select("id")
     .eq("user_id", userId)
     .eq("section", section)
     .eq("status", "in_progress")
@@ -260,62 +162,40 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true })
   let sessionId = existingSession?.id ?? null;
 
   if (!sessionId) {
-    // Create new session
     const { data: newSession, error: sessionErr } = await supabaseServer
       .from("practice_sessions")
-      .insert({
-        user_id: userId, // must match users(id) FK in your DB
-        section,
-        status: "in_progress",
-        started_at: new Date().toISOString(),
-      })
+      .insert({ user_id: userId, section, status: "in_progress", started_at: new Date().toISOString() })
       .select("id")
       .single();
 
     if (sessionErr || !newSession?.id) {
-      return res.status(500).json({
-        error: "session_create_failed",
-        message: sessionErr?.message ?? "Unable to create practice session",
-        requestId,
-      });
+      return res.status(500).json({ error: "session_create_failed", detail: sessionErr?.message, requestId });
     }
 
     sessionId = newSession.id;
   }
 
-  const picked = await pickRandomQuestion({ section, userId, sessionId });
+  const picked = await pickRandomQuestion({ section, sessionId });
   if ("error" in picked) {
     return res.status(500).json({ error: "question_pick_failed", detail: picked.error, requestId });
   }
 
-  // Log practice_event (non-blocking)
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: sessionId,
-      question_id: picked.question.id,
-      event_type: "served",
-      created_at: new Date().toISOString(),
-    });
-  } catch {
-    // ignore
-  }
-
-  // Get session stats for rehydration
-  const stats = await getSessionStats(sessionId, userId);
-
-  return res.json({
-    sessionId,
-    question: picked.question,
-    stats,
+  await supabaseServer.from("practice_events").insert({
+    user_id: userId,
+    session_id: sessionId,
+    question_id: picked.question.id,
+    event_type: "served",
+    created_at: new Date().toISOString(),
   });
+
+  const stats = await getSessionStats(sessionId, userId);
+  return res.json({ sessionId, question: picked.question, stats });
 });
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
   questionId: z.string().uuid(),
   selectedAnswer: z.string().optional().nullable(),
-  freeResponseAnswer: z.string().optional().nullable(),
   skipped: z.boolean().optional(),
   elapsedMs: z.number().optional().nullable(),
   idempotencyKey: z.string().max(128).optional().nullable(),
@@ -323,84 +203,34 @@ const AnswerBodySchema = z.object({
 
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
   const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-
-  if (!userId) {
-    return res.status(401).json({ error: "Authentication required", message: "You must be signed in", requestId });
-  }
+  const userId = (req as any).user?.id;
+  if (!userId) return res.status(401).json({ error: "Authentication required", requestId });
 
   const parsed = AnswerBodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
-  }
+  if (!parsed.success) return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
 
-  const { sessionId, questionId, selectedAnswer, freeResponseAnswer, skipped, elapsedMs, idempotencyKey } = parsed.data;
+  const { sessionId, questionId, selectedAnswer, skipped, elapsedMs, idempotencyKey } = parsed.data;
 
-  // --- ENFORCE SESSION OWNERSHIP ---
-  // Load session and verify user_id matches authenticated user
-  const { data: sessionRow, error: sessionErr } = await supabaseServer
-    .from("practice_sessions")
-    .select("id, user_id")
-    .eq("id", sessionId)
-    .single();
-  if (sessionErr || !sessionRow) {
-    return res.status(404).json({ error: "session_not_found", message: "Practice session not found", requestId });
-  }
-  if (sessionRow.user_id !== userId) {
-    return res.status(403).json({ error: "forbidden", message: "Session does not belong to this user", requestId });
-  }
-  // --- END SESSION OWNERSHIP CHECK ---
+  const { data: sessionRow, error: sessionErr } = await supabaseServer.from("practice_sessions").select("id, user_id").eq("id", sessionId).single();
+  if (sessionErr || !sessionRow) return res.status(404).json({ error: "session_not_found", requestId });
+  if (sessionRow.user_id !== userId) return res.status(403).json({ error: "forbidden", requestId });
 
-  // Fetch canonical answer + explanation from DB
-  const { data: qRow, error: qErr } = await supabaseServer
+  const { data: question, error: qErr } = await supabaseServer
     .from("questions")
-    .select("id, type, answer_choice, answer_text, explanation, options")
+    .select("id, canonical_id, question_type, correct_answer, explanation")
     .eq("id", questionId)
     .single();
 
-  if (qErr || !qRow) {
-    return res.status(404).json({ error: "question_not_found", message: qErr?.message ?? "Not found", requestId });
-  }
+  if (qErr || !question) return res.status(404).json({ error: "question_not_found", requestId });
+  if (question.question_type !== "multiple_choice") return res.status(422).json({ error: "invalid_question_data", requestId });
 
-  const qType: "mc" | "fr" = qRow.type === "fr" ? "fr" : "mc";
-  const correctAnswerKeyRaw = qType === "mc" ? qRow.answer_choice : qRow.answer_text;
-  const correctAnswerKey = normalizeKey(correctAnswerKeyRaw); // IMPORTANT normalization
-  const explanation: string | null = typeof qRow.explanation === "string" && qRow.explanation.trim() ? qRow.explanation : null;
+  const correctAnswer = normalizeChoice(question.correct_answer);
+  if (!correctAnswer) return res.status(422).json({ error: "invalid_question_data", requestId });
 
-  // Hard rule: do not allow MC grading if answer_choice missing.
-  // Also: do not show these questions in /next, but this protects older sessions.
-  if (qType === "mc" && !correctAnswerKey) {
-    return res.status(422).json({
-      error: "invalid_question_data",
-      message: "This question is missing an answer key and cannot be graded.",
-      requestId,
-    });
-  }
-
-  // Determine chosen value
-  const chosenRaw = skipped ? null : qType === "mc" ? selectedAnswer ?? null : freeResponseAnswer ?? null;
-  const chosen = normalizeKey(chosenRaw);
-
-  let isCorrect = false;
-  if (skipped) {
-    isCorrect = false;
-  } else if (qType === "mc") {
-    isCorrect = !!chosen && !!correctAnswerKey && chosen === correctAnswerKey;
-  } else {
-    // FR: simple normalized string compare (upgrade later)
-    isCorrect = !!chosen && !!correctAnswerKey && chosen === correctAnswerKey;
-  }
-
+  const chosen = skipped ? null : normalizeChoice(selectedAnswer);
+  const isCorrect = !!chosen && chosen === correctAnswer;
   const outcome = skipped ? "skipped" : isCorrect ? "correct" : "incorrect";
 
-  // Clamp time_spent_ms to 0-30 minutes for data integrity
-  const clampedTimeSpentMs = typeof elapsedMs === "number"
-    ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000)
-    : null;
-
-  // Insert answer attempt (MUST include user_id for RLS + FK auth.users)
-  // Note: user_id FK is auth.users(id). We assume req.user.id is auth uid.
   const attemptId = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -409,64 +239,27 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     user_id: userId,
     session_id: sessionId,
     question_id: questionId,
-    selected_answer: qType === "mc" ? (selectedAnswer ?? null) : null,
-    free_response_answer: qType === "fr" ? (freeResponseAnswer ?? null) : null,
-    chosen: chosenRaw ?? null,
+    selected_answer: chosen,
     is_correct: isCorrect,
     outcome,
-    time_spent_ms: clampedTimeSpentMs,
+    time_spent_ms: typeof elapsedMs === "number" ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000) : null,
     attempted_at: now,
     client_attempt_id: idempotencyKey ?? null,
   });
 
-  // If unique(user_id, client_attempt_id) or unique(session_id, question_id) hits because user answered twice, 
-  // we still return grade. But we want deterministic behavior, so we won't fail the UI.
-  if (insErr && String(insErr.message || "").toLowerCase().includes("duplicate")) {
-    if (idempotencyKey) {
-      // It's a true idempotent retry. Fetch the previous outcome and return exactly that.
-      const { data: existing } = await supabaseServer
-        .from("answer_attempts")
-        .select("is_correct, outcome")
-        .eq("user_id", userId)
-        .eq("client_attempt_id", idempotencyKey)
-        .single();
-
-      if (existing) {
-        return res.json({
-          isCorrect: existing.is_correct,
-          mode: qType,
-          correctAnswerKey: correctAnswerKey ?? null,
-          explanation,
-          feedback: existing.is_correct ? "Correct" : existing.outcome === "skipped" ? "Skipped" : "Incorrect",
-          stats: await getSessionStats(sessionId, userId),
-          idempotentRetried: true,
-        });
-      }
-    }
-  } else if (insErr) {
-    // non-blocking insert failure
-    console.error("[practice] answer_attempts insert failed", { requestId, message: insErr.message });
+  if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
+    return res.status(500).json({ error: "attempt_insert_failed", detail: insErr.message, requestId });
   }
 
-  // practice_events (non-blocking)
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: sessionId,
-      question_id: questionId,
-      event_type: "answered",
-      created_at: now,
-      payload: {
-        outcome,
-        isCorrect,
-      },
-    });
-  } catch {
-    // ignore
-  }
+  await supabaseServer.from("practice_events").insert({
+    user_id: userId,
+    session_id: sessionId,
+    question_id: questionId,
+    event_type: "answered",
+    created_at: now,
+    payload: { outcome, isCorrect },
+  });
 
-  // Log to student_question_attempts + update mastery rollups
-  // MASTERY V1.0: Use PRACTICE_SUBMIT event type for proper weighting
   try {
     const metadata = await getQuestionMetadataForAttempt(questionId);
     if (metadata.canonicalId) {
@@ -475,8 +268,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
         questionCanonicalId: metadata.canonicalId,
         sessionId,
         isCorrect,
-        selectedChoice: qType === "mc" ? (selectedAnswer ?? null) : null,
-        timeSpentMs: clampedTimeSpentMs,
+        selectedChoice: chosen,
+        timeSpentMs: typeof elapsedMs === "number" ? elapsedMs : null,
         eventType: MasteryEventType.PRACTICE_SUBMIT,
         metadata: {
           exam: metadata.exam,
@@ -484,26 +277,28 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
           domain: metadata.domain,
           skill: metadata.skill,
           subskill: metadata.subskill,
-          difficulty_bucket: metadata.difficulty_bucket,
+          difficulty: metadata.difficulty,
+          skill_code: metadata.skill_code,
           structure_cluster_id: metadata.structure_cluster_id,
         },
       });
     }
-  } catch (masteryErr: any) {
-    console.warn("[practice] mastery logging failed", { requestId, message: masteryErr?.message });
+  } catch (error: any) {
+    console.warn("[practice] mastery logging failed", error?.message);
   }
 
-  // Get updated session stats
   const stats = await getSessionStats(sessionId, userId);
 
   return res.json({
     isCorrect,
-    mode: qType,
-    correctAnswerKey: correctAnswerKey ?? null,
-    explanation,
+    question_type: "multiple_choice",
+    correctAnswerKey: correctAnswer,
+    explanation: question.explanation || null,
     feedback: isCorrect ? "Correct" : skipped ? "Skipped" : "Incorrect",
     stats,
   });
 });
 
 export default router;
+
+

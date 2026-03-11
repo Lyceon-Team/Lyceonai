@@ -4,7 +4,6 @@
  * per PRP — RAG Retrieval v2 specifications
  */
 
-import { questions, userProgress } from '../../../../shared/schema';
 import { generateEmbedding } from './embeddings';
 import { matchSimilar, MatchResult } from './vector';
 import { supabaseServer } from './supabase-server';
@@ -42,7 +41,7 @@ export interface ScoredMatch extends MatchResult {
  */
 export interface ScoringContext {
   targetCompetencies: string[];
-  targetDifficulty: string | null;
+  targetDifficulty: 1 | 2 | 3 | null;
   studentWeakAreas: string[];
 }
 
@@ -53,7 +52,7 @@ export interface VectorClient {
   matchSimilar(
     queryEmbedding: number[],
     topK: number,
-    section?: "Reading" | "Writing" | "Math",
+    section?: "RW" | "MATH",
     exam?: string
   ): Promise<MatchResult[]>;
 }
@@ -251,12 +250,19 @@ export class RagService {
   }
 
   /**
-   * Extract difficulty from match metadata or section info
+   * Extract canonical numeric difficulty from match metadata.
    */
-  private extractDifficulty(match: MatchResult): string | null {
-    if (match.metadata?.difficulty) {
-      return String(match.metadata.difficulty).toLowerCase();
+  private extractDifficulty(match: MatchResult): 1 | 2 | 3 | null {
+    const raw = match.metadata?.difficulty;
+    if (raw === 1 || raw === 2 || raw === 3) {
+      return raw;
     }
+
+    const parsed = Number(raw);
+    if (parsed === 1 || parsed === 2 || parsed === 3) {
+      return parsed as 1 | 2 | 3;
+    }
+
     return null;
   }
 
@@ -290,25 +296,15 @@ export class RagService {
    * 1 if equal, 0.5 if adjacent, 0 otherwise
    */
   private computeDifficultyMatch(
-    targetDifficulty: string | null,
-    matchDifficulty: string | null
+    targetDifficulty: 1 | 2 | 3 | null,
+    matchDifficulty: 1 | 2 | 3 | null
   ): number {
     if (!targetDifficulty || !matchDifficulty) return 0;
 
-    const target = targetDifficulty.toLowerCase();
-    const match = matchDifficulty.toLowerCase();
-
-    if (target === match) return 1;
-
-    // Define adjacency: easy <-> medium <-> hard
-    const difficultyOrder = ['easy', 'medium', 'hard'];
-    const targetIdx = difficultyOrder.indexOf(target);
-    const matchIdx = difficultyOrder.indexOf(match);
-
-    if (targetIdx === -1 || matchIdx === -1) return 0;
+    if (targetDifficulty === matchDifficulty) return 1;
 
     // Adjacent if difference is 1
-    if (Math.abs(targetIdx - matchIdx) === 1) return 0.5;
+    if (Math.abs(targetDifficulty - matchDifficulty) === 1) return 0.5;
 
     return 0;
   }
@@ -408,7 +404,7 @@ export class RagService {
     }
 
     // No target difficulty in concept mode (open exploration)
-    const targetDifficulty: string | null = null;
+    const targetDifficulty: 1 | 2 | 3 | null = null;
 
     // Extract student weak areas from profile
     const studentWeakAreas = this.extractStudentWeakAreas(studentProfile);
@@ -502,29 +498,39 @@ export class RagService {
       let competencyMap: Record<string, { correct: number; incorrect: number; total: number }> = {};
       
       try {
-        // Use Supabase RPC or direct query for user progress aggregation
+        // Use Supabase HTTP query for user progress aggregation
         const { data: progressData, error: progressError } = await supabaseServer
           .from('user_progress')
           .select(`
             is_correct,
-            questions!inner(section, unit_tag)
+            questions!inner(section_code, domain, skill, subskill, skill_code)
           `)
           .eq('user_id', userId);
 
         if (!progressError && progressData) {
           // Aggregate progress manually since Supabase doesn't support GROUP BY
           const aggregated: Record<string, { correct: number; incorrect: number; total: number }> = {};
-          
+
           for (const row of progressData) {
             const question = (row as any).questions;
-            const sectionCode = question?.section?.toLowerCase().includes('math') ? 'M' : 'RW';
-            const unitCode = question?.unit_tag?.replace(/\s+/g, '_').toUpperCase() || 'GENERAL';
-            const competencyCode = `${sectionCode}.${unitCode}`;
-            
+            const sectionCode = question?.section_code === 'MATH' ? 'MATH' : 'RW';
+
+            const explicitSkillCode = typeof question?.skill_code === 'string' && question.skill_code.trim().length > 0
+              ? question.skill_code.trim()
+              : null;
+
+            const taxonomyFallback = [question?.domain, question?.skill, question?.subskill]
+              .filter((part: unknown) => typeof part === 'string' && part.trim().length > 0)
+              .map((part: unknown) => String(part).trim())
+              .join('.');
+
+            const competencyCode = explicitSkillCode
+              ?? (taxonomyFallback.length > 0 ? taxonomyFallback : `${sectionCode}.GENERAL`);
+
             if (!aggregated[competencyCode]) {
               aggregated[competencyCode] = { correct: 0, incorrect: 0, total: 0 };
             }
-            
+
             aggregated[competencyCode].total += 1;
             if (row.is_correct) {
               aggregated[competencyCode].correct += 1;
@@ -532,7 +538,7 @@ export class RagService {
               aggregated[competencyCode].incorrect += 1;
             }
           }
-          
+
           competencyMap = aggregated;
         }
       } catch (progressError: any) {
@@ -614,31 +620,31 @@ export class RagService {
    * Convert database row to QuestionContext
    */
   private dbRowToQuestionContext(row: any): QuestionContext {
-    return {
-      canonicalId: row.canonicalId || row.id,
-      testCode: row.testCode || 'SAT',
-      sectionCode: row.sectionCode || this.sectionToCode(row.section),
-      sourceType: row.sourceType || 1,
+    return this.supabaseRowToQuestionContext({
+      canonical_id: row.canonical_id ?? row.canonicalId ?? row.id,
+      test_code: row.test_code ?? row.testCode ?? 'SAT',
+      section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
+      source_type: row.source_type ?? row.sourceType ?? 0,
       stem: row.stem,
-      options: (row.options as Array<{ key: string; text: string }>) || [],
-      answer: row.answerChoice || row.answer || null,
-      explanation: row.explanation || null,
-      competencies: (row.competencies as Competency[]) || [],
-      difficulty: row.difficulty || null,
-      tags: (row.tags as string[]) || [],
-    };
+      options: row.options,
+      correct_answer: row.correct_answer ?? row.correctAnswer ?? null,
+      explanation: row.explanation ?? null,
+      competencies: row.competencies ?? [],
+      difficulty: row.difficulty ?? null,
+      tags: row.tags ?? null,
+    });
   }
 
   /**
-   * Map section name to section code
+   * Map section name to canonical section code
    */
-  private sectionToCode(section: string | null): string {
-    if (!section) return 'M';
+  private sectionToCode(section: string | null): 'MATH' | 'RW' {
+    if (!section) return 'RW';
     const s = section.toLowerCase();
-    if (s.includes('reading') || s.includes('writing') || s === 'rw') {
-      return 'RW';
+    if (s.includes('math')) {
+      return 'MATH';
     }
-    return 'M';
+    return 'RW';
   }
 
   /**
@@ -703,9 +709,9 @@ export class RagService {
 
     // 2. Build filters from request OR primary question
     const testCode = request.testCode || primaryQuestion?.testCode || 'SAT';
-    const sectionCode = request.sectionCode || primaryQuestion?.sectionCode || 'M';
-    const section = sectionCode === 'M' ? 'Math' : 
-                    sectionCode === 'RW' ? 'Reading' : undefined;
+    const sectionCode = request.sectionCode || primaryQuestion?.sectionCode || 'MATH';
+    const section = sectionCode === 'MATH' ? 'MATH' : 
+                    sectionCode === 'RW' ? 'RW' : undefined;
 
     // Build scoring context with competencies from primary question
     const scoringContext = this.buildScoringContext(primaryQuestion, studentProfile);
@@ -799,8 +805,8 @@ export class RagService {
 
     // Build filters from request
     const testCode = request.testCode || 'SAT';
-    const section = request.sectionCode === 'M' ? 'Math' : 
-                    request.sectionCode === 'RW' ? 'Reading' : undefined;
+    const section = request.sectionCode === 'MATH' ? 'MATH' : 
+                    request.sectionCode === 'RW' ? 'RW' : undefined;
 
     // Build scoring context from request (no primary question)
     const scoringContext = this.buildScoringContextFromRequest(request, studentProfile);
@@ -945,20 +951,39 @@ export class RagService {
    * Convert Supabase row (snake_case) to QuestionContext
    */
   private supabaseRowToQuestionContext(row: any): QuestionContext {
-    const competencies = (row.competencies as Competency[]) || [];
+    const competencies = Array.isArray(row.competencies)
+      ? (row.competencies as Competency[])
+      : [];
+
+    const sectionCode = row.section_code === 'MATH' || row.section_code === 'RW'
+      ? row.section_code
+      : this.sectionToCode(row.section ?? null);
+
+    const sourceType = row.source_type === 0 || row.source_type === 1 || row.source_type === 2 || row.source_type === 3
+      ? row.source_type
+      : 0;
+
+    const difficulty = row.difficulty === 1 || row.difficulty === 2 || row.difficulty === 3
+      ? row.difficulty
+      : null;
+
+    const normalizedAnswer = String(row.correct_answer ?? '').toUpperCase();
+    const correctAnswer = normalizedAnswer === 'A' || normalizedAnswer === 'B' || normalizedAnswer === 'C' || normalizedAnswer === 'D'
+      ? (normalizedAnswer as 'A' | 'B' | 'C' | 'D')
+      : null;
 
     return {
       canonicalId: row.canonical_id || row.id,
       testCode: row.test_code || 'SAT',
-      sectionCode: row.section_code || this.sectionToCode(row.section),
-      sourceType: row.source_type || 1,
+      sectionCode,
+      sourceType,
       stem: row.stem,
-      options: (row.options as Array<{ key: string; text: string }>) || [],
-      answer: row.answer_choice || row.answer || null,
+      options: Array.isArray(row.options) ? (row.options as Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>) : [],
+      correctAnswer,
       explanation: row.explanation || null,
       competencies,
-      difficulty: row.difficulty || null,
-      tags: (row.tags as string[]) || [],
+      difficulty,
+      tags: row.tags ?? null,
     };
   }
 
@@ -1003,8 +1028,8 @@ export class RagService {
    * Exposed for testing: Compute difficulty match score
    */
   public testComputeDifficultyMatch(
-    targetDifficulty: string | null,
-    matchDifficulty: string | null
+    targetDifficulty: 1 | 2 | 3 | null,
+    matchDifficulty: 1 | 2 | 3 | null
   ): number {
     return this.computeDifficultyMatch(targetDifficulty, matchDifficulty);
   }
@@ -1099,3 +1124,5 @@ export function getRagService(): RagService {
   }
   return ragServiceInstance;
 }
+
+

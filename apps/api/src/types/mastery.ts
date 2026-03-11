@@ -72,7 +72,13 @@ export interface MasteryUpdateParams {
     domain: string | null;
     skill: string | null;
     subskill: string | null;
-    difficulty_bucket: string | null;
+    skill_code: string | null;
+    difficulty: 1 | 2 | 3 | null;
     structure_cluster_id: string | null;
   };
 }
+
+
+
+
+

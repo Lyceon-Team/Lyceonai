@@ -1,31 +1,29 @@
 // apps/api/src/services/exams/__tests__/exam-form-builder.test.ts
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { buildGeneratedFullLengthFormFromPool, type QuestionRow } from '../exam-form-builder';
 
 function q(
   canonical_id: string,
-  section_code: 'RW' | 'Math',
+  section_code: 'RW' | 'MATH',
   domain: string,
   skill: string,
-  difficulty_bucket: 'easy' | 'medium' | 'hard',
-  difficulty_level: number
+  difficulty: 1 | 2 | 3,
 ): QuestionRow {
   return {
     canonical_id,
     section_code,
-    section: section_code,
-    type: 'mc',
+    section: section_code === 'RW' ? 'Reading and Writing' : 'Math',
+    question_type: 'multiple_choice',
     domain,
     skill,
     subskill: null,
-    difficulty_bucket,
-    difficulty_level,
-    question_type: 'mc',
+    skill_code: `${section_code}.${domain}.${skill}`,
+    difficulty,
+    status: 'published',
   };
 }
 
 function makePool(): QuestionRow[] {
-  // Build enough items to satisfy module sizes.
   const out: QuestionRow[] = [];
 
   const rwDomains = [
@@ -37,20 +35,18 @@ function makePool(): QuestionRow[] {
 
   let c = 1;
 
-  // RW: 60+ items across domains and buckets
   for (const d of rwDomains) {
     for (let i = 0; i < 40; i++) {
-      const bucket = i < 15 ? 'easy' : i < 30 ? 'medium' : 'hard';
-      out.push(q(`RW_${d}_${c++}`, 'RW', d, `skill_${i % 5}`, bucket, i + 1));
+      const difficulty: 1 | 2 | 3 = i < 15 ? 1 : i < 30 ? 2 : 3;
+      out.push(q(`RW_${d}_${c++}`, 'RW', d, `skill_${i % 5}`, difficulty));
     }
   }
 
-  // Math: 80+ items mixed domains
   const mathDomains = ['Algebra', 'Advanced Math', 'Problem Solving and Data Analysis', 'Geometry and Trigonometry'];
   for (const d of mathDomains) {
     for (let i = 0; i < 50; i++) {
-      const bucket = i < 18 ? 'easy' : i < 36 ? 'medium' : 'hard';
-      out.push(q(`M_${d}_${c++}`, 'Math', d, `skill_${i % 7}`, bucket, i + 1));
+      const difficulty: 1 | 2 | 3 = i < 18 ? 1 : i < 36 ? 2 : 3;
+      out.push(q(`M_${d}_${c++}`, 'MATH', d, `skill_${i % 7}`, difficulty));
     }
   }
 
@@ -137,6 +133,5 @@ it('variation: different seeds yield different selection (usually)', () => {
   const a = buildGeneratedFullLengthFormFromPool({ seed: 'seed-a', constraintVersion: 1, questions: pool });
   const b = buildGeneratedFullLengthFormFromPool({ seed: 'seed-b', constraintVersion: 1, questions: pool });
 
-  // Not guaranteed in pathological pools, but should differ in normal pools.
   expect(a.itemsByModule.RW1.map((x) => x.canonicalId)).not.toEqual(b.itemsByModule.RW1.map((x) => x.canonicalId));
 });

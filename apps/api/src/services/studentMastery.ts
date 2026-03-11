@@ -43,9 +43,9 @@ export async function getQuestionMetadataForAttempt(
       domain,
       skill,
       subskill,
-      difficulty_bucket,
+      difficulty,
       structure_cluster_id,
-      unit_tag
+      skill_code
     `)
     .eq("id", questionId)
     .single();
@@ -59,7 +59,8 @@ export async function getQuestionMetadataForAttempt(
       domain: null,
       skill: null,
       subskill: null,
-      difficulty_bucket: null,
+      skill_code: null,
+      difficulty: null,
       structure_cluster_id: null,
     };
   }
@@ -69,9 +70,10 @@ export async function getQuestionMetadataForAttempt(
     exam: data.exam || null,
     section: data.section || null,
     domain: data.domain || null,
-    skill: data.skill || data.unit_tag || null,
+    skill: data.skill || null,
     subskill: data.subskill || null,
-    difficulty_bucket: data.difficulty_bucket || null,
+    skill_code: data.skill_code || null,
+    difficulty: (data.difficulty === 1 || data.difficulty === 2 || data.difficulty === 3) ? data.difficulty : null,
     structure_cluster_id: data.structure_cluster_id || null,
   };
 }
@@ -266,3 +268,9 @@ export async function getMasterySummary(
 
   return result;
 }
+
+
+
+
+
+

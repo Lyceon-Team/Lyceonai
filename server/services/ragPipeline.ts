@@ -250,9 +250,7 @@ export class RAGPipeline {
           canonicalId: questionDoc?.canonicalId,
           testCode: questionDoc?.testCode,
           sectionCode: questionDoc?.sectionCode,
-          competencyCodes: questionDoc?.competencies?.map(c => c.code),
-          questionNumber: questionDoc?.questionNumber || undefined,
-        };
+          competencyCodes: questionDoc?.competencies?.map(c => c.code),        };
 
         await this.upsertEmbeddings(chunks, dbId, metadata);
         
@@ -291,3 +289,5 @@ export class RAGPipeline {
     return false;
   }
 }
+
+

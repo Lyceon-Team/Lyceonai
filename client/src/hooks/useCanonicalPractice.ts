@@ -4,17 +4,18 @@ export type PracticeSectionParam = "math" | "reading-writing" | "random";
 
 export type PracticeQuestion = {
   id: string;
-  type: "mc" | "fr";
+  question_type: "multiple_choice";
   stem: string;
   section?: string | null;
-  options?: { key?: string | null; text?: string | null; value?: string | null }[] | null;
+  section_code?: "MATH" | "RW" | null;
+  options?: { key?: string | null; text?: string | null }[] | null;
+  difficulty?: 1 | 2 | 3 | null;
 };
 
 export type PracticeNextResponse = {
   question: PracticeQuestion | null;
   totalQuestions?: number;
   currentIndex?: number;
-  // If your backend now returns stats, keep this optional to avoid breaking.
   stats?: {
     correct?: number;
     incorrect?: number;
@@ -28,7 +29,6 @@ export type PracticeAnswerResponse = {
   isCorrect: boolean;
   correctAnswerKey?: string | null;
   explanation?: string | null;
-  // If your backend returns stats here too, keep optional.
   stats?: {
     correct?: number;
     incorrect?: number;
@@ -86,9 +86,8 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
   const canSubmit = useMemo(() => {
     if (!question) return false;
-    if (question.type === "mc") return !!selectedAnswer;
-    return freeResponseAnswer.trim().length > 0;
-  }, [question, selectedAnswer, freeResponseAnswer]);
+    return !!selectedAnswer;
+  }, [question, selectedAnswer]);
 
   const resetPerQuestionState = useCallback(() => {
     setSelectedAnswer(null);
@@ -118,7 +117,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
 
-      // If backend returns stats (rehydration), adopt it.
       if (data.stats) {
         setScore((prev) => mergeStats(prev, data.stats));
       }
@@ -146,8 +144,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
         const payload = {
           questionId: question.id,
-          selectedAnswer: question.type === "mc" ? (opts.skipped ? null : selectedAnswer) : null,
-          freeResponseAnswer: question.type === "fr" ? (opts.skipped ? "" : freeResponseAnswer) : "",
+          selectedAnswer: opts.skipped ? null : selectedAnswer,
           elapsedMs,
           skipped: opts.skipped,
         };
@@ -163,11 +160,9 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
         const data = (await res.json()) as PracticeAnswerResponse;
 
-        // Prefer server stats if available (deterministic session rehydration).
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));
         } else {
-          // Fallback: client increments if server doesn’t provide stats.
           setScore((prev) => {
             const next = { ...prev };
             next.total = prev.total + 1;
@@ -189,7 +184,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           });
         }
 
-        // Skip immediately advances.
         if (opts.skipped) {
           await fetchNextQuestion();
           return;
@@ -208,7 +202,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setIsSubmitting(false);
       }
     },
-    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer]
+    [fetchNextQuestion, question, selectedAnswer]
   );
 
   const nextQuestion = useCallback(async () => {
@@ -217,7 +211,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
   const handleMissingMcChoices = useCallback(async () => {
     if (!question) return;
-    if (question.type !== "mc") return;
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
 

@@ -91,7 +91,7 @@ router.get('/practice', async (req: Request, res: Response) => {
     const admin = getSupabaseAdmin();
 
     const requiredColumns: Record<string, string[]> = {
-      questions: ['id', 'section', 'stem', 'options', 'difficulty', 'classification', 'answer_choice', 'answer_text', 'explanation'],
+      questions: ['id', 'canonical_id', 'status', 'section', 'section_code', 'question_type', 'stem', 'options', 'correct_answer', 'answer_text', 'explanation', 'option_metadata', 'difficulty', 'source_type', 'domain', 'skill', 'subskill', 'skill_code'],
       practice_sessions: ['id', 'user_id', 'section', 'status', 'started_at'],
       answer_attempts: ['id', 'user_id', 'session_id', 'question_id', 'selected_answer', 'is_correct', 'attempted_at'],
       practice_events: ['id', 'user_id', 'event_type', 'created_at'],
@@ -155,3 +155,4 @@ router.get('/practice', async (req: Request, res: Response) => {
 });
 
 export default router;
+

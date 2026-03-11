@@ -25,7 +25,6 @@ const csrfProtection = csrfGuard();
 const submitAnswerSchema = z.object({
   questionId: z.string().uuid(),
   selectedAnswer: z.string().optional(),
-  freeResponseAnswer: z.string().optional(),
 });
 
 // ============================================================================
@@ -167,7 +166,6 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
       userId: req.user.id,
       questionId: parsed.data.questionId,
       selectedAnswer: parsed.data.selectedAnswer,
-      freeResponseAnswer: parsed.data.freeResponseAnswer,
     });
 
     return res.json({ success: true });
@@ -325,3 +323,6 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
 });
 
 export default router;
+
+
+

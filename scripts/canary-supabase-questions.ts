@@ -2,32 +2,43 @@ import { supabaseServer } from "../apps/api/src/lib/supabase-server";
 import { generateCanonicalId } from "../apps/api/src/lib/canonicalId";
 
 (async () => {
-  const canonical_id = generateCanonicalId("SAT", "R", "2");
+  const canonical_id = generateCanonicalId("SAT", "RW", 1);
 
   const row: any = {
     canonical_id,
-    section: "Reading",
-    stem: "CANARY: does insert work via supabaseServer?",
+    status: "draft",
+    section: "Reading and Writing",
+    section_code: "RW",
     question_type: "multiple_choice",
-    type: "mc",
+    stem: "CANARY: does canonical insert work via supabaseServer?",
     options: [
       { key: "A", text: "A" },
       { key: "B", text: "B" },
       { key: "C", text: "C" },
-      { key: "D", text: "D" }
+      { key: "D", text: "D" },
     ],
-    answer: "A",
-    answer_choice: "A",
+    correct_answer: "A",
     answer_text: "A",
     explanation: "canary",
-    difficulty: "Easy",
-    difficulty_level: 1,
-    tags: [],
-    classification: {},
-    source_mapping: { canary: true, origin: "scripts/canary-supabase-questions.ts" },
-    parsing_metadata: { canary: true },
-    confidence: 0.01,
-    needs_review: true,
+    option_metadata: {
+      A: { role: "correct", error_taxonomy: null },
+      B: { role: "distractor", error_taxonomy: null },
+      C: { role: "distractor", error_taxonomy: null },
+      D: { role: "distractor", error_taxonomy: null },
+    },
+    domain: "Information and Ideas",
+    skill: "Central Ideas and Details",
+    subskill: "Determine central idea",
+    skill_code: "RW.INFO.CENTRAL_IDEA",
+    difficulty: 2,
+    source_type: 1,
+    test_code: "SAT",
+    exam: "SAT",
+    ai_generated: true,
+    tags: ["canary"],
+    competencies: [{ code: "RW.INFO.CENTRAL_IDEA", raw: "determine central idea" }],
+    diagram_present: false,
+    provenance_chunk_ids: null,
   };
 
   console.log("CANARY canonical_id:", canonical_id);

@@ -52,7 +52,6 @@ interface ExamModule {
   id: string;
   section: string;
   module_index: number;
-  difficulty_bucket: string | null;
   status: string;
   started_at: string | null;
   ends_at: string | null;
@@ -63,16 +62,15 @@ interface ExamQuestion {
   id: string;
   stem: string;
   section: string;
-  type: "mc" | "fr";
-  options: Array<{ key: string; text: string }> | null;
-  difficulty: string | null;
+  question_type: "multiple_choice";
+  options: Array<{ key: string; text: string }>;
+  difficulty: 1 | 2 | 3 | null;
   orderIndex: number;
   moduleQuestionCount: number;
   answeredCount: number;
   // Previously submitted answer (for resume support)
   submittedAnswer?: {
     selectedAnswer?: string;
-    freeResponseAnswer?: string;
   };
 }
 
@@ -134,7 +132,6 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [freeResponseAnswer, setFreeResponseAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<CompleteExamResult | null>(null);
   
@@ -181,11 +178,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           if (data.currentQuestion.submittedAnswer) {
             // Resume: restore previously submitted answer
             setSelectedAnswer(data.currentQuestion.submittedAnswer.selectedAnswer || null);
-            setFreeResponseAnswer(data.currentQuestion.submittedAnswer.freeResponseAnswer || "");
           } else {
             // New question: clear inputs
             setSelectedAnswer(null);
-            setFreeResponseAnswer("");
           }
         }
         // If same question, keep current UI state (don't wipe on every poll)
@@ -259,7 +254,6 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           body: JSON.stringify({
             questionId,
             selectedAnswer: selectedAnswer || undefined,
-            freeResponseAnswer: freeResponseAnswer || undefined,
           }),
         }
       );
@@ -282,7 +276,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [sessionId, selectedAnswer, freeResponseAnswer, fetchSessionState, toast]);
+  }, [sessionId, selectedAnswer, fetchSessionState, toast]);
   
   // ============================================================================
   // MODULE SUBMISSION
@@ -638,13 +632,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           <div>
             <h1 className="text-2xl font-bold">
               {getSectionLabel(sessionState.session.current_section, sessionState.session.current_module)}
-            </h1>
-            {currentModule.difficulty_bucket && (
-              <Badge variant="outline" className="mt-1">
-                {currentModule.difficulty_bucket} difficulty
-              </Badge>
-            )}
-          </div>
+            </h1>`r`n          </div>
           
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -679,14 +667,14 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
               question={{
                 id: currentQuestion.id,
                 stem: currentQuestion.stem,
-                type: currentQuestion.type,
+                question_type: "multiple_choice",
                 section: currentQuestion.section,
                 options: currentQuestion.options,
               }}
               selectedAnswer={selectedAnswer}
               onSelectAnswer={setSelectedAnswer}
-              freeResponseAnswer={freeResponseAnswer}
-              onFreeResponseAnswerChange={setFreeResponseAnswer}
+              freeResponseAnswer=""
+              onFreeResponseAnswerChange={() => {}}
               showResult={false}
               disabled={submitting}
             />
@@ -696,7 +684,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         {/* Navigation */}
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground">
-            {selectedAnswer || freeResponseAnswer ? (
+            {selectedAnswer ? (
               <span className="flex items-center gap-1 text-green-600">
                 <CheckCircle2 className="h-4 w-4" />
                 Answer selected
@@ -710,7 +698,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             {!allAnswered && (
               <Button
                 onClick={() => submitAnswer(currentQuestion.id)}
-                disabled={submitting || (!selectedAnswer && !freeResponseAnswer)}
+                disabled={submitting || !selectedAnswer}
                 size="lg"
               >
                 {submitting ? "Submitting..." : "Next"}
@@ -746,3 +734,5 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     </AppShell>
   );
 }
+
+

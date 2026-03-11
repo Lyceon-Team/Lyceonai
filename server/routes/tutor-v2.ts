@@ -229,10 +229,10 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     }
     // Remove answer/explanation if not allowed
     if (primaryQuestion && !canReveal) {
-      primaryQuestion = { ...primaryQuestion, answer: null, explanation: null };
+      primaryQuestion = { ...primaryQuestion, correctAnswer: null, explanation: null };
     }
     if (!canReveal) {
-      supportingQuestions = supportingQuestions.map(q => ({ ...q, answer: null, explanation: null }));
+      supportingQuestions = supportingQuestions.map(q => ({ ...q, correctAnswer: null, explanation: null }));
     }
     // ========== END REVEAL POLICY ========== //
 
@@ -309,3 +309,4 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
 });
 
 export default router;
+

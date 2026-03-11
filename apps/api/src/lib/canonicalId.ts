@@ -1,9 +1,9 @@
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
 
-export type TestCode = "SAT" | "ACT" | "AP" | "MCAT" | "LSAT";
-export type SectionCode = "M" | "R" | "W" | "S";
-export type SourceCode = "1" | "2";
+export type TestCode = "SAT";
+export type SectionCode = "MATH" | "RW";
+export type SourceCode = 0 | 1 | 2 | 3;
 
 const UNIQUE_LENGTH = 6;
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -20,54 +20,38 @@ export function generateUniqueToken(length: number = UNIQUE_LENGTH): string {
 export function generateCanonicalId(
   test: TestCode,
   section: SectionCode,
-  source: SourceCode
+  source: SourceCode,
 ): string {
   const unique = generateUniqueToken();
   return `${test}${section}${source}${unique}`;
 }
 
 export function isValidCanonicalId(id: string): boolean {
-  const pattern = /^(SAT|ACT|AP|MCAT|LSAT)[MRWS][12][A-Z0-9]{6}$/;
+  const pattern = /^SAT(MATH|RW)[0-3][A-Z0-9]{6}$/;
   return pattern.test(id);
 }
 
 export function parseCanonicalId(id: string): {
-  test: string;
-  section: string;
-  source: string;
+  test: TestCode;
+  section: SectionCode;
+  source: SourceCode;
   unique: string;
 } | null {
-  if (!isValidCanonicalId(id)) return null;
-  
-  const testCodes = ["MCAT", "LSAT", "SAT", "ACT", "AP"];
-  let test = "";
-  let rest = id;
-  
-  for (const tc of testCodes) {
-    if (id.startsWith(tc)) {
-      test = tc;
-      rest = id.slice(tc.length);
-      break;
-    }
-  }
-  
-  if (!test) return null;
-  
+  const match = id.match(/^(SAT)(MATH|RW)([0-3])([A-Z0-9]{6})$/);
+  if (!match) return null;
+
   return {
-    test,
-    section: rest[0],
-    source: rest[1],
-    unique: rest.slice(2),
+    test: "SAT",
+    section: match[2] as SectionCode,
+    source: Number(match[3]) as SourceCode,
+    unique: match[4],
   };
 }
 
 export function mapSectionToCode(section: string): SectionCode {
   const normalized = section.toLowerCase();
-  if (normalized === "math") return "M";
-  if (normalized === "reading") return "R";
-  if (normalized === "writing") return "W";
-  if (normalized === "science") return "S";
-  return "R";
+  if (normalized.includes("math")) return "MATH";
+  return "RW";
 }
 
 export interface InsertWithRetryOptions<T> {
@@ -80,34 +64,34 @@ export interface InsertWithRetryOptions<T> {
 }
 
 export async function insertWithCanonicalIdRetry<T>(
-  options: InsertWithRetryOptions<T>
+  options: InsertWithRetryOptions<T>,
 ): Promise<{ canonicalId: string; data: any }> {
   const { generateRow, insertFn, test, section, source, maxRetries = 5 } = options;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const canonicalId = generateCanonicalId(test, section, source);
     const row = generateRow(canonicalId);
-    
+
     const { error, data } = await insertFn(row);
-    
+
     if (!error) {
       return { canonicalId, data };
     }
-    
-    const isDuplicateError = 
+
+    const isDuplicateError =
       error.code === "23505" ||
       error.message?.includes("duplicate key") ||
       error.message?.includes("unique constraint") ||
       error.message?.includes("canonical_id");
-    
+
     if (isDuplicateError) {
       console.warn(`[CQID] Collision on attempt ${attempt + 1}, retrying...`);
       continue;
     }
-    
+
     throw new Error(`Insert failed: ${error.message}`);
   }
-  
+
   throw new Error(`Failed to generate unique canonical_id after ${maxRetries} retries`);
 }
 
@@ -115,10 +99,10 @@ export async function upsertQuestionWithCanonicalId(
   row: Record<string, any>,
   test: TestCode,
   section: SectionCode,
-  source: SourceCode
+  source: SourceCode,
 ): Promise<{ canonicalId: string; questionId: string }> {
   const supabase = getSupabaseAdmin();
-  
+
   const result = await insertWithCanonicalIdRetry({
     test,
     section,
@@ -128,15 +112,11 @@ export async function upsertQuestionWithCanonicalId(
       canonical_id: canonicalId,
     }),
     insertFn: async (rowWithCqid) => {
-      const { data, error } = await supabase
-        .from("questions")
-        .insert(rowWithCqid)
-        .select("id, canonical_id")
-        .single();
+      const { data, error } = await supabase.from("questions").insert(rowWithCqid).select("id, canonical_id").single();
       return { data, error };
     },
   });
-  
+
   return {
     canonicalId: result.canonicalId,
     questionId: result.data.id,

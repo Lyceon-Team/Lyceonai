@@ -24,7 +24,7 @@ describe('Practice/Questions Validate Security Regression', () => {
     // Error response should never leak sensitive data
     expect(res.body).not.toHaveProperty('correctAnswerKey');
     expect(res.body).not.toHaveProperty('explanation');
-    expect(res.body).not.toHaveProperty('answer_choice');
+    expect(res.body).not.toHaveProperty('correct_answer');
     expect(res.body).not.toHaveProperty('answer_text');
   });
 
@@ -44,3 +44,4 @@ describe('Practice/Questions Validate Security Regression', () => {
     expect(res.body).not.toHaveProperty('explanation');
   });
 });
+

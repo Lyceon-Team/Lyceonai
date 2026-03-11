@@ -34,7 +34,8 @@ export interface QuestionMetadataSnapshot {
   domain: string | null;
   skill: string | null;
   subskill: string | null;
-  difficulty_bucket: string | null;
+  skill_code: string | null;
+  difficulty: 1 | 2 | 3 | null;
   structure_cluster_id: string | null;
 }
 
@@ -119,7 +120,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       domain: input.metadata.domain,
       skill: input.metadata.skill,
       subskill: input.metadata.subskill,
-      difficulty_bucket: input.metadata.difficulty_bucket,
+      skill_code: input.metadata.skill_code,
+      difficulty: input.metadata.difficulty,
       structure_cluster_id: input.metadata.structure_cluster_id,
     });
 
@@ -145,7 +147,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_is_correct: input.isCorrect,
         p_event_weight: eventWeight,
         p_event_type: input.eventType,
-        p_difficulty_bucket: input.metadata.difficulty_bucket || null,
+        p_difficulty: input.metadata.difficulty || null,
       });
       
       if (skillError) {
@@ -171,7 +173,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_is_correct: input.isCorrect,
         p_event_weight: eventWeight,
         p_event_type: input.eventType,
-        p_difficulty_bucket: input.metadata.difficulty_bucket || null,
+        p_difficulty: input.metadata.difficulty || null,
       });
       
       if (clusterError) {
@@ -200,3 +202,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
  * This alias exists to minimize code changes during the Sprint 3 PR-1 refactor.
  */
 export const logAttemptAndUpdateMastery = applyMasteryUpdate;
+
+
+
+
+

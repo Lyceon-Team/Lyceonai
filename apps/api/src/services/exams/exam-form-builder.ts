@@ -1,21 +1,21 @@
 // apps/api/src/services/exams/exam-form-builder.ts
-import { seedOffset3, stableSeededShuffle } from './seeded';
+import { seedOffset3 } from './seeded';
 
-export type SectionCode = 'RW' | 'Math';
+export type SectionCode = 'RW' | 'MATH';
 export type ModuleId = 'RW1' | 'RW2' | 'M1' | 'M2';
-export type DifficultyBucket = 'easy' | 'medium' | 'hard';
+export type QuestionDifficulty = 1 | 2 | 3;
 
 export type QuestionRow = {
   canonical_id: string;
   section_code: string | null;
   section: string | null;
-  type: string | null; // 'mc'
+  question_type: string | null;
   domain: string | null;
   skill: string | null;
   subskill: string | null;
-  difficulty_bucket: string | null; // easy|medium|hard
-  difficulty_level: number | null;
-  question_type: string | null;
+  skill_code: string | null;
+  difficulty: number | null;
+  status: string | null;
 };
 
 export type BuiltFormItem = {
@@ -27,9 +27,9 @@ export type BuiltFormItem = {
   domain: string;
   skill: string;
   subskill: string | null;
-  difficultyBucket: DifficultyBucket;
-  difficultyLevel: number | null;
-  questionType: string | null;
+  skillCode: string | null;
+  difficulty: QuestionDifficulty;
+  questionType: 'multiple_choice';
 };
 
 export type BuiltForm = {
@@ -38,7 +38,6 @@ export type BuiltForm = {
     examType: 'full_length';
     constraintVersion: 1;
     selectionSeed: string;
-    // Optional: for debugging / determinism proofs
     warnings: string[];
   };
   itemsByModule: Record<ModuleId, BuiltFormItem[]>;
@@ -51,61 +50,49 @@ const RW_DOMAIN_ORDER = [
   'Expression of Ideas',
 ] as const;
 
-function bucketRank(b: DifficultyBucket): number {
-  if (b === 'easy') return 1;
-  if (b === 'medium') return 2;
-  return 3;
-}
-
 function normalizeSectionCode(q: QuestionRow): SectionCode | null {
-  const sc = (q.section_code ?? '').trim();
+  const sc = (q.section_code ?? '').trim().toUpperCase();
   if (sc === 'RW') return 'RW';
-  if (sc === 'Math') return 'Math';
+  if (sc === 'MATH') return 'MATH';
 
-  // fallback on `section` if section_code is not normalized
   const s = (q.section ?? '').toLowerCase();
   if (s.includes('read') || s.includes('writing') || s === 'rw') return 'RW';
-  if (s.includes('math')) return 'Math';
+  if (s.includes('math')) return 'MATH';
   return null;
 }
 
-function normalizeBucket(q: QuestionRow): DifficultyBucket | null {
-  const b = (q.difficulty_bucket ?? '').trim().toLowerCase();
-  if (b === 'easy' || b === 'medium' || b === 'hard') return b;
-  return null;
+function normalizeDifficulty(q: QuestionRow): QuestionDifficulty | null {
+  return q.difficulty === 1 || q.difficulty === 2 || q.difficulty === 3
+    ? (q.difficulty as QuestionDifficulty)
+    : null;
 }
 
 function isEligibleBase(q: QuestionRow): boolean {
   if (!q.canonical_id) return false;
-  if ((q.type ?? '').trim() !== 'mc') return false;
-  const sectionCode = normalizeSectionCode(q);
-  if (!sectionCode) return false;
+  if ((q.question_type ?? '').trim() !== 'multiple_choice') return false;
+  if (!normalizeSectionCode(q)) return false;
   if (!q.domain || !q.skill) return false;
-  const b = normalizeBucket(q);
-  if (!b) return false;
+  if (!normalizeDifficulty(q)) return false;
+  if ((q.status ?? '').trim().toLowerCase() !== 'published') return false;
   return true;
 }
 
 function sortKeyRW(q: QuestionRow): string {
-  const bucket = normalizeBucket(q)!;
-  const dRank = bucketRank(bucket);
+  const d = normalizeDifficulty(q) ?? 999;
   const domain = q.domain ?? '';
-  const domainIndex = RW_DOMAIN_ORDER.indexOf(domain as any);
+  const domainIndex = RW_DOMAIN_ORDER.indexOf(domain as (typeof RW_DOMAIN_ORDER)[number]);
   const domRank = domainIndex >= 0 ? domainIndex : 999;
-  const dl = q.difficulty_level ?? 999999;
   const skill = q.skill ?? '';
   const cid = q.canonical_id ?? '';
-  return `${String(domRank).padStart(3, '0')}:${String(dRank).padStart(1, '0')}:${String(dl).padStart(6, '0')}:${skill}:${cid}`;
+  return `${String(domRank).padStart(3, '0')}:${String(d).padStart(1, '0')}:${skill}:${cid}`;
 }
 
 function sortKeyMath(q: QuestionRow): string {
-  const bucket = normalizeBucket(q)!;
-  const dRank = bucketRank(bucket);
-  const dl = q.difficulty_level ?? 999999;
+  const d = normalizeDifficulty(q) ?? 999;
   const domain = q.domain ?? '';
   const skill = q.skill ?? '';
   const cid = q.canonical_id ?? '';
-  return `${String(dRank).padStart(1, '0')}:${String(dl).padStart(6, '0')}:${domain}:${skill}:${cid}`;
+  return `${String(d).padStart(1, '0')}:${domain}:${skill}:${cid}`;
 }
 
 function pickDistinct(
@@ -121,8 +108,6 @@ function pickDistinct(
     return [];
   }
 
-  // Seeded rotation to introduce variation while preserving order constraints.
-  // We rotate the ordered list by a stable offset derived from seed+tag.
   const rot = Math.abs(seedOffset3(seed, tag)) % ordered.length;
   const rotated = ordered.slice(rot).concat(ordered.slice(0, rot));
 
@@ -135,10 +120,8 @@ function pickDistinct(
     alreadyUsed.add(cid);
   }
 
-  // Deterministic fallback: if not enough unique questions, fill from original list allowing reuse.
   if (picked.length < count) {
     warnings.push(`${tag}: insufficient unique pool (needed ${count}, got ${picked.length}); falling back to reuse`);
-    // Fill remaining with deterministic stable order (no seeded shuffle here)
     for (const q of rotated) {
       if (picked.length >= count) break;
       picked.push(q);
@@ -149,7 +132,6 @@ function pickDistinct(
 }
 
 function markPretestPositions(n: number, seed: string, moduleId: ModuleId): Set<number> {
-  // Deterministic positions near 33% and 78%, seed-adjusted by at most ±1
   const base1 = Math.floor(n * 0.33);
   const base2 = Math.floor(n * 0.78);
   const off1 = seedOffset3(seed, `${moduleId}:pre1`);
@@ -158,7 +140,6 @@ function markPretestPositions(n: number, seed: string, moduleId: ModuleId): Set<
   const p1 = Math.min(n - 1, Math.max(0, base1 + off1));
   const p2 = Math.min(n - 1, Math.max(0, base2 + off2));
 
-  // Ensure distinct
   if (p1 === p2) {
     const alt = Math.min(n - 1, p2 + 1);
     return new Set([p1, alt]);
@@ -174,17 +155,14 @@ export function buildGeneratedFullLengthFormFromPool(args: {
   const { seed, questions } = args;
 
   const warnings: string[] = [];
-
   const eligible = questions.filter(isEligibleBase);
 
   const rwPool = eligible.filter((q) => normalizeSectionCode(q) === 'RW');
-  const mathPool = eligible.filter((q) => normalizeSectionCode(q) === 'Math');
+  const mathPool = eligible.filter((q) => normalizeSectionCode(q) === 'MATH');
 
-  // Order pools deterministically
   const rwOrdered = rwPool.slice().sort((a, b) => sortKeyRW(a).localeCompare(sortKeyRW(b)));
   const mathOrdered = mathPool.slice().sort((a, b) => sortKeyMath(a).localeCompare(sortKeyMath(b)));
 
-  // Enforce uniqueness across modules within a section
   const usedRW = new Set<string>();
   const usedMath = new Set<string>();
 
@@ -200,35 +178,20 @@ export function buildGeneratedFullLengthFormFromPool(args: {
   const buildModuleItems = (moduleId: ModuleId, picked: QuestionRow[]): BuiltFormItem[] => {
     const pretestPos = markPretestPositions(picked.length, seed, moduleId);
 
-    return picked.map((q, idx) => {
-      const sectionCode = normalizeSectionCode(q)!;
-      const diff = normalizeBucket(q)!;
-      return {
-        moduleId,
-        position: idx,
-        canonicalId: q.canonical_id,
-        isOperational: !pretestPos.has(idx),
-        sectionCode,
-        domain: q.domain!,
-        skill: q.skill!,
-        subskill: q.subskill ?? null,
-        difficultyBucket: diff,
-        difficultyLevel: q.difficulty_level ?? null,
-        questionType: q.question_type ?? null,
-      };
-    });
+    return picked.map((q, idx) => ({
+      moduleId,
+      position: idx,
+      canonicalId: q.canonical_id,
+      isOperational: !pretestPos.has(idx),
+      sectionCode: normalizeSectionCode(q) as SectionCode,
+      domain: q.domain as string,
+      skill: q.skill as string,
+      subskill: q.subskill ?? null,
+      skillCode: q.skill_code ?? null,
+      difficulty: normalizeDifficulty(q) as QuestionDifficulty,
+      questionType: 'multiple_choice',
+    }));
   };
-
-  const itemsByModule: BuiltForm['itemsByModule'] = {
-    RW1: buildModuleItems('RW1', rw1),
-    RW2: buildModuleItems('RW2', rw2),
-    M1: buildModuleItems('M1', m1),
-    M2: buildModuleItems('M2', m2),
-  };
-
-  // Extra deterministic "tie shuffle" within exact ties (optional):
-  // If you want to lightly de-correlate repeated tests while staying deterministic,
-  // you can shuffle within equal sort-key groups. For v1, we keep it simple.
 
   return {
     form: {
@@ -238,7 +201,12 @@ export function buildGeneratedFullLengthFormFromPool(args: {
       selectionSeed: seed,
       warnings,
     },
-    itemsByModule,
+    itemsByModule: {
+      RW1: buildModuleItems('RW1', rw1),
+      RW2: buildModuleItems('RW2', rw2),
+      M1: buildModuleItems('M1', m1),
+      M2: buildModuleItems('M2', m2),
+    },
   };
 }
 
@@ -254,16 +222,17 @@ export async function fetchEligibleQuestionsForExam(supabaseServer: any): Promis
         'canonical_id',
         'section_code',
         'section',
-        'type',
+        'question_type',
         'domain',
         'skill',
         'subskill',
-        'difficulty_bucket',
-        'difficulty_level',
-        'question_type',
+        'skill_code',
+        'difficulty',
+        'status',
       ].join(',')
     )
-    .eq('type', 'mc')
+    .eq('question_type', 'multiple_choice')
+    .eq('status', 'published')
     .not('canonical_id', 'is', null);
 
   if (error) throw new Error(`fetchEligibleQuestionsForExam failed: ${error.message}`);
