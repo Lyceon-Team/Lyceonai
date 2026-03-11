@@ -16,18 +16,21 @@ export function csrfGuard() {
 
     const origin = req.headers.origin ? String(req.headers.origin) : "";
     const referer = req.headers.referer ? String(req.headers.referer) : "";
+    const requestId = req.requestId;
 
-    // If both Origin and Referer are missing, block state-changing requests
+    // If both Origin and Referer are missing, block state-changing requests.
     if (!origin && !referer) {
       console.warn("[CSRF] blocked", {
         method,
         reason: "missing_both_origin_and_referer",
         allowCount: normalized.size,
         allowPreview: Array.from(normalized).slice(0, 8),
+        requestId,
       });
       return res.status(403).json({
         error: "csrf_blocked",
         message: "Cross-site request blocked by CSRF protection",
+        requestId,
       });
     }
 
@@ -48,12 +51,14 @@ export function csrfGuard() {
       refererNorm,
       allowCount: normalized.size,
       allowPreview: Array.from(normalized).slice(0, 8),
+      requestId,
     });
 
     return res.status(403).json({
       error: "csrf_blocked",
       message: "Cross-site request blocked by CSRF protection",
       origin: origin || null,
+      requestId,
     });
   };
 }

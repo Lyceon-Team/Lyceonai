@@ -56,7 +56,7 @@ describe('Full-Length Review Lock Route Contract', () => {
     const res = await request(app).get('/api/full-length/sessions/session-locked/review');
 
     expect(res.status).toBe(423);
-    expect(res.body).toEqual({ error: 'Review locked until completion' });
+    expect(res.body).toMatchObject({ error: 'Review locked until completion', requestId: 'req-full-length-review-lock' });
   });
 });
 
