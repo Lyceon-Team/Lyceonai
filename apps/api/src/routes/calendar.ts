@@ -337,7 +337,7 @@ export async function syncCalendarDayFromSessions(
 
     const { data: sessions, error: sessionsError } = await supabaseServer
       .from("practice_sessions")
-      .select("duration_minutes, started_at, finished_at")
+      .select("actual_duration_ms, started_at, finished_at")
       .eq("user_id", userId)
       .gte("started_at", utcStart)
       .lte("started_at", utcEnd);
@@ -349,8 +349,8 @@ export async function syncCalendarDayFromSessions(
 
     let totalMinutes = 0;
     for (const session of sessions ?? []) {
-      if (session.duration_minutes != null) {
-        totalMinutes += session.duration_minutes;
+      if (session.actual_duration_ms != null) {
+        totalMinutes += Math.round(session.actual_duration_ms / 60000);
       } else if (session.started_at && session.finished_at) {
         const startTime = new Date(session.started_at).getTime();
         const endTime = new Date(session.finished_at).getTime();
@@ -359,12 +359,10 @@ export async function syncCalendarDayFromSessions(
     }
 
     const completedMinutes = Math.min(600, Math.max(0, totalMinutes));
-    const plannedMinutes = planDay.planned_minutes ?? 0;
-    const status = computeStatus(plannedMinutes, completedMinutes);
 
     const { error: updateError } = await supabaseServer
       .from("student_study_plan_days")
-      .update({ completed_minutes: completedMinutes, status })
+      .update({ completed_minutes: completedMinutes })
       .eq("user_id", userId)
       .eq("day_date", dayDate);
 
@@ -542,7 +540,7 @@ async function calculateStreak(userId: string, timezone: string = DEFAULT_TIMEZO
 
   const { data: completedDays, error } = await supabaseServer
     .from("student_study_plan_days")
-    .select("day_date, status, completed_minutes, planned_minutes")
+    .select("day_date, completed_minutes, planned_minutes")
     .eq("user_id", userId)
     .lte("day_date", todayLocal)
     .order("day_date", { ascending: false })
@@ -552,7 +550,7 @@ async function calculateStreak(userId: string, timezone: string = DEFAULT_TIMEZO
     return { current: 0, longest: 0 };
   }
 
-  const isComplete = (day: any) => day.status === "complete";
+  const isComplete = (day: any) => computeStatus(day.planned_minutes ?? 0, day.completed_minutes ?? 0) === "complete";
 
   const completeDaysSet = new Set(completedDays.filter(isComplete).map((d) => d.day_date));
 
@@ -656,7 +654,7 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
     const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
       supabase
         .from("student_study_plan_days")
-        .select("day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
+        .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
         .eq("user_id", userId)
         .gte("day_date", start)
         .lte("day_date", end)
@@ -707,6 +705,7 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
 
       return {
         ...day,
+        status: computeStatus(day.planned_minutes ?? 0, day.completed_minutes ?? 0),
         attempt_count: dayStats?.attempts ?? 0,
         accuracy: dayStats && dayStats.attempts > 0 ? Math.round((dayStats.correct / dayStats.attempts) * 100) : null,
         avg_seconds_per_question:
@@ -978,7 +977,7 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     const { data: updatedDay, error: upsertError } = await supabaseServer
       .from("student_study_plan_days")
       .upsert(payload, { onConflict: "user_id,day_date" })
-      .select("day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
+      .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
       .single();
 
     if (upsertError) {
@@ -987,7 +986,7 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
 
     return res.json({
       updated: true,
-      day: updatedDay,
+      day: { ...updatedDay, status: computeStatus(updatedDay.planned_minutes ?? 0, updatedDay.completed_minutes ?? 0) },
     });
   } catch (err: any) {
     return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
@@ -1037,7 +1036,7 @@ async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Pr
   const { data: regeneratedDay, error: upsertError } = await supabaseServer
     .from("student_study_plan_days")
     .upsert(generated.planDays[0], { onConflict: "user_id,day_date" })
-    .select("day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
+    .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
     .single();
 
   if (upsertError) {
@@ -1046,7 +1045,7 @@ async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Pr
 
   return res.json({
     regenerated: true,
-    day: regeneratedDay,
+    day: { ...regeneratedDay, status: computeStatus(regeneratedDay.planned_minutes ?? 0, regeneratedDay.completed_minutes ?? 0) },
   });
 }
 

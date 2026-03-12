@@ -497,52 +497,6 @@ export class RagService {
 
       // Canonical competency map source: student_skill_mastery (derived reader).
       let competencyMap: Record<string, { correct: number; incorrect: number; total: number }> = {};
-<<<<<<< HEAD
-      
-      try {
-        // Use Supabase HTTP query for user progress aggregation
-        const { data: progressData, error: progressError } = await supabaseServer
-          .from('user_progress')
-          .select(`
-            is_correct,
-            questions!inner(section_code, domain, skill, subskill, skill_code)
-          `)
-          .eq('user_id', userId);
-
-        if (!progressError && progressData) {
-          // Aggregate progress manually since Supabase doesn't support GROUP BY
-          const aggregated: Record<string, { correct: number; incorrect: number; total: number }> = {};
-
-          for (const row of progressData) {
-            const question = (row as any).questions;
-            const sectionCode = question?.section_code === 'MATH' ? 'MATH' : 'RW';
-
-            const explicitSkillCode = typeof question?.skill_code === 'string' && question.skill_code.trim().length > 0
-              ? question.skill_code.trim()
-              : null;
-
-            const taxonomyFallback = [question?.domain, question?.skill, question?.subskill]
-              .filter((part: unknown) => typeof part === 'string' && part.trim().length > 0)
-              .map((part: unknown) => String(part).trim())
-              .join('.');
-
-            const competencyCode = explicitSkillCode
-              ?? (taxonomyFallback.length > 0 ? taxonomyFallback : `${sectionCode}.GENERAL`);
-
-            if (!aggregated[competencyCode]) {
-              aggregated[competencyCode] = { correct: 0, incorrect: 0, total: 0 };
-            }
-
-            aggregated[competencyCode].total += 1;
-            if (row.is_correct) {
-              aggregated[competencyCode].correct += 1;
-            } else {
-              aggregated[competencyCode].incorrect += 1;
-            }
-          }
-
-          competencyMap = aggregated;
-=======
 
       try {
         const { data: masteryRows, error: masteryError } = await supabaseServer
@@ -553,7 +507,6 @@ export class RagService {
 
         if (!masteryError && masteryRows) {
           competencyMap = buildCompetencyMapFromMasteryRows(masteryRows as MasterySkillRow[]);
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
         }
       } catch (masteryReadError: any) {
         console.warn(`⚠️ [RAG-V2] Failed to load canonical mastery rows for ${userId}: ${masteryReadError.message}`);
@@ -639,7 +592,6 @@ export class RagService {
       section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
       source_type: row.source_type ?? row.sourceType ?? 0,
       stem: row.stem,
-<<<<<<< HEAD
       options: row.options,
       correct_answer: row.correct_answer ?? row.correctAnswer ?? null,
       explanation: row.explanation ?? null,
@@ -647,15 +599,6 @@ export class RagService {
       difficulty: row.difficulty ?? null,
       tags: row.tags ?? null,
     });
-=======
-      options: (row.options as Array<{ key: string; text: string }>) || [],
-      answer: row.correctAnswer || row.correct_answer || null,
-      explanation: row.explanation || null,
-      competencies: (row.competencies as Competency[]) || [],
-      difficulty: row.difficulty || null,
-      tags: (row.tags as string[]) || [],
-    };
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 
   /**
@@ -1001,13 +944,8 @@ export class RagService {
       sectionCode,
       sourceType,
       stem: row.stem,
-<<<<<<< HEAD
       options: Array.isArray(row.options) ? (row.options as Array<{ key: 'A' | 'B' | 'C' | 'D'; text: string }>) : [],
       correctAnswer,
-=======
-      options: (row.options as Array<{ key: string; text: string }>) || [],
-      answer: row.correct_answer || null,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       explanation: row.explanation || null,
       competencies,
       difficulty,
@@ -1154,7 +1092,4 @@ export function getRagService(): RagService {
 }
 
 
-<<<<<<< HEAD
-=======
 
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
