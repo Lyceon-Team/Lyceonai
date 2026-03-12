@@ -278,32 +278,48 @@ COMMENT ON TABLE sections IS 'RLS enabled - inherit course visibility';
 COMMENT ON TABLE items IS 'RLS enabled - inherit course visibility';
 
 -- RLS Policies for questions table
--- Questions visible based on course scope or global bank
+-- Questions use canonical global-bank access controls
 
 ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "questions_select_accessible"
+CREATE POLICY "questions_select_authenticated"
 ON questions FOR SELECT
-USING (
-  course_id IS NULL
-  OR EXISTS (
-    SELECT 1 FROM courses c
-    WHERE c.id = questions.course_id
-      AND (
-        c.visibility = 'public'
-        OR (
-          c.visibility = 'org'
-          AND c.org_id IS NOT NULL
-          AND EXISTS (
-            SELECT 1 FROM memberships m
-            WHERE m.org_id = c.org_id AND m.user_id = auth.uid()
-          )
-        )
-      )
+USING (auth.role() = 'authenticated');
+
+CREATE POLICY "questions_insert_admin"
+ON questions FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
   )
 );
 
-COMMENT ON TABLE questions IS 'RLS enabled - public/org-scoped or global bank access';
+CREATE POLICY "questions_update_admin"
+ON questions FOR UPDATE
+USING (
+  EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
+  )
+);
+
+CREATE POLICY "questions_delete_admin"
+ON questions FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
+  )
+);
+
+COMMENT ON TABLE questions IS 'RLS enabled - authenticated read, admin write';
 
 -- RLS Policies for jobs, batch_file_progress, exam_sections
 -- User-scoped or relation-scoped access
@@ -387,3 +403,4 @@ COMMENT ON TABLE audit_logs IS 'RLS enabled - admin-only access';
 COMMENT ON TABLE system_event_logs IS 'RLS enabled - admin-only access';
 
 COMMENT ON SCHEMA public IS 'SAT Learning Copilot - RLS Policies v1 Applied';
+

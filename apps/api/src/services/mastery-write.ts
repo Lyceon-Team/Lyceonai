@@ -12,7 +12,12 @@ export interface QuestionMetadataSnapshot {
   skill: string | null;
   subskill: string | null;
   skill_code: string | null;
+<<<<<<< HEAD
+  difficulty: 1 | 2 | 3 | null;
+  structure_cluster_id: string | null;
+=======
   difficulty: string | null;
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 }
 
 export interface AttemptInput {
@@ -69,7 +74,13 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       domain: input.metadata.domain,
       skill: input.metadata.skill,
       subskill: input.metadata.subskill,
+<<<<<<< HEAD
+      skill_code: input.metadata.skill_code,
+      difficulty: input.metadata.difficulty,
+      structure_cluster_id: input.metadata.structure_cluster_id,
+=======
       difficulty_bucket: difficultyBucket,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
 
   if (insertError) {
@@ -90,7 +101,11 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         p_is_correct: input.isCorrect,
         p_event_weight: eventWeight,
         p_event_type: input.eventType,
+<<<<<<< HEAD
+        p_difficulty: input.metadata.difficulty || null,
+=======
         p_difficulty_bucket: difficultyBucket,
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       });
 
       if (skillError) {
@@ -98,6 +113,36 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
         rollupError = skillError.message;
       }
     } catch (err: any) {
+<<<<<<< HEAD
+      console.warn("[Mastery] Skill rollup error:", err.message);
+      rollupUpdated = false;
+      rollupError = err.message;
+    }
+  }
+
+  // Step 3: Update student_cluster_mastery (CANONICAL WRITE #2)
+  // This RPC performs INSERT...ON CONFLICT DO UPDATE on student_cluster_mastery
+  // Using True Half-Life formula with difficulty weights and deterministic rounding
+  if (shouldUpdateMastery && input.metadata.structure_cluster_id) {
+    try {
+      const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
+        p_user_id: input.userId,
+        p_structure_cluster_id: input.metadata.structure_cluster_id,
+        p_is_correct: input.isCorrect,
+        p_event_weight: eventWeight,
+        p_event_type: input.eventType,
+        p_difficulty: input.metadata.difficulty || null,
+      });
+
+      if (clusterError) {
+        console.warn("[Mastery] Cluster rollup failed:", clusterError.message);
+        rollupUpdated = false;
+        rollupError = clusterError.message;
+      }
+    } catch (err: any) {
+      console.warn("[Mastery] Cluster rollup error:", err.message);
+=======
+>>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       rollupUpdated = false;
       rollupError = err.message;
     }
@@ -111,3 +156,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
 }
 
 export const logAttemptAndUpdateMastery = applyMasteryUpdate;
+
+
+
+
+

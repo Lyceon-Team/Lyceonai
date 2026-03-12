@@ -12,7 +12,7 @@ describe('Legacy Questions Validate Path Quarantine', () => {
     expect(res.status).toBe(404);
     expect(res.body).not.toHaveProperty('correctAnswerKey');
     expect(res.body).not.toHaveProperty('explanation');
-    expect(res.body).not.toHaveProperty('answer_choice');
+    expect(res.body).not.toHaveProperty('correct_answer');
     expect(res.body).not.toHaveProperty('answer_text');
   });
 
@@ -28,3 +28,4 @@ describe('Legacy Questions Validate Path Quarantine', () => {
     expect(res.body).not.toHaveProperty('explanation');
   });
 });
+

@@ -303,14 +303,14 @@ describe("Mastery Difficulty Weights and Rounding", () => {
   });
 
   describe("3. Edge Cases with Difficulty Weights", () => {
-    it("should handle null/missing difficulty_bucket as default 1.0", () => {
+    it("should handle null/missing difficulty as default 1.0", () => {
       // Simulate with default weight (1.0)
       const result = simulateTrueHalfLifeWithWeights({
         existingAttempts: 0,
         existingCorrect: 0,
         dtDays: 0,
         eventWeight: EVENT_WEIGHTS.PRACTICE_SUBMIT,
-        difficultyWeight: 1.0, // Default when difficulty_bucket is null/missing
+        difficultyWeight: 1.0, // Default when difficulty is null/missing
         isCorrect: true,
       });
 
@@ -422,3 +422,4 @@ describe("Mastery Difficulty Weights and Rounding", () => {
     });
   });
 });
+

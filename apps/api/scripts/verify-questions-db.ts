@@ -13,42 +13,61 @@ console.log("[Verify] SUPABASE_URL:", SUPABASE_URL);
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
+function hasCanonicalOptionMetadata(value: any): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    value.A &&
+    value.B &&
+    value.C &&
+    value.D
+  );
+}
+
 async function main() {
   const { data: headRows, error: headErr } = await supabase
     .from("questions")
-    .select("id, section, unit_tag, classification")
+    .select("id, canonical_id, section_code, question_type, difficulty, source_type")
     .limit(5);
 
   if (headErr) throw headErr;
 
-  console.log("[Verify] first 5 ids:", headRows?.map(r => r.id));
+  console.log("[Verify] first 5 ids:", headRows?.map((r) => r.id));
 
-  // Count domain set via client-side scan (small table so ok)
   const { data: all, error: allErr } = await supabase
     .from("questions")
-    .select("id, classification");
+    .select("id, section_code, question_type, difficulty, source_type, options, option_metadata, tags, competencies, provenance_chunk_ids");
 
   if (allErr) throw allErr;
 
-  let domainSet = 0;
-  let skillIsAlgebra = 0;
+  let invalidSectionCode = 0;
+  let invalidQuestionType = 0;
+  let invalidDifficulty = 0;
+  let invalidSourceType = 0;
+  let invalidOptions = 0;
+  let invalidOptionMetadata = 0;
+  let invalidJsonMetadata = 0;
 
-  for (const r of all ?? []) {
-    let c: any = null;
-    if (typeof r.classification === "string") {
-      try { c = JSON.parse(r.classification); } catch {}
-    } else if (typeof r.classification === "object" && r.classification) {
-      c = r.classification;
-    }
-    const dom = c?.domain ?? null;
-    const skill = c?.skill ?? null;
-    if (dom) domainSet++;
-    if (skill === "Algebra") skillIsAlgebra++;
+  for (const row of all ?? []) {
+    if (row.section_code !== "MATH" && row.section_code !== "RW") invalidSectionCode++;
+    if (row.question_type !== "multiple_choice") invalidQuestionType++;
+    if (![1, 2, 3].includes(row.difficulty)) invalidDifficulty++;
+    if (![0, 1, 2, 3].includes(row.source_type)) invalidSourceType++;
+    if (!Array.isArray(row.options) || row.options.length !== 4) invalidOptions++;
+    if (!hasCanonicalOptionMetadata(row.option_metadata)) invalidOptionMetadata++;
+
+    const jsonFields = [row.tags, row.competencies, row.provenance_chunk_ids];
+    if (jsonFields.some((field) => typeof field === "string")) invalidJsonMetadata++;
   }
 
   console.log("[Verify] total:", all?.length ?? 0);
-  console.log("[Verify] classification.domain set:", domainSet);
-  console.log('[Verify] classification.skill == "Algebra":', skillIsAlgebra);
+  console.log("[Verify] invalid section_code:", invalidSectionCode);
+  console.log("[Verify] invalid question_type:", invalidQuestionType);
+  console.log("[Verify] invalid difficulty:", invalidDifficulty);
+  console.log("[Verify] invalid source_type:", invalidSourceType);
+  console.log("[Verify] invalid options shape:", invalidOptions);
+  console.log("[Verify] invalid option_metadata shape:", invalidOptionMetadata);
+  console.log("[Verify] json fields stored as strings:", invalidJsonMetadata);
 }
 
 main().catch((e) => {

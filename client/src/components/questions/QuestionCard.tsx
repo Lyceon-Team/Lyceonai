@@ -1,14 +1,17 @@
 /**
+<<<<<<< HEAD
+ * QuestionCard - Unified component for rendering SAT practice questions.
+ * Canonical MC-only renderer.
+=======
  * QuestionCard - Unified component for rendering SAT practice questions
  * 
  * Clean, consistent layout focused on student-facing practice.
  * Handles both multiple-choice and free-response questions.
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
  */
 
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle, XCircle, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
 import MathRenderer from '@/components/MathRenderer';
 import type { QuestionVM, QuestionOption, ValidationResult } from '@/types/question';
@@ -34,11 +37,9 @@ export function QuestionCard({
   question,
   questionNumber,
   selectedAnswer = null,
-  freeResponseAnswer = '',
   showResult = false,
   validationResult,
   onAnswerSelect,
-  onFreeResponseChange,
   onSubmit,
   onNext,
   onFeedback,
@@ -46,11 +47,10 @@ export function QuestionCard({
   feedbackSubmitted = null,
   className = '',
 }: QuestionCardProps) {
-  const isMultipleChoice = question.type === 'mc' && question.options.length > 0;
-  const isFreeResponse = question.type === 'fr' || question.options.length === 0;
-  const canSubmit = isMultipleChoice ? !!selectedAnswer : freeResponseAnswer.trim().length > 0;
+  const isMultipleChoice = question.question_type === 'multiple_choice' && question.options.length > 0;
+  const canSubmit = !!selectedAnswer;
 
-  const sectionLabel = question.section || question.sectionCode || 'SAT Practice';
+  const sectionLabel = question.section || question.section_code || 'SAT Practice';
 
   return (
     <motion.section
@@ -66,8 +66,8 @@ export function QuestionCard({
 
       <div className="prose max-w-none mb-6">
         <div className="text-lg md:text-xl font-semibold text-neutral-900 leading-relaxed" data-testid="question-stem">
-          <MathRenderer 
-            content={question.stem} 
+          <MathRenderer
+            content={question.stem}
             className="whitespace-pre-wrap"
             displayMode={false}
           />
@@ -140,31 +140,6 @@ export function QuestionCard({
         </div>
       )}
 
-      {isFreeResponse && (
-        <div className="space-y-3">
-          <label htmlFor="free-response-input" className="block text-sm font-medium text-slate-700">
-            Enter your answer:
-          </label>
-          <Textarea
-            id="free-response-input"
-            placeholder="Type your answer here..."
-            value={freeResponseAnswer}
-            onChange={(e) => !showResult && !isSubmitting && onFreeResponseChange?.(e.target.value)}
-            disabled={showResult || isSubmitting}
-            rows={4}
-            className="w-full border-slate-200 focus:border-slate-400 focus:ring-slate-400"
-            data-testid="input-free-response"
-          />
-          {showResult && validationResult && (
-            <div className={`p-4 rounded-xl border ${validationResult.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <p className={validationResult.isCorrect ? 'text-green-800' : 'text-red-800'}>
-                {validationResult.feedback || (validationResult.isCorrect ? 'Correct!' : 'Incorrect')}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
       {!showResult && onSubmit && (
         <div className="flex justify-end pt-6">
           <Button
@@ -192,9 +167,7 @@ export function QuestionCard({
           className="mt-6 p-5 bg-blue-50 rounded-xl border border-blue-100"
         >
           <h4 className="font-semibold text-blue-900 mb-2">Explanation</h4>
-          <p className="text-blue-800 whitespace-pre-wrap leading-relaxed">
-            {question.explanation}
-          </p>
+          <p className="text-blue-800 whitespace-pre-wrap leading-relaxed">{question.explanation}</p>
         </motion.div>
       )}
 
@@ -235,7 +208,7 @@ export function QuestionCard({
               </div>
             </div>
           )}
-          
+
           {onNext && (
             <Button
               onClick={onNext}

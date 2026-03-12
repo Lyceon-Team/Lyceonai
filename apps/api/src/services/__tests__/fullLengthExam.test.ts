@@ -1,26 +1,27 @@
 /**
- * Full-Length Exam Service Tests
- * 
- * Tests for service-level functionality:
- * - Session creation idempotency
- * - Answer state restoration
+ * Full-Length Exam Service Tests (canonical questions contract)
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import * as fullLengthExamService from '../fullLengthExam';
 
-// Type for Supabase client mock
 interface MockSupabaseClient {
   from: Mock;
 }
 
-// Mock the Supabase admin client
 vi.mock('../../lib/supabase-admin', () => ({
   getSupabaseAdmin: vi.fn(),
 }));
 
 describe('Full-Length Exam Service', () => {
+<<<<<<< HEAD
+  it('createExamSession returns existing active session instead of creating duplicate', async () => {
+    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+    const mockExistingSession = {
+      id: 'existing-session-123',
+=======
   describe('createExamSession - Idempotency', () => {
     it('should return existing active session instead of creating duplicate', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
@@ -1352,118 +1353,48 @@ describe('Full-Length Exam Service', () => {
 
     const mockSession = {
       id: 'session-review-123',
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       user_id: 'user-456',
-      status: 'in_progress',
-      current_section: 'math',
-      current_module: 1,
-      seed: 'test-seed',
-      started_at: new Date().toISOString(),
-      completed_at: null,
+      status: 'not_started',
+      seed: 'user-456_1234567890',
       created_at: new Date().toISOString(),
     };
 
-    const mockCompletedSession = {
-      ...mockSession,
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-    };
-
-    const mockModule = {
-      id: 'module-1',
-      section: 'math',
-      module_index: 1,
-      status: 'in_progress',
-      difficulty_bucket: null,
-      started_at: new Date().toISOString(),
-      submitted_at: null,
-    };
-
-    const mockModuleQuestion = {
-      question_id: 'q1',
-      module_id: 'module-1',
-      order_index: 0,
-    };
-
-    const mockResponse = {
-      question_id: 'q1',
-      module_id: 'module-1',
-      selected_answer: 'B',
-      free_response_answer: null,
-      is_correct: true,
-      answered_at: new Date().toISOString(),
-    };
-
-    it('should NOT include answer/explanation fields for not-completed session', async () => {
-      const mockSupabase = {
-        from: vi.fn((table: string) => {
-          if (table === 'full_length_exam_sessions') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn(async () => ({
-                    data: mockSession,
-                    error: null,
-                  })),
-                })),
-              })),
-            };
-          } else if (table === 'full_length_exam_modules') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
+    const mockSupabase: MockSupabaseClient = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                in: vi.fn(() => ({
                   order: vi.fn(() => ({
-                    order: vi.fn(async () => ({
-                      data: [mockModule],
-                      error: null,
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi.fn(async () => ({ data: mockExistingSession, error: null })),
                     })),
                   })),
                 })),
               })),
-            };
-          } else if (table === 'full_length_exam_questions') {
-            return {
+            })),
+            insert: vi.fn(() => ({
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockModuleQuestion],
-                  error: null,
-                })),
+                single: vi.fn(async () => ({ data: null, error: new Error('should not insert') })),
               })),
-            };
-          } else if (table === 'questions') {
-            return {
-              select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockQuestionWithAnswers],
-                  error: null,
-                })),
-              })),
-            };
-          } else if (table === 'full_length_exam_responses') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(async () => ({
-                  data: [mockResponse],
-                  error: null,
-                })),
-              })),
-            };
-          }
-          return { select: vi.fn() };
-        }),
-      } as unknown as ReturnType<typeof import('../../lib/supabase-admin').getSupabaseAdmin>;
+            })),
+          };
+        }
 
-      const result = await fullLengthExamService.getExamReview({
-        supabase: mockSupabase,
-        sessionId: 'session-review-123',
-      });
+        return { select: vi.fn() };
+      }),
+    };
 
-      // Verify session is not completed
-      expect(result.session.status).toBe('in_progress');
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
-      // Verify questions returned
-      expect(result.questions.length).toBe(1);
-      const question = result.questions[0];
+    const result = await fullLengthExamService.createExamSession({ userId: 'user-456' });
 
+<<<<<<< HEAD
+    expect(result.id).toBe('existing-session-123');
+    expect(result.status).toBe('not_started');
+=======
       // Verify safe fields ARE present
       expect(question.id).toBe('q1');
       expect(question.stem).toBe('What is 2 + 2?');
@@ -1606,5 +1537,112 @@ describe('Full-Length Exam Service', () => {
       expect(answerFields).toContain('explanation');
       expect(answerFields).toContain('classification');
     });
+>>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+  });
+
+  it('submitAnswer grades against correct_answer for multiple_choice only', async () => {
+    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+    const upsertSpy = vi.fn(async () => ({ error: null }));
+
+    const mockSupabase: MockSupabaseClient = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: {
+                      id: 'session-1',
+                      status: 'in_progress',
+                      current_section: 'math',
+                      current_module: 1,
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_modules') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: {
+                        id: 'module-1',
+                        status: 'in_progress',
+                        started_at: new Date(Date.now() - 1000).toISOString(),
+                        target_duration_ms: 1000 * 60,
+                      },
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({ data: { id: 'mq-1' }, error: null })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: { id: 'q-1', question_type: 'multiple_choice', correct_answer: 'B' },
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_responses') {
+          return { upsert: upsertSpy };
+        }
+
+        return { select: vi.fn() };
+      }),
+    };
+
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+    await fullLengthExamService.submitAnswer({
+      sessionId: 'session-1',
+      userId: 'user-1',
+      questionId: 'q-1',
+      selectedAnswer: 'B',
+    });
+
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    const payload = upsertSpy.mock.calls[0][0];
+    expect(payload.selected_answer).toBe('B');
+    expect(payload.is_correct).toBe(true);
+  });
+
+  it('review field allowlists use canonical question keys', () => {
+    expect(fullLengthExamService.SAFE_QUESTION_FIELDS_PRE_COMPLETION).toContain('question_type');
+    expect(fullLengthExamService.SAFE_QUESTION_FIELDS_PRE_COMPLETION).toContain('skill_code');
+    expect(fullLengthExamService.SAFE_QUESTION_FIELDS_PRE_COMPLETION).not.toContain('type');
+
+    expect(fullLengthExamService.ANSWER_FIELDS_POST_COMPLETION).toContain('correct_answer');
+    expect(fullLengthExamService.ANSWER_FIELDS_POST_COMPLETION).not.toContain('answer');
   });
 });

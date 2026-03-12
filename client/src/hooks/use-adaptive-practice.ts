@@ -120,9 +120,9 @@ export function useAdaptivePractice({ section, mode = 'balanced', enabled = true
       setRationale(data.rationale);
       setAttemptIndex((prev) => prev + 1);
       
-      if (data.question?.canonicalId) {
+      if (data.question?.canonical_id) {
         excludeCanonicalIdsRef.current = [
-          data.question.canonicalId,
+          data.question.canonical_id,
           ...excludeCanonicalIdsRef.current,
         ].slice(0, MAX_EXCLUSIONS);
       }
@@ -283,3 +283,4 @@ export function useAdaptivePractice({ section, mode = 'balanced', enabled = true
     excludedCount: excludeCanonicalIdsRef.current.length,
   };
 }
+
