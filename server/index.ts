@@ -36,17 +36,10 @@ import {
   submitQuestionFeedback,
 } from "./routes/legacy/questions";
 import { searchQuestions } from "./routes/legacy/search";
-import {
-  getNeedsReview,
-  approveQuestion,
-  rejectQuestion,
-  getParsingStatistics,
-} from "./admin-review-routes";
 import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
-  requireSupabaseAdmin,
   requireStudentOrAdmin,
   requireRequestUser,
 } from "./middleware/supabase-auth";
@@ -55,10 +48,7 @@ import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
 import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-routes";
-import adminStatsRoutes from "./routes/admin-stats-routes";
-import adminProofRoutes from "./routes/admin-proof-routes";
 import { csrfGuard } from "./middleware/csrf";
-import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { diagnosticRouter } from "./routes/legacy/diagnostic";
@@ -68,7 +58,6 @@ import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import healthRoutes from "./routes/health-routes";
-import adminHealthRoutes from "./routes/admin-health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
@@ -335,44 +324,6 @@ app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, 
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
-
-// Admin Stats Routes
-app.use("/api/admin", adminStatsRoutes);
-
-// Admin Health Routes - consolidated health check endpoint
-app.use("/api/admin", requireSupabaseAdmin, adminHealthRoutes);
-
-// Admin Proof Routes - "No More Lying" layer for verification
-// Enforce cookie-admin only for admin-proof routes
-app.use(
-  "/api/admin/proof",
-  requireSupabaseAuth,
-  requireSupabaseAdmin,
-  adminProofRoutes
-);
-
-// Admin DB Health Check (requires Supabase admin)
-app.get("/api/admin/db-health", requireSupabaseAdmin, async (_req, res) => {
-  try {
-    const ok = await testSupabaseHttpConnection();
-
-    if (ok) return res.json({ ok: true });
-
-    return res.status(500).json({
-      ok: false,
-      error: "DB health check failed",
-    });
-  } catch (err: any) {
-    console.error("[DB-HEALTH] Supabase HTTP connection error:", err);
-
-    return res.status(500).json({
-      ok: false,
-      error: "DB health check failed",
-      detail: err?.message ?? "Unknown error",
-    });
-  }
-});
-
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
 app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
@@ -430,43 +381,6 @@ app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requ
 // Question feedback endpoint (thumbs up/down)
 app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
 
-// Admin Review Routes (with CSRF protection for state-changing operations)
-app.get("/api/admin/questions/needs-review", requireSupabaseAdmin, getNeedsReview);
-app.get("/api/admin/questions/statistics", requireSupabaseAdmin, getParsingStatistics);
-app.post("/api/admin/questions/:id/approve", csrfProtection, requireSupabaseAdmin, approveQuestion);
-app.post("/api/admin/questions/:id/reject", csrfProtection, requireSupabaseAdmin, rejectQuestion);
-
-// Admin-only Supabase debug endpoint to verify database connection
-app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => {
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL || "";
-    const url = supabaseUrl ? new URL(supabaseUrl) : null;
-
-    const { count, error: countErr } = await supabaseServer.from("questions").select("id", { count: "exact", head: true });
-
-    if (countErr) {
-      console.error("[ADMIN] supabase-debug count error:", countErr.message);
-      return res.status(500).json({ error: "Failed to count questions", detail: countErr.message });
-    }
-
-    const { data: latest, error: latestErr } = await supabaseServer.from("questions").select("created_at").order("created_at", { ascending: false }).limit(1);
-
-    if (latestErr) {
-      console.error("[ADMIN] supabase-debug latest error:", latestErr.message);
-    }
-
-    res.json({
-      supabaseUrlHost: url?.hostname || "unknown",
-      projectRef: url?.hostname?.split(".")[0] || "unknown",
-      questionsCount: count ?? 0,
-      latestQuestionCreatedAt: (latest as any)?.[0]?.created_at ?? null,
-    });
-  } catch (error: any) {
-    console.error("[ADMIN] supabase-debug exception:", error.message);
-    res.status(500).json({ error: "Internal error", detail: error.message });
-  }
-});
-
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);
 
@@ -498,7 +412,7 @@ app.get("/api/_whoami", (_req, res) => {
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
     version: "1.0.0",
-    routes: ["rag/v2", "tutor/v2", "admin/db-health"],
+    routes: ["rag/v2", "tutor/v2"],
     timestamp: new Date().toISOString(),
   });
 });
@@ -745,11 +659,6 @@ if (isMainModule) {
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  GET    /api/practice/next`);
     console.log(`  POST   /api/practice/answer`);
-    console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
-    console.log(`  GET    /api/admin/questions/needs-review`);
-    console.log(`  GET    /api/admin/questions/statistics`);
-    console.log(`  POST   /api/admin/questions/:id/approve`);
-    console.log(`  POST   /api/admin/questions/:id/reject`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);
@@ -780,3 +689,4 @@ if (isMainModule) {
 }
 
 export default app;
+

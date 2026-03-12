@@ -4,7 +4,6 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/useAuth";
 import { Crown, UserCircle, Menu, GraduationCap, LayoutDashboard, BookOpen, MessageSquare, CreditCard, Settings, LogOut, Zap, Upload, Star, Calendar } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import NotificationDropdown from "@/components/NotificationDropdown";
@@ -45,14 +44,14 @@ export function AppShell({
 function AppHeader() {
   const [location, navigate] = useLocation();
   const { user, isLoading: authLoading, signOut } = useSupabaseAuth();
-  const { isAdmin, isLoading: userLoading } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { toast } = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   
   // Get display name with fallbacks
   const displayName = user?.display_name || user?.email?.split('@')[0] || 'Student';
-  const isLoadingAuth = authLoading || userLoading;
+  const isLoadingAuth = authLoading;
 
   // Use the context signOut which clears Supabase session, backend cookies, and React Query cache
   const handleSignOut = async () => {
@@ -255,3 +254,4 @@ function AppHeader() {
     </header>
   );
 }
+

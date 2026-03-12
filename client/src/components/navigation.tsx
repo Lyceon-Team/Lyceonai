@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { UserCircle, Settings, LogOut, Crown, Zap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
@@ -9,38 +10,31 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import NotificationDropdown from "./NotificationDropdown";
 
 export default function Navigation() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated, isAdmin, isGuardian, authLoading } = useSupabaseAuth();
+  const { user, isAuthenticated, isAdmin, isGuardian, authLoading, signOut } = useSupabaseAuth();
   const { toast } = useToast();
 
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest('/api/auth/signout', {
-        method: 'POST'
-      });
-    },
-    onSuccess: () => {
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
       toast({ title: "Logged out successfully" });
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
       navigate('/login');
-    },
-    onError: () => {
+    } catch {
       toast({ 
         title: "Logout failed", 
         description: "Please try again",
         variant: "destructive"
       });
+    } finally {
+      setIsSigningOut(false);
     }
-  });
-
-  const handleLogout = () => {
-    logoutMutation.mutate();
   };
 
   const isActive = (path: string) => location === path;
@@ -178,11 +172,11 @@ export default function Navigation() {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     onClick={handleLogout}
-                    disabled={logoutMutation.isPending}
+                    disabled={isSigningOut}
                     data-testid="menu-logout"
                   >
                     <LogOut className="mr-2 h-4 w-4" />
-                    {logoutMutation.isPending ? 'Logging out...' : 'Logout'}
+                    {isSigningOut ? 'Logging out...' : 'Logout'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
