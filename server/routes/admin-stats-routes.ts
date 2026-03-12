@@ -18,7 +18,7 @@ router.get('/stats', requireSupabaseAdmin, async (req: Request, res: Response) =
       recentSessionsResult
     ] = await Promise.all([
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('needs_review', true),
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
       supabaseServer.from('practice_sessions').select('id', { count: 'exact', head: true })
         .gte('started_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
     ]);
@@ -55,7 +55,7 @@ router.get('/kpis', requireSupabaseAdmin, async (req: Request, res: Response) =>
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Math'),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Reading and Writing'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('needs_review', true),
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('status', 'draft'),
       supabaseServer.from('questions').select('created_at, source_pdf').order('created_at', { ascending: false }).limit(1),
     ]);
 

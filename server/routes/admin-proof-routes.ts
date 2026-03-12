@@ -168,7 +168,7 @@ router.delete('/cleanup-smoke', csrfProtection, async (_req: Request, res: Respo
     const { data, error } = await supabaseServer
       .from('questions')
       .delete()
-      .like('canonical_id', '%SMOKE%')
+      .eq('skill_code', 'SMOKE.SKILL')
       .select('id');
 
     if (error) {
