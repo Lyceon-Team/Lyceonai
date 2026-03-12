@@ -13,9 +13,10 @@ async function diagnose() {
 
   const { data: mathCandidates, error: mathErr } = await supabase
     .from("questions")
-    .select("id, section, stem")
-    .not("needs_review", "is", true)
-    .ilike("section", "%math%")
+    .select("id, section, section_code, stem, difficulty")
+    .eq("question_type", "multiple_choice")
+    .eq("status", "published")
+    .eq("section_code", "MATH")
     .limit(120);
 
   if (mathErr) {
@@ -27,6 +28,8 @@ async function diagnose() {
       console.log("[MATH] Sample:", {
         id: sample.id,
         section: sample.section,
+        section_code: sample.section_code,
+        difficulty: sample.difficulty,
         stemPopulated: !!sample.stem && sample.stem.length > 0,
         stemPreview: sample.stem?.slice(0, 60) + "...",
       });
@@ -37,9 +40,10 @@ async function diagnose() {
 
   const { data: rwCandidates, error: rwErr } = await supabase
     .from("questions")
-    .select("id, section, stem")
-    .not("needs_review", "is", true)
-    .or("section.ilike.%reading%,section.ilike.%writing%,section.ilike.%rw%")
+    .select("id, section, section_code, stem, difficulty")
+    .eq("question_type", "multiple_choice")
+    .eq("status", "published")
+    .eq("section_code", "RW")
     .limit(200);
 
   if (rwErr) {
@@ -51,6 +55,8 @@ async function diagnose() {
       console.log("[RW] Sample:", {
         id: sample.id,
         section: sample.section,
+        section_code: sample.section_code,
+        difficulty: sample.difficulty,
         stemPopulated: !!sample.stem && sample.stem.length > 0,
         stemPreview: sample.stem?.slice(0, 60) + "...",
       });
@@ -60,9 +66,9 @@ async function diagnose() {
   console.log("\n=== Summary ===");
   console.log("Math candidates:", mathCandidates?.length || 0);
   console.log("RW candidates:", rwCandidates?.length || 0);
-  console.log("Both have populated stems:", 
-    (mathCandidates?.[0]?.stem?.length || 0) > 0 && 
-    (rwCandidates?.[0]?.stem?.length || 0) > 0 ? "YES" : "NO"
+  console.log(
+    "Both have populated stems:",
+    (mathCandidates?.[0]?.stem?.length || 0) > 0 && (rwCandidates?.[0]?.stem?.length || 0) > 0 ? "YES" : "NO"
   );
 }
 

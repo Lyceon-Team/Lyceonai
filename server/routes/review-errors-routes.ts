@@ -13,37 +13,18 @@ import { MasteryEventType } from "../../apps/api/src/services/mastery-constants"
 type ReviewOutcome = "review_pass" | "review_fail";
 type TutorOutcome = "tutor_helped" | "tutor_fail";
 
-// Validation schema for review error attempt
 const reviewErrorAttemptSchema = z.object({
   question_id: z.string().min(1, "question_id is required"),
   selected_answer: z.string().nullable().optional(),
   free_response_answer: z.string().nullable().optional(),
-  is_correct: z.boolean().optional(), // deprecated: correctness is server-verified
+  is_correct: z.boolean().optional(),
   seconds_spent: z.number().int().nonnegative().nullable().optional(),
   source_context: z.literal("review_errors"),
   client_attempt_id: z.string().optional(),
 });
 
 function normalizeAnswer(value: string | null | undefined): string {
-  return (value || "").trim().toLowerCase();
-}
-
-function gradeReviewAnswer(
-  question: {
-    type: string | null;
-    answer_choice: string | null;
-    answer_text: string | null;
-  },
-  selectedAnswer: string | null | undefined,
-  freeResponseAnswer: string | null | undefined
-): boolean {
-  const type = (question.type || "mc").toLowerCase();
-
-  if (type === "fr") {
-    return normalizeAnswer(freeResponseAnswer) !== "" && normalizeAnswer(freeResponseAnswer) === normalizeAnswer(question.answer_text);
-  }
-
-  return normalizeAnswer(selectedAnswer) !== "" && normalizeAnswer(selectedAnswer) === normalizeAnswer(question.answer_choice);
+  return (value || "").trim().toUpperCase();
 }
 
 function resolveReviewOutcome(isCorrect: boolean): ReviewOutcome {
@@ -62,14 +43,6 @@ function resolveTutorEventType(isCorrect: boolean): MasteryEventType {
   return isCorrect ? MasteryEventType.TUTOR_HELPED : MasteryEventType.TUTOR_FAIL;
 }
 
-/**
- * POST /api/review-errors/attempt
- *
- * Records a student's review attempt and emits canonical mastery events.
- * - Always emits one canonical review outcome event: REVIEW_PASS or REVIEW_FAIL.
- * - Emits tutor auxiliary effects only on verified retries: TUTOR_HELPED or TUTOR_FAIL.
- * - Rejects mastery emission when no prior failed/skipped practice source attempt exists.
- */
 export async function recordReviewErrorAttempt(req: Request, res: Response) {
   const requestId = req.requestId;
 
@@ -88,7 +61,6 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
     const {
       question_id,
       selected_answer,
-      free_response_answer,
       seconds_spent,
       client_attempt_id,
     } = validationResult.data;
@@ -98,7 +70,6 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       return res.status(401).json({ error: "Unauthorized - user ID not found", code: "AUTH_REQUIRED", requestId });
     }
 
-    // Canonical anti-shortcut guard: question must come from a prior failed/skipped practice attempt.
     const { data: reviewSourceAttempt, error: reviewSourceError } = await supabaseServer
       .from("answer_attempts")
       .select("id, attempted_at, outcome, is_correct")
@@ -128,31 +99,27 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
     const { data: question, error: questionError } = await supabaseServer
       .from("questions")
-      .select("id, canonical_id, type, answer_choice, answer_text, explanation")
+      .select("id, canonical_id, question_type, correct_answer, answer_text, explanation")
       .eq("id", question_id)
+      .eq("question_type", "multiple_choice")
       .single();
 
     if (questionError || !question) {
       return res.status(404).json({ error: "Question not found", detail: questionError?.message, requestId });
     }
 
-    const verifiedIsCorrect = gradeReviewAnswer(question, selected_answer, free_response_answer);
+    const verifiedIsCorrect = normalizeAnswer(selected_answer) !== "" && normalizeAnswer(selected_answer) === normalizeAnswer(question.correct_answer);
     const reviewOutcome = resolveReviewOutcome(verifiedIsCorrect);
     const reviewEventType = resolveReviewEventType(verifiedIsCorrect);
 
-    const mode: "mc" | "fr" = (question.type || "mc").toLowerCase() === "fr" ? "fr" : "mc";
-    const correctAnswerKey = mode === "mc"
-      ? ((question.answer_choice || "").trim().toUpperCase() || null)
-      : null;
-    const explanation = typeof (question as any).explanation === "string" && (question as any).explanation.trim()
-      ? (question as any).explanation
-      : null;
+    const correctAnswerKey = normalizeAnswer(question.correct_answer) || null;
+    const explanation = typeof question.explanation === "string" && question.explanation.trim() ? question.explanation : null;
 
     const insertData = {
       student_id: userId,
       question_id,
       context: "review_errors" as const,
-      selected_answer: selected_answer || free_response_answer || null,
+      selected_answer: selected_answer || null,
       is_correct: verifiedIsCorrect,
       seconds_spent: seconds_spent || null,
       client_attempt_id: client_attempt_id || null,
@@ -174,7 +141,6 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
           .single();
 
         if (fetchError) {
-          console.error("[review-errors/attempt] Error fetching existing attempt:", fetchError);
           return res.status(500).json({ error: "Database error", detail: fetchError.message, requestId });
         }
 
@@ -190,13 +156,13 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
           masteryApplied: false,
           masteryEvents: [],
           masteryErrors: [],
-          mode,
+          mode: 'multiple_choice',
           correctAnswerKey,
+          answerText: null,
           explanation,
         });
       }
 
-      console.error("[review-errors/attempt] Error inserting attempt:", error);
       return res.status(500).json({ error: "Failed to record attempt", detail: error.message, requestId });
     }
 
@@ -224,8 +190,8 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
           domain: metadata.domain,
           skill: metadata.skill,
           subskill: metadata.subskill,
-          difficulty_bucket: metadata.difficulty_bucket,
-          structure_cluster_id: metadata.structure_cluster_id,
+          skill_code: metadata.skill_code,
+          difficulty: metadata.difficulty,
         },
       });
 
@@ -235,15 +201,13 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       }
     };
 
-    // Canonical review outcome event is always emitted for eligible review attempts.
     await emitMasteryEvent(reviewEventType);
 
-    // Tutor verification is separate from review semantics and only contributes on verified retry.
     let tutorVerifiedRetry = false;
     let tutorOutcome: TutorOutcome | null = null;
 
     if (question.canonical_id) {
-      const { data: tutorContext, error: tutorContextError } = await supabaseServer
+      const { data: tutorContext } = await supabaseServer
         .from("tutor_interactions")
         .select("id, created_at")
         .eq("user_id", userId)
@@ -252,10 +216,6 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (tutorContextError) {
-        console.warn("[review-errors/attempt] Tutor context check failed:", tutorContextError.message);
-      }
 
       if (tutorContext) {
         tutorVerifiedRetry = true;
@@ -274,12 +234,12 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       masteryApplied: masteryEvents.length > 0 && masteryErrors.length === 0,
       masteryEvents,
       masteryErrors,
-      mode,
+      mode: 'multiple_choice',
       correctAnswerKey,
+      answerText: null,
       explanation,
     });
   } catch (error: any) {
-    console.error("[review-errors/attempt] Unexpected error:", error);
     return res.status(500).json({ error: "Internal server error", detail: error.message, requestId });
   }
 }

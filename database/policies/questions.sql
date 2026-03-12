@@ -12,66 +12,42 @@ ALTER TABLE embeddings ENABLE ROW LEVEL SECURITY;
 -- QUESTIONS POLICIES
 -- ============================================================================
 
--- Questions readable if:
--- 1. Course is public, OR
--- 2. User is member of course's org, OR
--- 3. Question has no course_id (global question bank)
-CREATE POLICY "questions_select_accessible"
+-- Questions readable by authenticated users
+CREATE POLICY "questions_select_authenticated"
 ON questions FOR SELECT
-USING (
-  course_id IS NULL OR
-  EXISTS (
-    SELECT 1 FROM courses c
-    WHERE c.id = questions.course_id
-      AND (
-        c.visibility = 'public' OR
-        EXISTS (
-          SELECT 1 FROM memberships m
-          WHERE m.org_id = c.org_id AND m.user_id = auth.uid()
-        )
-      )
-  )
-);
+USING (auth.role() = 'authenticated');
 
--- Questions created by org teachers/admins (or system for global bank)
-CREATE POLICY "questions_insert_org_member"
+-- Questions writable by admins only
+CREATE POLICY "questions_insert_admin"
 ON questions FOR INSERT
 WITH CHECK (
-  course_id IS NULL OR -- Global question bank (admin only at app level)
   EXISTS (
-    SELECT 1 FROM courses c
-    JOIN memberships m ON m.org_id = c.org_id
-    WHERE c.id = questions.course_id
-      AND m.user_id = auth.uid()
-      AND m.role IN ('teacher', 'admin')
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
   )
 );
 
--- Questions updated by org teachers/admins
-CREATE POLICY "questions_update_org_member"
+CREATE POLICY "questions_update_admin"
 ON questions FOR UPDATE
 USING (
-  course_id IS NULL OR
   EXISTS (
-    SELECT 1 FROM courses c
-    JOIN memberships m ON m.org_id = c.org_id
-    WHERE c.id = questions.course_id
-      AND m.user_id = auth.uid()
-      AND m.role IN ('teacher', 'admin')
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
   )
 );
 
--- Questions deleted by org admins
 CREATE POLICY "questions_delete_admin"
 ON questions FOR DELETE
 USING (
-  course_id IS NULL OR
   EXISTS (
-    SELECT 1 FROM courses c
-    JOIN memberships m ON m.org_id = c.org_id
-    WHERE c.id = questions.course_id
-      AND m.user_id = auth.uid()
-      AND m.role = 'admin'
+    SELECT 1 FROM users u
+    WHERE u.id = auth.uid() AND u.is_admin = true
   )
 );
 
@@ -159,3 +135,4 @@ COMMENT ON TABLE documents IS 'RLS enabled - public SAT materials';
 COMMENT ON TABLE chunks IS 'RLS enabled - inherits course visibility';
 COMMENT ON TABLE transcripts IS 'RLS enabled - inherits course visibility';
 COMMENT ON TABLE embeddings IS 'RLS enabled - public for semantic search';
+

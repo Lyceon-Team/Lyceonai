@@ -170,18 +170,31 @@ CREATE POLICY "Only admins can modify questions"
 -- =====================================================================
 
 CREATE OR REPLACE VIEW public.questions_safe AS
-SELECT 
-  id, document_id, question_number, internal_id, section, stem,
-  question_type, options,
-  CASE WHEN (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin' 
-    THEN answer ELSE NULL END as answer,
-  CASE WHEN (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin' 
-    THEN answer_choice ELSE NULL END as answer_choice,
-  CASE WHEN (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'admin' 
-    THEN answer_text ELSE NULL END as answer_text,
-  explanation, difficulty, difficulty_level, unit_tag, tags,
-  classification, page_number, ai_generated, created_at, type,
-  confidence, needs_review
+SELECT
+  id,
+  canonical_id,
+  status,
+  section,
+  section_code,
+  question_type,
+  stem,
+  options,
+  domain,
+  skill,
+  subskill,
+  skill_code,
+  difficulty,
+  source_type,
+  test_code,
+  exam,
+  ai_generated,
+  diagram_present,
+  tags,
+  competencies,
+  provenance_chunk_ids,
+  created_at,
+  updated_at,
+  published_at
 FROM public.questions;
 
 GRANT SELECT ON public.questions_safe TO authenticated;
@@ -262,3 +275,4 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 -- ✅ questions_safe view (no answers for students)
 -- ✅ Auto-profile creation trigger
 -- =====================================================================
+

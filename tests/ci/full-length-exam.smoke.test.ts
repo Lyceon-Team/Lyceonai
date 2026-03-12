@@ -51,7 +51,7 @@ describe('Full-Length Exam Smoke Tests (No DB)', () => {
       // The actual implementation is in the routes/service layer
       
       // Expected: getCurrentSession returns question WITHOUT:
-      const forbiddenFields = ['answer_choice', 'answer_text', 'explanation', 'rationale'];
+      const forbiddenFields = ['correct_answer', 'answer_text', 'explanation', 'rationale'];
       
       // Required: getCurrentSession returns question WITH:
       const requiredFields = ['id', 'stem', 'section', 'type', 'options'];
@@ -128,3 +128,4 @@ describe('Full-Length Exam Smoke Tests (No DB)', () => {
     });
   });
 });
+

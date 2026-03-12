@@ -264,7 +264,7 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
     );
   }
 
-  const isMcQuestion = currentQuestion.type === 'mc' || (Array.isArray((currentQuestion as any).options) && (currentQuestion as any).options.length > 0);
+  const isMcQuestion = currentQuestion.question_type === 'multiple_choice' || (Array.isArray((currentQuestion as any).options) && (currentQuestion as any).options.length > 0);
 
   return (
     <div 
@@ -410,3 +410,4 @@ export default function FlowCardsPage() {
     </PracticeErrorBoundary>
   );
 }
+
