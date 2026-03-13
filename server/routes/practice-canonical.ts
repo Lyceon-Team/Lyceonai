@@ -1,38 +1,35 @@
+// server/routes/practice-canonical.ts
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { z } from "zod";
-import crypto from "crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { checkPracticeLimit } from "../middleware/usage-limits";
 import { csrfGuard } from "../middleware/csrf";
-<<<<<<< HEAD
-import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
-import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
-=======
 import { z } from "zod";
 import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
 // Intentional runtime delegation: practice route ownership stays in server/** while mastery writes stay in apps/api services.
 import { getQuestionMetadataForAttempt, applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 import { isValidCanonicalId } from "../../apps/api/src/lib/canonicalId";
+
+
 
 const router = Router();
 const csrfProtection = csrfGuard();
 
+// Rate limiter for practice answer submissions
 const practiceAnswerRateLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
+  windowMs: 60_000, // 1 minute window
+  max: 30, // max 30 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (_req, res) => {
-    res.status(429).json({ error: "rate_limited", message: "Too many practice submissions. Please slow down." });
+  handler: (req, res) => {
+    res.status(429).json({
+      error: "rate_limited",
+      message: "Too many practice submissions. Please slow down."
+    });
   },
 });
 
-<<<<<<< HEAD
-type Option = { key: "A" | "B" | "C" | "D"; text: string };
-=======
 /**
  * DB truth (from your questions_rows (6).csv):
  * questions has: id, canonical_id, section, section_code, stem, question_type, options, correct_answer, answer_text, explanation, domain, skill, subskill, skill_code, difficulty
@@ -47,43 +44,12 @@ type Option = { key: "A" | "B" | "C" | "D"; text: string };
  */
 
 type McOption = { key: string; text: string };
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
 type SafeQuestionDTO = {
   id: string;
-  canonical_id: string | null;
   section: string;
-  section_code: "MATH" | "RW";
-  question_type: "multiple_choice";
   stem: string;
-<<<<<<< HEAD
-<<<<<<< HEAD
-  options: [Option, Option, Option, Option];
-  difficulty: 1 | 2 | 3;
-  domain: string | null;
-  skill: string | null;
-  subskill: string | null;
-  skill_code: string | null;
-  tags: unknown | null;
-  competencies: unknown | null;
-};
-
-function normalizeSectionParam(section?: string | null): "MATH" | "RW" | "RANDOM" {
-  const s = String(section || "random").trim().toLowerCase();
-  if (s === "math" || s === "m") return "MATH";
-  if (s === "rw" || s === "reading-writing" || s === "reading" || s === "writing") return "RW";
-  return "RANDOM";
-}
-
-function normalizeChoice(value: unknown): "A" | "B" | "C" | "D" | null {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (["A", "B", "C", "D"].includes(normalized)) return normalized as "A" | "B" | "C" | "D";
-  return null;
-=======
-  type: "mc";
-=======
   questionType: "multiple_choice";
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   options: McOption[];
   difficulty: string | null;
 };
@@ -157,38 +123,6 @@ function normalizeSectionParam(section?: string | null): string | null {
 
   if (s === "random") return "Random";
   return "Random"; // Default to Random instead of null to avoid type issues
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-}
-
-function normalizeOptions(options: unknown): [Option, Option, Option, Option] | null {
-  if (!Array.isArray(options) || options.length !== 4) return null;
-  const parsed = options.map((opt: any) => ({ key: normalizeChoice(opt?.key), text: opt?.text }));
-  if (parsed.some((opt) => !opt.key || typeof opt.text !== "string" || opt.text.length === 0)) return null;
-  return parsed as [Option, Option, Option, Option];
-}
-
-function toSafeQuestion(row: any): SafeQuestionDTO | null {
-  const options = normalizeOptions(row.options);
-  const difficulty = Number(row.difficulty);
-  if (!options) return null;
-  if (difficulty !== 1 && difficulty !== 2 && difficulty !== 3) return null;
-
-  return {
-    id: row.id,
-    canonical_id: row.canonical_id ?? null,
-    section: row.section,
-    section_code: row.section_code,
-    question_type: "multiple_choice",
-    stem: row.stem,
-    options,
-    difficulty,
-    domain: row.domain ?? null,
-    skill: row.skill ?? null,
-    subskill: row.subskill ?? null,
-    skill_code: row.skill_code ?? null,
-    tags: row.tags ?? null,
-    competencies: row.competencies ?? null,
-  };
 }
 
 async function getSessionStats(sessionId: string, userId: string): Promise<{ correct: number; total: number; streak: number }> {
@@ -206,28 +140,15 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{ cor
   const total = attempts.length;
 
   let streak = 0;
-  for (const attempt of attempts) {
-    if (attempt.outcome === "skipped") continue;
-    if (attempt.is_correct) streak++;
+  for (const a of attempts) {
+    if ((a as any).outcome === "skipped") continue;
+    if ((a as any).is_correct) streak++;
     else break;
   }
 
   return { correct, total, streak };
 }
 
-<<<<<<< HEAD
-async function pickRandomQuestion(args: { section: "MATH" | "RW" | "RANDOM"; sessionId?: string | null }) {
-  let query = supabaseServer
-    .from("questions")
-    .select("id, canonical_id, section, section_code, question_type, stem, options, correct_answer, difficulty, domain, skill, subskill, skill_code, tags, competencies")
-    .eq("status", "published")
-    .eq("question_type", "multiple_choice")
-    .order("created_at", { ascending: false })
-    .limit(400);
-
-  if (args.section === "MATH") query = query.eq("section_code", "MATH");
-  if (args.section === "RW") query = query.eq("section_code", "RW");
-=======
 async function pickRandomQuestion(args: {
   section: "Math" | "RW" | "Random";
   userId: string;
@@ -255,24 +176,24 @@ async function pickRandomQuestion(args: {
   if (args.section === "Math") q = q.eq("section_code", "MATH");
   if (args.section === "RW") q = q.eq("section_code", "RW");
   // Random => no section filter
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
-  const { data: pool, error } = await query;
+  const { data: pool, error } = await q;
   if (error) return { error: `questions_query_failed: ${error.message}` };
+  if (!pool || pool.length === 0) return { error: "no_questions_available" };
 
-  let attemptedIds = new Set<string>();
+  // Session attempts filter (soft preference)
+  let attempted = new Set<string>();
   if (args.sessionId) {
-    const { data: attempts } = await supabaseServer
+    const { data: attempts, error: attemptsErr } = await supabaseServer
       .from("answer_attempts")
       .select("question_id")
       .eq("session_id", args.sessionId);
-    attemptedIds = new Set((attempts || []).map((a: any) => a.question_id));
+
+    if (!attemptsErr && attempts) {
+      attempted = new Set(attempts.map((a: any) => a.question_id).filter(Boolean));
+    }
   }
 
-<<<<<<< HEAD
-  const candidates = (pool || []).map(toSafeQuestion).filter((q): q is SafeQuestionDTO => !!q);
-  if (!candidates.length) return { error: "no_valid_questions_available" };
-=======
   // Filter invalid MC questions + build candidates (no explanation - secure DTO)
   const candidates = pool
     .map((row: any) => ({
@@ -289,35 +210,35 @@ async function pickRandomQuestion(args: {
       if (!isValidCanonicalId(String(row.canonical_id || ""))) return false;
       return isValidMcQuestion({ correct_answer: row._correct_answer, options: row.options });
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
-  const unattempted = candidates.filter((q) => !attemptedIds.has(q.id));
-  const source = unattempted.length ? unattempted : candidates;
-  const picked = source[Math.floor(Math.random() * source.length)];
-  return { question: picked };
+  if (candidates.length === 0) return { error: "no_valid_questions_available" };
+
+  // Prefer unattempted questions if possible
+  const unattempted = candidates.filter((c) => !attempted.has(c.id));
+  const pickFrom = unattempted.length > 0 ? unattempted : candidates;
+
+  // Random pick (crypto-safe not required)
+  const chosen = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+
+  return {
+    question: toSafeQuestionDTO(chosen),
+  };
 }
 
-<<<<<<< HEAD
-router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true }), async (req, res) => {
-=======
 /**
  * GET /api/practice/next?section=math&mode=balanced
  * - creates/continues practice session
  * - returns next question
  */
 router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, incrementStrategy: "on_success" }), async (req, res) => {
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   const requestId = (req as any).requestId;
-  const userId = (req as any).user?.id;
-  if (!userId) return res.status(401).json({ error: "Authentication required", requestId });
+  const user = (req as any).user;
+  const userId = user?.id;
 
-  const section = normalizeSectionParam(String(req.query.section ?? "random"));
+  if (!userId) {
+    return res.status(401).json({ error: "Authentication required", message: "You must be signed in", requestId });
+  }
 
-<<<<<<< HEAD
-  const { data: existingSession } = await supabaseServer
-    .from("practice_sessions")
-    .select("id")
-=======
   const sectionParam = normalizeSectionParam(String(req.query.section ?? "random"));
   const section: "Math" | "RW" | "Random" =
     sectionParam === "Math" ? "Math" : sectionParam === "RW" ? "RW" : "Random";
@@ -329,7 +250,6 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
   const { data: existingSession } = await supabaseServer
     .from("practice_sessions")
     .select("id, status, metadata")
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     .eq("user_id", userId)
     .eq("section", section)
     .eq("mode", mode)
@@ -342,11 +262,9 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
   let sessionMeta = (existingSession?.metadata as any) || {};
 
   if (!sessionId) {
+    // Create new session
     const { data: newSession, error: sessionErr } = await supabaseServer
       .from("practice_sessions")
-<<<<<<< HEAD
-      .insert({ user_id: userId, section, status: "in_progress", started_at: new Date().toISOString() })
-=======
       .insert({
         user_id: userId, // must match users(id) FK in your DB
         section,
@@ -356,12 +274,15 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
         metadata: { client_instance_id: clientInstanceId },
         updated_at: new Date().toISOString(),
       })
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
       .select("id")
       .single();
 
     if (sessionErr || !newSession?.id) {
-      return res.status(500).json({ error: "session_create_failed", detail: sessionErr?.message, requestId });
+      return res.status(500).json({
+        error: "session_create_failed",
+        message: sessionErr?.message ?? "Unable to create practice session",
+        requestId,
+      });
     }
 
     sessionId = newSession.id;
@@ -411,19 +332,11 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
     }
   }
 
-  const picked = await pickRandomQuestion({ section, sessionId });
+  const picked = await pickRandomQuestion({ section, userId, sessionId });
   if ("error" in picked) {
     return res.status(500).json({ error: "question_pick_failed", detail: picked.error, requestId });
   }
 
-<<<<<<< HEAD
-  await supabaseServer.from("practice_events").insert({
-    user_id: userId,
-    session_id: sessionId,
-    question_id: picked.question.id,
-    event_type: "served",
-    created_at: new Date().toISOString(),
-=======
   sessionMeta.active_question_id = picked.question.id;
   sessionMeta.client_instance_id = clientInstanceId;
 
@@ -450,17 +363,14 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
     sessionId,
     question: picked.question,
     stats,
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   });
-
-  const stats = await getSessionStats(sessionId, userId);
-  return res.json({ sessionId, question: picked.question, stats });
 });
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
   questionId: z.string().uuid(),
   selectedAnswer: z.string().optional().nullable(),
+  freeResponseAnswer: z.string().optional().nullable(),
   skipped: z.boolean().optional(),
   elapsedMs: z.number().optional().nullable(),
   idempotencyKey: z.string().max(128).optional().nullable(),
@@ -469,19 +379,18 @@ const AnswerBodySchema = z.object({
 
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
   const requestId = (req as any).requestId;
-  const userId = (req as any).user?.id;
-  if (!userId) return res.status(401).json({ error: "Authentication required", requestId });
+  const user = (req as any).user;
+  const userId = user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: "Authentication required", message: "You must be signed in", requestId });
+  }
 
   const parsed = AnswerBodySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", issues: parsed.error.issues, requestId });
+  }
 
-<<<<<<< HEAD
-  const { sessionId, questionId, selectedAnswer, skipped, elapsedMs, idempotencyKey } = parsed.data;
-
-  const { data: sessionRow, error: sessionErr } = await supabaseServer.from("practice_sessions").select("id, user_id").eq("id", sessionId).single();
-  if (sessionErr || !sessionRow) return res.status(404).json({ error: "session_not_found", requestId });
-  if (sessionRow.user_id !== userId) return res.status(403).json({ error: "forbidden", requestId });
-=======
   const { sessionId, questionId, selectedAnswer, skipped, elapsedMs, idempotencyKey, client_instance_id } = parsed.data;
 
   // --- ENFORCE SESSION OWNERSHIP ---
@@ -519,32 +428,18 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     }
   }
   // --- END SESSION OWNERSHIP CHECK ---
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
-  const { data: question, error: qErr } = await supabaseServer
+  // Fetch canonical answer + explanation from DB
+  const { data: qRow, error: qErr } = await supabaseServer
     .from("questions")
-<<<<<<< HEAD
-<<<<<<< HEAD
-    .select("id, canonical_id, question_type, correct_answer, explanation")
-=======
-    .select("id, canonical_id, type, answer_choice, explanation, options")
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-=======
     .select("id, canonical_id, question_type, correct_answer, explanation, options")
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     .eq("id", questionId)
     .single();
 
-  if (qErr || !question) return res.status(404).json({ error: "question_not_found", requestId });
-  if (question.question_type !== "multiple_choice") return res.status(422).json({ error: "invalid_question_data", requestId });
+  if (qErr || !qRow) {
+    return res.status(404).json({ error: "question_not_found", message: qErr?.message ?? "Not found", requestId });
+  }
 
-<<<<<<< HEAD
-  const correctAnswer = normalizeChoice(question.correct_answer);
-  if (!correctAnswer) return res.status(422).json({ error: "invalid_question_data", requestId });
-
-  const chosen = skipped ? null : normalizeChoice(selectedAnswer);
-  const isCorrect = !!chosen && chosen === correctAnswer;
-=======
   if (!isValidCanonicalId(String(qRow.canonical_id || ""))) {
     return res.status(422).json({
       error: "invalid_question_data",
@@ -607,9 +502,15 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
   const chosen = normalizeKey(chosenRaw);
 
   const isCorrect = !!chosen && chosen === correctAnswerKey;
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   const outcome = skipped ? "skipped" : isCorrect ? "correct" : "incorrect";
 
+  // Clamp time_spent_ms to 0-30 minutes for data integrity
+  const clampedTimeSpentMs = typeof elapsedMs === "number"
+    ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000)
+    : null;
+
+  // Insert answer attempt (MUST include user_id for RLS + FK auth.users)
+  // Note: user_id FK is auth.users(id). We assume req.user.id is auth uid.
   const attemptId = crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -618,24 +519,16 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     user_id: userId,
     session_id: sessionId,
     question_id: questionId,
-<<<<<<< HEAD
-    selected_answer: chosen,
-=======
     selected_answer: selectedAnswer ?? null,
     free_response_answer: null,
     chosen: chosenRaw ?? null,
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     is_correct: isCorrect,
     outcome,
-    time_spent_ms: typeof elapsedMs === "number" ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000) : null,
+    time_spent_ms: clampedTimeSpentMs,
     attempted_at: now,
     client_attempt_id: idempotencyKey ?? null,
   });
 
-<<<<<<< HEAD
-  if (insErr && !String(insErr.message || "").toLowerCase().includes("duplicate")) {
-    return res.status(500).json({ error: "attempt_insert_failed", detail: insErr.message, requestId });
-=======
   // If unique(user_id, client_attempt_id) or unique(session_id, question_id) is hit,
   // treat this as an idempotent retry and return the previously stored outcome.
   if (insErr) {
@@ -709,18 +602,27 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
       message: "Unable to record answer attempt",
       requestId,
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   }
 
-  await supabaseServer.from("practice_events").insert({
-    user_id: userId,
-    session_id: sessionId,
-    question_id: questionId,
-    event_type: "answered",
-    created_at: now,
-    payload: { outcome, isCorrect },
-  });
+  // practice_events (non-blocking)
+  try {
+    await supabaseServer.from("practice_events").insert({
+      user_id: userId,
+      session_id: sessionId,
+      question_id: questionId,
+      event_type: "answered",
+      created_at: now,
+      payload: {
+        outcome,
+        isCorrect,
+      },
+    });
+  } catch {
+    // ignore
+  }
 
+  // Log to student_question_attempts + update mastery rollups
+  // MASTERY V1.0: Use PRACTICE_SUBMIT event type for proper weighting
   try {
     const metadata = await getQuestionMetadataForAttempt(questionId);
     if (metadata.canonicalId) {
@@ -729,13 +631,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
         questionCanonicalId: metadata.canonicalId,
         sessionId,
         isCorrect,
-<<<<<<< HEAD
-        selectedChoice: chosen,
-        timeSpentMs: typeof elapsedMs === "number" ? elapsedMs : null,
-=======
         selectedChoice: selectedAnswer ?? null,
         timeSpentMs: clampedTimeSpentMs,
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
         eventType: MasteryEventType.PRACTICE_SUBMIT,
         metadata: {
           exam: metadata.exam,
@@ -743,34 +640,24 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
           domain: metadata.domain,
           skill: metadata.skill,
           subskill: metadata.subskill,
-<<<<<<< HEAD
-          difficulty: metadata.difficulty,
-          skill_code: metadata.skill_code,
-          structure_cluster_id: metadata.structure_cluster_id,
-=======
           skill_code: metadata.skill_code,
           difficulty: metadata.difficulty,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+          structure_cluster_id: metadata.structure_cluster_id ?? null,
         },
       });
     }
-  } catch (error: any) {
-    console.warn("[practice] mastery logging failed", error?.message);
+  } catch (masteryErr: any) {
+    console.warn("[practice] mastery logging failed", { requestId, message: masteryErr?.message });
   }
 
+  // Get updated session stats
   const stats = await getSessionStats(sessionId, userId);
 
   return res.json({
     isCorrect,
-<<<<<<< HEAD
-    question_type: "multiple_choice",
-    correctAnswerKey: correctAnswer,
-    explanation: question.explanation || null,
-=======
     mode: questionType,
     correctAnswerKey: correctAnswerKey ?? null,
     explanation,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     feedback: isCorrect ? "Correct" : skipped ? "Skipped" : "Incorrect",
     stats,
   });
@@ -778,13 +665,6 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 
 export default router;
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-=======
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-=======
 
 
 
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

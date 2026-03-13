@@ -134,11 +134,7 @@ async function selectQuestionsForDomain(
     .select('canonical_id, difficulty, id')
     .eq('section', sectionName)
     .eq('domain', domain)
-<<<<<<< HEAD
-    .eq('status', 'published') // Only published/servable questions
-=======
     .eq('needs_review', false) // Only active/servable questions
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     .order('difficulty', { ascending: true })
     .order('id', { ascending: true });
   

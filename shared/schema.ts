@@ -7,15 +7,8 @@ import { z } from "zod";
 // CANONICAL QUESTION TYPES - Shared between backend and frontend
 // ============================================================================
 
-<<<<<<< HEAD
-export type AnswerKey = "A" | "B" | "C" | "D";
-
-export interface QuestionOption {
-  key: AnswerKey;
-=======
 export interface QuestionOption {
   key: 'A' | 'B' | 'C' | 'D';
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   text: string;
 }
 
@@ -24,52 +17,18 @@ export interface Competency {
   raw?: string | null;
 }
 
-<<<<<<< HEAD
-export interface OptionMetadataEntry {
-  role: "correct" | "distractor";
-  error_taxonomy: string | null;
-}
-
-export interface OptionMetadata {
-  A: OptionMetadataEntry;
-  B: OptionMetadataEntry;
-  C: OptionMetadataEntry;
-  D: OptionMetadataEntry;
-}
-
-export interface StudentQuestionBase {
-  id: string;
-  canonical_id: string;
-  section: string;
-  section_code: "MATH" | "RW";
-  question_type: "multiple_choice";
-  stem: string;
-  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
-  difficulty: 1 | 2 | 3;
-  domain: string;
-  skill: string;
-  subskill: string;
-  skill_code: string;
-  tags: unknown | null;
-  competencies: unknown | null;
-  explanation: string | null;
-}
-
-export interface StudentMcQuestion extends StudentQuestionBase {
-  question_type: "multiple_choice";
-}
-
-export type StudentFrQuestion = never;
-export type StudentQuestion = StudentMcQuestion;
-=======
 export interface StudentQuestion {
   id: string;
   canonicalId?: string | null;
+  canonical_id?: string | null;
   stem: string;
   section: string;
   sectionCode?: 'MATH' | 'RW' | null;
-  questionType: 'multiple_choice';
-  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
+  section_code?: 'MATH' | 'RW' | null;
+  questionType: 'multiple_choice' | 'free_response';
+  question_type?: 'multiple_choice' | 'free_response' | null;
+  type?: 'mc' | 'fr';
+  options: QuestionOption[];
   explanation: string | null;
   tags: string[];
   domain?: string | null;
@@ -80,9 +39,17 @@ export interface StudentQuestion {
   competencies?: Competency[];
 }
 
-export type StudentMcQuestion = StudentQuestion;
-export type StudentFrQuestion = never;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+export type StudentMcQuestion = StudentQuestion & {
+  questionType: 'multiple_choice';
+  question_type?: 'multiple_choice' | null;
+  type?: 'mc';
+};
+
+export type StudentFrQuestion = StudentQuestion & {
+  questionType: 'free_response';
+  question_type?: 'free_response' | null;
+  type?: 'fr';
+};
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -136,45 +103,68 @@ export const documents = pgTable("documents", {
 });
 
 /**
- * Canonical public.questions table contract
+ * CANONICAL QUESTIONS TABLE
+ *
+ * This table stores all SAT practice questions with support for both multiple-choice and free-response formats.
+ *
+ * CORE FIELDS (Central to the app's functionality):
+ *  - id: Unique identifier
+ *  - stem: Question text/prompt
+ *  - section: Question category (Math | Reading | Writing | Reading and Writing)
+ *  - type: Discriminated union field ('mc' | 'fr') - CANONICAL for identifying question type
+ *  - options: For MC questions, array of {key, text} choices (stored as JSONB)
+ *  - answerChoice: For MC questions, correct answer key (A|B|C|D)
+ *  - answerText: For FR questions, correct answer text
+ *  - explanation: Learning explanation/rationale
+ *  - difficulty / difficultyLevel: Difficulty classification
+ *  - tags/unitTag: Topic/unit tags for organization
+ *
+ * ADVANCED FIELDS (Ingestion/AI/Analytics):
+ *  - classification: AI categorization metadata
+ *  - sourceMapping: PDF structure/position metadata
+ *  - pageNumber, position: Document location
+ *  - embedding: Vector embeddings for RAG
+ *  - parsingMetadata: OCR/parsing details
+ *  - confidence, needsReview: Quality assurance flags
+ *  - questionHash, engineUsed, engineConfidence: OCR pipeline metadata
+ *  - provenanceChunkIds: RAG source tracking
+ *
+ * LEGACY FIELDS (For backward compatibility):
+ *  - questionType: DEPRECATED - use 'type' instead (enum values map: "multiple_choice" -> "mc", "free_response" -> "fr")
+ *  - answer: DEPRECATED - use answerChoice (MC) or answerText (FR) instead
+ *
+ * SECURITY NOTE: API routes MUST NOT leak answer, answerChoice, or answerText to students.
+ * These fields are server-side only and should never be included in StudentQuestion responses.
  */
 export const questions = pgTable("questions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  canonicalId: text("canonical_id").notNull().unique(),
-  status: text("status").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-<<<<<<< HEAD
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  publishedAt: timestamp("published_at"),
-  reviewedAt: timestamp("reviewed_at"),
-  reviewedBy: uuid("reviewed_by"),
-
-  section: text("section").notNull(),
-  sectionCode: text("section_code").notNull(),
-  questionType: text("question_type").notNull().default("multiple_choice"),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  documentId: varchar("document_id").references(() => documents.id), // Made optional for internal AI-generated questions
+  questionNumber: integer("question_number"), // Optional for internal AI-generated questions
+  internalId: text("internal_id").unique(), // Internal question ID for AI-generated questions
+  section: text("section").notNull(), // Math, Reading, Writing, Reading and Writing
   stem: text("stem").notNull(),
-  options: jsonb("options").notNull(),
-  correctAnswer: text("correct_answer").notNull(),
-  answerText: text("answer_text").notNull(),
-  explanation: text("explanation").notNull(),
-  optionMetadata: jsonb("option_metadata").notNull(),
-
-  domain: text("domain").notNull(),
-  skill: text("skill").notNull(),
-  subskill: text("subskill").notNull(),
-  skillCode: text("skill_code").notNull(),
-  difficulty: integer("difficulty").notNull(),
-
-  sourceType: integer("source_type").notNull(),
-  testCode: text("test_code"),
-  exam: text("exam"),
-  aiGenerated: boolean("ai_generated"),
-
-  diagramPresent: boolean("diagram_present"),
-  tags: jsonb("tags"),
-  competencies: jsonb("competencies"),
-  provenanceChunkIds: jsonb("provenance_chunk_ids"),
-=======
+  
+  // DEPRECATED: use 'type' field instead
+  questionType: text("question_type").notNull().default("multiple_choice"), // multiple_choice, free_response
+  
+  options: jsonb("options"), // Array of {key: string, text: string} - null for free response
+  
+  // DEPRECATED: use answerChoice (MC) or answerText (FR) instead
+  answer: text("answer").notNull(),
+  
+  explanation: text("explanation"),
+  difficulty: text("difficulty"), // Easy, Medium, Hard (legacy text field)
+  difficultyLevel: integer("difficulty_level"), // 1-5 numeric difficulty rating
+  unitTag: text("unit_tag"), // Topic/unit tag (e.g., "Algebra", "Geometry", "Reading Comprehension")
+  tags: jsonb("tags"), // Array of strings (stored as JSONB array)
+  classification: jsonb("classification"), // Structured AI categorization JSON
+  sourceMapping: jsonb("source_mapping"), // PDF structure metadata
+  pageNumber: integer("page_number"),
+  position: jsonb("position"), // {x, y, width, height} for bounding box
+  embedding: jsonb("embedding"), // Vector embedding for similarity search
+  aiGenerated: boolean("ai_generated").default(false).notNull(), // Whether question was AI-generated
+  provenanceChunkIds: jsonb("provenance_chunk_ids"), // Array of chunk IDs used as source
+  createdAt: timestamp("created_at").defaultNow().notNull(),
   
   // CANONICAL DISCRIMINATED UNION FIELDS (new architecture):
   type: text("type"), // "mc" | "fr" - CANONICAL type field (use this, not questionType)
@@ -207,7 +197,6 @@ export const questions = pgTable("questions", {
   sourceType: integer("source_type"), // 1 = parsed PDF, 2 = AI generated
   competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }>>(), // Array of {code, raw}
   version: integer("version").default(1), // Schema version
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 });
 
 export const chatMessages = pgTable("chat_messages", {
@@ -860,6 +849,29 @@ export interface ApiQuestionOption {
   text: string;
 }
 
+// Structured AI classification data
+export interface QuestionClassification {
+  topic: string; // Main domain/topic (e.g., "Algebra", "Reading Comprehension")
+  subtopic: string; // Specific skill area (e.g., "Linear inequalities in one or two variables")
+  skills: string[]; // Array of specific skills
+  questionType: string; // "Multiple Choice", "Grid-In", etc.
+  calculatorAllowed: boolean;
+  cognitiveLevel: string; // "Knowledge", "Application", "Analysis"
+  difficultyText: string; // "Easy", "Medium", "Hard"
+  difficultyNumeric: number; // 1, 2, 3
+  standardIds: string[]; // Array of standard IDs if available
+}
+
+// PDF source structure metadata
+export interface SourceMapping {
+  docType: 'practice' | 'qbank' | 'answers' | 'generic';
+  profile: string; // "practice-test-math", "answer-explanations", etc.
+  hasColumns: boolean;
+  optionStyle: string; // "A.", "(A)", "A)"
+  numberingStyle: string; // "1.", "Question 1", etc.
+  answerKeyPresent: boolean;
+  explanationMarkers: string[]; // ["Explanation:", "Rationale:", etc.]
+}
 
 // Enhanced source information for RAG responses
 export interface SourceInfo {
@@ -943,10 +955,3 @@ export interface StrengthsWeaknesses {
 }
 
 
-<<<<<<< HEAD
-
-
-
-
-=======
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

@@ -1,13 +1,13 @@
 #!/usr/bin/env npx tsx
 /**
  * Guardian Flow Smoke Test Script
- * 
+ *
  * Prerequisites:
  * - Server running on http://localhost:5000 (or $BASE_URL)
  * - Two test accounts created:
  *   - Student: STUDENT_EMAIL / STUDENT_PASSWORD
  *   - Guardian: GUARDIAN_EMAIL / GUARDIAN_PASSWORD
- * 
+ *
  * Usage:
  *   STUDENT_EMAIL=test-student@example.com \
  *   STUDENT_PASSWORD=secret123 \
@@ -17,12 +17,24 @@
  */
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5000';
+const BASE_ORIGIN = (() => {
+  try {
+    return new URL(BASE_URL).origin;
+  } catch {
+    return BASE_URL;
+  }
+})();
 
 interface TestResult {
   name: string;
   passed: boolean;
   error?: string;
   data?: any;
+}
+
+interface AuthSession {
+  cookieHeader: string;
+  user: any;
 }
 
 const results: TestResult[] = [];
@@ -32,25 +44,51 @@ function log(msg: string) {
 }
 
 function logResult(result: TestResult) {
-  const icon = result.passed ? '✅' : '❌';
+  const icon = result.passed ? 'PASS' : 'FAIL';
   console.log(`${icon} ${result.name}${result.error ? ': ' + result.error : ''}`);
   results.push(result);
 }
 
-async function signIn(email: string, password: string): Promise<{ accessToken: string; user: any } | null> {
+function extractCookieHeader(res: Response): string {
+  const headersAny = res.headers as any;
+  const setCookieHeaders: string[] = typeof headersAny.getSetCookie === 'function'
+    ? headersAny.getSetCookie()
+    : (() => {
+        const single = res.headers.get('set-cookie');
+        return single ? [single] : [];
+      })();
+
+  const cookieParts = setCookieHeaders
+    .map((value) => value.split(';')[0]?.trim())
+    .filter((value): value is string => !!value);
+
+  if (cookieParts.length === 0) {
+    throw new Error('No auth cookies were returned by /api/auth/signin');
+  }
+
+  return cookieParts.join('; ');
+}
+
+async function signIn(email: string, password: string): Promise<AuthSession | null> {
   try {
     const res = await fetch(`${BASE_URL}/api/auth/signin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Origin': BASE_ORIGIN,
+        'Referer': `${BASE_ORIGIN}/`,
+      },
       body: JSON.stringify({ email, password }),
     });
+
     if (!res.ok) {
       const err = await res.text();
       throw new Error(`Sign in failed: ${res.status} - ${err}`);
     }
+
     const data = await res.json();
     return {
-      accessToken: data.session?.access_token || data.access_token,
+      cookieHeader: extractCookieHeader(res),
       user: data.user,
     };
   } catch (err: any) {
@@ -59,30 +97,33 @@ async function signIn(email: string, password: string): Promise<{ accessToken: s
   }
 }
 
-async function getProfile(token: string): Promise<any> {
-  const res = await fetch(`${BASE_URL}/api/auth/user`, {
+async function getProfile(cookieHeader: string): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/profile`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Cookie': cookieHeader,
     },
   });
   if (!res.ok) throw new Error(`Get profile failed: ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return data?.user || data;
 }
 
-async function getGuardianStudents(token: string): Promise<any> {
+async function getGuardianStudents(cookieHeader: string): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/guardian/students`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Cookie': cookieHeader,
     },
   });
   return { status: res.status, data: await res.json() };
 }
 
-async function linkStudent(token: string, code: string): Promise<any> {
+async function linkStudent(cookieHeader: string, code: string): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/guardian/link`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Cookie': cookieHeader,
+      'Origin': BASE_ORIGIN,
+      'Referer': `${BASE_ORIGIN}/`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ code }),
@@ -90,20 +131,22 @@ async function linkStudent(token: string, code: string): Promise<any> {
   return { status: res.status, data: await res.json() };
 }
 
-async function getStudentSummary(token: string, studentId: string): Promise<any> {
+async function getStudentSummary(cookieHeader: string, studentId: string): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/guardian/students/${studentId}/summary`, {
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Cookie': cookieHeader,
     },
   });
   return { status: res.status, data: await res.json() };
 }
 
-async function unlinkStudent(token: string, studentId: string): Promise<any> {
+async function unlinkStudent(cookieHeader: string, studentId: string): Promise<any> {
   const res = await fetch(`${BASE_URL}/api/guardian/link/${studentId}`, {
     method: 'DELETE',
     headers: {
-      'Authorization': `Bearer ${token}`,
+      'Cookie': cookieHeader,
+      'Origin': BASE_ORIGIN,
+      'Referer': `${BASE_ORIGIN}/`,
     },
   });
   return { status: res.status, data: await res.json() };
@@ -135,7 +178,7 @@ async function runTests() {
   const studentAuth = await signIn(studentEmail, studentPassword);
   logResult({
     name: 'Student sign in',
-    passed: !!studentAuth?.accessToken,
+    passed: !!studentAuth?.cookieHeader,
     error: studentAuth ? undefined : 'Failed to sign in student',
   });
   if (!studentAuth) {
@@ -147,7 +190,7 @@ async function runTests() {
   log('Test 2: Student profile has link code');
   let studentProfile: any;
   try {
-    studentProfile = await getProfile(studentAuth.accessToken);
+    studentProfile = await getProfile(studentAuth.cookieHeader);
     const hasLinkCode = !!studentProfile?.student_link_code;
     logResult({
       name: 'Student profile has link code',
@@ -167,7 +210,7 @@ async function runTests() {
   const guardianAuth = await signIn(guardianEmail, guardianPassword);
   logResult({
     name: 'Guardian sign in',
-    passed: !!guardianAuth?.accessToken,
+    passed: !!guardianAuth?.cookieHeader,
     error: guardianAuth ? undefined : 'Failed to sign in guardian',
   });
   if (!guardianAuth) {
@@ -178,7 +221,7 @@ async function runTests() {
   // Test 4: Guardian profile has role=guardian
   log('Test 4: Guardian profile has role=guardian');
   try {
-    const guardianProfile = await getProfile(guardianAuth.accessToken);
+    const guardianProfile = await getProfile(guardianAuth.cookieHeader);
     logResult({
       name: 'Guardian role is correct',
       passed: guardianProfile?.role === 'guardian',
@@ -190,7 +233,7 @@ async function runTests() {
 
   // Test 5: Guardian cannot access unlinked student summary
   log('Test 5: Cannot access unlinked student summary');
-  const unlinkedSummary = await getStudentSummary(guardianAuth.accessToken, studentId);
+  const unlinkedSummary = await getStudentSummary(guardianAuth.cookieHeader, studentId);
   logResult({
     name: 'Unlinked student summary blocked',
     passed: unlinkedSummary.status === 404 || unlinkedSummary.status === 403,
@@ -199,7 +242,7 @@ async function runTests() {
 
   // Test 6: Link student
   log('Test 6: Link student with code');
-  const linkResult = await linkStudent(guardianAuth.accessToken, studentLinkCode);
+  const linkResult = await linkStudent(guardianAuth.cookieHeader, studentLinkCode);
   logResult({
     name: 'Link student',
     passed: linkResult.status === 200 && linkResult.data?.ok === true,
@@ -208,7 +251,7 @@ async function runTests() {
 
   // Test 7: List students shows linked student
   log('Test 7: List students shows linked student');
-  const studentsResult = await getGuardianStudents(guardianAuth.accessToken);
+  const studentsResult = await getGuardianStudents(guardianAuth.cookieHeader);
   const foundStudent = studentsResult.data?.students?.find((s: any) => s.id === studentId);
   logResult({
     name: 'List students includes linked student',
@@ -218,7 +261,7 @@ async function runTests() {
 
   // Test 8: Can access linked student summary
   log('Test 8: Can access linked student summary');
-  const linkedSummary = await getStudentSummary(guardianAuth.accessToken, studentId);
+  const linkedSummary = await getStudentSummary(guardianAuth.cookieHeader, studentId);
   logResult({
     name: 'Linked student summary accessible',
     passed: linkedSummary.status === 200,
@@ -227,7 +270,7 @@ async function runTests() {
 
   // Test 9: Unlink student
   log('Test 9: Unlink student');
-  const unlinkResult = await unlinkStudent(guardianAuth.accessToken, studentId);
+  const unlinkResult = await unlinkStudent(guardianAuth.cookieHeader, studentId);
   logResult({
     name: 'Unlink student',
     passed: unlinkResult.status === 200 && unlinkResult.data?.ok === true,
@@ -236,7 +279,7 @@ async function runTests() {
 
   // Test 10: Cannot access after unlink
   log('Test 10: Cannot access after unlink');
-  const afterUnlinkSummary = await getStudentSummary(guardianAuth.accessToken, studentId);
+  const afterUnlinkSummary = await getStudentSummary(guardianAuth.cookieHeader, studentId);
   logResult({
     name: 'Unlinked student summary blocked again',
     passed: afterUnlinkSummary.status === 404 || afterUnlinkSummary.status === 403,
@@ -251,13 +294,13 @@ function printSummary() {
   console.log('========================================');
   console.log('SMOKE TEST SUMMARY');
   console.log('========================================');
-  
+
   const passed = results.filter(r => r.passed).length;
   const failed = results.filter(r => !r.passed).length;
-  
+
   console.log(`Passed: ${passed}/${results.length}`);
   console.log(`Failed: ${failed}/${results.length}`);
-  
+
   if (failed > 0) {
     console.log('');
     console.log('Failed tests:');
@@ -265,7 +308,7 @@ function printSummary() {
       console.log(`  - ${r.name}: ${r.error || 'Unknown error'}`);
     });
   }
-  
+
   console.log('');
   process.exit(failed > 0 ? 1 : 0);
 }

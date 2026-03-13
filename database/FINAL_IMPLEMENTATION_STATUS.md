@@ -11,7 +11,7 @@
 
 ```
 ┌─────────────┐
-│   React     │  - Auth state from /api/auth/user (backend-derived)
+│   React     │  - Auth state from /api/profile (backend-derived)
 │   Client    │  - No tokens in localStorage/state
 └──────┬──────┘  - HTTP-only cookies only
        │
@@ -51,9 +51,9 @@
 
 ### 1. React Auth (✅ Complete)
 
-**Files**: `client/src/contexts/SupabaseAuthContext.tsx`, `client/src/hooks/useAuth.ts`
+**Files**: `client/src/contexts/SupabaseAuthContext.tsx`
 
-- Auth state is 100% backend-derived from `/api/auth/user`
+- Auth state is 100% backend-derived from `/api/profile`
 - No tokens stored in React state or browser storage
 - Only HTTP-only cookies used for JWT
 - Automatic token refresh handled by Supabase

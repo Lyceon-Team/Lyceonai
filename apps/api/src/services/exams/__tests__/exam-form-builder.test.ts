@@ -1,5 +1,5 @@
 // apps/api/src/services/exams/__tests__/exam-form-builder.test.ts
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildGeneratedFullLengthFormFromPool, type QuestionRow } from '../exam-form-builder';
 
 function q(
@@ -7,31 +7,17 @@ function q(
   section_code: 'RW' | 'MATH',
   domain: string,
   skill: string,
-<<<<<<< HEAD
-  difficulty: 1 | 2 | 3,
-=======
   difficulty: 'easy' | 'medium' | 'hard'
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 ): QuestionRow {
   return {
     canonical_id,
     section_code,
-<<<<<<< HEAD
-    section: section_code === 'RW' ? 'Reading and Writing' : 'Math',
-=======
     section: section_code === 'MATH' ? 'Math' : 'Reading and Writing',
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     question_type: 'multiple_choice',
     domain,
     skill,
     subskill: null,
-<<<<<<< HEAD
-    skill_code: `${section_code}.${domain}.${skill}`,
     difficulty,
-    status: 'published',
-=======
-    difficulty,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
 
@@ -49,11 +35,7 @@ function makePool(): QuestionRow[] {
 
   for (const d of rwDomains) {
     for (let i = 0; i < 40; i++) {
-<<<<<<< HEAD
-      const difficulty: 1 | 2 | 3 = i < 15 ? 1 : i < 30 ? 2 : 3;
-=======
       const difficulty = i < 15 ? 'easy' : i < 30 ? 'medium' : 'hard';
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       out.push(q(`RW_${d}_${c++}`, 'RW', d, `skill_${i % 5}`, difficulty));
     }
   }
@@ -61,11 +43,7 @@ function makePool(): QuestionRow[] {
   const mathDomains = ['Algebra', 'Advanced Math', 'Problem Solving and Data Analysis', 'Geometry and Trigonometry'];
   for (const d of mathDomains) {
     for (let i = 0; i < 50; i++) {
-<<<<<<< HEAD
-      const difficulty: 1 | 2 | 3 = i < 18 ? 1 : i < 36 ? 2 : 3;
-=======
       const difficulty = i < 18 ? 'easy' : i < 36 ? 'medium' : 'hard';
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       out.push(q(`M_${d}_${c++}`, 'MATH', d, `skill_${i % 7}`, difficulty));
     }
   }
@@ -138,27 +116,6 @@ describe('exam-form-builder', () => {
         expect(idxs[i]).toBeGreaterThanOrEqual(idxs[i - 1]);
       }
     }
-<<<<<<< HEAD
-  }
-});
-
-it('deterministic: same seed yields same blueprint', () => {
-  const pool = makePool();
-  const a = buildGeneratedFullLengthFormFromPool({ seed: 'seed-x', constraintVersion: 1, questions: pool });
-  const b = buildGeneratedFullLengthFormFromPool({ seed: 'seed-x', constraintVersion: 1, questions: pool });
-
-  expect(a.itemsByModule.RW1.map((x) => x.canonicalId)).toEqual(b.itemsByModule.RW1.map((x) => x.canonicalId));
-  expect(a.itemsByModule.M2.map((x) => x.canonicalId)).toEqual(b.itemsByModule.M2.map((x) => x.canonicalId));
-});
-
-it('variation: different seeds yield different selection (usually)', () => {
-  const pool = makePool();
-  const a = buildGeneratedFullLengthFormFromPool({ seed: 'seed-a', constraintVersion: 1, questions: pool });
-  const b = buildGeneratedFullLengthFormFromPool({ seed: 'seed-b', constraintVersion: 1, questions: pool });
-
-  expect(a.itemsByModule.RW1.map((x) => x.canonicalId)).not.toEqual(b.itemsByModule.RW1.map((x) => x.canonicalId));
-});
-=======
   });
 
   it('deterministic: same seed yields same blueprint', () => {
@@ -178,4 +135,3 @@ it('variation: different seeds yield different selection (usually)', () => {
     expect(a.itemsByModule.RW1.map((x) => x.canonicalId)).not.toEqual(b.itemsByModule.RW1.map((x) => x.canonicalId));
   });
 });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f

@@ -40,96 +40,6 @@ function runningAgainstPlaceholder(): boolean {
 }
 
 /**
- * LEGACY COOKIE CLEANUP - Delete any stale auth cookies that might interfere
- * This middleware runs on auth routes to ensure clean state
- * 
- * ALLOWED COOKIES: sb-access-token, sb-refresh-token, sidebar:state, google_oauth_state
- * All other auth-like cookies are deleted
- * 
- * KEEP THIS FOR 7 DAYS AFTER DEPLOY TO FLUSH LEGACY COOKIES
- */
-const ALLOWED_COOKIES = new Set([
-  'sb-access-token',
-  'sb-refresh-token',
-  'sidebar:state',      // UI state, not auth
-  'google_oauth_state', // OAuth flow, temporary
-  'csrf-token',         // CSRF protection, must not be deleted!
-]);
-
-const LEGACY_AUTH_PATTERNS = [
-  'access-token',
-  'auth-token',
-  'session',
-  'token',
-  'guardian',
-  'role',
-  'user',
-];
-
-function clearLegacyCookies(req: any, res: any, isProd: boolean) {
-  const cookies = req.cookies || {};
-  const cookieNames = Object.keys(cookies);
-
-  for (const name of cookieNames) {
-    // Special-case: allow current sb-* cookies, but always clear any legacy '/api' path variants
-    // without touching the canonical '/' cookie.
-    if (name === 'sb-access-token' || name === 'sb-refresh-token') {
-      const deleteApiPathOptions: any[] = [
-        { path: '/api', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
-      ];
-
-      if (isProd) {
-        deleteApiPathOptions.push(
-          { path: '/api', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: 'lyceon.ai' } as any,
-          { path: '/api', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: '.lyceon.ai' } as any,
-        );
-      }
-
-      for (const opts of deleteApiPathOptions) {
-        res.clearCookie(name, opts);
-      }
-
-      // Continue normal loop; do NOT delete the canonical '/' cookie here.
-      continue;
-    }
-
-    // Skip allowed cookies
-    if (ALLOWED_COOKIES.has(name)) continue;
-
-    // Check if cookie name matches legacy auth patterns
-    const lowerName = name.toLowerCase();
-    const isLegacyAuth = LEGACY_AUTH_PATTERNS.some(pattern =>
-      lowerName.includes(pattern)
-    );
-
-    // Also delete any sb-* cookies that aren't our exact allowed ones
-    const isUnknownSbCookie = lowerName.startsWith('sb-') && !ALLOWED_COOKIES.has(name);
-
-    if (isLegacyAuth || isUnknownSbCookie) {
-      // Delete with multiple path/domain combinations to ensure cleanup
-      const deleteOptions = [
-        { path: '/', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
-        { path: '/api', httpOnly: true, secure: isProd, sameSite: 'lax' as const },
-      ];
-
-      // In production, also delete from both domain variants
-      if (isProd) {
-        deleteOptions.push(
-          { path: '/', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: 'lyceon.ai' } as any,
-          { path: '/', httpOnly: true, secure: true, sameSite: 'lax' as const, domain: '.lyceon.ai' } as any,
-        );
-      }
-
-      for (const opts of deleteOptions) {
-        res.clearCookie(name, opts);
-      }
-
-      logger.info('AUTH', 'legacy_cookie_cleared', `Cleared legacy cookie: ${name}`, {});
-    }
-  }
-}
-
-/**
  * POST /api/auth/signup
  * Sign up with email and password
  */
@@ -315,8 +225,6 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
     // Clear cookies with path: '/' (CRITICAL - must match how they were set)
     const isProd = process.env.NODE_ENV === 'production';
     clearAuthCookies(res, isProd);
-
-    logger.info('AUTH', 'signout_success', 'User signed out');
     logger.info('AUTH', 'signout_success', 'User signed out', {
       userId: (req as any).user?.id || null
     });
@@ -331,159 +239,6 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
   }
 });
 
-
-/**
- * GET /api/auth/user
- * Get current authenticated user
- * Returns 200 with {user: null} for anonymous requests
- */
-router.get('/user', async (req: Request, res: Response) => {
-  const isProd = process.env.NODE_ENV === 'production';
-
-  // PHASE 1: Clean up any legacy cookies on every /user request
-  clearLegacyCookies(req, res, isProd);
-
-  try {
-    const token = req.cookies['sb-access-token'];
-
-    if (!token) {
-      // Return 200 with null user for anonymous requests
-      return res.status(200).json({ user: null });
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      // Try to refresh if we have a refresh token
-      const refreshToken = req.cookies?.['sb-refresh-token'];
-      const hint = (authError as any)?.message || '';
-
-      const shouldTryRefresh =
-        refreshToken &&
-        (hint.includes('JWT expired') ||
-          hint.toLowerCase().includes('invalid') ||
-          hint.toLowerCase().includes('expired'));
-
-      if (shouldTryRefresh) {
-        logger.info('AUTH', 'auto_refresh', 'Attempting automatic token refresh', {});
-
-        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession({
-          refresh_token: refreshToken,
-        });
-
-        if (!refreshErr && refreshed?.session) {
-          setAuthCookies(res, refreshed.session, isProd);
-
-          const { data: userAgain, error: userAgainErr } = await supabase.auth.getUser(
-            refreshed.session.access_token
-          );
-
-          if (!userAgainErr && userAgain?.user) {
-            logger.info('AUTH', 'auto_refresh_success', 'Token refreshed successfully', { userId: userAgain.user.id });
-
-            // Continue with the refreshed user - fall through to profile fetch below
-            // by reassigning to a mutable binding
-            return handleUserFetch(req, res, userAgain.user, refreshed.session.access_token, isProd);
-          }
-        }
-
-        // Refresh failed - clear cookies and return 401
-        logger.warn('AUTH', 'auto_refresh_failed', 'Token refresh failed', {});
-        clearAuthCookies(res, isProd);
-        return res.status(401).json({ error: 'Invalid or expired token' });
-      }
-
-      // No refresh token available - clear and return 401
-      clearAuthCookies(res, isProd);
-      const requestId = crypto.randomUUID().slice(0, 8);
-      return res.status(401).json({
-        error: 'Invalid or expired token',
-        requestId,
-        hint: 'Access token invalid and no refresh token available.'
-      });
-    }
-
-    return handleUserFetch(req, res, user, token, isProd);
-  } catch (error) {
-    logger.error('AUTH', 'get_user_error', 'Get user endpoint error', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-async function handleUserFetch(req: Request, res: Response, user: any, token: string, isProd: boolean) {
-  try {
-
-    // Fetch profile using anon client with user's JWT (RLS enforced)
-    // Create client with user's token so RLS policies can see auth.uid()
-    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    });
-
-    let { data: profile, error: profileError } = await userSupabase
-      .from('profiles')
-      .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError) {
-      logger.error('AUTH', 'profile_fetch', 'Failed to fetch user profile', {
-        userId: user.id,
-        error: profileError
-      });
-    }
-
-    // Handle missing profile gracefully - auto-create if needed
-    if (!profile) {
-      logger.warn('AUTH', 'profile_missing', 'User has no profile row - creating one', { userId: user.id });
-
-      // Auto-create profile (should have been created by trigger, but handle edge case)
-      const admin = getSupabaseAdmin();
-      const { data: newProfile, error: createError } = await admin
-        .from('profiles')
-        .insert({
-          id: user.id,
-          email: user.email,
-          display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
-          role: user.user_metadata?.role || 'student'
-        })
-        .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
-        .single();
-
-      if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_creation_failed', 'Failed to auto-create profile', {
-          userId: user.id,
-          error: createError
-        });
-        return res.status(500).json({ error: 'Profile initialization failed' });
-      }
-
-      profile = newProfile;
-    }
-
-    res.json({
-      authenticated: true,
-      user: {
-        id: profile.id,
-        role: profile.role,
-        isAdmin: profile.role === 'admin',
-        isGuardian: profile.role === 'guardian',
-        is_under_13: profile.is_under_13,
-        guardian_consent: profile.guardian_consent,
-        student_link_code: profile.student_link_code,
-        profileCompletedAt: profile.profile_completed_at || null
-      }
-    });
-  } catch (error) {
-    logger.error('AUTH', 'handleUserFetch_error', 'Handle user fetch error', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 /**
  * POST /api/auth/consent
@@ -696,3 +451,7 @@ router.get('/debug', async (req: Request, res: Response) => {
 // REMOVED: exchange-session endpoint - see comment above for rationale
 
 export default router;
+
+
+
+

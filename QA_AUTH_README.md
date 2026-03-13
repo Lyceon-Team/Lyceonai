@@ -415,7 +415,7 @@ export default function AdminDashboard() {
    - Prevents RLS recursion on every authenticated request
 
 2. **`server/routes/supabase-auth-routes.ts`**
-   - Changed line 250: Added `getSupabaseAdmin()` for `/api/auth/user` profile fetch
+   - Changed line 250: Added `getSupabaseAdmin()` for `/api/profile` profile fetch
    - Prevents RLS recursion on user profile endpoint
 
 ### Frontend Files Created/Modified

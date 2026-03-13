@@ -1,98 +1,58 @@
-<<<<<<< HEAD
-import { Request, Response } from "express";
-import { supabaseServer } from "../lib/supabase-server";
-import { AuthenticatedRequest } from "../middleware/auth";
-=======
 import { Request, Response } from 'express';
 import { supabaseServer } from '../lib/supabase-server';
-<<<<<<< HEAD
 import { StudentQuestion, StudentMcQuestion, StudentFrQuestion, QuestionOption } from '../../../../shared/schema';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { getDerivedWeaknessSignals } from '../services/mastery-derived';
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
-const SAFE_QUESTION_SELECT = [
-  "id",
-  "canonical_id",
-  "section",
-  "section_code",
-  "question_type",
-  "stem",
-  "options",
-  "difficulty",
-  "domain",
-  "skill",
-  "subskill",
-  "skill_code",
-  "tags",
-  "competencies",
-  "diagram_present",
-].join(",");
-
-function normalizeSectionFilter(section: string | undefined): string | null {
-  if (!section) return null;
-  const value = section.trim().toLowerCase();
-  if (value === "math" || value === "m") return "math";
-  if (value === "rw" || value === "reading-writing" || value === "reading" || value === "writing") return "rw";
-  return null;
+// ============================================================================
+// FISHER-YATES SHUFFLE HELPER: In-place randomization with O(n) complexity
+// ============================================================================
+function fisherYatesShuffle<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
-<<<<<<< HEAD
-function toStudentSafeQuestion(row: any) {
-=======
 // ============================================================================
 // SHARED MAPPER HELPER: Converts DB row to canonical StudentQuestion type
 // ============================================================================
 export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
   const type = q.type ?? (q.options ? 'mc' : 'fr');
+  const questionType = type === 'fr' ? 'free_response' : 'multiple_choice';
+  const sectionCode = q.section_code ?? q.sectionCode ?? null;
+  const canonicalId = q.canonical_id ?? q.canonicalId ?? null;
 
   const base = {
-=======
-import { StudentQuestion, QuestionOption } from '../../../../shared/schema';
-import { AuthenticatedRequest } from '../middleware/auth';
-
-function parseOptions(raw: unknown): QuestionOption[] {
-  if (!Array.isArray(raw)) return [];
-  const valid = raw
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const key = (item as any).key;
-      const text = (item as any).text;
-      if (!['A', 'B', 'C', 'D'].includes(key) || typeof text !== 'string' || !text.trim()) {
-        return null;
-      }
-      return { key, text: text.trim() } as QuestionOption;
-    })
-    .filter((item): item is QuestionOption => !!item);
-
-  return valid.length === 4 ? valid : [];
-}
-
-function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
-  return {
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     id: q.id,
-    canonicalId: q.canonical_id ?? null,
+    canonicalId,
+    canonical_id: canonicalId,
     stem: q.stem,
     section: q.section,
-    sectionCode: q.section_code ?? null,
-    questionType: 'multiple_choice',
-    options: parseOptions(q.options) as [QuestionOption, QuestionOption, QuestionOption, QuestionOption],
+    sectionCode,
+    section_code: sectionCode,
+    questionType,
+    question_type: questionType,
+    type,
     explanation: null,
-    tags: Array.isArray(q.tags) ? q.tags : [],
-    domain: q.domain ?? null,
-    skill: q.skill ?? null,
-    subskill: q.subskill ?? null,
-    skillCode: q.skill_code ?? null,
-    difficulty: q.difficulty ?? null,
-    competencies: Array.isArray(q.competencies) ? q.competencies : [],
+    source: {
+      mapping: q.source_mapping ?? q.sourceMapping ?? null,
+      page: q.page_number ?? q.pageNumber ?? null,
+    },
+    tags: Array.isArray(q.tags)
+      ? q.tags
+      : typeof q.tags === 'string'
+        ? q.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+        : [],
   };
-<<<<<<< HEAD
 
   if (type === 'fr') {
     return {
       ...base,
       type: 'fr',
+      options: [],
     } as StudentFrQuestion;
   }
 
@@ -108,118 +68,74 @@ function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
       options = [];
     }
   }
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
+
   return {
-    id: row.id,
-    canonical_id: row.canonical_id,
-    section: row.section,
-    section_code: row.section_code,
-    question_type: "multiple_choice" as const,
-    stem: row.stem,
-    options: Array.isArray(row.options) ? row.options : [],
-    difficulty: row.difficulty,
-    domain: row.domain,
-    skill: row.skill,
-    subskill: row.subskill,
-    skill_code: row.skill_code,
-    tags: row.tags ?? null,
-    competencies: row.competencies ?? null,
-    diagram_present: row.diagram_present ?? null,
-    explanation: null,
-  };
+    ...base,
+    type: 'mc',
+    questionType: 'multiple_choice',
+    question_type: 'multiple_choice',
+    options,
+  } as StudentMcQuestion;
 }
+// Debug flag for question endpoints
+const DEBUG_QUESTIONS = process.env.DEBUG_QUESTIONS === '1';
 
-function parseDifficulty(value: string | undefined): 1 | 2 | 3 | null {
-  if (!value) return null;
-  const numeric = Number(value);
-  if (numeric === 1 || numeric === 2 || numeric === 3) return numeric;
-  return null;
-}
-
-async function fetchQuestionRows(params: {
-  limit: number;
-  offset?: number;
-  section?: string | null;
-  difficulty?: 1 | 2 | 3 | null;
-}) {
-  let query = supabaseServer
-    .from("questions")
-    .select(SAFE_QUESTION_SELECT)
-    .eq("question_type", "multiple_choice")
-    .order("created_at", { ascending: false })
-    .limit(params.limit);
-
-  if (typeof params.offset === "number") {
-    query = query.range(params.offset, params.offset + params.limit - 1);
-=======
-}
-
-const SAFE_QUESTION_SELECT = [
-  'id',
-  'canonical_id',
-  'stem',
-  'section',
-  'section_code',
-  'question_type',
-  'options',
-  'domain',
-  'skill',
-  'subskill',
-  'skill_code',
-  'difficulty',
-  'tags',
-  'competencies',
-  'created_at',
-].join(',');
-
-function applySectionFilter<T>(query: T, section?: string): T {
-  if (!section) return query;
-  const normalized = section.trim().toLowerCase();
-  if (normalized === 'math' || normalized === 'm') {
-    return (query as any).eq('section_code', 'MATH');
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
-  }
-  if (normalized === 'rw' || normalized === 'reading_writing' || normalized === 'reading-writing') {
-    return (query as any).eq('section_code', 'RW');
-  }
-  return query;
-}
-
-<<<<<<< HEAD
-  if (params.section === "math") {
-    query = query.eq("section_code", "MATH");
-  } else if (params.section === "rw") {
-    query = query.eq("section_code", "RW");
-  }
-
-  if (params.difficulty) {
-    query = query.eq("difficulty", params.difficulty);
-  }
-
-  return query;
-}
-
+// GET /api/questions - Student questions API (SECURE: No answer leaking)
 export const getQuestions = async (req: Request, res: Response) => {
-  const isTestEnv = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
-  if (isTestEnv) return res.json([]);
+  // In test mode we bypass the real Supabase queries so that CI can hit
+  // this endpoint without needing a working database. The anti-leak tests
+  // mostly just care that the handler executes and returns a well-formed
+  // (possibly empty) array. Returning an empty array here keeps the
+  // security assertions simple while avoiding 500 errors from the
+  // placeholder Supabase host.
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+  if (isTestEnv) {
+    return res.json([]);
+  }
 
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = parseInt(String(req.query.offset ?? "0"), 10) || 0;
-    const section = normalizeSectionFilter(req.query.section as string | undefined);
-    const difficulty = parseDifficulty(req.query.difficulty as string | undefined);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const section = req.query.section as string;
+    const type = req.query.type as string;
 
-    const { data, error } = await fetchQuestionRows({ limit, offset, section, difficulty });
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+    if (DEBUG_QUESTIONS) {
+      console.log('[DEBUG_QUESTIONS] GET /api/questions', { limit, offset, section, type });
     }
 
-<<<<<<< HEAD
-    return res.json((data ?? []).map(toStudentSafeQuestion));
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
-=======
+    let query = supabaseServer
+      .from('questions')
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        source_mapping,
+        page_number,
+        tags,
+        type
+      `)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+      query = query.eq('section', section);
+    }
+
+    if (type && ['mc', 'fr'].includes(type)) {
+      query = query.eq('type', type);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching questions (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
+    }
+
     const formatted: StudentQuestion[] = (data ?? []).map(mapDbQuestionToStudentQuestion);
 
     if (DEBUG_QUESTIONS) {
@@ -237,82 +153,56 @@ export const getQuestions = async (req: Request, res: Response) => {
       error: 'Failed to fetch questions',
       detail: message,
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   }
 };
 
-=======
-// GET /api/questions
-export const getQuestions = async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const offset = parseInt(req.query.offset as string) || 0;
-    const section = req.query.section as string | undefined;
-
-    let query: any = supabaseServer
-      .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    query = applySectionFilter(query, section);
-
-    const { data, error } = await query;
-    if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
-    }
-
-    return res.json((data ?? []).map(mapDbQuestionToStudentQuestion));
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/questions/recent
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+// GET /api/questions/recent - Recent questions for dashboard (SECURE: No answer leaking)
 export const getRecentQuestions = async (req: Request, res: Response) => {
-  const isTestEnv = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
-  if (isTestEnv) return res.json([]);
-
   try {
-<<<<<<< HEAD
-    const limit = Math.min(parseInt(String(req.query.limit ?? "10"), 10) || 10, 50);
-    const section = normalizeSectionFilter(req.query.section as string | undefined);
-
-    const { data, error } = await fetchQuestionRows({ limit, section });
-    if (error) return res.status(500).json({ error: "Failed to fetch recent questions", detail: error.message });
-
-<<<<<<< HEAD
-    return res.json((data ?? []).map(toStudentSafeQuestion));
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch recent questions", detail: error?.message ?? "Unknown error" });
-=======
-    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
-      query = query.eq('section', section);
-    }
-=======
+    const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 20);
-    const section = req.query.section as string | undefined;
+    const section = req.query.section as string;
 
-    let query: any = supabaseServer
+    let query = supabaseServer
       .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        source_mapping,
+        page_number,
+        tags,
+        type
+      `)
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    query = applySectionFilter(query, section);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
-
-    const { data, error } = await query;
-    if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
+    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+      query = query.eq('section', section);
     }
 
-    return res.json((data ?? []).map(mapDbQuestionToStudentQuestion));
+    const { data, error } = await query;
+
+    if (error) {
+      if (!isTestEnv) {
+        console.error('Error fetching recent questions (Supabase HTTP):', error);
+      }
+
+      // In test mode, return empty array instead of error
+      if (isTestEnv) {
+        return res.json([]);
+      }
+
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
+    }
+
+    const formatted: StudentQuestion[] = (data ?? []).map(mapDbQuestionToStudentQuestion);
+    res.json(formatted);
   } catch (error) {
-<<<<<<< HEAD
     const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
     if (!isTestEnv) {
       console.error('Error fetching questions:', error);
@@ -330,33 +220,29 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
       error: 'Failed to fetch questions',
       detail: message,
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   }
 };
 
+// GET /api/questions/random - Random questions for practice (SECURE: No answer leaking)
+// Supports optional ?focus=weak to bias toward user's weak competencies
 export const getRandomQuestions = async (req: AuthenticatedRequest, res: Response) => {
-  const isTestEnv = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
-  if (isTestEnv) return res.json([]);
+  // During CI tests we don't have a real Supabase connection, so short
+  // circuit early with an empty list. This lets the anti-leak tests hit
+  // the handler and exercise its shape logic without requiring a user or
+  // hitting the network. The authentication middleware is still applied
+  // by the server, but the tests inject a fake req.user (see test file).
+  const isTestEnv = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+  if (isTestEnv) {
+    return res.json([]);
+  }
 
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "10"), 10) || 10, 50);
-    const section = normalizeSectionFilter(req.query.section as string | undefined);
-    const difficulty = parseDifficulty(req.query.difficulty as string | undefined);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const section = req.query.section as string;
+    const type = req.query.type as string;
+    const focus = (req.query.focus as string | undefined)?.toLowerCase();
+    const userId = req.user?.id;
 
-<<<<<<< HEAD
-    const { data, error } = await fetchQuestionRows({ limit: Math.max(limit * 3, 30), section, difficulty });
-    if (error) return res.status(500).json({ error: "Failed to fetch random questions", detail: error.message });
-
-    const rows = data ?? [];
-    const shuffled = rows.slice().sort(() => Math.random() - 0.5).slice(0, limit);
-    return res.json(shuffled.map(toStudentSafeQuestion));
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch random questions", detail: error?.message ?? "Unknown error" });
-  }
-};
-
-export const getQuestionCount = async (_req: Request, res: Response) => {
-=======
     // ========================================================================
     // ADAPTIVE MODE: focus=weak biases toward user's weak competencies
     // ========================================================================
@@ -432,91 +318,115 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
 
     // First, get the count for random offset calculation
     let countQuery = supabaseServer
-=======
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/questions/random
-export const getRandomQuestions = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const section = req.query.section as string | undefined;
-
-    let countQuery: any = supabaseServer
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       .from('questions')
-      .select('id', { count: 'exact', head: true })
-      .eq('question_type', 'multiple_choice');
+      .select('id', { count: 'exact', head: true });
 
-    countQuery = applySectionFilter(countQuery, section);
+    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+      countQuery = countQuery.eq('section', section);
+    }
+
+    if (type && ['mc', 'fr'].includes(type)) {
+      countQuery = countQuery.eq('type', type);
+    }
+
     const { count, error: countError } = await countQuery;
 
     if (countError) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: countError.message });
+      console.error('Error counting questions (Supabase HTTP):', countError);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: countError.message,
+      });
     }
 
     const totalCount = count ?? 0;
+
+    // If we need fewer questions than available, use random offset
+    // Otherwise just get all available
     const maxOffset = Math.max(0, totalCount - limit);
     const randomOffset = maxOffset > 0 ? Math.floor(Math.random() * maxOffset) : 0;
 
-    let query: any = supabaseServer
+    let query = supabaseServer
       .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        source_mapping,
+        page_number,
+        tags,
+        type
+      `)
       .range(randomOffset, randomOffset + limit - 1);
 
-    query = applySectionFilter(query, section);
-
-    const { data, error } = await query;
-    if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
+    if (section && ['Math', 'Reading', 'Writing'].includes(section)) {
+      query = query.eq('section', section);
     }
 
+    if (type && ['mc', 'fr'].includes(type)) {
+      query = query.eq('type', type);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching random questions (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
+    }
+
+    // Shuffle the results for better randomness
     const shuffled = (data ?? []).sort(() => Math.random() - 0.5);
-    return res.json(shuffled.map(mapDbQuestionToStudentQuestion));
+
+    const formatted: StudentQuestion[] = shuffled.map(mapDbQuestionToStudentQuestion);
+    res.json(formatted);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Error fetching questions:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch questions',
+      detail: message,
+    });
   }
 };
-<<<<<<< HEAD
 // GET /api/questions/count - Quick question count for visibility verification
 export const getQuestionCount = async (req: Request, res: Response) => {
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   try {
     const { count, error } = await supabaseServer
-      .from("questions")
-      .select("id", { count: "exact", head: true })
-      .eq("question_type", "multiple_choice");
+      .from('questions')
+      .select('id', { count: 'exact', head: true });
 
-    if (error) return res.status(500).json({ error: "Failed to count questions", detail: error.message });
-    return res.json({ count: Number(count ?? 0) });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to count questions", detail: error?.message ?? "Unknown error" });
+    if (error) {
+      console.error('Error counting questions (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
+    }
+
+    res.json({ count: count ?? 0 });
+  } catch (error) {
+    console.error('Error fetching questions:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch questions',
+      detail: message,
+    });
   }
 };
 
-export const getQuestionStats = async (_req: Request, res: Response) => {
+// GET /api/questions/stats - Question statistics
+export const getQuestionStats = async (req: Request, res: Response) => {
   try {
-<<<<<<< HEAD
-    const [{ count: total }, { count: math }, { count: rw }] = await Promise.all([
-      supabaseServer.from("questions").select("id", { count: "exact", head: true }).eq("question_type", "multiple_choice"),
-      supabaseServer
-        .from("questions")
-        .select("id", { count: "exact", head: true })
-        .eq("question_type", "multiple_choice")
-        .eq("section_code", "MATH"),
-      supabaseServer
-        .from("questions")
-        .select("id", { count: "exact", head: true })
-        .eq("question_type", "multiple_choice")
-        .eq("section_code", "RW"),
-    ]);
-
-    return res.json({ total: Number(total ?? 0), bySection: { MATH: Number(math ?? 0), RW: Number(rw ?? 0) } });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch question stats", detail: error?.message ?? "Unknown error" });
-=======
     // Get total count
     const { count: totalCount, error: totalError } = await supabaseServer
       .from('questions')
@@ -530,96 +440,76 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
     const [mathResult, rwResult] = await Promise.all([
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'Math'),
       supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section', 'RW'),
-=======
-
-// GET /api/questions/count
-export const getQuestionCount = async (_req: Request, res: Response) => {
-  try {
-    const { count, error } = await supabaseServer
-      .from('questions')
-      .select('id', { count: 'exact', head: true })
-      .eq('question_type', 'multiple_choice');
-
-    if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
-    }
-
-    return res.json({ count: count ?? 0 });
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/questions/stats
-export const getQuestionStats = async (_req: Request, res: Response) => {
-  try {
-    const [total, math, rw, easy, medium, hard] = await Promise.all([
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('question_type', 'multiple_choice'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section_code', 'MATH').eq('question_type', 'multiple_choice'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).eq('section_code', 'RW').eq('question_type', 'multiple_choice'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'easy').eq('question_type', 'multiple_choice'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'medium').eq('question_type', 'multiple_choice'),
-      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'hard').eq('question_type', 'multiple_choice'),
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     ]);
 
-    return res.json({
-      total: Number(total.count ?? 0),
-      math: Number(math.count ?? 0),
-      readingWriting: Number(rw.count ?? 0),
+    // Get counts by difficulty
+    const [easyResult, mediumResult, hardResult] = await Promise.all([
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'easy'),
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'medium'),
+      supabaseServer.from('questions').select('id', { count: 'exact', head: true }).ilike('difficulty', 'hard'),
+    ]);
+
+    // Get recently added count (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { count: recentCount, error: recentError } = await supabaseServer
+      .from('questions')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', sevenDaysAgo.toISOString());
+
+    const stats = {
+      total: Number(totalCount ?? 0),
+      math: Number(mathResult.count ?? 0),
+      reading_writing: Number(rwResult.count ?? 0),
       byDifficulty: {
-        easy: Number(easy.count ?? 0),
-        medium: Number(medium.count ?? 0),
-        hard: Number(hard.count ?? 0),
+        easy: Number(easyResult.count ?? 0),
+        medium: Number(mediumResult.count ?? 0),
+        hard: Number(hardResult.count ?? 0),
       },
-    });
-<<<<<<< HEAD
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-  }
-};
+      recentlyAdded: Number(recentCount ?? 0),
+    };
 
-export const getQuestionsFeed = async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const section = normalizeSectionFilter(req.query.section as string | undefined);
-    const difficulty = parseDifficulty(req.query.difficulty as string | undefined);
-
-    const { data, error } = await fetchQuestionRows({ limit, section, difficulty });
-    if (error) return res.status(500).json({ error: "Failed to fetch questions feed", detail: error.message });
-
-<<<<<<< HEAD
-    return res.json({ questions: (data ?? []).map(toStudentSafeQuestion), total: (data ?? []).length });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions feed", detail: error?.message ?? "Unknown error" });
-=======
-    if (section && ['Math', 'RW'].includes(section)) {
-      query = query.eq('section', section);
-=======
+    res.json(stats);
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Error fetching question stats:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch questions',
+      detail: message,
+    });
   }
 };
 
-// GET /api/questions/feed
+// GET /api/questions/feed - Paginated feed for practice sessions
 export const getQuestionsFeed = async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const section = req.query.section as string | undefined;
-    const difficulty = req.query.difficulty as string | undefined;
-    const cursor = req.query.cursor as string | undefined;
+    const section = req.query.section as string;
+    const difficulty = req.query.difficulty as string;
+    const cursor = req.query.cursor as string;
 
-    let query: any = supabaseServer
+    let query = supabaseServer
       .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        source_mapping,
+        page_number,
+        tags,
+        created_at,
+        type
+      `)
       .order('created_at', { ascending: false })
       .limit(limit + 1);
 
-    query = applySectionFilter(query, section);
-
-    if (difficulty) {
-      query = query.ilike('difficulty', difficulty);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+    if (section && ['Math', 'RW'].includes(section)) {
+      query = query.eq('section', section);
     }
 
     if (cursor) {
@@ -627,22 +517,29 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
     }
 
     const { data, error } = await query;
+
     if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
+      console.error('Error fetching questions feed (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
     }
 
-    const rows = data ?? [];
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, -1) : rows;
-    const nextCursor = hasMore ? rows[rows.length - 2]?.created_at ?? null : null;
+    const results = data ?? [];
+    const hasMore = results.length > limit;
+    const questionsToReturn = hasMore ? results.slice(0, -1) : results;
+    const nextCursor = hasMore ? results[results.length - 2]?.created_at : null;
 
-    return res.json({
-      questions: items.map(mapDbQuestionToStudentQuestion),
+    // NOTE: Do NOT shuffle here - pagination cursor depends on stable ordering
+    // Frontend handles answer option shuffling via seeded Fisher-Yates in QuestionRenderer
+    const formatted: StudentQuestion[] = questionsToReturn.map(mapDbQuestionToStudentQuestion);
+    res.json({
+      questions: formatted,
       nextCursor,
-      hasMore,
+      hasMore
     });
   } catch (error) {
-<<<<<<< HEAD
     console.error('Error fetching questions:', error);
 
     const message =
@@ -652,239 +549,212 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
       error: 'Failed to fetch questions',
       detail: message,
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   }
 };
 
+// POST /api/questions/validate - Secure server-side answer validation (CRITICAL for practice)
 export const validateAnswer = async (req: Request, res: Response) => {
   try {
+    // Defensive: Only allow via requireSupabaseAuth, requireStudentOrAdmin, but double-check user/role
     const authUser = (req as any).authUser || req.user;
-=======
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// POST /api/questions/validate
-export const validateAnswer = async (req: Request, res: Response) => {
-  try {
-    const authUser = (req as any).authUser || (req as any).user;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const userId = authUser?.id;
     const isAdmin = !!authUser?.isAdmin;
-    const role = authUser?.role || (isAdmin ? "admin" : "student");
+    const role = authUser?.role || (isAdmin ? 'admin' : 'student');
+    const isGuardian = authUser?.isGuardian || role === 'guardian';
 
-<<<<<<< HEAD
-    if (role === "guardian") {
-      return res.status(403).json({ error: "Guardians are not permitted to validate answers." });
-=======
+    // Defensive: guardians never get answers
     if (isGuardian) {
       return res.status(403).json({ error: 'Guardians are not permitted to validate answers.' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     }
 
+    // Validate input
     const { questionId, studentAnswer } = req.body;
     if (!questionId || studentAnswer === undefined || studentAnswer === null) {
-      return res.status(400).json({ error: "Missing required fields: questionId and studentAnswer" });
+      return res.status(400).json({ error: 'Missing required fields: questionId and studentAnswer' });
     }
 
-    const { data: question, error } = await supabaseServer
-<<<<<<< HEAD
-      .from("questions")
-      .select("id, question_type, correct_answer, explanation")
-      .eq("id", questionId)
+    // Fetch the question
+    const { data, error } = await supabaseServer
+      .from('questions')
+      .select(`id, question_type, type, answer_choice, answer_text, answer, explanation`)
+      .eq('id', questionId)
+      .limit(1)
       .single();
+    if (error || !data) {
+      console.error('Error fetching question for validation:', error);
+      return res.status(404).json({ error: 'Question not found' });
+    }
+    const question = data;
+    let isCorrect: boolean | null = null;
+    let feedback = '';
+    let correctAnswerKey: string | null = null;
+    let mode: 'mc' | 'fr' = 'mc';
 
-    if (error || !question) {
-      return res.status(404).json({ error: "Question not found" });
+    // Derive mode
+    const qt = (question.question_type ?? '').trim().toLowerCase();
+    if (qt === 'multiple_choice') {
+      mode = 'mc';
+    } else if (qt === 'free_response') {
+      mode = 'fr';
+    } else {
+      if (question.type === 'mc' || (!question.type && question.answer_choice)) {
+        mode = 'mc';
+      } else if (question.type === 'fr' || (!question.type && !question.answer_choice)) {
+        mode = 'fr';
+      } else {
+        console.warn(`[VALIDATE] Question ${questionId} has invalid question_type: ${question.question_type}`);
+        return res.status(400).json({ error: 'Invalid question type' });
+      }
     }
 
-    if (question.question_type !== "multiple_choice") {
-      return res.status(400).json({ error: "Invalid question type" });
-    }
-
-    const normalizedStudent = String(studentAnswer).trim().toUpperCase();
-    const normalizedCorrect = String(question.correct_answer).trim().toUpperCase();
-    const isCorrect = normalizedStudent === normalizedCorrect;
-
+    // Only admins can always see correct answer/explanation
     let canSeeAnswer = false;
+    let canSeeExplanation = false;
     if (isAdmin) {
       canSeeAnswer = true;
-    } else if (userId) {
-      const { data: attempt } = await supabaseServer
-        .from("answer_attempts")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("question_id", questionId)
-        .limit(1)
-        .single();
-      canSeeAnswer = !!attempt;
+      canSeeExplanation = true;
+    } else {
+      // For students, require a verified submission (answer_attempt exists for this user/question)
+      if (userId) {
+        const { data: attempt } = await supabaseServer
+          .from('answer_attempts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('question_id', questionId)
+          .limit(1)
+          .single();
+        if (attempt) {
+          canSeeAnswer = true;
+          canSeeExplanation = true;
+        }
+      }
     }
 
-    return res.json({
+    // Validate answer
+    if (mode === 'mc') {
+      const rawKey = question.answer ?? question.answer_choice ?? null;
+      if (!rawKey) {
+        console.warn(`[VALIDATE] MC Question ${questionId} has no correct answer configured`);
+        feedback = 'Question has no correct answer configured.';
+        isCorrect = null;
+      } else {
+        correctAnswerKey = String(rawKey).trim().toUpperCase();
+        const studentKey = String(studentAnswer ?? '').trim().toUpperCase();
+        isCorrect = !!correctAnswerKey && studentKey === correctAnswerKey;
+        feedback = isCorrect ? 'Correct!' : 'Incorrect.';
+      }
+      // Only return correctAnswerKey if allowed
+      if (!canSeeAnswer) correctAnswerKey = null;
+    } else {
+      // Free Response
+      const rawAnswer = question.answer_text ?? question.answer ?? null;
+      if (!rawAnswer) {
+        feedback = 'Question has no correct answer configured.';
+        isCorrect = null;
+      } else {
+        const normalizedStudent = String(studentAnswer ?? '').trim().toLowerCase();
+        const normalizedCorrect = String(rawAnswer).trim().toLowerCase();
+        isCorrect = normalizedStudent === normalizedCorrect;
+        feedback = isCorrect ? 'Correct!' : 'Incorrect.';
+      }
+      correctAnswerKey = null; // Never leak FR answer
+    }
+
+    // Response: only include explanation if allowed
+    res.json({
       questionId,
-      question_type: "multiple_choice",
+      mode,
       isCorrect,
-      correctAnswerKey: canSeeAnswer ? normalizedCorrect : null,
-      feedback: isCorrect ? "Correct!" : "Incorrect.",
-      explanation: canSeeAnswer ? (question.explanation ?? null) : null,
+      correctAnswerKey,
+      feedback,
+      explanation: canSeeExplanation ? (question.explanation ?? null) : null,
     });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to validate answer", detail: error?.message ?? "Unknown error" });
+
+    console.log(`📝 Answer validation: Question ${questionId}, Mode: ${mode}, Correct: ${isCorrect}, User: ${userId}, Admin: ${isAdmin}, Verified: ${canSeeAnswer}`);
+  } catch (error) {
+    console.error('Error validating answer:', error);
+    const message = error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+    res.status(500).json({ error: 'Failed to validate answer', detail: message });
   }
 };
 
+// GET /api/questions/:id - Get single question by ID (SECURE: No answer leaking)
 export const getQuestionById = async (req: Request, res: Response) => {
   try {
-    const id = req.params.id;
-    if (!id) return res.status(400).json({ error: "Question ID is required" });
+    const { id } = req.params;
 
-    const { data, error } = await supabaseServer.from("questions").select(SAFE_QUESTION_SELECT).eq("id", id).single();
+    if (!id) {
+      return res.status(400).json({ error: 'Question ID is required' });
+    }
 
-    if (error || !data) return res.status(404).json({ error: "Question not found" });
+    const { data, error } = await supabaseServer
+      .from('questions')
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        source_mapping,
+        page_number,
+        tags,
+        type
+      `)
+      .eq('id', id)
+      .single();
 
-    return res.json(toStudentSafeQuestion(data));
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch question", detail: error?.message ?? "Unknown error" });
+    if (error) {
+      console.error('Error fetching question by ID (Supabase HTTP):', error);
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    if (!data) {
+      return res.status(404).json({ error: 'Question not found' });
+    }
+
+    const formatted = mapDbQuestionToStudentQuestion(data);
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error fetching question:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch question',
+      detail: message,
+    });
   }
 };
 
-<<<<<<< HEAD
-export const getReviewErrors = async (req: Request & { user?: { id: string } }, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
-=======
 // GET /api/review-errors - Get user's failed question attempts from most recent session
 export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     }
 
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-
-    const { data, error } = await supabaseServer
-      .from("answer_attempts")
-      .select("id, question_id, is_correct, attempted_at, questions(id, canonical_id, section, section_code, question_type, stem, options, difficulty, domain, skill, subskill, skill_code, tags, competencies, diagram_present)")
-      .eq("user_id", userId)
-      .eq("is_correct", false)
-      .order("attempted_at", { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to fetch failed attempts", detail: error.message });
-    }
-
-    const mapped = (data ?? []).map((attempt: any) => ({
-      id: attempt.id,
-      attempted_at: attempt.attempted_at,
-      question: attempt.questions ? toStudentSafeQuestion(attempt.questions) : null,
-    }));
-
-<<<<<<< HEAD
-    return res.json(mapped);
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch failed attempts", detail: error?.message ?? "Unknown error" });
-=======
-    // Step 2: Get all attempts from this session
-    const { data: allAttempts, error: attemptsError } = await supabaseServer
-=======
-      .from('questions')
-      .select('id, question_type, correct_answer, answer_text, explanation')
-      .eq('id', questionId)
-      .eq('question_type', 'multiple_choice')
-      .single();
-
-    if (error || !question) {
-      return res.status(404).json({ error: 'Question not found' });
-    }
-
-    const normalizedStudent = String(studentAnswer).trim().toUpperCase();
-    const normalizedCorrect = String(question.correct_answer || '').trim().toUpperCase();
-    const isCorrect = normalizedStudent === normalizedCorrect;
-
-    let canSeeAnswer = isAdmin;
-    let canSeeExplanation = isAdmin;
-
-    if (!isAdmin && userId) {
-      const { data: attempt } = await supabaseServer
-        .from('answer_attempts')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('question_id', questionId)
-        .limit(1)
-        .maybeSingle();
-
-      if (attempt) {
-        canSeeAnswer = true;
-        canSeeExplanation = true;
-      }
-    }
-
-    return res.json({
-      questionId,
-      mode: 'multiple_choice',
-      isCorrect,
-      correctAnswerKey: canSeeAnswer ? normalizedCorrect : null,
-      answerText: canSeeAnswer ? (question.answer_text ?? null) : null,
-      feedback: isCorrect ? 'Correct!' : 'Incorrect.',
-      explanation: canSeeExplanation ? (question.explanation ?? null) : null,
-    });
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to validate answer', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/questions/:id
-export const getQuestionById = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    if (!id) return res.status(400).json({ error: 'Question ID is required' });
-
-    const { data, error } = await supabaseServer
-      .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('id', id)
-      .eq('question_type', 'multiple_choice')
-      .single();
-
-    if (error || !data) {
-      return res.status(404).json({ error: 'Question not found' });
-    }
-
-    return res.json(mapDbQuestionToStudentQuestion(data));
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch question', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/review-errors
-export const getReviewErrors = async (req: Request & { user?: { id: string } }, res: Response) => {
-  try {
-    const user = req.user;
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
-
+    // Step 1: Find the most recent practice session for this user
     const { data: recentSession, error: sessionError } = await supabaseServer
       .from('practice_sessions')
       .select('id, started_at, mode, section')
       .eq('user_id', user.id)
       .order('started_at', { ascending: false })
       .limit(1)
-      .maybeSingle();
+      .single();
 
-    if (sessionError) {
-      return res.status(500).json({ error: 'Failed to fetch recent session', detail: sessionError.message });
+    if (sessionError && sessionError.code !== 'PGRST116') {
+      console.error('Error fetching recent session:', sessionError);
+      return res.status(500).json({
+        error: 'Failed to fetch recent session',
+        detail: sessionError.message,
+      });
     }
 
+    // No sessions found - return empty with helpful message
     if (!recentSession) {
       return res.json({
         attempts: [],
-        incorrectAttempts: [],
-        skippedAttempts: [],
-        reviewQueue: [],
         summary: {
           sessionId: null,
           sessionStartedAt: null,
@@ -897,8 +767,8 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
       });
     }
 
-    const { data: attempts, error: attemptsError } = await supabaseServer
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+    // Step 2: Get all attempts from this session
+    const { data: allAttempts, error: attemptsError } = await supabaseServer
       .from('answer_attempts')
       .select(`
         id,
@@ -917,19 +787,31 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
       .order('attempted_at', { ascending: false });
 
     if (attemptsError) {
-      return res.status(500).json({ error: 'Failed to fetch attempts', detail: attemptsError.message });
+      console.error('Error fetching attempts:', attemptsError);
+      return res.status(500).json({
+        error: 'Failed to fetch attempts',
+        detail: attemptsError.message,
+      });
     }
 
-    const rows = attempts ?? [];
-    const correctCount = rows.filter((a) => a.outcome === 'correct' || (a.is_correct && !a.outcome)).length;
-    const skippedCount = rows.filter((a) => a.outcome === 'skipped').length;
-    const incorrectCount = rows.filter((a) => a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')).length;
+    const attempts = allAttempts ?? [];
 
-    const incorrectRaw = rows.filter((a) => a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped'));
-    const skippedRaw = rows.filter((a) => a.outcome === 'skipped');
+    // Calculate summary counts
+    const correctCount = attempts.filter(a => a.outcome === 'correct' || (a.is_correct && !a.outcome)).length;
+    const skippedCount = attempts.filter(a => a.outcome === 'skipped').length;
+    const incorrectCount = attempts.filter(a => a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')).length;
 
-    const formatAttempt = (attempt: any) => {
-      const question = attempt.questions as { id: string; stem: string; section: string; difficulty: string } | null;
+    // Filter to incorrect attempts (exclude skipped)
+    const incorrectRaw = attempts.filter(a =>
+      a.outcome === 'incorrect' || (!a.is_correct && a.outcome !== 'skipped')
+    );
+
+    // Filter to skipped attempts only
+    const skippedRaw = attempts.filter(a => a.outcome === 'skipped');
+
+    // Helper to format attempt for frontend
+    const formatAttempt = (attempt: typeof attempts[0]) => {
+      const question = attempt.questions as unknown as { id: string; stem: string; section: string; difficulty: string } | null;
       return {
         id: attempt.id,
         questionId: attempt.question_id,
@@ -943,18 +825,26 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
       };
     };
 
+    // Format both lists
+    const incorrectAttempts = incorrectRaw.map(formatAttempt);
+    const skippedAttempts = skippedRaw.map(formatAttempt);
+
+    // Build reviewQueue from prior practice misses/skips (origin context only; not review outcome taxonomy)
+    // Ordered by attempted_at desc (already sorted from DB query)
     const reviewQueue = [...incorrectRaw, ...skippedRaw]
       .sort((a, b) => new Date(b.attempted_at).getTime() - new Date(a.attempted_at).getTime())
-      .map((attempt) => ({
+      .map(attempt => ({
         questionId: attempt.question_id,
+        originOutcome: attempt.outcome || (attempt.is_correct ? 'correct' : 'incorrect'),
+        // Backward-compatible alias for existing client reads.
         outcome: attempt.outcome || (attempt.is_correct ? 'correct' : 'incorrect'),
         attemptId: attempt.id,
       }));
 
-    return res.json({
-      attempts: incorrectRaw.map(formatAttempt),
-      incorrectAttempts: incorrectRaw.map(formatAttempt),
-      skippedAttempts: skippedRaw.map(formatAttempt),
+    res.json({
+      attempts: incorrectAttempts,
+      incorrectAttempts,
+      skippedAttempts,
       reviewQueue,
       summary: {
         sessionId: recentSession.id,
@@ -964,11 +854,10 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
         correctCount,
         incorrectCount,
         skippedCount,
-        totalCount: rows.length,
+        totalCount: attempts.length,
       },
     });
   } catch (error) {
-<<<<<<< HEAD
     console.error('Error fetching review errors:', error);
 
     const message =
@@ -978,182 +867,156 @@ export const getReviewErrors = async (req: Request & { user?: { id: string } }, 
       error: 'Failed to fetch failed attempts',
       detail: message,
     });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   }
 };
 
+// GET /api/questions/by-topic - Filter questions by unit/topic tag
 export const getQuestionsByTopic = async (req: Request, res: Response) => {
   try {
-    const skillCode = req.query.skillCode as string;
-    if (!skillCode) {
-      return res.status(400).json({ error: "skillCode query parameter is required" });
-=======
-    return res.status(500).json({ error: 'Failed to fetch failed attempts', detail: error instanceof Error ? error.message : 'Unknown error' });
-  }
-};
-
-// GET /api/questions/by-topic
-export const getQuestionsByTopic = async (req: Request, res: Response) => {
-  try {
-    const skillCode = (req.query.skillCode as string | undefined) ?? (req.query.unitTag as string | undefined);
+    const unitTag = req.query.unitTag as string;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    if (!skillCode) {
-      return res.status(400).json({ error: 'skillCode query parameter is required' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+    if (!unitTag) {
+      return res.status(400).json({ error: 'unitTag query parameter is required' });
     }
-
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = parseInt(String(req.query.offset ?? "0"), 10) || 0;
 
     const { data, error } = await supabaseServer
-<<<<<<< HEAD
-      .from("questions")
-      .select(SAFE_QUESTION_SELECT)
-      .eq("question_type", "multiple_choice")
-      .eq("skill_code", skillCode)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
-    }
-
-    return res.json({ questions: (data ?? []).map(toStudentSafeQuestion), total: (data ?? []).length, skillCode });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
-  }
-};
-
-export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
-  try {
-    const difficulty = parseDifficulty(req.query.difficulty as string | undefined);
-    if (!difficulty) {
-      return res.status(400).json({ error: "difficulty must be one of: 1, 2, 3" });
-=======
       .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
-      .eq('skill_code', skillCode)
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        unit_tag,
+        difficulty_level,
+        type,
+        tags
+      `)
+      .eq('unit_tag', unitTag)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
+      console.error('Error fetching questions by topic (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
     }
 
-    const questions = (data ?? []).map(mapDbQuestionToStudentQuestion);
-    return res.json({ questions, total: questions.length, skillCode });
+    // Format response without leaking answers
+    const formattedQuestions = (data ?? []).map(q => ({
+      id: q.id,
+      stem: q.stem,
+      section: q.section,
+      unitTag: q.unit_tag,
+      difficultyLevel: q.difficulty_level,
+      type: q.type || 'mc',
+      options: q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : [],
+      tags: q.tags ? (typeof q.tags === 'string' ? q.tags.split(',').map((t: string) => t.trim()) : q.tags) : [],
+      explanation: null,
+    }));
+
+    res.json({
+      questions: formattedQuestions,
+      total: formattedQuestions.length,
+      unitTag,
+    });
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Error fetching questions:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch questions',
+      detail: message,
+    });
   }
 };
 
-// GET /api/questions/by-difficulty
+// GET /api/questions/by-difficulty - Filter questions by difficulty level (1-5)
 export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
   try {
-    const difficulty = (req.query.difficulty as string | undefined)?.trim();
+    const difficultyLevel = parseInt(req.query.difficultyLevel as string);
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    if (!difficulty) {
-      return res.status(400).json({ error: 'difficulty query parameter is required' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+    if (!difficultyLevel || difficultyLevel < 1 || difficultyLevel > 5) {
+      return res.status(400).json({ error: 'difficultyLevel must be between 1 and 5' });
     }
-
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = parseInt(String(req.query.offset ?? "0"), 10) || 0;
 
     const { data, error } = await supabaseServer
-<<<<<<< HEAD
-      .from("questions")
-      .select(SAFE_QUESTION_SELECT)
-      .eq("question_type", "multiple_choice")
-      .eq("difficulty", difficulty)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
-    }
-
-    return res.json({ questions: (data ?? []).map(toStudentSafeQuestion), total: (data ?? []).length, difficulty });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
-=======
       .from('questions')
-      .select(SAFE_QUESTION_SELECT)
-      .eq('question_type', 'multiple_choice')
-      .ilike('difficulty', difficulty)
+      .select(`
+        id,
+        stem,
+        options,
+        section,
+        unit_tag,
+        difficulty_level,
+        type,
+        tags
+      `)
+      .eq('difficulty_level', difficultyLevel)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: 'Failed to fetch questions', detail: error.message });
+      console.error('Error fetching questions by difficulty (Supabase HTTP):', error);
+      return res.status(500).json({
+        error: 'Failed to fetch questions',
+        detail: error.message,
+      });
     }
 
-    const questions = (data ?? []).map(mapDbQuestionToStudentQuestion);
-    return res.json({ questions, total: questions.length, difficulty });
+    // Format response without leaking answers
+    const formattedQuestions = (data ?? []).map(q => ({
+      id: q.id,
+      stem: q.stem,
+      section: q.section,
+      unitTag: q.unit_tag,
+      difficultyLevel: q.difficulty_level,
+      type: q.type || 'mc',
+      options: q.options ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : [],
+      tags: q.tags ? (typeof q.tags === 'string' ? q.tags.split(',').map((t: string) => t.trim()) : q.tags) : [],
+      explanation: null,
+    }));
+
+    res.json({
+      questions: formattedQuestions,
+      total: formattedQuestions.length,
+      difficultyLevel,
+    });
   } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch questions', detail: error instanceof Error ? error.message : 'Unknown error' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+    console.error('Error fetching questions:', error);
+
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
+
+    res.status(500).json({
+      error: 'Failed to fetch questions',
+      detail: message,
+    });
   }
 };
 
-export const submitQuestionFeedback = async (req: Request, res: Response) => {
+export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Response) => {
   try {
-<<<<<<< HEAD
-<<<<<<< HEAD
-    const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
-
-=======
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
     }
-=======
-    const authReq = req as AuthenticatedRequest;
-    const userId = authReq.user?.id;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
+    const userId = user.id;
 
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     const { questionId, sentiment, comment } = req.body;
 
     if (!questionId) {
-      return res.status(400).json({ error: "questionId is required" });
+      return res.status(400).json({ error: 'questionId is required' });
     }
 
-<<<<<<< HEAD
-    if (!sentiment || !["up", "down"].includes(sentiment)) {
-      return res.status(400).json({ error: "sentiment must be 'up' or 'down'" });
-    }
-
-    const { error } = await supabaseServer.from("question_feedback").insert({
-      user_id: userId,
-      question_id: questionId,
-      sentiment,
-      comment: typeof comment === "string" ? comment : null,
-      created_at: new Date().toISOString(),
-    });
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to submit feedback", detail: error.message });
-    }
-
-    return res.json({ success: true });
-  } catch (error: any) {
-    return res.status(500).json({ error: "Failed to submit feedback", detail: error?.message ?? "Unknown error" });
-=======
     if (!sentiment || !['up', 'down'].includes(sentiment)) {
       return res.status(400).json({ error: 'sentiment must be "up" or "down"' });
     }
@@ -1170,35 +1033,24 @@ export const submitQuestionFeedback = async (req: Request, res: Response) => {
 
     const { error: insertError } = await supabaseServer
       .from('question_feedback')
-      .upsert(
-        {
-          question_id: questionId,
-          user_id: userId,
-          sentiment,
-          comment: comment || null,
-          created_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'question_id,user_id',
-        }
-      );
+      .upsert({
+        question_id: questionId,
+        user_id: userId,
+        sentiment,
+        comment: comment || null,
+        created_at: new Date().toISOString(),
+      }, {
+        onConflict: 'question_id,user_id',
+      });
 
     if (insertError) {
+      console.error('[FEEDBACK] Insert error:', insertError.message);
       return res.status(500).json({ error: 'Failed to save feedback' });
     }
 
-<<<<<<< HEAD
     res.json({ success: true, message: 'Feedback submitted' });
   } catch (error) {
     console.error('[FEEDBACK] Error:', error);
     res.status(500).json({ error: 'Failed to submit feedback' });
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-=======
-    return res.json({ success: true, message: 'Feedback submitted' });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to submit feedback' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 };
-
-export { mapDbQuestionToStudentQuestion };

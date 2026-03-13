@@ -22,11 +22,24 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   const { user, authLoading, isAdmin, isGuardian } = useSupabaseAuth();
   const [location] = useLocation();
 
-  // Fetch profile completion status from /api/auth/user
+  // Fetch profile completion status from canonical /api/profile endpoint
   const { data: authData, isLoading: profileLoading } = useQuery<AuthUserResponse>({
-    queryKey: ['/api/auth/user'],
+    queryKey: ['/api/profile'],
     retry: false,
     enabled: !!user, // only fetch when user is authenticated
+    queryFn: async () => {
+      const response = await fetch('/api/profile', { credentials: 'include' });
+
+      if (response.status === 401 || response.status === 403) {
+        return { authenticated: false, user: null };
+      }
+
+      if (!response.ok) {
+        throw new Error(`Profile hydration failed: ${response.status}`);
+      }
+
+      return response.json();
+    },
   });
 
   if (authLoading || (user && profileLoading)) {
@@ -73,4 +86,5 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
 }
 
 export default RequireRole;
+
 

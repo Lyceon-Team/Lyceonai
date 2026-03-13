@@ -15,9 +15,9 @@ export default function ProgressSidebar() {
   
   // Check if user is authenticated for admin access
   const { data: authData } = useQuery({
-    queryKey: ['/api/auth/user'],
+    queryKey: ['/api/profile'],
     queryFn: async () => {
-      const response = await fetch('/api/auth/user');
+      const response = await fetch('/api/profile', { credentials: 'include' });
       return response.json();
     }
   });
@@ -212,3 +212,4 @@ export default function ProgressSidebar() {
     </div>
   );
 }
+
