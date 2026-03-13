@@ -26,6 +26,44 @@ const profileCompletionSchema = z.object({
 });
 
 /**
+ * GET /api/profile
+ * Canonical hydration endpoint for authenticated user profile
+ */
+router.get("/", async (req: Request, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const fallbackUsername = user.email ? user.email.split("@")[0] : null;
+    const normalizedName = user.display_name || fallbackUsername || "Student";
+
+    return res.json({
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+        name: normalizedName,
+        username: fallbackUsername,
+        role: user.role,
+        isAdmin: user.isAdmin,
+        isGuardian: user.isGuardian,
+        is_under_13: user.is_under_13,
+        guardian_consent: user.guardian_consent,
+        studentLinkCode: user.student_link_code,
+        student_link_code: user.student_link_code,
+        profileCompletedAt: user.profile_completed_at ?? null,
+      },
+    });
+  } catch (error: any) {
+    console.error("[PROFILE] Error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
  * PATCH /api/profile
  * Complete user profile with additional information
  * Requires authentication and CSRF protection
@@ -118,4 +156,3 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
 });
 
 export default router;
-

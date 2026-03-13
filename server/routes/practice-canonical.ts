@@ -1,5 +1,5 @@
 // server/routes/practice-canonical.ts
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { checkPracticeLimit } from "../middleware/usage-limits";
@@ -377,7 +377,7 @@ const AnswerBodySchema = z.object({
   client_instance_id: z.string().max(128).optional().nullable(),
 });
 
-router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, async (req, res) => {
+export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -661,7 +661,8 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
     feedback: isCorrect ? "Correct" : skipped ? "Skipped" : "Incorrect",
     stats,
   });
-});
+}
+
+router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeAnswer);
 
 export default router;
-

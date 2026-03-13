@@ -9,77 +9,87 @@ describe('IDOR Regression Invariants', () => {
   it('tutor_v2_userid_from_auth_not_body', async () => {
     // This test validates that the endpoint requires authentication
     // and rejects requests without proper auth (preventing IDOR)
-    
+
     // Test 1: Unauthenticated request should be rejected
     const res = await request(app)
       .post('/api/tutor/v2')
       .set('Origin', 'http://localhost:5000')
       .send({ userId: 'victim-id', message: 'hi', mode: 'concept' });
-    
+
     // Should reject (401) - cannot proceed without auth
     expect(res.status).toBe(401);
-    
+
     // Test 2: Bearer auth should be rejected (cookie-only policy)
     const res2 = await request(app)
       .post('/api/tutor/v2')
       .set('Authorization', 'Bearer fake-token')
       .set('Origin', 'http://localhost:5000')
       .send({ userId: 'victim-id', message: 'hi', mode: 'concept' });
-    
+
     // Should reject
     expect([401, 403]).toContain(res2.status);
   });
 
   it('progress_review_attempt_rejects_foreign_session', async () => {
     vi.resetModules();
-    // ESM-safe: Mock the exact modules as imported in progress.ts
-    // 1. Mock supabaseServer to return a session owned by someone else for practice_sessions
-    const sessionId = 'foreign-session';
+
+    const sessionId = '11111111-1111-1111-1111-111111111111';
+    const questionId = '22222222-2222-2222-2222-222222222222';
     const userId = 'real-user';
-    const supabaseMock = {
-      from: (table) => {
-        if (table === 'practice_sessions') {
-          return {
-            select: () => ({
-              eq: (col, val) => ({
-                single: async () => ({ data: { id: sessionId, user_id: 'someone-else' }, error: null })
-              })
-            })
-          };
-        }
-        // Any other table: throw to fail test if called unexpectedly
-        throw new Error('Unexpected table: ' + table);
+
+    const fromMock = vi.fn((table: string) => {
+      if (table !== 'practice_sessions') {
+        throw new Error(`Unexpected table: ${table}`);
       }
-    };
-    vi.doMock('../../apps/api/src/lib/supabase-server', () => ({
-      supabaseServer: supabaseMock
-    }));
-    // 2. Mock recordCompetencyEvent to fail if called
-    const recordCompetencyEventMock = vi.fn();
-    vi.doMock('../../apps/api/src/routes/progress', async () => {
-      // Import the real module to spread all other exports
-      const actual = await vi.importActual('../../apps/api/src/routes/progress');
+
       return {
-        ...actual,
-        recordCompetencyEvent: recordCompetencyEventMock
+        select: () => ({
+          eq: (_col: string, _val: string) => ({
+            single: async () => ({
+              data: { id: sessionId, user_id: 'someone-else', metadata: {} },
+              error: null,
+            }),
+          }),
+        }),
       };
     });
-    // Import after mocks
-    const { recordReviewAttempt } = await import('../../apps/api/src/routes/progress');
-    // Prepare request/response mocks
+
+    vi.doMock('../apps/api/src/lib/supabase-server', () => ({
+      supabaseServer: {
+        from: fromMock,
+      },
+    }));
+
+    const { submitPracticeAnswer } = await import('../server/routes/practice-canonical');
+
     const req = {
+      requestId: 'idor-regression',
       user: { id: userId },
-      body: { questionId: 'q1', eventType: 'correct', sessionId },
-    };
+      body: {
+        sessionId,
+        questionId,
+        selectedAnswer: 'A',
+      },
+    } as any;
+
     let statusCode = 0;
-    let jsonBody = null;
+    let jsonBody: any = null;
     const res = {
-      status(code) { statusCode = code; return this; },
-      json(obj) { jsonBody = obj; return this; },
-    };
-    await recordReviewAttempt(req, res);
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(obj: any) {
+        jsonBody = obj;
+        return this;
+      },
+    } as any;
+
+    await submitPracticeAnswer(req, res);
+
     expect(statusCode).toBe(403);
-    expect(recordCompetencyEventMock).not.toHaveBeenCalled();
+    expect(jsonBody).toMatchObject({ error: 'forbidden' });
+    expect(fromMock).toHaveBeenCalledTimes(1);
   });
 });
 // Inject dummy env vars for deterministic test runs (no real credentials needed)
