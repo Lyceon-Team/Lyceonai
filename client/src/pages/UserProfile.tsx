@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageCard } from '@/components/common/page-card';
@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -16,11 +18,12 @@ import {
   Calendar,
   Trophy, Target, BookOpen, Clock, TrendingUp, Star,
   AlertCircle, CheckCircle,
-  Copy, Users
+  Copy, Mail, Users
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
+import { SUPPORT_EMAIL } from '@/lib/support-contact';
 
 interface UserProfile {
   id: string;
@@ -34,6 +37,31 @@ interface UserProfile {
   studentLinkCode?: string | null;
 }
 
+
+type RoleSwitchTarget = 'student' | 'guardian' | 'teacher';
+
+function buildRoleSwitchTemplate(args: {
+  currentRole: string;
+  requestedRole: RoleSwitchTarget;
+  accountEmail: string;
+  displayName?: string;
+}) {
+  return [
+    'Hello Lyceon Support Team,',
+    '',
+    'I am requesting a role update for my account.',
+    `Current role: ${args.currentRole}`,
+    `Requested role: ${args.requestedRole}`,
+    `Account email: ${args.accountEmail}`,
+    `Account name: ${args.displayName || 'Not provided'}`,
+    '',
+    'Reason for request:',
+    '- Please review and update my account role as appropriate.',
+    '',
+    'Thank you,',
+    args.displayName || args.accountEmail,
+  ].join('\n');
+}
 // Note: UserStats are not currently tracked by backend
 // Progress tracking uses /api/progress/kpis and /api/progress/projection
 // These features are temporarily disabled and shown as placeholders
@@ -43,6 +71,8 @@ export default function UserProfile() {
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user, signOut } = useSupabaseAuth();
+  const [roleSwitchTarget, setRoleSwitchTarget] = useState<RoleSwitchTarget>('student');
+  const [roleSwitchMessage, setRoleSwitchMessage] = useState('');
 
   // Get user profile from canonical endpoint
   const {
@@ -76,6 +106,29 @@ export default function UserProfile() {
   };
 
   const profileUser = userProfile?.user;
+
+  const currentRole = user?.role || 'student';
+  const accountEmail = user?.email || profileUser?.email || '';
+  const accountName = profileUser?.name || user?.display_name || '';
+
+  useEffect(() => {
+    if (!accountEmail) {
+      return;
+    }
+
+    setRoleSwitchMessage(
+      buildRoleSwitchTemplate({
+        currentRole,
+        requestedRole: roleSwitchTarget,
+        accountEmail,
+        displayName: accountName || undefined,
+      }),
+    );
+  }, [accountEmail, accountName, currentRole, roleSwitchTarget]);
+
+  const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
+  const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
+  const roleSwitchPreview = [`To: ${SUPPORT_EMAIL}`, `Subject: ${roleSwitchSubject}`, '', roleSwitchMessage].join('\n');
 
   if (profileLoading) {
     return (
@@ -315,6 +368,87 @@ export default function UserProfile() {
                 </Alert>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Request Role Change</CardTitle>
+                <CardDescription>
+                  Role changes are support-mediated and are not applied directly in-app.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No in-product role switch is available. Use this request form to draft an email to {SUPPORT_EMAIL}.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="space-y-2">
+                  <Label htmlFor="role-switch-target">Requested Role</Label>
+                  <Select
+                    value={roleSwitchTarget}
+                    onValueChange={(value) => setRoleSwitchTarget(value as RoleSwitchTarget)}
+                  >
+                    <SelectTrigger id="role-switch-target" data-testid="select-role-switch-target">
+                      <SelectValue placeholder="Select target role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="student">student</SelectItem>
+                      <SelectItem value="guardian">guardian</SelectItem>
+                      <SelectItem value="teacher">teacher</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="role-switch-message">Message</Label>
+                  <Textarea
+                    id="role-switch-message"
+                    value={roleSwitchMessage}
+                    onChange={(event) => setRoleSwitchMessage(event.target.value)}
+                    className="min-h-[220px]"
+                    data-testid="textarea-role-switch-message"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="role-switch-preview">Email Preview</Label>
+                  <pre
+                    id="role-switch-preview"
+                    className="rounded-lg border bg-muted p-4 text-xs leading-6 whitespace-pre-wrap"
+                    data-testid="preview-role-switch-email"
+                  >
+                    {roleSwitchPreview}
+                  </pre>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button asChild data-testid="button-role-switch-send">
+                    <a href={roleSwitchMailto}>
+                      <Mail className="h-4 w-4 mr-2" />
+                      Send to Support
+                    </a>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setRoleSwitchMessage(
+                        buildRoleSwitchTemplate({
+                          currentRole,
+                          requestedRole: roleSwitchTarget,
+                          accountEmail,
+                          displayName: accountName || undefined,
+                        }),
+                      )
+                    }
+                    data-testid="button-role-switch-reset"
+                  >
+                    Reset Template
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Progress Tab */}
@@ -472,3 +606,4 @@ export default function UserProfile() {
     </AppShell>
   );
 }
+

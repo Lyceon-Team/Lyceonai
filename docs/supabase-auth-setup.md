@@ -20,6 +20,7 @@ Canonical hydration endpoint:
 - `PUBLIC_SITE_URL`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
+- `ADMN_PASSCODE` (required only for guarded admin provisioning path)
 
 ## Auth Endpoints
 
@@ -28,6 +29,7 @@ Canonical hydration endpoint:
 - `POST /api/auth/signout`
 - `POST /api/auth/consent`
 - `POST /api/auth/refresh`
+- `POST /api/auth/admin-provision` (guarded)
 - `GET /api/auth/debug`
 - `GET /api/auth/google/start`
 - `GET /auth/google/callback`
@@ -57,6 +59,14 @@ Canonical hydration endpoint:
 - `POST /api/auth/exchange-session` is removed.
 - Client-side token exchange flows are not canonical.
 
+## Role and Provisioning Rules
+
+- Missing/legacy profile roles are normalized to `student`.
+- Signup and fallback profile bootstrap never assign admin.
+- `POST /api/auth/admin-provision` fails closed when `ADMN_PASSCODE` is missing or mismatched.
+- Runtime role switching is intentionally not implemented.
+- Operational fallback for role/account correction is `support@lyceon.ai`.
+
 ## Validation Commands
 
 ```bash
@@ -70,7 +80,3 @@ curl -i http://localhost:5000/api/profile
 # expected: 401 without auth cookie
 ```
 
-## Notes
-
-- Runtime role switching is intentionally not implemented.
-- Operational fallback for role/account correction is `support@lyceon.ai`.

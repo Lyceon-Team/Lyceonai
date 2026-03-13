@@ -16,8 +16,8 @@ test.describe('Database Schema & Wiring Checks', () => {
       if (response.ok() && health.database?.connected) {
         const tables = health.database.tables || [];
         
-        // Required NextAuth.js tables
-        const requiredAuthTables = ['user', 'account', 'session', 'verificationToken'];
+        // Required Supabase auth tables
+        const requiredAuthTables = ['profiles'];
         // Required SAT application tables
         const requiredAppTables = ['questions', 'jobs', 'qa_findings', 'user_profiles'];
         
@@ -84,7 +84,7 @@ test.describe('Database Schema & Wiring Checks', () => {
     }
   });
 
-  test('should verify NextAuth.js session management is working', async ({ page }) => {
+  test('should verify Supabase cookie session management is working', async ({ page }) => {
     try {
       // Login to create a session
       await page.goto('/login');
@@ -101,28 +101,28 @@ test.describe('Database Schema & Wiring Checks', () => {
       
       if (health.auth?.session === 'authenticated' && health.auth?.user) {
         reporter.addTest(
-          'NextAuth.js Session Management',
+          'Supabase Session Management',
           'PASS',
           undefined,
           { userEmail: health.auth.user.email }
         );
       } else {
         reporter.addTest(
-          'NextAuth.js Session Management',
+          'Supabase Session Management',
           'FAIL',
           'Session not properly established or user data missing'
         );
       }
     } catch (error) {
       reporter.addTest(
-        'NextAuth.js Session Management',
+        'Supabase Session Management',
         'FAIL',
         `Session management test failed: ${error}`
       );
     }
   });
 
-  test('should verify user profile integration with NextAuth', async ({ page }) => {
+  test('should verify user profile integration with Supabase auth', async ({ page }) => {
     try {
       // Login to test user profile integration
       await page.goto('/login');
@@ -139,7 +139,7 @@ test.describe('Database Schema & Wiring Checks', () => {
       
       if (health.auth?.user?.isAdmin !== undefined) {
         reporter.addTest(
-          'User Profile Integration with NextAuth',
+          'User Profile Integration with Supabase Auth',
           'PASS',
           undefined,
           { 
@@ -149,14 +149,14 @@ test.describe('Database Schema & Wiring Checks', () => {
         );
       } else {
         reporter.addTest(
-          'User Profile Integration with NextAuth',
+          'User Profile Integration with Supabase Auth',
           'FAIL',
-          'User profile data not properly integrated with NextAuth session'
+          'User profile data not properly integrated with Supabase-auth session'
         );
       }
     } catch (error) {
       reporter.addTest(
-        'User Profile Integration with NextAuth',
+        'User Profile Integration with Supabase Auth',
         'FAIL',
         `User profile integration test failed: ${error}`
       );
@@ -195,3 +195,4 @@ test.describe('Database Schema & Wiring Checks', () => {
     console.log('Schema & Wiring tests completed');
   });
 });
+

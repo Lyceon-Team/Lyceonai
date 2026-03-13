@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabaseAdmin, requireRequestUser } from '../middleware/supabase-auth';
 import { csrfGuard } from '../middleware/csrf';
+import { SUPPORT_EMAIL } from '../lib/support-contact';
 
 const router = Router();
 const csrfProtection = csrfGuard();
@@ -38,6 +39,13 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
 
     const userId = user.id;
 
+    if (req.body && typeof req.body === 'object' && Object.prototype.hasOwnProperty.call(req.body, 'role')) {
+      return res.status(403).json({
+        error: 'Role changes are support-mediated only',
+        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
+        supportEmail: SUPPORT_EMAIL,
+      });
+    }
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
@@ -110,3 +118,4 @@ router.patch('/', csrfProtection, async (req: Request, res: Response) => {
 });
 
 export default router;
+

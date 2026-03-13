@@ -37,7 +37,7 @@ export class TestReporter {
 
   generateMarkdownReport(): string {
     const timestamp = new Date().toISOString();
-    let report = `# NextAuth.js + Schema + Practice Flow Test Report\n\n`;
+    let report = `# Supabase Auth + Schema + Practice Flow Test Report\n\n`;
     report += `**Generated:** ${timestamp}\n\n`;
 
     let totalTests = 0;
@@ -89,3 +89,4 @@ export class TestReporter {
     return filepath;
   }
 }
+

@@ -10,6 +10,8 @@
   - `server/routes/google-oauth-routes.ts`
 - No runtime role-switch feature exists in product surfaces.
 - Operational fallback for role corrections is `support@lyceon.ai`.
+- Missing/legacy profile roles are normalized to `student`.
+- Admin provisioning is fail-closed unless `ADMN_PASSCODE` is configured and explicitly provided to `POST /api/auth/admin-provision`.
 
 ## Canonical Runtime Surface
 
@@ -27,6 +29,7 @@
   - `POST /api/auth/signout`
   - `POST /api/auth/consent`
   - `POST /api/auth/refresh`
+  - `POST /api/auth/admin-provision` (guarded; not part of normal signup/signin)
   - `GET /api/auth/debug`
 
 ### Google OAuth routes
@@ -80,7 +83,15 @@
 ### Role and access enforcement
 - Server-side role checks are enforced by middleware and route guards.
 - Guardian/student/admin behavior is server-authoritative.
+- Missing profile role values are normalized server-side to `student`.
+- Profile PATCH rejects direct role mutation requests and returns support-mediated guidance.
 - No in-product runtime role-switch endpoint is exposed.
+
+### Admin provisioning guard
+- `POST /api/auth/admin-provision` is the only runtime path that can write an admin role.
+- Requests fail closed when `ADMN_PASSCODE` is missing.
+- Requests fail closed when the provided passcode does not match `ADMN_PASSCODE`.
+- Signup/metadata/fallback bootstrap paths cannot create admins.
 
 ## Verification Checklist
 
@@ -106,3 +117,4 @@ curl -i http://localhost:5000/api/profile
 
 - In-product role switching is not implemented by design.
 - Role correction and account-state exceptions are handled operationally via `support@lyceon.ai`.
+
