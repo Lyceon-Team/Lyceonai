@@ -224,9 +224,10 @@ To enable vector search in Supabase, run:
 ## API Routes
 
 ### Public Routes
-- `GET /api/questions` - List all questions
 - `GET /api/questions/recent` - Get recent questions
-- `GET /api/questions/:id` - Get question by ID
+- `GET /api/questions/search` - Search public question previews
+- `GET /api/health` - API health check
+- `GET /healthz` - Service health check
 
 ### Protected Routes (Admin Only)
 - `GET /api/admin/questions/needs-review` - Review queue
@@ -239,7 +240,11 @@ To enable vector search in Supabase, run:
 - `POST /api/auth/signout` - Sign out (clears auth cookies)
 - `POST /api/auth/refresh` - Refresh session from refresh cookie
 - `POST /api/auth/consent` - Submit guardian consent (under-13 flow)
+- `GET /api/auth/debug` - Auth diagnostics endpoint
+- `GET /api/auth/google/start` - Start Google OAuth flow
+- `GET /auth/google/callback` - OAuth callback endpoint
 - `GET /api/profile` - Canonical current-user profile payload
+- Removed: `GET /api/auth/user` and `POST /api/auth/exchange-session` (both return 404)
 
 ## Logging
 

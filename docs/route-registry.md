@@ -119,6 +119,11 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/auth/consent` | POST | Yes | any | Submit guardian consent for under-13 users (CSRF protected) |
 | `/api/auth/refresh` | POST | No | public | Refresh auth token |
 | `/api/profile` | GET | Yes | any | Get user profile (canonical) |
+| `/auth/google/callback` | GET | No | public | Google OAuth callback handler |
+
+Removed auth endpoints (must return 404):
+- `/api/auth/user`
+- `/api/auth/exchange-session`
 
 ### Student Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |

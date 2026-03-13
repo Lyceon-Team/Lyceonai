@@ -56,6 +56,11 @@ describe('CI Routes Tests', () => {
         expect(res.body).toHaveProperty('error');
       }
     });
+
+    it('should return 404 for removed /api/auth/user endpoint', async () => {
+      const res = await request(app).get('/api/auth/user');
+      expect(res.status).toBe(404);
+    });
   });
 
   describe('Protected Routes - Auth Required', () => {
