@@ -34,7 +34,7 @@ const practiceAnswerRateLimiter = rateLimit({
  * DB truth (from your questions_rows (6).csv):
  * questions has: id, canonical_id, section, section_code, stem, question_type, options, correct_answer, answer_text, explanation, domain, skill, subskill, skill_code, difficulty
  *
- * practice_sessions FK: user_id -> users(id)  (NOT auth.users)
+ * practice_sessions FK: user_id -> auth.users(id)
  * answer_attempts FK: user_id -> auth.users(id)
  *
  * IMPORTANT:
@@ -266,7 +266,7 @@ router.get("/next", requireSupabaseAuth, checkPracticeLimit({ increment: true, i
     const { data: newSession, error: sessionErr } = await supabaseServer
       .from("practice_sessions")
       .insert({
-        user_id: userId, // must match users(id) FK in your DB
+        user_id: userId, // must match auth.users(id) FK in your DB
         section,
         mode,
         status: "in_progress",
@@ -664,7 +664,4 @@ router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProte
 });
 
 export default router;
-
-
-
 

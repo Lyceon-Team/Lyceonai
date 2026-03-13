@@ -416,41 +416,6 @@ export async function supabaseAuthMiddleware(
       email: req.user.email,
       role: req.user.role
     });
-
-    // PHASE 2: Ensure public.users row exists (FK constraint for practice_sessions)
-    // This prevents FK violation when inserting into tables that reference public.users(id)
-    try {
-      const { error: upsertError } = await supabaseAdmin
-        .from('users')
-        .upsert(
-          {
-            id: req.user.id,
-            email: req.user.email
-          },
-          { onConflict: 'id' }
-        );
-
-      if (upsertError) {
-        // Retry with just id if email column doesn't exist or other schema issue
-        const { error: retryError } = await supabaseAdmin
-          .from('users')
-          .upsert({ id: req.user.id }, { onConflict: 'id' });
-
-        if (retryError) {
-          logger.warn('AUTH', 'users_upsert_failed', 'Failed to upsert public.users', {
-            userId: req.user.id,
-            error: retryError.message
-          });
-        }
-      }
-    } catch (usersErr) {
-      // Log but don't block - some setups may not have public.users table
-      logger.warn('AUTH', 'users_upsert_exception', 'Exception during public.users upsert', {
-        userId: req.user.id,
-        error: usersErr instanceof Error ? usersErr.message : 'Unknown'
-      });
-    }
-
     // Ensure user has a lyceon_account and membership (student/guardian only)
     if (req.user.role === 'student' || req.user.role === 'guardian') {
       try {

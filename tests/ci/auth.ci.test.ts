@@ -96,6 +96,11 @@ describe('CI Auth Tests', () => {
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error')
     });
+
+    it('should return 404 for removed /api/auth/user hydration endpoint', async () => {
+      const res = await request(app).get('/api/auth/user');
+      expect(res.status).toBe(404);
+    });
   });
 
   describe('Protected Endpoints - Auth Required', () => {
