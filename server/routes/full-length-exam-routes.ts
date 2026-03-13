@@ -443,8 +443,5 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
 });
 export default router;
 
-<<<<<<< HEAD
 
 
-=======
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57

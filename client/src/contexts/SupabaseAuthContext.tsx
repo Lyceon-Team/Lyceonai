@@ -207,13 +207,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setAuthLoading(true);
     try {
-      try {
-        await fetch('/api/auth/signout', {
-          method: 'POST',
-          credentials: 'include',
-        });
-      } catch (err) {
-        console.warn('[AUTH] Backend signout failed:', err);
+      const response = await fetch('/api/auth/signout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sign out failed with status ${response.status}`);
       }
 
       setUser(null);

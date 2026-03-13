@@ -333,6 +333,39 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
 
 
 /**
+ * Build canonical current-user hydration payload.
+ * /api/profile is canonical; /api/auth/user mirrors this shape for compatibility.
+ */
+function buildHydratedUser(user: {
+  id: string;
+  email?: string | null;
+  display_name?: string | null;
+  role?: string | null;
+  is_under_13?: boolean | null;
+  guardian_consent?: boolean | null;
+  student_link_code?: string | null;
+  profile_completed_at?: string | null;
+}) {
+  const fallbackUsername = user.email ? user.email.split('@')[0] : null;
+  const normalizedName = user.display_name || fallbackUsername || 'Student';
+
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    display_name: user.display_name ?? null,
+    name: normalizedName,
+    username: fallbackUsername,
+    role: user.role ?? 'student',
+    isAdmin: user.role === 'admin',
+    isGuardian: user.role === 'guardian',
+    is_under_13: Boolean(user.is_under_13),
+    guardian_consent: Boolean(user.guardian_consent),
+    studentLinkCode: user.student_link_code ?? null,
+    student_link_code: user.student_link_code ?? null,
+    profileCompletedAt: user.profile_completed_at ?? null,
+  };
+}
+/**
  * GET /api/auth/user
  * Get current authenticated user
  * Returns 200 with {user: null} for anonymous requests
@@ -342,6 +375,23 @@ router.get('/user', async (req: Request, res: Response) => {
 
   // PHASE 1: Clean up any legacy cookies on every /user request
   clearLegacyCookies(req, res, isProd);
+
+  // Normal-path ownership: use middleware-hydrated user when available.
+  if (req.user?.id) {
+    return res.status(200).json({
+      authenticated: true,
+      user: buildHydratedUser({
+        id: req.user.id,
+        email: req.user.email ?? null,
+        display_name: req.user.display_name ?? null,
+        role: req.user.role,
+        is_under_13: req.user.is_under_13 ?? false,
+        guardian_consent: req.user.guardian_consent ?? false,
+        student_link_code: req.user.student_link_code ?? null,
+        profile_completed_at: null,
+      }),
+    });
+  }
 
   try {
     const token = req.cookies['sb-access-token'];
@@ -438,46 +488,30 @@ async function handleUserFetch(req: Request, res: Response, user: any, token: st
       });
     }
 
-    // Handle missing profile gracefully - auto-create if needed
+    // Handle missing profile deterministically: /api/auth/user is read-only.
+    // Canonical profile bootstrap/creation is owned by supabaseAuthMiddleware.
     if (!profile) {
-      logger.warn('AUTH', 'profile_missing', 'User has no profile row - creating one', { userId: user.id });
-
-      // Auto-create profile (should have been created by trigger, but handle edge case)
-      const admin = getSupabaseAdmin();
-      const { data: newProfile, error: createError } = await admin
-        .from('profiles')
-        .insert({
-          id: user.id,
-          email: user.email,
-          display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
-          role: user.user_metadata?.role || 'student'
-        })
-        .select('id, role, is_under_13, guardian_consent, student_link_code, profile_completed_at')
-        .single();
-
-      if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_creation_failed', 'Failed to auto-create profile', {
-          userId: user.id,
-          error: createError
-        });
-        return res.status(500).json({ error: 'Profile initialization failed' });
-      }
-
-      profile = newProfile;
+      logger.warn('AUTH', 'profile_missing', 'Profile missing during /api/auth/user read; refusing fallback creation', {
+        userId: user.id,
+      });
+      return res.status(409).json({
+        error: 'Profile initialization required',
+        code: 'profile_missing',
+      });
     }
 
     res.json({
       authenticated: true,
-      user: {
+      user: buildHydratedUser({
         id: profile.id,
+        email: user.email || null,
+        display_name: user.user_metadata?.display_name || user.user_metadata?.full_name || null,
         role: profile.role,
-        isAdmin: profile.role === 'admin',
-        isGuardian: profile.role === 'guardian',
         is_under_13: profile.is_under_13,
         guardian_consent: profile.guardian_consent,
         student_link_code: profile.student_link_code,
-        profileCompletedAt: profile.profile_completed_at || null
-      }
+        profile_completed_at: profile.profile_completed_at || null,
+      }),
     });
   } catch (error) {
     logger.error('AUTH', 'handleUserFetch_error', 'Handle user fetch error', error);

@@ -26,7 +26,6 @@ const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const FlowCards = lazy(() => import("@/pages/flow-cards"));
 const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
-const AdminPortal = lazy(() => import("@/pages/AdminPortal").then(m => ({ default: m.AdminPortal })));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 
@@ -111,16 +110,14 @@ function Router() {
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
 
-        {/* Consolidated Admin route - AdminPortal already has AdminGuard internally */}
-        <Route path="/admin" component={AdminPortal} />
-
-        {/* Legacy admin routes - redirect to canonical /admin */}
-        <Route path="/admin-dashboard">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-system-config">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-questions">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-review">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-portal">{() => <Redirect to="/admin" replace />}</Route>
-        <Route path="/admin-review-v2">{() => <Redirect to="/admin" replace />}</Route>
+        {/* Admin product surface shelved: keep routes non-functional */}
+        <Route path="/admin">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-dashboard">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-system-config">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-questions">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-review">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-portal">{() => <Redirect to="/dashboard" replace />}</Route>
+        <Route path="/admin-review-v2">{() => <Redirect to="/dashboard" replace />}</Route>
 
         {/* 404 */}
         <Route component={NotFound} />

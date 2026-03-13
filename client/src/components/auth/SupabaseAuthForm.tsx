@@ -24,6 +24,18 @@ export function SupabaseAuthForm() {
   const [guardianEmail, setGuardianEmail] = useState('');
   const [isGuardian, setIsGuardian] = useState(false);
   const [error, setError] = useState('');
+  const resolvePostAuthPath = async (): Promise<string> => {
+    try {
+      const response = await fetch('/api/profile', { credentials: 'include' });
+      if (!response.ok) return '/dashboard';
+
+      const data = await response.json();
+      const role = data?.user?.role;
+      return role === 'guardian' ? '/guardian' : '/dashboard';
+    } catch {
+      return '/dashboard';
+    }
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +48,7 @@ export function SupabaseAuthForm() {
           title: 'Welcome back!', 
           description: 'You have been signed in successfully.' 
         });
-        setLocation('/dashboard');
+        setLocation(await resolvePostAuthPath());
       } else {
         // Validate under-13 guardian email
         if (isUnder13 && !guardianEmail) {
@@ -66,7 +78,7 @@ export function SupabaseAuthForm() {
           });
         }
         
-        setLocation(isGuardian ? '/guardian' : '/dashboard');
+        setLocation(await resolvePostAuthPath());
       }
     } catch (err: any) {
       const errorMsg = err.message || 'Authentication failed';
@@ -334,3 +346,4 @@ export function SupabaseAuthForm() {
     </Card>
   );
 }
+
