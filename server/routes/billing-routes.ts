@@ -1,9 +1,7 @@
 import { Request, Response, Router } from 'express';
 import {
   getSupabaseAdmin,
-  requireRequestUser,
   requireSupabaseAuth,
-  sendForbidden,
   sendUnauthenticated,
 } from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
@@ -12,24 +10,13 @@ import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, m
 import { logger } from '../logger';
 import { z } from 'zod';
 import { csrfGuard } from '../middleware/csrf';
+import { requireGuardianRole } from '../middleware/guardian-role';
 
 const router = Router();
 const csrfProtection = csrfGuard();
-
-function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const user = requireRequestUser(req, res);
-  if (!user) {
-    return;
-  }
-  if (user.role !== 'guardian' && user.role !== 'admin') {
-    return sendForbidden(res, {
-      error: 'Guardian role required',
-      message: 'You do not have permission to access guardian billing resources',
-      requestId: req.requestId,
-    });
-  }
-  next();
-}
+const requireGuardianBillingAccess = requireGuardianRole({
+  message: 'You do not have permission to access guardian billing resources',
+});
 
 const checkoutSchema = z.object({
   plan: z.enum(['monthly', 'quarterly', 'yearly']).optional(),
@@ -412,7 +399,7 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
   });
 });
 
-router.get('/products', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/products', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const products = await billingStorage.listProducts();
@@ -588,7 +575,7 @@ function safeIdInfo(id: string | undefined): { prefix: string | null; last4: str
   };
 }
 
-router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/debug/env', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const stripeEnvRaw = process.env.STRIPE_ENV || null;
   const stripeEnvNormalized = stripeEnvRaw?.toLowerCase() === 'live' ? 'live' : 'test';
@@ -629,7 +616,7 @@ router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: R
   });
 });
 
-router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/debug/validate', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const secretKey = process.env.STRIPE_SECRET_KEY || '';
   const mode = secretKey.startsWith('sk_live_') ? 'live' : secretKey.startsWith('sk_test_') ? 'test' : 'unknown';
@@ -727,3 +714,4 @@ router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (r
 });
 
 export default router;
+
