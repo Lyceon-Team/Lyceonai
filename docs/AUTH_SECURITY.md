@@ -3,7 +3,7 @@
 ## TL;DR
 
 * Backend-derived auth: tokens live **only in HTTP-only cookies**; React holds **no tokens**.
-* `/api/auth/user` is the single source of truth for the UI.
+* `/api/profile` is the single source of truth for the UI.
 * RLS on Supabase + role guards + CSRF guard.
 * FERPA-grade: no token exposure to JS or storage.
 
@@ -23,7 +23,7 @@ Supabase → Frontend (/auth-callback#access_token,refresh_token)
 Frontend → Backend POST /api/auth/exchange-session {tokens}
 Backend → Browser Set-Cookie (HttpOnly, Secure, SameSite=Lax)
 Frontend → purge local/sessionStorage + clear JS memory
-Frontend → Backend GET /api/auth/user (credentials: include)
+Frontend → Backend GET /api/profile (credentials: include)
 Backend → Frontend { user: { id, email, role } }
 ```
 
@@ -31,7 +31,7 @@ Backend → Frontend { user: { id, email, role } }
 
 ### Authentication Endpoints
 * **POST /api/auth/exchange-session** → receives tokens from frontend, sets HttpOnly cookies, returns success
-* **GET /api/auth/user** → returns user profile derived from cookies (single source of truth)
+* **GET /api/profile** → returns user profile derived from cookies (single source of truth)
 * **POST /api/auth/logout** → clears cookies server-side and invalidates session
 * **GET /auth/callback** → Supabase OAuth callback handler
 
@@ -71,7 +71,7 @@ All state-changing routes (POST/PUT/DELETE/PATCH) enforce strict Origin/Referer 
 ### Token Security
 * ✅ No tokens in JS memory, localStorage, or React state
 * ✅ Tokens exist ONLY in HttpOnly cookies
-* ✅ Frontend auth state derived from backend API (`/api/auth/user`)
+* ✅ Frontend auth state derived from backend API (`/api/profile`)
 * ✅ Session exchange clears localStorage/sessionStorage and JS memory
 
 ### CSRF Protection
@@ -182,12 +182,12 @@ chmod +x scripts/smoke.sh
 4. Frontend calls `/api/auth/exchange-session` with tokens
 5. Backend sets HttpOnly cookies
 6. Frontend clears localStorage/sessionStorage
-7. Frontend calls `/api/auth/user` → receives user profile
+7. Frontend calls `/api/profile` → receives user profile
 8. Verify in DevTools:
    - ✅ Cookies: `sb-access-token` and `sb-refresh-token` are HttpOnly
    - ✅ LocalStorage: No `supabase.auth.token` or similar keys
    - ✅ SessionStorage: Empty
-   - ✅ Network tab: `/api/auth/user` returns user profile
+   - ✅ Network tab: `/api/profile` returns user profile
 
 ### 4. Protected Route Tests
 ```bash
@@ -253,8 +253,8 @@ npx jest -i tests/auth.integration.test.ts --coverage
 # Health check should return 200
 curl -f http://localhost:5000/api/health || exit 1
 
-# Auth endpoint should return 200
-curl -f http://localhost:5000/api/auth/user || exit 1
+# Auth endpoint should deny unauthenticated requests (401)
+curl -i http://localhost:5000/api/profile
 ```
 
 ### Pre-deployment Checklist

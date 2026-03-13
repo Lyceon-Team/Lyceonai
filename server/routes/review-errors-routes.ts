@@ -192,6 +192,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
           subskill: metadata.subskill,
           skill_code: metadata.skill_code,
           difficulty: metadata.difficulty,
+          structure_cluster_id: metadata.structure_cluster_id ?? null,
         },
       });
 

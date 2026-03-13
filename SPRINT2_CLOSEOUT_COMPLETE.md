@@ -146,7 +146,7 @@ grep -r "window.analytics" client/src/
 # All critical endpoints exist and are registered:
 /api/me/mastery/skills (GET) - Line 167 in mastery.ts ✅
 /api/profile (PATCH) - Line 32 in profile-routes.ts ✅
-/api/auth/user (GET) - Returns profileCompletedAt ✅
+/api/profile (GET) - Returns profileCompletedAt ✅
 ```
 
 ---

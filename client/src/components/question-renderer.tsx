@@ -8,7 +8,9 @@ type QuestionOption = {
 
 type Question = {
   id: string;
-  question_type: "multiple_choice";
+  question_type?: "multiple_choice" | "free_response" | null;
+  questionType?: "multiple_choice" | "free_response" | null;
+  type?: "mc" | "fr" | null;
   stem: string;
   section?: string | null;
   options?: QuestionOption[] | null;

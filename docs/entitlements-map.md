@@ -95,8 +95,7 @@ Some features are available to free tier but with **usage limits**:
 |----------|------|-------------|-------------|----------|
 | `POST /api/auth/signup` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/signin` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |
-| `POST /api/auth/signout` | any | free | requireSupabaseAuth | `server/routes/supabase-auth-routes.ts` |
-| `GET /api/auth/user` | any | free | None (allows anonymous) | `server/routes/supabase-auth-routes.ts` |
+| `POST /api/auth/signout` | any | free | csrfProtection (public route, clears cookies) | `server/routes/supabase-auth-routes.ts` |
 | `GET /api/auth/google/start` | public | free | None (public) | `server/routes/google-oauth-routes.ts` |
 | `POST /api/auth/consent` | any | free | requireSupabaseAuth, csrfProtection | `server/routes/supabase-auth-routes.ts` |
 | `POST /api/auth/refresh` | public | free | None (public) | `server/routes/supabase-auth-routes.ts` |

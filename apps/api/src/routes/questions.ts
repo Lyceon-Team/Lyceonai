@@ -21,11 +21,21 @@ function fisherYatesShuffle<T>(array: T[]): T[] {
 // ============================================================================
 export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
   const type = q.type ?? (q.options ? 'mc' : 'fr');
+  const questionType = type === 'fr' ? 'free_response' : 'multiple_choice';
+  const sectionCode = q.section_code ?? q.sectionCode ?? null;
+  const canonicalId = q.canonical_id ?? q.canonicalId ?? null;
 
   const base = {
     id: q.id,
+    canonicalId,
+    canonical_id: canonicalId,
     stem: q.stem,
     section: q.section,
+    sectionCode,
+    section_code: sectionCode,
+    questionType,
+    question_type: questionType,
+    type,
     explanation: null,
     source: {
       mapping: q.source_mapping ?? q.sourceMapping ?? null,
@@ -36,13 +46,13 @@ export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
       : typeof q.tags === 'string'
         ? q.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
         : [],
-    type,
   };
 
   if (type === 'fr') {
     return {
       ...base,
       type: 'fr',
+      options: [],
     } as StudentFrQuestion;
   }
 
@@ -58,13 +68,15 @@ export function mapDbQuestionToStudentQuestion(q: any): StudentQuestion {
       options = [];
     }
   }
+
   return {
     ...base,
     type: 'mc',
+    questionType: 'multiple_choice',
+    question_type: 'multiple_choice',
     options,
   } as StudentMcQuestion;
 }
-
 // Debug flag for question endpoints
 const DEBUG_QUESTIONS = process.env.DEBUG_QUESTIONS === '1';
 

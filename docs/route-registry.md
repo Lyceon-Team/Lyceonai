@@ -47,7 +47,7 @@ This document is the single authoritative registry of:
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
-| `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/auth/user`, `/api/legal/accept` | ACTIVE |
+| `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 | `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
 | `/admin` | admin | admin-only | AdminPortal | `/api/admin/*` (all admin endpoints) | ACTIVE |
@@ -114,8 +114,7 @@ The following routes have been **REMOVED** from the codebase:
 |----------|--------|--------------|------|---------|
 | `/api/auth/signup` | POST | No | public | Email/password signup |
 | `/api/auth/signin` | POST | No | public | Email/password signin |
-| `/api/auth/signout` | POST | Yes | any | Sign out current user |
-| `/api/auth/user` | GET | No | any | Get current user (returns {user: null} for anonymous) |
+| `/api/auth/signout` | POST | No (CSRF required) | any | Sign out current user (clears cookies) |
 | `/api/auth/google/start` | GET | No | public | Google OAuth flow |
 | `/api/auth/consent` | POST | Yes | any | Submit guardian consent for under-13 users (CSRF protected) |
 | `/api/auth/refresh` | POST | No | public | Refresh auth token |

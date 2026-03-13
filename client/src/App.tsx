@@ -12,7 +12,6 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
-import { RoleRedirect } from "@/components/auth/RoleRedirect";
 
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const CalendarPage = lazy(() => import("@/pages/calendar"));
@@ -53,9 +52,6 @@ function PageLoader() {
   );
 }
 
-function AuthenticatedRedirect() {
-  return <RoleRedirect />;
-}
 
 function Router() {
   return (
@@ -186,4 +182,3 @@ function App() {
 }
 
 export default App;
-

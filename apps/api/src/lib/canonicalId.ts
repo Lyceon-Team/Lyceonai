@@ -2,13 +2,8 @@ import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
 
 export type TestCode = "SAT";
-<<<<<<< HEAD
-export type SectionCode = "MATH" | "RW";
-export type SourceCode = 0 | 1 | 2 | 3;
-=======
 export type SectionCode = "M" | "RW";
 export type SourceCode = "1" | "2";
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
 
 const UNIQUE_LENGTH = 6;
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -25,37 +20,23 @@ export function generateUniqueToken(length: number = UNIQUE_LENGTH): string {
 export function generateCanonicalId(
   test: TestCode,
   section: SectionCode,
-  source: SourceCode,
+  source: SourceCode
 ): string {
   const unique = generateUniqueToken();
   return `${test}${section}${source}${unique}`;
 }
 
 export function isValidCanonicalId(id: string): boolean {
-<<<<<<< HEAD
-  const pattern = /^SAT(MATH|RW)[0-3][A-Z0-9]{6}$/;
-=======
   const pattern = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   return pattern.test(id);
 }
 
 export function parseCanonicalId(id: string): {
-  test: TestCode;
-  section: SectionCode;
-  source: SourceCode;
+  test: string;
+  section: string;
+  source: string;
   unique: string;
 } | null {
-<<<<<<< HEAD
-  const match = id.match(/^(SAT)(MATH|RW)([0-3])([A-Z0-9]{6})$/);
-  if (!match) return null;
-
-  return {
-    test: "SAT",
-    section: match[2] as SectionCode,
-    source: Number(match[3]) as SourceCode,
-    unique: match[4],
-=======
   if (!isValidCanonicalId(id)) return null;
 
   const test = "SAT";
@@ -69,15 +50,11 @@ export function parseCanonicalId(id: string): {
     section,
     source,
     unique,
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   };
 }
 
 export function mapSectionToCode(section: string): SectionCode {
   const normalized = section.toLowerCase();
-<<<<<<< HEAD
-  if (normalized.includes("math")) return "MATH";
-=======
   if (normalized === "math") return "M";
   if (normalized === "rw") return "RW";
   if (
@@ -89,7 +66,6 @@ export function mapSectionToCode(section: string): SectionCode {
   ) {
     return "RW";
   }
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
   return "RW";
 }
 
@@ -103,7 +79,7 @@ export interface InsertWithRetryOptions<T> {
 }
 
 export async function insertWithCanonicalIdRetry<T>(
-  options: InsertWithRetryOptions<T>,
+  options: InsertWithRetryOptions<T>
 ): Promise<{ canonicalId: string; data: any }> {
   const { generateRow, insertFn, test, section, source, maxRetries = 5 } = options;
 
@@ -138,7 +114,7 @@ export async function upsertQuestionWithCanonicalId(
   row: Record<string, any>,
   test: TestCode,
   section: SectionCode,
-  source: SourceCode,
+  source: SourceCode
 ): Promise<{ canonicalId: string; questionId: string }> {
   const supabase = getSupabaseAdmin();
 
@@ -151,7 +127,11 @@ export async function upsertQuestionWithCanonicalId(
       canonical_id: canonicalId,
     }),
     insertFn: async (rowWithCqid) => {
-      const { data, error } = await supabase.from("questions").insert(rowWithCqid).select("id, canonical_id").single();
+      const { data, error } = await supabase
+        .from("questions")
+        .insert(rowWithCqid)
+        .select("id, canonical_id")
+        .single();
       return { data, error };
     },
   });

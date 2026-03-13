@@ -131,15 +131,8 @@ function ReviewErrors() {
     setRecordError(null);
 
     try {
-<<<<<<< HEAD
-      const isMc = fullQuestion.question_type === 'multiple_choice';
-      const studentAnswer = isMc ? selectedAnswer : freeResponseAnswer.trim();
-      
-      const response = await apiRequest('/api/questions/validate', {
-=======
       const isMc = fullQuestion.type === 'mc';
       const response = await apiRequest('/api/review-errors/attempt', {
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
         method: 'POST',
         body: JSON.stringify({
           question_id: currentItem.questionId,
@@ -177,32 +170,6 @@ function ReviewErrors() {
           validatedAt: new Date(),
         },
       }));
-<<<<<<< HEAD
-      
-      try {
-        const recordResponse = await apiRequest('/api/review-errors/attempt', {
-          method: 'POST',
-          body: JSON.stringify({
-            question_id: currentItem.questionId,
-            selected_answer: selectedAnswer,
-            is_correct: result.isCorrect,
-            seconds_spent: null,
-            source_context: 'review_errors',
-            client_attempt_id: `${currentItem.questionId}-${Date.now()}`,
-          }),
-        });
-        
-        if (!recordResponse.ok) {
-          const errorData = await recordResponse.json().catch(() => ({}));
-          setRecordError(errorData.error || 'Failed to record attempt');
-        }
-      } catch (compError: unknown) {
-        console.warn('Failed to record review competency event:', compError);
-        const errorMessage = compError instanceof Error ? compError.message : 'Failed to record attempt';
-        setRecordError(errorMessage);
-      }
-=======
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
     } catch (error) {
       console.error('Error validating answer:', error);
       const message = error instanceof Error ? error.message : 'Failed to validate answer';
@@ -398,7 +365,7 @@ function ReviewErrors() {
                   <MathRenderer content={fullQuestion.stem} displayMode={false} />
                 </div>
 
-                {fullQuestion.question_type === 'multiple_choice' && 'options' in fullQuestion && (fullQuestion as StudentMcQuestion).options.length > 0 ? (
+                {fullQuestion.type === 'mc' && 'options' in fullQuestion && (fullQuestion as StudentMcQuestion).options.length > 0 ? (
                   <div className="space-y-3">
                     {(fullQuestion as StudentMcQuestion).options.map((option, index) => {
                       const optionKey = String.fromCharCode(65 + index);

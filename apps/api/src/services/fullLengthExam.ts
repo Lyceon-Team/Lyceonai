@@ -726,7 +726,7 @@ async function applyFullLengthMasterySignals(
   try {
     const { data: questionRows, error: questionError } = await supabase
       .from("questions")
-      .select("id, canonical_id, exam, section, domain, skill, subskill, skill_code, difficulty")
+      .select("id, canonical_id, exam, section, domain, skill, subskill, skill_code, difficulty, structure_cluster_id")
       .in("id", questionIds);
 
     if (questionError) {
@@ -755,6 +755,7 @@ async function applyFullLengthMasterySignals(
             subskill: question.subskill || null,
             skill_code: question.skill_code || null,
             difficulty: question.difficulty || null,
+            structure_cluster_id: question.structure_cluster_id || null,
           },
         });
 

@@ -98,9 +98,9 @@ Key features:
 
 ### Session Management:
 - JWT stored in HTTP-only cookies (`sb-access-token`, `sb-refresh-token`)
-- Frontend reads session via `supabase.auth.getSession()`
-- Auth context extracts user from session.user
-- No backend `/api/auth/user` call needed
+- Frontend validates session via `GET /api/profile` (credentials: include)
+- Auth context derives user/role from `/api/profile` response payload
+- `/api/profile` is the canonical current-user source of truth
 
 ## Required Action
 
