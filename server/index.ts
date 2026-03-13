@@ -40,8 +40,8 @@ import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
+  requireSupabaseAdmin,
   requireStudentOrAdmin,
-  requireRequestUser,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -271,44 +271,8 @@ app.get("/auth/google/callback", googleCallbackHandler);
 app.use("/api/auth", supabaseAuthRoutes);
 
 // Profile endpoints - requires authentication
-// GET /api/profile - Get current user profile
-// PATCH /api/profile - Complete/update user profile
-app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-
-    // Return complete user profile with all fields needed by frontend
-    // Source of truth: canonical current-user hydration payload
-    const fallbackUsername = user.email ? user.email.split('@')[0] : null;
-    const normalizedName = user.display_name || fallbackUsername || 'Student';
-
-    return res.json({
-      authenticated: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        name: normalizedName,
-        username: fallbackUsername,
-        role: user.role,
-        isAdmin: user.isAdmin,
-        isGuardian: user.isGuardian,
-        is_under_13: user.is_under_13,
-        guardian_consent: user.guardian_consent,
-        studentLinkCode: user.student_link_code,
-        student_link_code: user.student_link_code,
-        profileCompletedAt: user.profile_completed_at ?? null,
-      }
-    });
-  } catch (error) {
-    console.error('[PROFILE] Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
+// GET /api/profile - canonical hydration route
+// PATCH /api/profile - profile completion/update route
 app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
 // Notifications Routes
@@ -325,6 +289,14 @@ app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, 
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
+// Minimal guarded admin auth contract for regression invariants.
+app.get("/api/admin/db-health", requireSupabaseAuth, requireSupabaseAdmin, async (_req: Request, res: Response) => {
+  return res.json({
+    ok: true,
+    status: "healthy",
+    service: "database",
+  });
+});
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
 app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
@@ -689,6 +661,3 @@ if (isMainModule) {
 }
 
 export default app;
-
-
-

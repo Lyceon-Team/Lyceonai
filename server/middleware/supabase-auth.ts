@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../logger.js';
 import { ensureAccountForUser } from '../lib/account.js';
+import { ensureProfileForAuthUser } from '../lib/profile-bootstrap.js';
 
 /**
  * Token resolution result with diagnostics
@@ -286,83 +287,17 @@ export async function supabaseAuthMiddleware(
       return next(); // Continue without user
     }
 
-    // Fetch user profile from Supabase using anon client with user's JWT (RLS enforced)
-    // The JWT is automatically recognized by auth.uid() in RLS policies
-    const userSupabase = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_ANON_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      }
-    );
-
-    const { data: fetchedProfile, error: profileError } = await userSupabase
-      .from('profiles')
-      .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
-      .eq('id', user.id)
-      .single();
-
-    // Auto-create profile if missing (resilient profile loading)
-    let profile = fetchedProfile;
-
-    if (profileError || !fetchedProfile) {
-      // Profile doesn't exist - auto-create with safe defaults
-      logger.warn('AUTH', 'profile_missing', 'Profile not found, auto-creating', {
+    const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
+      source: 'supabase_auth_middleware',
+      requestId: req.requestId,
+    }).catch((profileError) => {
+      logger.error('AUTH', 'profile_load_failed', 'Failed to load or bootstrap profile', {
         userId: user.id,
-        email: user.email
+        error: profileError instanceof Error ? profileError.message : String(profileError),
+        requestId: req.requestId,
       });
-
-      // Determine role from user metadata (if set during signup)
-      // SECURITY: Only allow guardian role from metadata. Admin cannot be auto-assigned.
-      // Admin role must be manually assigned by DB admin or existing admin user.
-      const metadataRole = user.user_metadata?.role as string | undefined;
-      const allowedAutoRoles = ['student', 'guardian'] as const;
-      const defaultRole: 'student' | 'guardian' =
-        metadataRole === 'guardian' ? 'guardian' : 'student';
-
-      // Log if someone tried to auto-create as admin (potential abuse attempt)
-      if (metadataRole === 'admin') {
-        logger.warn('AUTH', 'admin_role_blocked', 'Blocked attempt to auto-create admin profile', {
-          userId: user.id,
-          email: user.email,
-          requestId: req.requestId
-        });
-      }
-
-      const { data: newProfile, error: createError } = await supabaseAdmin
-        .from('profiles')
-        .insert({
-          id: user.id,
-          email: user.email || '',
-          display_name: user.user_metadata?.display_name || user.user_metadata?.full_name || null,
-          role: defaultRole,
-          is_under_13: user.user_metadata?.is_under_13 || false,
-          guardian_consent: user.user_metadata?.guardian_consent || false,
-          guardian_email: user.user_metadata?.guardian_email || null,
-        })
-        .select('id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at')
-        .single();
-
-      if (createError || !newProfile) {
-        logger.error('AUTH', 'profile_create_failed', 'Failed to auto-create profile', {
-          userId: user.id,
-          error: createError
-        });
-        return res.status(500).json({ error: 'Failed to load user profile' });
-      }
-
-      logger.info('AUTH', 'profile_auto_created', 'Profile auto-created successfully', {
-        userId: newProfile.id,
-        role: newProfile.role,
-        requestId: req.requestId
-      });
-
-      profile = newProfile;
-    }
+      return null;
+    });
 
     if (!profile) {
       logger.error('AUTH', 'profile_null', 'Profile is null after fetch/create', { userId: user.id });

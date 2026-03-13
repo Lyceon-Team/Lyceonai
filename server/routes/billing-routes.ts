@@ -11,6 +11,7 @@ import { logger } from '../logger';
 import { z } from 'zod';
 import { csrfGuard } from '../middleware/csrf';
 import { requireGuardianRole } from '../middleware/guardian-role';
+import { normalizeRuntimeRole } from '../lib/auth-role';
 
 const router = Router();
 const csrfProtection = csrfGuard();
@@ -263,8 +264,7 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
 router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const userId = req.user!.id;
-  const rawRole = req.user!.role as string;
-  const userRole = rawRole === 'parent' ? 'guardian' : (rawRole || 'student');
+  const userRole = normalizeRuntimeRole(req.user!.role);
 
   let accountId: string | null = null;
   let entitlement: any = null;
@@ -505,8 +505,7 @@ router.post('/portal', requireSupabaseAuth, csrfProtection, async (req: Request,
   const requestId = req.requestId;
   try {
     const userId = req.user!.id;
-    const rawRole = (req.user!.role as string) || 'student';
-    const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+    const userRole = normalizeRuntimeRole(req.user!.role);
 
     const supabaseAdmin = getSupabaseAdmin();
 

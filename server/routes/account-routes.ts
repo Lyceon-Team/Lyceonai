@@ -8,6 +8,7 @@ import {
   getDailyUsage
 } from '../lib/account';
 import { logger } from '../logger';
+import { normalizeRuntimeRole } from '../lib/auth-role';
 import { z } from 'zod';
 import { csrfGuard } from '../middleware/csrf';
 
@@ -17,8 +18,7 @@ const csrfProtection = csrfGuard();
 router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const userId = req.user!.id;
-  const rawRole = req.user!.role as string;
-  const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+  const userRole = normalizeRuntimeRole(req.user!.role);
 
   try {
     const accounts = await getAllAccountsForUser(userId);
@@ -98,8 +98,7 @@ const selectAccountSchema = z.object({
 router.post('/select', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const userId = req.user!.id;
-  const rawRole = req.user!.role as string;
-  const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+  const userRole = normalizeRuntimeRole(req.user!.role);
 
   if (userRole !== 'guardian') {
     return res.status(403).json({
@@ -163,3 +162,4 @@ router.post('/select', requireSupabaseAuth, csrfProtection, async (req: Request,
 });
 
 export default router;
+
