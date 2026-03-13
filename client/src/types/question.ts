@@ -1,81 +1,36 @@
 /**
-<<<<<<< HEAD
- * Canonical client-side question type.
-=======
  * QuestionVM - View Model for rendering questions in the UI
-<<<<<<< HEAD
- * 
- * This is the canonical client-side type for displaying questions.
- * It abstracts away storage internals and provides a clean interface for UI components.
->>>>>>> 6a60baa79edc08652c60fd03f24f552b8e2f6e57
-=======
  *
  * Canonical client-side type for displaying question data from public.questions.
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
  */
 
-export type AnswerKey = 'A' | 'B' | 'C' | 'D';
-export type QuestionDifficulty = 1 | 2 | 3;
-export type SourceType = 0 | 1 | 2 | 3;
-
 export interface QuestionOption {
-  key: AnswerKey;
+  key: string;
   text: string;
-}
-
-export interface OptionMetaEntry {
-  role: 'correct' | 'distractor';
-  error_taxonomy: string | null;
-}
-
-export interface OptionMetadata {
-  A: OptionMetaEntry;
-  B: OptionMetaEntry;
-  C: OptionMetaEntry;
-  D: OptionMetaEntry;
 }
 
 export interface QuestionVM {
   id: string;
-  canonical_id?: string | null;
+  canonicalId?: string | null;
   exam?: string | null;
-<<<<<<< HEAD
-  test_code?: string | null;
-  section_code?: 'MATH' | 'RW' | null;
-=======
   testCode?: string | null;
   sectionCode?: 'MATH' | 'RW' | null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   section?: string | null;
-  domain?: string | null;
-  skill?: string | null;
-  subskill?: string | null;
-  skill_code?: string | null;
-  difficulty?: QuestionDifficulty | null;
-  source_type?: SourceType | null;
-  competencies?: unknown | null;
+  difficulty?: string | null;
+  competencies?: Array<{ code: string; raw?: string | null }> | null;
   stem: string;
-<<<<<<< HEAD
-  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption] | QuestionOption[];
-  question_type: 'multiple_choice';
-=======
   options: QuestionOption[];
-  questionType: 'multiple_choice';
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
+  questionType: 'multiple_choice' | 'free_response';
+  question_type?: 'multiple_choice' | 'free_response' | null;
+  type?: 'mc' | 'fr';
   explanation?: string | null;
-  tags?: unknown | null;
-  option_metadata?: OptionMetadata | null;
+  tags?: string[] | null;
 }
 
 export interface ValidationResult {
   isCorrect: boolean;
-<<<<<<< HEAD
-  questionType?: 'multiple_choice';
-  correctAnswerKey?: AnswerKey | null;
-=======
-  mode?: 'multiple_choice';
+  mode?: 'multiple_choice' | 'free_response' | 'mc' | 'fr';
   correctAnswerKey?: string | null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   feedback?: string;
 }
 
@@ -86,55 +41,39 @@ export interface PracticeQuestion extends QuestionVM {
 }
 
 export function toQuestionVM(apiQuestion: any): QuestionVM {
+  const inferredType: 'mc' | 'fr' =
+    apiQuestion.type === 'fr' ||
+    apiQuestion.questionType === 'free_response' ||
+    apiQuestion.question_type === 'free_response'
+      ? 'fr'
+      : 'mc';
+
+  const questionType = inferredType === 'fr' ? 'free_response' : 'multiple_choice';
+
   return {
-    id: String(apiQuestion.id),
-    canonical_id: apiQuestion.canonical_id ?? null,
-    exam: apiQuestion.exam ?? null,
-    test_code: apiQuestion.test_code ?? null,
-    section_code: apiQuestion.section_code ?? null,
-    section: apiQuestion.section ?? null,
-    domain: apiQuestion.domain ?? null,
-    skill: apiQuestion.skill ?? null,
-    subskill: apiQuestion.subskill ?? null,
-    skill_code: apiQuestion.skill_code ?? null,
-    difficulty: normalizeDifficulty(apiQuestion.difficulty),
-    source_type: normalizeSourceType(apiQuestion.source_type),
-    competencies: apiQuestion.competencies ?? null,
-    stem: String(apiQuestion.stem ?? ''),
+    id: apiQuestion.id,
+    canonicalId: apiQuestion.canonicalId || apiQuestion.canonical_id || null,
+    exam: apiQuestion.exam || apiQuestion.testCode || apiQuestion.test_code || null,
+    testCode: apiQuestion.testCode || apiQuestion.test_code || null,
+    sectionCode: apiQuestion.sectionCode || apiQuestion.section_code || null,
+    section: apiQuestion.section || null,
+    difficulty: apiQuestion.difficulty || null,
+    competencies: apiQuestion.competencies || null,
+    stem: apiQuestion.stem || '',
     options: normalizeOptions(apiQuestion.options),
-<<<<<<< HEAD
-    question_type: 'multiple_choice',
-    explanation: apiQuestion.explanation ?? null,
-    tags: apiQuestion.tags ?? null,
-    option_metadata: normalizeOptionMetadata(apiQuestion.option_metadata),
-=======
-    questionType: 'multiple_choice',
+    questionType,
+    question_type: questionType,
+    type: inferredType,
     explanation: apiQuestion.explanation || null,
     tags: apiQuestion.tags || null,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
 
-function normalizeDifficulty(value: unknown): QuestionDifficulty | null {
-  return value === 1 || value === 2 || value === 3 ? (value as QuestionDifficulty) : null;
-}
-
-function normalizeSourceType(value: unknown): SourceType | null {
-  return value === 0 || value === 1 || value === 2 || value === 3 ? (value as SourceType) : null;
-}
-
-function normalizeOptions(options: unknown): QuestionOption[] {
-  if (!Array.isArray(options)) {
+function normalizeOptions(options: any): QuestionOption[] {
+  if (!options || !Array.isArray(options)) {
     return [];
   }
 
-<<<<<<< HEAD
-  return options
-    .filter((opt): opt is { key: AnswerKey; text: string } => {
-      return !!opt && typeof opt === 'object' && ['A', 'B', 'C', 'D'].includes((opt as any).key) && typeof (opt as any).text === 'string';
-    })
-    .map((opt) => ({ key: opt.key, text: opt.text }));
-=======
   return options.map((opt: any, index: number) => {
     if (typeof opt === 'string') {
       const letter = String.fromCharCode(65 + index);
@@ -148,18 +87,4 @@ function normalizeOptions(options: unknown): QuestionOption[] {
     }
     return { key: String.fromCharCode(65 + index), text: String(opt) };
   });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
-}
-
-function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const metadata = value as Record<string, unknown>;
-  if (!('A' in metadata) || !('B' in metadata) || !('C' in metadata) || !('D' in metadata)) {
-    return null;
-  }
-
-  return metadata as unknown as OptionMetadata;
 }

@@ -76,13 +76,13 @@ describe.skipIf(!runIntegrationTests)('Integration Auth Tests', () => {
   });
 
   describe('Real Supabase Authentication', () => {
-    it('should authenticate with real Supabase token', async () => {
+    it('should require auth for /api/profile', async () => {
       // This test requires a real test user to be set up in Supabase
       // For now, we just validate the structure is in place
       
-      const res = await request(app).get('/api/auth/user');
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty('user');
+      const res = await request(app).get('/api/profile');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject invalid Supabase tokens', async () => {
@@ -110,3 +110,5 @@ describe.skipIf(!runIntegrationTests)('Integration Auth Tests', () => {
     });
   });
 });
+
+

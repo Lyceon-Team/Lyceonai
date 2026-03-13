@@ -234,11 +234,12 @@ To enable vector search in Supabase, run:
 - `GET /api/admin/questions/statistics` - Question quality metrics
 
 ### Auth Routes
-- `POST /auth/login` - Local login
-- `POST /auth/register` - Register new user
-- `POST /auth/logout` - Logout
-- `GET /auth/user` - Get current user
-- `POST /api/auth/*` - NextAuth.js routes (if enabled)
+- `POST /api/auth/signup` - Email/password signup
+- `POST /api/auth/signin` - Email/password sign in
+- `POST /api/auth/signout` - Sign out (clears auth cookies)
+- `POST /api/auth/refresh` - Refresh session from refresh cookie
+- `POST /api/auth/consent` - Submit guardian consent (under-13 flow)
+- `GET /api/profile` - Canonical current-user profile payload
 
 ## Logging
 

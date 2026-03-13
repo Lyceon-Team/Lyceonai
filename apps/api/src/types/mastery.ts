@@ -58,16 +58,6 @@ export interface MasteryUpdateParams {
     skill: string | null;
     subskill: string | null;
     skill_code: string | null;
-<<<<<<< HEAD
-    difficulty: 1 | 2 | 3 | null;
-    structure_cluster_id: string | null;
-=======
     difficulty: string | null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }
-
-
-
-
-

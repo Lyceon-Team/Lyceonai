@@ -3,27 +3,17 @@ import { seedOffset3 } from './seeded';
 
 export type SectionCode = 'RW' | 'MATH';
 export type ModuleId = 'RW1' | 'RW2' | 'M1' | 'M2';
-export type QuestionDifficulty = 1 | 2 | 3;
+export type DifficultyBucket = 'easy' | 'medium' | 'hard';
 
 export type QuestionRow = {
   canonical_id: string;
   section_code: string | null;
   section: string | null;
-<<<<<<< HEAD
-  question_type: string | null;
-  domain: string | null;
-  skill: string | null;
-  subskill: string | null;
-  skill_code: string | null;
-  difficulty: number | null;
-  status: string | null;
-=======
   question_type: 'multiple_choice' | null;
   domain: string | null;
   skill: string | null;
   subskill: string | null;
   difficulty: string | null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 };
 
 export type BuiltFormItem = {
@@ -35,13 +25,8 @@ export type BuiltFormItem = {
   domain: string;
   skill: string;
   subskill: string | null;
-<<<<<<< HEAD
-  skillCode: string | null;
-  difficulty: QuestionDifficulty;
-=======
   difficultyBucket: DifficultyBucket;
   difficultyLevel: number | null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   questionType: 'multiple_choice';
 };
 
@@ -63,32 +48,28 @@ const RW_DOMAIN_ORDER = [
   'Expression of Ideas',
 ] as const;
 
+function bucketRank(b: DifficultyBucket): number {
+  if (b === 'easy') return 1;
+  if (b === 'medium') return 2;
+  return 3;
+}
+
 function normalizeSectionCode(q: QuestionRow): SectionCode | null {
   const sc = (q.section_code ?? '').trim().toUpperCase();
   if (sc === 'RW') return 'RW';
   if (sc === 'MATH') return 'MATH';
 
-<<<<<<< HEAD
-=======
   // fallback on `section` if section_code is missing/non-canonical
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   const s = (q.section ?? '').toLowerCase();
   if (s.includes('read') || s.includes('writing') || s === 'rw') return 'RW';
   if (s.includes('math')) return 'MATH';
   return null;
 }
 
-<<<<<<< HEAD
-function normalizeDifficulty(q: QuestionRow): QuestionDifficulty | null {
-  return q.difficulty === 1 || q.difficulty === 2 || q.difficulty === 3
-    ? (q.difficulty as QuestionDifficulty)
-    : null;
-=======
 function normalizeBucket(q: QuestionRow): DifficultyBucket | null {
   const b = (q.difficulty ?? '').trim().toLowerCase();
   if (b === 'easy' || b === 'medium' || b === 'hard') return b;
   return null;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 }
 
 function toDifficultyLevel(bucket: DifficultyBucket): number {
@@ -99,46 +80,35 @@ function toDifficultyLevel(bucket: DifficultyBucket): number {
 
 function isEligibleBase(q: QuestionRow): boolean {
   if (!q.canonical_id) return false;
-<<<<<<< HEAD
-  if ((q.question_type ?? '').trim() !== 'multiple_choice') return false;
-  if (!normalizeSectionCode(q)) return false;
-=======
   if (q.question_type !== 'multiple_choice') return false;
   const sectionCode = normalizeSectionCode(q);
   if (!sectionCode) return false;
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   if (!q.domain || !q.skill) return false;
-  if (!normalizeDifficulty(q)) return false;
-  if ((q.status ?? '').trim().toLowerCase() !== 'published') return false;
+  const b = normalizeBucket(q);
+  if (!b) return false;
   return true;
 }
 
 function sortKeyRW(q: QuestionRow): string {
-  const d = normalizeDifficulty(q) ?? 999;
+  const bucket = normalizeBucket(q)!;
+  const dRank = bucketRank(bucket);
   const domain = q.domain ?? '';
-  const domainIndex = RW_DOMAIN_ORDER.indexOf(domain as (typeof RW_DOMAIN_ORDER)[number]);
+  const domainIndex = RW_DOMAIN_ORDER.indexOf(domain as any);
   const domRank = domainIndex >= 0 ? domainIndex : 999;
-<<<<<<< HEAD
-=======
   const dl = toDifficultyLevel(bucket);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   const skill = q.skill ?? '';
   const cid = q.canonical_id ?? '';
-  return `${String(domRank).padStart(3, '0')}:${String(d).padStart(1, '0')}:${skill}:${cid}`;
+  return `${String(domRank).padStart(3, '0')}:${String(dRank).padStart(1, '0')}:${String(dl).padStart(6, '0')}:${skill}:${cid}`;
 }
 
 function sortKeyMath(q: QuestionRow): string {
-<<<<<<< HEAD
-  const d = normalizeDifficulty(q) ?? 999;
-=======
   const bucket = normalizeBucket(q)!;
   const dRank = bucketRank(bucket);
   const dl = toDifficultyLevel(bucket);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   const domain = q.domain ?? '';
   const skill = q.skill ?? '';
   const cid = q.canonical_id ?? '';
-  return `${String(d).padStart(1, '0')}:${domain}:${skill}:${cid}`;
+  return `${String(dRank).padStart(1, '0')}:${String(dl).padStart(6, '0')}:${domain}:${skill}:${cid}`;
 }
 
 function pickDistinct(
@@ -201,6 +171,7 @@ export function buildGeneratedFullLengthFormFromPool(args: {
   const { seed, questions } = args;
 
   const warnings: string[] = [];
+
   const eligible = questions.filter(isEligibleBase);
 
   const rwPool = eligible.filter((q) => normalizeSectionCode(q) === 'RW');
@@ -224,23 +195,6 @@ export function buildGeneratedFullLengthFormFromPool(args: {
   const buildModuleItems = (moduleId: ModuleId, picked: QuestionRow[]): BuiltFormItem[] => {
     const pretestPos = markPretestPositions(picked.length, seed, moduleId);
 
-<<<<<<< HEAD
-    return picked.map((q, idx) => ({
-      moduleId,
-      position: idx,
-      canonicalId: q.canonical_id,
-      isOperational: !pretestPos.has(idx),
-      sectionCode: normalizeSectionCode(q) as SectionCode,
-      domain: q.domain as string,
-      skill: q.skill as string,
-      subskill: q.subskill ?? null,
-      skillCode: q.skill_code ?? null,
-      difficulty: normalizeDifficulty(q) as QuestionDifficulty,
-      questionType: 'multiple_choice',
-    }));
-  };
-
-=======
     return picked.map((q, idx) => {
       const sectionCode = normalizeSectionCode(q)!;
       const diff = normalizeBucket(q)!;
@@ -267,7 +221,6 @@ export function buildGeneratedFullLengthFormFromPool(args: {
     M2: buildModuleItems('M2', m2),
   };
 
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   return {
     form: {
       formKind: 'generated',
@@ -276,12 +229,7 @@ export function buildGeneratedFullLengthFormFromPool(args: {
       selectionSeed: seed,
       warnings,
     },
-    itemsByModule: {
-      RW1: buildModuleItems('RW1', rw1),
-      RW2: buildModuleItems('RW2', rw2),
-      M1: buildModuleItems('M1', m1),
-      M2: buildModuleItems('M2', m2),
-    },
+    itemsByModule,
   };
 }
 
@@ -301,21 +249,11 @@ export async function fetchEligibleQuestionsForExam(supabaseServer: any): Promis
         'domain',
         'skill',
         'subskill',
-<<<<<<< HEAD
-        'skill_code',
-        'difficulty',
-        'status',
-      ].join(',')
-    )
-    .eq('question_type', 'multiple_choice')
-    .eq('status', 'published')
-=======
         'difficulty',
       ].join(',')
     )
     .eq('question_type', 'multiple_choice')
     .eq('status', 'reviewed')
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     .not('canonical_id', 'is', null);
 
   if (error) throw new Error(`fetchEligibleQuestionsForExam failed: ${error.message}`);

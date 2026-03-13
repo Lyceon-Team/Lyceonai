@@ -4,7 +4,7 @@
 
 ### 1. React Auth State (Task 1)
 - **Status**: ✅ Complete
-- **Implementation**: Auth state is 100% backend-derived via `/api/auth/user` endpoint
+- **Implementation**: Auth state is 100% backend-derived via `/api/profile` endpoint
 - **Security**: No tokens stored in React state or browser storage (only HTTP-only cookies)
 - **Files Modified**:
   - `client/src/contexts/SupabaseAuthContext.tsx` - Already properly implemented

@@ -1,12 +1,10 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-<<<<<<< HEAD
-=======
 import { getWeakestSkills } from "./studentMastery";
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
 export type SectionFilter = "math" | "rw";
 export type SelectionMode = "balanced" | "skill" | "cluster";
-export type DifficultyPolicy = "auto" | 1 | 2 | 3;
+export type DifficultyPolicy = "auto" | "easy" | "medium" | "hard";
+export type DifficultyBucket = "easy" | "medium" | "hard" | "unknown";
 
 export interface SelectNextParams {
   userId: string;
@@ -18,7 +16,6 @@ export interface SelectNextParams {
     domain?: string;
     skill?: string;
     clusterId?: string;
-    skillCode?: string;
   };
   difficultyPolicy?: DifficultyPolicy;
   excludeCanonicalIds?: string[];
@@ -28,7 +25,7 @@ export interface SelectionRationale {
   mode: SelectionMode;
   pickedFrom: "skill" | "fallback";
   weaknessKey?: string;
-  difficultyPicked?: 1 | 2 | 3;
+  difficultyPicked?: DifficultyBucket;
   relaxStepUsed?: number;
   filterPath?: string[];
   candidateCount?: number;
@@ -43,35 +40,18 @@ function simpleHash(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
   return Math.abs(hash);
 }
 
 function deterministicPick<T>(items: T[], seed: string): T {
-  if (!items.length) throw new Error("Cannot pick from an empty list");
-  const index = simpleHash(seed) % items.length;
-  return items[index];
+  if (items.length === 0) throw new Error("Cannot pick from empty array");
+  const idx = simpleHash(seed) % items.length;
+  return items[idx];
 }
 
-<<<<<<< HEAD
-function normalizeDifficulty(value: unknown): 1 | 2 | 3 {
-  const numeric = Number(value);
-  if (numeric === 1 || numeric === 2 || numeric === 3) return numeric;
-  return 2;
-}
-
-async function queryCandidateQuestions(params: {
-  section: SectionFilter;
-  difficulty?: 1 | 2 | 3;
-  domain?: string;
-  skill?: string;
-  skillCode?: string;
-  excludeCanonicalIds: string[];
-  limit?: number;
-}): Promise<any[]> {
-=======
 function weightedDeterministicPick<T extends { accuracy: number }>(items: T[], seed: string): T {
   if (items.length === 0) throw new Error("Cannot pick from empty array");
   if (items.length === 1) return items[0];
@@ -192,24 +172,11 @@ function parseOptions(raw: unknown): Array<{ key: string; text: string }> {
 }
 
 async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   const supabase = getSupabaseAdmin();
   const limit = params.limit || 60;
 
   let query: any = supabase
     .from("questions")
-<<<<<<< HEAD
-    .select("id, canonical_id, section, section_code, question_type, stem, options, difficulty, domain, skill, subskill, skill_code, tags, competencies, explanation")
-    .eq("status", "published")
-    .eq("question_type", "multiple_choice")
-    .eq("section_code", params.section === "math" ? "MATH" : "RW");
-
-  if (params.difficulty) query = query.eq("difficulty", params.difficulty);
-  if (params.domain) query = query.eq("domain", params.domain);
-  if (params.skill) query = query.eq("skill", params.skill);
-  if (params.skillCode) query = query.eq("skill_code", params.skillCode);
-  query = query.limit(limit * 2);
-=======
     .select(`
       id,
       canonical_id,
@@ -251,38 +218,10 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
   if (params.difficultyBucket && params.difficultyBucket !== "unknown") {
     query = query.ilike("difficulty", params.difficultyBucket);
   }
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
   const { data, error } = await query;
   if (error) return [];
 
-<<<<<<< HEAD
-  const excluded = new Set(params.excludeCanonicalIds);
-  return (data || []).filter((row: any) => {
-    const cid = row.canonical_id || row.id;
-    return !excluded.has(cid);
-  });
-}
-
-function toStudentQuestion(row: any) {
-  return {
-    id: row.id,
-    canonicalId: row.canonical_id || row.id,
-    section: row.section,
-    section_code: row.section_code,
-    question_type: "multiple_choice" as const,
-    stem: row.stem,
-    options: Array.isArray(row.options) ? row.options : [],
-    difficulty: normalizeDifficulty(row.difficulty),
-    domain: row.domain ?? null,
-    skill: row.skill ?? null,
-    subskill: row.subskill ?? null,
-    skill_code: row.skill_code ?? null,
-    tags: row.tags ?? null,
-    competencies: row.competencies ?? null,
-    explanation: row.explanation ?? null,
-  };
-=======
   const excludeSet = new Set(params.excludeCanonicalIds);
 
   return (data || [])
@@ -296,7 +235,6 @@ function toStudentQuestion(row: any) {
       options: parseOptions(q.options),
     }))
     .slice(0, limit);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 }
 
 export async function selectNextQuestionForStudent(params: SelectNextParams): Promise<SelectNextResult> {
@@ -313,12 +251,6 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
   const mode: SelectionMode = target?.mode || "balanced";
   const filterPath: string[] = [];
 
-<<<<<<< HEAD
-  const pickedDifficulty: 1 | 2 | 3 = difficultyPolicy === "auto" ? 2 : difficultyPolicy;
-  filterPath.push(`difficulty=${pickedDifficulty}`);
-
-  const candidates = await queryCandidateQuestions({
-=======
   const recentlyAttempted = await getRecentlyAttemptedCanonicalIds(userId, section);
   const allExcluded = [...new Set([...excludeCanonicalIds, ...recentlyAttempted])];
 
@@ -395,71 +327,27 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
   }
 
   const lastResort = await queryCandidateQuestions({
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     section,
-    difficulty: pickedDifficulty,
-    domain: target?.domain,
-    skill: target?.skill,
-    skillCode: target?.skillCode,
-    excludeCanonicalIds,
+    excludeCanonicalIds: [],
     limit: 60,
   });
 
-<<<<<<< HEAD
-  if (candidates.length > 0) {
-    const seed = `${userId}:${sessionId || "nosession"}:${section}:${attemptIndex}`;
-    const question = deterministicPick(candidates, seed);
-=======
   if (lastResort.length > 0) {
     const question = deterministicPick(lastResort, determineSeed + ":lastresort");
     filterPath.push("last-resort-no-exclusions");
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
     return {
-      question: toStudentQuestion(question),
+      question: mapToStudentQuestion(question),
       rationale: {
         mode,
-<<<<<<< HEAD
-        pickedFrom: target?.skill || target?.skillCode ? "skill" : "fallback",
-        weaknessKey: target?.skillCode || target?.skill || undefined,
-        difficultyPicked: pickedDifficulty,
-        relaxStepUsed: 0,
-=======
         pickedFrom: "fallback",
         difficultyPicked: targetDifficulty,
         relaxStepUsed: 4,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
         filterPath,
-        candidateCount: candidates.length,
+        candidateCount: lastResort.length,
       },
     };
   }
-<<<<<<< HEAD
-
-  const fallback = await queryCandidateQuestions({
-    section,
-    excludeCanonicalIds,
-    limit: 60,
-  });
-
-  if (!fallback.length) {
-    throw new Error(`No questions available for section: ${section}`);
-  }
-
-  const seed = `${userId}:${sessionId || "nosession"}:${section}:${attemptIndex}:fallback`;
-  const question = deterministicPick(fallback, seed);
-
-  return {
-    question: toStudentQuestion(question),
-    rationale: {
-      mode,
-      pickedFrom: "fallback",
-      difficultyPicked: pickedDifficulty,
-      relaxStepUsed: 1,
-      filterPath: [...filterPath, "fallback"],
-      candidateCount: fallback.length,
-    },
-=======
 
   throw new Error(`No questions available for section: ${section}`);
 }
@@ -483,6 +371,5 @@ function mapToStudentQuestion(q: any): any {
     difficulty: q.difficulty ?? null,
     correctAnswer: q.correct_answer ?? null,
     answerText: q.answer_text ?? null,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   };
 }

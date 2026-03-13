@@ -1,50 +1,11 @@
-<<<<<<< HEAD
-import { Request, Response } from "express";
-import { supabaseServer } from "../lib/supabase-server";
-=======
 /**
  * Admin Question Review API Routes
  * Canonical questions schema only (public.questions).
  */
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
-const REVIEW_STATUSES = ["in_review", "pending_review"];
+import { Request, Response } from 'express';
+import { supabaseServer } from '../lib/supabase-server';
 
-<<<<<<< HEAD
-export const getQuestionsNeedingReview = async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(String(req.query.limit ?? "50"), 10) || 50;
-    const offset = parseInt(String(req.query.offset ?? "0"), 10) || 0;
-
-    const { data, error } = await supabaseServer
-      .from("questions")
-      .select("*")
-      .in("status", REVIEW_STATUSES)
-      .is("reviewed_at", null)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) return res.status(500).json({ error: "Failed to get questions needing review" });
-
-    return res.json({
-      questions: data || [],
-      total: data?.length || 0,
-      hasMore: (data?.length || 0) === limit,
-    });
-  } catch {
-    return res.status(500).json({ error: "Failed to get questions needing review" });
-  }
-};
-
-export const getDuplicateQuestions = async (req: Request, res: Response) => {
-  try {
-    const limit = parseInt(String(req.query.limit ?? "50"), 10) || 50;
-
-    const { data: allQuestions, error } = await supabaseServer
-      .from("questions")
-      .select("id, canonical_id, created_at")
-      .not("canonical_id", "is", null);
-=======
 /**
  * GET /api/admin/questions/needs-review
  * Get draft questions that need manual review.
@@ -120,58 +81,12 @@ export const getDuplicateQuestions = async (req: Request, res: Response) => {
       .from('questions')
       .select('id, canonical_id, created_at')
       .not('canonical_id', 'is', null);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
-    if (error) return res.status(500).json({ error: "Failed to get duplicate questions" });
-
-    const buckets: Record<string, any[]> = {};
-    for (const q of allQuestions || []) {
-      if (!q.canonical_id) continue;
-      if (!buckets[q.canonical_id]) buckets[q.canonical_id] = [];
-      buckets[q.canonical_id].push(q);
+    if (error) {
+      console.error('[ADMIN_QUESTIONS] Error fetching questions for duplicates:', error);
+      return res.status(500).json({ error: 'Failed to get duplicate questions' });
     }
 
-<<<<<<< HEAD
-    const duplicates = Object.entries(buckets).filter(([, rows]) => rows.length > 1).slice(0, limit);
-
-    if (!duplicates.length) {
-      return res.json({ duplicateGroups: [], total: 0 });
-    }
-
-    return res.json({
-      duplicateGroups: duplicates.map(([canonicalId, rows]) => ({
-        canonicalId,
-        count: rows.length,
-        questions: rows,
-      })),
-      total: duplicates.length,
-    });
-  } catch {
-    return res.status(500).json({ error: "Failed to get duplicate questions" });
-  }
-};
-
-export const getQuestionStatistics = async (_req: Request, res: Response) => {
-  try {
-    const [{ count: total }, { count: inReview }, { count: published }] = await Promise.all([
-      supabaseServer.from("questions").select("id", { count: "exact", head: true }),
-      supabaseServer.from("questions").select("id", { count: "exact", head: true }).in("status", REVIEW_STATUSES),
-      supabaseServer.from("questions").select("id", { count: "exact", head: true }).eq("status", "published"),
-    ]);
-
-    const { data: allQuestions } = await supabaseServer.from("questions").select("section_code, difficulty, source_type");
-
-    const bySection: Record<string, number> = {};
-    const byDifficulty: Record<string, number> = {};
-    const bySourceType: Record<string, number> = {};
-
-    for (const q of allQuestions || []) {
-      const sectionCode = q.section_code || "UNKNOWN";
-      bySection[sectionCode] = (bySection[sectionCode] || 0) + 1;
-
-      const diff = String(q.difficulty ?? "unknown");
-      byDifficulty[diff] = (byDifficulty[diff] || 0) + 1;
-=======
     const canonicalGroups: Record<string, any[]> = {};
     (allQuestions || []).forEach(q => {
       if (q.canonical_id) {
@@ -270,36 +185,21 @@ export const getQuestionStatistics = async (_req: Request, res: Response) => {
       issueStats[issue.severity][issue.issue_type] =
         (issueStats[issue.severity][issue.issue_type] || 0) + 1;
     });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
-      const sourceType = String(q.source_type ?? "unknown");
-      bySourceType[sourceType] = (bySourceType[sourceType] || 0) + 1;
-    }
-
-    return res.json({
+    res.json({
       counts: {
         total: total || 0,
-<<<<<<< HEAD
-        inReview: inReview || 0,
-        published: published || 0,
-=======
         needsReview: draft || 0,
         approved: reviewed || 0,
         multipleChoice: multipleChoice || 0,
         freeResponse: 0,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       },
       bySection,
       byDifficulty,
-      bySourceType,
+      validationIssues: {
+        bySeverity: issueStats,
+      },
     });
-<<<<<<< HEAD
-  } catch {
-    return res.status(500).json({ error: "Failed to get question statistics" });
-  }
-};
-
-=======
   } catch (error: any) {
     console.error('Error getting question statistics:', error);
     res.status(500).json({ error: 'Failed to get question statistics' });
@@ -310,53 +210,26 @@ export const getQuestionStatistics = async (_req: Request, res: Response) => {
  * POST /api/admin/questions/:id/approve
  * Approve a draft question.
  */
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export const approveQuestion = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const reviewerId = (req as any).user?.id || null;
 
     const { error } = await supabaseServer
-      .from("questions")
+      .from('questions')
       .update({
-<<<<<<< HEAD
-        status: "published",
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: reviewerId,
-        published_at: new Date().toISOString(),
-=======
         status: 'reviewed',
         reviewed_at: new Date().toISOString(),
         reviewed_by: reviewerId,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq('id', id);
 
-    if (error) return res.status(500).json({ error: "Failed to approve question" });
+    if (error) {
+      console.error('[ADMIN_QUESTIONS] Error approving question:', error);
+      return res.status(500).json({ error: 'Failed to approve question' });
+    }
 
-<<<<<<< HEAD
-    return res.json({ id, status: "published", message: "Question approved successfully" });
-  } catch {
-    return res.status(500).json({ error: "Failed to approve question" });
-  }
-};
-
-export const rejectQuestion = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const reviewerId = (req as any).user?.id || null;
-
-    const { error } = await supabaseServer
-      .from("questions")
-      .update({
-        status: "rejected",
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: reviewerId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-=======
     res.json({
       id,
       status: 'reviewed',
@@ -380,18 +253,12 @@ export const rejectQuestion = async (req: Request, res: Response) => {
       .from('questions')
       .delete()
       .eq('id', id);
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 
-    if (error) return res.status(500).json({ error: "Failed to reject question" });
+    if (error) {
+      console.error('[ADMIN_QUESTIONS] Error rejecting question:', error);
+      return res.status(500).json({ error: 'Failed to reject question' });
+    }
 
-<<<<<<< HEAD
-    return res.json({ id, status: "rejected", message: "Question rejected successfully" });
-  } catch {
-    return res.status(500).json({ error: "Failed to reject question" });
-  }
-};
-
-=======
     res.json({
       id,
       status: 'rejected',
@@ -407,38 +274,12 @@ export const rejectQuestion = async (req: Request, res: Response) => {
  * PATCH /api/admin/questions/:id
  * Update canonical question fields.
  */
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export const updateQuestion = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = req.body;
 
     const fieldMapping: Record<string, string> = {
-<<<<<<< HEAD
-      stem: "stem",
-      options: "options",
-      correctAnswer: "correct_answer",
-      answerText: "answer_text",
-      explanation: "explanation",
-      section: "section",
-      sectionCode: "section_code",
-      questionType: "question_type",
-      domain: "domain",
-      skill: "skill",
-      subskill: "subskill",
-      skillCode: "skill_code",
-      difficulty: "difficulty",
-      sourceType: "source_type",
-      status: "status",
-      testCode: "test_code",
-      exam: "exam",
-      aiGenerated: "ai_generated",
-      diagramPresent: "diagram_present",
-      tags: "tags",
-      competencies: "competencies",
-      provenanceChunkIds: "provenance_chunk_ids",
-      optionMetadata: "option_metadata",
-=======
       stem: 'stem',
       options: 'options',
       optionMetadata: 'option_metadata',
@@ -462,43 +303,26 @@ export const updateQuestion = async (req: Request, res: Response) => {
       testCode: 'test_code',
       exam: 'exam',
       aiGenerated: 'ai_generated',
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     };
 
-    const payload: Record<string, unknown> = {};
-    for (const [input, db] of Object.entries(fieldMapping)) {
-      if (Object.prototype.hasOwnProperty.call(updates, input)) payload[db] = updates[input];
+    const filteredUpdates: any = {};
+    for (const [field, dbField] of Object.entries(fieldMapping)) {
+      if (field in updates) {
+        filteredUpdates[dbField] = updates[field];
+      }
     }
 
-    if (!Object.keys(payload).length) {
-      return res.status(400).json({ error: "No valid fields to update" });
+    if (Object.keys(filteredUpdates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
     }
 
-    payload.updated_at = new Date().toISOString();
+    filteredUpdates.updated_at = new Date().toISOString();
 
-    const { error } = await supabaseServer.from("questions").update(payload).eq("id", id);
-    if (error) return res.status(500).json({ error: "Failed to update question" });
+    const { error } = await supabaseServer
+      .from('questions')
+      .update(filteredUpdates)
+      .eq('id', id);
 
-<<<<<<< HEAD
-    return res.json({ id, status: "updated", updatedFields: Object.keys(payload), message: "Question updated successfully" });
-  } catch {
-    return res.status(500).json({ error: "Failed to update question" });
-  }
-};
-
-export const deleteQuestion = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    await supabaseServer.from("validation_issues").delete().eq("question_id", id);
-    const { error } = await supabaseServer.from("questions").delete().eq("id", id);
-    if (error) return res.status(500).json({ error: "Failed to delete question" });
-    return res.json({ id, status: "deleted", message: "Question deleted successfully" });
-  } catch {
-    return res.status(500).json({ error: "Failed to delete question" });
-  }
-};
-
-=======
     if (error) {
       console.error('[ADMIN_QUESTIONS] Error updating question:', error);
       return res.status(500).json({ error: 'Failed to update question' });
@@ -554,46 +378,31 @@ export const deleteQuestion = async (req: Request, res: Response) => {
  * POST /api/admin/questions/bulk-approve
  * Approve multiple questions at once.
  */
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
 export const bulkApproveQuestions = async (req: Request, res: Response) => {
   try {
     const { questionIds } = req.body;
 
     if (!Array.isArray(questionIds) || questionIds.length === 0) {
-      return res.status(400).json({ error: "questionIds must be a non-empty array" });
+      return res.status(400).json({ error: 'questionIds must be a non-empty array' });
     }
 
-<<<<<<< HEAD
-    const now = new Date().toISOString();
-=======
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     const reviewerId = (req as any).user?.id || null;
 
     const { error } = await supabaseServer
-      .from("questions")
+      .from('questions')
       .update({
-<<<<<<< HEAD
-        status: "published",
-        reviewed_at: now,
-        reviewed_by: reviewerId,
-        published_at: now,
-        updated_at: now,
-=======
         status: 'reviewed',
         reviewed_at: new Date().toISOString(),
         reviewed_by: reviewerId,
         updated_at: new Date().toISOString(),
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
       })
-      .in("id", questionIds);
+      .in('id', questionIds);
 
-    if (error) return res.status(500).json({ error: "Failed to bulk approve questions" });
+    if (error) {
+      console.error('[ADMIN_QUESTIONS] Error bulk approving questions:', error);
+      return res.status(500).json({ error: 'Failed to bulk approve questions' });
+    }
 
-<<<<<<< HEAD
-    return res.json({ count: questionIds.length, status: "published", message: `${questionIds.length} questions approved successfully` });
-  } catch {
-    return res.status(500).json({ error: "Failed to bulk approve questions" });
-=======
     res.json({
       count: questionIds.length,
       status: 'reviewed',
@@ -602,6 +411,5 @@ export const bulkApproveQuestions = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error bulk approving questions:', error);
     res.status(500).json({ error: 'Failed to bulk approve questions' });
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
   }
 };

@@ -27,7 +27,9 @@ export async function insertExamFormAndItems(args: {
     (m) => built.itemsByModule[m]
   );
 
-  const rows = flatten.map((it) => ({
+  const rows = flatten.map((it) => {
+  const legacy = it as BuiltFormItem & { skillCode?: string | null; difficulty?: string | null };
+  return {
     exam_form_id: examFormId,
     module_id: it.moduleId,
     position: it.position,
@@ -37,10 +39,11 @@ export async function insertExamFormAndItems(args: {
     domain: it.domain,
     skill: it.skill,
     subskill: it.subskill,
-    skill_code: it.skillCode,
-    difficulty: it.difficulty,
+    skill_code: legacy.skillCode ?? null,
+    difficulty: legacy.difficulty ?? it.difficultyBucket,
     question_type: it.questionType,
-  }));
+  };
+});
 
   const { error: itemsErr } = await supabaseServer.from('exam_form_items').insert(rows);
   if (itemsErr) throw new Error(`insert exam_form_items failed: ${itemsErr.message}`);

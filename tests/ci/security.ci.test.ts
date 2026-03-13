@@ -158,9 +158,9 @@ describe('CI Security Tests - CSRF', () => {
       expect(res.status).toBe(200);
     });
 
-    it('should allow GET to /api/auth/user without Origin/Referer', async () => {
-      const res = await request(app).get('/api/auth/user');
-      expect(res.status).toBe(200);
+    it('should not CSRF-block GET to /api/profile without Origin/Referer', async () => {
+      const res = await request(app).get('/api/profile');
+      expect(res.status).toBe(401);
     });
 
     it('should allow GET to public questions endpoint without Origin/Referer', async () => {

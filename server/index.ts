@@ -281,7 +281,7 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
     }
 
     // Return complete user profile with all fields needed by frontend
-    // This matches the structure of /api/auth/user for compatibility
+    // Source of truth: canonical current-user hydration payload
     const fallbackUsername = user.email ? user.email.split('@')[0] : null;
     const normalizedName = user.display_name || fallbackUsername || 'Student';
 
@@ -299,7 +299,8 @@ app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response)
         is_under_13: user.is_under_13,
         guardian_consent: user.guardian_consent,
         studentLinkCode: user.student_link_code,
-        profileCompletedAt: (user as any).profile_completed_at || null,
+        student_link_code: user.student_link_code,
+        profileCompletedAt: user.profile_completed_at ?? null,
       }
     });
   } catch (error) {
@@ -650,7 +651,6 @@ if (isMainModule) {
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
     console.log(`  POST   /api/auth/signout`);
-    console.log(`  GET    /api/auth/user`);
     console.log(`\n❓ Questions API (requires Supabase auth):`);
     console.log(`  GET    /api/questions`);
     console.log(`  GET    /api/questions/recent`);
@@ -689,4 +689,6 @@ if (isMainModule) {
 }
 
 export default app;
+
+
 

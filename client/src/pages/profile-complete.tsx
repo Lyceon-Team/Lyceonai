@@ -75,8 +75,21 @@ export default function ProfileComplete() {
 
   // Check if user is authenticated
   const { data: userProfile, isLoading: authLoading, error: authError, refetch: refetchUser } = useQuery<AuthUserResponse>({
-    queryKey: ['/api/auth/user'],
-    retry: false
+    queryKey: ['/api/profile'],
+    retry: false,
+    queryFn: async () => {
+      const response = await fetch('/api/profile', { credentials: 'include' });
+
+      if (response.status === 401 || response.status === 403) {
+        return { authenticated: false, user: null };
+      }
+
+      if (!response.ok) {
+        throw new Error(`Profile auth check failed: ${response.status}`);
+      }
+
+      return response.json();
+    }
   });
 
   // Profile form
@@ -928,3 +941,6 @@ export default function ProfileComplete() {
     </div>
   );
 }
+
+
+

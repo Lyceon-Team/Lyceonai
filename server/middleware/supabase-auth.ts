@@ -101,6 +101,7 @@ export interface SupabaseUser {
   isGuardian: boolean;
   is_under_13?: boolean;
   guardian_consent?: boolean;
+  profile_completed_at?: string | null;
   jwt?: string;
   username?: string;
   name?: string;
@@ -378,6 +379,7 @@ export async function supabaseAuthMiddleware(
       isGuardian: profile.role === 'guardian',
       is_under_13: profile.is_under_13,
       guardian_consent: profile.guardian_consent,
+      profile_completed_at: profile.profile_completed_at ?? null,
       jwt: token, // Store raw JWT for RLS database context
       student_link_code: profile.student_link_code,
       // Legacy fields for backward compatibility with old auth
@@ -576,6 +578,21 @@ export function requireStudentOrAdmin(
     });
   }
 
+  if (!req.user.isAdmin && req.user.is_under_13 && !req.user.guardian_consent) {
+    logger.warn('AUTH', 'consent_required', 'Under-13 user blocked from student-only route without guardian consent', {
+      userId: req.user.id,
+      path: req.path,
+      requestId: req.requestId,
+    });
+
+    return sendForbidden(res, {
+      error: 'Guardian consent required',
+      message: 'Users under 13 require guardian consent to use this service',
+      requestId: req.requestId,
+      extra: { consentRequired: true },
+    });
+  }
+
   return next();
 }
 
@@ -592,3 +609,4 @@ export function getSupabaseAdmin() {
 export function getSupabaseAnon() {
   return supabaseAnon;
 }
+
