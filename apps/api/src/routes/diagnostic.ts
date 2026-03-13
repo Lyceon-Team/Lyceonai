@@ -3,7 +3,7 @@
  */
 
 import { Response, Router } from 'express';
-import { AuthenticatedRequest } from '../middleware/auth';
+import type { AuthenticatedRequest } from '../../../../server/middleware/supabase-auth';
 import {
   startDiagnosticSession,
   getCurrentDiagnosticQuestion,
@@ -185,3 +185,4 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 export const diagnosticRouter = router;
+

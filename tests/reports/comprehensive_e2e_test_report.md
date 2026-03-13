@@ -1,3 +1,6 @@
+> [!WARNING]
+> Legacy historical report. This file documents pre-Supabase/NextAuth-era experiments and is **not** runtime source of truth.
+> Current auth source of truth is `server/middleware/supabase-auth.ts`, `server/routes/supabase-auth-routes.ts`, `server/routes/google-oauth-routes.ts`, and `/api/profile`.
 # NextAuth.js + Schema + Practice Flow E2E Test Suite
 ## Comprehensive Test Report
 

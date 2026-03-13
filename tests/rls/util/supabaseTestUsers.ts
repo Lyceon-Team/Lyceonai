@@ -68,7 +68,7 @@ export async function createTestUser(email: string, password: string = 'TestPass
 
   // Create user profile in database
   const { error: profileError } = await supabaseAdmin
-    .from('users')
+    .from('profiles')
     .insert({
       id: user.user.id,
       email: user.user.email!,
@@ -149,3 +149,4 @@ export async function cleanupTestUsers(emailPattern: string = 'test-rls-'): Prom
 export function canRunRlsTests(): boolean {
   return hasServiceRoleKey;
 }
+
