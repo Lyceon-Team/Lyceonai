@@ -56,7 +56,6 @@ describe('Full-Length Exam Contract Closure', () => {
         { question_id: 'q-rw-1', is_correct: true },
         { question_id: 'q-rw-2', is_correct: false },
       ],
-      // One unanswered question in RW module 2 (question count still 2)
       'module-rw-2': [
         { question_id: 'q-rw-3', is_correct: false },
       ],
@@ -71,21 +70,29 @@ describe('Full-Length Exam Contract Closure', () => {
     };
 
     const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
-      'module-rw-1': [{ id: 'mq-rw-1' }, { id: 'mq-rw-2' }],
-      'module-rw-2': [{ id: 'mq-rw-3' }, { id: 'mq-rw-4' }],
-      'module-math-1': [{ id: 'mq-math-1' }, { id: 'mq-math-2' }],
-      'module-math-2': [{ id: 'mq-math-3' }, { id: 'mq-math-4' }],
+      'module-rw-1': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-1-${idx + 1}` })),
+      'module-rw-2': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-2-${idx + 1}` })),
+      'module-math-1': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-1-${idx + 1}` })),
+      'module-math-2': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-2-${idx + 1}` })),
     };
 
     const moduleQuestionsFlat = [
-      { module_id: 'module-rw-1', question_id: 'q-rw-1' },
-      { module_id: 'module-rw-1', question_id: 'q-rw-2' },
-      { module_id: 'module-rw-2', question_id: 'q-rw-3' },
-      { module_id: 'module-rw-2', question_id: 'q-rw-4' },
-      { module_id: 'module-math-1', question_id: 'q-math-1' },
-      { module_id: 'module-math-1', question_id: 'q-math-2' },
-      { module_id: 'module-math-2', question_id: 'q-math-3' },
-      { module_id: 'module-math-2', question_id: 'q-math-4' },
+      ...Array.from({ length: 27 }, (_, idx) => ({
+        module_id: 'module-rw-1',
+        question_id: idx === 0 ? 'q-rw-1' : idx === 1 ? 'q-rw-2' : `q-rw-1-extra-${idx + 1}`,
+      })),
+      ...Array.from({ length: 27 }, (_, idx) => ({
+        module_id: 'module-rw-2',
+        question_id: idx === 0 ? 'q-rw-3' : idx === 1 ? 'q-rw-4' : `q-rw-2-extra-${idx + 1}`,
+      })),
+      ...Array.from({ length: 22 }, (_, idx) => ({
+        module_id: 'module-math-1',
+        question_id: idx === 0 ? 'q-math-1' : idx === 1 ? 'q-math-2' : `q-math-1-extra-${idx + 1}`,
+      })),
+      ...Array.from({ length: 22 }, (_, idx) => ({
+        module_id: 'module-math-2',
+        question_id: idx === 0 ? 'q-math-3' : idx === 1 ? 'q-math-4' : `q-math-2-extra-${idx + 1}`,
+      })),
     ];
 
     const responsesBySession = Object.entries(responsesByModule).flatMap(([moduleId, rows]) =>
@@ -255,9 +262,9 @@ describe('Full-Length Exam Contract Closure', () => {
     expect(result.rawScore.math.correct).toBe(result.mathScore.totalCorrect);
     expect(result.rawScore.total.correct).toBe(result.overallScore.totalCorrect);
 
-    expect(result.rawScore.rw.total).toBe(4);
-    expect(result.rawScore.math.total).toBe(4);
-    expect(result.rawScore.total.total).toBe(8);
+    expect(result.rawScore.rw.total).toBe(54);
+    expect(result.rawScore.math.total).toBe(44);
+    expect(result.rawScore.total.total).toBe(98);
 
     expect(result.scaledScore.rw).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.rw.correct, result.rawScore.rw.total));
     expect(result.scaledScore.math).toBe(fullLengthExamService.calculateScaledScore(result.rawScore.math.correct, result.rawScore.math.total));
@@ -364,9 +371,8 @@ describe('Full-Length Exam Contract Closure', () => {
                 single: vi.fn(async () => ({
                   data: {
                     id: 'q-1',
-                    type: 'mc',
-                    answer_choice: 'A',
-                    answer_text: null,
+                    question_type: 'multiple_choice',
+                    correct_answer: 'A',
                   },
                   error: null,
                 })),

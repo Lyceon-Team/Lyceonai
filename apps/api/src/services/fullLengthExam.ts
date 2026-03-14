@@ -9,15 +9,18 @@
  * - Anti-leak: no answers/explanations before module submit
  */
 
+import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { applyMasteryUpdate } from "./mastery-write";
 import { MasteryEventType } from "./mastery-constants";
+import { normalizeSectionCode as normalizeCanonicalSectionCode } from "../../../../shared/question-bank-contract";
 import type {
   FullLengthExamSession,
   FullLengthExamModule,
   FullLengthExamQuestion,
   FullLengthExamResponse,
 } from "../../../../shared/schema";
+import { getModeledScaledScore, SECTION_SCORE_TABLES } from "./fullLengthScoreTables";
 
 // ============================================================================
 // CONSTANTS - Bluebook SAT Structure
@@ -77,6 +80,10 @@ export const ADAPTIVE_THRESHOLDS = {
   },
 } as const;
 
+export const CANONICAL_FULL_TEST_FORM_ID = "00000000-0000-4000-8000-000000000001";
+const ACTIVE_SESSION_STATUSES = ["not_started", "in_progress", "break"] as const;
+const CLIENT_INSTANCE_CONFLICT_MESSAGE = "Session client instance conflict";
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -92,6 +99,8 @@ type QuestionOption = { key: string; text: string };
 
 export interface CreateSessionParams {
   userId: string;
+  testFormId?: string;
+  clientInstanceId?: string;
 }
 
 export interface GetCurrentSessionResult {
@@ -122,11 +131,14 @@ export interface SubmitAnswerParams {
   userId: string;
   questionId: string;
   selectedAnswer?: string;
+  clientInstanceId?: string;
+  clientAttemptId?: string;
 }
 
 export interface SubmitModuleParams {
   sessionId: string;
   userId: string;
+  clientInstanceId?: string;
 }
 
 export interface SubmitModuleResult {
@@ -144,6 +156,7 @@ export interface SubmitModuleResult {
 export interface CompleteExamParams {
   sessionId: string;
   userId: string;
+  clientInstanceId?: string;
 }
 
 export interface SectionRawScore {
@@ -253,12 +266,6 @@ function determineModule2Difficulty(
   return module1CorrectCount >= threshold ? "hard" : "medium";
 }
 
-/**
- * Deterministic SAT-style scaling bounds for section scores.
- */
-const MIN_SECTION_SCALED = 200;
-const MAX_SECTION_SCALED = 800;
-
 interface DiagnosticInputRow {
   section: SectionType;
   isCorrect: boolean;
@@ -272,18 +279,109 @@ interface SectionDiagnostics {
 }
 
 /**
- * Deterministic raw->scaled score mapping.
- * Scales section raw score into SAT-style [200, 800] range.
+ * Deterministic modeled score table lookup.
+ * Fails closed when the section total does not match canonical SAT totals.
  */
 export function calculateScaledScore(rawCorrect: number, totalQuestions: number): number {
-  if (!Number.isFinite(rawCorrect) || !Number.isFinite(totalQuestions) || totalQuestions <= 0) {
-    return MIN_SECTION_SCALED;
+  if (!Number.isFinite(totalQuestions) || totalQuestions <= 0) {
+    throw new Error("Missing modeled score table for unsupported question total");
   }
 
-  const boundedRaw = Math.max(0, Math.min(totalQuestions, rawCorrect));
-  const ratio = boundedRaw / totalQuestions;
-  const scaled = MIN_SECTION_SCALED + Math.round(ratio * (MAX_SECTION_SCALED - MIN_SECTION_SCALED));
-  return Math.max(MIN_SECTION_SCALED, Math.min(MAX_SECTION_SCALED, scaled));
+  if (totalQuestions === SECTION_SCORE_TABLES.rw.totalQuestions) {
+    return getModeledScaledScore("rw", rawCorrect, totalQuestions);
+  }
+
+  if (totalQuestions === SECTION_SCORE_TABLES.math.totalQuestions) {
+    return getModeledScaledScore("math", rawCorrect, totalQuestions);
+  }
+
+  throw new Error(`Missing modeled score table for totalQuestions=${totalQuestions}`);
+}
+
+function calculateSectionScaledScore(
+  section: SectionType,
+  rawCorrect: number,
+  totalQuestions: number
+): number {
+  return getModeledScaledScore(section, rawCorrect, totalQuestions);
+}
+
+function normalizeClientInstanceId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function ensureSupportedTestFormId(testFormId?: string): string {
+  if (!testFormId) {
+    return CANONICAL_FULL_TEST_FORM_ID;
+  }
+  if (testFormId !== CANONICAL_FULL_TEST_FORM_ID) {
+    throw new Error("Unsupported test form");
+  }
+  return testFormId;
+}
+
+function assertClientInstanceAccess(
+  session: { client_instance_id?: string | null },
+  clientInstanceId?: string
+): void {
+  const boundClient = normalizeClientInstanceId(session.client_instance_id);
+  if (!boundClient) {
+    return;
+  }
+  const requestedClient = normalizeClientInstanceId(clientInstanceId);
+  if (!requestedClient || requestedClient !== boundClient) {
+    throw new Error(CLIENT_INSTANCE_CONFLICT_MESSAGE);
+  }
+}
+
+async function bindSessionClientInstanceIfNeeded(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  args: { sessionId: string; userId: string; clientInstanceId?: string }
+): Promise<void> {
+  const normalized = normalizeClientInstanceId(args.clientInstanceId);
+  if (!normalized) {
+    return;
+  }
+
+  await supabase
+    .from("full_length_exam_sessions")
+    .update({ client_instance_id: normalized })
+    .eq("id", args.sessionId)
+    .eq("user_id", args.userId)
+    .is("client_instance_id", null);
+}
+
+type FullLengthEventType =
+  | "test_started"
+  | "section_started"
+  | "answer_submitted"
+  | "test_completed"
+  | "score_computed";
+
+async function emitFullLengthEvent(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  eventType: FullLengthEventType,
+  args: {
+    sessionId: string;
+    userId: string;
+    details?: Record<string, unknown>;
+  }
+): Promise<void> {
+  try {
+    await supabase.from("system_event_logs").insert({
+      event_type: eventType,
+      level: "info",
+      source: "full_length_exam",
+      message: eventType,
+      user_id: args.userId,
+      session_id: args.sessionId,
+      details: args.details ?? null,
+    });
+  } catch {
+    // Best-effort observability; never break exam runtime.
+  }
 }
 
 function toAccuracy(correct: number, total: number): number {
@@ -431,8 +529,8 @@ function buildCompleteExamResult(input: BuildCompleteExamResultInput): CompleteE
   const mathRaw: SectionRawScore = { correct: mathTotalCorrect, total: mathTotalQuestions };
   const overallRaw: SectionRawScore = { correct: totalCorrect, total: totalQuestions };
 
-  const rwScaled = calculateScaledScore(rwRaw.correct, rwRaw.total);
-  const mathScaled = calculateScaledScore(mathRaw.correct, mathRaw.total);
+  const rwScaled = calculateSectionScaledScore("rw", rwRaw.correct, rwRaw.total);
+  const mathScaled = calculateSectionScaledScore("math", mathRaw.correct, mathRaw.total);
   const scaledTotal = rwScaled + mathScaled;
 
   const rows = input.diagnosticRows || [];
@@ -778,56 +876,81 @@ async function applyFullLengthMasterySignals(
  * Idempotent: returns existing active session if one exists for the user
  */
 export async function createExamSession(params: CreateSessionParams): Promise<FullLengthExamSession> {
+  const testFormId = ensureSupportedTestFormId(params.testFormId);
+  const requestedClientInstanceId = normalizeClientInstanceId(params.clientInstanceId);
   const supabase = getSupabaseAdmin();
 
-  // Check for existing active session (not_started, in_progress, or break)
   const { data: existingSession } = await supabase
     .from("full_length_exam_sessions")
     .select("*")
     .eq("user_id", params.userId)
-    .in("status", ["not_started", "in_progress", "break"])
+    .in("status", [...ACTIVE_SESSION_STATUSES])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // If active session exists, return it (idempotent)
   if (existingSession) {
+    if (existingSession.test_form_id && existingSession.test_form_id !== testFormId) {
+      throw new Error("Unsupported test form");
+    }
+
+    assertClientInstanceAccess(existingSession, requestedClientInstanceId || undefined);
+    await bindSessionClientInstanceIfNeeded(supabase, {
+      sessionId: existingSession.id,
+      userId: params.userId,
+      clientInstanceId: requestedClientInstanceId || undefined,
+    });
+
+    if (!existingSession.client_instance_id && requestedClientInstanceId) {
+      existingSession.client_instance_id = requestedClientInstanceId;
+    }
+
     return existingSession;
   }
 
-  // No active session - create a new one
   const seed = generateSeed(params.userId);
+  const insertClientInstanceId = requestedClientInstanceId || `srv_${crypto.randomUUID()}`;
 
-  // Create the session
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
     .insert({
       user_id: params.userId,
       seed,
       status: "not_started",
+      test_form_id: testFormId,
+      client_instance_id: insertClientInstanceId,
     })
     .select()
     .single();
 
-  // If insert failed due to unique constraint (race condition),
-  // re-select the active session that was created by the concurrent request
   if (sessionError) {
-    // Check if it's a unique constraint violation (code 23505)
-    if (sessionError.code === '23505' || sessionError.message?.includes('duplicate') || sessionError.message?.includes('unique')) {
+    if (sessionError.code === "23505" || sessionError.message?.includes("duplicate") || sessionError.message?.includes("unique")) {
       const { data: racedSession } = await supabase
         .from("full_length_exam_sessions")
         .select("*")
         .eq("user_id", params.userId)
-        .in("status", ["not_started", "in_progress", "break"])
+        .in("status", [...ACTIVE_SESSION_STATUSES])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (racedSession) {
+        if (racedSession.test_form_id && racedSession.test_form_id !== testFormId) {
+          throw new Error("Unsupported test form");
+        }
+        assertClientInstanceAccess(racedSession, requestedClientInstanceId || undefined);
+        await bindSessionClientInstanceIfNeeded(supabase, {
+          sessionId: racedSession.id,
+          userId: params.userId,
+          clientInstanceId: requestedClientInstanceId || undefined,
+        });
+        if (!racedSession.client_instance_id && requestedClientInstanceId) {
+          racedSession.client_instance_id = requestedClientInstanceId;
+        }
         return racedSession;
       }
     }
-    
+
     throw new Error(`Failed to create exam session: ${sessionError.message || "Unknown error"}`);
   }
 
@@ -835,7 +958,6 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     throw new Error("Failed to create exam session: No session returned");
   }
 
-  // Create all 4 modules (but don't select questions yet)
   const modules = [
     {
       session_id: session.id,
@@ -883,7 +1005,8 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
  */
 export async function getCurrentSession(
   sessionId: string,
-  userId: string
+  userId: string,
+  clientInstanceId?: string
 ): Promise<GetCurrentSessionResult> {
   const supabase = getSupabaseAdmin();
 
@@ -899,6 +1022,8 @@ export async function getCurrentSession(
     throw new Error("Session not found or access denied");
   }
 
+  assertClientInstanceAccess(session, clientInstanceId);
+
   // If session hasn't started, return minimal state
   if (session.status === "not_started") {
     return {
@@ -912,8 +1037,8 @@ export async function getCurrentSession(
 
   // Check if on break
   if (session.current_section === "break") {
-    // Calculate break time remaining (simplified - using session updated_at as break start)
-    const breakStart = new Date(session.updated_at).getTime();
+    // Break timer is server authoritative and anchored to break_started_at.
+    const breakStart = new Date(session.break_started_at || session.updated_at).getTime();
     const breakEnd = breakStart + BREAK_DURATION_MS;
     const now = Date.now();
     const breakTimeRemaining = Math.max(0, breakEnd - now);
@@ -942,7 +1067,7 @@ export async function getCurrentSession(
 
   // If module hasn't started, start it now
   if (currentModule.status === "not_started") {
-    await startModule(sessionId, currentModule.id, session.seed);
+    await startModule(sessionId, currentModule.id, session.seed, userId);
     // Re-fetch the module
     const { data: refreshedModule } = await supabase
       .from("full_length_exam_modules")
@@ -1059,7 +1184,7 @@ export async function getCurrentSession(
   // Check if time expired
   if (timeRemaining !== null && timeRemaining === 0 && currentModule.status === "in_progress") {
     // Auto-submit module if time expired
-    await submitModule({ sessionId, userId });
+    await submitModule({ sessionId, userId, clientInstanceId });
   }
 
   return {
@@ -1074,10 +1199,14 @@ export async function getCurrentSession(
 /**
  * Start a module by selecting questions and setting start time
  */
-async function startModule(sessionId: string, moduleId: string, seed: string): Promise<void> {
+async function startModule(
+  sessionId: string,
+  moduleId: string,
+  seed: string,
+  userId?: string
+): Promise<void> {
   const supabase = getSupabaseAdmin();
 
-  // Get module details
   const { data: module, error: moduleError } = await supabase
     .from("full_length_exam_modules")
     .select("*")
@@ -1088,36 +1217,52 @@ async function startModule(sessionId: string, moduleId: string, seed: string): P
     throw new Error("Module not found");
   }
 
+  if (module.status !== "not_started") {
+    return;
+  }
+
   const section = module.section as SectionType;
   const moduleIndex = module.module_index as ModuleIndex;
   const config = MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"];
 
-  // Select questions deterministically
-  const questions = await selectQuestionsForModule(
-    section,
-    moduleIndex,
-    module.difficulty_bucket as DifficultyBucket | null,
-    config.questionCount,
-    seed,
-    moduleId
-  );
-
-  // Insert module questions
-  const moduleQuestions = questions.map((q, idx) => ({
-    module_id: moduleId,
-    question_id: q.id,
-    order_index: idx,
-  }));
-
-  const { error: insertError } = await supabase
+  const { data: existingQuestions, error: existingQuestionsError } = await supabase
     .from("full_length_exam_questions")
-    .insert(moduleQuestions);
+    .select("id")
+    .eq("module_id", moduleId)
+    .order("order_index", { ascending: true });
 
-  if (insertError) {
-    throw new Error(`Failed to insert module questions: ${insertError.message}`);
+  if (existingQuestionsError) {
+    throw new Error(`Failed to load module questions: ${existingQuestionsError.message}`);
   }
 
-  // Update module to in_progress
+  if (!existingQuestions || existingQuestions.length === 0) {
+    const questions = await selectQuestionsForModule(
+      section,
+      moduleIndex,
+      module.difficulty_bucket as DifficultyBucket | null,
+      config.questionCount,
+      seed
+    );
+
+    const moduleQuestions = questions.map((q, idx) => ({
+      module_id: moduleId,
+      question_id: q.id,
+      order_index: idx,
+    }));
+
+    const { error: insertError } = await supabase
+      .from("full_length_exam_questions")
+      .insert(moduleQuestions);
+
+    if (insertError) {
+      const message = (insertError.message || "").toLowerCase();
+      const isDuplicate = insertError.code === "23505" || message.includes("duplicate") || message.includes("unique");
+      if (!isDuplicate) {
+        throw new Error(`Failed to insert module questions: ${insertError.message}`);
+      }
+    }
+  }
+
   const now = new Date();
   const endsAt = new Date(now.getTime() + module.target_duration_ms);
 
@@ -1128,10 +1273,23 @@ async function startModule(sessionId: string, moduleId: string, seed: string): P
       started_at: now.toISOString(),
       ends_at: endsAt.toISOString(),
     })
-    .eq("id", moduleId);
+    .eq("id", moduleId)
+    .eq("status", "not_started");
 
   if (updateError) {
     throw new Error(`Failed to start module: ${updateError.message}`);
+  }
+
+  if (userId) {
+    await emitFullLengthEvent(supabase, "section_started", {
+      sessionId,
+      userId,
+      details: {
+        moduleId,
+        section,
+        moduleIndex,
+      },
+    });
   }
 }
 
@@ -1149,12 +1307,10 @@ async function selectQuestionsForModule(
   moduleIndex: ModuleIndex,
   difficultyBucket: DifficultyBucket | null,
   questionCount: number,
-  seed: string,
-  moduleId: string
+  _seed: string
 ): Promise<Array<{ id: string }>> {
   const supabase = getSupabaseAdmin();
 
-  // For module 1, select medium (2). For module 2, map adaptive bucket to canonical numeric difficulty.
   const targetDifficulty: QuestionDifficulty = moduleIndex === 1
     ? 2
     : difficultyBucketToNumeric(difficultyBucket || "medium");
@@ -1168,28 +1324,21 @@ async function selectQuestionsForModule(
     .eq("question_type", "multiple_choice")
     .eq("status", "published")
     .eq("difficulty", targetDifficulty)
-    .limit(questionCount * 3); // Get more than needed for selection
+    .order("canonical_id", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(questionCount);
 
   if (error) {
     throw new Error(`Failed to fetch questions: ${error.message}`);
   }
 
-  if (!candidates || candidates.length === 0) {
-    throw new Error(`No questions available for section=${sectionCode}, difficulty=${targetDifficulty}`);
+  if (!candidates || candidates.length < questionCount) {
+    throw new Error(
+      `No published questions available for section=${sectionCode}, difficulty=${targetDifficulty}`
+    );
   }
 
-  // Deterministically shuffle and select
-  const shuffled = [...candidates];
-  const seedForModule = `${seed}_${moduleId}_${section}_${moduleIndex}`;
-
-  // Simple deterministic shuffle
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = simpleHash(`${seedForModule}_${i}`) % (i + 1);
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  // Take first N questions
-  return shuffled.slice(0, questionCount);
+  return candidates.slice(0, questionCount);
 }
 
 /**
@@ -1198,10 +1347,9 @@ async function selectQuestionsForModule(
 export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
   const supabase = getSupabaseAdmin();
 
-  // Validate session ownership
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
-    .select("id, status, current_section, current_module")
+    .select("id, status, current_section, current_module, client_instance_id")
     .eq("id", params.sessionId)
     .eq("user_id", params.userId)
     .single();
@@ -1210,11 +1358,12 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Session not found or access denied");
   }
 
+  assertClientInstanceAccess(session, params.clientInstanceId);
+
   if (session.status !== "in_progress") {
     throw new Error("Session is not in progress");
   }
 
-  // Get current module
   const { data: currentModule, error: moduleError } = await supabase
     .from("full_length_exam_modules")
     .select("*")
@@ -1231,13 +1380,16 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Module is not in progress");
   }
 
-  // Check if time expired
   const timeRemaining = calculateTimeRemaining(currentModule);
   if (timeRemaining === 0) {
+    await submitModule({
+      sessionId: params.sessionId,
+      userId: params.userId,
+      clientInstanceId: params.clientInstanceId,
+    });
     throw new Error("Module time has expired");
   }
 
-  // Verify question belongs to this module
   const { data: moduleQuestion, error: mqError } = await supabase
     .from("full_length_exam_questions")
     .select("id")
@@ -1249,8 +1401,6 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found in current module");
   }
 
-  // Idempotent write contract: first accepted submission wins.
-  // Duplicate submissions for the same session/module/question are treated as no-ops.
   const { data: existingResponse, error: existingResponseError } = await supabase
     .from("full_length_exam_responses")
     .select("id")
@@ -1267,8 +1417,6 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     return;
   }
 
-  // Get question to check correctness
-    // Get question to check correctness
   const { data: question, error: questionError } = await supabase
     .from("questions")
     .select("id, question_type, correct_answer")
@@ -1283,12 +1431,11 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Unsupported question type for full-length exam");
   }
 
-  // Determine correctness against canonical answer key
   const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
   const correct = String(question.correct_answer ?? "").trim().toUpperCase();
   const isCorrect = selected.length > 0 && selected === correct;
+  const storedSelectedAnswer = selected.length > 0 ? selected : null;
 
-  // Insert response once; duplicate-key races are accepted as idempotent no-ops.
   const now = new Date().toISOString();
 
   const { error: insertError } = await supabase
@@ -1297,7 +1444,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       session_id: params.sessionId,
       module_id: currentModule.id,
       question_id: params.questionId,
-      selected_answer: params.selectedAnswer,
+      selected_answer: storedSelectedAnswer,
       is_correct: isCorrect,
       answered_at: now,
       updated_at: now,
@@ -1310,6 +1457,16 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     }
     throw new Error(`Failed to insert response: ${insertError.message}`);
   }
+
+  await emitFullLengthEvent(supabase, "answer_submitted", {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    details: {
+      moduleId: currentModule.id,
+      questionId: params.questionId,
+      clientAttemptId: params.clientAttemptId ?? null,
+    },
+  });
 }
 
 /**
@@ -1329,6 +1486,8 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   if (sessionError || !session) {
     throw new Error("Session not found or access denied");
   }
+
+  assertClientInstanceAccess(session, params.clientInstanceId);
 
   if (session.status !== "in_progress") {
     throw new Error("Session is not in progress");
@@ -1496,6 +1655,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       .from("full_length_exam_sessions")
       .update({
         current_module: 2,
+        break_started_at: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.sessionId);
@@ -1508,6 +1668,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       .update({
         current_section: "break",
         current_module: null,
+        break_started_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", params.sessionId);
@@ -1527,10 +1688,9 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
 /**
  * Start the exam (set status to in_progress, start RW Module 1)
  */
-export async function startExam(sessionId: string, userId: string): Promise<void> {
+export async function startExam(sessionId: string, userId: string, clientInstanceId?: string): Promise<void> {
   const supabase = getSupabaseAdmin();
 
-  // Validate session ownership
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
     .select("*")
@@ -1542,11 +1702,13 @@ export async function startExam(sessionId: string, userId: string): Promise<void
     throw new Error("Session not found or access denied");
   }
 
+  assertClientInstanceAccess(session, clientInstanceId);
+  await bindSessionClientInstanceIfNeeded(supabase, { sessionId, userId, clientInstanceId });
+
   if (session.status !== "not_started") {
     throw new Error("Exam already started");
   }
 
-  // Update session to in_progress, set current section/module
   const { error: updateError } = await supabase
     .from("full_length_exam_sessions")
     .update({
@@ -1561,15 +1723,19 @@ export async function startExam(sessionId: string, userId: string): Promise<void
   if (updateError) {
     throw new Error(`Failed to start exam: ${updateError.message}`);
   }
+
+  await emitFullLengthEvent(supabase, "test_started", {
+    sessionId,
+    userId,
+  });
 }
 
 /**
  * Continue from break to Math Module 1
  */
-export async function continueFromBreak(sessionId: string, userId: string): Promise<void> {
+export async function continueFromBreak(sessionId: string, userId: string, clientInstanceId?: string): Promise<void> {
   const supabase = getSupabaseAdmin();
 
-  // Validate session ownership
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
     .select("*")
@@ -1581,16 +1747,18 @@ export async function continueFromBreak(sessionId: string, userId: string): Prom
     throw new Error("Session not found or access denied");
   }
 
+  assertClientInstanceAccess(session, clientInstanceId);
+
   if (session.current_section !== "break") {
     throw new Error("Not on break");
   }
 
-  // Update session to Math Module 1
   const { error: updateError } = await supabase
     .from("full_length_exam_sessions")
     .update({
       current_section: "math",
       current_module: 1,
+      break_started_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", sessionId);
@@ -1606,7 +1774,6 @@ export async function continueFromBreak(sessionId: string, userId: string): Prom
 export async function completeExam(params: CompleteExamParams): Promise<CompleteExamResult> {
   const supabase = getSupabaseAdmin();
 
-  // Validate session ownership
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
     .select("*")
@@ -1618,7 +1785,8 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  // Idempotency: if already completed, return canonical computed report.
+  assertClientInstanceAccess(session, params.clientInstanceId);
+
   if (session.status === "completed") {
     return computeCanonicalExamReport(
       supabase,
@@ -1627,13 +1795,6 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     );
   }
 
-  // Terminal-state guard: enforce preconditions for completion
-  // - session.status must be "in_progress"
-  // - session.current_section must be "math"
-  // - session.current_module must be 2
-  // - Math Module 2 must exist
-  // - Math Module 2 status must be "submitted"
-  
   if (session.status !== "in_progress") {
     throw new Error("Invalid exam state");
   }
@@ -1646,7 +1807,6 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Invalid exam state");
   }
 
-  // Verify Math Module 2 exists and is submitted
   const { data: mathMod2, error: mathMod2Error } = await supabase
     .from("full_length_exam_modules")
     .select("*")
@@ -1663,8 +1823,6 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Invalid exam state");
   }
 
-  // Mark session as completed with atomic conditional update
-  // Only update if status is NOT already 'completed' (prevents race conditions)
   const completedAt = new Date();
   const { data: updateResult, error: updateError } = await supabase
     .from("full_length_exam_sessions")
@@ -1682,8 +1840,6 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error(`Failed to complete exam: ${updateError.message}`);
   }
 
-  // Handle race condition: if no rows were updated, session was already completed
-  // Re-fetch and return the existing completed result (idempotent)
   if (!updateResult || updateResult.length === 0) {
     const { data: completedSession, error: refetchError } = await supabase
       .from("full_length_exam_sessions")
@@ -1702,18 +1858,37 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
         params.sessionId,
         new Date(completedSession.completed_at || completedAt.toISOString())
       );
-    } else {
-      throw new Error("Invalid exam state");
     }
+
+    throw new Error("Invalid exam state");
   }
 
-  // Success: compute scores, persist rollup, and return
-  return await computeAndPersistExamScores(
+  const result = await computeAndPersistExamScores(
     supabase,
     params.sessionId,
     params.userId,
     completedAt
   );
+
+  await emitFullLengthEvent(supabase, "test_completed", {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    details: {
+      completedAt: completedAt.toISOString(),
+    },
+  });
+
+  await emitFullLengthEvent(supabase, "score_computed", {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    details: {
+      scaledTotal: result.scaledScore.total,
+      scaledRw: result.scaledScore.rw,
+      scaledMath: result.scaledScore.math,
+    },
+  });
+
+  return result;
 }
 
 // ============================================================================
@@ -1942,11 +2117,15 @@ export interface GetExamReviewParams {
   userId?: string;
 }
 
-function normalizeSectionCode(value: unknown): CanonicalSectionCode | null {
+function normalizeReviewSectionCode(value: unknown): CanonicalSectionCode | null {
   if (value === "MATH" || value === "RW") {
     return value;
   }
-  return null;
+  const normalized = normalizeCanonicalSectionCode(value);
+  if (!normalized) {
+    return null;
+  }
+  return normalized === "M" ? "MATH" : "RW";
 }
 
 function normalizeDifficulty(value: unknown): QuestionDifficulty | null {
@@ -1988,7 +2167,7 @@ function projectSafeQuestionFields(
     canonical_id: (question.canonical_id as string | null) ?? null,
     stem: String(question.stem ?? ""),
     section: String(question.section ?? ""),
-    section_code: normalizeSectionCode(question.section_code),
+    section_code: normalizeReviewSectionCode(question.section_code),
     question_type: "multiple_choice",
     options: normalizeOptions(question.options),
     domain: (question.domain as string | null) ?? null,
@@ -2168,4 +2347,5 @@ export async function getExamReview(
     responses: formattedResponses,
   };
 }
+
 

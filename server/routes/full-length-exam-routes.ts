@@ -25,9 +25,20 @@ const csrfProtection = csrfGuard();
 // VALIDATION SCHEMAS
 // ============================================================================
 
+const createSessionSchema = z.object({
+  test_form_id: z.string().uuid().optional(),
+  client_instance_id: z.string().uuid().optional(),
+});
+
+const clientInstanceSchema = z.object({
+  client_instance_id: z.string().uuid().optional(),
+});
+
 const submitAnswerSchema = z.object({
   questionId: z.string().uuid(),
   selectedAnswer: z.string().optional(),
+  client_instance_id: z.string().uuid().optional(),
+  client_attempt_id: z.string().uuid().optional(),
 });
 
 function sendRouteError(
@@ -42,6 +53,10 @@ function sendRouteError(
     ...extra,
     requestId: req.requestId,
   });
+}
+
+function isClientInstanceConflict(message: string): boolean {
+  return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
 }
 // ============================================================================
 // ROUTES
@@ -63,13 +78,30 @@ router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Reques
       return;
     }
 
+    const parsed = createSessionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+    }
+
     const session = await fullLengthExamService.createExamSession({
       userId: user.id,
+      testFormId: parsed.data.test_form_id,
+      clientInstanceId: parsed.data.client_instance_id,
     });
 
     return res.status(201).json({ session });
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Create session error:", error);
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("Unsupported test form")) {
+      return sendRouteError(req, res, 400, "Unsupported test form");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
+    }
+
     return sendRouteError(req, res, 500, "Internal error");
   }
 });
@@ -95,7 +127,8 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
       return sendRouteError(req, res, 400, "sessionId query parameter required");
     }
 
-    const result = await fullLengthExamService.getCurrentSession(sessionId, user.id);
+    const clientInstanceId = typeof req.query.client_instance_id === "string" ? req.query.client_instance_id : undefined;
+    const result = await fullLengthExamService.getCurrentSession(sessionId, user.id, clientInstanceId);
 
     return res.json(result);
   } catch (error: unknown) {
@@ -104,6 +137,10 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
     
     if (message.includes("not found") || message.includes("access denied")) {
       return sendRouteError(req, res, 404, "Session not found");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -131,7 +168,12 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
       return sendRouteError(req, res, 400, "sessionId required");
     }
 
-    await fullLengthExamService.startExam(sessionId, user.id);
+    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+    }
+
+    await fullLengthExamService.startExam(sessionId, user.id, parsed.data.client_instance_id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -144,6 +186,10 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
     
     if (message.includes("already started")) {
       return sendRouteError(req, res, 400, "Invalid exam state");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -183,6 +229,8 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
       userId: user.id,
       questionId: parsed.data.questionId,
       selectedAnswer: parsed.data.selectedAnswer,
+      clientInstanceId: parsed.data.client_instance_id,
+      clientAttemptId: parsed.data.client_attempt_id,
     });
 
     return res.json({ success: true });
@@ -204,6 +252,10 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
     
     if (message.includes("not found in current module")) {
       return sendRouteError(req, res, 400, "Invalid exam state");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -232,9 +284,15 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
       return sendRouteError(req, res, 400, "sessionId required");
     }
 
+    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+    }
+
     const result = await fullLengthExamService.submitModule({
       sessionId,
       userId: user.id,
+      clientInstanceId: parsed.data.client_instance_id,
     });
 
     return res.json(result);
@@ -252,6 +310,10 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
     
     if (message.includes("already submitted")) {
       return sendRouteError(req, res, 400, "Invalid exam state");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -279,7 +341,12 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
       return sendRouteError(req, res, 400, "sessionId required");
     }
 
-    await fullLengthExamService.continueFromBreak(sessionId, user.id);
+    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+    }
+
+    await fullLengthExamService.continueFromBreak(sessionId, user.id, parsed.data.client_instance_id);
 
     return res.json({ success: true });
   } catch (error: unknown) {
@@ -292,6 +359,10 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
     
     if (message.includes("Not on break")) {
       return sendRouteError(req, res, 400, "Invalid exam state");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -320,9 +391,15 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
       return sendRouteError(req, res, 400, "sessionId required");
     }
 
+    const parsed = clientInstanceSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+    }
+
     const result = await fullLengthExamService.completeExam({
       sessionId,
       userId: user.id,
+      clientInstanceId: parsed.data.client_instance_id,
     });
 
     return res.json(result);
@@ -336,6 +413,10 @@ router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth
     
     if (message.includes("Invalid exam state")) {
       return sendRouteError(req, res, 400, "Invalid exam state");
+    }
+
+    if (isClientInstanceConflict(message)) {
+      return sendRouteError(req, res, 409, "Session client instance conflict");
     }
     
     return sendRouteError(req, res, 500, "Internal error");

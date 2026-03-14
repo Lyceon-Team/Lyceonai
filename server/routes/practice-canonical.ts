@@ -700,8 +700,8 @@ async function pickDeterministicQuestion(args: {
       row,
       masteryScore: typeof masteryScore === "number" ? masteryScore : 0.5,
       difficultyPenalty: Math.abs(difficulty - targetDifficulty),
-      tieBreaker: simpleHash(`${args.sessionId}:${args.nextOrdinal}:${row.canonical_id || row.id}`),
-      canonicalId: String(row.canonical_id || row.id),
+      tieBreaker: simpleHash(`${args.sessionId}:${args.nextOrdinal}:${row.canonical_id}`),
+      canonicalId: String(row.canonical_id),
     };
   });
 
@@ -1837,4 +1837,5 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeAnswer);
 
 export default router;
+
 

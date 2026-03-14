@@ -8,6 +8,7 @@ import { generateEmbedding } from './embeddings';
 import { matchSimilar, MatchResult } from './vector';
 import { supabaseServer } from './supabase-server';
 import { buildCompetencyMapFromMasteryRows, MasterySkillRow } from '../services/mastery-derived';
+import { isValidCanonicalId } from '../../../../shared/question-bank-contract';
 import {
   RagMode,
   RagContext,
@@ -587,7 +588,7 @@ export class RagService {
    */
   private dbRowToQuestionContext(row: any): QuestionContext {
     return this.supabaseRowToQuestionContext({
-      canonical_id: row.canonical_id ?? row.canonicalId ?? row.id,
+      canonical_id: this.requireCanonicalId(row),
       test_code: row.test_code ?? row.testCode ?? 'SAT',
       section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
       source_type: row.source_type ?? row.sourceType ?? 0,
@@ -913,6 +914,20 @@ export class RagService {
     }
   }
 
+  private requireCanonicalId(row: any): string {
+    const candidate = typeof row?.canonical_id === 'string'
+      ? row.canonical_id
+      : typeof row?.canonicalId === 'string'
+        ? row.canonicalId
+        : null;
+
+    if (!candidate || !isValidCanonicalId(candidate)) {
+      throw new Error('canonical_id_missing_or_invalid');
+    }
+
+    return candidate;
+  }
+
   /**
    * Convert Supabase row (snake_case) to QuestionContext
    */
@@ -939,7 +954,7 @@ export class RagService {
       : null;
 
     return {
-      canonicalId: row.canonical_id || row.id,
+      canonicalId: this.requireCanonicalId(row),
       testCode: row.test_code || 'SAT',
       sectionCode,
       sourceType,
@@ -1090,6 +1105,7 @@ export function getRagService(): RagService {
   }
   return ragServiceInstance;
 }
+
 
 
 

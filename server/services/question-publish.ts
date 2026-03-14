@@ -1,3 +1,7 @@
+/**
+ * Service-only canonical publish/version owner.
+ * Intentionally unmounted from public routes: runtime callers should invoke this service directly.
+ */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   buildCanonicalId,
@@ -318,3 +322,5 @@ export async function versionPublishedQuestion(params: VersionPublishedQuestionP
     version: nextVersion,
   };
 }
+
+
