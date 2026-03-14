@@ -2,12 +2,13 @@ import React, { useEffect, useMemo } from "react";
 import MathRenderer from "@/components/MathRenderer";
 
 type QuestionOption = {
+  id?: string | null;
   key?: string | null;
   text?: string | null;
 };
 
 type Question = {
-  id: string;
+  id?: string;
   question_type?: "multiple_choice" | "free_response" | null;
   questionType?: "multiple_choice" | "free_response" | null;
   type?: "mc" | "fr" | null;
@@ -16,6 +17,12 @@ type Question = {
   options?: QuestionOption[] | null;
   correct_answer?: string | null;
   explanation?: string | null;
+};
+
+type NormalizedOption = {
+  id: string;
+  text: string;
+  canonicalKey: string | null;
 };
 
 function normalizeChoiceKey(raw: string | null | undefined): string {
@@ -28,6 +35,14 @@ function normalizeChoiceKey(raw: string | null | undefined): string {
 function getOptionText(opt: QuestionOption): string {
   const t = (opt.text ?? "").toString();
   return t.trim();
+}
+
+function normalizeOptionId(opt: QuestionOption): string {
+  if (typeof opt.id === "string" && opt.id.trim().length > 0) {
+    return opt.id.trim();
+  }
+  const key = normalizeChoiceKey(opt.key ?? "");
+  return key;
 }
 
 export interface QuestionRendererProps {
@@ -43,6 +58,7 @@ export interface QuestionRendererProps {
   showResult: boolean;
   isCorrect?: boolean | null;
   correctAnswerKey?: string | null;
+  correctOptionId?: string | null;
   explanation?: string | null;
 
   disabled?: boolean;
@@ -56,28 +72,25 @@ export default function QuestionRenderer({
   showResult,
   isCorrect,
   correctAnswerKey,
+  correctOptionId,
   explanation,
   disabled = false,
   onMissingMcChoices,
 }: QuestionRendererProps) {
-  const normalizedCorrect = useMemo(
-    () => normalizeChoiceKey(correctAnswerKey ?? question.correct_answer ?? ""),
-    [correctAnswerKey, question.correct_answer]
-  );
-
   const options = useMemo(() => {
     const raw = question.options ?? [];
     return raw
       .map((o) => ({
-        key: normalizeChoiceKey(o.key ?? ""),
+        id: normalizeOptionId(o),
         text: getOptionText(o),
+        canonicalKey: normalizeChoiceKey(o.key ?? "") || null,
       }))
-      .filter((o) => o.key.length > 0);
+      .filter((o): o is NormalizedOption => o.id.length > 0 && o.text.length > 0);
   }, [question.options]);
 
   const hasUsableMcChoices = useMemo(() => {
     if (!options.length) return false;
-    return options.some((o) => (o.text ?? "").trim().length > 0);
+    return options.some((o) => o.text.trim().length > 0);
   }, [options]);
 
   useEffect(() => {
@@ -87,11 +100,30 @@ export default function QuestionRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasUsableMcChoices]);
 
+  const selectedNorm = (selectedAnswer ?? "").trim();
+  const normalizedCorrectKey = normalizeChoiceKey(correctAnswerKey ?? question.correct_answer ?? "");
+
+  const resolvedCorrectOptionId = useMemo(() => {
+    if (typeof correctOptionId === "string" && correctOptionId.trim().length > 0) {
+      return correctOptionId.trim();
+    }
+
+    if (!normalizedCorrectKey) return null;
+
+    const byKey = options.find((opt) => opt.canonicalKey === normalizedCorrectKey);
+    return byKey?.id ?? null;
+  }, [correctOptionId, normalizedCorrectKey, options]);
+
+  const resolvedCorrectText = useMemo(() => {
+    if (!resolvedCorrectOptionId) return null;
+    return options.find((opt) => opt.id === resolvedCorrectOptionId)?.text ?? null;
+  }, [options, resolvedCorrectOptionId]);
+
+  const showCanonicalChoiceLabels = options.every((opt) => !!opt.canonicalKey);
+
   if (!hasUsableMcChoices) {
     return null;
   }
-
-  const selectedNorm = normalizeChoiceKey(selectedAnswer ?? "");
 
   return (
     <div className="space-y-5">
@@ -101,8 +133,8 @@ export default function QuestionRenderer({
 
       <div className="space-y-3">
         {options.map((opt) => {
-          const isSelected = selectedNorm && opt.key === selectedNorm;
-          const isCorrectChoice = normalizedCorrect && opt.key === normalizedCorrect;
+          const isSelected = selectedNorm.length > 0 && opt.id === selectedNorm;
+          const isCorrectChoice = !!resolvedCorrectOptionId && opt.id === resolvedCorrectOptionId;
 
           const showCorrect = showResult && isCorrectChoice;
           const showWrong = showResult && isSelected && !isCorrectChoice;
@@ -118,18 +150,20 @@ export default function QuestionRenderer({
 
           return (
             <button
-              key={opt.key}
+              key={opt.id}
               type="button"
               className={`${base} ${border}`}
               disabled={disabled || showResult}
-              onClick={() => onSelectAnswer(opt.key)}
+              onClick={() => onSelectAnswer(opt.id)}
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 font-semibold">
-                {opt.key}
-              </div>
+              {showCanonicalChoiceLabels ? (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 font-semibold">
+                  {opt.canonicalKey}
+                </div>
+              ) : null}
 
               <div className="text-base text-slate-900">
-                <MathRenderer content={opt.text || ""} />
+                <MathRenderer content={opt.text} />
               </div>
             </button>
           );
@@ -140,9 +174,9 @@ export default function QuestionRenderer({
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="font-semibold text-slate-900">{isCorrect ? "Correct" : "Incorrect"}</div>
 
-          {normalizedCorrect ? (
+          {resolvedCorrectText ? (
             <div className="mt-2 text-slate-800">
-              <span className="font-medium">Correct answer:</span> {normalizedCorrect}
+              <span className="font-medium">Correct answer:</span> <MathRenderer content={resolvedCorrectText} />
             </div>
           ) : null}
 

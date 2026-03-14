@@ -81,10 +81,10 @@ describe('Practice Answer Rate Limiter', () => {
         .post('/api/practice/answer')
         .set('Origin', 'http://localhost:5000')
         .send({
-          sessionId: 'test-session-id',
-          questionId: 'test-question-id',
-          selectedAnswer: 'A',
-          skipped: false,
+          sessionId: '00000000-0000-0000-0000-000000000001',
+          sessionItemId: '00000000-0000-0000-0000-000000000101',
+          selectedOptionId: 'opt_rate_limit',
+          clientAttemptId: 'attempt-rate-limit',
         });
       
       statuses.push(res.status);
@@ -104,11 +104,11 @@ describe('Practice Answer Rate Limiter', () => {
       .post('/api/practice/answer')
       .set('Origin', 'http://localhost:5000')
       .send({
-        sessionId: 'test-session-id',
-        questionId: 'test-question-id',
-        selectedAnswer: 'A',
-        skipped: false,
-      });
+          sessionId: '00000000-0000-0000-0000-000000000001',
+          sessionItemId: '00000000-0000-0000-0000-000000000101',
+          selectedOptionId: 'opt_rate_limit',
+          clientAttemptId: 'attempt-rate-limit',
+        });
     
     expect(rateLimitedRes.status).toBe(429);
     

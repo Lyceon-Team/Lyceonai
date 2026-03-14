@@ -270,6 +270,26 @@ describe("Practice Runtime Contract", () => {
     difficulty: "medium",
   };
 
+  function getCorrectTokenFromSessionItem(sessionItemId: string): string {
+    const item = db.practice_session_items.find((row) => row.id === sessionItemId);
+    if (!item || !item.option_token_map) {
+      throw new Error("missing option token map fixture");
+    }
+
+    const question = db.questions.find((row) => row.id === item.question_id);
+    if (!question) {
+      throw new Error("missing question fixture");
+    }
+
+    const correctKey = String(question.correct_answer || "");
+    const token = Object.entries(item.option_token_map as Record<string, string>).find((entry) => entry[1] === correctKey)?.[0];
+    if (!token) {
+      throw new Error("missing correct token fixture");
+    }
+
+    return token;
+  }
+
   beforeAll(async () => {
     process.env.VITEST = "true";
     process.env.NODE_ENV = "test";
@@ -356,8 +376,23 @@ describe("Practice Runtime Contract", () => {
     expect(nextA.status).toBe(200);
     expect(nextA.body.question.correct_answer).toBeNull();
     expect(nextA.body.question.explanation).toBeNull();
+    expect(nextA.body.question).not.toHaveProperty("id");
+    expect(nextA.body.question).not.toHaveProperty("questionId");
+    expect(nextA.body.question).not.toHaveProperty("option_token_map");
+    expect(nextA.body.question).not.toHaveProperty("optionTokenMap");
+    expect(Array.isArray(nextA.body.question.options)).toBe(true);
+    expect(nextA.body.question.options).toHaveLength(4);
+
+    for (const option of nextA.body.question.options) {
+      expect(option).toHaveProperty("id");
+      expect(option).toHaveProperty("text");
+      expect(option).not.toHaveProperty("key");
+      expect(option).not.toHaveProperty("canonicalKey");
+    }
+
     expect(nextB.status).toBe(200);
     expect(nextB.body.sessionItemId).toBe(nextA.body.sessionItemId);
+    expect(nextB.body.question.options).toEqual(nextA.body.question.options);
     expect(db.practice_session_items).toHaveLength(1);
   });
 
@@ -374,6 +409,7 @@ describe("Practice Runtime Contract", () => {
     expect(state.status).toBe(200);
     expect(state.body.currentOrdinal).toBe(1);
     expect(state.body.lastServedUnansweredItem.sessionItemId).toBe(next.body.sessionItemId);
+    expect(state.body.lastServedUnansweredItem).not.toHaveProperty("questionId");
   });
 
   it("blocks second client_instance_id from advancing same session", async () => {
@@ -403,11 +439,8 @@ describe("Practice Runtime Contract", () => {
     const payload = {
       sessionId,
       sessionItemId: next.body.sessionItemId,
-      questionId: next.body.question.id,
-      selectedAnswer: "A",
-      skipped: false,
-      client_instance_id: "tab-1",
-      idempotencyKey: "attempt-1",
+      selectedOptionId: next.body.question.options[0].id,
+      clientAttemptId: "attempt-1",
     };
 
     const first = await request(app).post("/api/practice/answer").set("Origin", "http://localhost:5000").send(payload);
@@ -418,6 +451,31 @@ describe("Practice Runtime Contract", () => {
     expect(second.body.idempotentRetried).toBe(true);
     expect(db.answer_attempts).toHaveLength(1);
     expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("submit with opaque selectedOptionId resolves correctly", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const selectedOptionId = getCorrectTokenFromSessionItem(next.body.sessionItemId);
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        selectedOptionId,
+        clientAttemptId: "attempt-correct-token",
+      });
+
+    expect(submit.status).toBe(200);
+    expect(submit.body.isCorrect).toBe(true);
+    expect(submit.body).toHaveProperty("correctOptionId");
   });
 
   it("allows current-item completion after entitlement loss but blocks next-item progression", async () => {
@@ -442,11 +500,8 @@ describe("Practice Runtime Contract", () => {
       .send({
         sessionId,
         sessionItemId: next.body.sessionItemId,
-        questionId: next.body.question.id,
-        selectedAnswer: "A",
-        skipped: false,
-        client_instance_id: "tab-1",
-        idempotencyKey: "attempt-mid-session",
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "attempt-mid-session",
       });
 
     const blockedNext = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
@@ -478,16 +533,17 @@ describe("Practice Runtime Contract", () => {
     });
 
     const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
-    const selectedQuestionId = first.body.question.id;
+    const firstSessionItem = db.practice_session_items.find((row) => row.id === first.body.sessionItemId);
 
     db.practice_session_items = [];
 
     const second = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const secondSessionItem = db.practice_session_items.find((row) => row.id === second.body.sessionItemId);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(selectedQuestionId).toBe(second.body.question.id);
-    expect(selectedQuestionId).toBe("00000000-0000-0000-0000-000000000002");
+    expect(firstSessionItem?.question_id).toBe(secondSessionItem?.question_id);
+    expect(firstSessionItem?.question_id).toBe("00000000-0000-0000-0000-000000000002");
   });
 
   it("denies non-owner answer submit", async () => {
@@ -512,6 +568,8 @@ describe("Practice Runtime Contract", () => {
       ordinal: 1,
       status: "served",
       attempt_id: null,
+      option_order: ["A", "B", "C", "D"],
+      option_token_map: { opt_foreign: "A", opt_foreign_b: "B", opt_foreign_c: "C", opt_foreign_d: "D" },
       client_instance_id: "tab-foreign",
     });
 
@@ -521,11 +579,8 @@ describe("Practice Runtime Contract", () => {
       .send({
         sessionId: foreignSessionId,
         sessionItemId: foreignSessionItemId,
-        questionId: questionA.id,
-        selectedAnswer: "A",
-        skipped: false,
-        client_instance_id: "tab-foreign",
-        idempotencyKey: "foreign-attempt-1",
+        selectedOptionId: "opt_foreign",
+        clientAttemptId: "foreign-attempt-1",
       });
 
     expect(submit.status).toBe(404);
@@ -547,11 +602,8 @@ describe("Practice Runtime Contract", () => {
       .send({
         sessionId,
         sessionItemId: next.body.sessionItemId,
-        questionId: next.body.question.id,
-        selectedAnswer: "A",
-        skipped: false,
-        client_instance_id: "tab-1",
-        idempotencyKey: "attempt-before-close",
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "attempt-before-close",
       });
 
     const target = db.practice_sessions.find((row) => row.id === sessionId);
@@ -566,11 +618,8 @@ describe("Practice Runtime Contract", () => {
       .send({
         sessionId,
         sessionItemId: next.body.sessionItemId,
-        questionId: next.body.question.id,
-        selectedAnswer: "A",
-        skipped: false,
-        client_instance_id: "tab-1",
-        idempotencyKey: "attempt-after-close",
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "attempt-after-close",
       });
 
     expect(first.status).toBe(200);

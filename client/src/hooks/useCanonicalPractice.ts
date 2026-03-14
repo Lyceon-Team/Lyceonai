@@ -1,14 +1,18 @@
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
-export type PracticeQuestion = {
+export type PracticeOption = {
   id: string;
-  type: "mc" | "fr";
+  text: string;
+};
+
+export type PracticeQuestion = {
+  sessionItemId?: string;
+  questionType?: "multiple_choice" | null;
   stem: string;
   section?: string | null;
-  options?: { key?: string | null; text?: string | null; value?: string | null }[] | null;
+  options?: PracticeOption[] | null;
 };
 
 export type PracticeNextResponse = {
@@ -30,7 +34,7 @@ export type PracticeNextResponse = {
 
 export type PracticeAnswerResponse = {
   isCorrect: boolean;
-  correctAnswerKey?: string | null;
+  correctOptionId?: string | null;
   explanation?: string | null;
   state?: "active" | "completed" | "abandoned";
   stats?: {
@@ -41,10 +45,6 @@ export type PracticeAnswerResponse = {
     streak?: number;
   };
 };
-
-function nowMs() {
-  return Date.now();
-}
 
 function mergeStats(
   prev: { correct: number; incorrect: number; skipped: number; total: number; streak: number },
@@ -60,11 +60,42 @@ function mergeStats(
   };
 }
 
+function isMultipleChoice(question: PracticeQuestion | null): boolean {
+  return !!question && question.questionType === "multiple_choice";
+}
+
+function normalizeQuestion(raw: PracticeQuestion | null): PracticeQuestion | null {
+  if (!raw) return null;
+
+  const stem = typeof raw.stem === "string" ? raw.stem : "";
+  const section = typeof raw.section === "string" ? raw.section : null;
+  const options = Array.isArray(raw.options)
+    ? raw.options
+      .map((opt) => {
+        const id = typeof opt?.id === "string" ? opt.id.trim() : "";
+        const text = typeof opt?.text === "string" ? opt.text : "";
+        if (!id || !text) return null;
+        return { id, text };
+      })
+      .filter((opt): opt is PracticeOption => !!opt)
+    : [];
+
+  if (!stem || options.length === 0) return null;
+
+  return {
+    sessionItemId: typeof raw.sessionItemId === "string" ? raw.sessionItemId : undefined,
+    questionType: "multiple_choice",
+    stem,
+    section,
+    options,
+  };
+}
+
 export function useCanonicalPractice(section: PracticeSectionParam) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionItemId, setSessionItemId] = useState<string | null>(null);
   const [clientInstanceId] = useState(() => crypto.randomUUID());
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [clientAttemptId, setClientAttemptId] = useState(() => crypto.randomUUID());
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -77,7 +108,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [correctAnswerKey, setCorrectAnswerKey] = useState<string | null>(null);
+  const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
 
   const [score, setScore] = useState({
@@ -91,11 +122,9 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState<number | undefined>(undefined);
 
-  const questionStartMs = useRef<number>(nowMs());
-
   const canSubmit = useMemo(() => {
     if (!question) return false;
-    if (question.type === "mc") return !!selectedAnswer;
+    if (isMultipleChoice(question)) return !!selectedAnswer;
     return freeResponseAnswer.trim().length > 0;
   }, [question, selectedAnswer, freeResponseAnswer]);
 
@@ -104,10 +133,9 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     setFreeResponseAnswer("");
     setShowResult(false);
     setIsCorrect(null);
-    setCorrectAnswerKey(null);
+    setCorrectOptionId(null);
     setExplanation(null);
-    setIdempotencyKey(crypto.randomUUID());
-    questionStartMs.current = nowMs();
+    setClientAttemptId(crypto.randomUUID());
   }, []);
 
   const ensureSession = useCallback(async () => {
@@ -163,7 +191,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
       if (data.sessionId) setSessionId(data.sessionId);
       setSessionItemId(data.sessionItemId ?? null);
-      setQuestion(data.question ?? null);
+      setQuestion(normalizeQuestion(data.question ?? null));
 
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
@@ -201,18 +229,11 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           throw new Error("No active session item. Please load the next question.");
         }
 
-        const elapsedMs = Math.max(0, nowMs() - questionStartMs.current);
-
         const payload = {
           sessionId: effectiveSessionId,
           sessionItemId: effectiveSessionItemId,
-          questionId: question.id,
-          selectedAnswer: question.type === "mc" ? (opts.skipped ? null : selectedAnswer) : null,
-          freeResponseAnswer: question.type === "fr" ? (opts.skipped ? "" : freeResponseAnswer) : "",
-          elapsedMs,
-          skipped: opts.skipped,
-          client_instance_id: clientInstanceId,
-          idempotencyKey,
+          selectedOptionId: opts.skipped ? null : selectedAnswer,
+          clientAttemptId,
         };
 
         const res = await fetch("/api/practice/answer", {
@@ -258,7 +279,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         }
 
         setIsCorrect(!!data.isCorrect);
-        setCorrectAnswerKey(data.correctAnswerKey ?? null);
+        setCorrectOptionId(data.correctOptionId ?? null);
         setExplanation(data.explanation ?? null);
         setShowResult(true);
         return data;
@@ -271,11 +292,9 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       }
     },
     [
-      clientInstanceId,
+      clientAttemptId,
       ensureSession,
       fetchNextQuestion,
-      freeResponseAnswer,
-      idempotencyKey,
       question,
       selectedAnswer,
       sessionItemId,
@@ -288,7 +307,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
   const handleMissingMcChoices = useCallback(async () => {
     if (!question) return;
-    if (question.type !== "mc") return;
+    if (!isMultipleChoice(question)) return;
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
 
@@ -311,7 +330,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
     showResult,
     isCorrect,
-    correctAnswerKey,
+    correctOptionId,
     explanation,
 
     score,

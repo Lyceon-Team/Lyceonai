@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { csrfGuard } from "../middleware/csrf";
 import { getSupabaseAdmin, requireSupabaseAuth } from "../middleware/supabase-auth.js";
@@ -32,15 +33,29 @@ type McOption = {
   text: string;
 };
 
-type SafeQuestionDTO = {
+type StudentSafeOption = {
   id: string;
-  section: string;
+  text: string;
+};
+
+type StudentSafeQuestionDTO = {
+  sessionItemId: string;
   stem: string;
+  section: string;
   questionType: "multiple_choice";
-  options: McOption[];
+  options: StudentSafeOption[];
   difficulty: string | number | null;
   correct_answer: null;
   explanation: null;
+};
+
+type CanonicalQuestionForServing = {
+  id: string;
+  canonical_id: string;
+  section: string;
+  stem: string;
+  options: McOption[];
+  difficulty: string | number | null;
 };
 
 type SessionRow = {
@@ -58,6 +73,9 @@ type SessionItemRow = {
   session_id: string;
   user_id: string;
   question_id: string;
+  question_canonical_id?: string | null;
+  option_order?: string[] | null;
+  option_token_map?: Record<string, string> | null;
   ordinal: number;
   status: "served" | "answered" | "skipped";
   attempt_id?: string | null;
@@ -113,15 +131,10 @@ const StartSessionBodySchema = z.object({
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
-  sessionItemId: z.string().uuid().optional().nullable(),
-  questionId: z.string().uuid(),
-  selectedAnswer: z.string().optional().nullable(),
-  freeResponseAnswer: z.string().optional().nullable(),
-  skipped: z.boolean().optional(),
-  elapsedMs: z.number().optional().nullable(),
-  idempotencyKey: z.string().max(128).optional().nullable(),
-  client_instance_id: z.string().max(128).optional().nullable(),
-});
+  sessionItemId: z.string().uuid(),
+  selectedOptionId: z.string().max(128).optional().nullable(),
+  clientAttemptId: z.string().max(128).optional().nullable(),
+}).strict();
 
 function asSessionMetadata(metadata: unknown): SessionMetadata {
   if (!metadata || typeof metadata !== "object") return {};
@@ -167,26 +180,176 @@ function safeParseOptions(raw: unknown): McOption[] {
     const key = typeof (item as any).key === "string" ? (item as any).key.trim() : "";
     const text = typeof (item as any).text === "string" ? (item as any).text : "";
     if (!key || !text) continue;
-    options.push({ key, text });
+    const normalized = normalizeAnswerKey(key);
+    if (!normalized) continue;
+    options.push({ key: normalized, text });
   }
 
   return options;
 }
 
-function isValidMcQuestion(row: any): boolean {
-  const options = safeParseOptions(row?.options);
-  if (!hasCanonicalOptionSet(options)) return false;
-  return hasSingleCanonicalCorrectAnswer(row?.correct_answer, options);
+function parseStoredOptionOrder(raw: unknown): string[] | null {
+  if (Array.isArray(raw)) {
+    const values = raw
+      .map((v) => (typeof v === "string" ? normalizeAnswerKey(v) : null))
+      .filter((v) => !!v) as string[];
+    return values.length > 0 ? values : null;
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) return null;
+      const values = inner.split(",").map((k) => normalizeAnswerKey(k.trim())).filter((k) => !!k) as string[];
+      return values.length > 0 ? values : null;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parseStoredOptionOrder(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
-function toSafeQuestionDTO(q: any): SafeQuestionDTO {
+function parseStoredOptionTokenMap(raw: unknown): Record<string, string> | null {
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const out: Record<string, string> = {};
+  for (const [token, keyRaw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof token !== "string" || token.trim().length === 0) return null;
+    const normalizedKey = normalizeAnswerKey(keyRaw);
+    if (!normalizedKey) return null;
+    out[token] = normalizedKey;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function fisherYates<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = crypto.randomInt(0, i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function buildServedOptions(options: McOption[]): {
+  optionOrder: string[];
+  optionTokenMap: Record<string, string>;
+  safeOptions: StudentSafeOption[];
+} {
+  const shuffled = fisherYates(options);
+  const optionOrder = shuffled.map((o) => o.key);
+
+  const optionTokenMap: Record<string, string> = {};
+  const safeOptions: StudentSafeOption[] = shuffled.map((o) => {
+    let token = "opt_" + crypto.randomBytes(8).toString("hex");
+    while (optionTokenMap[token]) {
+      token = "opt_" + crypto.randomBytes(8).toString("hex");
+    }
+    optionTokenMap[token] = o.key;
+    return { id: token, text: o.text };
+  });
+
   return {
-    id: q.id,
-    section: q.section,
-    stem: q.stem,
-    questionType: "multiple_choice",
+    optionOrder,
+    optionTokenMap,
+    safeOptions,
+  };
+}
+
+function buildSafeOptionsFromStoredMap(options: McOption[], optionOrderRaw: unknown, optionTokenMapRaw: unknown): StudentSafeOption[] | null {
+  const optionOrder = parseStoredOptionOrder(optionOrderRaw);
+  const optionTokenMap = parseStoredOptionTokenMap(optionTokenMapRaw);
+  if (!optionOrder || !optionTokenMap) return null;
+
+  if (optionOrder.length !== options.length) return null;
+
+  const optionByKey = new Map<string, string>();
+  for (const opt of options) {
+    const normalized = normalizeAnswerKey(opt.key);
+    if (!normalized) return null;
+    optionByKey.set(normalized, opt.text);
+  }
+
+  const canonicalKeys = new Set(optionByKey.keys());
+  if (canonicalKeys.size !== options.length) return null;
+
+  const orderKeySet = new Set(optionOrder);
+  if (orderKeySet.size !== optionOrder.length) return null;
+  if (!Array.from(orderKeySet).every((key) => canonicalKeys.has(key))) return null;
+
+  const entries = Object.entries(optionTokenMap);
+  if (entries.length !== options.length) return null;
+
+  const tokenSet = new Set<string>();
+  const mappedKeySet = new Set<string>();
+  const tokenByKey = new Map<string, string>();
+
+  for (const [token, key] of entries) {
+    if (!token || !key) return null;
+    if (tokenSet.has(token)) return null;
+    tokenSet.add(token);
+
+    if (!canonicalKeys.has(key)) return null;
+    if (mappedKeySet.has(key)) return null;
+    mappedKeySet.add(key);
+    tokenByKey.set(key, token);
+  }
+
+  const safeOptions: StudentSafeOption[] = [];
+  for (const key of optionOrder) {
+    const token = tokenByKey.get(key);
+    const textValue = optionByKey.get(key);
+    if (!token || !textValue) return null;
+    safeOptions.push({ id: token, text: textValue });
+  }
+
+  return safeOptions;
+}
+
+function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
+  return {
+    id: String(q.id),
+    canonical_id: String(q.canonical_id),
+    section: String(q.section ?? q.section_code ?? ""),
+    stem: String(q.stem ?? ""),
     options: safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
+  };
+}
+
+function toStudentSafeQuestionDTO(args: {
+  sessionItemId: string;
+  question: CanonicalQuestionForServing;
+  safeOptions: StudentSafeOption[];
+}): StudentSafeQuestionDTO {
+  return {
+    sessionItemId: args.sessionItemId,
+    section: args.question.section,
+    stem: args.question.stem,
+    questionType: "multiple_choice",
+    options: args.safeOptions,
+    difficulty: args.question.difficulty ?? null,
     correct_answer: null,
     explanation: null,
   };
@@ -349,7 +512,7 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{
   return { correct, incorrect, skipped, total, streak };
 }
 
-async function fetchQuestionForServing(questionId: string): Promise<SafeQuestionDTO | null> {
+async function fetchQuestionForServing(questionId: string): Promise<CanonicalQuestionForServing | null> {
   const { data, error } = await supabaseServer
     .from("questions")
     .select("id, canonical_id, status, section, section_code, stem, question_type, options, difficulty, correct_answer")
@@ -361,13 +524,13 @@ async function fetchQuestionForServing(questionId: string): Promise<SafeQuestion
   if (error || !data) return null;
   if (!isCanonicalPublishedMcQuestion(data as any)) return null;
 
-  return toSafeQuestionDTO(data);
+  return toCanonicalQuestionForServing(data);
 }
 
 async function getCurrentUnansweredItem(sessionId: string): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .select("id, session_id, user_id, question_id, ordinal, status, attempt_id, client_instance_id")
+    .select("id, session_id, user_id, question_id, question_canonical_id, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id")
     .eq("session_id", sessionId)
     .eq("status", "served")
     .order("ordinal", { ascending: false })
@@ -384,7 +547,7 @@ async function getCurrentUnansweredItem(sessionId: string): Promise<SessionItemR
 async function getLatestSessionItem(sessionId: string): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .select("id, session_id, user_id, question_id, ordinal, status, attempt_id, client_instance_id")
+    .select("id, session_id, user_id, question_id, question_canonical_id, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id")
     .eq("session_id", sessionId)
     .order("ordinal", { ascending: false })
     .limit(1)
@@ -432,7 +595,7 @@ async function pickDeterministicQuestion(args: {
   sessionId: string;
   nextOrdinal: number;
   excludedQuestionIds: string[];
-}): Promise<{ question: SafeQuestionDTO } | { error: string }> {
+}): Promise<{ question: CanonicalQuestionForServing } | { error: string }> {
     let query = supabaseServer
     .from("questions")
     .select("id, canonical_id, status, section, section_code, stem, question_type, options, difficulty, correct_answer, domain, skill")
@@ -518,7 +681,7 @@ async function pickDeterministicQuestion(args: {
 
   let targetDifficulty: 1 | 2 | 3;
   if (hasMastery) {
-    const scores = [...masteryMap.values()];
+    const scores = Array.from(masteryMap.values());
     const avgMastery = scores.reduce((sum, value) => sum + value, 0) / scores.length;
     if (avgMastery < 0.45) targetDifficulty = 1;
     else if (avgMastery > 0.75) targetDifficulty = 3;
@@ -563,7 +726,7 @@ async function pickDeterministicQuestion(args: {
     return { error: "no_questions_available_after_ranking" };
   }
 
-  return { question: toSafeQuestionDTO(chosen) };
+  return { question: toCanonicalQuestionForServing(chosen) };
 }
 
 async function updateSessionLifecycle(sessionId: string, metadata: SessionMetadata, patch?: Record<string, unknown>) {
@@ -751,30 +914,13 @@ async function loadOwnedSession(sessionId: string, userId: string): Promise<Sess
 async function findSessionItemById(sessionId: string, sessionItemId: string): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .select("id, session_id, user_id, question_id, ordinal, status, attempt_id, client_instance_id")
+    .select("id, session_id, user_id, question_id, question_canonical_id, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id")
     .eq("session_id", sessionId)
     .eq("id", sessionItemId)
     .maybeSingle();
 
   if (error) {
     throw new Error(`practice_session_item_lookup_failed: ${error.message}`);
-  }
-
-  return (data as SessionItemRow | null) ?? null;
-}
-
-async function findLatestSessionItemByQuestion(sessionId: string, questionId: string): Promise<SessionItemRow | null> {
-  const { data, error } = await supabaseServer
-    .from("practice_session_items")
-    .select("id, session_id, user_id, question_id, ordinal, status, attempt_id, client_instance_id")
-    .eq("session_id", sessionId)
-    .eq("question_id", questionId)
-    .order("ordinal", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`practice_session_item_by_question_failed: ${error.message}`);
   }
 
   return (data as SessionItemRow | null) ?? null;
@@ -886,13 +1032,41 @@ async function serveNextForSession(args: {
 
   const unresolved = await getCurrentUnansweredItem(args.sessionId);
   if (unresolved) {
-    const safeQuestion = await fetchQuestionForServing(unresolved.question_id);
-    if (!safeQuestion) {
+    const canonicalQuestion = await fetchQuestionForServing(unresolved.question_id);
+    if (!canonicalQuestion) {
       return args.res.status(422).json({
         error: "invalid_question_data",
         message: "Unable to resume the current question due to invalid canonical data.",
         requestId,
       });
+    }
+
+    let safeOptions = buildSafeOptionsFromStoredMap(canonicalQuestion.options, unresolved.option_order, unresolved.option_token_map);
+
+    if (!safeOptions) {
+      const rebuilt = buildServedOptions(canonicalQuestion.options);
+      safeOptions = rebuilt.safeOptions;
+
+      const rebuildPatch = {
+        question_canonical_id: canonicalQuestion.canonical_id,
+        option_order: rebuilt.optionOrder,
+        option_token_map: rebuilt.optionTokenMap,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: rebuildErr } = await supabaseServer
+        .from("practice_session_items")
+        .update(rebuildPatch)
+        .eq("id", unresolved.id)
+        .eq("status", "served");
+
+      if (rebuildErr) {
+        return args.res.status(500).json({
+          error: "session_item_rebuild_failed",
+          message: rebuildErr.message,
+          requestId,
+        });
+      }
     }
 
     metadata.lifecycle_state = "active";
@@ -908,7 +1082,11 @@ async function serveNextForSession(args: {
       sessionItemId: unresolved.id,
       ordinal: unresolved.ordinal,
       state: "active",
-      question: safeQuestion,
+      question: toStudentSafeQuestionDTO({
+        sessionItemId: unresolved.id,
+        question: canonicalQuestion,
+        safeOptions,
+      }),
       stats: await getSessionStats(args.sessionId, args.userId),
     });
   }
@@ -938,6 +1116,8 @@ async function serveNextForSession(args: {
     });
   }
 
+  const servedOptions = buildServedOptions(picked.question.options);
+
   const now = new Date().toISOString();
   const newSessionItemId = crypto.randomUUID();
 
@@ -948,6 +1128,9 @@ async function serveNextForSession(args: {
       session_id: args.sessionId,
       user_id: args.userId,
       question_id: picked.question.id,
+      question_canonical_id: picked.question.canonical_id,
+      option_order: servedOptions.optionOrder,
+      option_token_map: servedOptions.optionTokenMap,
       ordinal: nextOrdinal,
       status: "served",
       attempt_id: null,
@@ -955,18 +1138,27 @@ async function serveNextForSession(args: {
       created_at: now,
       updated_at: now,
     })
-    .select("id, session_id, user_id, question_id, ordinal, status, attempt_id, client_instance_id")
+    .select("id, session_id, user_id, question_id, question_canonical_id, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id")
     .single();
 
   if (insertErr || !insertedItem) {
     if (isDuplicateConflict(insertErr?.message)) {
       const deduped = await getCurrentUnansweredItem(args.sessionId);
       if (deduped) {
-        const question = await fetchQuestionForServing(deduped.question_id);
-        if (!question) {
+        const canonicalQuestion = await fetchQuestionForServing(deduped.question_id);
+        if (!canonicalQuestion) {
           return args.res.status(422).json({
             error: "invalid_question_data",
             message: "Unable to load deduplicated unanswered item.",
+            requestId,
+          });
+        }
+
+        const dedupedOptions = buildSafeOptionsFromStoredMap(canonicalQuestion.options, deduped.option_order, deduped.option_token_map);
+        if (!dedupedOptions) {
+          return args.res.status(500).json({
+            error: "session_item_mapping_missing",
+            message: "Unable to restore option mapping for deduplicated item.",
             requestId,
           });
         }
@@ -976,7 +1168,11 @@ async function serveNextForSession(args: {
           sessionItemId: deduped.id,
           ordinal: deduped.ordinal,
           state: "active",
-          question,
+          question: toStudentSafeQuestionDTO({
+            sessionItemId: deduped.id,
+            question: canonicalQuestion,
+            safeOptions: dedupedOptions,
+          }),
           stats: await getSessionStats(args.sessionId, args.userId),
           deduplicated: true,
         });
@@ -1033,7 +1229,11 @@ async function serveNextForSession(args: {
     sessionItemId: insertedItem.id,
     ordinal: insertedItem.ordinal,
     state: "active",
-    question: picked.question,
+    question: toStudentSafeQuestionDTO({
+      sessionItemId: insertedItem.id,
+      question: picked.question,
+      safeOptions: servedOptions.safeOptions,
+    }),
     stats: await getSessionStats(args.sessionId, args.userId),
   });
 }
@@ -1194,7 +1394,6 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     lastServedUnansweredItem: unresolved
       ? {
           sessionItemId: unresolved.id,
-          questionId: unresolved.question_id,
           ordinal: unresolved.ordinal,
         }
       : null,
@@ -1287,22 +1486,9 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const {
     sessionId,
     sessionItemId,
-    questionId,
-    selectedAnswer,
-    skipped,
-    elapsedMs,
-    idempotencyKey,
-    client_instance_id,
+    selectedOptionId,
+    clientAttemptId,
   } = parsed.data;
-
-  const clientInstanceId = getClientInstanceId(client_instance_id);
-  if (!clientInstanceId) {
-    return res.status(400).json({
-      error: "missing_client_instance_id",
-      message: "client_instance_id is required",
-      requestId,
-    });
-  }
 
   const session = await loadOwnedSession(sessionId, userId);
   if (!session) {
@@ -1324,18 +1510,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const boundClient = getClientInstanceId(sessionMeta.client_instance_id);
-  if (boundClient && boundClient !== clientInstanceId) {
-    return sendClientConflict(res, requestId, clientInstanceId, "Session was taken over by another tab.");
-  }
-
-  let servedItem: SessionItemRow | null = null;
-  if (sessionItemId) {
-    servedItem = await findSessionItemById(sessionId, sessionItemId);
-  } else {
-    servedItem = await findLatestSessionItemByQuestion(sessionId, questionId);
-  }
-
+  const servedItem = await findSessionItemById(sessionId, sessionItemId);
   if (!servedItem) {
     return res.status(409).json({
       error: "session_item_not_found",
@@ -1344,18 +1519,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  if (servedItem.question_id !== questionId) {
-    return res.status(409).json({
-      error: "session_item_mismatch",
-      message: "Submitted question does not match the served session item.",
-      requestId,
-    });
-  }
-
   const { data: qRow, error: qErr } = await supabaseServer
     .from("questions")
     .select("id, canonical_id, status, section, section_code, question_type, stem, correct_answer, explanation, options")
-    .eq("id", questionId)
+    .eq("id", servedItem.question_id)
     .eq("status", "published")
     .eq("question_type", "multiple_choice")
     .single();
@@ -1393,6 +1560,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  const optionTokenMap = parseStoredOptionTokenMap(servedItem.option_token_map);
+  if (!optionTokenMap) {
+    return res.status(409).json({
+      error: "session_item_mapping_missing",
+      message: "The served option mapping is missing for this session item.",
+      requestId,
+    });
+  }
+
   const correctAnswerKey = normalizeAnswerKey(qRow.correct_answer);
   const explanation = typeof qRow.explanation === "string" && qRow.explanation.trim().length > 0
     ? qRow.explanation
@@ -1406,19 +1582,23 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  const questionId = String(qRow.id);
+
   const existingAttempt = await findExistingAttempt({
     userId,
     sessionId,
     questionId,
     sessionItemId: servedItem.id,
-    idempotencyKey: idempotencyKey?.trim() || null,
+    idempotencyKey: clientAttemptId?.trim() || null,
   });
+
+  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
 
   if (existingAttempt) {
     if (existingAttempt.session_id !== sessionId || existingAttempt.question_id !== questionId) {
       return res.status(409).json({
         error: "idempotency_key_reuse",
-        message: "The provided idempotency key is already bound to a different attempt.",
+        message: "The provided clientAttemptId is already bound to a different attempt.",
         requestId,
       });
     }
@@ -1428,7 +1608,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       sessionItemId: servedItem.id,
       isCorrect: !!existingAttempt.is_correct,
       mode: "multiple_choice",
-      correctAnswerKey,
+      correctOptionId,
       explanation,
       feedback: existingAttempt.is_correct ? "Correct" : existingAttempt.outcome === "skipped" ? "Skipped" : "Incorrect",
       stats: await getSessionStats(sessionId, userId),
@@ -1444,36 +1624,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const isSkipped = skipped === true;
-  const allowedKeys = new Set(parsedOptions.map((opt) => normalizeAnswerKey(opt.key)).filter(Boolean));
+  const isSkipped = !selectedOptionId;
+  const selectedCanonicalKey = selectedOptionId ? optionTokenMap[selectedOptionId] : null;
 
-  if (!isSkipped) {
-    const selected = normalizeAnswerKey(selectedAnswer ?? null);
-    if (!selected) {
-      return res.status(400).json({
-        error: "invalid_answer",
-        message: "selectedAnswer is required for non-skipped MC submissions.",
-        requestId,
-      });
-    }
-
-    if (!allowedKeys.has(selected)) {
-      return res.status(400).json({
-        error: "invalid_answer",
-        message: "selectedAnswer must be one of the configured option keys.",
-        requestId,
-      });
-    }
+  if (!isSkipped && !selectedCanonicalKey) {
+    return res.status(400).json({
+      error: "invalid_answer",
+      message: "selectedOptionId must match a served option token.",
+      requestId,
+    });
   }
 
-  const chosenRaw = isSkipped ? null : selectedAnswer ?? null;
-  const chosen = normalizeAnswerKey(chosenRaw);
+  const chosen = normalizeAnswerKey(selectedCanonicalKey ?? null);
   const isCorrect = !isSkipped && !!chosen && chosen === correctAnswerKey;
   const outcome = isSkipped ? "skipped" : isCorrect ? "correct" : "incorrect";
 
-  const clampedTimeSpentMs = typeof elapsedMs === "number"
-    ? Math.min(Math.max(0, elapsedMs), 30 * 60 * 1000)
-    : null;
+  const clampedTimeSpentMs = null;
 
   const attemptId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -1484,14 +1650,14 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     session_id: sessionId,
     session_item_id: servedItem.id,
     question_id: questionId,
-    selected_answer: selectedAnswer ?? null,
+    selected_answer: selectedOptionId ?? null,
     free_response_answer: null,
-    chosen: chosenRaw ?? null,
+    chosen: chosen ?? null,
     is_correct: isCorrect,
     outcome,
     time_spent_ms: clampedTimeSpentMs,
     attempted_at: now,
-    client_attempt_id: idempotencyKey ?? null,
+    client_attempt_id: clientAttemptId ?? null,
   };
 
   const insertResult = await insertAnswerAttempt(insertPayload);
@@ -1502,7 +1668,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId,
         questionId,
         sessionItemId: servedItem.id,
-        idempotencyKey: idempotencyKey?.trim() || null,
+        idempotencyKey: clientAttemptId?.trim() || null,
       });
 
       if (!duplicate) {
@@ -1518,7 +1684,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionItemId: servedItem.id,
         isCorrect: !!duplicate.is_correct,
         mode: "multiple_choice",
-        correctAnswerKey,
+        correctOptionId,
         explanation,
         feedback: duplicate.is_correct ? "Correct" : duplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
         stats: await getSessionStats(sessionId, userId),
@@ -1560,7 +1726,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       sessionId,
       questionId,
       sessionItemId: servedItem.id,
-      idempotencyKey: idempotencyKey?.trim() || null,
+      idempotencyKey: clientAttemptId?.trim() || null,
     });
 
     if (raceDuplicate) {
@@ -1569,7 +1735,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionItemId: servedItem.id,
         isCorrect: !!raceDuplicate.is_correct,
         mode: "multiple_choice",
-        correctAnswerKey,
+        correctOptionId,
         explanation,
         feedback: raceDuplicate.is_correct ? "Correct" : raceDuplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
         stats: await getSessionStats(sessionId, userId),
@@ -1611,7 +1777,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         questionCanonicalId: metadata.canonicalId,
         sessionId,
         isCorrect,
-        selectedChoice: selectedAnswer ?? null,
+        selectedChoice: chosen ?? null,
         timeSpentMs: clampedTimeSpentMs,
         eventType: MasteryEventType.PRACTICE_SUBMIT,
         metadata: {
@@ -1660,7 +1826,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     sessionItemId: servedItem.id,
     isCorrect,
     mode: "multiple_choice",
-    correctAnswerKey,
+    correctOptionId,
     explanation,
     feedback: isCorrect ? "Correct" : isSkipped ? "Skipped" : "Incorrect",
     stats: await getSessionStats(sessionId, userId),
