@@ -17,6 +17,10 @@ No parallel mounted practice runtime exists under `apps/api/**`.
   - Session header/source-of-truth for ownership, lifecycle metadata, and client-instance binding.
 - `practice_session_items`
   - Ordered served-item truth (`session_item_id`, `ordinal`, `status`).
+  - Persists opaque option serving state per served item:
+    - `question_canonical_id`
+    - `option_order` (canonical key order server-side only)
+    - `option_token_map` (opaque token -> canonical key map server-side only)
   - Exactly one unresolved (`status='served'`) item per session at a time.
 - `answer_attempts`
   - Authoritative answer-attempt truth.
@@ -36,6 +40,8 @@ No parallel mounted practice runtime exists under `apps/api/**`.
 - Returns current unresolved served item if one exists.
 - Otherwise serves exactly one new item, persists one `practice_session_items` row, and returns stable `session_item_id` + `ordinal`.
 - Enforces anti-leak before submit:
+  - payload omits canonical question identifiers
+  - options are returned as opaque `{ id, text }` only
   - `correct_answer: null`
   - `explanation: null`
 - Applies entitlement/usage gating when serving a **new** item.
@@ -45,12 +51,13 @@ No parallel mounted practice runtime exists under `apps/api/**`.
 - Supports refresh/resume with no new item side effects.
 
 ### `POST /api/practice/answer`
-- Validates ownership + `client_instance_id` conflict rules.
+- Accepts only student-safe payload fields: `sessionId`, `sessionItemId`, `selectedOptionId`, optional `clientAttemptId`.
+- Resolves `selectedOptionId` using server-owned `practice_session_items.option_token_map`.
 - Validates answer against canonical question truth.
 - Enforces idempotency for duplicate submissions (`client_attempt_id` and served-item linkage).
 - Writes exactly one attempt for the served item.
 - Resolves `practice_session_items.status` from `served` to `answered`/`skipped`.
-- Reveals `correctAnswerKey` and `explanation` only post-submit.
+- Reveals correctness plus post-submit explanation/correct option token only after submit.
 - Calls canonical mastery update path once for non-duplicate writes.
 
 ### `GET /api/practice/next` (legacy compatibility)
@@ -77,7 +84,9 @@ No parallel mounted practice runtime exists under `apps/api/**`.
 
 ## Anti-Leak Guarantees
 - Pre-submit payloads never include real answers/explanations.
-- Post-submit responses may include correctness, canonical answer key, and explanation.
+- Pre-submit payloads never include canonical question IDs or canonical option keys.
+- Option token mapping remains server-side only and is not returned in client payloads.
+- Post-submit responses may include correctness, the correct served option token, and explanation.
 
 ## Entitlement and Role Gates
 - Practice runtime is mounted behind:
