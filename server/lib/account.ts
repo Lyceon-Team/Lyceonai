@@ -3,7 +3,7 @@
  * Only returns ACTIVE links.
  * Returns { account_id, student_user_id } if linked, else null.
  */
-export async function getGuardianLinkForStudent(guardianProfileId: string, studentId: string): Promise<{ account_id: string, student_user_id: string } | null> {
+export async function getGuardianLinkForStudent(guardianProfileId: string, studentId: string): Promise<{ account_id: string | null, student_user_id: string } | null> {
   const { data, error } = await supabaseServer
     .from('guardian_links')
     .select('account_id, student_user_id')
@@ -35,7 +35,42 @@ export async function createGuardianLink(
   studentId: string,
   accountId?: string
 ): Promise<{ id: string; guardian_profile_id: string; student_user_id: string }> {
-  // Insert into canonical table
+  const { data: guardianActiveLinks, error: guardianLinksError } = await supabaseServer
+    .from('guardian_links')
+    .select('student_user_id')
+    .eq('guardian_profile_id', guardianProfileId)
+    .eq('status', 'active')
+    .order('linked_at', { ascending: true })
+    .limit(2);
+
+  if (guardianLinksError) {
+    throw new Error(`Failed to validate guardian active links: ${guardianLinksError.message}`);
+  }
+
+  if ((guardianActiveLinks || []).some((row: any) => row.student_user_id !== studentId)) {
+    const conflictErr = new Error('Guardian already has an active linked student');
+    (conflictErr as any).code = 'GUARDIAN_ALREADY_LINKED';
+    throw conflictErr;
+  }
+
+  const { data: studentActiveLinks, error: studentLinksError } = await supabaseServer
+    .from('guardian_links')
+    .select('guardian_profile_id')
+    .eq('student_user_id', studentId)
+    .eq('status', 'active')
+    .order('linked_at', { ascending: true })
+    .limit(2);
+
+  if (studentLinksError) {
+    throw new Error(`Failed to validate student active links: ${studentLinksError.message}`);
+  }
+
+  if ((studentActiveLinks || []).some((row: any) => row.guardian_profile_id !== guardianProfileId)) {
+    const conflictErr = new Error('Student is already linked to another guardian');
+    (conflictErr as any).code = 'STUDENT_ALREADY_LINKED';
+    throw conflictErr;
+  }
+
   const { data, error } = await supabaseServer
     .from('guardian_links')
     .upsert(
@@ -56,7 +91,6 @@ export async function createGuardianLink(
     console.error('[Account] Failed to create guardian link:', error);
     throw new Error(`Failed to create guardian link: ${error.message}`);
   }
-
 
   return data;
 }
@@ -134,7 +168,7 @@ export async function getAccountIdForUser(userId: string): Promise<string | null
 }
 
 /**
- * Get ALL accounts for a user (for guardians with multiple students)
+ * Get all account memberships for a user
  */
 export async function getAllAccountsForUser(userId: string): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
   const { data, error } = await supabaseServer
@@ -155,39 +189,6 @@ export async function getAllAccountsForUser(userId: string): Promise<Array<{ acc
   }));
 }
 
-/**
- * Get selected account for guardian from guardian_preferences
- */
-export async function getGuardianSelectedAccount(userId: string): Promise<string | null> {
-  const { data, error } = await supabaseServer
-    .from('guardian_preferences')
-    .select('selected_account_id')
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    console.error('[Account] Failed to get guardian preferences:', error);
-  }
-
-  return data?.selected_account_id || null;
-}
-
-/**
- * Set selected account for guardian
- */
-export async function setGuardianSelectedAccount(userId: string, accountId: string): Promise<void> {
-  const { error } = await supabaseServer
-    .from('guardian_preferences')
-    .upsert(
-      { user_id: userId, selected_account_id: accountId, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id' }
-    );
-
-  if (error) {
-    throw new Error(`Failed to set guardian selected account: ${error.message}`);
-  }
-}
-
 interface Entitlement {
   account_id: string;
   plan: 'free' | 'paid';
@@ -197,6 +198,36 @@ interface Entitlement {
   current_period_end: string | null;
 }
 
+export type PairPremiumSource = 'student' | 'guardian' | 'both' | 'none';
+
+export interface LinkedPairPremiumAccess {
+  role: 'student' | 'guardian';
+  hasPremiumAccess: boolean;
+  hasActiveLink: boolean;
+  premiumSource: PairPremiumSource;
+  reason: string;
+  studentUserId: string | null;
+  guardianUserId: string | null;
+  studentAccountId: string | null;
+  guardianAccountId: string | null;
+  studentEntitlementStatus: Entitlement['status'] | 'missing';
+  guardianEntitlementStatus: Entitlement['status'] | 'missing';
+  studentEntitlementExpired: boolean;
+  guardianEntitlementExpired: boolean;
+}
+
+export function isEntitlementActive(entitlement: Entitlement | null): boolean {
+  if (!entitlement) return false;
+  if (entitlement.plan !== 'paid') return false;
+  if (entitlement.status !== 'active' && entitlement.status !== 'trialing') return false;
+  if (!entitlement.current_period_end) return true;
+  return new Date(entitlement.current_period_end) > new Date();
+}
+
+function isEntitlementExpired(entitlement: Entitlement | null): boolean {
+  if (!entitlement?.current_period_end) return false;
+  return new Date(entitlement.current_period_end) <= new Date();
+}
 interface UsageDaily {
   practice_questions_used: number;
   ai_messages_used: number;
@@ -367,11 +398,15 @@ export async function incrementUsage(accountId: string, type: 'practice' | 'ai_c
  */
 export async function checkUsageLimit(
   accountId: string,
-  type: 'practice' | 'ai_chat'
+  type: 'practice' | 'ai_chat',
+  options?: { premiumOverride?: boolean }
 ): Promise<{ allowed: boolean; current: number; limit: number; resetAt: string }> {
+  if (options?.premiumOverride) {
+    return { allowed: true, current: 0, limit: Infinity, resetAt: '' };
+  }
+
   const entitlement = await getEntitlement(accountId);
-  const isPaid = entitlement?.plan === 'paid' &&
-    (entitlement.status === 'active' || entitlement.status === 'trialing');
+  const isPaid = isEntitlementActive(entitlement);
 
   if (isPaid) {
     return { allowed: true, current: 0, limit: Infinity, resetAt: '' };
@@ -399,27 +434,33 @@ export async function checkUsageLimit(
  * CANONICAL: Reads from guardian_links WHERE status='active'.
  * Returns the first linked student's user_id.
  */
-export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ student_user_id: string } | null> {
-  // Canonical path: query guardian_links
+export async function getPrimaryGuardianLink(guardianUserId: string): Promise<{ student_user_id: string; account_id: string | null } | null> {
   const { data, error } = await supabaseServer
     .from('guardian_links')
-    .select('student_user_id')
+    .select('student_user_id, account_id, linked_at')
     .eq('guardian_profile_id', guardianUserId)
     .eq('status', 'active')
     .order('linked_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
 
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
     console.error('[Account] Failed to get primary guardian link:', error);
     throw new Error(`Failed to get primary guardian link: ${error.message}`);
   }
 
-  if (data?.student_user_id) {
-    return { student_user_id: data.student_user_id };
+  if ((data || []).length > 1) {
+    throw new Error('Guardian has multiple active student links; 1:1 invariant violated');
   }
 
-  return null;
+  const link = data?.[0];
+  if (!link?.student_user_id) {
+    return null;
+  }
+
+  return {
+    student_user_id: link.student_user_id,
+    account_id: link.account_id ?? null,
+  };
 }
 
 
@@ -433,14 +474,148 @@ export async function getAllGuardianStudentLinks(guardianUserId: string): Promis
     .select('student_user_id, linked_at')
     .eq('guardian_profile_id', guardianUserId)
     .eq('status', 'active')
-    .order('linked_at', { ascending: true });
+    .order('linked_at', { ascending: true })
+    .limit(2);
 
   if (error) {
     console.error('[Account] Failed to get guardian student links:', error);
     return [];
   }
 
+  if ((data || []).length > 1) {
+    throw new Error('Guardian has multiple active student links; 1:1 invariant violated');
+  }
+
   return data || [];
+}
+
+export async function getLinkedGuardianForStudent(studentUserId: string): Promise<{ guardian_profile_id: string; account_id: string | null } | null> {
+  const { data, error } = await supabaseServer
+    .from('guardian_links')
+    .select('guardian_profile_id, account_id, linked_at')
+    .eq('student_user_id', studentUserId)
+    .eq('status', 'active')
+    .order('linked_at', { ascending: true })
+    .limit(2);
+
+  if (error) {
+    throw new Error(`Failed to get linked guardian: ${error.message}`);
+  }
+
+  if ((data || []).length > 1) {
+    throw new Error('Student has multiple active guardian links; 1:1 invariant violated');
+  }
+
+  const link = data?.[0];
+  if (!link?.guardian_profile_id) {
+    return null;
+  }
+
+  return {
+    guardian_profile_id: link.guardian_profile_id,
+    account_id: link.account_id ?? null,
+  };
+}
+
+function resolvePremiumSource(studentActive: boolean, guardianActive: boolean): PairPremiumSource {
+  if (studentActive && guardianActive) return 'both';
+  if (studentActive) return 'student';
+  if (guardianActive) return 'guardian';
+  return 'none';
+}
+
+export async function resolveLinkedPairPremiumAccessForStudent(studentUserId: string): Promise<LinkedPairPremiumAccess> {
+  const studentAccountId = await ensureAccountForUser(supabaseServer, studentUserId, 'student');
+  const studentEntitlement = studentAccountId ? await getEntitlement(studentAccountId) : null;
+
+  const guardianLink = await getLinkedGuardianForStudent(studentUserId);
+  const guardianUserId = guardianLink?.guardian_profile_id ?? null;
+  const guardianAccountId = guardianUserId ? await getAccountIdForUser(guardianUserId) : null;
+  const guardianEntitlement = guardianAccountId ? await getEntitlement(guardianAccountId) : null;
+
+  const studentActive = isEntitlementActive(studentEntitlement);
+  const guardianActive = isEntitlementActive(guardianEntitlement);
+  const hasActiveLink = !!guardianLink;
+  const hasPremiumAccess = studentActive || (hasActiveLink && guardianActive);
+
+  return {
+    role: 'student',
+    hasPremiumAccess,
+    hasActiveLink,
+    premiumSource: resolvePremiumSource(studentActive, guardianActive),
+    reason: hasPremiumAccess
+      ? studentActive
+        ? 'Student has active premium entitlement.'
+        : 'Linked guardian has active premium entitlement.'
+      : hasActiveLink
+        ? 'No active paid entitlement on linked student-guardian pair.'
+        : 'No active paid entitlement on student account.',
+    studentUserId,
+    guardianUserId,
+    studentAccountId,
+    guardianAccountId,
+    studentEntitlementStatus: studentEntitlement?.status ?? 'missing',
+    guardianEntitlementStatus: guardianEntitlement?.status ?? 'missing',
+    studentEntitlementExpired: isEntitlementExpired(studentEntitlement),
+    guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),
+  };
+}
+
+export async function resolveLinkedPairPremiumAccessForGuardian(
+  guardianUserId: string,
+  requestedStudentId?: string
+): Promise<LinkedPairPremiumAccess> {
+  const guardianAccountId = await getAccountIdForUser(guardianUserId);
+  const guardianEntitlement = guardianAccountId ? await getEntitlement(guardianAccountId) : null;
+
+  const link = requestedStudentId
+    ? await getGuardianLinkForStudent(guardianUserId, requestedStudentId)
+    : await getPrimaryGuardianLink(guardianUserId);
+
+  if (!link?.student_user_id) {
+    return {
+      role: 'guardian',
+      hasPremiumAccess: false,
+      hasActiveLink: false,
+      premiumSource: 'none',
+      reason: 'Guardian has no linked student.',
+      studentUserId: null,
+      guardianUserId,
+      studentAccountId: null,
+      guardianAccountId,
+      studentEntitlementStatus: 'missing',
+      guardianEntitlementStatus: guardianEntitlement?.status ?? 'missing',
+      studentEntitlementExpired: false,
+      guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),
+    };
+  }
+
+  const studentAccountId = link.account_id ?? await ensureAccountForUser(supabaseServer, link.student_user_id, 'student');
+  const studentEntitlement = studentAccountId ? await getEntitlement(studentAccountId) : null;
+
+  const studentActive = isEntitlementActive(studentEntitlement);
+  const guardianActive = isEntitlementActive(guardianEntitlement);
+  const hasPremiumAccess = studentActive || guardianActive;
+
+  return {
+    role: 'guardian',
+    hasPremiumAccess,
+    hasActiveLink: true,
+    premiumSource: resolvePremiumSource(studentActive, guardianActive),
+    reason: hasPremiumAccess
+      ? studentActive
+        ? 'Linked student has active premium entitlement.'
+        : 'Guardian has active premium entitlement.'
+      : 'No active paid entitlement on linked student-guardian pair.',
+    studentUserId: link.student_user_id,
+    guardianUserId,
+    studentAccountId,
+    guardianAccountId,
+    studentEntitlementStatus: studentEntitlement?.status ?? 'missing',
+    guardianEntitlementStatus: guardianEntitlement?.status ?? 'missing',
+    studentEntitlementExpired: isEntitlementExpired(studentEntitlement),
+    guardianEntitlementExpired: isEntitlementExpired(guardianEntitlement),
+  };
 }
 
 export function mapStripeStatusToEntitlement(stripeStatus: string): {
@@ -464,4 +639,6 @@ export function mapStripeStatusToEntitlement(stripeStatus: string): {
 }
 
 export { FREE_TIER_LIMITS };
+
+
 

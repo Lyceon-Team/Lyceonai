@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { checkUsageLimit, incrementUsage, FREE_TIER_LIMITS, getAccountIdForUser, ensureAccountForUser } from '../lib/account';
+import { checkUsageLimit, incrementUsage, FREE_TIER_LIMITS, getAccountIdForUser, ensureAccountForUser, resolveLinkedPairPremiumAccessForStudent, resolveLinkedPairPremiumAccessForGuardian } from '../lib/account';
 import { getSupabaseAdmin } from './supabase-auth';
 import { logger } from '../logger';
 
@@ -33,7 +33,16 @@ export function createUsageLimitMiddleware(limitType: 'practice' | 'ai_chat', op
         return next();
       }
 
-      const check = await checkUsageLimit(accountId, limitType);
+      let premiumOverride = false;
+      if (userRole === 'student') {
+        const premiumAccess = await resolveLinkedPairPremiumAccessForStudent(userId);
+        premiumOverride = premiumAccess.hasPremiumAccess;
+      } else if (userRole === 'guardian') {
+        const premiumAccess = await resolveLinkedPairPremiumAccessForGuardian(userId);
+        premiumOverride = premiumAccess.hasPremiumAccess;
+      }
+
+      const check = await checkUsageLimit(accountId, limitType, { premiumOverride });
 
       if (!check.allowed) {
         logger.warn('USAGE', 'limit_reached', `${limitType} limit reached`, {
@@ -108,3 +117,4 @@ export function checkAiChatLimit(opts?: UsageLimitOptions) {
 }
 
 export { FREE_TIER_LIMITS };
+

@@ -15,6 +15,10 @@ interface BillingStatus {
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
   isPaid: boolean;
+  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
+  hasLinkedStudent?: boolean;
+  linkRequiredForPremium?: boolean;
+  billingOwnerRole?: 'student' | 'guardian';
 }
 
 interface PriceOption {
@@ -86,7 +90,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
 
   const isPollingTimeout = pollingStartTime && (Date.now() - pollingStartTime) > POLLING_TIMEOUT_MS;
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && !isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && !isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF]">
         <div className="flex flex-col items-center gap-4">
@@ -98,7 +102,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  if (checkoutSuccess && !billingStatus?.effectiveAccess && isPollingTimeout) {
+  if (checkoutSuccess && !billingStatus?.effectiveAccess && !billingStatus?.linkRequiredForPremium && isPollingTimeout) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
         <Card className="w-full max-w-md">
@@ -213,6 +217,10 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
         </div>
       </div>
     );
+  }
+
+  if (billingStatus?.linkRequiredForPremium) {
+    return <>{children}</>;
   }
 
   if (billingStatus?.effectiveAccess) {
@@ -460,3 +468,4 @@ export function ManageSubscriptionButton() {
     </Button>
   );
 }
+

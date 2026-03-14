@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { Redirect } from 'wouter';
@@ -42,8 +42,15 @@ interface StudentSummary {
   };
 }
 
+interface GuardianBillingStatus {
+  isPaid: boolean;
+  effectiveAccess: boolean;
+  hasLinkedStudent?: boolean;
+  linkRequiredForPremium?: boolean;
+}
+
 export default function GuardianDashboard() {
-  const { user, isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
+  const { isGuardian, isAuthenticated, authLoading } = useSupabaseAuth();
   const queryClient = useQueryClient();
   const [linkCode, setLinkCode] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -77,6 +84,16 @@ export default function GuardianDashboard() {
     enabled: !!selectedStudentId,
   });
 
+  const { data: billingStatus } = useQuery({
+    queryKey: ['guardian-billing-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/billing/status', { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch billing status');
+      return res.json() as Promise<GuardianBillingStatus>;
+    },
+    enabled: isGuardian && isAuthenticated,
+    retry: 1,
+  });
   const linkMutation = useMutation({
     mutationFn: async (code: string) => {
       const res = await fetch('/api/guardian/link', {
@@ -171,6 +188,8 @@ export default function GuardianDashboard() {
   }
 
   const students = studentsData?.students || [];
+  const showPaidUnlinkedCta = !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
+  const showUnlinkedLinkFirstHint = !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
 
   return (
     <SubscriptionPaywall>
@@ -186,6 +205,27 @@ export default function GuardianDashboard() {
             </div>
             <ManageSubscriptionButton />
           </div>
+
+          {showPaidUnlinkedCta && (
+            <Alert className="border-[#0F2E48]/20 bg-[#0F2E48]/5">
+              <CreditCard className="h-4 w-4 text-[#0F2E48]" />
+              <AlertDescription className="text-[#0F2E48]">
+                <div className="font-medium">Your subscription is active.</div>
+                <div className="text-sm text-[#0F2E48]/80">
+                  Link your student to unlock guardian progress, KPI, and calendar views.
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {showUnlinkedLinkFirstHint && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-800">
+                Link your student first, then choose a subscription to unlock premium guardian views.
+              </AlertDescription>
+            </Alert>
+          )}
 
         <Card className="bg-white border-[#0F2E48]/10">
           <CardHeader>
@@ -437,3 +477,4 @@ export default function GuardianDashboard() {
     </SubscriptionPaywall>
   );
 }
+
