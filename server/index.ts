@@ -629,7 +629,10 @@ if (isMainModule) {
     console.log(`  GET    /api/questions/random`);
     console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
-    console.log(`  GET    /api/practice/next`);
+    console.log(`  POST   /api/practice/sessions`);
+    console.log(`  GET    /api/practice/sessions/:sessionId/next`);
+    console.log(`  GET    /api/practice/sessions/:sessionId/state`);
+    console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);

@@ -1,20 +1,19 @@
-import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./supabase-admin";
+import {
+  buildCanonicalId,
+  generateCanonicalIdSuffix,
+  isValidCanonicalId as isValidCanonicalIdShared,
+  normalizeSectionCode,
+} from "../../../../shared/question-bank-contract";
 
 export type TestCode = "SAT";
 export type SectionCode = "M" | "RW";
 export type SourceCode = "1" | "2";
 
 const UNIQUE_LENGTH = 6;
-const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 export function generateUniqueToken(length: number = UNIQUE_LENGTH): string {
-  const bytes = randomBytes(length);
-  let result = "";
-  for (let i = 0; i < length; i++) {
-    result += CHARSET[bytes[i] % CHARSET.length];
-  }
-  return result;
+  return generateCanonicalIdSuffix(length);
 }
 
 export function generateCanonicalId(
@@ -22,13 +21,14 @@ export function generateCanonicalId(
   section: SectionCode,
   source: SourceCode
 ): string {
-  const unique = generateUniqueToken();
-  return `${test}${section}${source}${unique}`;
+  if (test !== "SAT") {
+    throw new Error(`Unsupported test code: ${test}`);
+  }
+  return buildCanonicalId(section, Number(source) as 1 | 2);
 }
 
 export function isValidCanonicalId(id: string): boolean {
-  const pattern = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
-  return pattern.test(id);
+  return isValidCanonicalIdShared(id);
 }
 
 export function parseCanonicalId(id: string): {
@@ -54,19 +54,8 @@ export function parseCanonicalId(id: string): {
 }
 
 export function mapSectionToCode(section: string): SectionCode {
-  const normalized = section.toLowerCase();
-  if (normalized === "math") return "M";
-  if (normalized === "rw") return "RW";
-  if (
-    normalized === "reading" ||
-    normalized === "writing" ||
-    normalized === "reading_writing" ||
-    normalized === "reading and writing" ||
-    normalized === "reading & writing"
-  ) {
-    return "RW";
-  }
-  return "RW";
+  const normalized = normalizeSectionCode(section);
+  return normalized ?? "RW";
 }
 
 export interface InsertWithRetryOptions<T> {

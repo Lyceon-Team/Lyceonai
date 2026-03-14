@@ -1,13 +1,13 @@
 /**
  * Canonical SAT question types used by shared runtime helpers.
- * Canonical ID generation is delegated to apps/api/src/lib/canonicalId.
+ * Canonical ID generation is delegated to shared/question-bank-contract.
  */
 
 import {
-  generateCanonicalId as generateSatCanonicalId,
-  mapSectionToCode as mapCanonicalSectionToCode,
+  buildCanonicalId,
   isValidCanonicalId,
-} from "../../apps/api/src/lib/canonicalId";
+  normalizeSectionCode,
+} from "../../shared/question-bank-contract";
 
 export interface QuestionOption {
   key: string;
@@ -63,29 +63,31 @@ export function generateCanonicalId(params: CanonicalIdParams): string {
   }
 
   const normalizedSection = sectionToCode(params.sectionCode);
-  const source = String(params.sourceType) as "1" | "2";
 
-  if (source !== "1" && source !== "2") {
+  if (params.sourceType !== 1 && params.sourceType !== 2) {
     throw new Error(`Invalid source type for canonical ID: ${params.sourceType}`);
   }
 
   if (params.uniqueSuffix) {
-    const candidate = `SAT${normalizedSection}${source}${params.uniqueSuffix.toUpperCase()}`;
+    const candidate = `SAT${normalizedSection}${params.sourceType}${params.uniqueSuffix.toUpperCase()}`;
     if (!isValidCanonicalId(candidate)) {
       throw new Error(`Invalid canonical ID suffix: ${params.uniqueSuffix}`);
     }
     return candidate;
   }
 
-  return generateSatCanonicalId("SAT", normalizedSection, source);
+  return buildCanonicalId(normalizedSection, params.sourceType);
 }
 
 /**
  * Map section string to canonical section code.
  */
 export function sectionToCode(section: string | null | undefined): "M" | "RW" {
-  if (!section) return "RW";
-  return mapCanonicalSectionToCode(section);
+  const normalized = normalizeSectionCode(section ?? null);
+  if (!normalized) {
+    throw new Error(`Invalid section for canonical ID: ${section ?? "null"}`);
+  }
+  return normalized;
 }
 
 /**

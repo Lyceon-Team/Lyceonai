@@ -26,13 +26,13 @@ interface Question {
  */
 function deriveCanonicalIdFromStem(stem: string | undefined): string | null {
   if (!stem) return null;
-  
+
   const match = stem.match(/Question\s+ID\s*[:\-]?\s*([a-fA-F0-9]{6,10})/i);
   if (match && match[1]) {
-    const hexId = match[1].toUpperCase();
-    return `SATM1-${hexId}`;
+    const suffix = match[1].toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(6, "0");
+    return `SATM1${suffix}`;
   }
-  
+
   return null;
 }
 
@@ -164,3 +164,5 @@ main().catch(err => {
   console.error('❌ Backfill failed:', err.message);
   process.exit(1);
 });
+
+

@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type PracticeSectionParam = "math" | "reading_writing" | "random";
@@ -12,10 +13,12 @@ export type PracticeQuestion = {
 
 export type PracticeNextResponse = {
   sessionId?: string;
+  sessionItemId?: string;
+  ordinal?: number;
   question: PracticeQuestion | null;
   totalQuestions?: number;
   currentIndex?: number;
-  // If your backend now returns stats, keep this optional to avoid breaking.
+  state?: "created" | "active" | "completed" | "abandoned";
   stats?: {
     correct?: number;
     incorrect?: number;
@@ -29,7 +32,7 @@ export type PracticeAnswerResponse = {
   isCorrect: boolean;
   correctAnswerKey?: string | null;
   explanation?: string | null;
-  // If your backend returns stats here too, keep optional.
+  state?: "active" | "completed" | "abandoned";
   stats?: {
     correct?: number;
     incorrect?: number;
@@ -59,6 +62,7 @@ function mergeStats(
 
 export function useCanonicalPractice(section: PracticeSectionParam) {
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionItemId, setSessionItemId] = useState<string | null>(null);
   const [clientInstanceId] = useState(() => crypto.randomUUID());
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
@@ -106,27 +110,65 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     questionStartMs.current = nowMs();
   }, []);
 
+  const ensureSession = useCallback(async () => {
+    if (sessionId) return sessionId;
+
+    const startRes = await fetch("/api/practice/sessions", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        section,
+        mode: "balanced",
+        client_instance_id: clientInstanceId,
+      }),
+    });
+
+    if (!startRes.ok) {
+      throw new Error(`Failed to start practice session (${startRes.status})`);
+    }
+
+    const started = (await startRes.json()) as { sessionId?: string };
+    if (!started.sessionId) {
+      throw new Error("Server did not return a sessionId");
+    }
+
+    setSessionId(started.sessionId);
+    return started.sessionId;
+  }, [clientInstanceId, section, sessionId]);
+
   const fetchNextQuestion = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+
     try {
-      const res = await fetch(`/api/practice/next?section=${encodeURIComponent(section)}&client_instance_id=${encodeURIComponent(clientInstanceId)}`, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      });
+      const effectiveSessionId = await ensureSession();
+      const nextRes = await fetch(
+        `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/next?client_instance_id=${encodeURIComponent(clientInstanceId)}`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        }
+      );
 
-      if (!res.ok) throw new Error(`Failed to load next question (${res.status})`);
+      if (!nextRes.ok) {
+        throw new Error(`Failed to load next question (${nextRes.status})`);
+      }
 
-      const data = (await res.json()) as PracticeNextResponse;
+      const data = (await nextRes.json()) as PracticeNextResponse;
 
       if (data.sessionId) setSessionId(data.sessionId);
+      setSessionItemId(data.sessionItemId ?? null);
       setQuestion(data.question ?? null);
-      if (data.sessionId) setSessionId(data.sessionId);
+
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
+      if (typeof data.ordinal === "number") setCurrentIndex(Math.max(0, data.ordinal - 1));
 
-      // If backend returns stats (rehydration), adopt it.
       if (data.stats) {
         setScore((prev) => mergeStats(prev, data.stats));
       }
@@ -137,11 +179,12 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       const message = err instanceof Error ? err.message : "Failed to load question";
       setError(message);
       setQuestion(null);
+      setSessionItemId(null);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [resetPerQuestionState, section]);
+  }, [clientInstanceId, ensureSession, resetPerQuestionState]);
 
   const submitAnswer = useCallback(
     async (opts: { skipped: boolean }) => {
@@ -149,11 +192,20 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
       setIsSubmitting(true);
       setError(null);
+
       try {
+        const effectiveSessionId = await ensureSession();
+        const effectiveSessionItemId = sessionItemId;
+
+        if (!effectiveSessionItemId) {
+          throw new Error("No active session item. Please load the next question.");
+        }
+
         const elapsedMs = Math.max(0, nowMs() - questionStartMs.current);
 
         const payload = {
-          sessionId,
+          sessionId: effectiveSessionId,
+          sessionItemId: effectiveSessionItemId,
           questionId: question.id,
           selectedAnswer: question.type === "mc" ? (opts.skipped ? null : selectedAnswer) : null,
           freeResponseAnswer: question.type === "fr" ? (opts.skipped ? "" : freeResponseAnswer) : "",
@@ -170,15 +222,15 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           body: JSON.stringify(payload),
         });
 
-        if (!res.ok) throw new Error(`Failed to submit answer (${res.status})`);
+        if (!res.ok) {
+          throw new Error(`Failed to submit answer (${res.status})`);
+        }
 
         const data = (await res.json()) as PracticeAnswerResponse;
 
-        // Prefer server stats if available (deterministic session rehydration).
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));
         } else {
-          // Fallback: client increments if server doesn’t provide stats.
           setScore((prev) => {
             const next = { ...prev };
             next.total = prev.total + 1;
@@ -200,7 +252,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           });
         }
 
-        // Skip immediately advances.
         if (opts.skipped) {
           await fetchNextQuestion();
           return;
@@ -219,7 +270,16 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setIsSubmitting(false);
       }
     },
-    [fetchNextQuestion, freeResponseAnswer, question, selectedAnswer, sessionId]
+    [
+      clientInstanceId,
+      ensureSession,
+      fetchNextQuestion,
+      freeResponseAnswer,
+      idempotencyKey,
+      question,
+      selectedAnswer,
+      sessionItemId,
+    ]
   );
 
   const nextQuestion = useCallback(async () => {
