@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { getWeakestSkills } from "./studentMastery";
+import { isValidCanonicalId } from "../../../../shared/question-bank-contract";
 
 export type SectionFilter = "math" | "rw";
 export type SelectionMode = "balanced" | "skill" | "cluster";
@@ -171,6 +172,13 @@ function parseOptions(raw: unknown): Array<{ key: string; text: string }> {
   }) as Array<{ key: string; text: string }>;
 }
 
+function getCanonicalIdOrNull(q: any): string | null {
+  const value = typeof q?.canonical_id === 'string' ? q.canonical_id.trim() : '';
+  if (!value || !isValidCanonicalId(value)) {
+    return null;
+  }
+  return value;
+}
 async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
   const supabase = getSupabaseAdmin();
   const limit = params.limit || 60;
@@ -226,12 +234,12 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
 
   return (data || [])
     .filter((q: any) => {
-      const cid = q.canonical_id || q.id;
-      return !excludeSet.has(cid);
+      const cid = getCanonicalIdOrNull(q);
+      return !!cid && !excludeSet.has(cid);
     })
     .map((q: any) => ({
       ...q,
-      canonical_id: q.canonical_id || q.id,
+      canonical_id: getCanonicalIdOrNull(q)!,
       options: parseOptions(q.options),
     }))
     .slice(0, limit);
@@ -353,9 +361,13 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
 }
 
 function mapToStudentQuestion(q: any): any {
+  const canonicalId = getCanonicalIdOrNull(q);
+  if (!canonicalId) {
+    throw new Error("question_missing_canonical_id");
+  }
   return {
     id: q.id,
-    canonicalId: q.canonical_id || q.id,
+    canonicalId,
     stem: q.stem,
     section: q.section,
     sectionCode: q.section_code,
@@ -373,3 +385,5 @@ function mapToStudentQuestion(q: any): any {
     answerText: q.answer_text ?? null,
   };
 }
+
+

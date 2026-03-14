@@ -533,6 +533,13 @@ describe('Full-Length Exam Service', () => {
         { id: 'module-math-2', section: 'math', module_index: 2 },
       ];
 
+      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
+        'module-rw-1': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-1-${idx + 1}` })),
+        'module-rw-2': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-2-${idx + 1}` })),
+        'module-math-1': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-1-${idx + 1}` })),
+        'module-math-2': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-2-${idx + 1}` })),
+      };
+
       const responsesByModule: Record<string, Array<{ question_id: string; is_correct: boolean }>> = {
         'module-rw-1': [{ question_id: 'q-rw-1', is_correct: true }],
         'module-rw-2': [{ question_id: 'q-rw-2', is_correct: false }],
@@ -540,18 +547,23 @@ describe('Full-Length Exam Service', () => {
         'module-math-2': [{ question_id: 'q-math-2', is_correct: true }],
       };
 
-      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
-        'module-rw-1': [{ id: 'mq-rw-1' }],
-        'module-rw-2': [{ id: 'mq-rw-2' }],
-        'module-math-1': [{ id: 'mq-math-1' }],
-        'module-math-2': [{ id: 'mq-math-2' }],
-      };
-
       const moduleQuestionsFlat = [
-        { module_id: 'module-rw-1', question_id: 'q-rw-1' },
-        { module_id: 'module-rw-2', question_id: 'q-rw-2' },
-        { module_id: 'module-math-1', question_id: 'q-math-1' },
-        { module_id: 'module-math-2', question_id: 'q-math-2' },
+        ...Array.from({ length: 27 }, (_, idx) => ({
+          module_id: 'module-rw-1',
+          question_id: idx === 0 ? 'q-rw-1' : `q-rw-1-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 27 }, (_, idx) => ({
+          module_id: 'module-rw-2',
+          question_id: idx === 0 ? 'q-rw-2' : `q-rw-2-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 22 }, (_, idx) => ({
+          module_id: 'module-math-1',
+          question_id: idx === 0 ? 'q-math-1' : `q-math-1-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 22 }, (_, idx) => ({
+          module_id: 'module-math-2',
+          question_id: idx === 0 ? 'q-math-2' : `q-math-2-extra-${idx + 1}`,
+        })),
       ];
 
       const responsesBySession = Object.entries(responsesByModule).flatMap(([moduleId, rows]) =>
@@ -671,8 +683,8 @@ describe('Full-Length Exam Service', () => {
       expect(result2.sessionId).toBe('session-123');
       expect(result1.completedAt.getTime()).toBe(completedAt.getTime());
       expect(result2.completedAt.getTime()).toBe(completedAt.getTime());
-      expect(result1.rawScore.total.total).toBe(4);
-      expect(result2.rawScore.total.total).toBe(4);
+      expect(result1.rawScore.total.total).toBe(98);
+      expect(result2.rawScore.total.total).toBe(98);
       expect(rollupFetchCount).toBe(0);
     });
 
@@ -717,6 +729,13 @@ describe('Full-Length Exam Service', () => {
         { id: 'module-math-1', section: 'math', module_index: 1 },
         { id: 'module-math-2', section: 'math', module_index: 2 },
       ];
+
+      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
+        'module-rw-1': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-1-${idx + 1}` })),
+        'module-rw-2': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-2-${idx + 1}` })),
+        'module-math-1': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-1-${idx + 1}` })),
+        'module-math-2': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-2-${idx + 1}` })),
+      };
 
       const mockRollup = {
         id: 'rollup-789',
@@ -828,6 +847,21 @@ describe('Full-Length Exam Service', () => {
                   ],
                   error: null,
                 })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn((field: string, value: string) => {
+                  if (field === 'module_id') {
+                    return Promise.resolve({
+                      data: moduleQuestionsByModule[value] || [],
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: [], error: null });
+                }),
+                in: vi.fn(async () => ({ data: [], error: null })),
               })),
             };
           } else if (table === 'full_length_exam_score_rollups') {

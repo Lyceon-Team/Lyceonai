@@ -137,6 +137,33 @@ describe("Canonical Content Publish Contract", () => {
     expect(mock.getVersionRows()).toHaveLength(0);
   });
 
+  it("publishes via service and writes canonical published version snapshot", async () => {
+    const mock = createMockSupabase({
+      id: "question-publish-1",
+      status: "qa",
+      version: 1,
+      canonical_id: null,
+      section: "Math",
+      section_code: "M",
+      source_type: 1,
+      question_type: "multiple_choice",
+      stem: "What is 3 + 2?",
+      options: buildValidOptions(),
+      correct_answer: "C",
+    });
+
+    const result = await publishQuestion({
+      questionId: "question-publish-1",
+      supabase: mock.supabase,
+    });
+
+    expect(result.status).toBe("published");
+    expect(result.canonicalId).toMatch(/^SAT(?:M|RW)[12][A-Z0-9]{6}$/);
+    expect(mock.getQuestion().status).toBe("published");
+    expect(mock.getQuestion().canonical_id).toBe(result.canonicalId);
+    expect(mock.getVersionRows()).toHaveLength(1);
+    expect(mock.getVersionRows()[0].lifecycle_status).toBe("published");
+  });
   it("requires published edits to be versioned and moves lifecycle back to qa", async () => {
     const mock = createMockSupabase({
       id: "question-3",
@@ -211,3 +238,4 @@ describe("Canonical Content Publish Contract", () => {
     expect(res.status).toBe(404);
   });
 });
+

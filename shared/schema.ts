@@ -140,7 +140,7 @@ export const questions = pgTable("questions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   documentId: varchar("document_id").references(() => documents.id), // Made optional for internal AI-generated questions
   questionNumber: integer("question_number"), // Optional for internal AI-generated questions
-  internalId: text("internal_id").unique(), // Internal question ID for AI-generated questions
+  internalId: text("internal_id").unique(), // Legacy import metadata (non-runtime question identity)
   section: text("section").notNull(), // Math, Reading, Writing, Reading and Writing
   stem: text("stem").notNull(),
   
@@ -181,7 +181,7 @@ export const questions = pgTable("questions", {
     originalText?: string;
   }>(), // Detailed parsing metadata for review
   reviewedAt: timestamp("reviewed_at"), // When question was reviewed
-  reviewedBy: varchar("reviewed_by").references(() => users.id), // Admin who reviewed
+  reviewedBy: varchar("reviewed_by").references(() => users.id), // Legacy reviewer link to public.users for historical import rows
   
   // Legacy import provenance fields retained for historical data compatibility (non-runtime).
   questionHash: text("question_hash").unique(), // Normalized hash for deduplication
@@ -191,7 +191,7 @@ export const questions = pgTable("questions", {
   ingestionRunId: varchar("ingestion_run_id"), // Legacy compatibility link to ingestion_runs historical records
   
   // Legacy canonical import metadata retained for historical rows (non-runtime).
-  canonicalId: text("canonical_id").unique(), // Stable canonical ID like SATM1****** or ACTR1******
+  canonicalId: text("canonical_id").unique(), // Canonical runtime identity: SAT{M|RW}{1|2}{A-Z0-9}{6}
   testCode: text("test_code"), // e.g. "SAT", "ACT", "AP"
   sectionCode: text("section_code"), // e.g. "M", "RW"
   sourceType: integer("source_type"), // 1 = parsed PDF, 2 = AI generated
@@ -204,7 +204,7 @@ export const questionVersions = pgTable("question_versions", {
   questionId: text("question_id").notNull(),
   canonicalId: text("canonical_id").notNull(),
   versionNumber: integer("version_number").notNull(),
-  lifecycleStatus: text("lifecycle_status").notNull(), // 'qa' | 'published'
+  lifecycleStatus: text("lifecycle_status").notNull(), // Version snapshot lifecycle: 'qa' | 'published' (draft->qa->published on questions table)
   snapshot: jsonb("snapshot").notNull(),
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -388,6 +388,11 @@ export const fullLengthExamSessions = pgTable("full_length_exam_sessions", {
   status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'completed', 'abandoned'
   currentSection: text("current_section"), // 'rw' | 'math' | 'break' | null
   currentModule: integer("current_module"), // 1 | 2 | null
+  breakStartedAt: timestamp("break_started_at"),
+
+  // Canonical exam-form + multi-tab ownership context
+  testFormId: text("test_form_id").notNull().default("00000000-0000-4000-8000-000000000001"),
+  clientInstanceId: text("client_instance_id"),
   
   // Deterministic selection
   seed: text("seed").notNull(), // For reproducible question selection
@@ -594,7 +599,7 @@ export const choices = pgTable("choices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Media assets (figures, tables, diagrams)
+// Legacy import-only media extraction metadata (non-runtime question-bank feature)
 export const media = pgTable("media", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }),
@@ -765,10 +770,6 @@ export const insertChoiceSchema = createInsertSchema(choices).omit({
   createdAt: true,
 });
 
-export const insertMediaSchema = createInsertSchema(media).omit({
-  id: true,
-  createdAt: true,
-});
 
 export const insertValidationIssueSchema = createInsertSchema(validationIssues).omit({
   id: true,
@@ -854,8 +855,6 @@ export type DocumentPage = typeof documentPages.$inferSelect;
 export type InsertChoice = z.infer<typeof insertChoiceSchema>;
 export type Choice = typeof choices.$inferSelect;
 
-export type InsertMedia = z.infer<typeof insertMediaSchema>;
-export type Media = typeof media.$inferSelect;
 
 export type InsertValidationIssue = z.infer<typeof insertValidationIssueSchema>;
 export type ValidationIssue = typeof validationIssues.$inferSelect;
@@ -973,5 +972,6 @@ export interface StrengthsWeaknesses {
   weaknesses: string[];
   recommendations: string[];
 }
+
 
 
