@@ -1,5 +1,4 @@
-import { ensureAccountForUser, getEntitlement } from "../lib/account";
-import { getSupabaseAdmin } from "../middleware/supabase-auth";
+import { getEntitlement, resolveLinkedPairPremiumAccessForStudent } from "../lib/account";
 
 export interface KpiEntitlementAccess {
   hasPaidAccess: boolean;
@@ -21,40 +20,33 @@ function baseFree(reason: string): KpiEntitlementAccess {
   };
 }
 
-function isAccessActive(plan: "free" | "paid", status: string, currentPeriodEnd: string | null): boolean {
-  if (plan !== "paid") return false;
-  if (!(status === "active" || status === "trialing")) return false;
-  if (!currentPeriodEnd) return true;
-  return new Date(currentPeriodEnd) > new Date();
-}
-
 export async function resolvePaidKpiAccessForStudent(studentUserId: string): Promise<KpiEntitlementAccess> {
   try {
-    const supabaseAdmin = getSupabaseAdmin();
-    const accountId = await ensureAccountForUser(supabaseAdmin, studentUserId, "student");
-    if (!accountId) {
-      return baseFree("No student account is linked to this user.");
+    const access = await resolveLinkedPairPremiumAccessForStudent(studentUserId);
+
+    let status: KpiEntitlementAccess['status'] = 'inactive';
+    let currentPeriodEnd: string | null = null;
+    let sourceAccountId: string | null = access.studentAccountId;
+
+    if (access.premiumSource === 'guardian') {
+      sourceAccountId = access.guardianAccountId;
     }
 
-    const entitlement = await getEntitlement(accountId);
-    if (!entitlement) {
-      return {
-        ...baseFree("No entitlement record found for student account."),
-        accountId,
-      };
+    if (sourceAccountId) {
+      const sourceEntitlement = await getEntitlement(sourceAccountId);
+      if (sourceEntitlement) {
+        status = sourceEntitlement.status;
+        currentPeriodEnd = sourceEntitlement.current_period_end;
+      }
     }
-
-    const hasPaidAccess = isAccessActive(entitlement.plan, entitlement.status, entitlement.current_period_end);
 
     return {
-      hasPaidAccess,
-      accountId,
-      plan: entitlement.plan,
-      status: entitlement.status,
-      currentPeriodEnd: entitlement.current_period_end,
-      reason: hasPaidAccess
-        ? "Student has active paid entitlement."
-        : "Student entitlement is free/inactive/expired for premium KPI surfaces.",
+      hasPaidAccess: access.hasPremiumAccess,
+      accountId: sourceAccountId,
+      plan: access.hasPremiumAccess ? 'paid' : 'free',
+      status: access.hasPremiumAccess ? status : 'inactive',
+      currentPeriodEnd: access.hasPremiumAccess ? currentPeriodEnd : null,
+      reason: access.reason,
     };
   } catch (err: any) {
     return baseFree(err?.message || "Failed to resolve entitlement state.");

@@ -1,5 +1,5 @@
 import { Request, Response, Router } from 'express';
-import { requireSupabaseAuth } from '../middleware/supabase-auth';
+import { getSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
 import { requireGuardianEntitlement } from '../middleware/guardian-entitlement';
 import { requireGuardianRole } from '../middleware/guardian-role';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
@@ -7,7 +7,7 @@ import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
 import { DateTime } from 'luxon';
 import { csrfGuard } from '../middleware/csrf';
-import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks } from '../lib/account';
+import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks, ensureAccountForUser } from '../lib/account';
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
@@ -121,24 +121,26 @@ router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection,
       return res.json({ ok: true, message: 'Already linked', student: { id: student.id, display_name: student.display_name }, requestId });
     }
 
-    // Check if student is linked to another guardian via guardian_links
-    const { data: existingLinks } = await supabaseServer
-      .from('guardian_links')
-      .select('guardian_profile_id')
-      .eq('student_user_id', student.id)
-      .eq('status', 'active')
-      .limit(1);
 
-    if (existingLinks && existingLinks.length > 0) {
-      await auditLog(guardianId, 'link_attempt', 'failure', undefined, 'already_linked_other', trimmedCode.substring(0, 2), requestId);
-      logger.warn('GUARDIAN', 'link_attempt_blocked', 'Student already linked to another guardian', { guardianId, requestId });
-      return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
-    }
-
-    // CANONICAL: Create link in guardian_links
+    // CANONICAL: Create link in guardian_links with resolved student account_id
     try {
-      await createGuardianLink(guardianId, student.id);
+      const studentAccountId = await ensureAccountForUser(getSupabaseAdmin(), student.id, 'student');
+      await createGuardianLink(guardianId, student.id, studentAccountId);
     } catch (linkError: any) {
+      if (linkError?.code === 'GUARDIAN_ALREADY_LINKED') {
+        await auditLog(guardianId, 'link_attempt', 'failure', student.id, 'guardian_already_linked_other', trimmedCode.substring(0, 2), requestId);
+        return res.status(409).json({
+          error: 'Guardian already linked to another student. Unlink before linking a new student.',
+          code: 'GUARDIAN_ALREADY_LINKED',
+          requestId,
+        });
+      }
+
+      if (linkError?.code === 'STUDENT_ALREADY_LINKED') {
+        await auditLog(guardianId, 'link_attempt', 'failure', student.id, 'already_linked_other', trimmedCode.substring(0, 2), requestId);
+        return res.status(404).json({ error: 'Invalid or unavailable student code', requestId });
+      }
+
       await auditLog(guardianId, 'link_attempt', 'failure', student.id, 'update_failed', undefined, requestId);
       logger.error('GUARDIAN', 'link_student', 'Failed to link student', { error: linkError.message, requestId });
       return res.status(500).json({ error: 'Failed to link student', requestId });

@@ -40,11 +40,11 @@ Review is locked until session completion.
 ## Guardian Visibility Rule
 Guardian exam report visibility requires BOTH:
 1. Active guardian link to the student (`guardian_links.status = 'active'`)
-2. Active student entitlement (`plan='paid'` and status `active|trialing`, not period-expired)
+2. Active premium on the linked pair (student entitlement or guardian entitlement is active/trialing and unexpired)
 
 Enforcement path:
 - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report`
-- `requireGuardianEntitlement` checks linked student + student entitlement
+- `requireGuardianEntitlement` resolves linked-pair access via `resolveLinkedPairPremiumAccessForGuardian(...)`
 - Route performs explicit linked-student authorization check and hard-denies unauthorized access (`403`)
 
 ## Contract Outputs
@@ -58,4 +58,3 @@ Full-test result payload supports:
 1. Persist domain/skill diagnostics in a dedicated rollup table/JSON column to avoid recompute on read and improve auditability.
 2. Add an explicit DB schema migration for full-length score rollup shape in `shared/schema.ts` to align typed schema with runtime table usage.
 3. Add end-to-end database-backed tests for guardian report retrieval against real RLS policies.
-

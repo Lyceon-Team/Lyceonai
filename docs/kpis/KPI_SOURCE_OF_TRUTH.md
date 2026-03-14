@@ -33,7 +33,7 @@
   - `historical_trends`: `GET /api/progress/kpis` (`recency` is removed for free tier).
   - `full_test_analytics`: `GET /api/full-length/sessions/:sessionId/report`.
 - Entitlement resolver: `server/services/kpi-access.ts`.
-- Guardians inherit only linked student entitlement via `requireGuardianEntitlement`.
+- Guardians require active link + linked-pair premium via `requireGuardianEntitlement` (student data remains student-derived).
 - Admin role bypasses entitlement gating.
 
 ## Measurement Separation Contract
@@ -80,4 +80,6 @@ No LLM-generated KPI explanations are used in runtime responses.
 - `server/routes/full-length-exam-routes.ts`
 - `server/routes/admin-stats-routes.ts`
 - `apps/api/src/routes/mastery.ts`
+
+
 

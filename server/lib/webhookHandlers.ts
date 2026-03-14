@@ -122,13 +122,13 @@ async function tryInsertWebhookEventGate(eventId: string, eventType: string): Pr
     if (error.code === "23505") {
       return false; // Duplicate event, already processed
     }
-    logger.warn('WEBHOOK', 'idempotency_gate_insert', 'Failed to write idempotency gate; processing event anyway', {
+    logger.error('WEBHOOK', 'idempotency_gate_insert', 'Failed to write idempotency gate; rejecting webhook event', {
       eventId,
       eventType,
       error: error.message,
       code: error.code,
     });
-    return true;
+    throw new Error(`Failed to write webhook idempotency gate: code=${error.code ?? 'unknown'} message=${error.message}`);
   }
 
   return true;
@@ -242,3 +242,4 @@ export class WebhookHandlers {
     return { received: true, eventId: event.id, status: 'processed' };
   }
 }
+
