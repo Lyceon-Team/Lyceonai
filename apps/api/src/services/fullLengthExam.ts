@@ -1,8 +1,9 @@
 /**
  * Full-Length SAT Exam Service
  * 
- * Implements Bluebook-style adaptive testing with:
- * - Deterministic question selection (seeded)
+ * Implements server-authoritative SAT full test runtime with:
+ * - Published form lifecycle enforcement
+ * - Fixed-order question serving from canonical form items
  * - Server-authoritative timing
  * - Adaptive Module 2 difficulty based on Module 1 performance
  * - Idempotent answer submission
@@ -80,9 +81,18 @@ export const ADAPTIVE_THRESHOLDS = {
   },
 } as const;
 
-export const CANONICAL_FULL_TEST_FORM_ID = "00000000-0000-4000-8000-000000000001";
 const ACTIVE_SESSION_STATUSES = ["not_started", "in_progress", "break"] as const;
 const CLIENT_INSTANCE_CONFLICT_MESSAGE = "Session client instance conflict";
+const FORM_NOT_FOUND_MESSAGE = "Test form not found";
+const FORM_NOT_PUBLISHED_MESSAGE = "Test form is not published";
+const FORM_ITEMS_MISSING_MESSAGE = "Test form has no items";
+const FORM_STRUCTURE_INCOMPLETE_MESSAGE = "Test form is structurally incomplete";
+const FORM_DUPLICATE_ORDINAL_MESSAGE = "Test form has duplicate ordinals";
+const FORM_INVALID_ORDINAL_MESSAGE = "Test form has invalid ordinal sequence";
+const FORM_UNKNOWN_QUESTION_MESSAGE = "Test form references unknown canonical question";
+const FORM_UNPUBLISHED_QUESTION_MESSAGE = "Test form references unpublished question";
+const FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE = "Test form references unsupported question type";
+const FORM_SECTION_MISMATCH_MESSAGE = "Test form question section mismatch";
 
 // ============================================================================
 // TYPES
@@ -96,6 +106,26 @@ export type SessionStatus = "not_started" | "in_progress" | "completed" | "aband
 export type ModuleStatus = "not_started" | "in_progress" | "submitted" | "expired";
 
 type QuestionOption = { key: string; text: string };
+
+type TestFormItemRecord = {
+  section: string;
+  module_index: number;
+  ordinal: number;
+  question_id: string;
+};
+
+type ResolvedFormItem = {
+  section: SectionType;
+  moduleIndex: ModuleIndex;
+  ordinal: number;
+  canonicalQuestionId: string;
+  questionId: string;
+};
+
+type ResolvedPublishedForm = {
+  formId: string;
+  itemsByModule: Map<string, ResolvedFormItem[]>;
+};
 
 export interface CreateSessionParams {
   userId: string;
@@ -225,35 +255,10 @@ export interface CompleteExamResult {
 // HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * Generate a deterministic seed for the session
- * Format: userId_timestamp
- */
 function generateSeed(userId: string): string {
   return `${userId}_${Date.now()}`;
 }
 
-/**
- * Simple hash function for deterministic selection
- */
-function simpleHash(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
-}
-
-/**
- * Deterministically pick an item from an array using a seed
- */
-function deterministicPickFromArray<T>(items: T[], seed: string): T {
-  if (items.length === 0) throw new Error("Cannot pick from empty array");
-  const idx = simpleHash(seed) % items.length;
-  return items[idx];
-}
 
 /**
  * Determine Module 2 difficulty based on Module 1 performance
@@ -312,14 +317,232 @@ function normalizeClientInstanceId(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function ensureSupportedTestFormId(testFormId?: string): string {
-  if (!testFormId) {
-    return CANONICAL_FULL_TEST_FORM_ID;
+function toSectionType(value: unknown): SectionType | null {
+  if (value === "rw" || value === "math") {
+    return value;
   }
-  if (testFormId !== CANONICAL_FULL_TEST_FORM_ID) {
-    throw new Error("Unsupported test form");
+  if (value === "RW") return "rw";
+  if (value === "M" || value === "MATH") return "math";
+
+  const normalized = normalizeCanonicalSectionCode(value);
+  if (!normalized) {
+    return null;
   }
-  return testFormId;
+  return normalized === "RW" ? "rw" : "math";
+}
+
+function moduleKey(section: SectionType, moduleIndex: ModuleIndex): string {
+  return `${section}:${moduleIndex}`;
+}
+
+function requireModuleItems(
+  itemsByModule: Map<string, ResolvedFormItem[]>,
+  section: SectionType,
+  moduleIndex: ModuleIndex
+): ResolvedFormItem[] {
+  const key = moduleKey(section, moduleIndex);
+  const items = itemsByModule.get(key);
+  if (!items || items.length === 0) {
+    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing items for ${section} module ${moduleIndex}`);
+  }
+  return items;
+}
+
+async function resolvePublishedFormForSession(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  requestedFormId?: string
+): Promise<ResolvedPublishedForm> {
+  let formId = requestedFormId ?? null;
+
+  if (formId) {
+    const { data: form, error: formError } = await supabase
+      .from("test_forms")
+      .select("id, status, published_at, created_at")
+      .eq("id", formId)
+      .maybeSingle();
+
+    if (formError) {
+      throw new Error(`Failed to load test form: ${formError.message}`);
+    }
+
+    if (!form) {
+      throw new Error(FORM_NOT_FOUND_MESSAGE);
+    }
+
+    if (form.status !== "published") {
+      throw new Error(FORM_NOT_PUBLISHED_MESSAGE);
+    }
+  } else {
+    const { data: latestForm, error: latestFormError } = await supabase
+      .from("test_forms")
+      .select("id, status, published_at, created_at")
+      .eq("status", "published")
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestFormError) {
+      throw new Error(`Failed to load published test form: ${latestFormError.message}`);
+    }
+
+    if (!latestForm) {
+      throw new Error(FORM_NOT_FOUND_MESSAGE);
+    }
+
+    formId = latestForm.id;
+  }
+
+  if (!formId) {
+    throw new Error(FORM_NOT_FOUND_MESSAGE);
+  }
+
+  const { data: rawItems, error: itemsError } = await supabase
+    .from("test_form_items")
+    .select("section, module_index, ordinal, question_id")
+    .eq("form_id", formId)
+    .order("section", { ascending: true })
+    .order("module_index", { ascending: true })
+    .order("ordinal", { ascending: true });
+
+  if (itemsError) {
+    throw new Error(`Failed to load test form items: ${itemsError.message}`);
+  }
+
+  const formItems = (rawItems ?? []) as TestFormItemRecord[];
+  if (!formItems.length) {
+    throw new Error(FORM_ITEMS_MISSING_MESSAGE);
+  }
+
+  const seenModuleOrdinals = new Set<string>();
+  const canonicalQuestionIds = new Set<string>();
+  const orderedDraftItems: Array<{
+    section: SectionType;
+    moduleIndex: ModuleIndex;
+    ordinal: number;
+    canonicalQuestionId: string;
+  }> = [];
+
+  for (const item of formItems) {
+    const section = toSectionType(item.section);
+    if (!section) {
+      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid section in test_form_items`);
+    }
+
+    if (item.module_index !== 1 && item.module_index !== 2) {
+      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid module index in test_form_items`);
+    }
+
+    if (!Number.isInteger(item.ordinal) || item.ordinal < 1) {
+      throw new Error(`${FORM_INVALID_ORDINAL_MESSAGE}: ordinals must start at 1`);
+    }
+
+    const canonicalQuestionId = String(item.question_id ?? "").trim();
+    if (!canonicalQuestionId) {
+      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing canonical question id`);
+    }
+
+    const ordinalKey = `${section}:${item.module_index}:${item.ordinal}`;
+    if (seenModuleOrdinals.has(ordinalKey)) {
+      throw new Error(FORM_DUPLICATE_ORDINAL_MESSAGE);
+    }
+
+    seenModuleOrdinals.add(ordinalKey);
+    canonicalQuestionIds.add(canonicalQuestionId);
+
+    orderedDraftItems.push({
+      section,
+      moduleIndex: item.module_index as ModuleIndex,
+      ordinal: item.ordinal,
+      canonicalQuestionId,
+    });
+  }
+
+  const { data: questionRows, error: questionRowsError } = await supabase
+    .from("questions")
+    .select("id, canonical_id, status, question_type, section_code")
+    .in("canonical_id", Array.from(canonicalQuestionIds));
+
+  if (questionRowsError) {
+    throw new Error(`Failed to load canonical questions for test form: ${questionRowsError.message}`);
+  }
+
+  const questionByCanonicalId = new Map<string, {
+    id: string;
+    canonical_id: string;
+    status: string;
+    question_type: string;
+    section_code: string | null;
+  }>();
+
+  for (const row of (questionRows ?? [])) {
+    if (typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0) {
+      questionByCanonicalId.set(row.canonical_id, {
+        id: row.id,
+        canonical_id: row.canonical_id,
+        status: row.status,
+        question_type: row.question_type,
+        section_code: row.section_code,
+      });
+    }
+  }
+
+  const itemsByModule = new Map<string, ResolvedFormItem[]>();
+
+  for (const item of orderedDraftItems) {
+    const question = questionByCanonicalId.get(item.canonicalQuestionId);
+    if (!question) {
+      throw new Error(FORM_UNKNOWN_QUESTION_MESSAGE);
+    }
+
+    if (question.status !== "published") {
+      throw new Error(FORM_UNPUBLISHED_QUESTION_MESSAGE);
+    }
+
+    if (question.question_type !== "multiple_choice") {
+      throw new Error(FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE);
+    }
+
+    const questionSection = toSectionType(question.section_code);
+    if (!questionSection || questionSection !== item.section) {
+      throw new Error(FORM_SECTION_MISMATCH_MESSAGE);
+    }
+
+    const key = moduleKey(item.section, item.moduleIndex);
+    const moduleItems = itemsByModule.get(key) ?? [];
+    moduleItems.push({
+      section: item.section,
+      moduleIndex: item.moduleIndex,
+      ordinal: item.ordinal,
+      canonicalQuestionId: item.canonicalQuestionId,
+      questionId: question.id,
+    });
+    itemsByModule.set(key, moduleItems);
+  }
+
+  for (const section of ["rw", "math"] as const) {
+    for (const moduleIndex of [1, 2] as const) {
+      const moduleItems = requireModuleItems(itemsByModule, section, moduleIndex);
+      const expectedCount = MODULE_CONFIG[section][`module${moduleIndex}`].questionCount;
+
+      if (moduleItems.length !== expectedCount) {
+        throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: ${section} module ${moduleIndex} expected ${expectedCount} items`);
+      }
+
+      moduleItems.sort((a, b) => a.ordinal - b.ordinal);
+
+      for (let ordinal = 1; ordinal <= expectedCount; ordinal += 1) {
+        if (moduleItems[ordinal - 1]?.ordinal !== ordinal) {
+          throw new Error(`${FORM_INVALID_ORDINAL_MESSAGE}: ${section} module ${moduleIndex} must be contiguous 1..${expectedCount}`);
+        }
+      }
+    }
+  }
+
+  return {
+    formId,
+    itemsByModule,
+  };
 }
 
 function assertClientInstanceAccess(
@@ -876,7 +1099,6 @@ async function applyFullLengthMasterySignals(
  * Idempotent: returns existing active session if one exists for the user
  */
 export async function createExamSession(params: CreateSessionParams): Promise<FullLengthExamSession> {
-  const testFormId = ensureSupportedTestFormId(params.testFormId);
   const requestedClientInstanceId = normalizeClientInstanceId(params.clientInstanceId);
   const supabase = getSupabaseAdmin();
 
@@ -890,8 +1112,8 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .maybeSingle();
 
   if (existingSession) {
-    if (existingSession.test_form_id && existingSession.test_form_id !== testFormId) {
-      throw new Error("Unsupported test form");
+    if (params.testFormId && existingSession.test_form_id !== params.testFormId) {
+      throw new Error("Active session exists for a different test form");
     }
 
     assertClientInstanceAccess(existingSession, requestedClientInstanceId || undefined);
@@ -908,6 +1130,8 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     return existingSession;
   }
 
+  const resolvedForm = await resolvePublishedFormForSession(supabase, params.testFormId);
+
   const seed = generateSeed(params.userId);
   const insertClientInstanceId = requestedClientInstanceId || `srv_${crypto.randomUUID()}`;
 
@@ -917,7 +1141,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
       user_id: params.userId,
       seed,
       status: "not_started",
-      test_form_id: testFormId,
+      test_form_id: resolvedForm.formId,
       client_instance_id: insertClientInstanceId,
     })
     .select()
@@ -935,18 +1159,21 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
         .maybeSingle();
 
       if (racedSession) {
-        if (racedSession.test_form_id && racedSession.test_form_id !== testFormId) {
-          throw new Error("Unsupported test form");
+        if (params.testFormId && racedSession.test_form_id !== params.testFormId) {
+          throw new Error("Active session exists for a different test form");
         }
+
         assertClientInstanceAccess(racedSession, requestedClientInstanceId || undefined);
         await bindSessionClientInstanceIfNeeded(supabase, {
           sessionId: racedSession.id,
           userId: params.userId,
           clientInstanceId: requestedClientInstanceId || undefined,
         });
+
         if (!racedSession.client_instance_id && requestedClientInstanceId) {
           racedSession.client_instance_id = requestedClientInstanceId;
         }
+
         return racedSession;
       }
     }
@@ -989,17 +1216,58 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     },
   ];
 
-  const { error: modulesError } = await supabase
+  const { data: createdModules, error: modulesError } = await supabase
     .from("full_length_exam_modules")
-    .insert(modules);
+    .insert(modules)
+    .select("id, section, module_index");
 
-  if (modulesError) {
-    throw new Error(`Failed to create exam modules: ${modulesError.message}`);
+  if (modulesError || !createdModules) {
+    throw new Error(`Failed to create exam modules: ${modulesError?.message || "No modules returned"}`);
+  }
+
+  const moduleIdByKey = new Map<string, string>();
+  for (const moduleRow of createdModules) {
+    const section = toSectionType(moduleRow.section);
+    if (!section) {
+      throw new Error("Invalid module section while creating session");
+    }
+    if (moduleRow.module_index !== 1 && moduleRow.module_index !== 2) {
+      throw new Error("Invalid module index while creating session");
+    }
+    moduleIdByKey.set(moduleKey(section, moduleRow.module_index as ModuleIndex), moduleRow.id);
+  }
+
+  const sessionQuestions: Array<{ module_id: string; question_id: string; order_index: number }> = [];
+
+  for (const section of ["rw", "math"] as const) {
+    for (const moduleIndex of [1, 2] as const) {
+      const key = moduleKey(section, moduleIndex);
+      const moduleId = moduleIdByKey.get(key);
+      if (!moduleId) {
+        throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: module mapping missing for ${section} module ${moduleIndex}`);
+      }
+
+      const formItems = requireModuleItems(resolvedForm.itemsByModule, section, moduleIndex);
+      for (const item of formItems) {
+        sessionQuestions.push({
+          module_id: moduleId,
+          question_id: item.questionId,
+          order_index: item.ordinal - 1,
+        });
+      }
+    }
+  }
+
+  const { error: sessionQuestionsError } = await supabase
+    .from("full_length_exam_questions")
+    .insert(sessionQuestions);
+
+  if (sessionQuestionsError) {
+    throw new Error(`Failed to materialize form questions for session: ${sessionQuestionsError.message}`);
   }
 
   return session;
 }
-
 /**
  * Get the current session state with the current question
  */
@@ -1067,7 +1335,7 @@ export async function getCurrentSession(
 
   // If module hasn't started, start it now
   if (currentModule.status === "not_started") {
-    await startModule(sessionId, currentModule.id, session.seed, userId);
+    await startModule(sessionId, currentModule.id, userId);
     // Re-fetch the module
     const { data: refreshedModule } = await supabase
       .from("full_length_exam_modules")
@@ -1197,12 +1465,11 @@ export async function getCurrentSession(
 }
 
 /**
- * Start a module by selecting questions and setting start time
+ * Start a module by validating and activating materialized fixed-order questions
  */
 async function startModule(
   sessionId: string,
   moduleId: string,
-  seed: string,
   userId?: string
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
@@ -1223,7 +1490,7 @@ async function startModule(
 
   const section = module.section as SectionType;
   const moduleIndex = module.module_index as ModuleIndex;
-  const config = MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"];
+  const expectedQuestionCount = MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"].questionCount;
 
   const { data: existingQuestions, error: existingQuestionsError } = await supabase
     .from("full_length_exam_questions")
@@ -1235,32 +1502,10 @@ async function startModule(
     throw new Error(`Failed to load module questions: ${existingQuestionsError.message}`);
   }
 
-  if (!existingQuestions || existingQuestions.length === 0) {
-    const questions = await selectQuestionsForModule(
-      section,
-      moduleIndex,
-      module.difficulty_bucket as DifficultyBucket | null,
-      config.questionCount,
-      seed
+  if (!existingQuestions || existingQuestions.length !== expectedQuestionCount) {
+    throw new Error(
+      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: session module ${section} ${moduleIndex} expected ${expectedQuestionCount} items`
     );
-
-    const moduleQuestions = questions.map((q, idx) => ({
-      module_id: moduleId,
-      question_id: q.id,
-      order_index: idx,
-    }));
-
-    const { error: insertError } = await supabase
-      .from("full_length_exam_questions")
-      .insert(moduleQuestions);
-
-    if (insertError) {
-      const message = (insertError.message || "").toLowerCase();
-      const isDuplicate = insertError.code === "23505" || message.includes("duplicate") || message.includes("unique");
-      if (!isDuplicate) {
-        throw new Error(`Failed to insert module questions: ${insertError.message}`);
-      }
-    }
   }
 
   const now = new Date();
@@ -1292,55 +1537,6 @@ async function startModule(
     });
   }
 }
-
-function difficultyBucketToNumeric(bucket: DifficultyBucket): QuestionDifficulty {
-  if (bucket === "easy") return 1;
-  if (bucket === "hard") return 3;
-  return 2;
-}
-
-/**
- * Select questions for a module deterministically
- */
-async function selectQuestionsForModule(
-  section: SectionType,
-  moduleIndex: ModuleIndex,
-  difficultyBucket: DifficultyBucket | null,
-  questionCount: number,
-  _seed: string
-): Promise<Array<{ id: string }>> {
-  const supabase = getSupabaseAdmin();
-
-  const targetDifficulty: QuestionDifficulty = moduleIndex === 1
-    ? 2
-    : difficultyBucketToNumeric(difficultyBucket || "medium");
-
-  const sectionCode = section === "rw" ? "RW" : "MATH";
-
-  const { data: candidates, error } = await supabase
-    .from("questions")
-    .select("id, difficulty, canonical_id")
-    .eq("section_code", sectionCode)
-    .eq("question_type", "multiple_choice")
-    .eq("status", "published")
-    .eq("difficulty", targetDifficulty)
-    .order("canonical_id", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(questionCount);
-
-  if (error) {
-    throw new Error(`Failed to fetch questions: ${error.message}`);
-  }
-
-  if (!candidates || candidates.length < questionCount) {
-    throw new Error(
-      `No published questions available for section=${sectionCode}, difficulty=${targetDifficulty}`
-    );
-  }
-
-  return candidates.slice(0, questionCount);
-}
-
 /**
  * Submit an answer to a question
  */
@@ -2347,5 +2543,4 @@ export async function getExamReview(
     responses: formattedResponses,
   };
 }
-
 

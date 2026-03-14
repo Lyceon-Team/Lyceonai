@@ -139,7 +139,7 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
   };
 });
 
-vi.mock("../server/routes/legacy/questions", () => ({
+vi.mock("../server/routes/questions-runtime", () => ({
   getQuestions: (_req: any, res: any) => res.json([]),
   getRandomQuestions: (_req: any, res: any) => res.json([]),
   getQuestionCount: (_req: any, res: any) => res.json({ count: 0 }),

@@ -55,6 +55,9 @@ describe('Canonical Mastery Event Behavior', () => {
     expect(skillCalls[0][1]).toEqual(skillCalls[1][1]);
     expect(skillCalls[0][1].p_event_type).toBe(MasteryEventType.PRACTICE_SUBMIT);
     expect(skillCalls[0][1].p_event_weight).toBe(EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]);
+
+    const firstInsertPayload = insertMock.mock.calls[0][0];
+    expect(firstInsertPayload.event_type).toBe(MasteryEventType.PRACTICE_SUBMIT);
   });
 
   it('tutor open (TUTOR_VIEW) logs attempt but performs no mastery rollup mutation', async () => {
@@ -76,6 +79,7 @@ describe('Canonical Mastery Event Behavior', () => {
     });
 
     expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(insertMock.mock.calls[0][0].event_type).toBe(MasteryEventType.TUTOR_VIEW);
     expect(rpcMock).not.toHaveBeenCalled();
   });
 

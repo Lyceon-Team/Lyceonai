@@ -73,32 +73,60 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       return res.status(401).json({ error: "Unauthorized - user ID not found", code: "AUTH_REQUIRED", requestId });
     }
 
-    const { data: reviewSourceAttempt, error: reviewSourceError } = await supabaseServer
-      .from("answer_attempts")
-      .select("id, attempted_at, outcome, is_correct")
-      .eq("user_id", userId)
-      .eq("question_id", question_id)
-      .or("outcome.eq.incorrect,outcome.eq.skipped,is_correct.eq.false")
-      .order("attempted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const [practiceReviewSourceResult, fullTestReviewSourceResult] = await Promise.all([
+      supabaseServer
+        .from("answer_attempts")
+        .select("id, attempted_at, outcome, is_correct")
+        .eq("user_id", userId)
+        .eq("question_id", question_id)
+        .or("outcome.eq.incorrect,outcome.eq.skipped,is_correct.eq.false")
+        .order("attempted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabaseServer
+        .from("full_length_exam_responses")
+        .select("id, answered_at, is_correct, full_length_exam_sessions!inner(user_id, status)")
+        .eq("question_id", question_id)
+        .eq("is_correct", false)
+        .eq("full_length_exam_sessions.user_id", userId)
+        .eq("full_length_exam_sessions.status", "completed")
+        .order("answered_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-    if (reviewSourceError) {
+    if (practiceReviewSourceResult.error || fullTestReviewSourceResult.error) {
       return res.status(500).json({
         error: "Failed to verify review eligibility",
         code: "REVIEW_ELIGIBILITY_CHECK_FAILED",
-        detail: reviewSourceError.message,
+        detail: practiceReviewSourceResult.error?.message || fullTestReviewSourceResult.error?.message,
         requestId,
       });
     }
 
-    if (!reviewSourceAttempt) {
+    const practiceReviewSource = practiceReviewSourceResult.data;
+    const fullTestReviewSource = fullTestReviewSourceResult.data as { answered_at?: string | null } | null;
+
+    const practiceAttemptedAt = practiceReviewSource?.attempted_at ?? null;
+    const fullTestAttemptedAt = fullTestReviewSource?.answered_at ?? null;
+
+    const practiceEpoch = practiceAttemptedAt ? Date.parse(practiceAttemptedAt) : Number.NEGATIVE_INFINITY;
+    const fullTestEpoch = fullTestAttemptedAt ? Date.parse(fullTestAttemptedAt) : Number.NEGATIVE_INFINITY;
+
+    const hasPracticeSource = Boolean(practiceReviewSource);
+    const hasFullTestSource = Boolean(fullTestReviewSource);
+
+    if (!hasPracticeSource && !hasFullTestSource) {
       return res.status(403).json({
         error: "Question is not eligible for review mastery updates",
         code: "REVIEW_NOT_ELIGIBLE",
         requestId,
       });
     }
+
+    const reviewSourceAttemptedAt = fullTestEpoch > practiceEpoch
+      ? fullTestAttemptedAt
+      : practiceAttemptedAt;
 
     const { data: question, error: questionError } = await supabaseServer
       .from("questions")
@@ -162,6 +190,14 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
         if (fetchError) {
           return res.status(500).json({ error: "Database error", detail: fetchError.message, requestId });
+        }
+
+        if (existing?.question_id && existing.question_id !== question_id) {
+          return res.status(409).json({
+            error: "client_attempt_id is already bound to a different question",
+            code: "IDEMPOTENCY_KEY_REUSED",
+            requestId,
+          });
         }
 
         const existingIsCorrect = Boolean(existing?.is_correct);
@@ -233,7 +269,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
         .select("id, created_at")
         .eq("user_id", userId)
         .contains("canonical_ids_used", [question.canonical_id])
-        .gte("created_at", reviewSourceAttempt.attempted_at)
+        .gte("created_at", reviewSourceAttemptedAt || "1970-01-01T00:00:00.000Z")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();

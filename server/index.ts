@@ -34,9 +34,9 @@ import {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
-} from "./routes/legacy/questions";
-import { searchQuestions } from "./routes/legacy/search";
-import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
+} from "./routes/questions-runtime";
+import { searchQuestions } from "./routes/search-runtime";
+import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -347,7 +347,9 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
+app.post("/api/review-errors/sessions", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, startReviewErrorSession);
+app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitReviewSessionAnswer);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
@@ -664,3 +666,7 @@ if (isMainModule) {
 }
 
 export default app;
+
+
+
+

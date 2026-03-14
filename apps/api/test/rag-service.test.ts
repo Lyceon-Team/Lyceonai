@@ -456,7 +456,7 @@ describe('RagService', () => {
       const result = await service.testHandleConceptMode(request, profile);
 
       // Verify question repo was called for loading questions
-      expect(mockQuestionRepo.loadById).toHaveBeenCalled();
+      expect(mockQuestionRepo.loadByCanonicalId).toHaveBeenCalled();
     });
 
     it('should identify weak and strong areas in competency context', async () => {
@@ -535,3 +535,4 @@ describe('RagService', () => {
     });
   });
 });
+

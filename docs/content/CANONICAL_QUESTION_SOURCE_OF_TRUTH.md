@@ -3,10 +3,10 @@
 ## Runtime Source Of Truth
 - Mounted runtime authority is `server/**`.
 - Question/review/search handlers mounted by the production server:
-  - `server/index.ts` mounts `/api/questions*` handlers from `server/routes/legacy/questions.ts` (re-exporting `server/routes/questions-runtime.ts`).
-  - `server/index.ts` mounts `/api/questions/search` from `server/routes/legacy/search.ts` (re-exporting `server/routes/search-runtime.ts`).
+  - `server/index.ts` mounts `/api/questions*` handlers directly from `server/routes/questions-runtime.ts`.
+  - `server/index.ts` mounts `/api/questions/search` from `server/routes/search-runtime.ts`.
   - `server/index.ts` mounts `/api/practice/*` from `server/routes/practice-canonical.ts`.
-  - `server/index.ts` mounts `/api/review-errors/attempt` from `server/routes/review-errors-routes.ts`.
+  - `server/index.ts` mounts `/api/review-errors/attempt` from `server/routes/review-session-routes.ts` (session-item anchored submit).
   - `server/index.ts` mounts `/api/full-length/*` from `server/routes/full-length-exam-routes.ts`.
 
 ## Canonical Tables
@@ -69,7 +69,7 @@
 - Published retrieval/serving filters require `status = published`.
 
 ## Compatibility + Deprecation Notes
-- `apps/api/src/routes/questions.ts` and `apps/api/src/routes/search.ts` are legacy/unmounted runtime duplicates.
+- `server/routes/review-errors-routes.ts` is legacy/unmounted and quarantined from active runtime mount; canonical submit route is `server/routes/review-session-routes.ts`.
 - `/api/questions/validate` is intentionally unmounted in runtime (`404` contract).
 - Runtime validation/reveal authority is:
   - `POST /api/practice/answer`

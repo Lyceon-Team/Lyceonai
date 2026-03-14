@@ -64,6 +64,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       is_correct: input.isCorrect,
       selected_choice: input.selectedChoice || null,
       time_spent_ms: input.timeSpentMs || null,
+      event_type: input.eventType,
       exam: input.metadata.exam,
       section: input.metadata.section,
       domain: input.metadata.domain,

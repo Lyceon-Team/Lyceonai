@@ -1,77 +1,63 @@
 # Full Test Runtime Contract
 
-## Canonical Runtime
-- Route mount: `server/index.ts` mounts `fullLengthExamRouter` at `/api/full-length`.
-- Canonical route handlers: `server/routes/full-length-exam-routes.ts`.
-- Canonical domain logic: `apps/api/src/services/fullLengthExam.ts`.
+## Canonical Runtime Mount
+- `server/index.ts` mounts `fullLengthExamRouter` at `/api/full-length`.
+- Canonical handlers: `server/routes/full-length-exam-routes.ts`.
+- Canonical domain runtime: `apps/api/src/services/fullLengthExam.ts`.
 
 ## Canonical Tables
-- `full_length_exam_sessions`: authoritative exam-session header state, ownership, client instance, and timing anchors.
-- `full_length_exam_modules`: authoritative module lifecycle and module timer lock state.
-- `full_length_exam_questions`: immutable served order for each module in a session.
-- `full_length_exam_responses`: idempotent answer truth per `(session_id, module_id, question_id)`.
-- `full_length_exam_score_rollups`: completion-time score rollup projection.
+- `public.test_forms`: immutable published/draft form headers.
+- `public.test_form_items`: fixed ordered canonical question references by `(form_id, section, module_index, ordinal)`.
+- `public.full_length_exam_sessions`: session state + ownership + timer anchors + bound `client_instance_id`.
+- `public.full_length_exam_modules`: per-module lifecycle, lock state, and server timer fields.
+- `public.full_length_exam_questions`: materialized fixed module order for each session.
+- `public.full_length_exam_responses`: idempotent answer truth.
+- `public.full_length_exam_score_rollups`: completion-time score projection.
 
-## Route Contract
-- `POST /api/full-length/sessions`
-  - Creates or replays one active session for the authenticated student.
-  - Enforces supported `test_form_id` and binds `client_instance_id`.
-- `GET /api/full-length/sessions/current?sessionId=...&client_instance_id=...`
-  - Returns authoritative resume state from server-owned timers and module/session truth.
-- `POST /api/full-length/sessions/:sessionId/start`
-- `POST /api/full-length/sessions/:sessionId/answer`
-- `POST /api/full-length/sessions/:sessionId/module/submit`
-- `POST /api/full-length/sessions/:sessionId/break/continue`
-- `POST /api/full-length/sessions/:sessionId/complete`
-- `GET /api/full-length/sessions/:sessionId/report`
-- `GET /api/full-length/sessions/:sessionId/review`
+## Start Session Contract
+- Route: `POST /api/full-length/sessions`.
+- Input: `test_form_id` (optional UUID), `client_instance_id` (optional UUID).
+- Runtime behavior:
+  - checks auth + ownership and active-session replay rules.
+  - enforces `test_form_id` exists and `status='published'`.
+  - when `test_form_id` omitted, resolves latest published form.
+  - loads canonical ordered items from `test_form_items`.
+  - validates structural completeness/contiguity; fail-closed on invalid form.
+  - materializes fixed order into `full_length_exam_questions` exactly once.
 
-## Session State Machine
-- Session lifecycle: `not_started -> in_progress -> completed`.
-- Terminal non-complete branch: `abandoned` only.
-- Break is represented by `current_section = 'break'` with `status = 'in_progress'`.
-
-## Timer + Lock Semantics
-- Module timers are server-owned via `full_length_exam_modules.started_at` and `ends_at`.
-- Break timer is server-owned via `full_length_exam_sessions.break_started_at`.
-- Expired modules auto-submit on resume/read and are denied for answer mutation.
-- Submitted modules are locked and read-only for answers.
+## Timing / Lock Contract
+- Timers are server-derived from module/session timestamps.
+- Module transitions and lock states are server-only.
+- Expired modules auto-submit and reject additional mutation.
+- Section submit and completion remain idempotent and deterministic.
 
 ## Anti-Leak Contract
-- Active exam payloads never include `correct_answer` or `explanation`.
-- Review endpoints remain locked until session `status = 'completed'`.
-- Post-completion review reveals full answer/explanation fields through allowlisted projection.
+- Active exam payloads do not include `correct_answer` or `explanation`.
+- Review stays locked until session `status='completed'`.
+- Review endpoint is read-only after completion.
 
-## Multi-Tab Contract (`client_instance_id`)
-- Session writes are bound to one `client_instance_id`.
-- Same client instance may replay/resume safely.
-- Different or missing client instance on a bound active session fails with deterministic conflict.
+## Full-Test Ordering Contract
+- Published forms are immutable.
+- Question order is fixed by `test_form_items.section + module_index + ordinal`.
+- Full-test runtime never reshuffles published form items.
+- Client-provided order is ignored.
 
-## Idempotency Contract
-- Session creation is replay-safe and returns the same active session.
-- Answer submission is idempotent per `(session, module, question)`; first write wins.
-- Completion is idempotent; replay recomputes canonical report without duplicate state mutation.
+## Canonical Question-ID Contract
+- `test_form_items.question_id` stores canonical text IDs (`questions.canonical_id`).
+- Runtime resolves canonical IDs to `questions.id` before session materialization.
+- Runtime fails closed on missing/unpublished/section-mismatched question references.
+
+## Idempotency + Client Instance Contract
+- Session creation replays one active session per user.
+- Bound `client_instance_id` prevents cross-tab/cross-client mutation.
+- Answer submission is idempotent per `(session_id, module_id, question_id)`.
+
+## Guardian Visibility Contract
+- Guardian full-test endpoints are summary-only with link + entitlement checks.
+- No question-level answer dump for guardians.
 
 ## Scoring Contract
-- One canonical scoring path: `computeCanonicalExamReport()` in `fullLengthExam.ts`.
-- Section scaled scores use modeled score tables from `fullLengthScoreTables.ts`.
-- Missing or inconsistent score-table totals fail closed.
-- `total scaled = rw scaled + math scaled`.
-- Domain/skill diagnostics are derived deterministically from response + metadata rows.
-
-## Mastery + Guardian Semantics
-- Module submit emits canonical mastery updates via `applyMasteryUpdate()` with `FULL_LENGTH_SUBMIT`.
-- Guardian full-length visibility is summary-only via `server/routes/guardian-routes.ts` and entitlement/link guards.
-- Guardian routes never expose question-level answer dumps.
-
-## Observability Events
-- Canonical events emitted by full-length service:
-  - `test_started`
-  - `section_started`
-  - `answer_submitted`
-  - `test_completed`
-  - `score_computed`
-
-## Deferred / Out of Scope
-- Published-form table management (draft/published form authoring lifecycle) is not present in this runtime.
-- Runtime enforces a single supported canonical form id while preserving existing active mount behavior.
+- One canonical scoring path: `computeCanonicalExamReport()`.
+- Scaled scores come from modeled score tables.
+- Missing/inconsistent tables fail closed.
+- Official scores and diagnostic signals remain separated.

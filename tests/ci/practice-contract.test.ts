@@ -583,8 +583,8 @@ describe("Practice Runtime Contract", () => {
         clientAttemptId: "foreign-attempt-1",
       });
 
-    expect(submit.status).toBe(404);
-    expect(submit.body.error).toBe("session_not_found");
+    expect(submit.status).toBe(403);
+    expect(submit.body.error).toBe("forbidden");
   });
 
   it("denies submit after session completion", async () => {

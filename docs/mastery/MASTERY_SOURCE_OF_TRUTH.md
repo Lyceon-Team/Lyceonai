@@ -23,13 +23,15 @@
 - `FULL_LENGTH_SUBMIT`:
   - Source: `apps/api/src/services/fullLengthExam.ts` module submission flow.
   - Weight: highest trust.
+- `REVIEW_PASS` / `REVIEW_FAIL`:
+  - Source: `server/routes/review-session-routes.ts` submit flow.
+  - Emitted only from served review session items.
+- `TUTOR_HELPED` / `TUTOR_FAIL`:
+  - Source: `server/routes/review-session-routes.ts` only when tutor context is verified alongside review retry.
+  - Never emitted from tutor-only opens.
 - `TUTOR_VIEW`:
   - Source meaning: tutor open/view interaction.
   - Mastery effect: no rollup mutation.
-- `TUTOR_RETRY_SUBMIT`:
-  - Source: `server/routes/review-errors-routes.ts` only when tutor context is verified and retry answer is server-graded.
-  - Weight: below raw practice, above pure tutor view.
-
 ## Deprecated and Derived Paths
 - Deprecated as runtime mastery writers:
   - `user_competencies` writes (removed from active runtime).
