@@ -1,59 +1,85 @@
 # CANONICAL QUESTION SOURCE OF TRUTH
 
-## Runtime Authority
-- Runtime truth is mounted from `server/**`.
-- Primary mounts:
-  - `server/index.ts` -> `app.use("/api/practice", ..., practiceCanonicalRouter)`
-  - `server/index.ts` -> `app.use("/api/full-length", ..., fullLengthExamRouter)`
-  - `server/index.ts` -> `app.post("/api/review-errors/attempt", ..., recordReviewErrorAttempt)`
+## Runtime Source Of Truth
+- Mounted runtime authority is `server/**`.
+- Question/review/search handlers mounted by the production server:
+  - `server/index.ts` mounts `/api/questions*` handlers from `server/routes/legacy/questions.ts` (re-exporting `server/routes/questions-runtime.ts`).
+  - `server/index.ts` mounts `/api/questions/search` from `server/routes/legacy/search.ts` (re-exporting `server/routes/search-runtime.ts`).
+  - `server/index.ts` mounts `/api/practice/*` from `server/routes/practice-canonical.ts`.
+  - `server/index.ts` mounts `/api/review-errors/attempt` from `server/routes/review-errors-routes.ts`.
+  - `server/index.ts` mounts `/api/full-length/*` from `server/routes/full-length-exam-routes.ts`.
 
-## Canonical ID Format + Helper
-- Canonical question IDs must match: `SAT{M|RW}{1|2}[A-Z0-9]{6}`.
-- Single helper of truth:
-  - `apps/api/src/lib/canonicalId.ts`
-  - `generateCanonicalId("SAT", "M" | "RW", "1" | "2")`
-  - `isValidCanonicalId(id)`
-- `server/services/questionTypes.ts` delegates ID generation to this helper.
+## Canonical Tables
+- `public.questions`
+  - Runtime question source for retrieval, serving, grading, and full-length forms.
+- `public.question_versions`
+  - Canonical publish/version ledger for immutable published-question history.
+- `public.answer_attempts`
+  - Practice attempt truth (submit/reveal gating).
+- `public.review_error_attempts`
+  - Review workflow attempts.
+- `public.full_length_exam_*`
+  - Full-length session/module/question/response truth.
 
-## Schema Truth (Runtime Enforced)
-- Runtime serving/grading paths enforce MC canonical schema:
-  - `type === "mc"`
-  - valid `answer_choice`
-  - options contain the answer key
-  - valid canonical ID format
-- Enforced in:
-  - `server/routes/practice-canonical.ts`
-  - `apps/api/src/lib/question-validation.ts` (admin insert validation)
+## Canonical ID Helper
+- Canonical ID truth is centralized in:
+  - `shared/question-bank-contract.ts`
+- Required format:
+  - `SAT{M|RW}{1|2}{XXXXXX}`
+- Generation rules:
+  - Random uppercase alphanumeric suffix length = 6.
+  - Assigned only at publish time by `server/services/question-publish.ts`.
+  - Collision checked before finalize.
 
-## Validation Truth Path
-- Canonical practice validation path: `POST /api/practice/answer`.
-- Review retry validation path: `POST /api/review-errors/attempt`.
-- Full-length answer submission path: `POST /api/full-length/sessions/:sessionId/answer`.
-- Legacy duplicate `POST /api/questions/validate` is quarantined (not mounted).
+## Canonical Lifecycle
+- Lifecycle states: `draft -> qa -> published`.
+- Publish/version service:
+  - `server/services/question-publish.ts`
+  - `publishQuestion(...)`:
+    - validates canonical MC schema
+    - assigns canonical ID if missing
+    - blocks duplicate canonical ID
+    - writes published snapshot to `question_versions`
+  - `versionPublishedQuestion(...)`:
+    - blocks canonical ID mutation
+    - increments version
+    - transitions edited published item back to `qa`
+    - writes version snapshot to `question_versions`
 
-## Publish / Version Lifecycle
-- Canonical lifecycle policy:
-  - canonical ID is immutable and opaque
-  - published question content is read-only in runtime behavior
-  - fixes require same canonical ID + new version + full QA before re-serve
-- Current runtime policy enforcement:
-  - active serve/grade paths reject invalid canonical IDs/schemas
-  - admin insert smoke path validates canonical format before insert
+## Anti-Leak Contract
+- Pre-submit student-safe retrieval:
+  - `server/routes/questions-runtime.ts`
+  - `server/routes/search-runtime.ts`
+  - `server/routes/practice-topics-routes.ts`
+  - `server/routes/practice-canonical.ts` (`/next`, `/sessions/:id/next`)
+  - Contract: `correct_answer: null`, `explanation: null` in student-safe payloads.
+- Post-submit reveal:
+  - `server/routes/practice-canonical.ts` (`POST /api/practice/answer`)
+  - Reveal allowed only after valid owned-session submission.
+- Full-length review:
+  - `apps/api/src/services/fullLengthExam.ts`
+  - Pre-completion uses explicit safe field allowlist only.
+  - Post-completion adds answer/explanation projection.
 
-## Anti-Leak Retrieval Rules
-- Pre-submit question retrieval must never leak answer or explanation:
-  - `GET /api/practice/next` returns `correct_answer: null`, `explanation: null`
-  - full-length active session retrieval omits answer/explanation fields
-- Post-submit reveal allowed only in allowed context:
-  - practice: `POST /api/practice/answer` may reveal `correctAnswerKey` + `explanation`
-  - review retries: `POST /api/review-errors/attempt` may reveal review feedback
-- Full-length reveal remains review-phase only:
-  - `GET /api/full-length/sessions/:sessionId/review` is locked until completion
+## Canonical Schema Contract
+- Question type: `multiple_choice` only in active student runtime paths.
+- MC options: exactly 4 options, keys `A|B|C|D`, exactly one valid correct answer key.
+- Section code canonical target: `M` or `RW`.
+  - Compatibility normalization still accepts legacy `MATH` reads where present.
+- Published retrieval/serving filters require `status = published`.
 
-## Quarantined Legacy Paths
-- Unmounted:
-  - `POST /api/questions/validate`
-- Legacy code retained but not runtime authority:
-  - `server/routes/questions-validate.ts`
-  - `apps/api/src/routes/questions.ts` legacy `validateAnswer` export
-- Any future reactivation requires explicit contract review and anti-leak test updates.
+## Compatibility + Deprecation Notes
+- `apps/api/src/routes/questions.ts` and `apps/api/src/routes/search.ts` are legacy/unmounted runtime duplicates.
+- `/api/questions/validate` is intentionally unmounted in runtime (`404` contract).
+- Runtime validation/reveal authority is:
+  - `POST /api/practice/answer`
+  - `POST /api/review-errors/attempt`
+  - `POST /api/full-length/sessions/:sessionId/answer`
+
+## Contract Tests
+- `tests/ci/questions.anti-leak.ci.test.ts`
+- `tests/ci/canonical-content.publish.contract.test.ts`
+- `tests/practice.validate.regression.test.ts`
+- `tests/ci/practice-contract.test.ts`
+- `tests/ci/full-length-review-lock.contract.test.ts`
+- `tests/ci/full-length-exam.smoke.test.ts`

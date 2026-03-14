@@ -1,4 +1,4 @@
-// Mount shim only: runtime question/review queue ownership lives in apps/api/src/routes/questions.ts.
+// Runtime source of truth: question/review endpoints are implemented in server/routes/questions-runtime.ts.
 export {
   getQuestions,
   getRandomQuestions,
@@ -9,4 +9,4 @@ export {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
-} from "../../../apps/api/src/routes/questions";
+} from "../questions-runtime";

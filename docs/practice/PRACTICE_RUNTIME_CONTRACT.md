@@ -1,44 +1,92 @@
 # Practice Runtime Contract
 
-This document outlines the locked schema expectations, endpoint behaviors, and anti-leak guarantees for Lyceon's practice system.
+This document defines the locked canonical runtime for Lyceon practice.
 
-## Foundational Truths
-1. **Source of Truth**
-   - The exact canonical source of truth for runtime logic is the `server/**` directory.
-   - The system uses the `practice_sessions` and `answer_attempts` tables per `supabase/migrations/20260110_practice_canonical_plus_events.sql` without any secondary persistence modeling.
-   - Server handles all state orchestration and timing.
-2. **Determinism and Session Flow**
-   - Practice is session-based, resumable, and deterministic.
-   - We avoid duplicate items on resume.
-   - `client_instance_id` provides multi-tab takeover safety.
+## Canonical Runtime Files
+- `server/index.ts`
+  - Mounts the canonical runtime at `app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter)`.
+- `server/routes/practice-canonical.ts`
+  - Owns session creation, serving, state, answer submission, idempotency, anti-leak enforcement, and multi-tab conflict behavior.
+- `apps/api/src/services/studentMastery.ts`
+  - Canonical mastery write path called after successful non-duplicate practice submissions.
 
-## Multi-Tab Behavior & Resumption Check
-- When a client issues `GET /api/practice/next?client_instance_id=<ID>`, the server:
-  1. Finds the existing "in_progress" session.
-  2. Inspects `session.metadata.active_question_id`.
-  3. If this active question has **not** been answered yet, the server *resumes* it rather than fetching a new random question.
-  4. At the same time, the server updates `session.metadata.client_instance_id` to the currently requesting `<ID>`.
-- **Takeover Conflict**: When a client issues `POST /api/practice/answer` using an older `client_instance_id`, the server detects that `session.metadata.client_instance_id` mismatches. It rejects the attempt with `409 Conflict`.
-  - Exception: If it is an **idempotent retry** (matching `client_attempt_id` stored as `idempotencyKey`), it is allowed to pass gracefully to avoid punishing poor network conditions on successful answers.
+No parallel mounted practice runtime exists under `apps/api/**`.
 
-## Idempotency Rules
-- Answer submission is fully idempotent by verifying `client_attempt_id` mapped to `answer_attempts.client_attempt_id` against a composite unique index with `user_id`.
-- Duplicate answer submissions safely return the prior generated result (including `isCorrect`, `explanation`, and `correctAnswerKey`) instead of logging extra answers.
+## Canonical Data Model
+- `practice_sessions`
+  - Session header/source-of-truth for ownership, lifecycle metadata, and client-instance binding.
+- `practice_session_items`
+  - Ordered served-item truth (`session_item_id`, `ordinal`, `status`).
+  - Exactly one unresolved (`status='served'`) item per session at a time.
+- `answer_attempts`
+  - Authoritative answer-attempt truth.
+  - Linked to served items via `session_item_id` when available.
+
+## API Contract
+
+### `POST /api/practice/sessions`
+- Validates authenticated actor from server auth context.
+- Enforces student-primary ownership.
+- Replays existing active session when appropriate (including start idempotency key if provided).
+- Records/returns `client_instance_id`.
+- Initializes lifecycle without serving duplicate items.
+
+### `GET /api/practice/sessions/{session_id}/next?client_instance_id=...`
+- Validates session ownership and client-instance binding.
+- Returns current unresolved served item if one exists.
+- Otherwise serves exactly one new item, persists one `practice_session_items` row, and returns stable `session_item_id` + `ordinal`.
+- Enforces anti-leak before submit:
+  - `correct_answer: null`
+  - `explanation: null`
+- Applies entitlement/usage gating when serving a **new** item.
+
+### `GET /api/practice/sessions/{session_id}/state`
+- Returns authoritative server state (`state`, `currentOrdinal`, `answeredCount`, unresolved item descriptor).
+- Supports refresh/resume with no new item side effects.
+
+### `POST /api/practice/answer`
+- Validates ownership + `client_instance_id` conflict rules.
+- Validates answer against canonical question truth.
+- Enforces idempotency for duplicate submissions (`client_attempt_id` and served-item linkage).
+- Writes exactly one attempt for the served item.
+- Resolves `practice_session_items.status` from `served` to `answered`/`skipped`.
+- Reveals `correctAnswerKey` and `explanation` only post-submit.
+- Calls canonical mastery update path once for non-duplicate writes.
+
+### `GET /api/practice/next` (legacy compatibility)
+- Thin delegate to the same canonical domain flow.
+- Requires `client_instance_id` and uses the same server-authoritative session/item logic.
+
+## Lifecycle and State Machine
+- Runtime lifecycle states:
+  - `created -> active -> completed`
+  - `abandoned` is terminal.
+- Session completion:
+  - Server marks session complete when resolved item count reaches target question count.
+- Completed/abandoned sessions are read-only for progression and answer writes.
+
+## Multi-Tab Safety
+- `client_instance_id` is server-enforced for progression.
+- A different active client instance on the same session receives deterministic `409 conflict`.
+- Concurrent `/next` calls cannot fork progression into multiple unresolved items.
+
+## Idempotency Guarantees
+- Session start supports replay/idempotent behavior via active-session replay and optional start key.
+- Answer submit duplicate calls return prior authoritative result.
+- Duplicate submits do not create second attempt rows and do not trigger second mastery writes.
 
 ## Anti-Leak Guarantees
-- Any payload returned BEFORE a question is answered must be explicitly neutralized.
-- Specifically, `GET /api/practice/next` leverages `toSafeQuestionDTO` to mandate that pre-submit items strictly guarantee `correct_answer: null` and `explanation: null`.
-- Only following successful idempotent or standard execution of `POST /api/practice/answer` are correct answers and explanations yielded to the client.
+- Pre-submit payloads never include real answers/explanations.
+- Post-submit responses may include correctness, canonical answer key, and explanation.
 
-## Endpoint Contract
-1. `GET /api/practice/next?section=<SECTION>&client_instance_id=<ID>`
-   - Finds or initializes session.
-   - Checks metadata for resumption of same unanswered item.
-   - Mutates `client_instance_id`.
-   - Returns neutralized `SafeQuestionDTO`.
-2. `POST /api/practice/answer`
-   - Expects variables: `sessionId`, `questionId`, `selectedAnswer` or `freeResponseAnswer`, `skipped`, `client_instance_id`, `idempotencyKey`.
-   - Rejects 409 on `client_instance_id` drift (unless `idempotencyKey` confirms previously secured retry).
-   - Validates response with canonical truth and mutates `answer_attempts`.
-   - Computes mastery using internal domain pipeline.
-   - Returns outcome with un-neutralized `explanation` and `correctAnswerKey`.
+## Entitlement and Role Gates
+- Practice runtime is mounted behind:
+  - auth (`requireSupabaseAuth`)
+  - student/admin role gate (`requireStudentOrAdmin`)
+- Guardian role does not receive practice learning-write authority.
+- Entitlement/usage checks are enforced server-side for new-item progression.
+- Mid-session behavior is fail-closed for new-item access; already served item submission remains possible.
+
+## Deferred / Out of Scope
+- Explicit inactivity-driven abandonment automation is not part of this pass.
+- Legacy compatibility endpoint (`GET /api/practice/next`) remains mounted but delegates to the canonical domain logic.

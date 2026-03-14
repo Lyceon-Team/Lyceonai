@@ -9,6 +9,12 @@ import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
+import {
+  hasCanonicalOptionSet,
+  hasSingleCanonicalCorrectAnswer,
+  isValidCanonicalId,
+  normalizeAnswerKey,
+} from "../../shared/question-bank-contract";
 
 type ReviewOutcome = "review_pass" | "review_fail";
 type TutorOutcome = "tutor_helped" | "tutor_fail";
@@ -23,9 +29,6 @@ const reviewErrorAttemptSchema = z.object({
   client_attempt_id: z.string().optional(),
 });
 
-function normalizeAnswer(value: string | null | undefined): string {
-  return (value || "").trim().toUpperCase();
-}
 
 function resolveReviewOutcome(isCorrect: boolean): ReviewOutcome {
   return isCorrect ? "review_pass" : "review_fail";
@@ -99,8 +102,9 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
     const { data: question, error: questionError } = await supabaseServer
       .from("questions")
-      .select("id, canonical_id, question_type, correct_answer, answer_text, explanation")
+      .select("id, canonical_id, status, question_type, correct_answer, answer_text, explanation, options")
       .eq("id", question_id)
+      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .single();
 
@@ -108,18 +112,34 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
       return res.status(404).json({ error: "Question not found", detail: questionError?.message, requestId });
     }
 
-    const verifiedIsCorrect = normalizeAnswer(selected_answer) !== "" && normalizeAnswer(selected_answer) === normalizeAnswer(question.correct_answer);
+    if (!isValidCanonicalId(question.canonical_id)) {
+      return res.status(422).json({
+        error: "Question canonical ID is invalid",
+        code: "INVALID_QUESTION_DATA",
+        requestId,
+      });
+    }
+
+    if (!hasCanonicalOptionSet(question.options) || !hasSingleCanonicalCorrectAnswer(question.correct_answer, question.options)) {
+      return res.status(422).json({
+        error: "Question MC schema is invalid",
+        code: "INVALID_QUESTION_DATA",
+        requestId,
+      });
+    }
+
+    const selectedAnswerKey = normalizeAnswerKey(selected_answer ?? null);
+    const correctAnswerKey = normalizeAnswerKey(question.correct_answer);
+    const verifiedIsCorrect = Boolean(selectedAnswerKey && correctAnswerKey && selectedAnswerKey === correctAnswerKey);
     const reviewOutcome = resolveReviewOutcome(verifiedIsCorrect);
     const reviewEventType = resolveReviewEventType(verifiedIsCorrect);
-
-    const correctAnswerKey = normalizeAnswer(question.correct_answer) || null;
     const explanation = typeof question.explanation === "string" && question.explanation.trim() ? question.explanation : null;
 
     const insertData = {
       student_id: userId,
       question_id,
       context: "review_errors" as const,
-      selected_answer: selected_answer || null,
+      selected_answer: selectedAnswerKey || null,
       is_correct: verifiedIsCorrect,
       seconds_spent: seconds_spent || null,
       client_attempt_id: client_attempt_id || null,
@@ -181,7 +201,7 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
         questionCanonicalId: metadata.canonicalId,
         sessionId: null,
         isCorrect: verifiedIsCorrect,
-        selectedChoice: selected_answer || null,
+        selectedChoice: selectedAnswerKey || null,
         timeSpentMs: typeof seconds_spent === "number" ? seconds_spent * 1000 : null,
         eventType,
         metadata: {

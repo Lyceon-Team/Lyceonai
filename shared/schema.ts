@@ -199,6 +199,18 @@ export const questions = pgTable("questions", {
   version: integer("version").default(1), // Schema version
 });
 
+export const questionVersions = pgTable("question_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  questionId: text("question_id").notNull(),
+  canonicalId: text("canonical_id").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  lifecycleStatus: text("lifecycle_status").notNull(), // 'qa' | 'published'
+  snapshot: jsonb("snapshot").notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+});
+
 export const chatMessages = pgTable("chat_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(), // User who sent the message
@@ -690,6 +702,11 @@ export const insertQuestionSchema = createInsertSchema(questions).omit({
   createdAt: true,
 });
 
+export const insertQuestionVersionSchema = createInsertSchema(questionVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
   id: true,
   timestamp: true,
@@ -769,6 +786,9 @@ export type Document = typeof documents.$inferSelect;
 
 export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
 export type Question = typeof questions.$inferSelect;
+
+export type InsertQuestionVersion = z.infer<typeof insertQuestionVersionSchema>;
+export type QuestionVersion = typeof questionVersions.$inferSelect;
 
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
