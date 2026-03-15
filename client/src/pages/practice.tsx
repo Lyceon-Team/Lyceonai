@@ -438,7 +438,7 @@ function Practice() {
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start" size="sm">
                   <Link href="/chat">
-                    Ask AI Tutor
+                    Ask Lisa
                   </Link>
                 </Button>
                 <Button asChild variant="ghost" className="w-full justify-start" size="sm">

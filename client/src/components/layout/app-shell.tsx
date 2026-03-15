@@ -78,7 +78,7 @@ function AppHeader() {
     { href: '/flow-cards', label: 'FlowCards', icon: Zap },
     { href: '/practice', label: 'Practice', icon: BookOpen },
     { href: '/full-test', label: 'Full Tests', icon: CreditCard },
-    { href: '/chat', label: 'Tutor Chat', icon: MessageSquare },
+    { href: '/chat', label: 'Lisa', icon: MessageSquare },
   ];
 
   const NavLink = ({ href, label, icon: Icon, mobile = false }: { href: string; label: string; icon: any; mobile?: boolean }) => {

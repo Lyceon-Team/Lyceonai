@@ -146,7 +146,7 @@ export default function TestOptions() {
           </CardContent>
         </Card>
 
-        {/* AI Tutor */}
+        {/* Lisa */}
         <Card className="hover:shadow-lg transition-shadow cursor-pointer group" data-testid="card-ai-tutor">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
@@ -156,10 +156,10 @@ export default function TestOptions() {
               <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">
-              AI Tutor
+              Lisa
             </h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Get personalized help from our AI tutor. Ask questions, get explanations.
+              Get personalized help from Lisa, your SAT tutor. Ask questions, get explanations.
             </p>
             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
               <Target className="h-4 w-4" />

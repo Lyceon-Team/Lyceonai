@@ -44,4 +44,4 @@ Session creation fails when:
 ## Deterministic Scoring and Mastery
 - Completion invokes one canonical report/scoring path.
 - Modeled score table lookup is deterministic and fail-closed.
-- Mastery updates emit deterministic `FULL_LENGTH_SUBMIT` events without duplicate score ledgers.
+- Mastery updates emit deterministic `test_pass` / `test_fail` events without duplicate score ledgers.

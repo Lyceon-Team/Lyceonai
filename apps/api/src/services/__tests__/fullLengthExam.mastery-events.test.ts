@@ -23,7 +23,7 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
     vi.clearAllMocks();
   });
 
-  it('emits FULL_LENGTH_SUBMIT event on module submission', async () => {
+  it('emits test_pass event on module submission for correct answers', async () => {
     const future = new Date(Date.now() + 60_000).toISOString();
 
     const mockSupabase = {
@@ -136,7 +136,7 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
 
     const masteryCalls = (applyMasteryUpdate as unknown as Mock).mock.calls;
     expect(masteryCalls.length).toBe(1);
-    expect(masteryCalls[0][0].eventType).toBe(MasteryEventType.FULL_LENGTH_SUBMIT);
+    expect(masteryCalls[0][0].eventType).toBe(MasteryEventType.TEST_PASS);
     expect(masteryCalls[0][0].questionCanonicalId).toBe('cq-1');
   });
 

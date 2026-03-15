@@ -27,7 +27,7 @@ describe('Canonical Mastery Event Behavior', () => {
     vi.clearAllMocks();
   });
 
-  it('uses deterministic PRACTICE_SUBMIT payload for canonical skill rollup writes', async () => {
+  it('uses deterministic practice_pass payload for canonical skill rollup writes', async () => {
     const input = {
       userId: 'user-1',
       questionCanonicalId: 'q-1',
@@ -35,14 +35,15 @@ describe('Canonical Mastery Event Behavior', () => {
       isCorrect: true,
       selectedChoice: 'A',
       timeSpentMs: 42000,
-      eventType: MasteryEventType.PRACTICE_SUBMIT,
+      eventType: MasteryEventType.PRACTICE_PASS,
       metadata: {
         exam: 'SAT',
         section: 'Math',
         domain: 'algebra',
         skill: 'linear_equations',
         subskill: null,
-        difficulty_bucket: 'medium',
+        skill_code: 'ALG-1',
+        difficulty: 2,
         structure_cluster_id: null,
       },
     } as const;
@@ -53,46 +54,50 @@ describe('Canonical Mastery Event Behavior', () => {
     const skillCalls = rpcMock.mock.calls.filter((call) => call[0] === 'upsert_skill_mastery');
     expect(skillCalls).toHaveLength(2);
     expect(skillCalls[0][1]).toEqual(skillCalls[1][1]);
-    expect(skillCalls[0][1].p_event_type).toBe(MasteryEventType.PRACTICE_SUBMIT);
-    expect(skillCalls[0][1].p_event_weight).toBe(EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]);
+    expect(skillCalls[0][1].p_event_type).toBe(MasteryEventType.PRACTICE_PASS);
+    expect(skillCalls[0][1].p_event_weight).toBe(EVENT_WEIGHTS[MasteryEventType.PRACTICE_PASS]);
 
     const firstInsertPayload = insertMock.mock.calls[0][0];
-    expect(firstInsertPayload.event_type).toBe(MasteryEventType.PRACTICE_SUBMIT);
+    expect(firstInsertPayload.event_type).toBe(MasteryEventType.PRACTICE_PASS);
   });
 
-  it('tutor open (TUTOR_VIEW) logs attempt but performs no mastery rollup mutation', async () => {
-    await applyMasteryUpdate({
+  it('fails closed on invalid event type and does not write canonical mastery state', async () => {
+    const result = await applyMasteryUpdate({
       userId: 'user-2',
       questionCanonicalId: 'q-2',
       sessionId: null,
       isCorrect: false,
-      eventType: MasteryEventType.TUTOR_VIEW,
+      eventType: 'tutor_view' as any,
       metadata: {
         exam: 'SAT',
         section: 'Math',
         domain: 'algebra',
         skill: 'linear_equations',
         subskill: null,
-        difficulty_bucket: 'easy',
+        skill_code: 'ALG-1',
+        difficulty: 1,
         structure_cluster_id: 'cluster-1',
       },
     });
 
-    expect(insertMock).toHaveBeenCalledTimes(1);
-    expect(insertMock.mock.calls[0][0].event_type).toBe(MasteryEventType.TUTOR_VIEW);
+    expect(result.rollupUpdated).toBe(false);
+    expect(result.error).toContain('Invalid event type');
+    expect(insertMock).not.toHaveBeenCalled();
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
-  it('full-length event remains distinct and higher-trust than practice', () => {
-    expect(EVENT_WEIGHTS[MasteryEventType.FULL_LENGTH_SUBMIT]).toBeGreaterThan(
-      EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]
+  it('keeps review and test signals stronger than practice while preserving test anchor priority', () => {
+    expect(EVENT_WEIGHTS[MasteryEventType.REVIEW_PASS]).toBeGreaterThan(
+      EVENT_WEIGHTS[MasteryEventType.PRACTICE_PASS]
     );
-    expect(EVENT_WEIGHTS[MasteryEventType.FULL_LENGTH_SUBMIT]).toBeGreaterThan(
+    expect(EVENT_WEIGHTS[MasteryEventType.TEST_PASS]).toBeGreaterThan(
+      EVENT_WEIGHTS[MasteryEventType.REVIEW_PASS]
+    );
+    expect(EVENT_WEIGHTS[MasteryEventType.TEST_PASS]).toBeGreaterThan(
       EVENT_WEIGHTS[MasteryEventType.TUTOR_HELPED]
     );
-    expect(EVENT_WEIGHTS[MasteryEventType.FULL_LENGTH_SUBMIT]).not.toBe(
-      EVENT_WEIGHTS[MasteryEventType.PRACTICE_SUBMIT]
+    expect(EVENT_WEIGHTS[MasteryEventType.TEST_PASS]).toBe(
+      EVENT_WEIGHTS[MasteryEventType.TEST_FAIL]
     );
   });
 });
-

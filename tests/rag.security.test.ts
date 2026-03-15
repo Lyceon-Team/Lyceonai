@@ -59,7 +59,7 @@ describe('RAG Security - Prompt Injection', () => {
     // systemInstruction should contain the tutor persona
     // contents should be an array of parts, containing the malicious query
 
-    expect(systemInstruction).toContain('AI SAT tutor');
+    expect(systemInstruction).toContain('Lisa, your SAT tutor');
     expect(systemInstruction).not.toContain(maliciousQuery);
 
     expect(Array.isArray(contents)).toBe(true);

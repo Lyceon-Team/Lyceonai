@@ -32,8 +32,8 @@
 - Server validates session ownership and served-item lock state.
 - Duplicate submit is idempotent via `client_attempt_id` and served-item lock.
 - Duplicate submit returns prior authoritative result and does not double-write mastery.
-- Correct submit emits `REVIEW_PASS`; incorrect submit emits `REVIEW_FAIL`.
-- Tutor context can add `TUTOR_HELPED`/`TUTOR_FAIL`; tutor-only interaction emits no mastery write.
+- Correct submit emits `review_pass`; incorrect submit emits `review_fail`.
+- Tutor context can add `tutor_helped`/`tutor_fail`; tutor-only interaction emits no mastery write.
 
 ## Anti-Leak Contract
 - Pre-submit state payload returns question with:

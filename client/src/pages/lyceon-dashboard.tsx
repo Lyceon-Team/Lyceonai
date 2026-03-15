@@ -360,7 +360,7 @@ export default function LyceonDashboard() {
           {/* Right Column (1/3 width) */}
           <div className="space-y-6 min-w-0">
             {/* Tutor Insights */}
-            <PageCard title="AI Tutor Insights">
+            <PageCard title="Lisa Insights">
               <div className="space-y-4">
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
                   <div className="flex items-start gap-3">
@@ -386,7 +386,7 @@ export default function LyceonDashboard() {
 
                 <Button asChild variant="outline" className="w-full" data-testid="button-ask-tutor">
                   <Link href="/chat">
-                    Ask AI Tutor
+                    Ask Lisa
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>

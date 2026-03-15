@@ -107,6 +107,22 @@ async function hasActiveFullLengthExam(userId: string): Promise<boolean> {
   }
 }
 
+function suppressAnswerReveal<T extends Record<string, unknown>>(question: T | null): T | null {
+  if (!question) return null;
+
+  const sanitized: Record<string, unknown> = {
+    ...question,
+    correctAnswer: null,
+    explanation: null,
+  };
+
+  if (Object.prototype.hasOwnProperty.call(sanitized, "answer")) {
+    sanitized.answer = null;
+  }
+
+  return sanitized as T;
+}
+
 function buildTutorPrompt(
   message: string,
   primaryQuestion: QuestionContext | null,
@@ -171,7 +187,7 @@ ${explanationLevelText}`;
     styleSection += `\n${primaryStyleInstruction}`;
   }
 
-  const systemInstruction = `You are a friendly, clear SAT tutor for high school students.
+  const systemInstruction = `You are Lisa, a friendly and clear SAT tutor for high school students.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 - Always explain step by step in plain language.
@@ -280,11 +296,11 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     }
 
     if (primaryQuestion && !canReveal) {
-      primaryQuestion = { ...primaryQuestion, correctAnswer: null, explanation: null };
+      primaryQuestion = suppressAnswerReveal(primaryQuestion);
     }
 
     if (!canReveal) {
-      supportingQuestions = supportingQuestions.map(q => ({ ...q, correctAnswer: null, explanation: null }));
+      supportingQuestions = supportingQuestions.map((q) => suppressAnswerReveal(q)!);
     }
 
     const sanitizedContext = {

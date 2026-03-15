@@ -28,9 +28,9 @@ export default function FloatingActions() {
         <DialogContent className="max-w-4xl w-full h-[80vh] flex flex-col" aria-describedby="chat-dialog-description">
           <DialogHeader>
             <div className="flex items-center justify-between">
-              <DialogTitle>AI Tutor Chat</DialogTitle>
+              <DialogTitle>Chat with Lisa</DialogTitle>
               <p id="chat-dialog-description" className="sr-only">
-                Interactive chat with your AI SAT tutor for personalized help and guidance
+                Interactive chat with Lisa for personalized SAT help and guidance
               </p>
               <div className="flex items-center gap-2">
                 <Link href="/chat">

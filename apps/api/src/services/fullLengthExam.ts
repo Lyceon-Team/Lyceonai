@@ -1067,7 +1067,7 @@ async function applyFullLengthMasterySignals(
           questionCanonicalId: question.canonical_id,
           sessionId,
           isCorrect: !!response.is_correct,
-          eventType: MasteryEventType.FULL_LENGTH_SUBMIT,
+          eventType: response.is_correct ? MasteryEventType.TEST_PASS : MasteryEventType.TEST_FAIL,
           metadata: {
             exam: question.exam || null,
             section: question.section || null,

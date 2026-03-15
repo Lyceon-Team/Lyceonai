@@ -1,3 +1,10 @@
+/**
+ * CANONICAL MASTERY WRITE CHOKE POINT
+ *
+ * All runtime mastery-affecting flows must call applyMasteryUpdate().
+ * Canonical rollup tables mutated by this choke point: student_skill_mastery, student_cluster_mastery.
+ * No other runtime path may directly mutate canonical mastery tables.
+ */
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import {
   MasteryEventType,
@@ -34,14 +41,52 @@ export interface AttemptResult {
   error?: string;
 }
 
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptResult> {
   const supabase = getSupabaseAdmin();
 
   if (!(input.eventType in EVENT_WEIGHTS)) {
     return {
-      attemptId: '',
+      attemptId: "",
       rollupUpdated: false,
-      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.keys(EVENT_WEIGHTS).join(', ')}`,
+      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.keys(EVENT_WEIGHTS).join(", ")}`,
+    };
+  }
+
+  const canonicalQuestionId = normalizeText(input.questionCanonicalId);
+  const section = normalizeText(input.metadata.section);
+  const domain = normalizeText(input.metadata.domain) || "unknown";
+  const skill = normalizeText(input.metadata.skill);
+  const skillCode = normalizeText(input.metadata.skill_code);
+  const eventWeight = EVENT_WEIGHTS[input.eventType];
+  const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
+
+  if (!canonicalQuestionId) {
+    return {
+      attemptId: "",
+      rollupUpdated: false,
+      error: "Missing canonical question id for mastery update",
+    };
+  }
+
+  if (!section) {
+    return {
+      attemptId: "",
+      rollupUpdated: false,
+      error: "Missing section for mastery update",
+    };
+  }
+
+  if (!skill && !skillCode) {
+    return {
+      attemptId: "",
+      rollupUpdated: false,
+      error: "Missing skill mapping for mastery update",
     };
   }
 
@@ -49,30 +94,25 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
   let rollupUpdated = true;
   let rollupError: string | undefined;
 
-  const eventWeight = EVENT_WEIGHTS[input.eventType];
-  const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
-  const shouldUpdateMastery = input.eventType !== MasteryEventType.TUTOR_VIEW;
-
-
   const { error: insertError } = await supabase
     .from("student_question_attempts")
     .insert({
       id: attemptId,
       user_id: input.userId,
-      question_canonical_id: input.questionCanonicalId,
+      question_canonical_id: canonicalQuestionId,
       session_id: input.sessionId || null,
       is_correct: input.isCorrect,
       selected_choice: input.selectedChoice || null,
       time_spent_ms: input.timeSpentMs || null,
       event_type: input.eventType,
-      exam: input.metadata.exam,
-      section: input.metadata.section,
-      domain: input.metadata.domain,
-      skill: input.metadata.skill,
-      subskill: input.metadata.subskill,
-      skill_code: input.metadata.skill_code,
+      exam: normalizeText(input.metadata.exam),
+      section,
+      domain,
+      skill: skill || skillCode,
+      subskill: normalizeText(input.metadata.subskill),
+      skill_code: skillCode,
       difficulty: input.metadata.difficulty,
-      structure_cluster_id: input.metadata.structure_cluster_id,
+      structure_cluster_id: normalizeText(input.metadata.structure_cluster_id),
     });
 
   if (insertError) {
@@ -83,40 +123,35 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
     };
   }
 
-  if (shouldUpdateMastery && input.metadata.section && input.metadata.skill) {
-    try {
-      const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
-        p_user_id: input.userId,
-        p_section: input.metadata.section,
-        p_domain: input.metadata.domain || "unknown",
-        p_skill: input.metadata.skill,
-        p_is_correct: input.isCorrect,
-        p_event_weight: eventWeight,
-        p_event_type: input.eventType,
-        p_difficulty: input.metadata.difficulty || null,
-      });
+  try {
+    const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
+      p_user_id: input.userId,
+      p_section: section,
+      p_domain: domain,
+      p_skill: skill || skillCode,
+      p_is_correct: input.isCorrect,
+      p_event_weight: eventWeight * questionWeight,
+      p_event_type: input.eventType,
+      p_difficulty: input.metadata.difficulty || null,
+    });
 
-      if (skillError) {
-        rollupUpdated = false;
-        rollupError = skillError.message;
-      }
-    } catch (err: any) {
-      console.warn("[Mastery] Skill rollup error:", err.message);
+    if (skillError) {
       rollupUpdated = false;
-      rollupError = err.message;
+      rollupError = skillError.message;
     }
+  } catch (err: any) {
+    console.warn("[Mastery] Skill rollup error:", err.message);
+    rollupUpdated = false;
+    rollupError = err.message;
   }
 
-  // Step 3: Update student_cluster_mastery (CANONICAL WRITE #2)
-  // This RPC performs INSERT...ON CONFLICT DO UPDATE on student_cluster_mastery
-  // Using True Half-Life formula with difficulty weights and deterministic rounding
-  if (shouldUpdateMastery && input.metadata.structure_cluster_id) {
+  if (input.metadata.structure_cluster_id) {
     try {
       const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
         p_user_id: input.userId,
         p_structure_cluster_id: input.metadata.structure_cluster_id,
         p_is_correct: input.isCorrect,
-        p_event_weight: eventWeight,
+        p_event_weight: eventWeight * questionWeight,
         p_event_type: input.eventType,
         p_difficulty: input.metadata.difficulty || null,
       });
@@ -141,8 +176,3 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
 }
 
 export const logAttemptAndUpdateMastery = applyMasteryUpdate;
-
-
-
-
-

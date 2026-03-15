@@ -1913,7 +1913,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         isCorrect,
         selectedChoice: chosen ?? null,
         timeSpentMs: clampedTimeSpentMs,
-        eventType: MasteryEventType.PRACTICE_SUBMIT,
+        eventType: isCorrect ? MasteryEventType.PRACTICE_PASS : MasteryEventType.PRACTICE_FAIL,
         metadata: {
           exam: metadata.exam,
           section: metadata.section,

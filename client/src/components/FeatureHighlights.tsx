@@ -14,7 +14,7 @@ export default function FeatureHighlights() {
     },
     { 
       icon: <Brain className="text-primary" size={24}/>, 
-      title: "AI Tutor Help", 
+      title: "Lisa Help", 
       desc: "Step-by-step explanations and chat guidance." 
     },
   ];
