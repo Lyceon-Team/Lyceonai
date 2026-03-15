@@ -28,9 +28,6 @@ export interface QuestionDoc {
   tags: string[];
   sourcePdf?: string | null;
   pageNumber?: number | null;
-  // Legacy provenance field retained for historical data compatibility.
-  // No runtime ingestion pipeline writes to this field in current scope.
-  ingestionRunId?: string | null;
   questionHash?: string | null;
   engineUsed?: string | null;
   engineConfidence?: number | null;
@@ -38,3 +35,4 @@ export interface QuestionDoc {
   questionNumber?: number | null;
   section?: string | null;
 }
+

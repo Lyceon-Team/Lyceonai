@@ -206,7 +206,7 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
       status
     `)
     .eq("question_type", "multiple_choice")
-    .eq("status", "reviewed")
+    .eq("status", "published")
     .limit(limit * 2);
 
   if (params.section === "math") {
@@ -385,5 +385,4 @@ function mapToStudentQuestion(q: any): any {
     answerText: q.answer_text ?? null,
   };
 }
-
 

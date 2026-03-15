@@ -70,7 +70,6 @@ export interface EmbeddingClient {
  * Question repository interface for dependency injection (testing)
  */
 export interface QuestionRepository {
-  loadById(questionId: string): Promise<QuestionContext | null>;
   loadByCanonicalId(canonicalId: string): Promise<QuestionContext | null>;
 }
 
@@ -858,14 +857,12 @@ export class RagService {
   }
 
   /**
-   * Load question by ID (handles both canonical ID and regular ID)
+   * Load question by canonical ID only (fail-closed; no UUID fallback)
    * Uses injected questionRepo if available, otherwise falls back to Supabase HTTP client
    */
   private async loadQuestionById(questionId: string): Promise<QuestionContext | null> {
     // Use injected repository if available (for testing)
     if (this.questionRepo) {
-      const result = await this.questionRepo.loadById(questionId);
-      if (result) return result;
       return this.questionRepo.loadByCanonicalId(questionId);
     }
 
@@ -888,26 +885,7 @@ export class RagService {
         return this.supabaseRowToQuestionContext(canonicalQuery.data);
       }
 
-      // Fall back to regular ID if not found by canonical ID
-      const idQuery = await supabaseServer
-        .from('questions')
-        .select('*')
-        .eq('id', questionId)
-        .limit(1)
-        .maybeSingle();
-
-      if (idQuery.error) {
-        console.warn(`⚠️ [RAG-V2] Error loading by id ${questionId}:`, idQuery.error.message);
-        return null;
-      }
-
-      if (!idQuery.data) {
-        console.log(`[RAG-V2] Question not found: ${questionId}`);
-        return null;
-      }
-
-      console.log(`[RAG-V2] Loaded question by id: ${idQuery.data.id}`);
-      return this.supabaseRowToQuestionContext(idQuery.data);
+      return null;
     } catch (error: any) {
       console.error(`❌ [RAG-V2] Failed to load question ${questionId}:`, error.message);
       return null;
@@ -1105,7 +1083,4 @@ export function getRagService(): RagService {
   }
   return ragServiceInstance;
 }
-
-
-
 

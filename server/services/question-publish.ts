@@ -131,11 +131,10 @@ async function insertQuestionVersion(params: {
   snapshot: Record<string, unknown>;
   publishedAt?: string | null;
 }) {
-  const { supabase, questionId, canonicalId, versionNumber, lifecycleStatus, actorUserId, snapshot, publishedAt } = params;
+  const { supabase, canonicalId, versionNumber, lifecycleStatus, actorUserId, snapshot, publishedAt } = params;
 
   const { error } = await supabase.from("question_versions").insert({
-    question_id: questionId,
-    canonical_id: canonicalId,
+    question_canonical_id: canonicalId,
     version_number: versionNumber,
     lifecycle_status: lifecycleStatus,
     snapshot,
@@ -322,5 +321,4 @@ export async function versionPublishedQuestion(params: VersionPublishedQuestionP
     version: nextVersion,
   };
 }
-
 

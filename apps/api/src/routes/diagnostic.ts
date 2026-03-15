@@ -159,7 +159,7 @@ router.post('/answer', async (req: AuthenticatedRequest, res: Response) => {
       isCorrect,
       selectedChoice: selectedChoice || null,
       timeSpentMs: timeSpentMs || null,
-      eventType: MasteryEventType.DIAGNOSTIC_SUBMIT,
+      eventType: isCorrect ? MasteryEventType.PRACTICE_PASS : MasteryEventType.PRACTICE_FAIL,
       metadata: {
         exam: question.exam || null,
         section: question.section || null,

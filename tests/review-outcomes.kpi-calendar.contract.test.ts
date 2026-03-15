@@ -4,8 +4,8 @@ import { isCanonicalKpiAttemptEventType } from '../server/services/kpi-truth-lay
 import { isCalendarCountedEventType } from '../apps/api/src/routes/calendar';
 
 describe('Canonical Review Outcome Consumption', () => {
-  const included = [null, 'PRACTICE_SUBMIT', 'REVIEW_PASS', 'REVIEW_FAIL'];
-  const excluded = ['TUTOR_HELPED', 'TUTOR_FAIL', 'TUTOR_VIEW'];
+  const included = [null, 'practice_pass', 'practice_fail', 'review_pass', 'review_fail'];
+  const excluded = ['tutor_helped', 'tutor_fail', 'test_pass', 'test_fail'];
 
   it('KPI truth layer includes canonical review outcomes and excludes tutor-only events', () => {
     for (const eventType of included) {

@@ -15,12 +15,11 @@ import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
-// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, embeddings, etc.).
-// apps/api MUST NOT be mounted for user-facing routes:
-//   - /api/tutor/v2
-//   - auth token resolution / requireSupabaseAuth
-import { rag } from "./routes/legacy/rag";
-import ragV2Router from "./routes/legacy/rag-v2";
+// SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
+// Canonical RAG route owners are apps/api/src/routes/rag.ts and apps/api/src/routes/rag-v2.ts.
+// Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
+import { rag } from "../apps/api/src/routes/rag";
+import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
 import { legalRouter } from "./routes/legal-routes.js";
 import fullLengthExamRouter from "./routes/full-length-exam-routes";
@@ -34,9 +33,9 @@ import {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
-} from "./routes/legacy/questions";
-import { searchQuestions } from "./routes/legacy/search";
-import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
+} from "./routes/questions-runtime";
+import { searchQuestions } from "./routes/search-runtime";
+import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -258,7 +257,7 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
+// Tutor v2 endpoint - Lisa tutoring with canonical RAG context
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
 
 // Google OAuth Routes (direct OAuth flow)
@@ -347,7 +346,9 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
+app.post("/api/review-errors/sessions", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, startReviewErrorSession);
+app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitReviewSessionAnswer);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
@@ -618,7 +619,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
+    console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
@@ -664,3 +665,7 @@ if (isMainModule) {
 }
 
 export default app;
+
+
+
+

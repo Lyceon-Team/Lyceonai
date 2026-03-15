@@ -131,10 +131,66 @@ const StartSessionBodySchema = z.object({
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
-  sessionItemId: z.string().uuid(),
-  selectedOptionId: z.string().max(128).optional().nullable(),
+  sessionItemId: z.string().uuid().optional(),
+  questionId: z.string().uuid().optional(),
+  selectedAnswer: z.string().trim().max(32).optional().nullable(),
+  selectedOptionId: z.string().trim().max(32).optional().nullable(),
+  answer: z.string().trim().max(32).optional().nullable(),
+  freeResponseAnswer: z.string().trim().max(2000).optional().nullable(),
   clientAttemptId: z.string().max(128).optional().nullable(),
-}).strict();
+  client_instance_id: z.string().max(128).optional().nullable(),
+});
+
+type NormalizedAnswerPayload = {
+  sessionId: string;
+  sessionItemId?: string;
+  questionId?: string;
+  selectedAnswer: string | null;
+  freeResponseAnswer: string | null;
+  clientAttemptId: string | null;
+  clientInstanceId: string | null;
+};
+
+function normalizeAnswerPayload(input: z.infer<typeof AnswerBodySchema>): NormalizedAnswerPayload {
+  const selectedAnswerRaw =
+    typeof input.selectedAnswer === "string"
+      ? input.selectedAnswer
+      : typeof input.selectedOptionId === "string"
+        ? input.selectedOptionId
+        : typeof input.answer === "string"
+          ? input.answer
+          : null;
+
+  const selectedAnswer =
+    selectedAnswerRaw && selectedAnswerRaw.trim().length > 0
+      ? selectedAnswerRaw.trim()
+      : null;
+
+  const freeResponseAnswer =
+    typeof input.freeResponseAnswer === "string" && input.freeResponseAnswer.trim().length > 0
+      ? input.freeResponseAnswer.trim()
+      : null;
+
+  const clientAttemptId =
+    typeof input.clientAttemptId === "string" && input.clientAttemptId.trim().length > 0
+      ? input.clientAttemptId.trim()
+      : null;
+
+  const clientInstanceId =
+    typeof input.client_instance_id === "string" && input.client_instance_id.trim().length > 0
+      ? input.client_instance_id.trim()
+      : null;
+
+  return {
+    sessionId: input.sessionId,
+    sessionItemId: input.sessionItemId,
+    questionId: input.questionId,
+    selectedAnswer,
+    freeResponseAnswer,
+    clientAttemptId,
+    clientInstanceId,
+  };
+}
 
 function asSessionMetadata(metadata: unknown): SessionMetadata {
   if (!metadata || typeof metadata !== "object") return {};
@@ -899,7 +955,7 @@ async function startOrReplaySession(args: {
   };
 }
 
-async function loadOwnedSession(sessionId: string, userId: string): Promise<SessionRow | null> {
+async function loadOwnedSessionForUser(sessionId: string, userId: string): Promise<SessionRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_sessions")
     .select("id, user_id, section, mode, status, completed, metadata")
@@ -1003,7 +1059,7 @@ async function serveNextForSession(args: {
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
 
-  const session = await loadOwnedSession(args.sessionId, args.userId);
+  const session = await loadOwnedSessionForUser(args.sessionId, args.userId);
   if (!session) {
     return args.res.status(404).json({
       error: "session_not_found",
@@ -1362,7 +1418,7 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     });
   }
 
-  const session = await loadOwnedSession(sessionId, userId);
+  const session = await loadOwnedSessionForUser(sessionId, userId);
   if (!session) {
     return res.status(404).json({
       error: "session_not_found",
@@ -1461,6 +1517,58 @@ router.get("/next", requireSupabaseAuth, async (req, res) => {
   });
 });
 
+async function loadSessionById(sessionId: string) {
+  const { data, error } = await supabaseServer
+    .from("practice_sessions")
+    .select("id, user_id, status, mode, section, difficulty, metadata")
+    .eq("id", sessionId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+async function loadOwnedSession(sessionId: string, userId: string) {
+  const session = await loadSessionById(sessionId);
+  if (!session) return null;
+  if (session.user_id !== userId) {
+    return { forbidden: true as const, session };
+  }
+  return { forbidden: false as const, session };
+}
+
+async function findSessionItemForSubmission(
+  sessionId: string,
+  args: {
+    sessionItemId?: string;
+    questionId?: string;
+  }
+) {
+  let query = supabaseServer
+    .from("practice_session_items")
+    .select("id, session_id, user_id, question_id, question_canonical_id, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id")
+    .eq("session_id", sessionId);
+
+  if (args.sessionItemId) {
+    query = query.eq("id", args.sessionItemId);
+  } else if (args.questionId) {
+    query = query.eq("question_id", args.questionId);
+  } else {
+    query = query.eq("status", "served").order("ordinal", { ascending: false }).limit(1);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data || data.length === 0) return null;
+  return data[0];
+}
 export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
@@ -1468,33 +1576,68 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   if (!userId) {
     return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
+      error: "authentication_required",
+      message: "Authentication required",
       requestId,
     });
   }
 
-  const parsed = AnswerBodySchema.safeParse(req.body);
+  const parsed = AnswerBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({
-      error: "invalid_payload",
-      issues: parsed.error.issues,
+      error: "invalid_request",
+      message: "Invalid answer payload",
       requestId,
     });
   }
 
-  const {
-    sessionId,
-    sessionItemId,
-    selectedOptionId,
-    clientAttemptId,
-  } = parsed.data;
+  const payload = normalizeAnswerPayload(parsed.data);
 
-  const session = await loadOwnedSession(sessionId, userId);
-  if (!session) {
+  if (!payload.selectedAnswer && !payload.freeResponseAnswer) {
+    return res.status(400).json({
+      error: "invalid_request",
+      message: "An answer is required",
+      requestId,
+    });
+  }
+
+  const ownedSessionResult = await loadOwnedSession(payload.sessionId, userId);
+
+  if (!ownedSessionResult) {
     return res.status(404).json({
       error: "session_not_found",
       message: "Practice session not found",
+      requestId,
+    });
+  }
+
+  if (ownedSessionResult.forbidden) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "You do not have access to this practice session",
+      requestId,
+    });
+  }
+
+  const session = ownedSessionResult.session;
+
+  const sessionItem = await findSessionItemForSubmission(payload.sessionId, {
+    sessionItemId: payload.sessionItemId,
+    questionId: payload.questionId,
+  });
+
+  if (!sessionItem) {
+    return res.status(404).json({
+      error: "question_not_served",
+      message: "No served practice item found for this session",
+      requestId,
+    });
+  }
+
+  if (sessionItem.user_id && sessionItem.user_id !== userId) {
+    return res.status(403).json({
+      error: "forbidden",
+      message: "You do not have access to this practice session item",
       requestId,
     });
   }
@@ -1509,20 +1652,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       requestId,
     });
   }
-
-  const servedItem = await findSessionItemById(sessionId, sessionItemId);
-  if (!servedItem) {
-    return res.status(409).json({
-      error: "session_item_not_found",
-      message: "No served practice item was found for this answer submission.",
-      requestId,
-    });
-  }
-
   const { data: qRow, error: qErr } = await supabaseServer
     .from("questions")
     .select("id, canonical_id, status, section, section_code, question_type, stem, correct_answer, explanation, options")
-    .eq("id", servedItem.question_id)
+    .eq("id", sessionItem.question_id)
     .eq("status", "published")
     .eq("question_type", "multiple_choice")
     .single();
@@ -1560,7 +1693,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const optionTokenMap = parseStoredOptionTokenMap(servedItem.option_token_map);
+  const optionTokenMap = parseStoredOptionTokenMap(sessionItem.option_token_map);
   if (!optionTokenMap) {
     return res.status(409).json({
       error: "session_item_mapping_missing",
@@ -1586,16 +1719,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   const existingAttempt = await findExistingAttempt({
     userId,
-    sessionId,
+    sessionId: payload.sessionId,
     questionId,
-    sessionItemId: servedItem.id,
-    idempotencyKey: clientAttemptId?.trim() || null,
+    sessionItemId: sessionItem.id,
+    idempotencyKey: payload.clientAttemptId,
   });
 
   const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
 
   if (existingAttempt) {
-    if (existingAttempt.session_id !== sessionId || existingAttempt.question_id !== questionId) {
+    if (existingAttempt.session_id !== payload.sessionId || existingAttempt.question_id !== questionId) {
       return res.status(409).json({
         error: "idempotency_key_reuse",
         message: "The provided clientAttemptId is already bound to a different attempt.",
@@ -1604,19 +1737,19 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     }
 
     return res.json({
-      sessionId,
-      sessionItemId: servedItem.id,
+      sessionId: payload.sessionId,
+      sessionItemId: sessionItem.id,
       isCorrect: !!existingAttempt.is_correct,
       mode: "multiple_choice",
       correctOptionId,
       explanation,
       feedback: existingAttempt.is_correct ? "Correct" : existingAttempt.outcome === "skipped" ? "Skipped" : "Incorrect",
-      stats: await getSessionStats(sessionId, userId),
+      stats: await getSessionStats(payload.sessionId, userId),
       idempotentRetried: true,
     });
   }
 
-  if (servedItem.status !== "served") {
+  if (sessionItem.status !== "served") {
     return res.status(409).json({
       error: "session_item_not_open",
       message: "This practice item is already resolved.",
@@ -1624,20 +1757,21 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const isSkipped = !selectedOptionId;
-  const selectedCanonicalKey = selectedOptionId ? optionTokenMap[selectedOptionId] : null;
+  const selectedTokenOrKey = payload.selectedAnswer;
+  const mappedKeyFromToken = selectedTokenOrKey ? optionTokenMap[selectedTokenOrKey] : null;
+  const selectedCanonicalKey = mappedKeyFromToken ?? normalizeAnswerKey(selectedTokenOrKey ?? null);
 
-  if (!isSkipped && !selectedCanonicalKey) {
+  if (!selectedCanonicalKey) {
     return res.status(400).json({
       error: "invalid_answer",
-      message: "selectedOptionId must match a served option token.",
+      message: "selectedAnswer must match a served option token or canonical option key.",
       requestId,
     });
   }
 
-  const chosen = normalizeAnswerKey(selectedCanonicalKey ?? null);
-  const isCorrect = !isSkipped && !!chosen && chosen === correctAnswerKey;
-  const outcome = isSkipped ? "skipped" : isCorrect ? "correct" : "incorrect";
+  const chosen = selectedCanonicalKey;
+  const isCorrect = chosen === correctAnswerKey;
+  const outcome = isCorrect ? "correct" : "incorrect";
 
   const clampedTimeSpentMs = null;
 
@@ -1647,17 +1781,17 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const insertPayload: Record<string, unknown> = {
     id: attemptId,
     user_id: userId,
-    session_id: sessionId,
-    session_item_id: servedItem.id,
+    session_id: payload.sessionId,
+    session_item_id: sessionItem.id,
     question_id: questionId,
-    selected_answer: selectedOptionId ?? null,
-    free_response_answer: null,
+    selected_answer: payload.selectedAnswer ?? null,
+    free_response_answer: payload.freeResponseAnswer ?? null,
     chosen: chosen ?? null,
     is_correct: isCorrect,
     outcome,
     time_spent_ms: clampedTimeSpentMs,
     attempted_at: now,
-    client_attempt_id: clientAttemptId ?? null,
+    client_attempt_id: payload.clientAttemptId ?? null,
   };
 
   const insertResult = await insertAnswerAttempt(insertPayload);
@@ -1665,10 +1799,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     if (isDuplicateConflict(insertResult.error.message)) {
       const duplicate = await findExistingAttempt({
         userId,
-        sessionId,
+        sessionId: payload.sessionId,
         questionId,
-        sessionItemId: servedItem.id,
-        idempotencyKey: clientAttemptId?.trim() || null,
+        sessionItemId: sessionItem.id,
+        idempotencyKey: payload.clientAttemptId,
       });
 
       if (!duplicate) {
@@ -1680,14 +1814,14 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       }
 
       return res.json({
-        sessionId,
-        sessionItemId: servedItem.id,
+        sessionId: payload.sessionId,
+        sessionItemId: sessionItem.id,
         isCorrect: !!duplicate.is_correct,
         mode: "multiple_choice",
         correctOptionId,
         explanation,
         feedback: duplicate.is_correct ? "Correct" : duplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
-        stats: await getSessionStats(sessionId, userId),
+        stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
     }
@@ -1702,12 +1836,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const { data: updatedItem, error: updateItemErr } = await supabaseServer
     .from("practice_session_items")
     .update({
-      status: isSkipped ? "skipped" : "answered",
+      status: "answered",
       attempt_id: attemptId,
       updated_at: now,
       answered_at: now,
     })
-    .eq("id", servedItem.id)
+    .eq("id", sessionItem.id)
     .eq("status", "served")
     .select("id")
     .maybeSingle();
@@ -1723,22 +1857,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (!updatedItem) {
     const raceDuplicate = await findExistingAttempt({
       userId,
-      sessionId,
+      sessionId: payload.sessionId,
       questionId,
-      sessionItemId: servedItem.id,
-      idempotencyKey: clientAttemptId?.trim() || null,
+      sessionItemId: sessionItem.id,
+      idempotencyKey: payload.clientAttemptId,
     });
 
     if (raceDuplicate) {
       return res.json({
-        sessionId,
-        sessionItemId: servedItem.id,
+        sessionId: payload.sessionId,
+        sessionItemId: sessionItem.id,
         isCorrect: !!raceDuplicate.is_correct,
         mode: "multiple_choice",
         correctOptionId,
         explanation,
         feedback: raceDuplicate.is_correct ? "Correct" : raceDuplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
-        stats: await getSessionStats(sessionId, userId),
+        stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
     }
@@ -1755,12 +1889,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       .from("practice_events")
       .insert({
         user_id: userId,
-        session_id: sessionId,
+        session_id: payload.sessionId,
         question_id: questionId,
         event_type: "answered",
         created_at: now,
         payload: {
-          session_item_id: servedItem.id,
+          session_item_id: sessionItem.id,
           outcome,
           isCorrect,
         },
@@ -1775,11 +1909,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       await applyMasteryUpdate({
         userId,
         questionCanonicalId: metadata.canonicalId,
-        sessionId,
+        sessionId: payload.sessionId,
         isCorrect,
         selectedChoice: chosen ?? null,
         timeSpentMs: clampedTimeSpentMs,
-        eventType: MasteryEventType.PRACTICE_SUBMIT,
+        eventType: isCorrect ? MasteryEventType.PRACTICE_PASS : MasteryEventType.PRACTICE_FAIL,
         metadata: {
           exam: metadata.exam,
           section: metadata.section,
@@ -1802,38 +1936,37 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const refreshedMeta = asSessionMetadata(session.metadata);
   refreshedMeta.active_session_item_id = null;
 
-  const resolvedCount = await countResolvedSessionItems(sessionId);
+  const resolvedCount = await countResolvedSessionItems(payload.sessionId);
   const targetQuestionCount = coerceTargetQuestionCount(refreshedMeta.target_question_count);
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
     refreshedMeta.lifecycle_state = "completed";
-    await updateSessionLifecycle(sessionId, refreshedMeta, {
+    await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "completed",
       completed: true,
       finished_at: now,
     });
   } else {
     refreshedMeta.lifecycle_state = "active";
-    await updateSessionLifecycle(sessionId, refreshedMeta, {
+    await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "in_progress",
       completed: false,
     });
   }
 
   return res.json({
-    sessionId,
-    sessionItemId: servedItem.id,
+    sessionId: payload.sessionId,
+    sessionItemId: sessionItem.id,
     isCorrect,
     mode: "multiple_choice",
     correctOptionId,
     explanation,
-    feedback: isCorrect ? "Correct" : isSkipped ? "Skipped" : "Incorrect",
-    stats: await getSessionStats(sessionId, userId),
+    feedback: isCorrect ? "Correct" : "Incorrect",
+    stats: await getSessionStats(payload.sessionId, userId),
     state: shouldComplete ? "completed" : "active",
   });
 }
-
 router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeAnswer);
 
 export default router;

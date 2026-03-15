@@ -13,9 +13,7 @@ export async function getQuestionMetadataForAttempt(
 ): Promise<QuestionMetadataSnapshot & { canonicalId: string | null }> {
   const supabase = getSupabaseAdmin();
 
-  const { data, error } = await supabase
-    .from("questions")
-    .select(`
+  const queryColumns = `
       canonical_id,
       exam,
       section,
@@ -25,9 +23,27 @@ export async function getQuestionMetadataForAttempt(
       difficulty,
       structure_cluster_id,
       skill_code
-    `)
-    .eq("id", questionId)
-    .single();
+    `;
+
+  const byCanonical = await supabase
+    .from("questions")
+    .select(queryColumns)
+    .eq("canonical_id", questionId)
+    .maybeSingle();
+
+  let data = byCanonical.data;
+  let error = byCanonical.error;
+
+  if (!data) {
+    const byId = await supabase
+      .from("questions")
+      .select(queryColumns)
+      .eq("id", questionId)
+      .maybeSingle();
+
+    data = byId.data;
+    error = byId.error;
+  }
 
   if (error || !data) {
     return {
@@ -209,6 +225,7 @@ export async function getMasterySummary(
 
   return result;
 }
+
 
 
 

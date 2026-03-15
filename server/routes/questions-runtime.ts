@@ -7,6 +7,7 @@ import {
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
+import { buildReviewQueueForStudent } from "../services/review-queue";
 
 const QUESTION_SAFE_SELECT = [
   "id",
@@ -303,19 +304,9 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       return;
     }
 
-    const { data: recentSession, error: sessionError } = await supabaseServer
-      .from("practice_sessions")
-      .select("id, started_at, mode, section")
-      .eq("user_id", user.id)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const queue = await buildReviewQueueForStudent(user.id);
 
-    if (sessionError) {
-      return res.status(500).json({ error: "Failed to fetch recent session", detail: sessionError.message });
-    }
-
-    if (!recentSession) {
+    if (queue.latestSnapshots.length === 0) {
       return res.json({
         attempts: [],
         incorrectAttempts: [],
@@ -329,73 +320,60 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
           skippedCount: 0,
           totalCount: 0,
         },
-        message: "No practice sessions found. Start practicing to see your mistakes here!",
+        message: "No review-eligible misses found yet. Keep practicing to build your recovery queue.",
       });
     }
 
-    const { data: allAttempts, error: attemptsError } = await supabaseServer
-      .from("answer_attempts")
-      .select(
-        "id, question_id, is_correct, outcome, attempted_at, questions(id, stem, section, difficulty)"
-      )
-      .eq("session_id", recentSession.id)
-      .eq("user_id", user.id)
-      .order("attempted_at", { ascending: false });
+    const formatAttempt = (snapshot: any) => ({
+      id: snapshot.attemptId,
+      questionId: snapshot.questionId,
+      questionCanonicalId: snapshot.questionCanonicalId,
+      questionText: snapshot.questionText,
+      section: snapshot.section,
+      difficulty: snapshot.difficulty ?? "",
+      isCorrect: snapshot.isCorrect,
+      outcome: snapshot.outcome,
+      attemptedAt: snapshot.attemptedAt,
+      documentName: snapshot.source === "full_test" ? "SAT Full-Length" : "SAT Practice",
+      source: snapshot.source,
+    });
 
-    if (attemptsError) {
-      return res.status(500).json({ error: "Failed to fetch attempts", detail: attemptsError.message });
-    }
+    const incorrectAttempts = queue.unresolvedQueue.filter((snapshot) => snapshot.outcome === "incorrect").map(formatAttempt);
+    const skippedAttempts = queue.unresolvedQueue.filter((snapshot) => snapshot.outcome === "skipped").map(formatAttempt);
 
-    const attempts = allAttempts ?? [];
-    const correctCount = attempts.filter((a: any) => a.outcome === "correct" || (a.is_correct && !a.outcome)).length;
-    const skippedCount = attempts.filter((a: any) => a.outcome === "skipped").length;
-    const incorrectCount = attempts.filter((a: any) => a.outcome === "incorrect" || (!a.is_correct && a.outcome !== "skipped")).length;
-
-    const incorrectRaw = attempts.filter((a: any) => a.outcome === "incorrect" || (!a.is_correct && a.outcome !== "skipped"));
-    const skippedRaw = attempts.filter((a: any) => a.outcome === "skipped");
-
-    const formatAttempt = (attempt: any) => {
-      const question = attempt.questions as { id: string; stem: string; section: string; difficulty: string } | null;
-      return {
-        id: attempt.id,
-        questionId: attempt.question_id,
-        questionText: question?.stem?.slice(0, 200) || "Question text unavailable",
-        section: question?.section || "Unknown",
-        difficulty: question?.difficulty || "",
-        isCorrect: attempt.is_correct,
-        outcome: attempt.outcome,
-        attemptedAt: attempt.attempted_at,
-        documentName: "SAT Practice",
-      };
-    };
-
-    const incorrectAttempts = incorrectRaw.map(formatAttempt);
-    const skippedAttempts = skippedRaw.map(formatAttempt);
-
-    const reviewQueue = [...incorrectRaw, ...skippedRaw]
-      .sort((a: any, b: any) => new Date(b.attempted_at).getTime() - new Date(a.attempted_at).getTime())
-      .map((attempt: any) => ({
-        questionId: attempt.question_id,
-        originOutcome: attempt.outcome || (attempt.is_correct ? "correct" : "incorrect"),
-        outcome: attempt.outcome || (attempt.is_correct ? "correct" : "incorrect"),
-        attemptId: attempt.id,
-      }));
+    const reviewQueue = queue.unresolvedQueue.map((snapshot) => ({
+      questionId: snapshot.questionId,
+      questionCanonicalId: snapshot.questionCanonicalId,
+      originOutcome: snapshot.outcome,
+      outcome: snapshot.outcome,
+      attemptId: snapshot.attemptId,
+      source: snapshot.source,
+      attemptedAt: snapshot.attemptedAt,
+      section: snapshot.section,
+      domain: snapshot.domain,
+      skill: snapshot.skill,
+      subskill: snapshot.subskill,
+      difficulty: snapshot.difficulty,
+    }));
 
     return res.json({
-      attempts: incorrectAttempts,
+      attempts: queue.unresolvedQueue.map(formatAttempt),
       incorrectAttempts,
       skippedAttempts,
       reviewQueue,
       summary: {
-        sessionId: recentSession.id,
-        sessionStartedAt: recentSession.started_at,
-        sessionMode: recentSession.mode,
-        sessionSection: recentSession.section,
-        correctCount,
-        incorrectCount,
-        skippedCount,
-        totalCount: attempts.length,
+        sessionId: null,
+        sessionStartedAt: queue.latestAttemptAt,
+        sessionMode: "mixed",
+        sessionSection: "mixed",
+        correctCount: queue.correctCount,
+        incorrectCount: queue.incorrectCount,
+        skippedCount: queue.skippedCount,
+        totalCount: queue.latestSnapshots.length,
       },
+      message: reviewQueue.length === 0
+        ? "No unresolved review items right now. Great recovery streak."
+        : undefined,
     });
   } catch (error: any) {
     return res.status(500).json({ error: "Failed to fetch failed attempts", detail: error?.message ?? "Unknown error" });
@@ -528,3 +506,5 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
     return res.status(500).json({ error: "Failed to submit feedback", detail: error?.message ?? "Unknown error" });
   }
 };
+
+

@@ -15,6 +15,21 @@ const state = vi.hoisted(() => ({
   rpcCalls: [] as string[],
 }));
 
+const accountMocks = vi.hoisted(() => ({
+  checkUsageLimit: vi.fn(async () => ({
+    allowed: true,
+    current: 0,
+    limit: 10,
+    resetAt: "2099-01-01T00:00:00.000Z",
+  })),
+  incrementUsage: vi.fn(async () => ({ ai_messages_used: 1, practice_questions_used: 0 })),
+  getAccountIdForUser: vi.fn(async () => "acct-test"),
+  ensureAccountForUser: vi.fn(async () => "acct-test"),
+  resolveLinkedPairPremiumAccessForStudent: vi.fn(async () => ({ hasPremiumAccess: false })),
+  resolveLinkedPairPremiumAccessForGuardian: vi.fn(async () => ({ hasPremiumAccess: false })),
+  FREE_TIER_LIMITS: { ai_chat: 5, practice: 10 },
+}));
+
 const { callLlmMock, handleRagQueryMock, updateStudentStyleMock, logTutorInteractionMock } = vi.hoisted(() => ({
   callLlmMock: vi.fn().mockResolvedValue("Mock tutor response"),
   handleRagQueryMock: vi.fn(async (request: any) => {
@@ -97,6 +112,8 @@ vi.mock("../apps/api/src/lib/tutor-log", () => ({
   logTutorInteraction: logTutorInteractionMock,
 }));
 
+vi.mock("../server/lib/account", () => accountMocks);
+
 vi.mock("../apps/api/src/lib/supabase-server", () => {
   function createBuilder(table: string) {
     return {
@@ -139,7 +156,7 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
   };
 });
 
-vi.mock("../server/routes/legacy/questions", () => ({
+vi.mock("../server/routes/questions-runtime", () => ({
   getQuestions: (_req: any, res: any) => res.json([]),
   getRandomQuestions: (_req: any, res: any) => res.json([]),
   getQuestionCount: (_req: any, res: any) => res.json({ count: 0 }),

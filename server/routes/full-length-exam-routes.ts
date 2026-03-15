@@ -94,8 +94,16 @@ router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Reques
     console.error("[FULL-LENGTH] Create session error:", error);
     const message = error instanceof Error ? error.message : "";
 
-    if (message.includes("Unsupported test form")) {
-      return sendRouteError(req, res, 400, "Unsupported test form");
+    if (message.includes("Test form not found")) {
+      return sendRouteError(req, res, 404, "Test form not found");
+    }
+
+    if (message.includes("Test form is not published")) {
+      return sendRouteError(req, res, 400, "Test form is not published");
+    }
+
+    if (message.includes("Test form has") || message.includes("Test form is structurally incomplete") || message.includes("Active session exists for a different test form")) {
+      return sendRouteError(req, res, 409, message);
     }
 
     if (isClientInstanceConflict(message)) {
@@ -523,6 +531,4 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
   }
 });
 export default router;
-
-
 
