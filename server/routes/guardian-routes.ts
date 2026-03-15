@@ -6,6 +6,7 @@ import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
 import { DateTime } from 'luxon';
+<<<<<<< HEAD
 import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks, ensureAccountForUser } from '../lib/account';
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
@@ -13,9 +14,10 @@ import * as fullLengthExamService from "../../apps/api/src/services/fullLengthEx
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
 import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
 import { KPI_CALENDAR_COUNTED_EVENTS } from '../../apps/api/src/services/mastery-constants';
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
 const GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
@@ -85,7 +87,11 @@ router.get('/students', requireSupabaseAuth, requireGuardianAccess, async (req: 
   }
 });
 
+<<<<<<< HEAD
 router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection, durableRateLimiter, async (req: Request, res: Response) => {
+=======
+router.post('/link', requireSupabaseAuth, requireGuardianRole, durableRateLimiter, async (req: Request, res: Response) => {
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;
@@ -156,7 +162,11 @@ router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection,
   }
 });
 
+<<<<<<< HEAD
 router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, csrfProtection, async (req: Request, res: Response) => {
+=======
+router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;

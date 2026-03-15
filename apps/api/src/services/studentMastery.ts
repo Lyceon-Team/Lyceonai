@@ -1,12 +1,124 @@
+import { supabaseServer } from "../lib/supabase-server";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import type { AttemptInput, AttemptResult, QuestionMetadataSnapshot } from "./mastery-write";
 
+<<<<<<< HEAD
 export type { QuestionMetadataSnapshot, AttemptInput, AttemptResult };
 
 export {
   applyMasteryUpdate,
   logAttemptAndUpdateMastery,
 } from "./mastery-write";
+=======
+export interface QuestionMetadataSnapshot {
+  exam: string | null;
+  section: string | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  difficulty_bucket: string | null;
+  structure_cluster_id: string | null;
+}
+
+export interface AttemptInput {
+  userId: string;
+  questionCanonicalId: string;
+  sessionId?: string | null;
+  isCorrect: boolean;
+  selectedChoice?: string | null;
+  timeSpentMs?: number | null;
+  metadata: QuestionMetadataSnapshot;
+}
+
+export interface AttemptResult {
+  attemptId: string;
+  rollupUpdated: boolean;
+  error?: string;
+}
+
+export async function logAttemptAndUpdateMastery(input: AttemptInput): Promise<AttemptResult> {
+  const supabase = getSupabaseAdmin();
+  
+  const attemptId = crypto.randomUUID();
+  let rollupUpdated = true;
+  let rollupError: string | undefined;
+  
+  const { error: insertError } = await supabase
+    .from("student_question_attempts")
+    .insert({
+      id: attemptId,
+      user_id: input.userId,
+      question_canonical_id: input.questionCanonicalId,
+      session_id: input.sessionId || null,
+      is_correct: input.isCorrect,
+      selected_choice: input.selectedChoice || null,
+      time_spent_ms: input.timeSpentMs || null,
+      exam: input.metadata.exam,
+      section: input.metadata.section,
+      domain: input.metadata.domain,
+      skill: input.metadata.skill,
+      subskill: input.metadata.subskill,
+      difficulty_bucket: input.metadata.difficulty_bucket,
+      structure_cluster_id: input.metadata.structure_cluster_id,
+    });
+
+  if (insertError) {
+    console.error("[Mastery] Failed to log attempt:", insertError.message);
+    return {
+      attemptId,
+      rollupUpdated: false,
+      error: `Failed to log attempt: ${insertError.message}`,
+    };
+  }
+
+  if (input.metadata.section && input.metadata.skill) {
+    try {
+      const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
+        p_user_id: input.userId,
+        p_section: input.metadata.section,
+        p_domain: input.metadata.domain || "unknown",
+        p_skill: input.metadata.skill,
+        p_is_correct: input.isCorrect,
+      });
+      
+      if (skillError) {
+        console.warn("[Mastery] Skill rollup failed:", skillError.message);
+        rollupUpdated = false;
+        rollupError = skillError.message;
+      }
+    } catch (err: any) {
+      console.warn("[Mastery] Skill rollup error:", err.message);
+      rollupUpdated = false;
+      rollupError = err.message;
+    }
+  }
+
+  if (input.metadata.structure_cluster_id) {
+    try {
+      const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
+        p_user_id: input.userId,
+        p_structure_cluster_id: input.metadata.structure_cluster_id,
+        p_is_correct: input.isCorrect,
+      });
+      
+      if (clusterError) {
+        console.warn("[Mastery] Cluster rollup failed:", clusterError.message);
+        rollupUpdated = false;
+        rollupError = clusterError.message;
+      }
+    } catch (err: any) {
+      console.warn("[Mastery] Cluster rollup error:", err.message);
+      rollupUpdated = false;
+      rollupError = err.message;
+    }
+  }
+
+  return {
+    attemptId,
+    rollupUpdated,
+    error: rollupError,
+  };
+}
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 export async function getQuestionMetadataForAttempt(
   questionId: string

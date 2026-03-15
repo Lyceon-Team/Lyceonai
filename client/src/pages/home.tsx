@@ -49,6 +49,16 @@ export default function HomePage() {
 
   const trackCtaClick = (ctaText: string) => {
     console.debug("hero_cta_click", { variant, ctaText });
+<<<<<<< HEAD
+=======
+    console.debug("[A/B Test] Current localStorage:", window.localStorage.getItem("landing_hero_variant"));
+    if (typeof window !== 'undefined' && (window as any).analytics) {
+      (window as any).analytics.track("hero_cta_click", {
+        variant,
+        ctaText,
+      });
+    }
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   };
 
   return (

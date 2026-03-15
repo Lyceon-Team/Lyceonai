@@ -67,9 +67,15 @@ const mockQuestions = [...mockMathQuestions, ...mockRWQuestions];
 
 function createChainableMock(returnData: any[] = []) {
   const mock: any = {};
+<<<<<<< HEAD
   const methods = ['select', 'eq', 'neq', 'in', 'ilike', 'or', 'gte', 'gt', 'lt', 'lte', 'order', 'limit', 'not'];
 
   methods.forEach((method) => {
+=======
+  const methods = ['select', 'eq', 'neq', 'in', 'ilike', 'or', 'gte', 'gt', 'lt', 'lte', 'order', 'limit'];
+  
+  methods.forEach(method => {
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     mock[method] = vi.fn(() => mock);
   });
 

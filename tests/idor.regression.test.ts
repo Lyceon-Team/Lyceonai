@@ -1,9 +1,9 @@
+
 import { describe, it, expect, vi } from 'vitest';
-import request from 'supertest';
-import app from '../server/index';
 
 // ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
+<<<<<<< HEAD
   // Security test: Verify that /api/tutor/v2 uses req.user.id, not body.userId
   // This prevents IDOR attacks where an attacker tries to impersonate another user
   it('tutor_v2_userid_from_auth_not_body', async () => {
@@ -28,6 +28,47 @@ describe('IDOR Regression Invariants', () => {
 
     // Should reject
     expect([401, 403]).toContain(res2.status);
+=======
+  it('tutor_v2_userid_ignored_from_body', async () => {
+    vi.resetModules();
+    // Mock downstream dependencies before importing the router (ESM-safe)
+    const handleRagQueryMock = vi.fn(async (args) => ({ context: {}, metadata: {}, ok: true }));
+    vi.doMock('../../apps/api/src/lib/rag-service', () => ({
+      getRagService: () => ({ handleRagQuery: handleRagQueryMock })
+    }));
+    const updateStudentStyleMock = vi.fn(async () => true);
+    vi.doMock('../../apps/api/src/lib/profile-service', () => ({
+      updateStudentStyle: updateStudentStyleMock
+    }));
+    const logTutorInteractionMock = vi.fn(async () => {});
+    vi.doMock('../../apps/api/src/lib/tutor-log', () => ({
+      logTutorInteraction: logTutorInteractionMock
+    }));
+    // Import router after mocks are set
+    const { default: router } = await import('../server/routes/tutor-v2');
+    // Prepare request/response mocks
+    const req = {
+      user: { id: 'real-user' },
+      body: { userId: 'victim-id', message: 'hi', mode: 'concept' },
+    };
+    let statusCode = 0;
+    const res = {
+      status(code) { statusCode = code; return this; },
+      json(obj) { this.body = obj; return this; },
+    };
+    // Find the POST handler
+    const postLayer = router.stack.find(
+      (r) => r.route && r.route.path === '/' && r.route.methods.post
+    );
+    expect(postLayer).toBeTruthy();
+    const handler = postLayer.route.stack[0].handle;
+    await handler(req, res, () => {});
+    // Assert downstream only receives req.user.id
+    expect(handleRagQueryMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 'real-user' }));
+    expect(handleRagQueryMock).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'victim-id' }));
+    expect(updateStudentStyleMock).toHaveBeenCalledWith('real-user', expect.anything());
+    expect(logTutorInteractionMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 'real-user' }));
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   });
 
   it('progress_review_attempt_rejects_foreign_session', async () => {

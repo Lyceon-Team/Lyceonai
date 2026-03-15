@@ -3,8 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame } from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
 import {
@@ -50,11 +49,11 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
   }
 }
 
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function dateToDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
@@ -68,16 +67,16 @@ function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; d
   for (let i = 0; i < startWeekday; i++) {
     const prevDate = new Date(year, month, -startWeekday + i + 1);
     grid.push({
-      dateKey: formatDateKey(prevDate),
+      dateKey: dateToDateKey(prevDate),
       day: prevDate.getDate(),
       isCurrentMonth: false,
     });
   }
 
-  for (let d = 1; d <= daysInMonth; d++) {
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
     grid.push({
-      dateKey: formatDateKey(new Date(year, month, d)),
-      day: d,
+      dateKey: dateToDateKey(new Date(year, month, dayNum)),
+      day: dayNum,
       isCurrentMonth: true,
     });
   }
@@ -86,7 +85,7 @@ function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; d
   for (let i = 1; i <= remaining; i++) {
     const nextDate = new Date(year, month + 1, i);
     grid.push({
-      dateKey: formatDateKey(nextDate),
+      dateKey: dateToDateKey(nextDate),
       day: nextDate.getDate(),
       isCurrentMonth: false,
     });
@@ -108,7 +107,6 @@ export default function CalendarPage() {
   const [monthData, setMonthData] = useState<StudyPlanDay[]>([]);
   const [streak, setStreak] = useState<{ current: number; longest: number }>({ current: 0, longest: 0 });
   const [monthLoading, setMonthLoading] = useState(false);
-  const [monthError, setMonthError] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const year = currentMonth.getFullYear();
@@ -116,8 +114,8 @@ export default function CalendarPage() {
 
   const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
 
-  const gridStartDate = monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
-  const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? formatDateKey(new Date(year, month + 1, 0));
+  const gridStartDate = monthGrid[0]?.dateKey ?? dateToDateKey(new Date(year, month, 1));
+  const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? dateToDateKey(new Date(year, month + 1, 0));
 
   useEffect(() => {
     setProfileLoading(true);
@@ -130,13 +128,11 @@ export default function CalendarPage() {
   const loadMonthData = useCallback(async () => {
     if (!profile) return;
     setMonthLoading(true);
-    setMonthError(null);
     try {
       const response = await getCalendarMonth(gridStartDate, gridEndDate);
       setMonthData(response.days);
       setStreak(response.streak);
-    } catch (err: any) {
-      setMonthError(err?.message || "Failed to load calendar data");
+    } catch {
       setMonthData([]);
       setStreak({ current: 0, longest: 0 });
     } finally {
@@ -209,13 +205,11 @@ export default function CalendarPage() {
   const handlePrevMonth = () => {
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
     setSelectedDateKey(null);
-    setMonthError(null);
   };
 
   const handleNextMonth = () => {
     setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
     setSelectedDateKey(null);
-    setMonthError(null);
   };
 
   if (profileLoading) {
@@ -258,24 +252,6 @@ export default function CalendarPage() {
           <div className="flex items-center justify-center py-4">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        )}
-
-        {monthError && !monthLoading && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <span>{monthError}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={loadMonthData}
-                className="ml-4"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
         )}
 
         {/* Streak Display */}
@@ -413,7 +389,7 @@ function MonthGrid({
   selectedDateKey: string | null;
   onSelectDay: (dateKey: string) => void;
 }) {
-  const today = formatDateKey(new Date());
+  const today = dateToDateKey(new Date());
 
   return (
     <div className="bg-card rounded-lg border border-border p-4">

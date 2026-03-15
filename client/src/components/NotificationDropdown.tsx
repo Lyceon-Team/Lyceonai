@@ -11,8 +11,7 @@ import {
   Heart,
   Zap,
   X,
-  ExternalLink,
-  RefreshCw
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +22,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Notification, NotificationType, NotificationCategory, NotificationPriority } from "@shared/schema";
 
@@ -85,13 +83,13 @@ export default function NotificationDropdown() {
   const [, navigate] = useLocation();
 
   // Fetch notifications
-  const { data: notifications = [], isLoading, error: notificationsError, refetch: refetchNotifications } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
     queryKey: ['/api/notifications'],
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
   // Fetch unread count
-  const { data: unreadData, error: unreadError, refetch: refetchUnreadCount } = useQuery<{ count: number }>({
+  const { data: unreadData } = useQuery<{ count: number }>({
     queryKey: ['/api/notifications/unread-count'],
     refetchInterval: 15000, // Check unread count more frequently
   });
@@ -140,11 +138,6 @@ export default function NotificationDropdown() {
 
   const handleMarkAllAsRead = () => {
     markAllAsReadMutation.mutate();
-  };
-
-  const handleRetry = () => {
-    refetchNotifications();
-    refetchUnreadCount();
   };
 
   return (
@@ -218,44 +211,6 @@ export default function NotificationDropdown() {
         {isLoading ? (
           <div className="p-4 text-center text-sm text-muted-foreground" data-testid="notifications-loading">
             Loading notifications...
-          </div>
-        ) : notificationsError ? (
-          <div className="p-4 space-y-3" data-testid="notifications-error">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Failed to load notifications. {notificationsError instanceof Error ? notificationsError.message : 'Please try again.'}
-              </AlertDescription>
-            </Alert>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRetry}
-              className="w-full"
-              data-testid="button-retry-notifications"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry
-            </Button>
-          </div>
-        ) : unreadError ? (
-          <div className="p-4 space-y-3" data-testid="unread-count-error">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Failed to load unread count. {unreadError instanceof Error ? unreadError.message : 'Please try again.'}
-              </AlertDescription>
-            </Alert>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRetry}
-              className="w-full"
-              data-testid="button-retry-unread"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Retry
-            </Button>
           </div>
         ) : (notifications as Notification[]).length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground" data-testid="notifications-empty">

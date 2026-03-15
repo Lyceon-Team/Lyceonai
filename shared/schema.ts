@@ -530,6 +530,7 @@ export const examSections = pgTable("exam_sections", {
   status: text("status").notNull().default("pending"), // pending | in_progress | completed | timed_out
 });
 
+<<<<<<< HEAD
 export const questionFeedback = pgTable("question_feedback", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   questionId: varchar("question_id").references(() => questions.id, {
@@ -639,6 +640,10 @@ export const fullLengthExamResponses = pgTable(
 // ============================================================================
 // ADMIN / AUDIT / SYSTEM LOGS
 // ============================================================================
+=======
+// DEPRECATED: batch_jobs tables removed - use ingestion_runs instead
+// See ingestionRuns table below for current ingestion tracking
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 export const adminAuditLogs = pgTable("admin_audit_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -892,11 +897,16 @@ export const insertExamSectionSchema = createInsertSchema(examSections).omit({
   id: true,
 });
 
+<<<<<<< HEAD
 export const insertQuestionFeedbackSchema = createInsertSchema(questionFeedback).omit({
+=======
+export const insertQuestionSchema = createInsertSchema(questions).omit({
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   id: true,
   createdAt: true,
 });
 
+<<<<<<< HEAD
 export const insertFullLengthExamSessionSchema = createInsertSchema(
   fullLengthExamSessions,
 ).omit({
@@ -908,17 +918,44 @@ export const insertFullLengthExamSessionSchema = createInsertSchema(
 export const insertFullLengthExamModuleSchema = createInsertSchema(
   fullLengthExamModules,
 ).omit({
+=======
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  timestamp: true,
+});
+
+export const insertDocChunkSchema = createInsertSchema(docChunks).omit({
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   id: true,
   createdAt: true,
 });
 
+<<<<<<< HEAD
 export const insertFullLengthExamQuestionSchema = createInsertSchema(
   fullLengthExamQuestions,
 ).omit({
+=======
+export const insertUserProgressSchema = createInsertSchema(userProgress).omit({
+  id: true,
+  attemptedAt: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  type: notificationTypeEnum,
+  category: notificationCategoryEnum, 
+  priority: notificationPriorityEnum.optional()
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   id: true,
   createdAt: true,
 });
 
+<<<<<<< HEAD
 export const insertFullLengthExamResponseSchema = createInsertSchema(
   fullLengthExamResponses,
 ).omit({
@@ -926,6 +963,9 @@ export const insertFullLengthExamResponseSchema = createInsertSchema(
   createdAt: true,
   updatedAt: true,
 });
+=======
+// DEPRECATED: batch job schemas removed - use ingestion_runs instead
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 export const insertAdminAuditLogSchema = createInsertSchema(adminAuditLogs).omit({
   id: true,
@@ -1012,6 +1052,7 @@ export type ExamAttempt = typeof examAttempts.$inferSelect;
 export type InsertExamSection = z.infer<typeof insertExamSectionSchema>;
 export type ExamSection = typeof examSections.$inferSelect;
 
+<<<<<<< HEAD
 export type InsertQuestionFeedback = z.infer<typeof insertQuestionFeedbackSchema>;
 export type QuestionFeedback = typeof questionFeedback.$inferSelect;
 
@@ -1034,6 +1075,9 @@ export type InsertFullLengthExamResponse = z.infer<
   typeof insertFullLengthExamResponseSchema
 >;
 export type FullLengthExamResponse = typeof fullLengthExamResponses.$inferSelect;
+=======
+// DEPRECATED: BatchJob and BatchFileProgress types removed - use IngestionRun instead
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 export type InsertAdminAuditLog = z.infer<typeof insertAdminAuditLogSchema>;
 export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;

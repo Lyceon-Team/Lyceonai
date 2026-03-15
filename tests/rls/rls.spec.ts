@@ -7,9 +7,12 @@ import { nanoid } from 'nanoid';
 // Note: Adjust this import path based on your project structure
 const app = await import('../../server/index').then(m => m.default || m.app);
 
-// Skip all tests if Supabase secrets are not available
-// Integration tests require: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
-describe.skipIf(!canRunRlsTests())('RLS Isolation Tests', () => {
+describe('RLS Isolation Tests', () => {
+  // Skip all tests if service role key is not available
+  if (!canRunRlsTests()) {
+    it.skip('RLS tests require SUPABASE_SERVICE_ROLE_KEY', () => {});
+    return;
+  }
 
   let userA: { id: string; email: string; password: string };
   let userB: { id: string; email: string; password: string };

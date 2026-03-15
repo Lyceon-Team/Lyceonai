@@ -440,12 +440,8 @@ export default function GuardianDashboard() {
                   )}
                 </div>
               ) : (
-                <div className="text-center py-12 px-4">
-                  <AlertCircle className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-[#0F2E48] mb-2">No Progress Data Available</h3>
-                  <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Unable to load progress data for this student. This may be because the student hasn't started any practice sessions yet.
-                  </p>
+                <div className="text-center py-8 text-[#0F2E48]/60">
+                  Unable to load progress data
                 </div>
               )}
             </CardContent>

@@ -21,7 +21,6 @@ const Practice = lazy(() => import("@/pages/practice"));
 const MathPractice = lazy(() => import("@/pages/math-practice"));
 const ReadingWritingPractice = lazy(() => import("@/pages/reading-writing-practice"));
 const RandomPractice = lazy(() => import("@/pages/random-practice"));
-const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const FlowCards = lazy(() => import("@/pages/flow-cards"));
 const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
@@ -60,10 +59,14 @@ function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={Login} />
+<<<<<<< HEAD
 
         {/* Signup redirects to login page (signup happens via modal/form on login page) */}
         <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
 
+=======
+                
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
         {/* SEO Content Pages */}
         <Route path="/digital-sat" component={DigitalSAT} />
         <Route path="/digital-sat/math" component={DigitalSATMath} />
@@ -87,7 +90,6 @@ function Router() {
         <Route path="/chat" component={() => <RequireRole allow={['student', 'admin']}><Chat /></RequireRole>} />
         <Route path="/full-test" component={() => <RequireRole allow={['student', 'admin']}><FullTest /></RequireRole>} />
         <Route path="/practice" component={() => <RequireRole allow={['student', 'admin']}><Practice /></RequireRole>} />
-        <Route path="/practice/topics" component={() => <RequireRole allow={['student', 'admin']}><BrowseTopics /></RequireRole>} />
         <Route path="/practice/math" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/practice/reading-writing" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/practice/random" component={() => <RequireRole allow={['student', 'admin']}><RandomPractice /></RequireRole>} />
@@ -105,6 +107,7 @@ function Router() {
         {/* Guardian routes - require guardian or admin role */}
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
+<<<<<<< HEAD
 
         {/* Admin product surface shelved: keep routes non-functional */}
         <Route path="/admin">{() => <Redirect to="/dashboard" replace />}</Route>
@@ -115,6 +118,23 @@ function Router() {
         <Route path="/admin-portal">{() => <Redirect to="/dashboard" replace />}</Route>
         <Route path="/admin-review-v2">{() => <Redirect to="/dashboard" replace />}</Route>
 
+=======
+        
+        {/* Consolidated Admin route - AdminPortal already has AdminGuard internally */}
+        <Route path="/admin" component={AdminPortal} />
+        
+        {/* Legacy admin routes - redirect to canonical /admin */}
+        <Route path="/admin-dashboard">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-pdf-monitor">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-system-config">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-questions">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-review">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-ingest-jobs">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-portal">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-ingest">{() => <Redirect to="/admin" replace />}</Route>
+        <Route path="/admin-review-v2">{() => <Redirect to="/admin" replace />}</Route>
+        
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
         {/* 404 */}
         <Route component={NotFound} />
       </Switch>
