@@ -1,6 +1,6 @@
 /**
- * RAG pipeline utilities for SAT question retrieval metadata.
- * Generates Q-chunks, E-chunks, and embeddings for SAT questions.
+ * Offline RAG pipeline utilities for SAT question metadata and embeddings.
+ * Not a mounted runtime owner for /api/rag, /api/rag/v2, or /api/tutor/v2.
  */
 
 import { GoogleGenAI } from "@google/genai";

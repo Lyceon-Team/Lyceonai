@@ -1,35 +1,23 @@
 import { Request, Response, Router } from 'express';
 import {
   getSupabaseAdmin,
-  requireRequestUser,
   requireSupabaseAuth,
-  sendForbidden,
   sendUnauthenticated,
 } from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
 import { billingStorage } from '../lib/billingStorage';
-import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement } from '../lib/account';
+import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
 import { csrfGuard } from '../middleware/csrf';
+import { requireGuardianRole } from '../middleware/guardian-role';
+import { normalizeRuntimeRole } from '../lib/auth-role';
 
 const router = Router();
 const csrfProtection = csrfGuard();
-
-function requireGuardianRole(req: Request, res: Response, next: Function) {
-  const user = requireRequestUser(req, res);
-  if (!user) {
-    return;
-  }
-  if (user.role !== 'guardian' && user.role !== 'admin') {
-    return sendForbidden(res, {
-      error: 'Guardian role required',
-      message: 'You do not have permission to access guardian billing resources',
-      requestId: req.requestId,
-    });
-  }
-  next();
-}
+const requireGuardianBillingAccess = requireGuardianRole({
+  message: 'You do not have permission to access guardian billing resources',
+});
 
 const checkoutSchema = z.object({
   plan: z.enum(['monthly', 'quarterly', 'yearly']).optional(),
@@ -135,12 +123,9 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
     } else if (role === 'student') {
       accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
     } else if (role === 'guardian') {
+      accountId = await ensureAccountForUser(supabaseAdmin, userId, 'guardian');
       const link = await getPrimaryGuardianLink(userId);
-      if (!link?.student_user_id) {
-        return res.status(400).json({ error: 'Guardian has no linked student. Link a student before subscribing.', requestId });
-      }
-      linkedStudentId = link.student_user_id;
-      accountId = await ensureAccountForUser(supabaseAdmin, linkedStudentId, 'student');
+      linkedStudentId = link?.student_user_id ?? null;
     } else {
       return res.status(403).json({ error: 'Unsupported role', requestId });
     }
@@ -276,27 +261,25 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
 router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const userId = req.user!.id;
-  const rawRole = req.user!.role as string;
-  const userRole = rawRole === 'parent' ? 'guardian' : (rawRole || 'student');
+  const userRole = normalizeRuntimeRole(req.user!.role);
 
   let accountId: string | null = null;
   let entitlement: any = null;
+  let hasLinkedStudent = false;
+  let linkRequiredForPremium = false;
+  let premiumSource: 'student' | 'guardian' | 'both' | 'none' = 'none';
+  let effectiveAccess = false;
+
+  if (userRole === 'admin') {
+    return res.status(403).json({ error: 'Admins cannot access billing status', requestId });
+  }
 
   try {
     const supabaseAdmin = getSupabaseAdmin();
-
-    if (userRole === 'guardian') {
-      const link = await getPrimaryGuardianLink(userId);
-      if (link?.student_user_id) {
-        accountId = await ensureAccountForUser(supabaseAdmin, link.student_user_id, 'student');
-      } else {
-        accountId = await ensureAccountForUser(supabaseAdmin, userId, 'guardian');
-      }
-    } else {
-      accountId = await ensureAccountForUser(supabaseAdmin, userId, userRole as 'student' | 'guardian' | 'admin');
-    }
+    const billingRole = userRole === 'guardian' ? 'guardian' : 'student';
+    accountId = await ensureAccountForUser(supabaseAdmin, userId, billingRole);
   } catch (err: any) {
-    logger.warn('BILLING', 'status', 'Failed to ensure account, using fallback', { userId, err: err.message, requestId });
+    logger.warn('BILLING', 'status', 'Failed to ensure billing owner account', { userId, err: err.message, requestId });
   }
 
   try {
@@ -311,9 +294,17 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
   let status = entitlement?.status || 'inactive';
   let currentPeriodEnd = entitlement?.current_period_end || null;
 
-  const isPaid = plan === 'paid' && (status === 'active' || status === 'trialing');
+  let isActiveOrTrialing = status === 'active' || status === 'trialing';
+  const isPastDueOrUnpaid = status === 'past_due' || status === 'unpaid';
 
-  if (!isPaid && accountId) {
+  let periodExpired = false;
+  if (currentPeriodEnd) {
+    periodExpired = new Date(currentPeriodEnd) < new Date();
+  }
+
+  let billingIsPaid = plan === 'paid' && isActiveOrTrialing && !periodExpired;
+
+  if (!billingIsPaid && accountId) {
     try {
       const stripeCustomerId = entitlement?.stripe_customer_id || null;
       if (stripeCustomerId) {
@@ -332,8 +323,6 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
           limit: 10,
         });
 
-        // CRITICAL: Filter subscriptions to only those matching this account
-        // Prevents corruption when guardian has multiple linked students
         const accountSubs = subs.data.filter(s => {
           const subAccountId = s.metadata?.account_id;
           return subAccountId === accountId;
@@ -361,6 +350,9 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
           plan = entitlement?.plan || 'free';
           status = entitlement?.status || 'inactive';
           currentPeriodEnd = entitlement?.current_period_end || null;
+          isActiveOrTrialing = status === 'active' || status === 'trialing';
+          periodExpired = currentPeriodEnd ? new Date(currentPeriodEnd) < new Date() : false;
+          billingIsPaid = plan === 'paid' && isActiveOrTrialing && !periodExpired;
 
           logger.info('BILLING', 'status', 'Self-heal: reconciliation complete', {
             userId,
@@ -377,24 +369,39 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
     }
   }
 
-  const isActiveOrTrialing = status === 'active' || status === 'trialing';
-  const isPastDueOrUnpaid = status === 'past_due' || status === 'unpaid';
-
-  let periodExpired = false;
-  if (currentPeriodEnd) {
-    periodExpired = new Date(currentPeriodEnd) < new Date();
+  try {
+    if (userRole === 'guardian') {
+      const access = await resolveLinkedPairPremiumAccessForGuardian(userId);
+      hasLinkedStudent = access.hasActiveLink;
+      linkRequiredForPremium = !hasLinkedStudent;
+      premiumSource = access.premiumSource;
+      effectiveAccess = access.hasPremiumAccess;
+    } else {
+      const access = await resolveLinkedPairPremiumAccessForStudent(userId);
+      premiumSource = access.premiumSource;
+      effectiveAccess = access.hasPremiumAccess;
+    }
+  } catch (err: any) {
+    logger.warn('BILLING', 'status', 'Failed to resolve linked-pair premium access', {
+      userId,
+      role: userRole,
+      error: err.message,
+      requestId,
+    });
+    effectiveAccess = false;
   }
 
-  const effectiveAccess = plan === 'paid' && isActiveOrTrialing && !periodExpired;
-  const needsPaymentUpdate = isPastDueOrUnpaid || (plan === 'paid' && periodExpired);
-  const finalIsPaid = plan === 'paid' && effectiveAccess;
+  const needsPaymentUpdate = !effectiveAccess && !linkRequiredForPremium;
 
   logger.info('BILLING', 'status', 'Billing status retrieved', {
     userId,
     accountId,
-    plan,
-    status,
+    billingPlan: plan,
+    billingStatus: status,
     effectiveAccess,
+    premiumSource,
+    hasLinkedStudent,
+    linkRequiredForPremium,
     needsPaymentUpdate,
     requestId
   });
@@ -407,12 +414,16 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
     stripeSubscriptionId: entitlement?.stripe_subscription_id || null,
     effectiveAccess,
     needsPaymentUpdate,
-    isPaid: finalIsPaid,
+    isPaid: billingIsPaid,
+    premiumSource,
+    hasLinkedStudent,
+    linkRequiredForPremium,
+    billingOwnerRole: userRole === 'guardian' ? 'guardian' : 'student',
     requestId,
   });
 });
 
-router.get('/products', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/products', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const products = await billingStorage.listProducts();
@@ -518,20 +529,19 @@ router.post('/portal', requireSupabaseAuth, csrfProtection, async (req: Request,
   const requestId = req.requestId;
   try {
     const userId = req.user!.id;
-    const rawRole = (req.user!.role as string) || 'student';
-    const userRole = rawRole === 'parent' ? 'guardian' : rawRole;
+    const userRole = normalizeRuntimeRole(req.user!.role);
+
+    if (userRole === 'admin') {
+      return res.status(403).json({ error: 'Admins cannot access billing portal', requestId });
+    }
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // Resolve the ACCOUNT to manage (student is primary; guardian manages linked student account)
+    // Resolve billing-owner account (guardian owns guardian billing, student owns student billing)
     let accountId: string | null = null;
 
     if (userRole === 'guardian') {
-      const link = await getPrimaryGuardianLink(userId);
-      if (!link?.student_user_id) {
-        return res.status(400).json({ error: 'Guardian has no linked student', requestId });
-      }
-      accountId = await ensureAccountForUser(supabaseAdmin, link.student_user_id, 'student');
+      accountId = await ensureAccountForUser(supabaseAdmin, userId, 'guardian');
     } else {
       // student pays/manages their own account entitlement
       accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
@@ -588,7 +598,7 @@ function safeIdInfo(id: string | undefined): { prefix: string | null; last4: str
   };
 }
 
-router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/debug/env', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const stripeEnvRaw = process.env.STRIPE_ENV || null;
   const stripeEnvNormalized = stripeEnvRaw?.toLowerCase() === 'live' ? 'live' : 'test';
@@ -629,7 +639,7 @@ router.get('/debug/env', requireSupabaseAuth, requireGuardianRole, async (req: R
   });
 });
 
-router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (req: Request, res: Response) => {
+router.get('/debug/validate', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const secretKey = process.env.STRIPE_SECRET_KEY || '';
   const mode = secretKey.startsWith('sk_live_') ? 'live' : secretKey.startsWith('sk_test_') ? 'test' : 'unknown';
@@ -727,3 +737,4 @@ router.get('/debug/validate', requireSupabaseAuth, requireGuardianRole, async (r
 });
 
 export default router;
+

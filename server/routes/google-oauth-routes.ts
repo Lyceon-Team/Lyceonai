@@ -26,6 +26,8 @@ import crypto from 'crypto';
 import { logger } from '../logger.js';
 import { BUILD } from '../lib/build.js';
 import { setAuthCookies } from '../lib/auth-cookies.js';
+import { getSupabaseAdmin } from '../middleware/supabase-auth.js';
+import { ensureProfileForAuthUser } from '../lib/profile-bootstrap.js';
 
 const router = Router();
 
@@ -250,7 +252,7 @@ export async function googleCallbackHandler(req: Request, res: Response) {
       token: tokenData.id_token
     });
 
-    if (supabaseError || !data.session) {
+    if (supabaseError || !data.session || !data.user) {
       logger.error('GOOGLE_OAUTH', 'supabase_signin_failed', 'Failed to sign in with Supabase', { 
         error: supabaseError?.message 
       });
@@ -259,36 +261,27 @@ export async function googleCallbackHandler(req: Request, res: Response) {
 
     setAuthCookies(res, data.session, isProduction);
 
-    const userId = data.user?.id;
-    const userEmail = data.user?.email || userId;
+    const userId = data.user.id;
+    const userEmail = data.user.email || userId;
     
     let redirectPath = '/dashboard';
     
     try {
-      const supabaseAuthed = createClient(getSupabaseUrl(), getSupabaseAnonKey(), {
-        global: {
-          headers: {
-            Authorization: `Bearer ${data.session.access_token}`,
-          },
-        },
+      const profile = await ensureProfileForAuthUser(getSupabaseAdmin(), data.user, {
+        source: 'google_oauth_callback',
+        requestId: req.requestId,
       });
 
-      const { data: profile, error: profileError } = await supabaseAuthed
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .single();
-      
-      if (!profileError && profile?.role === 'guardian') {
+      if (profile.role === 'guardian') {
         redirectPath = '/guardian';
         logger.info('GOOGLE_OAUTH', 'role_detected', 'Guardian role detected, redirecting to /guardian', { userId });
       } else {
-        logger.info('GOOGLE_OAUTH', 'role_detected', 'Student/default role, redirecting to /dashboard', { userId, role: profile?.role });
+        logger.info('GOOGLE_OAUTH', 'role_detected', 'Student/default role, redirecting to /dashboard', { userId, role: profile.role });
       }
     } catch (profileErr) {
-      logger.warn('GOOGLE_OAUTH', 'profile_fetch_failed', 'Could not fetch profile for role, defaulting to /dashboard', { 
+      logger.warn('GOOGLE_OAUTH', 'profile_fetch_failed', 'Could not bootstrap profile for role, defaulting to /dashboard', {
         userId,
-        error: profileErr 
+        error: profileErr,
       });
     }
     

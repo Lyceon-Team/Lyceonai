@@ -8,6 +8,7 @@ import { generateEmbedding } from './embeddings';
 import { matchSimilar, MatchResult } from './vector';
 import { supabaseServer } from './supabase-server';
 import { buildCompetencyMapFromMasteryRows, MasterySkillRow } from '../services/mastery-derived';
+import { isValidCanonicalId } from '../../../../shared/question-bank-contract';
 import {
   RagMode,
   RagContext,
@@ -69,7 +70,6 @@ export interface EmbeddingClient {
  * Question repository interface for dependency injection (testing)
  */
 export interface QuestionRepository {
-  loadById(questionId: string): Promise<QuestionContext | null>;
   loadByCanonicalId(canonicalId: string): Promise<QuestionContext | null>;
 }
 
@@ -587,7 +587,7 @@ export class RagService {
    */
   private dbRowToQuestionContext(row: any): QuestionContext {
     return this.supabaseRowToQuestionContext({
-      canonical_id: row.canonical_id ?? row.canonicalId ?? row.id,
+      canonical_id: this.requireCanonicalId(row),
       test_code: row.test_code ?? row.testCode ?? 'SAT',
       section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
       source_type: row.source_type ?? row.sourceType ?? 0,
@@ -857,14 +857,12 @@ export class RagService {
   }
 
   /**
-   * Load question by ID (handles both canonical ID and regular ID)
+   * Load question by canonical ID only (fail-closed; no UUID fallback)
    * Uses injected questionRepo if available, otherwise falls back to Supabase HTTP client
    */
   private async loadQuestionById(questionId: string): Promise<QuestionContext | null> {
     // Use injected repository if available (for testing)
     if (this.questionRepo) {
-      const result = await this.questionRepo.loadById(questionId);
-      if (result) return result;
       return this.questionRepo.loadByCanonicalId(questionId);
     }
 
@@ -887,30 +885,25 @@ export class RagService {
         return this.supabaseRowToQuestionContext(canonicalQuery.data);
       }
 
-      // Fall back to regular ID if not found by canonical ID
-      const idQuery = await supabaseServer
-        .from('questions')
-        .select('*')
-        .eq('id', questionId)
-        .limit(1)
-        .maybeSingle();
-
-      if (idQuery.error) {
-        console.warn(`⚠️ [RAG-V2] Error loading by id ${questionId}:`, idQuery.error.message);
-        return null;
-      }
-
-      if (!idQuery.data) {
-        console.log(`[RAG-V2] Question not found: ${questionId}`);
-        return null;
-      }
-
-      console.log(`[RAG-V2] Loaded question by id: ${idQuery.data.id}`);
-      return this.supabaseRowToQuestionContext(idQuery.data);
+      return null;
     } catch (error: any) {
       console.error(`❌ [RAG-V2] Failed to load question ${questionId}:`, error.message);
       return null;
     }
+  }
+
+  private requireCanonicalId(row: any): string {
+    const candidate = typeof row?.canonical_id === 'string'
+      ? row.canonical_id
+      : typeof row?.canonicalId === 'string'
+        ? row.canonicalId
+        : null;
+
+    if (!candidate || !isValidCanonicalId(candidate)) {
+      throw new Error('canonical_id_missing_or_invalid');
+    }
+
+    return candidate;
   }
 
   /**
@@ -939,7 +932,7 @@ export class RagService {
       : null;
 
     return {
-      canonicalId: row.canonical_id || row.id,
+      canonicalId: this.requireCanonicalId(row),
       testCode: row.test_code || 'SAT',
       sectionCode,
       sourceType,
@@ -1090,6 +1083,4 @@ export function getRagService(): RagService {
   }
   return ragServiceInstance;
 }
-
-
 

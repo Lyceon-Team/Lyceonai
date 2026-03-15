@@ -73,7 +73,7 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     // These routes bypass auth so CI can exercise handlers directly.
     // They should not be used by production clients.
     const { getRandomQuestions, getQuestions } = await import(
-      '../../apps/api/src/routes/questions'
+      '../../server/routes/questions-runtime'
     );
 
     const registerNoAuthGet = (path: string, handler: any) => {

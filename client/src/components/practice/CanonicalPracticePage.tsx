@@ -21,7 +21,7 @@ export default function CanonicalPracticePage(props: {
     isSubmitting,
     showResult,
     isCorrect,
-    correctAnswerKey,
+    correctOptionId,
     explanation,
     score,
     currentIndex,
@@ -95,7 +95,7 @@ export default function CanonicalPracticePage(props: {
               onFreeResponseAnswerChange={setFreeResponseAnswer}
               showResult={showResult}
               isCorrect={isCorrect}
-              correctAnswerKey={correctAnswerKey}
+              correctOptionId={correctOptionId}
               explanation={explanation}
               disabled={isSubmitting || isLoading}
               onMissingMcChoices={handleMissingMcChoices}

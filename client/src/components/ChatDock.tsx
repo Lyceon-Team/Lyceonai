@@ -16,7 +16,7 @@ export default function ChatDock() {
       <button
         onClick={() => navigate('/chat')}
         className="p-4 rounded-full bg-lyceon-primary text-white shadow-lg hover:scale-105 transition-transform"
-        aria-label="Open AI Tutor Chat"
+        aria-label="Open Lisa chat"
         data-testid="chat-dock-button"
       >
         <MessageCircle size={24} />

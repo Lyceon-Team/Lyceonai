@@ -22,12 +22,12 @@ const faqs = [
     answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and proficiency progression over time.',
   },
   {
-    question: 'How does tutor chat work?',
-    answer: 'Tutor chat provides step-by-step guidance tied to SAT-style question context. It is designed to support reasoning and review, not to bypass learning.',
+    question: 'How does Lisa work?',
+    answer: 'Lisa provides step-by-step guidance tied to SAT-style question context. Lisa is designed to support reasoning and review, not to bypass learning.',
   },
   {
     question: 'What is free vs paid?',
-    answer: 'Free includes daily limits (10 practice questions and 5 tutor chat messages). Paid plans remove those limits and expand guardian visibility features.',
+    answer: 'Free includes daily limits (10 practice questions and 5 Lisa messages). Paid plans remove those limits and expand guardian visibility features.',
   },
 ];
 
@@ -36,7 +36,7 @@ export default function DigitalSATPage() {
     <PublicLayout>
       <SEO
         title="Digital SAT Prep - Study Smarter, Score Higher"
-        description="Prepare for the Digital SAT with adaptive practice, full-length exams, mastery tracking, and tutor chat."
+        description="Prepare for the Digital SAT with adaptive practice, full-length exams, mastery tracking, and Lisa."
         canonical="https://lyceon.ai/digital-sat"
       />
       <JsonLd data={organizationJsonLd} />
@@ -120,9 +120,9 @@ export default function DigitalSATPage() {
                 <Brain className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Tutor Chat Guidance</h3>
+                <h3 className="font-semibold mb-1">Lisa Guidance</h3>
                 <p className="text-muted-foreground">
-                  Tutor chat gives step-by-step explanations tied to SAT-style question context.
+                  Lisa gives step-by-step explanations tied to SAT-style question context.
                 </p>
               </div>
             </div>

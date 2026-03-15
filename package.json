@@ -31,8 +31,6 @@
     "verify:csrf": "npx tsx scripts/verify-csrf-protection.ts"
   },
   "dependencies": {
-    "@auth/core": "^0.34.2",
-    "@auth/drizzle-adapter": "^1.10.0",
     "@google-cloud/documentai": "^9.4.0",
     "@google/genai": "^1.19.0",
     "@hookform/resolvers": "^3.10.0",
@@ -94,7 +92,6 @@
     "lucide-react": "^0.453.0",
     "luxon": "^3.7.2",
     "multer": "^2.0.2",
-    "next-auth": "^4.24.13",
     "p-limit": "^7.1.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",

@@ -21,6 +21,39 @@ vi.mock('../../lib/supabase-admin', () => ({
 }));
 
 describe('Full-Length Exam Service', () => {
+function buildPublishedFormFixture(formId: string) {
+  const form = {
+    id: formId,
+    status: 'published',
+    published_at: '2026-03-14T00:00:00.000Z',
+    created_at: '2026-03-14T00:00:00.000Z',
+  };
+
+  const formItems: Array<{ section: 'rw' | 'math'; module_index: 1 | 2; ordinal: number; question_id: string }> = [];
+  const questionRows: Array<{ id: string; canonical_id: string; status: string; question_type: string; section_code: string }> = [];
+
+  const addModule = (section: 'rw' | 'math', moduleIndex: 1 | 2, count: number) => {
+    for (let ordinal = 1; ordinal <= count; ordinal += 1) {
+      const canonicalId = `${section.toUpperCase()}_${moduleIndex}_${String(ordinal).padStart(2, '0')}`;
+      formItems.push({ section, module_index: moduleIndex, ordinal, question_id: canonicalId });
+      questionRows.push({
+        id: `q_${canonicalId}`,
+        canonical_id: canonicalId,
+        status: 'published',
+        question_type: 'multiple_choice',
+        section_code: section === 'rw' ? 'RW' : 'MATH',
+      });
+    }
+  };
+
+  addModule('rw', 1, 27);
+  addModule('rw', 2, 27);
+  addModule('math', 1, 22);
+  addModule('math', 2, 22);
+
+  return { form, formItems, questionRows };
+}
+
   describe('createExamSession - Idempotency', () => {
     it('should return existing active session instead of creating duplicate', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
@@ -144,12 +177,16 @@ describe('Full-Length Exam Service', () => {
     it('should create new session when no active session exists', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
 
+      const formId = '11111111-1111-4111-8111-111111111111';
+      const fixture = buildPublishedFormFixture(formId);
+
       const mockNewSession = {
         id: 'new-session-789',
         user_id: 'user-456',
         status: 'not_started',
         seed: 'user-456_9876543210',
         created_at: new Date().toISOString(),
+        test_form_id: formId,
       };
 
       const mockSupabase: MockSupabaseClient = {
@@ -162,7 +199,7 @@ describe('Full-Length Exam Service', () => {
                     order: vi.fn(() => ({
                       limit: vi.fn(() => ({
                         maybeSingle: vi.fn(async () => ({
-                          data: null, // No existing session
+                          data: null,
                           error: null,
                         })),
                       })),
@@ -179,14 +216,63 @@ describe('Full-Length Exam Service', () => {
                 })),
               })),
             };
-          } else if (table === 'full_length_exam_modules') {
+          }
+
+          if (table === 'test_forms') {
             return {
-              insert: vi.fn(async () => ({
-                error: null,
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({ data: fixture.form, error: null })),
+                })),
               })),
             };
           }
-          return { select: vi.fn() };
+
+          if (table === 'test_form_items') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      order: vi.fn(async () => ({ data: fixture.formItems, error: null })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_modules') {
+            return {
+              insert: vi.fn(() => ({
+                select: vi.fn(async () => ({
+                  data: [
+                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
+                    { id: 'mod-math-1', section: 'math', module_index: 1 },
+                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                  ],
+                  error: null,
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_questions') {
+            return {
+              insert: vi.fn(async () => ({ error: null })),
+            };
+          }
+
+          return { select: vi.fn() } as any;
         }),
       };
 
@@ -194,15 +280,18 @@ describe('Full-Length Exam Service', () => {
 
       const result = await fullLengthExamService.createExamSession({
         userId: 'user-456',
+        testFormId: formId,
       });
 
-      // Should create and return new session
       expect(result.id).toBe('new-session-789');
       expect(result.status).toBe('not_started');
+      expect(result.test_form_id).toBe(formId);
     });
-
     it('should check for active statuses: not_started, in_progress, and break (not completed)', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const formId = '11111111-1111-4111-8111-111111111111';
+      const fixture = buildPublishedFormFixture(formId);
 
       let capturedStatuses: string[] = [];
 
@@ -219,10 +308,7 @@ describe('Full-Length Exam Service', () => {
                     return {
                       order: vi.fn(() => ({
                         limit: vi.fn(() => ({
-                          maybeSingle: vi.fn(async () => ({
-                            data: null,
-                            error: null,
-                          })),
+                          maybeSingle: vi.fn(async () => ({ data: null, error: null })),
                         })),
                       })),
                     };
@@ -232,45 +318,96 @@ describe('Full-Length Exam Service', () => {
               insert: vi.fn(() => ({
                 select: vi.fn(() => ({
                   single: vi.fn(async () => ({
-                    data: { id: 'test', status: 'not_started' },
+                    data: { id: 'test', status: 'not_started', test_form_id: formId },
                     error: null,
                   })),
                 })),
               })),
             };
-          } else if (table === 'full_length_exam_modules') {
+          }
+
+          if (table === 'test_forms') {
             return {
-              insert: vi.fn(async () => ({
-                error: null,
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({ data: fixture.form, error: null })),
+                })),
               })),
             };
           }
-          return { select: vi.fn() };
+
+          if (table === 'test_form_items') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      order: vi.fn(async () => ({ data: fixture.formItems, error: null })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_modules') {
+            return {
+              insert: vi.fn(() => ({
+                select: vi.fn(async () => ({
+                  data: [
+                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
+                    { id: 'mod-math-1', section: 'math', module_index: 1 },
+                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                  ],
+                  error: null,
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_questions') {
+            return {
+              insert: vi.fn(async () => ({ error: null })),
+            };
+          }
+
+          return { select: vi.fn() } as any;
         }),
       };
 
       (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
 
-      await fullLengthExamService.createExamSession({ userId: 'user-123' });
+      await fullLengthExamService.createExamSession({ userId: 'user-123', testFormId: formId });
 
-      // Verify it checks for all active statuses including break
       expect(capturedStatuses).toEqual(['not_started', 'in_progress', 'break']);
       expect(capturedStatuses).not.toContain('completed');
       expect(capturedStatuses).not.toContain('abandoned');
     });
-
     it('should handle race condition by returning existing session on unique constraint violation', async () => {
       const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const formId = '11111111-1111-4111-8111-111111111111';
+      const fixture = buildPublishedFormFixture(formId);
 
       const existingRacedSession = {
         id: 'raced-session-999',
         user_id: 'user-456',
         status: 'not_started',
         seed: 'user-456_1234567890',
+        test_form_id: formId,
         created_at: new Date().toISOString(),
       };
 
-      let insertCallCount = 0;
+      let selectCallCount = 0;
 
       const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
@@ -282,14 +419,11 @@ describe('Full-Length Exam Service', () => {
                     order: vi.fn(() => ({
                       limit: vi.fn(() => ({
                         maybeSingle: vi.fn(async () => {
-                          insertCallCount++;
-                          // First select (before insert) returns null
-                          // Second select (after unique constraint error) returns raced session
-                          if (insertCallCount === 1) {
+                          selectCallCount += 1;
+                          if (selectCallCount === 1) {
                             return { data: null, error: null };
-                          } else {
-                            return { data: existingRacedSession, error: null };
                           }
+                          return { data: existingRacedSession, error: null };
                         }),
                       })),
                     })),
@@ -308,14 +442,63 @@ describe('Full-Length Exam Service', () => {
                 })),
               })),
             };
-          } else if (table === 'full_length_exam_modules') {
+          }
+
+          if (table === 'test_forms') {
             return {
-              insert: vi.fn(async () => ({
-                error: null,
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn(async () => ({ data: fixture.form, error: null })),
+                })),
               })),
             };
           }
-          return { select: vi.fn() };
+
+          if (table === 'test_form_items') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      order: vi.fn(async () => ({ data: fixture.formItems, error: null })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_modules') {
+            return {
+              insert: vi.fn(() => ({
+                select: vi.fn(async () => ({
+                  data: [
+                    { id: 'mod-rw-1', section: 'rw', module_index: 1 },
+                    { id: 'mod-rw-2', section: 'rw', module_index: 2 },
+                    { id: 'mod-math-1', section: 'math', module_index: 1 },
+                    { id: 'mod-math-2', section: 'math', module_index: 2 },
+                  ],
+                  error: null,
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_questions') {
+            return {
+              insert: vi.fn(async () => ({ error: null })),
+            };
+          }
+
+          return { select: vi.fn() } as any;
         }),
       };
 
@@ -323,9 +506,9 @@ describe('Full-Length Exam Service', () => {
 
       const result = await fullLengthExamService.createExamSession({
         userId: 'user-456',
+        testFormId: formId,
       });
 
-      // Should return the raced session that was created by concurrent request
       expect(result.id).toBe('raced-session-999');
       expect(result.status).toBe('not_started');
     });
@@ -533,6 +716,13 @@ describe('Full-Length Exam Service', () => {
         { id: 'module-math-2', section: 'math', module_index: 2 },
       ];
 
+      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
+        'module-rw-1': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-1-${idx + 1}` })),
+        'module-rw-2': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-2-${idx + 1}` })),
+        'module-math-1': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-1-${idx + 1}` })),
+        'module-math-2': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-2-${idx + 1}` })),
+      };
+
       const responsesByModule: Record<string, Array<{ question_id: string; is_correct: boolean }>> = {
         'module-rw-1': [{ question_id: 'q-rw-1', is_correct: true }],
         'module-rw-2': [{ question_id: 'q-rw-2', is_correct: false }],
@@ -540,18 +730,23 @@ describe('Full-Length Exam Service', () => {
         'module-math-2': [{ question_id: 'q-math-2', is_correct: true }],
       };
 
-      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
-        'module-rw-1': [{ id: 'mq-rw-1' }],
-        'module-rw-2': [{ id: 'mq-rw-2' }],
-        'module-math-1': [{ id: 'mq-math-1' }],
-        'module-math-2': [{ id: 'mq-math-2' }],
-      };
-
       const moduleQuestionsFlat = [
-        { module_id: 'module-rw-1', question_id: 'q-rw-1' },
-        { module_id: 'module-rw-2', question_id: 'q-rw-2' },
-        { module_id: 'module-math-1', question_id: 'q-math-1' },
-        { module_id: 'module-math-2', question_id: 'q-math-2' },
+        ...Array.from({ length: 27 }, (_, idx) => ({
+          module_id: 'module-rw-1',
+          question_id: idx === 0 ? 'q-rw-1' : `q-rw-1-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 27 }, (_, idx) => ({
+          module_id: 'module-rw-2',
+          question_id: idx === 0 ? 'q-rw-2' : `q-rw-2-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 22 }, (_, idx) => ({
+          module_id: 'module-math-1',
+          question_id: idx === 0 ? 'q-math-1' : `q-math-1-extra-${idx + 1}`,
+        })),
+        ...Array.from({ length: 22 }, (_, idx) => ({
+          module_id: 'module-math-2',
+          question_id: idx === 0 ? 'q-math-2' : `q-math-2-extra-${idx + 1}`,
+        })),
       ];
 
       const responsesBySession = Object.entries(responsesByModule).flatMap(([moduleId, rows]) =>
@@ -671,8 +866,8 @@ describe('Full-Length Exam Service', () => {
       expect(result2.sessionId).toBe('session-123');
       expect(result1.completedAt.getTime()).toBe(completedAt.getTime());
       expect(result2.completedAt.getTime()).toBe(completedAt.getTime());
-      expect(result1.rawScore.total.total).toBe(4);
-      expect(result2.rawScore.total.total).toBe(4);
+      expect(result1.rawScore.total.total).toBe(98);
+      expect(result2.rawScore.total.total).toBe(98);
       expect(rollupFetchCount).toBe(0);
     });
 
@@ -717,6 +912,13 @@ describe('Full-Length Exam Service', () => {
         { id: 'module-math-1', section: 'math', module_index: 1 },
         { id: 'module-math-2', section: 'math', module_index: 2 },
       ];
+
+      const moduleQuestionsByModule: Record<string, Array<{ id: string }>> = {
+        'module-rw-1': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-1-${idx + 1}` })),
+        'module-rw-2': Array.from({ length: 27 }, (_, idx) => ({ id: `mq-rw-2-${idx + 1}` })),
+        'module-math-1': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-1-${idx + 1}` })),
+        'module-math-2': Array.from({ length: 22 }, (_, idx) => ({ id: `mq-math-2-${idx + 1}` })),
+      };
 
       const mockRollup = {
         id: 'rollup-789',
@@ -828,6 +1030,21 @@ describe('Full-Length Exam Service', () => {
                   ],
                   error: null,
                 })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn((field: string, value: string) => {
+                  if (field === 'module_id') {
+                    return Promise.resolve({
+                      data: moduleQuestionsByModule[value] || [],
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: [], error: null });
+                }),
+                in: vi.fn(async () => ({ data: [], error: null })),
               })),
             };
           } else if (table === 'full_length_exam_score_rollups') {
@@ -1603,5 +1820,4 @@ describe('Full-Length Exam Service', () => {
     });
   });
 });
-
 

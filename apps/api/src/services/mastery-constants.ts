@@ -12,14 +12,14 @@
 // ============================================================================
 
 export enum MasteryEventType {
-  PRACTICE_SUBMIT = 'PRACTICE_SUBMIT',
-  DIAGNOSTIC_SUBMIT = 'DIAGNOSTIC_SUBMIT',
-  FULL_LENGTH_SUBMIT = 'FULL_LENGTH_SUBMIT',
-  TUTOR_VIEW = 'TUTOR_VIEW',
-  REVIEW_PASS = 'REVIEW_PASS',
-  REVIEW_FAIL = 'REVIEW_FAIL',
-  TUTOR_HELPED = 'TUTOR_HELPED',
-  TUTOR_FAIL = 'TUTOR_FAIL',
+  PRACTICE_PASS = "practice_pass",
+  PRACTICE_FAIL = "practice_fail",
+  REVIEW_PASS = "review_pass",
+  REVIEW_FAIL = "review_fail",
+  TUTOR_HELPED = "tutor_helped",
+  TUTOR_FAIL = "tutor_fail",
+  TEST_PASS = "test_pass",
+  TEST_FAIL = "test_fail",
 }
 
 // ============================================================================
@@ -67,22 +67,22 @@ export const M_MAX = 100;
  * Event weights control how impactful each attempt type is.
  *
  * Rationale:
- * - Diagnostic is slightly stronger than ordinary practice (sets baseline faster)
- * - Full-length is strongest (higher reliability)
- * - Review outcomes are baseline evidence; tutor effects are auxiliary and only emitted after verified retry
- * - Practice is baseline (1.0)
+ * - Practice events are baseline evidence
+ * - Review events are stronger than practice
+ * - Tutor effects are auxiliary and only emitted after verified retry
+ * - Full-test outcomes are highest trust anchors
  *
  * Fixed constants for v1.0 - do not learn/fit
  */
 export const EVENT_WEIGHTS: Record<MasteryEventType, number> = {
-  [MasteryEventType.PRACTICE_SUBMIT]: 1.00,
-  [MasteryEventType.DIAGNOSTIC_SUBMIT]: 1.25,
-  [MasteryEventType.FULL_LENGTH_SUBMIT]: 1.50,
-  [MasteryEventType.TUTOR_VIEW]: 0.00, // No mastery change
-  [MasteryEventType.REVIEW_PASS]: 1.00,
-  [MasteryEventType.REVIEW_FAIL]: 1.00,
+  [MasteryEventType.PRACTICE_PASS]: 1.0,
+  [MasteryEventType.PRACTICE_FAIL]: 1.0,
+  [MasteryEventType.REVIEW_PASS]: 1.2,
+  [MasteryEventType.REVIEW_FAIL]: 1.2,
   [MasteryEventType.TUTOR_HELPED]: 0.25,
   [MasteryEventType.TUTOR_FAIL]: 0.25,
+  [MasteryEventType.TEST_PASS]: 1.5,
+  [MasteryEventType.TEST_FAIL]: 1.5,
 };
 
 export const REVIEW_OUTCOME_EVENTS: ReadonlyArray<MasteryEventType> = [
@@ -97,7 +97,8 @@ export const TUTOR_EFFECT_EVENTS: ReadonlyArray<MasteryEventType> = [
 
 // Canonical KPI/calendar counted attempts (exclude tutor-only auxiliary effects).
 export const KPI_CALENDAR_COUNTED_EVENTS: ReadonlyArray<MasteryEventType> = [
-  MasteryEventType.PRACTICE_SUBMIT,
+  MasteryEventType.PRACTICE_PASS,
+  MasteryEventType.PRACTICE_FAIL,
   MasteryEventType.REVIEW_PASS,
   MasteryEventType.REVIEW_FAIL,
 ];

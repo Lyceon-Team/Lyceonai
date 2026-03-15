@@ -15,12 +15,11 @@ import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
-// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, embeddings, etc.).
-// apps/api MUST NOT be mounted for user-facing routes:
-//   - /api/tutor/v2
-//   - auth token resolution / requireSupabaseAuth
-import { rag } from "./routes/legacy/rag";
-import ragV2Router from "./routes/legacy/rag-v2";
+// SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
+// Canonical RAG route owners are apps/api/src/routes/rag.ts and apps/api/src/routes/rag-v2.ts.
+// Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
+import { rag } from "../apps/api/src/routes/rag";
+import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
 import { legalRouter } from "./routes/legal-routes.js";
 import fullLengthExamRouter from "./routes/full-length-exam-routes";
@@ -34,14 +33,14 @@ import {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
-} from "./routes/legacy/questions";
-import { searchQuestions } from "./routes/legacy/search";
-import { recordReviewErrorAttempt } from "./routes/review-errors-routes";
+} from "./routes/questions-runtime";
+import { searchQuestions } from "./routes/search-runtime";
+import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
+  requireSupabaseAdmin,
   requireStudentOrAdmin,
-  requireRequestUser,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -258,7 +257,7 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - AI tutoring with RAG v2 + student profiles
+// Tutor v2 endpoint - Lisa tutoring with canonical RAG context
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
 
 // Google OAuth Routes (direct OAuth flow)
@@ -271,44 +270,8 @@ app.get("/auth/google/callback", googleCallbackHandler);
 app.use("/api/auth", supabaseAuthRoutes);
 
 // Profile endpoints - requires authentication
-// GET /api/profile - Get current user profile
-// PATCH /api/profile - Complete/update user profile
-app.get("/api/profile", requireSupabaseAuth, async (req: Request, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-
-    // Return complete user profile with all fields needed by frontend
-    // Source of truth: canonical current-user hydration payload
-    const fallbackUsername = user.email ? user.email.split('@')[0] : null;
-    const normalizedName = user.display_name || fallbackUsername || 'Student';
-
-    return res.json({
-      authenticated: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        name: normalizedName,
-        username: fallbackUsername,
-        role: user.role,
-        isAdmin: user.isAdmin,
-        isGuardian: user.isGuardian,
-        is_under_13: user.is_under_13,
-        guardian_consent: user.guardian_consent,
-        studentLinkCode: user.student_link_code,
-        student_link_code: user.student_link_code,
-        profileCompletedAt: user.profile_completed_at ?? null,
-      }
-    });
-  } catch (error) {
-    console.error('[PROFILE] Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
+// GET /api/profile - canonical hydration route
+// PATCH /api/profile - profile completion/update route
 app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
 // Notifications Routes
@@ -325,6 +288,14 @@ app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, 
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
+// Minimal guarded admin auth contract for regression invariants.
+app.get("/api/admin/db-health", requireSupabaseAuth, requireSupabaseAdmin, async (_req: Request, res: Response) => {
+  return res.json({
+    ok: true,
+    status: "healthy",
+    service: "database",
+  });
+});
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
 app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
@@ -375,7 +346,9 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt);
+app.post("/api/review-errors/sessions", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, startReviewErrorSession);
+app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitReviewSessionAnswer);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
@@ -646,7 +619,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
+    console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
@@ -657,7 +630,10 @@ if (isMainModule) {
     console.log(`  GET    /api/questions/random`);
     console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
-    console.log(`  GET    /api/practice/next`);
+    console.log(`  POST   /api/practice/sessions`);
+    console.log(`  GET    /api/practice/sessions/:sessionId/next`);
+    console.log(`  GET    /api/practice/sessions/:sessionId/state`);
+    console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
@@ -689,6 +665,7 @@ if (isMainModule) {
 }
 
 export default app;
+
 
 
 

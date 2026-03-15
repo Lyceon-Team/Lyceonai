@@ -55,7 +55,7 @@ export default function HomePage() {
     <PublicLayout>
       <SEO
         title="Lyceon | Study Smarter, Score Higher"
-        description="Digital SAT prep with adaptive practice, full-length exams, mastery tracking, tutor chat, and guardian visibility. Free plan available with daily limits."
+        description="Digital SAT prep with adaptive practice, full-length exams, mastery tracking, Lisa chat, and guardian visibility. Free plan available with daily limits."
         canonical="https://lyceon.ai"
       />
       <JsonLd data={organizationJsonLd} />
@@ -85,7 +85,7 @@ export default function HomePage() {
                     Practice SAT-style questions, review step-by-step explanations, and track mastery over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Use quick daily sessions, full-length exams, and tutor chat in one place.
+                    Use quick daily sessions, full-length exams, and Lisa in one place.
                   </p>
                 </>
               ) : (
@@ -166,7 +166,7 @@ export default function HomePage() {
                   <div className="flex-1">
                     {demoState === "idle" && (
                       <div className="text-sm text-muted-foreground italic">
-                        Sign in to start practicing with tutor chat
+                        Sign in to start practicing with Lisa
                       </div>
                     )}
 
@@ -218,7 +218,7 @@ export default function HomePage() {
                 <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    Tutor chat support
+                    Lisa support
                   </span>
                   <span>Grounded in SAT-style questions</span>
                 </div>
@@ -275,7 +275,7 @@ export default function HomePage() {
               <MessageSquare className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Practice and review</h3>
               <p className="text-muted-foreground">
-                Use adaptive question flow and tutor chat to understand mistakes and next steps.
+                Use adaptive question flow and Lisa to understand mistakes and next steps.
               </p>
             </Card>
 
@@ -307,7 +307,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-8">
             <Card>
               <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Tutor chat, grounded in context</h3>
+              <h3 className="text-xl font-semibold mb-3">Lisa, grounded in context</h3>
               <p className="text-muted-foreground mb-4">
                 Explanations stay focused on SAT-style question patterns and reasoning.
               </p>

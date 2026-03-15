@@ -1,56 +1,50 @@
 # Mastery Source of Truth
 
-## Canonical Table
-- Canonical runtime mastery state is stored in `student_skill_mastery`.
-- `student_cluster_mastery` is a canonical secondary rollup updated by the same write choke point.
-- Raw attempt history is stored in `student_question_attempts`.
-
 ## Canonical Writer
-- The only runtime mastery writer is:
+- Canonical runtime mastery write choke point:
   - `apps/api/src/services/mastery-write.ts`
   - function: `applyMasteryUpdate(...)`
-- This choke point validates event type, logs raw attempt, and applies mastery rollups through:
+- All mastery-affecting runtime flows call this function:
+  - `server/routes/practice-canonical.ts`
+  - `server/routes/review-session-routes.ts`
+  - `apps/api/src/routes/diagnostic.ts`
+  - `apps/api/src/services/fullLengthExam.ts`
+
+## Canonical Runtime Tables
+- Canonical attempt/event ledger: `public.student_question_attempts`
+- Canonical skill mastery state: `public.student_skill_mastery`
+- Canonical cluster rollup state: `public.student_cluster_mastery`
+
+These are the active runtime equivalents of the locked conceptual model (`mastery_events`, `skill_mastery`).
+
+## Canonical Event Taxonomy
+Only these event values are accepted for mastery writes:
+- `practice_pass`
+- `practice_fail`
+- `review_pass`
+- `review_fail`
+- `tutor_helped`
+- `tutor_fail`
+- `test_pass`
+- `test_fail`
+
+Fail-closed behavior:
+- Unknown event types are rejected before any mastery table write.
+- Missing canonical question id, section, or skill mapping is rejected.
+
+## Runtime Writer Guarantees
+- `applyMasteryUpdate(...)` inserts one row into `student_question_attempts`.
+- The same call then updates rollups via:
   - `upsert_skill_mastery`
   - `upsert_cluster_mastery`
+- No other active runtime path writes canonical mastery rollup tables directly.
 
-## Event Taxonomy
-- `PRACTICE_SUBMIT`:
-  - Source: `server/routes/practice-canonical.ts` answer submit flow.
-  - Weight: baseline.
-- `DIAGNOSTIC_SUBMIT`:
-  - Source: `apps/api/src/routes/diagnostic.ts`.
-  - Weight: stronger than practice.
-- `FULL_LENGTH_SUBMIT`:
-  - Source: `apps/api/src/services/fullLengthExam.ts` module submission flow.
-  - Weight: highest trust.
-- `TUTOR_VIEW`:
-  - Source meaning: tutor open/view interaction.
-  - Mastery effect: no rollup mutation.
-- `TUTOR_RETRY_SUBMIT`:
-  - Source: `server/routes/review-errors-routes.ts` only when tutor context is verified and retry answer is server-graded.
-  - Weight: below raw practice, above pure tutor view.
+## Parallel Systems Status
+- `user_competencies`: legacy table, not active runtime mastery truth.
+- `competency_events`: legacy/derived table family, not active runtime mastery truth.
+- `user_progress`: deprecated parallel ledger, not active runtime mastery truth.
 
-## Deprecated and Derived Paths
-- Deprecated as runtime mastery writers:
-  - `user_competencies` writes (removed from active runtime).
-  - `user_progress` as learning-state reader (retired from tutor profile derivation).
-- Retained as derived/reporting-only:
-  - `competency_events` in `apps/api/src/routes/progress.ts`.
-- Canonical-derived reader helper:
-  - `apps/api/src/services/mastery-derived.ts`
-  - Used by weak-area/progress readers and tutor profile competency mapping.
-
-## Reader Migration Notes
-- Weak-area readers now derive from `student_skill_mastery` via `getDerivedWeaknessSignals(...)`.
-- Tutor profile competency map now derives from `student_skill_mastery` (not `user_progress`).
-- Adaptive weak-question selection reads canonical-derived weakness aliases from `student_skill_mastery`.
-- Guardian weakness rollups now use canonical-derived mastery signals.
-
-## DB Cleanup Needed
-- Optional but recommended after soak period:
-1. Freeze legacy tables to reporting-only by revoking app write privileges for:
-   - `user_competencies`
-   - `user_progress`
-2. Backfill any reporting dependencies from canonical tables/views if needed.
-3. Drop or archive legacy tables once dashboards/readers are fully migrated.
-4. Keep `competency_events` only if reporting needs it; otherwise archive and remove.
+## Reader Alignment
+- KPI/calendar event counting derives from `student_question_attempts` and canonical event filters in `apps/api/src/services/mastery-constants.ts`.
+- Mastery summaries/weakness readers derive from `student_skill_mastery`.
+- Guardian mastery-adjacent surfaces remain summary-only and do not expose raw mastery score deltas or attempt-level internals.

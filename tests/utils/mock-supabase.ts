@@ -64,11 +64,6 @@ export function createMockAuthenticatedClient(
           }),
         } as any;
       }
-      if (table === 'users') {
-        return {
-          upsert: async () => ({ data: null, error: null }),
-        } as any;
-      }
       return {} as any;
     },
   } as Partial<SupabaseClient>;
@@ -189,3 +184,4 @@ export function generateMockToken(userId: string): string {
   const signature = 'mock-signature-' + userId.slice(0, 8);
   return `${header}.${payload}.${signature}`;
 }
+

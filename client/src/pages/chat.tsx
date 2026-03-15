@@ -87,7 +87,7 @@ export default function Chat() {
       setInputValue(messageContent);
       toast({
         title: "Error",
-        description: "Failed to get response from AI tutor. Please try again.",
+        description: "Failed to get response from Lisa. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -124,17 +124,17 @@ export default function Chat() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-                AI Tutor Chat
+                Chat with Lisa
               </h1>
               <p className="text-muted-foreground">
-                Ask questions and get personalized SAT help powered by AI
+                Ask Lisa and get personalized SAT help
               </p>
             </div>
             
             {/* AI Provider Badge */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border">
               <Sparkles className="h-4 w-4 text-foreground" />
-              <span className="text-sm font-medium text-foreground">Gemini AI</span>
+              <span className="text-sm font-medium text-foreground">Lisa, your SAT tutor</span>
             </div>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function Chat() {
                   Start a conversation
                 </h3>
                 <p className="text-muted-foreground max-w-md">
-                  Hi! I'm your SAT AI Tutor. I can help you understand questions, explain concepts, and provide personalized study guidance. Ask me anything to get started!
+                  Hi! I'm Lisa, your SAT tutor. I can help you understand questions, explain concepts, and provide personalized study guidance. Ask me anything to get started!
                 </p>
               </div>
             ) : (

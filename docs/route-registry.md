@@ -118,7 +118,13 @@ The following routes have been **REMOVED** from the codebase:
 | `/api/auth/google/start` | GET | No | public | Google OAuth flow |
 | `/api/auth/consent` | POST | Yes | any | Submit guardian consent for under-13 users (CSRF protected) |
 | `/api/auth/refresh` | POST | No | public | Refresh auth token |
+| `/api/auth/admin-provision` | POST | No (CSRF + passcode required) | guarded | Provision admin account through explicit passcode gate (`ADMN_PASSCODE`) |
 | `/api/profile` | GET | Yes | any | Get user profile (canonical) |
+| `/auth/google/callback` | GET | No | public | Google OAuth callback handler |
+
+Removed auth endpoints (must return 404):
+- `/api/auth/user`
+- `/api/auth/exchange-session`
 
 ### Student Endpoints
 | Endpoint | Method | Auth Required | Role | Entitlement | Purpose |
@@ -285,3 +291,4 @@ Expected: **2+ hits** for each
 
 **Maintainer:** Development Team  
 **Validation Frequency:** On every route change (enforced by CI)
+

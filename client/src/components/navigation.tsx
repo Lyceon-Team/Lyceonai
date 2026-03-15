@@ -108,7 +108,7 @@ export default function Navigation() {
                     className={`${isActive('/chat') ? 'text-foreground font-medium border-b-2 border-foreground' : 'text-muted-foreground hover:text-foreground'} transition-colors pb-1`}
                     data-testid="nav-resources"
                   >
-                    AI Tutor
+                    Lisa
                   </Link>
                 </>
               )}

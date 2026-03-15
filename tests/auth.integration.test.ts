@@ -157,24 +157,19 @@ describe('Auth Integration Tests', () => {
     });
   });
 
-  describe('Session Exchange', () => {
-    it('should require tokens in exchange-session endpoint', async () => {
+  describe('Removed Legacy Auth Endpoints', () => {
+    it('should return 404 for removed exchange-session endpoint', async () => {
       const res = await request(app)
         .post('/api/auth/exchange-session')
         .send({});
-      
-      expect([400, 401]).toContain(res.status);
+
+      expect(res.status).toBe(404);
     });
 
-    it('should reject invalid tokens in exchange-session', async () => {
-      const res = await request(app)
-        .post('/api/auth/exchange-session')
-        .send({
-          access_token: 'invalid_token',
-          refresh_token: 'invalid_token'
-        });
-      
-      expect([400, 401, 500]).toContain(res.status);
+    it('should return 404 for removed auth hydration endpoint', async () => {
+      const res = await request(app).get('/api/auth/user');
+
+      expect(res.status).toBe(404);
     });
   });
 
@@ -214,7 +209,7 @@ describe('Auth Integration Tests', () => {
 
     it('should handle malformed JSON gracefully', async () => {
       const res = await request(app)
-        .post('/api/auth/exchange-session')
+        .post('/api/auth/signin')
         .set('Content-Type', 'application/json')
         .send('{ invalid json }');
       
@@ -222,5 +217,4 @@ describe('Auth Integration Tests', () => {
     });
   });
 });
-
 

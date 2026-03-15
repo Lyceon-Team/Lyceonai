@@ -112,7 +112,7 @@ This is the most important part. For every wrong answer, understand why you miss
 - Remove distractions—phone on airplane mode
 - Track your streaks to build momentum
 
-Our AI SAT tutor is designed for quick study sessions with personalized questions and instant explanations. Start with our [Digital SAT overview](/digital-sat), or focus on [Math](/digital-sat/math) or [Reading & Writing](/digital-sat/reading-writing) depending on your needs.`
+Lisa is designed for quick study sessions with personalized questions and instant explanations. Start with our [Digital SAT overview](/digital-sat), or focus on [Math](/digital-sat/math) or [Reading & Writing](/digital-sat/reading-writing) depending on your needs.`
   },
   {
     slug: "sat-question-bank-practice",

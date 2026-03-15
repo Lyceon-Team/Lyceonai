@@ -25,7 +25,7 @@ export default function ChatInterface() {
     {
       id: '1',
       type: 'tutor',
-      content: "Hi! I'm here to help you with your SAT preparation. Feel free to ask me about any questions you're working on, or let me know if you'd like to practice specific topics! 😊",
+      content: "Hi! I'm Lisa, your SAT tutor. Feel free to ask me about any questions you're working on, or let me know if you'd like to practice specific topics! 😊",
       timestamp: new Date()
     }
   ]);
@@ -128,11 +128,11 @@ export default function ChatInterface() {
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-card-foreground">
-            AI Tutor Chat
+            Chat with Lisa
           </h3>
           <Badge variant="secondary" className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" />
-            Gemini AI
+            Lisa
           </Badge>
         </div>
         

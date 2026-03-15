@@ -1,9 +1,9 @@
 # Guardian Trust Source of Truth
 
-This document outlines the source of truth for guardian authentication, authorization, and student data visibility.
+This document outlines the source of truth for guardian authentication, authorization, linked-student visibility, and premium gating.
 
 ## 1. Canonical Table: `guardian_links`
-The single source of truth for all guardian↔student relationships is the `public.guardian_links` table.
+The single source of truth for guardian↔student relationships is the `public.guardian_links` table.
 
 ```sql
 CREATE TABLE public.guardian_links (
@@ -16,39 +16,47 @@ CREATE TABLE public.guardian_links (
   UNIQUE(guardian_profile_id, student_user_id)
 );
 ```
-- **Active Link:** Defined strictly as `{ guardian_profile_id, student_user_id }` where `status = 'active'`.
-- **Revoked Link:** Links are never hard-deleted. They are marked `status = 'revoked'` with a `revoked_at` timestamp.
+
+- Active link means `status = 'active'` for a specific `(guardian_profile_id, student_user_id)` pair.
+- Revoked links are soft-revoked (`status = 'revoked'`, `revoked_at` set), not hard-deleted.
+- Runtime enforcement is locked to **1 active guardian ↔ 1 active student**. Conflicting second active links are denied and treated as invariant violations.
 
 ## 2. Exact Visibility Rule
-Guardian visibility to any student data requires **two independent, active states**:
-1. **Active Link:** A row in `guardian_links` with `status = 'active'` for the specific `(guardian, student)` pair.
-2. **Active Student Entitlement:** The linked student must have an **active paid subscription** (`entitlements.status = 'active' OR 'trialing'` AND `current_period_end > NOW()`). Payment does not bypass this. The entitlement belongs to the student's *account*.
+Guardian visibility to student-derived product surfaces requires two independent conditions:
 
-If either state changes to inactive/revoked, visibility is revoked **immediately**.
+1. Active link: the guardian is actively linked to that student in `guardian_links`.
+2. Active premium on the linked pair: at least one side has active paid entitlement (`plan='paid'` and `status IN ('active','trialing')` and not expired):
+   - linked student entitlement, or
+   - linked guardian entitlement.
+
+If link or pair premium becomes inactive, guardian visibility is revoked immediately.
 
 ## 3. Route Flow & Middleware
-Any guardian route involving student data must pass through:
-1. **Authentication:** `requireSupabaseAuth` validates the parent's session.
-2. **Role Verification:** `requireGuardianRole` asserts `role === 'guardian'`.
-3. **Entitlement & Link Verification:** `requireGuardianEntitlement` assertions:
-   - Validates `guardian_links` (`status = 'active'`) for the requested student.
-   - Retrieves the student's `entitlement` record.
-   - Asserts `entitlement.plan === 'paid'` AND `status IN ('active', 'trialing')` AND `current_period_end > NOW()`.
+Guardian routes that expose student-derived data must pass:
 
-### Code Paths
-- `POST /api/guardian/link` -> `createGuardianLink()` Inserts/Upserts `guardian_links` status to 'active'.
-- `DELETE /api/guardian/link/:studentId` -> `revokeGuardianLink()` Updates `guardian_links` status to 'revoked'.
-- `GET /api/guardian/students` -> `getAllGuardianStudentLinks()` queries `guardian_links WHERE status = 'active'`.
-- `GET /api/guardian/students/:studentId/*` -> Evaluates `isGuardianLinkedToStudent` and checks entitlement.
+1. Authentication: `requireSupabaseAuth`
+2. Role verification: `requireGuardianRole`
+3. Link + pair-premium enforcement: `requireGuardianEntitlement`
 
-## 4. Denial Cases
-The system enforces the following explicit denial scenarios with 403 or 404 responses:
-- **Unlinked Guardian:** Guardian requesting access for a student they have not linked. (403/404)
-- **Revoked Link:** Guardian requesting access for a student whose link was revoked (even if it was previously active). (403/404)
-- **Inactive Student Entitlement:** Guardian linked to a student with no active paid subscription, or an expired one. (402 Payment Required)
-- **Immediate Revocation:** Once `revokeGuardianLink()` is called, the next and all subsequent API requests for that student fail immediately.
-- **Entitlement Expiration:** Once the student's `current_period_end` passes, guardian visibility fails immediately, regardless of link status.
+`requireGuardianEntitlement` is resolved via `resolveLinkedPairPremiumAccessForGuardian(...)` and denies when:
+- guardian has no active link to requested student (`NO_LINKED_STUDENT`, 403)
+- linked pair has no active premium (`PAYMENT_REQUIRED`, 402)
 
-## 5. Deprecated Paths Removed
-- ❌ **`profiles.guardian_profile_id`:** Deprecated. A user's profile is NO LONGER the source of truth for who their guardian is. The `guardian_links` table enables many-to-many, time-bound, and verifiable relationships.
-- Due to the nature of the migration, `profiles.guardian_profile_id` is maintained passively, but no authorization decisions are made from it.
+## 4. Canonical Runtime Paths
+- `POST /api/guardian/link` -> `createGuardianLink(...)` in `server/lib/account.ts`
+- `DELETE /api/guardian/link/:studentId` -> `revokeGuardianLink(...)`
+- `GET /api/guardian/students` -> `getAllGuardianStudentLinks(...)`
+- `GET /api/guardian/students/:studentId/*` -> guarded by `requireGuardianEntitlement`
+
+## 5. Denial Cases
+- Unlinked guardian requests linked-student data: denied.
+- Revoked link requests: denied immediately.
+- Linked guardian with no active premium on either side of pair: denied (402).
+- Second-link conflicts:
+  - guardian already linked to different student: denied (`GUARDIAN_ALREADY_LINKED`, 409)
+  - student already linked to different guardian: denied with anti-enumeration contract (404)
+
+## 6. Deprecated Paths Removed
+- `profiles.guardian_profile_id` is not authorization truth.
+- Runtime guardian visibility is not derived from passive profile fields.
+- Runtime relationship truth is `guardian_links` + entitlement state on the active linked pair.

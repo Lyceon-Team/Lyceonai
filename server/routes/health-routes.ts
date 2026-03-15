@@ -1,12 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
 import { logger } from '../logger.js';
-import { getSupabaseAdmin, resolveTokenFromRequest } from '../middleware/supabase-auth.js';
+import { getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
 
 const router = Router();
-
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
 interface SchemaCheck {
   hasColumns: string[];
@@ -37,7 +33,7 @@ interface HealthReport {
 
 router.get('/practice', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
-  
+
   const report: HealthReport = {
     ok: true,
     timestamp: new Date().toISOString(),
@@ -61,20 +57,19 @@ router.get('/practice', async (req: Request, res: Response) => {
   };
 
   try {
-    // Use SHARED helper for token resolution (same as practice endpoints)
+    // Use shared helpers so token validation logic stays canonical in supabase-auth middleware.
     const tokenResult = resolveTokenFromRequest(req);
     report.auth.tokenSource = tokenResult.tokenSource;
 
     if (tokenResult.token) {
       try {
-        const supabase = createClient(supabaseUrl, supabaseAnonKey);
-        const { data: { user }, error } = await supabase.auth.getUser(tokenResult.token);
-        if (!error && user) {
-          report.auth.resolvedUserId = user.id;
+        const resolvedUserId = await resolveUserIdFromToken(tokenResult.token);
+        if (resolvedUserId) {
+          report.auth.resolvedUserId = resolvedUserId;
 
           const admin = getSupabaseAdmin();
-          const { data, error: adminErr } = await admin.auth.admin.getUserById(user.id);
-          
+          const { data, error: adminErr } = await admin.auth.admin.getUserById(resolvedUserId);
+
           if (adminErr || !data?.user) {
             report.auth.serviceRoleCanReadUser = false;
             report.auth.userLookupError = adminErr?.message || 'user_not_found';
@@ -82,6 +77,8 @@ router.get('/practice', async (req: Request, res: Response) => {
           } else {
             report.auth.serviceRoleCanReadUser = true;
           }
+        } else {
+          report.auth.userLookupError = 'token_invalid';
         }
       } catch (e: any) {
         report.auth.userLookupError = e?.message || 'exception';
@@ -99,14 +96,14 @@ router.get('/practice', async (req: Request, res: Response) => {
 
     for (const [tableName, columns] of Object.entries(requiredColumns)) {
       const tableCheck = report.schema[tableName as keyof typeof report.schema];
-      
+
       // Use information_schema to check column existence (more reliable)
       const { data: schemaRows, error: schemaErr } = await admin
         .from('information_schema.columns' as any)
         .select('column_name')
         .eq('table_schema', 'public')
         .eq('table_name', tableName);
-      
+
       if (schemaErr) {
         // Fallback: try select approach if information_schema fails
         const selectStr = columns.join(', ');
@@ -114,7 +111,7 @@ router.get('/practice', async (req: Request, res: Response) => {
           .from(tableName)
           .select(selectStr)
           .limit(0);
-        
+
         if (selectErr) {
           const missingMatch = selectErr.message?.match(/column.*"(\w+)".*does not exist/i);
           if (missingMatch) {

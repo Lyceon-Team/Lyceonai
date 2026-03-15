@@ -1,14 +1,41 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, uuid, integer, jsonb, timestamp, boolean, real } from "drizzle-orm/pg-core";
+<<<<<<< HEAD
+import { pgTable, text, varchar, integer, jsonb, timestamp, boolean, uuid } from "drizzle-orm/pg-core";
+
+/**
+ * Shared schema/types trimmed to active runtime and active script imports.
+ *
+ * Canonical content truth:
+ * - runtime question identity is questions.canonical_id
+ * - canonical lifecycle is draft -> qa -> published
+ * - question_versions uses question_canonical_id (canonical key)
+ *
+ * Non-runtime note:
+ * - `users` remains only for legacy migration scripts.
+ * - auth/profile runtime truth is Supabase auth.users + profiles.
+ */
+=======
+import {
+  pgTable,
+  text,
+  varchar,
+  uuid,
+  integer,
+  jsonb,
+  timestamp,
+  boolean,
+  real,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // ============================================================================
-// CANONICAL QUESTION TYPES - Shared between backend and frontend
+// SHARED RUNTIME QUESTION TYPES
 // ============================================================================
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
 
 export interface QuestionOption {
-  key: 'A' | 'B' | 'C' | 'D';
+  key: "A" | "B" | "C" | "D";
   text: string;
 }
 
@@ -23,11 +50,16 @@ export interface StudentQuestion {
   canonical_id?: string | null;
   stem: string;
   section: string;
-  sectionCode?: 'MATH' | 'RW' | null;
-  section_code?: 'MATH' | 'RW' | null;
-  questionType: 'multiple_choice' | 'free_response';
-  question_type?: 'multiple_choice' | 'free_response' | null;
-  type?: 'mc' | 'fr';
+<<<<<<< HEAD
+  sectionCode?: "M" | "RW" | "MATH" | null;
+  section_code?: "M" | "RW" | "MATH" | null;
+=======
+  sectionCode?: "MATH" | "RW" | null;
+  section_code?: "MATH" | "RW" | null;
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
+  questionType: "multiple_choice" | "free_response";
+  question_type?: "multiple_choice" | "free_response" | null;
+  type?: "mc" | "fr";
   options: QuestionOption[];
   explanation: string | null;
   tags: string[];
@@ -35,476 +67,620 @@ export interface StudentQuestion {
   skill?: string | null;
   subskill?: string | null;
   skillCode?: string | null;
-  difficulty?: string | null;
+  difficulty?: string | number | null;
   competencies?: Competency[];
 }
 
 export type StudentMcQuestion = StudentQuestion & {
-  questionType: 'multiple_choice';
-  question_type?: 'multiple_choice' | null;
-  type?: 'mc';
+  questionType: "multiple_choice";
+  question_type?: "multiple_choice" | null;
+  type?: "mc";
 };
 
 export type StudentFrQuestion = StudentQuestion & {
-  questionType: 'free_response';
-  question_type?: 'free_response' | null;
-  type?: 'fr';
+  questionType: "free_response";
+  question_type?: "free_response" | null;
+  type?: "fr";
 };
 
+<<<<<<< HEAD
+// Legacy migration source table (non-runtime).
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").unique(), // Made optional for Google OAuth users
-  password: text("password"), // Made optional for Google OAuth users
-  googleId: text("google_id").unique(), // Google OAuth user ID
-  email: text("email").unique(), // User email from Google OAuth
-  name: text("name"), // Display name from Google OAuth
-  avatarUrl: text("avatar_url"), // Profile picture URL from Google
-  isAdmin: boolean("is_admin").default(false).notNull(), // Admin access flag
-  adminPermissions: jsonb("admin_permissions"), // Granular admin permissions
-  lastLoginAt: timestamp("last_login_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  
-  // Comprehensive profile fields for industry-standard user profiles
+  username: text("username"),
+  password: text("password"),
+  googleId: text("google_id"),
+  email: text("email"),
+  name: text("name"),
+  avatarUrl: text("avatar_url"),
+  isAdmin: boolean("is_admin").default(false).notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
   phoneNumber: text("phone_number"),
-  dateOfBirth: timestamp("date_of_birth"), // For age calculation and personalization
-  address: jsonb("address"), // {street, city, state, zipCode, country}
-  timeZone: text("time_zone"), // User's timezone for scheduling
-  profileCompletedAt: timestamp("profile_completed_at"), // When profile was completed
-  preferredLanguage: text("preferred_language").default("en"), // For i18n
-  marketingOptIn: boolean("marketing_opt_in").default(false), // GDPR compliance
-  termsAcceptedAt: timestamp("terms_accepted_at"), // Legal compliance
-  privacyPolicyAcceptedAt: timestamp("privacy_policy_accepted_at"), // GDPR compliance
-  emailVerified: boolean("email_verified").default(false), // Email verification status
-  emailVerificationToken: text("email_verification_token"), // For verification
-  passwordResetToken: text("password_reset_token"), // For password reset
-  passwordResetExpiresAt: timestamp("password_reset_expires_at"), // Token expiration
-  twoFactorEnabled: boolean("two_factor_enabled").default(false), // 2FA support
-  twoFactorSecret: text("two_factor_secret"), // TOTP secret
-  recoveryCodesUsed: jsonb("recovery_codes_used"), // Used backup codes
-  loginAttempts: integer("login_attempts").default(0).notNull(), // Rate limiting
-  lockedUntil: timestamp("locked_until"), // Account lockout
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Canonical question-bank table used by runtime Supabase flows.
+export const questions = pgTable("questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  canonicalId: text("canonical_id").unique(),
+  status: text("status").notNull().default("draft"),
+  section: text("section").notNull(),
+  sectionCode: text("section_code"),
+  sourceType: integer("source_type"),
+  questionType: text("question_type").notNull().default("multiple_choice"),
+  stem: text("stem").notNull(),
+  options: jsonb("options").$type<Array<{ key: string; text: string }> | null>(),
+  correctAnswer: text("correct_answer"),
+  answerText: text("answer_text"),
+  explanation: text("explanation"),
+  optionMetadata: jsonb("option_metadata"),
+=======
+// ============================================================================
+// IDENTITY / AUTH
+// ============================================================================
+
+/**
+ * Canonical runtime identity/profile table.
+ * This is the source of truth for authenticated users in active runtime.
+ */
+export const profiles = pgTable("profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  email: text("email"),
+  displayName: text("display_name"),
+  role: text("role").notNull().default("student"), // 'student' | 'guardian' | 'admin'
+  isUnder13: boolean("is_under_13").default(false).notNull(),
+  guardianConsent: boolean("guardian_consent").default(false).notNull(),
+  guardianEmail: text("guardian_email"),
+  studentLinkCode: text("student_link_code"),
+  profileCompletedAt: timestamp("profile_completed_at"),
+
+  // Extended profile fields used by runtime profile completion
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phoneNumber: text("phone_number"),
+  dateOfBirth: timestamp("date_of_birth"),
+  address: jsonb("address"), // { street, city, state, zipCode, country }
+  timeZone: text("time_zone"),
+  preferredLanguage: text("preferred_language").default("en"),
+  marketingOptIn: boolean("marketing_opt_in").default(false),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Legacy compatibility table.
+ *
+ * Runtime auth has moved to `profiles`, but this table is retained because
+ * historical schema surface and some legacy compatibility paths still reference it.
+ *
+ * It is not the canonical runtime user/profile source of truth.
+ */
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  username: text("username").unique(),
+  password: text("password"),
+
+  googleId: text("google_id").unique(),
+  email: text("email").unique(),
+  name: text("name"),
+  avatarUrl: text("avatar_url"),
+
+  isAdmin: boolean("is_admin").default(false).notNull(),
+  adminPermissions: jsonb("admin_permissions"),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phoneNumber: text("phone_number"),
+  dateOfBirth: timestamp("date_of_birth"),
+  address: jsonb("address"),
+  timeZone: text("time_zone"),
+  profileCompletedAt: timestamp("profile_completed_at"),
+  preferredLanguage: text("preferred_language").default("en"),
+  marketingOptIn: boolean("marketing_opt_in").default(false),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  privacyPolicyAcceptedAt: timestamp("privacy_policy_accepted_at"),
+  emailVerified: boolean("email_verified").default(false),
+  emailVerificationToken: text("email_verification_token"),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpiresAt: timestamp("password_reset_expires_at"),
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorSecret: text("two_factor_secret"),
+  recoveryCodesUsed: jsonb("recovery_codes_used"),
+  loginAttempts: integer("login_attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until"),
+});
+
+// ============================================================================
+// CONTENT / DOCUMENTS / QUESTIONS
+// ============================================================================
 
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   filename: text("filename").notNull(),
   originalName: text("original_name").notNull(),
-  storagePath: text("storage_path").notNull(), // Cloud storage path
-  size: integer("size").notNull(), // File size in bytes
-  pageCount: integer("page_count"), // Number of pages in PDF
+  storagePath: text("storage_path").notNull(),
+  size: integer("size").notNull(),
+  pageCount: integer("page_count"),
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
   processedAt: timestamp("processed_at"),
-  status: text("status").notNull().default("processing"), // processing, completed, failed
+  status: text("status").notNull().default("processing"), // processing | completed | failed
   totalQuestions: integer("total_questions").default(0),
-  extractionMethod: text("extraction_method"), // mathpix, document-ai, pdf-js, tesseract
-  extractionConfidence: integer("extraction_confidence"), // 0-100 confidence score
+  extractionMethod: text("extraction_method"),
+  extractionConfidence: integer("extraction_confidence"),
 });
 
 /**
- * CANONICAL QUESTIONS TABLE
+ * Canonical questions table.
  *
- * This table stores all SAT practice questions with support for both multiple-choice and free-response formats.
+ * Runtime question identity is `canonical_id`.
+ * Pre-submit student responses must never include answer-bearing fields.
  *
- * CORE FIELDS (Central to the app's functionality):
- *  - id: Unique identifier
- *  - stem: Question text/prompt
- *  - section: Question category (Math | Reading | Writing | Reading and Writing)
- *  - type: Discriminated union field ('mc' | 'fr') - CANONICAL for identifying question type
- *  - options: For MC questions, array of {key, text} choices (stored as JSONB)
- *  - answerChoice: For MC questions, correct answer key (A|B|C|D)
- *  - answerText: For FR questions, correct answer text
- *  - explanation: Learning explanation/rationale
- *  - difficulty / difficultyLevel: Difficulty classification
- *  - tags/unitTag: Topic/unit tags for organization
- *
- * ADVANCED FIELDS (Ingestion/AI/Analytics):
- *  - classification: AI categorization metadata
- *  - sourceMapping: PDF structure/position metadata
- *  - pageNumber, position: Document location
- *  - embedding: Vector embeddings for RAG
- *  - parsingMetadata: OCR/parsing details
- *  - confidence, needsReview: Quality assurance flags
- *  - questionHash, engineUsed, engineConfidence: OCR pipeline metadata
- *  - provenanceChunkIds: RAG source tracking
- *
- * LEGACY FIELDS (For backward compatibility):
- *  - questionType: DEPRECATED - use 'type' instead (enum values map: "multiple_choice" -> "mc", "free_response" -> "fr")
- *  - answer: DEPRECATED - use answerChoice (MC) or answerText (FR) instead
- *
- * SECURITY NOTE: API routes MUST NOT leak answer, answerChoice, or answerText to students.
- * These fields are server-side only and should never be included in StudentQuestion responses.
+ * Active lifecycle truth on the questions table is draft -> qa -> published.
  */
 export const questions = pgTable("questions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").references(() => documents.id), // Made optional for internal AI-generated questions
-  questionNumber: integer("question_number"), // Optional for internal AI-generated questions
-  internalId: text("internal_id").unique(), // Internal question ID for AI-generated questions
-  section: text("section").notNull(), // Math, Reading, Writing, Reading and Writing
+
+  documentId: varchar("document_id").references(() => documents.id),
+  questionNumber: integer("question_number"),
+
+  // Legacy import metadata only. Not runtime question identity.
+  internalId: text("internal_id").unique(),
+
+  section: text("section").notNull(),
   stem: text("stem").notNull(),
-  
-  // DEPRECATED: use 'type' field instead
-  questionType: text("question_type").notNull().default("multiple_choice"), // multiple_choice, free_response
-  
-  options: jsonb("options"), // Array of {key: string, text: string} - null for free response
-  
-  // DEPRECATED: use answerChoice (MC) or answerText (FR) instead
+
+  // Legacy question type field retained for compatibility.
+  questionType: text("question_type").notNull().default("multiple_choice"),
+
+  options: jsonb("options"),
+
+  // Legacy answer field retained for compatibility.
   answer: text("answer").notNull(),
-  
+
   explanation: text("explanation"),
-  difficulty: text("difficulty"), // Easy, Medium, Hard (legacy text field)
-  difficultyLevel: integer("difficulty_level"), // 1-5 numeric difficulty rating
-  unitTag: text("unit_tag"), // Topic/unit tag (e.g., "Algebra", "Geometry", "Reading Comprehension")
-  tags: jsonb("tags"), // Array of strings (stored as JSONB array)
-  classification: jsonb("classification"), // Structured AI categorization JSON
-  sourceMapping: jsonb("source_mapping"), // PDF structure metadata
-  pageNumber: integer("page_number"),
-  position: jsonb("position"), // {x, y, width, height} for bounding box
-  embedding: jsonb("embedding"), // Vector embedding for similarity search
-  aiGenerated: boolean("ai_generated").default(false).notNull(), // Whether question was AI-generated
-  provenanceChunkIds: jsonb("provenance_chunk_ids"), // Array of chunk IDs used as source
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
+  difficulty: text("difficulty"),
+  difficultyLevel: integer("difficulty_level"),
+  unitTag: text("unit_tag"),
+  tags: jsonb("tags"),
+<<<<<<< HEAD
+  competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }> | null>(),
+  domain: text("domain"),
+  skill: text("skill"),
+  subskill: text("subskill"),
+  skillCode: text("skill_code"),
+  type: text("type"),
+  embedding: jsonb("embedding").$type<number[] | null>(),
+  version: integer("version").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  
-  // CANONICAL DISCRIMINATED UNION FIELDS (new architecture):
-  type: text("type"), // "mc" | "fr" - CANONICAL type field (use this, not questionType)
-  answerChoice: text("answer_choice"), // for MC: "A" | "B" | "C" | "D" (use this instead of answer for MC)
-  answerText: text("answer_text"), // for FR: free response text answer (use this instead of answer for FR)
-  
-  // Quality assurance fields
-  confidence: real("confidence").default(1.0), // Parsing confidence 0.0-1.0
-  needsReview: boolean("needs_review").default(false).notNull(), // True if confidence < 0.8
+  updatedAt: timestamp("updated_at").defaultNow(),
+=======
+  classification: jsonb("classification"),
+  sourceMapping: jsonb("source_mapping"),
+  pageNumber: integer("page_number"),
+  position: jsonb("position"),
+  embedding: jsonb("embedding"),
+
+  aiGenerated: boolean("ai_generated").default(false).notNull(),
+  provenanceChunkIds: jsonb("provenance_chunk_ids"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+
+  // Canonical discriminated-union fields
+  type: text("type"), // 'mc' | 'fr'
+  answerChoice: text("answer_choice"), // MC answer key
+  answerText: text("answer_text"), // FR answer text
+
+  confidence: real("confidence").default(1.0),
+  needsReview: boolean("needs_review").default(false).notNull(),
   parsingMetadata: jsonb("parsing_metadata").$type<{
     anchorsDetected?: string[];
     patternMatches?: Record<string, boolean>;
     warnings?: string[];
     originalText?: string;
-  }>(), // Detailed parsing metadata for review
-  reviewedAt: timestamp("reviewed_at"), // When question was reviewed
-  reviewedBy: varchar("reviewed_by").references(() => users.id), // Admin who reviewed
-  
-  // Legacy import provenance fields retained for historical data compatibility (non-runtime).
-  questionHash: text("question_hash").unique(), // Normalized hash for deduplication
-  engineUsed: text("engine_used"), // 'docai' | 'mathpix' | 'nougat' - primary OCR engine
-  engineConfidence: real("engine_confidence"), // Average confidence from OCR engine (0.0-1.0)
-  sourcePdf: text("source_pdf"), // GCS path to source PDF
-  ingestionRunId: varchar("ingestion_run_id"), // Legacy compatibility link to ingestion_runs historical records
-  
-  // Legacy canonical import metadata retained for historical rows (non-runtime).
-  canonicalId: text("canonical_id").unique(), // Stable canonical ID like SATM1****** or ACTR1******
-  testCode: text("test_code"), // e.g. "SAT", "ACT", "AP"
-  sectionCode: text("section_code"), // e.g. "M", "RW"
-  sourceType: integer("source_type"), // 1 = parsed PDF, 2 = AI generated
-  competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }>>(), // Array of {code, raw}
-  version: integer("version").default(1), // Schema version
+  }>(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: varchar("reviewed_by").references(() => profiles.id), // historical reviewer link now aligned to runtime identity
+
+  // Historical import provenance retained for compatibility
+  questionHash: text("question_hash").unique(),
+  engineUsed: text("engine_used"),
+  engineConfidence: real("engine_confidence"),
+  sourcePdf: text("source_pdf"),
+  ingestionRunId: varchar("ingestion_run_id"),
+
+  // Canonical runtime identity
+  canonicalId: text("canonical_id").unique(), // SAT{M|RW}{1|2}{A-Z0-9}{6}
+  testCode: text("test_code"), // SAT
+  sectionCode: text("section_code"), // M | RW
+  sourceType: integer("source_type"), // 1 parsed, 2 AI generated
+  competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }>>(),
+  version: integer("version").default(1),
+
+  // Runtime lifecycle field used by active routes
+  status: text("status").default("draft"), // draft | qa | published
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
 });
 
-export const chatMessages = pgTable("chat_messages", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(), // User who sent the message
-  message: text("message").notNull(),
-  response: text("response").notNull(),
-  sources: jsonb("sources"), // Array of question IDs that were used as context
-  timestamp: timestamp("timestamp").defaultNow().notNull(),
+// Canonical immutable version ledger keyed by canonical question ID.
+export const questionVersions = pgTable("question_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  questionCanonicalId: text("question_canonical_id").notNull(),
+  versionNumber: integer("version_number").notNull(),
+<<<<<<< HEAD
+  lifecycleStatus: text("lifecycle_status").notNull(),
+=======
+  lifecycleStatus: text("lifecycle_status").notNull(), // qa | published
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
+  snapshot: jsonb("snapshot").notNull(),
+  createdBy: varchar("created_by").references(() => profiles.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
 });
 
-// Document chunks for enhanced RAG and content segmentation
+<<<<<<< HEAD
+export type NotificationType =
+  | "system_update"
+  | "study_reminder"
+  | "progress_alert"
+  | "achievement"
+  | "ai_tutor_suggestion";
+
+export type NotificationCategory =
+  | "study_progress"
+  | "learning_analytics"
+  | "question_updates"
+  | "motivation"
+  | "ai_tutor"
+  | "technical"
+  | "milestones";
+
+export type NotificationPriority = "low" | "normal" | "high" | "urgent";
+
+export interface Notification {
+  id: string;
+  userId: string | null;
+  type: NotificationType;
+  category: NotificationCategory;
+  priority: NotificationPriority;
+  title: string;
+  message: string;
+  actionUrl: string | null;
+  metadata: Record<string, unknown> | null;
+  isRead: boolean;
+  createdAt: Date;
+  readAt: Date | null;
+  expiresAt: Date | null;
+=======
 export const docChunks = pgTable("doc_chunks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   documentId: varchar("document_id").references(() => documents.id).notNull(),
-  type: text("type").notNull(), // 'stem', 'explanation', 'passage', 'window'
-  content: text("content").notNull(), // The actual text content
-  pageNumber: integer("page_number"), // Page where this chunk appears
-  sourceQuestionId: varchar("source_question_id").references(() => questions.id, { onDelete: 'cascade' }), // If derived from question
-  embedding: jsonb("embedding"), // Vector embedding for similarity search
-  metadata: jsonb("metadata"), // Additional context (position, formatting, etc.)
+  type: text("type").notNull(), // stem | explanation | passage | window
+  content: text("content").notNull(),
+  pageNumber: integer("page_number"),
+  sourceQuestionId: varchar("source_question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }),
+  embedding: jsonb("embedding"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const choices = pgTable("choices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  choiceKey: text("choice_key").notNull(),
+  choiceText: text("choice_text").notNull(),
+  bbox: jsonb("bbox").$type<number[]>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================================================
+// CHAT / TUTOR / QUESTION CONTEXT
+// ============================================================================
+
+export const chatMessages = pgTable("chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => profiles.id).notNull(),
+  message: text("message").notNull(),
+  response: text("response").notNull(),
+  sources: jsonb("sources"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+// ============================================================================
+// PROGRESS / NOTIFICATIONS
+// ============================================================================
 
 export const userProgress = pgTable("user_progress", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
+  userId: varchar("user_id").references(() => profiles.id).notNull(),
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
   isCorrect: boolean("is_correct").notNull(),
   attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
 });
 
-// Notification enums for type safety
 export const notificationTypeEnum = z.enum([
-  'system_update', 
-  'study_reminder', 
-  'progress_alert', 
-  'achievement', 
-  'ai_tutor_suggestion'
+  "system_update",
+  "study_reminder",
+  "progress_alert",
+  "achievement",
+  "ai_tutor_suggestion",
 ]);
 
 export const notificationCategoryEnum = z.enum([
-  'study_progress',
-  'learning_analytics', 
-  'question_updates',
-  'motivation',
-  'ai_tutor',
-  'technical',
-  'milestones'
+  "study_progress",
+  "learning_analytics",
+  "question_updates",
+  "motivation",
+  "ai_tutor",
+  "technical",
+  "milestones",
 ]);
 
-export const notificationPriorityEnum = z.enum(['low', 'normal', 'high', 'urgent']);
+export const notificationPriorityEnum = z.enum(["low", "normal", "high", "urgent"]);
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id), // Null for system-wide notifications
-  type: text("type").notNull(), // Values from notificationTypeEnum
-  category: text("category").notNull(), // Values from notificationCategoryEnum
+  userId: varchar("user_id").references(() => profiles.id),
+  type: text("type").notNull(),
+  category: text("category").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
-  priority: text("priority").notNull().default("normal"), // Values from notificationPriorityEnum
+  priority: text("priority").notNull().default("normal"),
   isRead: boolean("is_read").default(false).notNull(),
-  actionUrl: text("action_url"), // Optional URL to navigate when clicked
-  actionText: text("action_text"), // Optional action button text
-  metadata: jsonb("metadata"), // Additional data (progress stats, achievement details, etc.)
-  expiresAt: timestamp("expires_at"), // Optional expiration for temporary notifications
+  actionUrl: text("action_url"),
+  actionText: text("action_text"),
+  metadata: jsonb("metadata"),
+  expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const notificationReads = pgTable("notification_reads", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  notificationId: varchar("notification_id").references(() => notifications.id).notNull(),
-  readAt: timestamp("read_at").defaultNow().notNull(),
-}, (table) => [
-  { uniqueUserNotification: sql`UNIQUE(${table.userId}, ${table.notificationId})` }
-]);
+export const notificationReads = pgTable(
+  "notification_reads",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => profiles.id).notNull(),
+    notificationId: varchar("notification_id").references(() => notifications.id).notNull(),
+    readAt: timestamp("read_at").defaultNow().notNull(),
+  },
+  (table) => [
+    { uniqueUserNotification: sql`UNIQUE(${table.userId}, ${table.notificationId})` },
+  ],
+);
 
-// Practice sessions for FlowCards and Structured practice
+// ============================================================================
+// PRACTICE / EXAMS
+// ============================================================================
+
 export const practiceSessions = pgTable("practice_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
-  mode: text("mode").notNull(), // 'flow', 'structured'
-  section: text("section"), // 'math', 'reading', 'writing', 'mixed'
-  difficulty: text("difficulty"), // 'easy', 'medium', 'hard', 'adaptive'
-  targetDurationMs: integer("target_duration_ms"), // 20 minutes = 1200000ms for structured
+  userId: varchar("user_id").references(() => profiles.id),
+  mode: text("mode").notNull(), // flow | structured
+  section: text("section"), // math | reading | writing | mixed
+  difficulty: text("difficulty"), // easy | medium | hard | adaptive
+  targetDurationMs: integer("target_duration_ms"),
   actualDurationMs: integer("actual_duration_ms"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
-  status: text("status").notNull().default("in_progress"), // 'in_progress', 'completed', 'abandoned'
-  questionIds: jsonb("question_ids"), // Array of question IDs for this session
-  completed: boolean("completed").default(false).notNull(), // Explicit completion flag
-  metadata: jsonb("metadata"), // Additional session data
+  status: text("status").notNull().default("in_progress"), // in_progress | completed | abandoned
+  questionIds: jsonb("question_ids"),
+  completed: boolean("completed").default(false).notNull(),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Full exam attempts with lockdown browser
-export const examAttempts = pgTable("exam_attempts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id),
-  examType: text("exam_type").notNull().default("practice"), // 'practice', 'diagnostic'
-  startedAt: timestamp("started_at").defaultNow().notNull(),
-  submittedAt: timestamp("submitted_at"),
-  status: text("status").notNull().default("in_progress"), // 'in_progress', 'submitted', 'failed', 'abandoned'
-  violations: integer("violations").default(0), // Number of lockdown violations
-  rawScoreMath: integer("raw_score_math"), // Correct answers in math section
-  rawScoreRW: integer("raw_score_rw"), // Correct answers in reading & writing
-  scaledScoreMath: integer("scaled_score_math"), // 200-800 scaled score
-  scaledScoreRW: integer("scaled_score_rw"), // 200-800 scaled score
-  totalScore: integer("total_score"), // Combined score 400-1600
-  metadata: jsonb("metadata"), // Additional exam data, section timings
-});
-
-// Answer attempts for any practice mode
 export const answerAttempts = pgTable("answer_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").references(() => practiceSessions.id, { onDelete: 'cascade' }),
-  examAttemptId: varchar("exam_attempt_id").references(() => examAttempts.id, { onDelete: 'cascade' }),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  selectedAnswer: text("selected_answer"), // For multiple choice
-  freeResponseAnswer: text("free_response_answer"), // For free response
+  sessionId: varchar("session_id").references(() => practiceSessions.id, {
+    onDelete: "cascade",
+  }),
+  examAttemptId: varchar("exam_attempt_id").references(() => examAttempts.id, {
+    onDelete: "cascade",
+  }),
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  selectedAnswer: text("selected_answer"),
+  freeResponseAnswer: text("free_response_answer"),
   isCorrect: boolean("is_correct").notNull(),
-  outcome: text("outcome").default("correct"), // 'correct' | 'incorrect' | 'skipped'
-  timeSpentMs: integer("time_spent_ms"), // Time spent on this question
+  outcome: text("outcome").default("correct"), // correct | incorrect | skipped
+  timeSpentMs: integer("time_spent_ms"),
   attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
 });
 
-// Question feedback - thumbs up/down ratings from students
-export const questionFeedback = pgTable("question_feedback", {
+export const examAttempts = pgTable("exam_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  userId: varchar("user_id").references(() => users.id), // Nullable for anonymous
-  practiceSessionId: varchar("practice_session_id").references(() => practiceSessions.id, { onDelete: 'set null' }),
-  rating: text("rating").notNull(), // 'up' | 'down'
-  timeToAnswerSeconds: integer("time_to_answer_seconds"), // How long student took to answer
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  userId: varchar("user_id").references(() => profiles.id),
+  examType: text("exam_type").notNull().default("practice"), // practice | diagnostic
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  submittedAt: timestamp("submitted_at"),
+  status: text("status").notNull().default("in_progress"), // in_progress | submitted | failed | abandoned
+  violations: integer("violations").default(0),
+  rawScoreMath: integer("raw_score_math"),
+  rawScoreRW: integer("raw_score_rw"),
+  scaledScoreMath: integer("scaled_score_math"),
+  scaledScoreRW: integer("scaled_score_rw"),
+  totalScore: integer("total_score"),
+  metadata: jsonb("metadata"),
 });
 
-// Zod schema for question feedback
-export const questionFeedbackRatingEnum = z.enum(['up', 'down']);
-
-export const insertQuestionFeedbackSchema = createInsertSchema(questionFeedback).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertQuestionFeedback = z.infer<typeof insertQuestionFeedbackSchema>;
-export type QuestionFeedback = typeof questionFeedback.$inferSelect;
-
-// Exam sections for tracking per-section progress
 export const examSections = pgTable("exam_sections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  examAttemptId: varchar("exam_attempt_id").references(() => examAttempts.id, { onDelete: 'cascade' }).notNull(),
-  section: text("section").notNull(), // 'RW1', 'RW2', 'M1', 'M2'
-  sectionName: text("section_name").notNull(), // 'Reading & Writing Module 1', etc.
-  targetDurationMs: integer("target_duration_ms").notNull(), // Official time limit
+  examAttemptId: varchar("exam_attempt_id").references(() => examAttempts.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  section: text("section").notNull(), // RW1 | RW2 | M1 | M2
+  sectionName: text("section_name").notNull(),
+  targetDurationMs: integer("target_duration_ms").notNull(),
   actualDurationMs: integer("actual_duration_ms"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
-  status: text("status").notNull().default("pending"), // 'pending', 'in_progress', 'completed', 'timed_out'
+  status: text("status").notNull().default("pending"), // pending | in_progress | completed | timed_out
 });
 
-// ============================================================================
-// FULL-LENGTH SAT EXAM TABLES (Bluebook-style adaptive testing)
-// ============================================================================
+export const questionFeedback = pgTable("question_feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  userId: varchar("user_id").references(() => profiles.id),
+  practiceSessionId: varchar("practice_session_id").references(() => practiceSessions.id, {
+    onDelete: "set null",
+  }),
+  rating: text("rating").notNull(), // up | down
+  timeToAnswerSeconds: integer("time_to_answer_seconds"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const questionFeedbackRatingEnum = z.enum(["up", "down"]);
 
 /**
- * Full-length exam sessions - tracks complete SAT exam attempts
- * Supports Bluebook-style adaptive testing with deterministic question selection
+ * Full-length SAT exam runtime tables.
+ * These support server-authoritative timing and deterministic module/question ownership.
  */
 export const fullLengthExamSessions = pgTable("full_length_exam_sessions", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: uuid("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  
-  // Session state
-  status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'completed', 'abandoned'
-  currentSection: text("current_section"), // 'rw' | 'math' | 'break' | null
+  userId: varchar("user_id").references(() => profiles.id, {
+    onDelete: "cascade",
+  }).notNull(),
+
+  status: text("status").notNull().default("not_started"), // not_started | in_progress | completed | abandoned
+  currentSection: text("current_section"), // rw | math | break | null
   currentModule: integer("current_module"), // 1 | 2 | null
-  
-  // Deterministic selection
-  seed: text("seed").notNull(), // For reproducible question selection
-  
-  // Timestamps
+  breakStartedAt: timestamp("break_started_at"),
+
+  testFormId: text("test_form_id").notNull().default("00000000-0000-4000-8000-000000000001"),
+  clientInstanceId: text("client_instance_id"),
+
+  seed: text("seed").notNull(),
+
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-/**
- * Exam modules - tracks individual modules within a full-length exam
- * Each exam has 4 modules: RW Module 1, RW Module 2, Math Module 1, Math Module 2
- */
 export const fullLengthExamModules = pgTable("full_length_exam_modules", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
-  
-  // Module identification
-  section: text("section").notNull(), // 'rw' | 'math'
+  sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+
+  section: text("section").notNull(), // rw | math
   moduleIndex: integer("module_index").notNull(), // 1 | 2
-  
-  // Adaptive difficulty (determined by Module 1 performance for Module 2)
-  difficultyBucket: text("difficulty_bucket"), // 'easy' | 'medium' | 'hard' | null (null for module 1, set after module 1 submit)
-  
-  // Timing (server-authoritative)
-  targetDurationMs: integer("target_duration_ms").notNull(), // RW: 32min (1920000ms), Math: 35min (2100000ms)
+  difficultyBucket: text("difficulty_bucket"), // easy | medium | hard | null
+
+  targetDurationMs: integer("target_duration_ms").notNull(),
   startedAt: timestamp("started_at"),
-  endsAt: timestamp("ends_at"), // Computed: startedAt + targetDurationMs
+  endsAt: timestamp("ends_at"),
   submittedAt: timestamp("submitted_at"),
-  submittedLate: boolean("submitted_late").notNull().default(false), // true if submitted after ends_at
-  
-  // State
-  status: text("status").notNull().default("not_started"), // 'not_started', 'in_progress', 'submitted', 'expired'
-  
+  submittedLate: boolean("submitted_late").notNull().default(false),
+
+  status: text("status").notNull().default("not_started"), // not_started | in_progress | submitted | expired
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-/**
- * Exam module questions - deterministic mapping of questions to modules
- * Stores which questions were presented in which order
- */
 export const fullLengthExamQuestions = pgTable("full_length_exam_questions", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  moduleId: uuid("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
-  questionId: uuid("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  
-  // Ordering
-  orderIndex: integer("order_index").notNull(), // 0-based index within module
-  
-  // Presentation tracking
+  moduleId: uuid("module_id").references(() => fullLengthExamModules.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  orderIndex: integer("order_index").notNull(),
   presentedAt: timestamp("presented_at"),
-  
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-/**
- * Exam responses - student answers to exam questions
- * Supports idempotent submission and tracks correctness server-side
- */
-export const fullLengthExamResponses = pgTable("full_length_exam_responses", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, { onDelete: 'cascade' }).notNull(),
-  moduleId: uuid("module_id").references(() => fullLengthExamModules.id, { onDelete: 'cascade' }).notNull(),
-  questionId: uuid("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  
-  // Answer
-  selectedAnswer: text("selected_answer"), // For MC questions
-  freeResponseAnswer: text("free_response_answer"), // For FR questions
-  
-  // Correctness (computed server-side, never sent to client before submit)
-  isCorrect: boolean("is_correct"),
-  
-  // Timestamps
-  answeredAt: timestamp("answered_at"),
-  submittedAt: timestamp("submitted_at"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  // Unique constraint for idempotent answer submission
-  // Ensures one response per question per module per session
-  { uniqueSessionModuleQuestion: sql`UNIQUE(${table.sessionId}, ${table.moduleId}, ${table.questionId})` }
-]);
+export const fullLengthExamResponses = pgTable(
+  "full_length_exam_responses",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    sessionId: uuid("session_id").references(() => fullLengthExamSessions.id, {
+      onDelete: "cascade",
+    }).notNull(),
+    moduleId: uuid("module_id").references(() => fullLengthExamModules.id, {
+      onDelete: "cascade",
+    }).notNull(),
+    questionId: varchar("question_id").references(() => questions.id, {
+      onDelete: "cascade",
+    }).notNull(),
 
-// DEPRECATED: historical import-run tables retained for compatibility only.
-// There is no active ingestion runtime in this repository.
+    selectedAnswer: text("selected_answer"),
+    freeResponseAnswer: text("free_response_answer"),
+    isCorrect: boolean("is_correct"),
 
-// Admin audit logs for tracking administrative actions
+    answeredAt: timestamp("answered_at"),
+    submittedAt: timestamp("submitted_at"),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    {
+      uniqueSessionModuleQuestion: sql`UNIQUE(${table.sessionId}, ${table.moduleId}, ${table.questionId})`,
+    },
+  ],
+);
+
+// ============================================================================
+// ADMIN / AUDIT / SYSTEM LOGS
+// ============================================================================
+
 export const adminAuditLogs = pgTable("admin_audit_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  adminUserId: varchar("admin_user_id").references(() => users.id).notNull(),
-  action: text("action").notNull(), // 'database_query', 'file_view', 'file_edit', 'system_command', 'user_management'
-  resource: text("resource").notNull(), // Table name, file path, or resource identifier
-  method: text("method"), // HTTP method or operation type
-  details: jsonb("details"), // Operation details, queries executed, etc.
+  adminUserId: varchar("admin_user_id").references(() => profiles.id).notNull(),
+  action: text("action").notNull(),
+  resource: text("resource").notNull(),
+  method: text("method"),
+  details: jsonb("details"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   success: boolean("success").notNull(),
-  error: text("error"), // Error message if operation failed
+  error: text("error"),
   executionTimeMs: integer("execution_time_ms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// System event logs for monitoring PDF processing and application events
 export const systemEventLogs = pgTable("system_event_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  eventType: text("event_type").notNull(), // 'pdf_processing', 'extraction', 'qa_validation', 'system_error', 'performance'
-  level: text("level").notNull().default("info"), // 'debug', 'info', 'warning', 'error', 'critical'
-  source: text("source").notNull(), // 'nougat_extractor', 'qa_validation', 'pdf_pipeline', etc.
+  eventType: text("event_type").notNull(),
+  level: text("level").notNull().default("info"),
+  source: text("source").notNull(),
   message: text("message").notNull(),
-  details: jsonb("details"), // Structured event data
-  documentId: varchar("document_id").references(() => documents.id), // Related document if applicable
-  userId: varchar("user_id").references(() => users.id), // Related user if applicable
-  sessionId: text("session_id"), // For tracking related events
-  duration: integer("duration"), // Duration in milliseconds if applicable
+  details: jsonb("details"),
+  documentId: varchar("document_id").references(() => documents.id),
+  userId: varchar("user_id").references(() => profiles.id),
+  sessionId: text("session_id"),
+  duration: integer("duration"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ============================================================================
-// LEGACY IMPORT-RUN TABLES (DEPRECATED, NON-RUNTIME)
+// LEGACY IMPORT / OCR / INGESTION SURFACES (NON-RUNTIME)
 // ============================================================================
 
-// Historical import-run records retained for audit/backfill compatibility.
+/**
+ * Historical import-run records retained for audit/backfill compatibility only.
+ * There is no active ingestion runtime in this repository.
+ */
 export const ingestionRuns = pgTable("ingestion_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  status: text("status").notNull().default("queued"), // 'queued', 'ocr_docai', 'ocr_mathpix_patch', 'ocr_nougat_fallback', 'parsing', 'qa', 'upsert_db', 'embed', 'done', 'failed'
-  sourcePdfs: jsonb("source_pdfs").$type<string[]>(), // Array of GCS paths
+  status: text("status").notNull().default("queued"),
+  sourcePdfs: jsonb("source_pdfs").$type<string[]>(),
   totalPages: integer("total_pages").default(0),
   processedPages: integer("processed_pages").default(0),
   totalQuestions: integer("total_questions").default(0),
@@ -512,7 +688,7 @@ export const ingestionRuns = pgTable("ingestion_runs", {
   duplicateQuestions: integer("duplicate_questions").default(0),
   failedQuestions: integer("failed_questions").default(0),
   needsReviewCount: integer("needs_review_count").default(0),
-  // Stage timestamps for observability
+
   queuedAt: timestamp("queued_at").defaultNow().notNull(),
   ocrStartedAt: timestamp("ocr_started_at"),
   ocrCompletedAt: timestamp("ocr_completed_at"),
@@ -523,12 +699,12 @@ export const ingestionRuns = pgTable("ingestion_runs", {
   embedStartedAt: timestamp("embed_started_at"),
   embedCompletedAt: timestamp("embed_completed_at"),
   completedAt: timestamp("completed_at"),
-  // Error tracking
+
   errorMessage: text("error_message"),
-  errorStage: text("error_stage"), // Which stage failed
-  // OCR Provider tracing (added for fallback observability)
-  providerUsed: text("provider_used"), // Primary OCR provider that succeeded: 'docai' | 'nougat' | 'mathpix' | 'docling' | 'docupipe'
-  providerAttempts: jsonb("provider_attempts").$type<string[]>(), // Array of providers attempted in order
+  errorStage: text("error_stage"),
+
+  providerUsed: text("provider_used"),
+  providerAttempts: jsonb("provider_attempts").$type<string[]>(),
   ocrStats: jsonb("ocr_stats").$type<{
     totalPages: number;
     byEngine: Record<string, { pages: number; errors: number }>;
@@ -537,93 +713,97 @@ export const ingestionRuns = pgTable("ingestion_runs", {
     mathpixPatchCount?: number;
     nougatMergeCount?: number;
   }>(),
-  // Configuration
   config: jsonb("config").$type<{
     ocrConfidenceThreshold?: number;
     maxConcurrency?: number;
     skipMathpix?: boolean;
     skipNougat?: boolean;
   }>(),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Document pages - stores OCR results per page with provenance
 export const documentPages = pgTable("document_pages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  ingestionRunId: varchar("ingestion_run_id").references(() => ingestionRuns.id, { onDelete: 'cascade' }).notNull(),
-  sourcePdf: text("source_pdf").notNull(), // GCS path
+  ingestionRunId: varchar("ingestion_run_id").references(() => ingestionRuns.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  sourcePdf: text("source_pdf").notNull(),
   pageNumber: integer("page_number").notNull(),
-  rawText: text("raw_text").notNull(), // Full OCR text for this page
-  // OCR engine metadata
-  primaryEngine: text("primary_engine").notNull(), // 'docai' | 'mathpix' | 'nougat'
-  patchedByMathpix: boolean("patched_by_mathpix").default(false), // Whether Mathpix patched math regions
-  mergedFromNougat: boolean("merged_from_nougat").default(false), // Whether Nougat results were merged
-  engineConfidence: real("engine_confidence"), // Average confidence (0.0-1.0)
-  // Structured OCR blocks for bbox tracking
-  blocks: jsonb("blocks").$type<Array<{
-    text: string;
-    bbox: number[]; // [x, y, width, height]
-    confidence: number;
-    type?: 'text' | 'math';
-    engine: 'docai' | 'mathpix' | 'nougat';
-  }>>(),
-  metadata: jsonb("metadata"), // Additional OCR metadata
+  rawText: text("raw_text").notNull(),
+
+  primaryEngine: text("primary_engine").notNull(),
+  patchedByMathpix: boolean("patched_by_mathpix").default(false),
+  mergedFromNougat: boolean("merged_from_nougat").default(false),
+  engineConfidence: real("engine_confidence"),
+
+  blocks: jsonb("blocks").$type<
+    Array<{
+      text: string;
+      bbox: number[];
+      confidence: number;
+      type?: "text" | "math";
+      engine: "docai" | "mathpix" | "nougat";
+    }>
+  >(),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Normalized choices table for MC questions
-export const choices = pgTable("choices", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  choiceKey: text("choice_key").notNull(), // 'A', 'B', 'C', 'D'
-  choiceText: text("choice_text").notNull(),
-  bbox: jsonb("bbox").$type<number[]>(), // Bounding box [x, y, width, height]
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// Media assets (figures, tables, diagrams)
+/**
+ * Legacy import-only media extraction metadata.
+ * This is not a runtime question-bank feature in the current repository.
+ */
 export const media = pgTable("media", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }),
-  documentPageId: varchar("document_page_id").references(() => documentPages.id, { onDelete: 'cascade' }),
-  mediaType: text("media_type").notNull(), // 'figure', 'table', 'diagram', 'equation'
-  storagePath: text("storage_path"), // GCS path to extracted image
-  bbox: jsonb("bbox").$type<number[]>(), // Bounding box in source PDF
-  caption: text("caption"), // Extracted or generated caption
-  altText: text("alt_text"), // Accessibility description
-  metadata: jsonb("metadata"), // Additional media metadata
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }),
+  documentPageId: varchar("document_page_id").references(() => documentPages.id, {
+    onDelete: "cascade",
+  }),
+  mediaType: text("media_type").notNull(), // figure | table | diagram | equation
+  storagePath: text("storage_path"),
+  bbox: jsonb("bbox").$type<number[]>(),
+  caption: text("caption"),
+  altText: text("alt_text"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Validation issues - tracks QA problems for review
 export const validationIssues = pgTable("validation_issues", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }),
-  ingestionRunId: varchar("ingestion_run_id").references(() => ingestionRuns.id, { onDelete: 'cascade' }),
-  issueType: text("issue_type").notNull(), // 'structure', 'consistency', 'duplicate', 'math_solver_failed', 'missing_explanation', 'low_confidence'
-  severity: text("severity").notNull(), // 'error', 'warning', 'info'
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }),
+  ingestionRunId: varchar("ingestion_run_id").references(() => ingestionRuns.id, {
+    onDelete: "cascade",
+  }),
+  issueType: text("issue_type").notNull(),
+  severity: text("severity").notNull(), // error | warning | info
   message: text("message").notNull(),
-  details: jsonb("details"), // Structured details about the issue
+  details: jsonb("details"),
   resolved: boolean("resolved").default(false),
   resolvedAt: timestamp("resolved_at"),
-  resolvedBy: varchar("resolved_by").references(() => users.id),
+  resolvedBy: varchar("resolved_by").references(() => profiles.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Question embeddings - vector embeddings for RAG with metadata
 export const questionEmbeddings = pgTable("question_embeddings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  questionId: varchar("question_id").references(() => questions.id, { onDelete: 'cascade' }).notNull(),
-  chunkType: text("chunk_type").notNull(), // 'Q' (question+options) | 'E' (explanation)
-  content: text("content").notNull(), // The text that was embedded
-  embedding: jsonb("embedding").notNull(), // Vector embedding array
-  // Provenance metadata for citations
+  questionId: varchar("question_id").references(() => questions.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  chunkType: text("chunk_type").notNull(), // Q | E
+  content: text("content").notNull(),
+  embedding: jsonb("embedding").notNull(),
+
   sourcePdf: text("source_pdf"),
   pageNumber: integer("page_number"),
   bbox: jsonb("bbox").$type<number[]>(),
-  engineUsed: text("engine_used"), // OCR engine that extracted this content
-  // Supabase vector search metadata (legacy import fields may appear in historical rows)
+  engineUsed: text("engine_used"),
+
   metadata: jsonb("metadata").$type<{
     section?: string;
     difficulty?: string;
@@ -633,15 +813,65 @@ export const questionEmbeddings = pgTable("question_embeddings", {
     sectionCode?: string;
     competencyCodes?: string[];
   }>(),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Insert schemas
+// ============================================================================
+// INSERT SCHEMAS
+// ============================================================================
+
+export const insertProfileSchema = createInsertSchema(profiles).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
   uploadedAt: true,
   processedAt: true,
 });
+
+export const insertQuestionSchema = createInsertSchema(questions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertQuestionVersionSchema = createInsertSchema(questionVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  timestamp: true,
+});
+
+export const insertDocChunkSchema = createInsertSchema(docChunks).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserProgressSchema = createInsertSchema(userProgress).omit({
+  id: true,
+  attemptedAt: true,
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications)
+  .omit({
+    id: true,
+    createdAt: true,
+  })
+  .extend({
+    type: notificationTypeEnum,
+    category: notificationCategoryEnum,
+    priority: notificationPriorityEnum.optional(),
+  });
 
 export const insertPracticeSessionSchema = createInsertSchema(practiceSessions).omit({
   id: true,
@@ -662,64 +892,40 @@ export const insertExamSectionSchema = createInsertSchema(examSections).omit({
   id: true,
 });
 
-// Full-length exam insert schemas
-export const insertFullLengthExamSessionSchema = createInsertSchema(fullLengthExamSessions).omit({
+export const insertQuestionFeedbackSchema = createInsertSchema(questionFeedback).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFullLengthExamSessionSchema = createInsertSchema(
+  fullLengthExamSessions,
+).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertFullLengthExamModuleSchema = createInsertSchema(fullLengthExamModules).omit({
+export const insertFullLengthExamModuleSchema = createInsertSchema(
+  fullLengthExamModules,
+).omit({
   id: true,
   createdAt: true,
 });
 
-export const insertFullLengthExamQuestionSchema = createInsertSchema(fullLengthExamQuestions).omit({
+export const insertFullLengthExamQuestionSchema = createInsertSchema(
+  fullLengthExamQuestions,
+).omit({
   id: true,
   createdAt: true,
 });
 
-export const insertFullLengthExamResponseSchema = createInsertSchema(fullLengthExamResponses).omit({
+export const insertFullLengthExamResponseSchema = createInsertSchema(
+  fullLengthExamResponses,
+).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
-
-export const insertQuestionSchema = createInsertSchema(questions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
-  id: true,
-  timestamp: true,
-});
-
-export const insertDocChunkSchema = createInsertSchema(docChunks).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertUserProgressSchema = createInsertSchema(userProgress).omit({
-  id: true,
-  attemptedAt: true,
-});
-
-export const insertNotificationSchema = createInsertSchema(notifications).omit({
-  id: true,
-  createdAt: true,
-}).extend({
-  type: notificationTypeEnum,
-  category: notificationCategoryEnum, 
-  priority: notificationPriorityEnum.optional()
-});
-
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-});
-
-// DEPRECATED: legacy import-run schemas retained for compatibility only.
 
 export const insertAdminAuditLogSchema = createInsertSchema(adminAuditLogs).omit({
   id: true,
@@ -731,7 +937,6 @@ export const insertSystemEventLogSchema = createInsertSchema(systemEventLogs).om
   createdAt: true,
 });
 
-// Legacy import-run insert schemas retained for compatibility.
 export const insertIngestionRunSchema = createInsertSchema(ingestionRuns).omit({
   id: true,
   createdAt: true,
@@ -748,27 +953,36 @@ export const insertChoiceSchema = createInsertSchema(choices).omit({
   createdAt: true,
 });
 
-export const insertMediaSchema = createInsertSchema(media).omit({
-  id: true,
-  createdAt: true,
-});
-
 export const insertValidationIssueSchema = createInsertSchema(validationIssues).omit({
   id: true,
   createdAt: true,
 });
 
-export const insertQuestionEmbeddingSchema = createInsertSchema(questionEmbeddings).omit({
+export const insertQuestionEmbeddingSchema = createInsertSchema(
+  questionEmbeddings,
+).omit({
   id: true,
   createdAt: true,
 });
 
-// Types
+// ============================================================================
+// ROW TYPES
+// ============================================================================
+
+export type InsertProfile = z.infer<typeof insertProfileSchema>;
+export type Profile = typeof profiles.$inferSelect;
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type Document = typeof documents.$inferSelect;
 
 export type InsertQuestion = z.infer<typeof insertQuestionSchema>;
 export type Question = typeof questions.$inferSelect;
+
+export type InsertQuestionVersion = z.infer<typeof insertQuestionVersionSchema>;
+export type QuestionVersion = typeof questionVersions.$inferSelect;
 
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
@@ -782,15 +996,10 @@ export type UserProgress = typeof userProgress.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
 
-// Export notification enums for frontend use
 export type NotificationType = z.infer<typeof notificationTypeEnum>;
 export type NotificationCategory = z.infer<typeof notificationCategoryEnum>;
 export type NotificationPriority = z.infer<typeof notificationPriorityEnum>;
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
-
-// New practice session types
 export type InsertPracticeSession = z.infer<typeof insertPracticeSessionSchema>;
 export type PracticeSession = typeof practiceSessions.$inferSelect;
 
@@ -803,20 +1012,28 @@ export type ExamAttempt = typeof examAttempts.$inferSelect;
 export type InsertExamSection = z.infer<typeof insertExamSectionSchema>;
 export type ExamSection = typeof examSections.$inferSelect;
 
-// Full-length exam types
-export type InsertFullLengthExamSession = z.infer<typeof insertFullLengthExamSessionSchema>;
+export type InsertQuestionFeedback = z.infer<typeof insertQuestionFeedbackSchema>;
+export type QuestionFeedback = typeof questionFeedback.$inferSelect;
+
+export type InsertFullLengthExamSession = z.infer<
+  typeof insertFullLengthExamSessionSchema
+>;
 export type FullLengthExamSession = typeof fullLengthExamSessions.$inferSelect;
 
-export type InsertFullLengthExamModule = z.infer<typeof insertFullLengthExamModuleSchema>;
+export type InsertFullLengthExamModule = z.infer<
+  typeof insertFullLengthExamModuleSchema
+>;
 export type FullLengthExamModule = typeof fullLengthExamModules.$inferSelect;
 
-export type InsertFullLengthExamQuestion = z.infer<typeof insertFullLengthExamQuestionSchema>;
+export type InsertFullLengthExamQuestion = z.infer<
+  typeof insertFullLengthExamQuestionSchema
+>;
 export type FullLengthExamQuestion = typeof fullLengthExamQuestions.$inferSelect;
 
-export type InsertFullLengthExamResponse = z.infer<typeof insertFullLengthExamResponseSchema>;
+export type InsertFullLengthExamResponse = z.infer<
+  typeof insertFullLengthExamResponseSchema
+>;
 export type FullLengthExamResponse = typeof fullLengthExamResponses.$inferSelect;
-
-// DEPRECATED: BatchJob and BatchFileProgress types removed; IngestionRun remains legacy compatibility only.
 
 export type InsertAdminAuditLog = z.infer<typeof insertAdminAuditLogSchema>;
 export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
@@ -824,7 +1041,6 @@ export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 export type InsertSystemEventLog = z.infer<typeof insertSystemEventLogSchema>;
 export type SystemEventLog = typeof systemEventLogs.$inferSelect;
 
-// Legacy import-run types retained for compatibility.
 export type InsertIngestionRun = z.infer<typeof insertIngestionRunSchema>;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 
@@ -834,70 +1050,125 @@ export type DocumentPage = typeof documentPages.$inferSelect;
 export type InsertChoice = z.infer<typeof insertChoiceSchema>;
 export type Choice = typeof choices.$inferSelect;
 
-export type InsertMedia = z.infer<typeof insertMediaSchema>;
-export type Media = typeof media.$inferSelect;
-
 export type InsertValidationIssue = z.infer<typeof insertValidationIssueSchema>;
 export type ValidationIssue = typeof validationIssues.$inferSelect;
 
 export type InsertQuestionEmbedding = z.infer<typeof insertQuestionEmbeddingSchema>;
 export type QuestionEmbedding = typeof questionEmbeddings.$inferSelect;
 
-// Additional types for API responses
+// ============================================================================
+// API / RESPONSE TYPES
+// ============================================================================
+
 export interface ApiQuestionOption {
   key: string;
   text: string;
 }
 
-// Structured AI classification data
 export interface QuestionClassification {
-  topic: string; // Main domain/topic (e.g., "Algebra", "Reading Comprehension")
-  subtopic: string; // Specific skill area (e.g., "Linear inequalities in one or two variables")
-  skills: string[]; // Array of specific skills
-  questionType: string; // "Multiple Choice", "Grid-In", etc.
+  topic: string;
+  subtopic: string;
+  skills: string[];
+  questionType: string;
   calculatorAllowed: boolean;
-  cognitiveLevel: string; // "Knowledge", "Application", "Analysis"
-  difficultyText: string; // "Easy", "Medium", "Hard"
-  difficultyNumeric: number; // 1, 2, 3
-  standardIds: string[]; // Array of standard IDs if available
+  cognitiveLevel: string;
+  difficultyText: string;
+  difficultyNumeric: number;
+  standardIds: string[];
 }
 
-// PDF source structure metadata
 export interface SourceMapping {
-  docType: 'practice' | 'qbank' | 'answers' | 'generic';
-  profile: string; // "practice-test-math", "answer-explanations", etc.
+  docType: "practice" | "qbank" | "answers" | "generic";
+  profile: string;
   hasColumns: boolean;
-  optionStyle: string; // "A.", "(A)", "A)"
-  numberingStyle: string; // "1.", "Question 1", etc.
+  optionStyle: string;
+  numberingStyle: string;
   answerKeyPresent: boolean;
-  explanationMarkers: string[]; // ["Explanation:", "Rationale:", etc.]
+  explanationMarkers: string[];
 }
 
-// Enhanced source information for RAG responses
 export interface SourceInfo {
-  type: 'question' | 'chunk';
+  type: "question" | "chunk";
   id: string;
   documentName: string;
   pageNumber?: number;
   questionNumber?: number;
-  chunkType?: 'stem' | 'explanation' | 'passage' | 'window';
+  chunkType?: "stem" | "explanation" | "passage" | "window";
   snippet: string;
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac
 }
 
-export interface ChatResponse {
-  response: string;
-  sources: Array<SourceInfo>;
-  confidence: number;
+// Full-length exam types are imported by runtime service code.
+// Keep these as interfaces (service-owned runtime uses Supabase directly).
+export interface FullLengthExamSession {
+  id: string;
+  user_id?: string;
+  status: string;
+  current_section?: string | null;
+  current_module?: number | null;
+  break_started_at?: string | null;
+  test_form_id?: string | null;
+  client_instance_id?: string | null;
+  seed?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FullLengthExamModule {
+  id: string;
+  session_id?: string;
+  section?: string;
+  module_index?: number;
+  difficulty_bucket?: string | null;
+  target_duration_ms?: number;
+  started_at?: string | null;
+  ends_at?: string | null;
+  submitted_at?: string | null;
+  submitted_late?: boolean;
+  status?: string;
+  created_at?: string | null;
+  startedAt?: string | null;
+  endsAt?: string | null;
+  submittedAt?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FullLengthExamQuestion {
+  id: string;
+  module_id?: string;
+  question_id?: string;
+  order_index?: number;
+  presented_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface FullLengthExamResponse {
+  id: string;
+  session_id?: string;
+  module_id?: string;
+  question_id?: string;
+  selected_answer?: string | null;
+  free_response_answer?: string | null;
+  is_correct?: boolean | null;
+  answered_at?: string | null;
+  submitted_at?: string | null;
+  [key: string]: unknown;
 }
 
 export interface ProgressStats {
-  totalQuestions: number;
   mathProgress: number;
   readingProgress: number;
-  writingProgress: number;
+  totalQuestions: number;
+  correctAnswers?: number;
+  recentStreak?: number;
+  averageAccuracy?: number;
 }
 
-// Detailed analytics types for user progress tracking
+<<<<<<< HEAD
+=======
 export interface DetailedProgressStats {
   totalAttempts: number;
   correctAnswers: number;
@@ -953,5 +1224,4 @@ export interface StrengthsWeaknesses {
   weaknesses: string[];
   recommendations: string[];
 }
-
-
+>>>>>>> 05efd891af89c9efaa3e08ef672fa417439f93ac

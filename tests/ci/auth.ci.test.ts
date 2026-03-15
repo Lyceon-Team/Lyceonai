@@ -96,8 +96,72 @@ describe('CI Auth Tests', () => {
       expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error')
     });
+
+    it('should return 404 for removed /api/auth/user hydration endpoint', async () => {
+      const res = await request(app).get('/api/auth/user');
+      expect(res.status).toBe(404);
+    });
   });
 
+  describe('Admin Provisioning Guard', () => {
+    it('fails closed when ADMN_PASSCODE is missing', async () => {
+      const previous = process.env.ADMN_PASSCODE;
+      delete process.env.ADMN_PASSCODE;
+
+      const res = await request(app)
+        .post('/api/auth/admin-provision')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          email: 'admin-missing-passcode@test.com',
+          password: 'AdminPass123!',
+          passcode: 'anything',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty('error', 'Admin provisioning is disabled');
+
+      if (previous) {
+        process.env.ADMN_PASSCODE = previous;
+      }
+    });
+
+    it('fails closed when ADMN_PASSCODE does not match', async () => {
+      const previous = process.env.ADMN_PASSCODE;
+      process.env.ADMN_PASSCODE = 'expected-passcode';
+
+      const res = await request(app)
+        .post('/api/auth/admin-provision')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          email: 'admin-bad-passcode@test.com',
+          password: 'AdminPass123!',
+          passcode: 'wrong-passcode',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty('error', 'Invalid provisioning credentials');
+
+      if (previous) {
+        process.env.ADMN_PASSCODE = previous;
+      } else {
+        delete process.env.ADMN_PASSCODE;
+      }
+    });
+
+    it('blocks admin role during normal signup', async () => {
+      const res = await request(app)
+        .post('/api/auth/signup')
+        .set('Origin', 'http://localhost:5000')
+        .send({
+          email: 'signup-admin-attempt@test.com',
+          password: 'AdminPass123!',
+          role: 'admin',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty('error', 'Admin signup is disabled');
+    });
+  });
   describe('Protected Endpoints - Auth Required', () => {
     const protectedEndpoints = [
       { method: 'get', path: '/api/profile', name: 'profile', needsOrigin: false },
@@ -234,8 +298,4 @@ describe('Error Handling', () => {
     });
   });
 });
-
-
-
-
 

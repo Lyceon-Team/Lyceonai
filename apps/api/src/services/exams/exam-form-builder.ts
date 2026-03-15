@@ -1,5 +1,6 @@
 // apps/api/src/services/exams/exam-form-builder.ts
 import { seedOffset3 } from './seeded';
+import { normalizeSectionCode as normalizeCanonicalSectionCode } from '../../../../../shared/question-bank-contract';
 
 export type SectionCode = 'RW' | 'MATH';
 export type ModuleId = 'RW1' | 'RW2' | 'M1' | 'M2';
@@ -54,16 +55,10 @@ function bucketRank(b: DifficultyBucket): number {
   return 3;
 }
 
-function normalizeSectionCode(q: QuestionRow): SectionCode | null {
-  const sc = (q.section_code ?? '').trim().toUpperCase();
-  if (sc === 'RW') return 'RW';
-  if (sc === 'MATH') return 'MATH';
-
-  // fallback on `section` if section_code is missing/non-canonical
-  const s = (q.section ?? '').toLowerCase();
-  if (s.includes('read') || s.includes('writing') || s === 'rw') return 'RW';
-  if (s.includes('math')) return 'MATH';
-  return null;
+function normalizeExamSectionCode(q: QuestionRow): SectionCode | null {
+  const normalized = normalizeCanonicalSectionCode(q.section_code ?? q.section ?? null);
+  if (!normalized) return null;
+  return normalized === 'M' ? 'MATH' : 'RW';
 }
 
 function normalizeBucket(q: QuestionRow): DifficultyBucket | null {
@@ -81,7 +76,7 @@ function toDifficultyLevel(bucket: DifficultyBucket): number {
 function isEligibleBase(q: QuestionRow): boolean {
   if (!q.canonical_id) return false;
   if (q.question_type !== 'multiple_choice') return false;
-  const sectionCode = normalizeSectionCode(q);
+  const sectionCode = normalizeExamSectionCode(q);
   if (!sectionCode) return false;
   if (!q.domain || !q.skill) return false;
   const b = normalizeBucket(q);
@@ -174,8 +169,8 @@ export function buildGeneratedFullLengthFormFromPool(args: {
 
   const eligible = questions.filter(isEligibleBase);
 
-  const rwPool = eligible.filter((q) => normalizeSectionCode(q) === 'RW');
-  const mathPool = eligible.filter((q) => normalizeSectionCode(q) === 'MATH');
+  const rwPool = eligible.filter((q) => normalizeExamSectionCode(q) === 'RW');
+  const mathPool = eligible.filter((q) => normalizeExamSectionCode(q) === 'MATH');
 
   const rwOrdered = rwPool.slice().sort((a, b) => sortKeyRW(a).localeCompare(sortKeyRW(b)));
   const mathOrdered = mathPool.slice().sort((a, b) => sortKeyMath(a).localeCompare(sortKeyMath(b)));
@@ -196,7 +191,7 @@ export function buildGeneratedFullLengthFormFromPool(args: {
     const pretestPos = markPretestPositions(picked.length, seed, moduleId);
 
     return picked.map((q, idx) => {
-      const sectionCode = normalizeSectionCode(q)!;
+      const sectionCode = normalizeExamSectionCode(q)!;
       const diff = normalizeBucket(q)!;
       return {
         moduleId,
@@ -253,7 +248,7 @@ export async function fetchEligibleQuestionsForExam(supabaseServer: any): Promis
       ].join(',')
     )
     .eq('question_type', 'multiple_choice')
-    .eq('status', 'reviewed')
+    .eq('status', 'published')
     .not('canonical_id', 'is', null);
 
   if (error) throw new Error(`fetchEligibleQuestionsForExam failed: ${error.message}`);

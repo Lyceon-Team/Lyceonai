@@ -6,6 +6,8 @@ import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolve
 import { csrfGuard } from '../middleware/csrf.js';
 import { BUILD } from '../lib/build.js';
 import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
+import { z } from 'zod';
+import { isAdminRoleRequest, normalizeSignupRole } from '../lib/auth-role.js';
 
 const router = Router();
 
@@ -53,6 +55,17 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
       });
     }
 
+    // Signup must never create admins.
+    if (isAdminRoleRequest(requestedRole)) {
+      logger.warn('AUTH', 'admin_signup_blocked', 'Blocked admin role request during signup', {
+        email,
+        requestId: req.requestId,
+      });
+      return res.status(403).json({
+        error: 'Admin signup is disabled',
+      });
+    }
+
     // In test env we skip making real Supabase calls; behave like signup
     // failed so that downstream logic doesn't try to set cookies.
     if (runningAgainstPlaceholder()) {
@@ -69,8 +82,9 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
     // Create anon client for signup
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+
     // Validate role (only allow student or guardian, default to student)
-    const validRole = requestedRole === 'guardian' ? 'guardian' : 'student';
+    const validRole = normalizeSignupRole(requestedRole);
 
     // Sign up user with Supabase Auth
     const { data: authData, error: signupError } = await supabase.auth.signUp({
@@ -150,6 +164,125 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
   }
 });
 
+const adminProvisionSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  passcode: z.string().min(1),
+  displayName: z.string().min(1).max(120).optional(),
+});
+
+/**
+ * POST /api/auth/admin-provision
+ * Guarded admin bootstrap path.
+ *
+ * Fails closed unless ADMN_PASSCODE is configured and explicitly provided.
+ */
+router.post('/admin-provision', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+  const validation = adminProvisionSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      error: validation.error.errors[0]?.message || 'Invalid admin provision payload',
+    });
+  }
+
+  const configuredPasscode = process.env.ADMN_PASSCODE;
+  if (!configuredPasscode) {
+    logger.error('AUTH', 'admin_provision_closed', 'ADMN_PASSCODE is missing; refusing admin provisioning', {
+      requestId: req.requestId,
+    });
+    return res.status(403).json({
+      error: 'Admin provisioning is disabled',
+    });
+  }
+
+  const { email, password, passcode, displayName } = validation.data;
+
+  if (passcode !== configuredPasscode) {
+    logger.warn('AUTH', 'admin_provision_rejected', 'Rejected admin provisioning due to passcode mismatch', {
+      email,
+      requestId: req.requestId,
+    });
+    return res.status(403).json({
+      error: 'Invalid provisioning credentials',
+    });
+  }
+
+  if (runningAgainstPlaceholder()) {
+    return res.status(503).json({
+      error: 'Admin provisioning is unavailable in test placeholder mode',
+    });
+  }
+
+  try {
+    const admin = getSupabaseAdmin();
+
+    const { data: created, error: createError } = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        display_name: displayName || email.split('@')[0],
+      },
+    });
+
+    if (createError || !created.user?.id) {
+      logger.error('AUTH', 'admin_provision_failed', 'Failed to create Supabase auth user for admin provisioning', {
+        email,
+        error: createError,
+        requestId: req.requestId,
+      });
+      return res.status(400).json({
+        error: createError?.message || 'Failed to provision admin account',
+      });
+    }
+
+    const { error: profileError } = await admin
+      .from('profiles')
+      .upsert(
+        {
+          id: created.user.id,
+          email: created.user.email || email,
+          display_name: displayName || created.user.user_metadata?.display_name || null,
+          role: 'admin',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' },
+      );
+
+    if (profileError) {
+      logger.error('AUTH', 'admin_profile_upsert_failed', 'Failed to persist admin profile during provisioning', {
+        userId: created.user.id,
+        email,
+        error: profileError,
+        requestId: req.requestId,
+      });
+      return res.status(500).json({
+        error: 'Failed to persist admin profile',
+      });
+    }
+
+    logger.warn('AUTH', 'admin_provisioned', 'Admin account provisioned through guarded path', {
+      userId: created.user.id,
+      email: created.user.email,
+      requestId: req.requestId,
+    });
+
+    return res.status(201).json({
+      success: true,
+      user: {
+        id: created.user.id,
+        email: created.user.email,
+        role: 'admin',
+      },
+    });
+  } catch (error) {
+    logger.error('AUTH', 'admin_provision_exception', 'Unexpected admin provisioning error', {
+      error,
+      requestId: req.requestId,
+    });
+    return res.status(500).json({ error: 'Failed to provision admin account' });
+  }
+});
 /**
  * POST /api/auth/signin
  * Sign in with email and password
@@ -163,6 +296,7 @@ router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res
         error: 'Email and password are required'
       });
     }
+
 
     // In CI/test with placeholder Supabase URL we can't reach the host. Return
     // the same 401 shape the normal handler would, but let rate limiter still
@@ -451,7 +585,4 @@ router.get('/debug', async (req: Request, res: Response) => {
 // REMOVED: exchange-session endpoint - see comment above for rationale
 
 export default router;
-
-
-
 
