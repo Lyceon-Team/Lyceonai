@@ -74,19 +74,10 @@ describe('CI Routes Tests', () => {
         needsOrigin: false,
       },
       { 
-        path: '/api/rag', 
-        method: 'post', 
-        name: 'RAG endpoint',
-        body: { question: 'What is calculus?' },
-        requiresAuth: true,
-        requiresAdmin: false,
-        needsOrigin: true,
-      },
-      { 
         path: '/api/rag/v2', 
         method: 'post', 
         name: 'RAG v2 endpoint',
-        body: { question: 'What is calculus?' },
+        body: { userId: 'ignored', message: 'What is calculus?', mode: 'concept' },
         requiresAuth: true,
         requiresAdmin: false,
         needsOrigin: true,
@@ -296,4 +287,5 @@ describe('CI Routes Tests', () => {
     });
   });
 });
+
 

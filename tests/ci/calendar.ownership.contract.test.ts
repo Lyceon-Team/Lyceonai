@@ -26,7 +26,8 @@ type TableName =
   | 'student_study_profile'
   | 'student_study_plan_days'
   | 'student_question_attempts'
-  | 'practice_sessions';
+  | 'practice_sessions'
+  | 'system_event_logs';
 
 type TableRow = Record<string, any>;
 
@@ -231,6 +232,7 @@ class FakeSupabaseClient {
         student_study_plan_days: seed?.student_study_plan_days ? [...seed.student_study_plan_days] : [],
         student_question_attempts: seed?.student_question_attempts ? [...seed.student_question_attempts] : [],
         practice_sessions: seed?.practice_sessions ? [...seed.practice_sessions] : [],
+        system_event_logs: seed?.system_event_logs ? [...seed.system_event_logs] : [],
       },
       writes: {
         upsert: 0,
@@ -245,7 +247,7 @@ class FakeSupabaseClient {
   }
 }
 
-import { calendarRouter } from '../../apps/api/src/routes/calendar';
+import { calendarRouter, syncCalendarDayFromSessions } from '../../apps/api/src/routes/calendar';
 
 function buildCalendarApp(role: 'student' | 'guardian' = 'student') {
   const app = express();
@@ -291,6 +293,7 @@ function defaultSeed(overrides?: Partial<FakeStore['tables']>): Partial<FakeStor
     ],
     student_study_plan_days: [],
     student_question_attempts: [],
+    system_event_logs: [],
     ...overrides,
   };
 }
@@ -469,6 +472,108 @@ describe('Calendar Ownership Contract', () => {
     expect(month.body.days[0].is_user_override).toBe(true);
     expect(month.body.days[0].planned_minutes).toBe(60);
     expect(mocks.client.store.writes.upsert).toBe(0);
+  });
+
+  it('emits canonical calendar observability events for generate/edit/refresh flows', async () => {
+    const app = buildCalendarApp('student');
+
+    const generate = await request(app)
+      .post('/api/calendar/generate')
+      .send({ start_date: '2026-03-10', days: 2 });
+
+    expect(generate.status).toBe(200);
+
+    const edit = await request(app)
+      .put('/api/calendar/day/2026-03-10')
+      .send({
+        planned_minutes: 55,
+        focus: [{ section: 'Math', weight: 1 }],
+        tasks: [{ type: 'practice', section: 'Math', mode: 'manual', minutes: 55 }],
+      });
+
+    expect(edit.status).toBe(200);
+
+    const refresh = await request(app)
+      .post('/api/calendar/refresh/auto')
+      .send({ start_date: '2026-03-10', days: 2 });
+
+    expect(refresh.status).toBe(200);
+
+    const eventTypes = mocks.client.store.tables.system_event_logs.map((row: any) => row.event_type);
+    expect(eventTypes).toContain('plan_generated');
+    expect(eventTypes).toContain('day_edited');
+    expect(eventTypes).toContain('override_applied');
+    expect(eventTypes).toContain('plan_refreshed');
+  });
+
+  it('custom-mode refresh emits non-applying plan_refreshed observability event', async () => {
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_profile: [
+          {
+            user_id: 'student-1',
+            baseline_score: null,
+            target_score: null,
+            exam_date: null,
+            daily_minutes: 45,
+            timezone: 'America/Chicago',
+            planner_mode: 'custom',
+          },
+        ],
+      })
+    );
+
+    const app = buildCalendarApp('student');
+
+    const refresh = await request(app)
+      .post('/api/calendar/refresh/auto')
+      .send({ start_date: '2026-03-22', days: 1 });
+
+    expect(refresh.status).toBe(200);
+    expect(refresh.body.applied).toBe(false);
+
+    const events = mocks.client.store.tables.system_event_logs.filter((row: any) => row.event_type === 'plan_refreshed');
+    expect(events).toHaveLength(1);
+    expect(events[0].details.applied).toBe(false);
+    expect(events[0].details.planner_mode).toBe('custom');
+  });
+
+  it('emits block_completed once when session-derived completion crosses complete threshold', async () => {
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_plan_days: [
+          {
+            user_id: 'student-1',
+            day_date: '2026-03-10',
+            planned_minutes: 40,
+            completed_minutes: 10,
+            focus: [],
+            tasks: [],
+            plan_version: 1,
+            is_user_override: false,
+            generated_at: '2026-03-09T00:00:00.000Z',
+          },
+        ],
+        practice_sessions: [
+          {
+            user_id: 'student-1',
+            started_at: '2026-03-10T13:00:00.000Z',
+            finished_at: '2026-03-10T14:00:00.000Z',
+            actual_duration_ms: 3600000,
+          },
+        ],
+      })
+    );
+
+    await syncCalendarDayFromSessions('student-1', '2026-03-10', 'America/Chicago');
+    await syncCalendarDayFromSessions('student-1', '2026-03-10', 'America/Chicago');
+
+    const planDay = mocks.client.store.tables.student_study_plan_days.find((row: any) => row.day_date === '2026-03-10');
+    expect(planDay.completed_minutes).toBe(60);
+
+    const blockEvents = mocks.client.store.tables.system_event_logs.filter((row: any) => row.event_type === 'block_completed');
+    expect(blockEvents).toHaveLength(1);
+    expect(blockEvents[0].details.day_date).toBe('2026-03-10');
   });
 
   it('custom mode returns catch-up suggestions without forced writes', async () => {

@@ -4,9 +4,9 @@ import app from '../server/index';
 
 describe('Entitlement/Auth Regression Invariants', () => {
 
-  it('auth_cookie_only_api_rag_rejects_bearer', async () => {
+  it('auth_cookie_only_api_rag_v2_rejects_bearer', async () => {
     const res = await request(app)
-      .post('/api/rag')
+      .post('/api/rag/v2')
       .set('Authorization', 'Bearer FAKE_TOKEN');
     
     expect(res.status).not.toBe(200);
@@ -46,3 +46,4 @@ describe('Entitlement/Auth Regression Invariants', () => {
     expect([401, 403]).toContain(res.status);
   });
 });
+
