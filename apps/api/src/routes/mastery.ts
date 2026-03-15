@@ -2,7 +2,6 @@ import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
 import { getSupabaseAdmin } from '../lib/supabase-admin';
-import { getMasteryStatus } from '../services/mastery-projection';
 import { DateTime } from 'luxon';
 import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
 
@@ -133,18 +132,22 @@ interface SectionNode {
   avgMastery: number;
 }
 
+<<<<<<< HEAD
+=======
+function getMasteryStatus(score: number, attempts: number): "not_started" | "weak" | "improving" | "proficient" {
+  if (attempts === 0) return "not_started";
+  if (score < 40) return "weak";
+  if (score < 70) return "improving";
+  return "proficient";
+}
+
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
 
 const router = Router();
 
-/**
- * GET /mastery/summary - READ ONLY endpoint
- * 
- * Returns aggregated mastery summary by section and domain.
- * Does NOT mutate mastery state or recalculate scores.
- */
 router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
@@ -166,16 +169,6 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-/**
- * GET /mastery/skills - READ ONLY endpoint
- * 
- * Returns full skill tree with mastery status computed from STORED mastery scores.
- * 
- * DERIVED COMPUTATION: Status thresholds (not_started, weak, improving, proficient)
- * are computed from stored mastery_score, but mastery_score itself is NOT recalculated.
- * 
- * Does NOT apply decay, weighting, or mutate mastery state.
- */
 router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
@@ -197,7 +190,6 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     const userId = user.id;
     const supabase = getSupabaseAdmin();
 
-    // READ ONLY: Fetch stored mastery scores
     const { data: masteryData, error } = await supabase
       .from("student_skill_mastery")
       .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
@@ -239,12 +231,12 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
             label: skillId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
             attempts,
             correct,
-            accuracy: Math.round(accuracy * 100), // accuracy still in 0-1 range
-            mastery_score: Math.round(mastery_score), // mastery_score now in 0-100 range
-            status: getMasteryStatus(mastery_score, attempts),
+            accuracy: Math.round(accuracy * 100),
+            mastery_score: Math.round(mastery_score * 100),
+            status: getMasteryStatus(mastery_score * 100, attempts),
           });
 
-          domainTotalMastery += mastery_score;
+          domainTotalMastery += mastery_score * 100;
         }
 
         const avgDomainMastery = domainDef.skills.length > 0 
@@ -280,12 +272,6 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-/**
- * GET /mastery/weakest - READ ONLY endpoint
- * 
- * Returns weakest skills sorted by stored accuracy.
- * Does NOT mutate mastery state or recalculate scores.
- */
 router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
@@ -308,9 +294,9 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
       skill: row.skill,
       label: row.skill.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
       attempts: row.attempts,
-      accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
-      mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: getMasteryStatus(row.mastery_score, row.attempts),
+      accuracy: Math.round(row.accuracy * 100),
+      mastery_score: Math.round(row.mastery_score * 100),
+      status: getMasteryStatus(row.mastery_score * 100, row.attempts),
     }));
 
     return res.json({ weakest: formatted });

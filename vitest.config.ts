@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
+<<<<<<< HEAD
     setupFiles: ['./vitest.setup.ts'],
     // Use threads pool instead of forks for stability (prevents worker crashes)
     pool: 'threads',
@@ -14,17 +15,13 @@ export default defineConfig({
             // Limit concurrency to prevent worker pool instability in CI
         minThreads: 1,
         maxThreads: 1,
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     environmentMatchGlobs: [
       ['apps/api/**/*.test.ts', 'node'],
       ['client/**/*.test.{ts,tsx}', 'jsdom'],
     ],
     include: ['**/*.test.{ts,tsx}'],
-    exclude: [
-      'tests/regressions.test.ts', // Legacy file with jest syntax, tests migrated to separate files
-      'tests/auth.integration.test.ts', // Moved to tests/integration/
-      'tests/integration/**', // Integration tests require real Supabase, excluded from default test run
-      '**/node_modules/**',
-    ],
   },
   resolve: {
     alias: {

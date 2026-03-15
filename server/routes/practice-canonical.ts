@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+<<<<<<< HEAD
 import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { csrfGuard } from "../middleware/csrf";
@@ -25,6 +26,10 @@ import {
   incrementUsage,
   resolveLinkedPairPremiumAccessForStudent,
 } from "../lib/account";
+=======
+import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
+import { getQuestionMetadataForAttempt, logAttemptAndUpdateMastery } from "../../apps/api/src/services/studentMastery";
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 type PracticeLifecycleState = "created" | "active" | "completed" | "abandoned";
 
@@ -102,7 +107,6 @@ type PracticeAccess = {
 };
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
@@ -1172,6 +1176,7 @@ async function serveNextForSession(args: {
     });
   }
 
+<<<<<<< HEAD
   const servedOptions = buildServedOptions(picked.question.options);
 
   const now = new Date().toISOString();
@@ -1295,6 +1300,9 @@ async function serveNextForSession(args: {
 }
 
 router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) => {
+=======
+router.post("/answer", requireSupabaseAuth, async (req, res) => {
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1833,6 +1841,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+<<<<<<< HEAD
   const { data: updatedItem, error: updateItemErr } = await supabaseServer
     .from("practice_session_items")
     .update({
@@ -1903,17 +1912,23 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     // non-blocking
   }
 
+=======
+  // Log to student_question_attempts + update mastery rollups
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   try {
     const metadata = await getQuestionMetadataForAttempt(questionId);
     if (metadata.canonicalId) {
-      await applyMasteryUpdate({
+      await logAttemptAndUpdateMastery({
         userId,
         questionCanonicalId: metadata.canonicalId,
         sessionId: payload.sessionId,
         isCorrect,
         selectedChoice: chosen ?? null,
         timeSpentMs: clampedTimeSpentMs,
+<<<<<<< HEAD
         eventType: isCorrect ? MasteryEventType.PRACTICE_PASS : MasteryEventType.PRACTICE_FAIL,
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
         metadata: {
           exam: metadata.exam,
           section: metadata.section,

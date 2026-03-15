@@ -11,6 +11,11 @@ export function csrfGuard() {
   console.log("[CSRF] Allowed origins (raw):", raw);
 
   return function csrfMiddleware(req: Request, res: Response, next: NextFunction) {
+<<<<<<< HEAD
+=======
+    if (isDev) return next();
+
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     const method = (req.method || "").toUpperCase();
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
 

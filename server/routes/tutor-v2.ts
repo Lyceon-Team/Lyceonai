@@ -6,11 +6,13 @@ import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
 import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { csrfGuard } from "../middleware/csrf";
 
 const router = Router();
+<<<<<<< HEAD
 const csrfProtection = csrfGuard();
 const ACTIVE_FULL_TEST_STATUSES = ["in_progress", "break"] as const;
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 // userId must NOT be accepted from body; always derive from req.user.id
 const TutorV2RequestSchema = z.object({
@@ -222,7 +224,7 @@ ${styleSection}
   return { systemInstruction, userContents };
 }
 
-router.post("/", csrfProtection, async (req: Request, res: Response) => {
+router.post("/", async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
     // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)

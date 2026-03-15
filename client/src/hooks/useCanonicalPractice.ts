@@ -98,8 +98,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const [clientAttemptId, setClientAttemptId] = useState(() => crypto.randomUUID());
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [freeResponseAnswer, setFreeResponseAnswer] = useState("");
@@ -169,9 +167,13 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   }, [clientInstanceId, section, sessionId]);
 
   const fetchNextQuestion = useCallback(async () => {
+<<<<<<< HEAD
     setIsLoading(true);
     setError(null);
 
+=======
+    setIsSubmitting(true);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     try {
       const effectiveSessionId = await ensureSession();
       const nextRes = await fetch(
@@ -202,6 +204,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       }
 
       resetPerQuestionState();
+<<<<<<< HEAD
       return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load question";
@@ -209,8 +212,10 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       setQuestion(null);
       setSessionItemId(null);
       return null;
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   }, [clientInstanceId, ensureSession, resetPerQuestionState]);
 
@@ -219,8 +224,11 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       if (!question) return;
 
       setIsSubmitting(true);
+<<<<<<< HEAD
       setError(null);
 
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
       try {
         const effectiveSessionId = await ensureSession();
         const effectiveSessionItemId = sessionItemId;
@@ -282,11 +290,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         setCorrectOptionId(data.correctOptionId ?? null);
         setExplanation(data.explanation ?? null);
         setShowResult(true);
-        return data;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit answer";
-        setError(message);
-        return null;
       } finally {
         setIsSubmitting(false);
       }
@@ -312,14 +315,12 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   }, [question, submitAnswer]);
 
   useEffect(() => {
-    fetchNextQuestion();
+    fetchNextQuestion().catch(() => setQuestion(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
     question,
-    isLoading,
-    error,
 
     selectedAnswer,
     setSelectedAnswer,

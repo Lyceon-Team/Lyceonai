@@ -249,11 +249,6 @@ export default function GuardianCalendarPage() {
                   Retry
                 </Button>
               </div>
-            ) : !calendarData?.days || calendarData.days.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-[#0F2E48]/60 mb-2">No calendar data available</p>
-                <p className="text-sm text-[#0F2E48]/40">The student hasn't created a study plan yet.</p>
-              </div>
             ) : (
               <div className="grid grid-cols-7 gap-1">
                 {WEEKDAYS.map((day) => (

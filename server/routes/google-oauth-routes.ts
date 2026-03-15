@@ -32,43 +32,10 @@ import { ensureProfileForAuthUser } from '../lib/profile-bootstrap.js';
 const router = Router();
 
 
-/**
- * Detect if running in test environment
- */
-function isTestEnvironment(): boolean {
-  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
-}
-
-// Lazy validation wrapper for required env vars
-function requireEnv(key: string): string {
-  const value = process.env[key];
-  if (!value && !isTestEnvironment()) {
-    throw new Error(`${key} must be set in production/development`);
-  }
-  return value || '';
-}
-
-// Google OAuth credentials - empty strings allowed in test env only
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-
-// Supabase credentials - lazy validation on first use
-let SUPABASE_URL = '';
-let SUPABASE_ANON_KEY = '';
-
-function getSupabaseUrl(): string {
-  if (!SUPABASE_URL) {
-    SUPABASE_URL = requireEnv('SUPABASE_URL');
-  }
-  return SUPABASE_URL;
-}
-
-function getSupabaseAnonKey(): string {
-  if (!SUPABASE_ANON_KEY) {
-    SUPABASE_ANON_KEY = requireEnv('SUPABASE_ANON_KEY');
-  }
-  return SUPABASE_ANON_KEY;
-}
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -121,7 +88,7 @@ router.get("/debug", (req: Request, res: Response) => {
     redirectUri,
     ...fp,
     clientSecretSet: !!GOOGLE_CLIENT_SECRET,
-    supabaseUrlSet: !!process.env.SUPABASE_URL,
+    supabaseUrlSet: !!SUPABASE_URL,
     nodeEnv: process.env.NODE_ENV || 'undefined'
   });
 });
@@ -245,7 +212,7 @@ export async function googleCallbackHandler(req: Request, res: Response) {
       return res.redirect(`${siteUrl}/login?error=google_oauth_failed`);
     }
 
-    const supabase = createClient(getSupabaseUrl(), getSupabaseAnonKey());
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
     const { data, error: supabaseError } = await supabase.auth.signInWithIdToken({
       provider: 'google',
@@ -267,9 +234,18 @@ export async function googleCallbackHandler(req: Request, res: Response) {
     let redirectPath = '/dashboard';
     
     try {
+<<<<<<< HEAD
       const profile = await ensureProfileForAuthUser(getSupabaseAdmin(), data.user, {
         source: 'google_oauth_callback',
         requestId: req.requestId,
+=======
+      const supabaseAuthed = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+        },
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
       });
 
       if (profile.role === 'guardian') {

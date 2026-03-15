@@ -375,6 +375,173 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
 
 
 /**
+<<<<<<< HEAD
+=======
+ * GET /api/auth/user
+ * Get current authenticated user
+ */
+router.get('/user', async (req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  
+  // PHASE 1: Clean up any legacy cookies on every /user request
+  clearLegacyCookies(req, res, isProd);
+  
+  try {
+    const token = req.cookies['sb-access-token'];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No access token' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      // Try to refresh if we have a refresh token
+      const refreshToken = req.cookies?.['sb-refresh-token'];
+      const hint = (authError as any)?.message || '';
+      
+      const shouldTryRefresh =
+        refreshToken &&
+        (hint.includes('JWT expired') ||
+         hint.toLowerCase().includes('invalid') ||
+         hint.toLowerCase().includes('expired'));
+
+      if (shouldTryRefresh) {
+        logger.info('AUTH', 'auto_refresh', 'Attempting automatic token refresh', {});
+        
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession({
+          refresh_token: refreshToken,
+        });
+
+        if (!refreshErr && refreshed?.session) {
+          setAuthCookies(res, refreshed.session, isProd);
+
+          const { data: userAgain, error: userAgainErr } = await supabase.auth.getUser(
+            refreshed.session.access_token
+          );
+
+          if (!userAgainErr && userAgain?.user) {
+            logger.info('AUTH', 'auto_refresh_success', 'Token refreshed successfully', { userId: userAgain.user.id });
+            
+            // Continue with the refreshed user - fall through to profile fetch below
+            // by reassigning to a mutable binding
+            return handleUserFetch(req, res, userAgain.user, refreshed.session.access_token, isProd);
+          }
+        }
+
+        // Refresh failed - clear cookies and return 401
+        logger.warn('AUTH', 'auto_refresh_failed', 'Token refresh failed', {});
+        clearAuthCookies(res, isProd);
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+
+      // No refresh token available - clear and return 401
+      clearAuthCookies(res, isProd);
+      const requestId = crypto.randomUUID().slice(0, 8);
+      return res.status(401).json({ 
+        error: 'Invalid or expired token',
+        requestId,
+        hint: 'Access token invalid and no refresh token available.'
+      });
+    }
+    
+    return handleUserFetch(req, res, user, token, isProd);
+  } catch (error) {
+    logger.error('AUTH', 'get_user_error', 'Get user endpoint error', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+async function handleUserFetch(req: Request, res: Response, user: any, token: string, isProd: boolean) {
+  try {
+
+    // Fetch profile using anon client with user's JWT (RLS enforced)
+    // Create client with user's token so RLS policies can see auth.uid()
+    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    });
+    
+    let { data: profile, error: profileError } = await userSupabase
+      .from('profiles')
+      .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      logger.error('AUTH', 'profile_fetch', 'Failed to fetch user profile', { 
+        userId: user.id, 
+        error: profileError 
+      });
+    }
+
+    // Handle missing profile gracefully - auto-create if needed
+    if (!profile) {
+      logger.warn('AUTH', 'profile_missing', 'User has no profile row - creating one', { userId: user.id });
+      
+      // Auto-create profile (should have been created by trigger, but handle edge case)
+      const admin = getSupabaseAdmin();
+      const { data: newProfile, error: createError } = await admin
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email,
+          display_name: user.user_metadata?.display_name || user.email!.split('@')[0],
+          role: user.user_metadata?.role || 'student'
+        })
+        .select('id, email, display_name, role, is_under_13, guardian_consent, student_link_code')
+        .single();
+      
+      if (createError || !newProfile) {
+        logger.error('AUTH', 'profile_creation_failed', 'Failed to auto-create profile', { 
+          userId: user.id, 
+          error: createError 
+        });
+        return res.status(500).json({ error: 'Profile initialization failed' });
+      }
+      
+      profile = newProfile;
+    }
+
+    const rawDisplayName = profile.display_name;
+    const fallbackUsername = profile.email ? profile.email.split('@')[0] : null;
+    
+    const normalizedName = rawDisplayName || fallbackUsername || 'Student';
+    const normalizedUsername = fallbackUsername || null;
+
+    res.json({
+      authenticated: true,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        display_name: profile.display_name,
+        name: normalizedName,
+        username: normalizedUsername,
+        firstName: null,
+        lastName: null,
+        profileCompletedAt: null,
+        lastLoginAt: null,
+        role: profile.role,
+        isAdmin: profile.role === 'admin',
+        isGuardian: profile.role === 'guardian',
+        is_under_13: profile.is_under_13,
+        guardian_consent: profile.guardian_consent,
+        student_link_code: profile.student_link_code
+      }
+    });
+  } catch (error) {
+    logger.error('AUTH', 'handleUserFetch_error', 'Handle user fetch error', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+/**
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
  * POST /api/auth/consent
  * Submit guardian consent for under-13 users
  */

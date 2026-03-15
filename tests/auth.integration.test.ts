@@ -70,6 +70,13 @@ describe('Auth Integration Tests', () => {
       const res = await request(app).get('/api/admin/questions/needs-review');
       expect([401, 404]).toContain(res.status);
     });
+
+    it('should return 401 for document upload without auth', async () => {
+      const res = await request(app)
+        .post('/api/documents/upload')
+        .attach('file', Buffer.from('test'), 'test.pdf');
+      expect(res.status).toBe(401);
+    });
   });
 
   describe('CSRF Protection', () => {

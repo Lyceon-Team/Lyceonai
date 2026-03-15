@@ -324,11 +324,14 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
                 <div className="space-y-4">
                   <QuestionRenderer
                     question={currentQuestion}
+                    questionIndex={score.total}
                     selectedAnswer={selectedAnswer}
                     freeResponseAnswer={freeResponseAnswer}
-                    onSelectAnswer={handleAnswerSelect}
-                    onFreeResponseAnswerChange={handleFreeResponseChange}
+                    onAnswerSelect={handleAnswerSelect}
+                    onFreeResponseChange={handleFreeResponseChange}
                     showResult={false}
+                    validationResult={null}
+                    hideActions={true}
                   />
                   
                   {!isMcQuestion && freeResponseAnswer.trim() && !isAutoSubmitting && (

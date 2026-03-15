@@ -14,8 +14,15 @@ export function corsMiddleware() {
   return cors({
     credentials: true,
     origin: (origin, cb) => {
+<<<<<<< HEAD
       // If no origin header, don't set CORS headers (server-to-server communication)
       if (!origin) return cb(null, false);
+=======
+      // Non-browser requests (curl without Origin) should be allowed
+      if (!origin) return cb(null, true);
+
+      if (isDev) return cb(null, true);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
       const o = normalizeOrigin(origin);
       const ok = normalized.has(o);
@@ -26,8 +33,12 @@ export function corsMiddleware() {
           normalized: o,
           allowPreview: Array.from(normalized).slice(0, 8),
         });
+<<<<<<< HEAD
         // Return false to deny CORS
         return cb(null, false);
+=======
+        return cb(new Error("CORS blocked"), false);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
       }
 
       // Origin is allowlisted: echo back exactly that origin with credentials

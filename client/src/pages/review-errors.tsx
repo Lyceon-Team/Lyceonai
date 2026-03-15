@@ -104,6 +104,7 @@ function buildClientInstanceId() {
 }
 
 function ReviewErrors() {
+<<<<<<< HEAD
   const [mode, setMode] = useState<ReviewMode>("summary");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<ReviewFilter>("all");
@@ -122,6 +123,20 @@ function ReviewErrors() {
     refetch: refetchSummary,
   } = useQuery<ReviewErrorsResponse>({
     queryKey: ["/api/review-errors"],
+=======
+  const [mode, setMode] = useState<ReviewMode>('summary');
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all');
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [freeResponseAnswer, setFreeResponseAnswer] = useState("");
+  const [showResult, setShowResult] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [reviewResults, setReviewResults] = useState<Record<string, ReviewRunResult>>({});
+
+  const { data: reviewData, isLoading, refetch } = useQuery<ReviewErrorsResponse>({
+    queryKey: ['/api/review-errors'],
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   });
 
   const {
@@ -144,10 +159,25 @@ function ReviewErrors() {
   const currentItem = sessionState?.currentItem ?? null;
   const currentQuestion = currentItem?.question ?? null;
 
+<<<<<<< HEAD
   const resetPerItemState = useCallback(() => {
     setSelectedOptionId(null);
     setSubmitResult(null);
     setRecordError(null);
+=======
+  const currentItem = currentQueue[currentIndex];
+
+  const { data: fullQuestion, isLoading: questionLoading } = useQuery<StudentQuestion>({
+    queryKey: ['/api/questions', currentItem?.questionId],
+    enabled: mode === 'sequential' && !!currentItem?.questionId,
+  });
+
+  const resetQuestionState = useCallback(() => {
+    setSelectedAnswer(null);
+    setFreeResponseAnswer("");
+    setShowResult(false);
+    setValidationResult(null);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   }, []);
 
   const startReview = useCallback(async (filter: ReviewFilter) => {
@@ -163,11 +193,39 @@ function ReviewErrors() {
           idempotency_key: `review-session:${filter}:${clientInstanceId}`,
         }),
       });
+<<<<<<< HEAD
       const payload = (await response.json()) as ReviewStartResponse;
 
       if (!response.ok) {
         setRecordError((payload as any)?.error || "Unable to start review session");
         return;
+=======
+      
+      const result: ValidationResult = await response.json();
+      setValidationResult(result);
+      setShowResult(true);
+      
+      const reviewOutcome = result.isCorrect ? 'correct' : 'incorrect';
+      setReviewResults(prev => ({
+        ...prev,
+        [currentItem.questionId]: {
+          outcome: reviewOutcome,
+          validatedAt: new Date(),
+        },
+      }));
+      
+      try {
+        await apiRequest('/api/review-errors/attempt', {
+          method: 'POST',
+          body: JSON.stringify({
+            questionId: currentItem.questionId,
+            eventType: reviewOutcome,
+            sessionId: null,
+          }),
+        });
+      } catch (compError) {
+        console.warn('Failed to record review competency event:', compError);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
       }
 
       if (!payload.session?.id || payload.empty) {
@@ -194,12 +252,18 @@ function ReviewErrors() {
       const response = await apiRequest("/api/review-errors/attempt", {
         method: "POST",
         body: JSON.stringify({
+<<<<<<< HEAD
           session_id: activeSessionId,
           review_session_item_id: currentItem.id,
           selected_option_id: selectedOptionId,
           source_context: "review_errors",
           client_attempt_id: `review-submit:${activeSessionId}:${currentItem.id}`,
           client_instance_id: clientInstanceId,
+=======
+          questionId: currentItem.questionId,
+          eventType: 'skipped',
+          sessionId: null,
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
         }),
       });
       const payload = await response.json();
@@ -283,6 +347,7 @@ function ReviewErrors() {
     );
   }
 
+<<<<<<< HEAD
   if (isError) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -327,6 +392,22 @@ function ReviewErrors() {
                     <p className="text-2xl font-bold text-muted-foreground">{runStats.skipped}</p>
                     <p className="text-sm text-muted-foreground">Skipped</p>
                   </div>
+=======
+  if (mode === 'sequential' && currentQueue.length > 0 && Object.keys(reviewResults).length === currentQueue.length && !showResult) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-8 max-w-2xl">
+          <Card data-testid="card-review-complete">
+            <CardHeader className="text-center">
+              <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-600" />
+              <CardTitle className="text-2xl">Review Complete!</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="p-4 rounded-lg bg-green-50 dark:bg-green-900/20">
+                  <p className="text-2xl font-bold text-green-600">{reviewRunStats.correct}</p>
+                  <p className="text-sm text-muted-foreground">Correct</p>
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
@@ -435,6 +516,7 @@ function ReviewErrors() {
                   </div>
                 )}
 
+<<<<<<< HEAD
                 {recordError && (
                   <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
                     <p className="text-sm text-orange-700 dark:text-orange-300">{recordError}</p>
@@ -447,6 +529,42 @@ function ReviewErrors() {
                       <Button variant="outline" onClick={skipItem} disabled={isSubmitting}>
                         <SkipForward className="h-4 w-4 mr-2" />
                         Skip
+=======
+                <div className="flex items-center justify-between gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={handleBack}
+                    disabled={currentIndex === 0}
+                    data-testid="button-back"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+                  
+                  <div className="flex gap-3">
+                    {!showResult ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={handleSkip}
+                          data-testid="button-skip"
+                        >
+                          <SkipForward className="h-4 w-4 mr-2" />
+                          Skip
+                        </Button>
+                        <Button
+                          onClick={handleSubmit}
+                          disabled={!selectedAnswer && !freeResponseAnswer.trim()}
+                          data-testid="button-submit"
+                        >
+                          Submit
+                        </Button>
+                      </>
+                    ) : (
+                      <Button onClick={handleNext} data-testid="button-next">
+                        {isReviewComplete ? 'Finish' : 'Next'}
+                        <ArrowRight className="h-4 w-4 ml-2" />
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
                       </Button>
                       <Button onClick={submitAnswer} disabled={!selectedOptionId || isSubmitting}>
                         Submit

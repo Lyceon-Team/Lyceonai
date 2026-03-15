@@ -1,45 +1,64 @@
 import request from 'supertest';
 import app from '../server/index';
-import { describe, it, expect } from 'vitest';
 
-// Security regression test: Verify that /api/tutor/v2 does not leak
-// answers or explanations to students who haven't attempted the question.
-// 
-// This test validates the ABSENCE of security bugs without requiring complex mocks.
-// We test that:
-// 1. Unauthenticated requests are rejected (401)
-// 2. The endpoint structure doesn't leak sensitive fields
+// Minimal mocks for tutor context and LLM
+const mockRagService = {
+  handleRagQuery: jest.fn(),
+};
+const mockCallLlm = jest.fn();
+
+jest.mock('../server/routes/tutor-v2', () => {
+  const real = jest.requireActual('../server/routes/tutor-v2');
+  return {
+    ...real,
+    getRagService: () => mockRagService,
+    callLlm: mockCallLlm,
+  };
+});
+
 describe('Tutor V2 Security Regression', () => {
-
-  it('PRAC-002: rejects unauthenticated requests (no cookie)', async () => {
-    // No auth cookie = should get 401
-    const res = await request(app)
-      .post('/api/tutor/v2')
-      .set('Origin', 'http://localhost:5000')
-      .send({ message: 'Help me', mode: 'question' });
-    
-    // Should reject with 401 (unauthenticated)
-    expect(res.status).toBe(401);
-    
-    // Error response should never leak sensitive data
-    expect(res.body).not.toHaveProperty('answer');
-    expect(res.body).not.toHaveProperty('explanation');
-    expect(res.body).not.toHaveProperty('correctAnswerKey');
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it('PRAC-002: rejects bearer auth (cookie-only endpoint)', async () => {
-    // Try bearer auth (should be rejected per cookie-only policy)
-    const res = await request(app)
+  it('PRAC-002: does not leak answers/explanations in prompt for students', async () => {
+    // Arrange: mock context with answer/explanation present
+    mockRagService.handleRagQuery.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: {
+          stem: 'What is 2+2?',
+          answer: '4',
+          explanation: 'Because 2+2=4',
+          canonicalId: 'q1',
+          options: [
+            { key: 'A', text: '3' },
+            { key: 'B', text: '4' },
+          ],
+        },
+        supportingQuestions: [
+          { stem: 'What is 1+1?', answer: '2', explanation: 'Simple math', options: [] },
+        ],
+        competencyContext: { studentWeakAreas: [], studentStrongAreas: [], competencyLabels: [] },
+        studentProfile: { overallLevel: 3 },
+      },
+      metadata: { canonicalIdsUsed: ['q1'] },
+    });
+    mockCallLlm.mockResolvedValueOnce('LLM response');
+    // Simulate student user (not admin, no prior attempt)
+    const fakeCookie = 'sb-access-token=fakevalidtoken';
+    await request(app)
       .post('/api/tutor/v2')
-      .set('Authorization', 'Bearer fake-token')
-      .set('Origin', 'http://localhost:5000')
-      .send({ message: 'Help me', mode: 'question' });
-    
-    // Should reject (401 or 403)
-    expect([401, 403]).toContain(res.status);
-    
-    // Error response should never leak sensitive data
-    expect(res.body).not.toHaveProperty('answer');
-    expect(res.body).not.toHaveProperty('explanation');
+      .set('Cookie', fakeCookie)
+      .send({ userId: 'student1', message: 'Help me', mode: 'question' });
+    // Assert: prompt passed to LLM does not leak answers/explanations
+    const prompt = mockCallLlm.mock.calls[0][0];
+    expect(prompt).not.toMatch(/The correct answer is/i);
+    expect(prompt).not.toMatch(/Here's why:/i);
+    // Assert: answer/explanation fields are scrubbed before prompt
+    const ctx = mockRagService.handleRagQuery.mock.calls[0]?.[0];
+    // The context passed to prompt builder should have answer/explanation null/undefined
+    // (This depends on the implementation, but we check the prompt and context)
+    expect(prompt).not.toMatch(/4/);
+    expect(prompt).not.toMatch(/Because 2\+2=4/);
   });
 });

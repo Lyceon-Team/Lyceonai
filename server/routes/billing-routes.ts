@@ -9,6 +9,7 @@ import { billingStorage } from '../lib/billingStorage';
 import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
+<<<<<<< HEAD
 import { csrfGuard } from '../middleware/csrf';
 import { requireGuardianRole } from '../middleware/guardian-role';
 import { normalizeRuntimeRole } from '../lib/auth-role';
@@ -18,6 +19,21 @@ const csrfProtection = csrfGuard();
 const requireGuardianBillingAccess = requireGuardianRole({
   message: 'You do not have permission to access guardian billing resources',
 });
+=======
+
+const router = Router();
+
+function requireGuardianRole(req: Request, res: Response, next: Function) {
+  const requestId = req.requestId;
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required', requestId });
+  }
+  if (req.user.role !== 'guardian' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Guardian role required', requestId });
+  }
+  next();
+}
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 const checkoutSchema = z.object({
   plan: z.enum(['monthly', 'quarterly', 'yearly']).optional(),
@@ -65,7 +81,7 @@ function resolvePriceIdAndPlan(input: { plan?: string; priceId?: string }): { pl
   return { plan, priceId: input.priceId };
 }
 
-router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post('/checkout', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const userId = req.user?.id;
@@ -117,13 +133,18 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
     const supabaseAdmin = getSupabaseAdmin();
     let accountId: string | null = null;
     let linkedStudentId: string | null = null;
+    const normalizedRole = role === 'parent' ? 'guardian' : role;
 
-    if (role === 'admin') {
+    if (normalizedRole === 'admin') {
       return res.status(403).json({ error: 'Admins cannot initiate checkout', requestId });
-    } else if (role === 'student') {
+    } else if (normalizedRole === 'student') {
       accountId = await ensureAccountForUser(supabaseAdmin, userId, 'student');
+<<<<<<< HEAD
     } else if (role === 'guardian') {
       accountId = await ensureAccountForUser(supabaseAdmin, userId, 'guardian');
+=======
+    } else if (normalizedRole === 'guardian') {
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
       const link = await getPrimaryGuardianLink(userId);
       linkedStudentId = link?.student_user_id ?? null;
     } else {
@@ -159,6 +180,7 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
     const entitlement = await getOrCreateEntitlement(accountId);
     let customerId: string | null = entitlement?.stripe_customer_id || null;
 
+<<<<<<< HEAD
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: req.user!.email,
@@ -168,12 +190,24 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
           payer_role: role, // "student" | "guardian"
         },
       });
+=======
+if (!customerId) {
+  const customer = await stripe.customers.create({
+    email: req.user!.email,
+    metadata: {
+      account_id: accountId,
+      payer_user_id: userId,
+      payer_role: normalizedRole, // "student" | "guardian"
+    },
+  });
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
       customerId = customer.id;
 
       // Persist at ENTITLEMENT level (source of truth)
       await upsertEntitlement(accountId, { stripe_customer_id: customerId });
 
+<<<<<<< HEAD
       logger.info('BILLING', 'checkout', 'Created Stripe customer', {
         userId,
         accountId,
@@ -190,6 +224,27 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
         requestId,
       });
     }
+=======
+  // Optional backward compatibility only
+  await billingStorage.updateProfileStripeInfo(userId, { stripe_customer_id: customerId });
+
+  logger.info('BILLING', 'checkout', 'Created Stripe customer', {
+    userId,
+    accountId,
+    customerId,
+    role: normalizedRole,
+    requestId,
+  });
+} else {
+  logger.info('BILLING', 'checkout', 'Reusing existing Stripe customer from entitlement', {
+    userId,
+    accountId,
+    customerId,
+    role: normalizedRole,
+    requestId,
+  });
+}
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 
     logger.info('BILLING', 'checkout', 'Upserted entitlement stripe_customer_id', {
@@ -525,7 +580,7 @@ router.get('/portal', (req, res) => {
 });
 
 
-router.post('/portal', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post('/portal', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const userId = req.user!.id;

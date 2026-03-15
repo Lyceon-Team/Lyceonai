@@ -3,7 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Sparkles, FileText, Info, MessageSquare } from "lucide-react";
+import { Send, Sparkles, FileText, Info } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -24,7 +24,15 @@ interface ChatMessage {
 
 export default function Chat() {
   const { user } = useSupabaseAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      type: 'tutor',
+      content: "Hi! I'm your SAT AI Tutor. I can help you understand questions, explain concepts, and provide personalized study guidance. What would you like to work on today?",
+      timestamp: new Date(),
+      provider: 'gemini'
+    }
+  ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -161,6 +169,7 @@ export default function Chat() {
             className="h-[500px] overflow-y-auto p-6 space-y-6"
             data-testid="chat-messages-container"
           >
+<<<<<<< HEAD
             {messages.length === 0 && !isLoading ? (
               // Empty state when no messages
               <div className="h-full flex flex-col items-center justify-center text-center px-4">
@@ -177,6 +186,9 @@ export default function Chat() {
             ) : (
               <>
                 {messages.map((message) => (
+=======
+            {messages.map((message) => (
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
               <div 
                 key={message.id}
                 className={`flex gap-3 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
@@ -273,8 +285,6 @@ export default function Chat() {
             )}
             
             <div ref={messagesEndRef} />
-            </>
-            )}
           </div>
 
           {/* Input Area */}

@@ -6,8 +6,67 @@ import {
   getDailyUsage,
 } from '../lib/account';
 import { logger } from '../logger';
+<<<<<<< HEAD
 
 const router = Router();
+=======
+import { z } from 'zod';
+
+const router = Router();
+
+router.get('/bootstrap', requireSupabaseAuth, async (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  const userId = req.user!.id;
+  let userRole: string = req.user!.role;
+
+  try {
+    if (userRole === 'parent') {
+      userRole = 'guardian';
+    }
+
+    if (userRole !== 'student' && userRole !== 'guardian') {
+      return res.status(400).json({ 
+        error: 'Unsupported role for bootstrap',
+        role: req.user!.role,
+        requestId 
+      });
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const accountId = await ensureAccountForUser(supabaseAdmin, userId, userRole as 'student' | 'guardian');
+
+    logger.info('ACCOUNT', 'bootstrap', 'Account bootstrapped via API', {
+      userId,
+      role: userRole,
+      accountId,
+      requestId
+    });
+
+    res.json({ accountId, userId, role: userRole, requestId });
+  } catch (err: any) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const errorStack = err instanceof Error ? err.stack : undefined;
+    
+    logger.error('ACCOUNT', 'bootstrap', 'Failed to bootstrap account', {
+      userId,
+      role: userRole,
+      error: errorMessage,
+      stack: errorStack,
+      requestId
+    });
+    
+    res.status(500).json({ 
+      error: 'Failed to bootstrap account', 
+      requestId,
+      debug: {
+        userId,
+        role: req.user!.role,
+        message: errorMessage
+      }
+    });
+  }
+});
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
@@ -78,6 +137,13 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
   }
 });
 
+<<<<<<< HEAD
+=======
+const selectAccountSchema = z.object({
+  accountId: z.string().uuid('Invalid account ID'),
+});
+
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 router.post('/select', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
 

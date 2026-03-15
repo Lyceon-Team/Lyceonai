@@ -1,10 +1,9 @@
-node_modules/
+node_modules
 .env
-.env.*.local
-dist/
-client/dist/
-*.log
+.env.*
+!.env.example
 .DS_Store
+<<<<<<< HEAD
 .vscode/settings.json
 .replit
 replit.nix
@@ -29,3 +28,15 @@ test-results/
 .env.*
 !.env.example
 
+=======
+dist
+build
+.next
+.turbo
+.vercel
+.output
+coverage
+*.log
+var
+uploads
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b

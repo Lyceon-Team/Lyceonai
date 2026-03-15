@@ -1,11 +1,11 @@
 /**
- * Production Server - Express server for Supabase auth + RAG + Practice
+ * MVP Server - Minimal Express server for Bearer auth + Ingest + RAG
  *
  * Replaces the legacy monolithic server (now in server/legacy-server.ts)
- * with a clean production-ready server focused on:
- *   - Supabase authentication (httpOnly cookies)
- *   - POST /api/rag (authenticated users)
- *   - Practice and tutoring endpoints
+ * with a clean MVP focused on:
+ *   - Simple Bearer token authentication
+ *   - POST /api/ingest (admin token required)
+ *   - POST /api/rag (user token required)
  *   - GET /healthz
  */
 
@@ -15,14 +15,23 @@ import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
+<<<<<<< HEAD
 // SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
 // Canonical RAG route owners are apps/api/src/routes/rag.ts and apps/api/src/routes/rag-v2.ts.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
+=======
+// SECURITY GUARD: apps/api imports are allowed ONLY for shared libraries (e.g., supabase-server, ingestion, embeddings, etc.).
+// apps/api MUST NOT be mounted for user-facing routes:
+//   - /api/questions/validate
+//   - /api/tutor/v2
+//   - auth token resolution / requireSupabaseAuth
+// ...removed ingest import...
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
+// ...removed ingest-llm imports...
 import { legalRouter } from "./routes/legal-routes.js";
-import fullLengthExamRouter from "./routes/full-length-exam-routes";
 import {
   getQuestions,
   getRandomQuestions,
@@ -33,9 +42,22 @@ import {
   getQuestionById,
   getReviewErrors,
   submitQuestionFeedback,
+<<<<<<< HEAD
 } from "./routes/questions-runtime";
 import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
+=======
+} from "../apps/api/src/routes/questions";
+import { validateAnswer } from "./routes/questions-validate";
+import {
+  getNeedsReview,
+  approveQuestion,
+  rejectQuestion,
+  getParsingStatistics,
+} from "./admin-review-routes";
+import { analyzeQuestion } from "./routes/student-routes";
+import { requireBearer } from "../apps/api/src/middleware/bearer-auth";
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -48,11 +70,20 @@ import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
 import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-routes";
 import { csrfGuard } from "./middleware/csrf";
+<<<<<<< HEAD
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { diagnosticRouter } from "./routes/legacy/diagnostic";
 import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
+=======
+import { testSupabaseHttpConnection, supabaseServer } from "../apps/api/src/lib/supabase-server";
+// ...removed ingestion-v4 imports...
+import { weaknessRouter } from "../apps/api/src/routes/weakness";
+import { masteryRouter } from "../apps/api/src/routes/mastery";
+import { calendarRouter } from "../apps/api/src/routes/calendar";
+import { getScoreProjection, getRecencyKpis } from "../apps/api/src/routes/progress";
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
@@ -60,8 +91,6 @@ import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
-import profileRoutes from "./routes/profile-routes";
-import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -69,6 +98,9 @@ import { logger } from "./logger";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
+
+// Validate environment variables on startup
+validateEnvironment();
 
 const app = express();
 app.disable("x-powered-by");
@@ -87,7 +119,6 @@ app.use(cookieParser());
 
 // Stripe webhook route MUST be registered BEFORE express.json()
 // Webhook needs raw Buffer, not parsed JSON
-// CSRF_EXEMPT_REASON: Webhook uses Stripe signature verification instead of CSRF
 app.post(
   "/api/billing/webhook",
   express.raw({ type: "application/json" }),
@@ -229,11 +260,23 @@ app.all("/terms", (_req, res) => res.redirect(301, "/legal/student-terms"));
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" })); // Legacy alias
 
+// ...removed /debug/env/ingest route...
+
+// ...removed ingestLimiter...
+
 const ragLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
   message: { error: "Too many RAG requests" },
 });
+
+const studentUploadLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  message: { error: "Too many upload requests. Please wait a moment before trying again." },
+});
+
+// ...removed /api/ingest endpoint...
 
 // RAG endpoint - accepts EITHER Bearer token OR Supabase auth
 // CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
@@ -260,6 +303,14 @@ app.use(
 // Tutor v2 endpoint - Lisa tutoring with canonical RAG context
 app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
 
+// ...removed /api/ingestion-v4 route...
+
+// ...removed all /api/ingest-v2/* deprecated endpoints...
+
+// ...removed requireIngestAdmin middleware...
+
+// ...removed all /api/ingest-llm/* and /api/ingest/jobs endpoints...
+
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
 
@@ -269,18 +320,20 @@ app.get("/auth/google/callback", googleCallbackHandler);
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
+<<<<<<< HEAD
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route
 app.use("/api/profile", requireSupabaseAuth, profileRoutes);
 
+=======
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 // Notifications Routes
 app.use("/api/notifications", notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
@@ -288,6 +341,7 @@ app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, 
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
+<<<<<<< HEAD
 // Minimal guarded admin auth contract for regression invariants.
 app.get("/api/admin/db-health", requireSupabaseAuth, requireSupabaseAdmin, async (_req: Request, res: Response) => {
   return res.json({
@@ -295,6 +349,43 @@ app.get("/api/admin/db-health", requireSupabaseAuth, requireSupabaseAdmin, async
     status: "healthy",
     service: "database",
   });
+=======
+
+// Admin Stats Routes
+app.use("/api/admin", adminStatsRoutes);
+
+// Admin Proof Routes - "No More Lying" layer for verification
+// Enforce cookie-admin only for admin-proof routes
+app.use(
+  "/api/admin/proof",
+  requireSupabaseAuth,
+  requireSupabaseAdmin,
+  adminProofRoutes
+);
+
+// ...removed /api/admin/ingest-summary endpoint...
+
+// Admin DB Health Check (requires Supabase admin)
+app.get("/api/admin/db-health", requireSupabaseAdmin, async (_req, res) => {
+  try {
+    const ok = await testSupabaseHttpConnection();
+
+    if (ok) return res.json({ ok: true });
+
+    return res.status(500).json({
+      ok: false,
+      error: "DB health check failed",
+    });
+  } catch (err: any) {
+    console.error("[DB-HEALTH] Supabase HTTP connection error:", err);
+
+    return res.status(500).json({
+      ok: false,
+      error: "DB health check failed",
+      detail: err?.message ?? "Unknown error",
+    });
+  }
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 });
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
@@ -309,8 +400,7 @@ app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req
   return getQuestions(req, res);
 });
 
-app.get("/api/questions/recent", async (req, res) => {
-  // Allow anonymous access to recent questions for public preview
+app.get("/api/questions/recent", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
   const originalJson = res.json.bind(res);
   res.json = function (data: any) {
     if (Array.isArray(data)) {
@@ -336,25 +426,79 @@ app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQ
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
 
-// Search endpoint - allow anonymous access for public search
-app.get("/api/questions/search", searchQuestions);
-
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
+<<<<<<< HEAD
 // Review errors attempt endpoint - records student attempts during error review
 app.post("/api/review-errors/sessions", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, startReviewErrorSession);
 app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
 app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitReviewSessionAnswer);
+=======
+// Review errors attempt stub endpoint (prevents 404 from frontend POST calls)
+app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, (_req, res) => {
+  res.json({ ok: true });
+});
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
 app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
 
+<<<<<<< HEAD
+=======
+// Admin Review Routes (with CSRF protection for state-changing operations)
+app.get("/api/admin/questions/needs-review", requireSupabaseAdmin, getNeedsReview);
+app.get("/api/admin/questions/statistics", requireSupabaseAdmin, getParsingStatistics);
+app.post("/api/admin/questions/:id/approve", csrfProtection, requireSupabaseAdmin, approveQuestion);
+app.post("/api/admin/questions/:id/reject", csrfProtection, requireSupabaseAdmin, rejectQuestion);
+
+// Task B: Admin-only Supabase debug endpoint to verify ingestion target
+app.get("/api/admin/supabase-debug", requireSupabaseAdmin, async (_req, res) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || "";
+    const url = supabaseUrl ? new URL(supabaseUrl) : null;
+
+    const { count, error: countErr } = await supabaseServer.from("questions").select("id", { count: "exact", head: true });
+
+    if (countErr) {
+      console.error("[ADMIN] supabase-debug count error:", countErr.message);
+      return res.status(500).json({ error: "Failed to count questions", detail: countErr.message });
+    }
+
+    const { data: latest, error: latestErr } = await supabaseServer.from("questions").select("created_at").order("created_at", { ascending: false }).limit(1);
+
+    if (latestErr) {
+      console.error("[ADMIN] supabase-debug latest error:", latestErr.message);
+    }
+
+    res.json({
+      supabaseUrlHost: url?.hostname || "unknown",
+      projectRef: url?.hostname?.split(".")[0] || "unknown",
+      questionsCount: count ?? 0,
+      latestQuestionCreatedAt: (latest as any)?.[0]?.created_at ?? null,
+    });
+  } catch (error: any) {
+    console.error("[ADMIN] supabase-debug exception:", error.message);
+    res.status(500).json({ error: "Internal error", detail: error.message });
+  }
+});
+
+// Student Routes (requires Supabase auth + CSRF protection)
+app.post(
+  "/api/student/analyze-question",
+  csrfProtection,
+  studentUploadLimiter,
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  ...(analyzeQuestion as any)
+);
+
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);
 
@@ -367,18 +511,10 @@ app.use("/api/account", accountRoutes);
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
 
-// Practice Topics Routes (for browsing and filtering)
-app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
-app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
-
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
 app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
-
-// Full-Length Exam Routes (Bluebook-style SAT exams)
-// All routes require Supabase auth and are student-only
-app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
@@ -386,7 +522,11 @@ app.get("/api/_whoami", (_req, res) => {
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
     version: "1.0.0",
+<<<<<<< HEAD
     routes: ["rag/v2", "tutor/v2"],
+=======
+    routes: ["rag/v2", "tutor/v2", "ingest", "ingest-v2/upload", "ingest-v2/jobs", "ingest-v2/status/:jobId", "admin/ingest-summary", "admin/db-health"],
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     timestamp: new Date().toISOString(),
   });
 });
@@ -526,6 +666,8 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
     "GEMINI_API_KEY",
+    "INGEST_ADMIN_TOKEN",
+    "API_USER_TOKEN",
   ];
 
   const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);
@@ -554,6 +696,7 @@ const isMainModule = (() => {
   }
 })();
 
+<<<<<<< HEAD
 // Start server if run directly or as bundled entry
 if (isMainModule) {
   // Global error handlers to prevent crashes before port binding
@@ -565,45 +708,97 @@ if (isMainModule) {
   process.on("unhandledRejection", (reason) => {
     logger.error("PROCESS", "unhandled_rejection", "Unhandled promise rejection", reason, { fatal: false });
   });
+=======
+// Global error handlers to prevent crashes before port binding
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", (err as any)?.message);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL] Unhandled rejection:", reason);
+});
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
 
-  // Validate environment variables on startup
-  validateEnvironment();
-
-  // Validate PUBLIC_SITE_URL at startup (critical for OAuth)
-  function validateSiteUrl(): void {
-    const publicSiteUrl = process.env.PUBLIC_SITE_URL;
-    const isProduction = process.env.NODE_ENV === "production";
-
-    if (!publicSiteUrl) {
-      if (isProduction) {
-        console.error("❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.");
-        console.error("   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.");
-        process.exit(1);
-      } else {
-        console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
-        console.warn("   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.");
-      }
-      return;
-    }
-
-    if (publicSiteUrl.endsWith("/")) {
-      console.warn("⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.");
-    }
-
-    if (!publicSiteUrl.startsWith("https://") && isProduction) {
-      console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
-      process.exit(1);
-    }
-
-    const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
-    if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
-      console.warn("⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.");
-    }
-
-    console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
-    console.log(`✅ [AUTH] OAuth callback: ${publicSiteUrl.replace(/\/$/, "")}/auth/google/callback`);
+// Initialize Stripe schema and sync data
+async function initStripe() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    console.log("[STRIPE] No DATABASE_URL - skipping Stripe initialization");
+    return;
   }
 
+  try {
+    console.log("[STRIPE] Initializing schema...");
+    await runMigrations({ databaseUrl });
+    console.log("[STRIPE] Schema ready");
+
+    const stripeSync = await getStripeSync();
+
+    console.log("[STRIPE] Setting up managed webhook...");
+    const domains = process.env.REPLIT_DOMAINS?.split(",");
+    if (domains && domains.length > 0 && domains[0]) {
+      const webhookBaseUrl = `https://${domains[0]}`;
+      try {
+        const result = await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/billing/webhook`);
+        if ((result as any)?.webhook?.url) {
+          console.log(`[STRIPE] Webhook configured: ${(result as any).webhook.url}`);
+        } else {
+          console.log("[STRIPE] Webhook setup returned no URL, will rely on Stripe dashboard config");
+        }
+      } catch (webhookErr: any) {
+        console.warn("[STRIPE] Managed webhook setup failed (optional):", webhookErr.message);
+      }
+    } else {
+      console.log("[STRIPE] No REPLIT_DOMAINS found, skipping managed webhook setup");
+    }
+
+    console.log("[STRIPE] Syncing data in background...");
+    stripeSync
+      .syncBackfill()
+      .then(() => console.log("[STRIPE] Data sync complete"))
+      .catch((err: any) => console.error("[STRIPE] Sync error:", err.message));
+  } catch (error: any) {
+    console.error("[STRIPE] Initialization failed:", error.message);
+  }
+}
+
+// Validate PUBLIC_SITE_URL at startup (critical for OAuth)
+function validateSiteUrl(): void {
+  const publicSiteUrl = process.env.PUBLIC_SITE_URL;
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (!publicSiteUrl) {
+    if (isProduction) {
+      console.error("❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.");
+      console.error("   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.");
+      process.exit(1);
+    } else {
+      console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
+      console.warn("   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.");
+    }
+    return;
+  }
+
+  if (publicSiteUrl.endsWith("/")) {
+    console.warn("⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.");
+  }
+
+  if (!publicSiteUrl.startsWith("https://") && isProduction) {
+    console.error("❌ [FATAL] PUBLIC_SITE_URL must use HTTPS in production.");
+    process.exit(1);
+  }
+
+  const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
+  if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
+    console.warn("⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.");
+  }
+
+  console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
+  console.log(`✅ [AUTH] OAuth callback: ${publicSiteUrl.replace(/\/$/, "")}/auth/google/callback`);
+}
+
+// Start server if run directly or as bundled entry
+if (isMainModule) {
   validateSiteUrl();
 
   console.log(`[API] Starting Lyceon API server...`);
@@ -611,15 +806,20 @@ if (isMainModule) {
   console.log(`[API] Binding to 0.0.0.0:${PORT}`);
 
   // Initialize Stripe before starting server (non-blocking)
-  // TODO: Restore when initStripe is implemented
-  // initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
+  initStripe().catch((err) => console.error("[STRIPE] Init error:", err.message));
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
+<<<<<<< HEAD
     console.log(`  POST   /api/rag (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
+=======
+    console.log(`  POST   /api/ingest (requires INGEST_ADMIN_TOKEN)`);
+    console.log(`  POST   /api/rag (requires API_USER_TOKEN)`);
+    console.log(`  POST   /api/tutor/v2 (AI tutoring with RAG v2)`);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
@@ -635,11 +835,23 @@ if (isMainModule) {
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
+<<<<<<< HEAD
+=======
+    console.log(`  POST   /api/practice/end-session`);
+    console.log(`\n👨‍💼 Admin Routes (requires Supabase admin):`);
+    console.log(`  GET    /api/admin/questions/needs-review`);
+    console.log(`  GET    /api/admin/questions/statistics`);
+    console.log(`  POST   /api/admin/questions/:id/approve`);
+    console.log(`  POST   /api/admin/questions/:id/reject`);
+    console.log(`\n📷 Student Routes (requires Supabase auth):`);
+    console.log(`  POST   /api/student/analyze-question`);
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);
     console.log(`  PATCH  /api/notifications/:id/read`);
     console.log(`  PATCH  /api/notifications/mark-all-read`);
+<<<<<<< HEAD
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions/current`);
@@ -650,6 +862,39 @@ if (isMainModule) {
     console.log(`  POST   /api/full-length/sessions/:sessionId/complete`);
     console.log(`  GET    /api/full-length/sessions/:sessionId/report`);
     console.log(`  GET    /api/full-length/sessions/:sessionId/review`);
+=======
+    console.log(`\n📤 Ingestion v2 Pipeline (requires INGEST_ADMIN_TOKEN):`);
+    console.log(`  POST   /api/ingest/pdf (v3 canonical upload)`);
+    console.log(`  POST   /api/ingest-llm (v3 upload)`);
+    console.log(`  POST   /api/ingest-llm/test (v3 test mode)`);
+    console.log(`  GET    /api/ingest-llm/status/:jobId`);
+    console.log(`  GET    /api/ingest-llm/jobs`);
+    console.log(`  GET    /api/ingest/jobs (alias)`);
+    console.log(`  POST   /api/ingest-llm/retry/:jobId`);
+    console.log(`  * /api/ingest-v2/* endpoints deprecated (410 Gone)`);
+    console.log(`\n📄 DocuPipe Integration (requires INGEST_ADMIN_TOKEN):`);
+    console.log(`  POST   /api/docupipe/ingest-poc`);
+  });
+
+  // Ingestion worker controls (if enabled)
+  try {
+    if (isWorkerEnabled()) {
+      startWorker();
+    }
+  } catch (e: any) {
+    console.warn("[WORKER] Worker not started:", e?.message ?? "unknown");
+  }
+
+  // Optional worker control endpoints (admin-only)
+  app.get("/api/admin/worker/status", requireSupabaseAdmin, (_req, res) => {
+    const workerStatus = getWorkerStatus();
+    res.json(workerStatus);
+  });
+
+  app.post("/api/admin/worker/stop", requireSupabaseAdmin, (_req, res) => {
+    stopWorker();
+    res.json({ ok: true });
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   });
 
   // Graceful shutdown

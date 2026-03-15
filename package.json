@@ -9,7 +9,11 @@
     "dev:client": "vite",
     "dev:all": "npx concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
     "prebuild": "rimraf dist client/dist",
+<<<<<<< HEAD
     "build": "vite build && pnpm -s exec esbuild server/index.ts --bundle --platform=node --packages=external --format=esm --outfile=dist/index.js",
+=======
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
     "postbuild": "node scripts/check-no-cdn-katex.js",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
@@ -17,10 +21,9 @@
     "lint": "echo 'No linting configured'",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
-    "test:ci": "vitest run tests/ci",
-    "test:integration": "vitest run tests/integration",
     "test:api": "vitest run apps/api/test",
     "test:watch": "vitest",
+<<<<<<< HEAD
     "test:all": "vitest run",
     "exam:smoke": "vitest run tests/ci/full-length-exam.smoke.test.ts",
     "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
@@ -29,6 +32,13 @@
     "route:validate": "node scripts/validate-route-registry.mjs",
     "audit:ci": "pnpm audit --json > audit-output.json || test -s audit-output.json",
     "verify:csrf": "npx tsx scripts/verify-csrf-protection.ts"
+=======
+    "ingest:dev": "tsx server/scripts/run-ingestion-dev.ts",
+    "cleanup:stems": "tsx server/scripts/cleanup-question-stems.ts",
+    "backfill:metadata": "tsx server/scripts/backfill-question-metadata.ts",
+    "test:security": "vitest run tests/idor.regression.test.ts tests/entitlements.regression.test.ts",
+    "audit:no-ingest": "rg -n --color=always 'api/ingest|ingestion-v4|ingest-llm' server apps | (grep . && (echo 'Ingest code found!' && exit 1) || exit 0)"
+>>>>>>> 72cc5b30fd35c01a282a1128e9b6226a69d0399b
   },
   "dependencies": {
     "@google-cloud/documentai": "^9.4.0",
@@ -143,7 +153,6 @@
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.30.4",
     "esbuild": "^0.25.10",
-    "esbuild-wasm": "^0.27.2",
     "jest": "^30.2.0",
     "jsdom": "^27.4.0",
     "postcss": "^8.5.6",
