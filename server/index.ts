@@ -4,7 +4,8 @@
  * Replaces the legacy monolithic server (now in server/legacy-server.ts)
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
- *   - POST /api/rag (authenticated users)
+ *   - POST /api/rag/v2 (structured retrieval)
+ *   - POST /api/tutor/v2 (Lisa tutoring)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -16,9 +17,8 @@ import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import rateLimit from "express-rate-limit";
 // SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
-// Canonical RAG route owners are apps/api/src/routes/rag.ts and apps/api/src/routes/rag-v2.ts.
+// Canonical RAG route owner is apps/api/src/routes/rag-v2.ts.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
-import { rag } from "../apps/api/src/routes/rag";
 import ragV2Router from "../apps/api/src/routes/rag-v2";
 import tutorV2Router from "./routes/tutor-v2";
 import { legalRouter } from "./routes/legal-routes.js";
@@ -234,18 +234,6 @@ const ragLimiter = rateLimit({
   max: 30,
   message: { error: "Too many RAG requests" },
 });
-
-// RAG endpoint - accepts EITHER Bearer token OR Supabase auth
-// CSRF protection applied for cookie-based auth (Bearer tokens are self-contained)
-// RAG endpoint - cookie-only auth, no Bearer allowed
-app.post(
-  "/api/rag",
-  ragLimiter,
-  csrfProtection,
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  rag
-);
 
 // RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
 app.use(
@@ -618,7 +606,7 @@ if (isMainModule) {
     console.log(`✅ Server listening on http://0.0.0.0:${PORT}`);
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
-    console.log(`  POST   /api/rag (requires Supabase auth)`);
+    console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
@@ -665,7 +653,3 @@ if (isMainModule) {
 }
 
 export default app;
-
-
-
-

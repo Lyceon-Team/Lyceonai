@@ -19,10 +19,35 @@ const DEFAULT_AUTO_REFRESH_DAYS = 7;
 const MIN_GENERATION_DAYS = 1;
 const MAX_GENERATION_DAYS = 30;
 const CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
+type CalendarEventType =
+  | "plan_generated"
+  | "day_edited"
+  | "plan_refreshed"
+  | "block_completed"
+  | "override_applied";
 
 export function isCalendarCountedEventType(eventType: string | null | undefined): boolean {
   if (!eventType) return true; // Legacy rows before event_type migration
   return CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
+}
+
+async function emitCalendarEvent(args: {
+  eventType: CalendarEventType;
+  userId: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await supabaseServer.from("system_event_logs").insert({
+      event_type: args.eventType,
+      level: "info",
+      source: "calendar_planner",
+      message: args.eventType,
+      user_id: args.userId,
+      details: args.details ?? null,
+    });
+  } catch {
+    // Best-effort observability; never break calendar runtime.
+  }
 }
 
 type PlannerMode = "auto" | "custom";
@@ -324,7 +349,7 @@ export async function syncCalendarDayFromSessions(
   try {
     const { data: planDay, error: planError } = await supabaseServer
       .from("student_study_plan_days")
-      .select("planned_minutes")
+      .select("day_date, planned_minutes, completed_minutes")
       .eq("user_id", userId)
       .eq("day_date", dayDate)
       .maybeSingle();
@@ -359,6 +384,8 @@ export async function syncCalendarDayFromSessions(
     }
 
     const completedMinutes = Math.min(600, Math.max(0, totalMinutes));
+    const priorStatus = computeStatus(planDay.planned_minutes ?? 0, planDay.completed_minutes ?? 0);
+    const nextStatus = computeStatus(planDay.planned_minutes ?? 0, completedMinutes);
 
     const { error: updateError } = await supabaseServer
       .from("student_study_plan_days")
@@ -368,6 +395,20 @@ export async function syncCalendarDayFromSessions(
 
     if (updateError) {
       console.warn("[calendar] syncCalendarDayFromSessions: failed to update", updateError.message);
+      return;
+    }
+
+    if (priorStatus !== "complete" && nextStatus === "complete") {
+      await emitCalendarEvent({
+        eventType: "block_completed",
+        userId,
+        details: {
+          day_date: dayDate,
+          planned_minutes: planDay.planned_minutes ?? 0,
+          completed_minutes: completedMinutes,
+          source: "practice_sessions_sync",
+        },
+      });
     }
   } catch (err: any) {
     console.warn("[calendar] syncCalendarDayFromSessions: unexpected error", err?.message || String(err));
@@ -804,6 +845,19 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
       }
     }
 
+    await emitCalendarEvent({
+      eventType: "plan_generated",
+      userId,
+      details: {
+        start_date,
+        end_date: generated.endDateStr,
+        generated_days: generated.planDays.length,
+        skipped_override_days: generated.skippedOverrideDays,
+        skipped_override_count: generated.skippedOverrideDays.length,
+        planner_mode: asPlannerMode(profile.planner_mode),
+      },
+    });
+
     return res.json({
       generated: {
         start_date,
@@ -859,6 +913,18 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
         dailyMinutes: profile.daily_minutes ?? DEFAULT_DAILY_MINUTES,
       });
 
+      await emitCalendarEvent({
+        eventType: "plan_refreshed",
+        userId,
+        details: {
+          applied: false,
+          planner_mode: "custom",
+          start_date: startDate,
+          requested_days: parsedDays,
+          reason: "Auto refresh is disabled in custom mode.",
+        },
+      });
+
       return res.json({
         applied: false,
         planner_mode: "custom",
@@ -897,6 +963,20 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
         return res.status(500).json({ error: "Failed to save auto-refreshed study plan", details: upsertError.message });
       }
     }
+
+    await emitCalendarEvent({
+      eventType: "plan_refreshed",
+      userId,
+      details: {
+        applied: true,
+        planner_mode: "auto",
+        start_date: startDate,
+        end_date: generated.endDateStr,
+        refreshed_days: generated.planDays.length,
+        skipped_override_days: generated.skippedOverrideDays,
+        skipped_override_count: generated.skippedOverrideDays.length,
+      },
+    });
 
     return res.json({
       applied: true,
@@ -983,6 +1063,24 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     if (upsertError) {
       return res.status(500).json({ error: "Failed to save manual day edit", details: upsertError.message });
     }
+
+    await emitCalendarEvent({
+      eventType: "day_edited",
+      userId,
+      details: {
+        day_date: dayDate,
+        planned_minutes: payload.planned_minutes,
+        plan_version: payload.plan_version,
+      },
+    });
+    await emitCalendarEvent({
+      eventType: "override_applied",
+      userId,
+      details: {
+        day_date: dayDate,
+        is_user_override: true,
+      },
+    });
 
     return res.json({
       updated: true,

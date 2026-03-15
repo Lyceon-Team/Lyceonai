@@ -3,7 +3,7 @@
  *
  * This is intentionally conservative:
  * - Exposes supabase for legacy callers.
- * - Exposes matchSimilar used by rag.ts.
+ * - Exposes matchSimilar for legacy vector callers.
  * - Exposes vectorStore as a backward-compatible wrapper.
  *
  * If Supabase env vars are missing, functions log and return empty results

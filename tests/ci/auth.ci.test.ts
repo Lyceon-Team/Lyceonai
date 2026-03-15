@@ -166,7 +166,7 @@ describe('CI Auth Tests', () => {
     const protectedEndpoints = [
       { method: 'get', path: '/api/profile', name: 'profile', needsOrigin: false },
       { method: 'post', path: '/api/practice/sessions', name: 'practice sessions', body: { mode: 'flow', section: 'math' }, needsOrigin: true },
-      { method: 'post', path: '/api/rag', name: 'RAG endpoint', body: { question: 'test' }, needsOrigin: true },
+      { method: 'post', path: '/api/rag/v2', name: 'RAG v2 endpoint', body: { userId: 'ignored', message: 'test', mode: 'concept' }, needsOrigin: true },
       { method: 'post', path: '/api/tutor/v2', name: 'Tutor v2', body: { message: 'test' }, needsOrigin: true },
     ];
 
@@ -191,10 +191,10 @@ describe('CI Auth Tests', () => {
     });
 
     // Test that POST endpoints are CSRF protected (403 without Origin)
-    it('should block POST /api/rag without Origin/Referer (CSRF protection)', async () => {
+    it('should block POST /api/rag/v2 without Origin/Referer (CSRF protection)', async () => {
       const res = await request(app)
-        .post('/api/rag')
-        .send({ question: 'test' });
+        .post('/api/rag/v2')
+        .send({ userId: 'ignored', message: 'test', mode: 'concept' });
       
       // Should get 403 (CSRF blocked) before auth check
       expect(res.status).toBe(403);
@@ -298,4 +298,5 @@ describe('Error Handling', () => {
     });
   });
 });
+
 

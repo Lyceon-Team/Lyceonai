@@ -45,6 +45,13 @@
 - Loss of entitlement does not delete or mutate existing plan history or override rows.
 - Calendar read endpoints remain available so prior history and override state stay visible.
 
+## Observability Events
+- Canonical calendar observability writes are best-effort into `system_event_logs` from `apps/api/src/routes/calendar.ts`.
+- Emitted event types: `plan_generated`, `day_edited`, `plan_refreshed`, `override_applied`, `block_completed`.
+- `block_completed` is emitted only when session-derived completion transitions a day into complete status.
+
+See also: `docs/calendar/CALENDAR_RUNTIME_CONTRACT.md` for route-level behavior contract.
+
 ## Proof Commands (CAL1)
 ```bash
 pnpm -s exec vitest run tests/ci/calendar.ownership.contract.test.ts
