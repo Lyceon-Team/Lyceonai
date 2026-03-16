@@ -14,11 +14,13 @@ interface BillingStatus {
   stripeSubscriptionId: string | null;
   effectiveAccess: boolean;
   needsPaymentUpdate: boolean;
+  requiresStudentSubscription?: boolean;
   isPaid: boolean;
   premiumSource?: 'student' | 'guardian' | 'both' | 'none';
   hasLinkedStudent?: boolean;
   linkRequiredForPremium?: boolean;
   billingOwnerRole?: 'student' | 'guardian';
+  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
 interface PriceOption {
@@ -237,7 +239,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             </div>
             <CardTitle className="text-2xl text-[#0F2E48]">Payment Update Required</CardTitle>
             <CardDescription className="text-base">
-              Your subscription payment needs attention to continue accessing parent features.
+              Your linked student's subscription needs attention before guardian reporting can unlock again.
             </CardDescription>
           </CardHeader>
           
@@ -246,8 +248,8 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
                 {billingStatus.stripeStatus === 'past_due' 
-                  ? 'Your recent payment failed. Please update your payment method.'
-                  : 'Your subscription period has ended. Please renew to continue.'}
+                  ? 'The linked student subscription payment failed. Please update the payment method.'
+                  : 'The linked student subscription has expired. Renew it to restore guardian visibility.'}
               </AlertDescription>
             </Alert>
           </CardContent>
@@ -278,6 +280,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   }
 
   const prices = Array.isArray(pricesData) ? pricesData : [];
+  const requiresStudentSubscription = !!billingStatus?.requiresStudentSubscription;
 
   if (pricesError) {
     return (
@@ -301,13 +304,26 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
           <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-[#0F2E48]/10 flex items-center justify-center">
             <Shield className="h-8 w-8 text-[#0F2E48]" />
           </div>
-          <CardTitle className="text-2xl text-[#0F2E48]">Parent Access Subscription</CardTitle>
+          <CardTitle className="text-2xl text-[#0F2E48]">
+            {requiresStudentSubscription ? 'Student Subscription Required' : 'Parent Access Subscription'}
+          </CardTitle>
           <CardDescription className="text-base">
-            Subscribe to monitor your child's SAT preparation progress
+            {requiresStudentSubscription
+              ? "Guardian reporting unlocks only when your linked student's subscription is active."
+              : "Subscribe to monitor your child's SAT preparation progress"}
           </CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6">
+          {requiresStudentSubscription && (
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                Billing is tied to the linked student account. Start or renew the student subscription to unlock guardian visibility.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-3">
             <div className="flex items-start gap-3">
               <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
@@ -420,7 +436,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                Subscribe Now
+                {requiresStudentSubscription ? 'Start Student Subscription' : 'Subscribe Now'}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </>
             )}

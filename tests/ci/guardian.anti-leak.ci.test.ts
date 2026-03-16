@@ -37,7 +37,7 @@ function buildAccess(overrides: Partial<GuardianAccessMock> = {}): GuardianAcces
     hasPremiumAccess: false,
     hasActiveLink: true,
     premiumSource: 'none',
-    reason: 'No active paid entitlement on linked student-guardian pair.',
+    reason: 'Linked student account does not have an active premium entitlement.',
     studentUserId: 'student-456',
     guardianUserId: 'guardian-123',
     studentAccountId: 'acc-789',

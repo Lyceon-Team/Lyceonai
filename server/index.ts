@@ -334,14 +334,14 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/sessions", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, startReviewErrorSession);
+app.post("/api/review-errors/sessions", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, startReviewErrorSession);
 app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
-app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitReviewSessionAnswer);
+app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
-app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
+app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitQuestionFeedback);
 
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use("/api/guardian", guardianRoutes);

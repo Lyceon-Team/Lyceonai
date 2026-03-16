@@ -6,6 +6,8 @@ const accountMocks = vi.hoisted(() => ({
   incrementUsage: vi.fn(),
   getAccountIdForUser: vi.fn(),
   ensureAccountForUser: vi.fn(),
+  resolveLinkedPairPremiumAccessForStudent: vi.fn(),
+  resolveLinkedPairPremiumAccessForGuardian: vi.fn(),
 }));
 
 vi.mock('../../server/lib/account', () => ({
@@ -13,6 +15,8 @@ vi.mock('../../server/lib/account', () => ({
   incrementUsage: accountMocks.incrementUsage,
   getAccountIdForUser: accountMocks.getAccountIdForUser,
   ensureAccountForUser: accountMocks.ensureAccountForUser,
+  resolveLinkedPairPremiumAccessForStudent: accountMocks.resolveLinkedPairPremiumAccessForStudent,
+  resolveLinkedPairPremiumAccessForGuardian: accountMocks.resolveLinkedPairPremiumAccessForGuardian,
   FREE_TIER_LIMITS: {
     practice: 10,
     ai_chat: 5,
@@ -58,6 +62,12 @@ describe('Usage Limit Middleware Contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     accountMocks.getAccountIdForUser.mockResolvedValue('acc-test');
+    accountMocks.resolveLinkedPairPremiumAccessForStudent.mockResolvedValue({
+      hasPremiumAccess: false,
+    });
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockResolvedValue({
+      hasPremiumAccess: false,
+    });
     accountMocks.checkUsageLimit.mockResolvedValue({
       allowed: true,
       current: 0,
