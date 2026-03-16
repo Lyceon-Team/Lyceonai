@@ -31,6 +31,23 @@ ALTER TABLE public.student_study_plan_days
   ADD COLUMN IF NOT EXISTS completed_task_count INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS study_minutes_target INTEGER NOT NULL DEFAULT 0;
 
+UPDATE public.student_study_plan_days
+SET status = CASE status
+  WHEN 'complete' THEN 'completed'
+  WHEN 'in_progress' THEN 'partially_completed'
+  WHEN 'planned' THEN 'planned'
+  WHEN 'completed' THEN 'completed'
+  WHEN 'partially_completed' THEN 'partially_completed'
+  WHEN 'missed' THEN 'missed'
+  ELSE 'planned'
+END;
+
+UPDATE public.student_study_plan_days
+SET generation_source = CASE
+  WHEN generation_source IN ('auto', 'user', 'refresh', 'regenerate', 'generate') THEN generation_source
+  ELSE 'auto'
+END;
+
 DO $$
 BEGIN
   IF NOT EXISTS (

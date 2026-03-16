@@ -5,6 +5,9 @@ export interface StudyProfile {
   exam_date: string | null;
   daily_minutes: number | null;
   timezone: string | null;
+  planner_mode?: "auto" | "custom" | null;
+  full_test_cadence?: "weekly" | "biweekly" | "none" | null;
+  preferred_study_days?: number[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +23,10 @@ export interface StudyPlanDay {
   generated_at: string;
   created_at: string;
   updated_at: string;
+  is_exam_day?: boolean;
+  is_taper_day?: boolean;
+  is_full_test_day?: boolean;
+  status_canonical?: string | null;
 }
 
 export async function getCalendarProfile(): Promise<StudyProfile | null> {
@@ -71,4 +78,67 @@ export async function getCalendarMonth(start: string, end: string): Promise<Cale
     days: data.days ?? [],
     streak: data.streak ?? { current: 0, longest: 0 },
   };
+}
+
+export async function generateCalendarPlan(startDate: string, days = 28): Promise<any> {
+  const response = await fetch('/api/calendar/generate', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ start_date: startDate, days }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to generate plan');
+  }
+  return data;
+}
+
+export async function refreshCalendarPlan(startDate: string, days = 28): Promise<any> {
+  const response = await fetch('/api/calendar/refresh/auto', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ start_date: startDate, days }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to refresh plan');
+  }
+  return data;
+}
+
+export async function regenerateCalendarPlan(startDate: string, days = 28): Promise<any> {
+  const response = await fetch('/api/calendar/regenerate', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ start_date: startDate, days }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to regenerate plan');
+  }
+  return data;
+}
+
+export async function updateCalendarDay(
+  dayDate: string,
+  payload: {
+    planned_minutes: number;
+    focus?: Array<{ section: string; weight: number; competencies?: string[] }>;
+    tasks: Array<{ type: string; section: string; mode: string; minutes: number; status?: string }>;
+  },
+): Promise<any> {
+  const response = await fetch(`/api/calendar/day/${dayDate}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to update day');
+  }
+  return data;
 }

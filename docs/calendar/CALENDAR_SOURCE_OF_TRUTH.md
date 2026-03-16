@@ -1,64 +1,66 @@
 # Calendar Source Of Truth
 
-## Canonical Runtime Owner
-- Mounted runtime owner: `server/index.ts` mounts `app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter)`.
-- Canonical planner logic implementation: `apps/api/src/routes/calendar.ts` (mounted via `server/routes/legacy/calendar.ts` re-export).
-- Guardian calendar runtime is read-only and isolated to `server/routes/guardian-routes.ts`.
+## Canonical Runtime Owners
+- Student planner runtime: `apps/api/src/routes/calendar.ts`.
+- Deterministic planner engine: `apps/api/src/services/calendar-planner.ts`.
+- Guardian read-only calendar: `server/routes/guardian-routes.ts` (`GET /api/guardian/students/:studentId/calendar/month`).
 
-## Canonical Plan Generator
-- Canonical generation endpoint: `POST /api/calendar/generate`.
-- Generator computes heuristic `focus` and `tasks` from weakest-skill signals and profile `daily_minutes`.
-- Generation uses row-level version bumps (`plan_version`) and preserves user ownership flags.
+## Canonical Planner State
+- `student_study_profile`:
+  - `planner_mode`
+  - `daily_minutes`
+  - `exam_date`
+  - `full_test_cadence`
+  - `preferred_study_days`
+  - timezone
+- `student_study_plan_days`:
+  - day header, override, status, generation source, exam/taper/full-test flags
+- `student_study_plan_tasks`:
+  - ordered task ledger (`ordinal`)
+  - task type, section, duration
+  - source metadata and status
+  - planner-owned vs user-owned ownership
 
-## Override Semantics
-- Manual day edits use `PUT /api/calendar/day/:dayDate`.
-- Manual edits set `is_user_override = true`.
-- Any day with `is_user_override = true` is frozen against system regeneration paths.
-- Explicit single-day regenerate (`POST /api/calendar/day/:dayDate/regenerate` or `/reset`) clears override lock on that one day by writing regenerated output with `is_user_override = false`.
+## Deterministic Planning Inputs
+- Mastery-derived skill signals (`skill_mastery`).
+- Attempt recency/miss patterns (`student_question_attempts`).
+- Existing plan/task history for suppression/rotation and cadence stability.
+- Profile settings from `student_study_profile`.
+- No LLM/AI planner path is used in runtime generation.
 
-## Auto/Custom Mode Behavior
-- Global mode column: `student_study_profile.planner_mode`.
-- Allowed values: `auto`, `custom`.
-- Mode endpoints:
-  - `GET /api/calendar/mode`
-  - `PUT /api/calendar/mode`
-  - `GET /api/calendar/profile` and `PUT /api/calendar/profile` also include `planner_mode`.
-- Auto refresh endpoint: `POST /api/calendar/refresh/auto`.
-  - `auto` mode: can regenerate non-overridden days only.
-  - `custom` mode: returns suggestions only (`applied: false`) and never auto-applies changes.
+## Non-Negotiable Ownership Rules
+- Student is the only planner writer.
+- Guardian is read-only and summary-safe.
+- Client cannot author override truth, planner mode truth, or completion truth.
+- Day/task mutation rights are server-enforced by role + entitlement + ownership checks.
 
-## Regeneration Contracts
-- Full-range regenerate (`POST /api/calendar/generate` on existing rows):
-  - never rewrites overridden days.
-  - reports skipped override days.
-- Single-day regenerate (`POST /api/calendar/day/:dayDate/regenerate` and `/reset`):
-  - recalculates exactly one day.
-  - can rewrite an overridden day only because it is explicit student-triggered regeneration.
+## Regeneration Rules
+- Refresh (`/refresh/auto`) preserves overrides.
+- Regenerate (`/regenerate`) replaces future overrides.
+- Single-day regenerate/reset operates only on targeted day.
+- Past days are immutable.
 
-## Guardian Read-Only Rule
-- Guardians are blocked from student calendar write paths by mount-time role guard (`requireStudentOrAdmin`).
-- Guardian calendar route (`GET /api/guardian/students/:studentId/calendar/month`) only reads and returns data.
-- No guardian calendar write or regenerate endpoint is mounted.
+## Entitlement Rules
+- Calendar endpoints under `/api/calendar/*` require active paid entitlement.
+- Entitlement failure is explicit (`402` with `CALENDAR_PREMIUM_REQUIRED`).
+- Guardian month view is separately entitlement-gated by guardian middleware.
 
-## Entitlement Behavior
-- Locked planner write features (full regeneration, auto refresh, single-day regenerate) require active entitlement.
-- Loss of entitlement does not delete or mutate existing plan history or override rows.
-- Calendar read endpoints remain available so prior history and override state stay visible.
+## Telemetry Source Of Truth
+- Planner telemetry is emitted only from calendar runtime into `system_event_logs`.
+- Canonical event set:
+  - `plan_generated`
+  - `day_edited`
+  - `plan_refreshed`
+  - `override_applied`
+  - `block_completed`
 
-## Observability Events
-- Canonical calendar observability writes are best-effort into `system_event_logs` from `apps/api/src/routes/calendar.ts`.
-- Emitted event types: `plan_generated`, `day_edited`, `plan_refreshed`, `override_applied`, `block_completed`.
-- `block_completed` is emitted only when session-derived completion transitions a day into complete status.
+## De-duplicated Runtime Path
+- `server/routes/legacy/calendar.ts` remains mount shim only.
+- No alternate active planner runtime remains in `server/**` for student calendar writes.
 
-See also: `docs/calendar/CALENDAR_RUNTIME_CONTRACT.md` for route-level behavior contract.
-
-## Proof Commands (CAL1)
+## Validation (CAL1)
 ```bash
-pnpm -s exec vitest run tests/ci/calendar.ownership.contract.test.ts
-pnpm -s exec tsc -p tsconfig.ci.json
+corepack pnpm -s exec tsc -p tsconfig.ci.json
+npx vitest run tests/ci/calendar.ownership.contract.test.ts tests/ci/guardian-reporting.contract.test.ts tests/review-outcomes.kpi-calendar.contract.test.ts --reporter=dot --silent
+rg -n "calendarRouter|/api/calendar|student_study_plan_tasks" server apps/api/src/routes apps/api/src/services
 ```
-
-## Deprecated / Quarantined Legacy Paths
-- `server/routes/legacy/calendar.ts` is a mount shim only (no planner logic).
-- `POST /api/me/mastery/add-to-plan` no longer writes plan rows; it returns suggestions and points canonical writes to `/api/calendar/day/:dayDate`.
-- Calendar ownership is centralized under `/api/calendar/*` to avoid dual planner truth.
