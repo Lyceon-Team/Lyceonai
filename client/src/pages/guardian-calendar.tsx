@@ -10,7 +10,6 @@ interface GuardianCalendarDay {
   planned_minutes: number;
   completed_minutes: number | null;
   status: string | null;
-  focus: Array<{ section: string; weight: number }> | null;
   attempt_count: number;
   accuracy: number | null;
   avg_seconds_per_question: number | null;
@@ -354,3 +353,4 @@ export default function GuardianCalendarPage() {
     </div>
   );
 }
+

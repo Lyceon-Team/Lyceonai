@@ -32,7 +32,6 @@ interface StudentSummary {
   student: {
     id: string;
     displayName: string | null;
-    email: string;
   };
   progress: {
     practiceMinutesLast7Days: number;

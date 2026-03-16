@@ -28,6 +28,44 @@ export function isGuardianCalendarCountedEventType(eventType: string | null | un
   return GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
 }
 
+type GuardianAccessEventType =
+  | 'guardian_dashboard_viewed'
+  | 'guardian_calendar_viewed'
+  | 'guardian_report_viewed'
+  | 'guardian_access_denied';
+
+async function emitGuardianAccessEvent(args: {
+  eventType: GuardianAccessEventType;
+  guardianId: string;
+  studentId?: string;
+  requestId?: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await supabaseServer.from('system_event_logs').insert({
+      event_type: args.eventType,
+      level: 'info',
+      source: 'guardian_routes',
+      message: args.eventType,
+      user_id: args.guardianId,
+      session_id: args.studentId ?? null,
+      details: {
+        request_id: args.requestId ?? null,
+        student_id: args.studentId ?? null,
+        ...(args.details ?? {}),
+      },
+    });
+  } catch {
+    // Best effort only.
+  }
+}
+
+function toGuardianWeaknessPriority(score: number): 'low' | 'medium' | 'high' {
+  if (score >= 0.66) return 'high';
+  if (score >= 0.33) return 'medium';
+  return 'low';
+}
+
 async function auditLog(
   guardianId: string,
   action: 'link_attempt' | 'link_success' | 'unlink_success',
@@ -63,6 +101,12 @@ router.get('/students', requireSupabaseAuth, requireGuardianAccess, async (req: 
     // CANONICAL: Read from guardian_links, join profiles for display info
     const links = await getAllGuardianStudentLinks(guardianId);
     if (links.length === 0) {
+      await emitGuardianAccessEvent({
+        eventType: 'guardian_dashboard_viewed',
+        guardianId,
+        requestId,
+        details: { linked_student_count: 0 },
+      });
       return res.json({ students: [], requestId });
     }
 
@@ -78,6 +122,12 @@ router.get('/students', requireSupabaseAuth, requireGuardianAccess, async (req: 
       return res.status(500).json({ error: 'Failed to fetch students', requestId });
     }
 
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_dashboard_viewed',
+      guardianId,
+      requestId,
+      details: { linked_student_count: (students || []).length },
+    });
     res.json({ students: students || [], requestId });
   } catch (err) {
     logger.error('GUARDIAN', 'list_students', 'Error', { err, requestId });
@@ -210,12 +260,19 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianA
     const linked = await isGuardianLinkedToStudent(guardianId, studentId);
     if (!linked && req.user!.role !== 'admin') {
       logger.warn('GUARDIAN', 'summary_access_denied', 'Student not found or not linked to guardian', { guardianId, studentId, requestId });
+      await emitGuardianAccessEvent({
+        eventType: 'guardian_access_denied',
+        guardianId,
+        studentId,
+        requestId,
+        details: { surface: 'summary', reason: 'not_linked' },
+      });
       return res.status(404).json({ error: 'Student not found', requestId });
     }
 
     const { data: student, error: studentError } = await supabaseServer
       .from('profiles')
-      .select('id, email, display_name, created_at')
+      .select('id, display_name')
       .eq('id', studentId)
       .eq('role', 'student')
       .single();
@@ -226,12 +283,18 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianA
 
     const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
     const guardianView = buildGuardianSummaryKpiView(snapshot);
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_report_viewed',
+      guardianId,
+      studentId,
+      requestId,
+      details: { surface: 'summary' },
+    });
 
     return res.json({
       student: {
         id: student.id,
         displayName: student.display_name,
-        email: student.email,
       },
       progress: guardianView.progress,
       metrics: guardianView.metrics,
@@ -352,6 +415,13 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
           sessionId,
           requestId,
         });
+        await emitGuardianAccessEvent({
+          eventType: 'guardian_access_denied',
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: 'full_length_report', session_id: sessionId, reason: 'not_linked' },
+        });
         return res.status(403).json({ error: 'Not authorized to view this student', requestId });
       }
     }
@@ -366,6 +436,13 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
       studentId,
       sessionId,
       requestId,
+    });
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_report_viewed',
+      guardianId,
+      studentId,
+      requestId,
+      details: { surface: 'full_length_report', session_id: sessionId },
     });
 
     return res.json({
@@ -399,20 +476,27 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const start = req.query.start as string | undefined;
     const end = req.query.end as string | undefined;
 
-    if (!start || !isIsoDate(start)) {
-      return res.status(400).json({ error: 'start query param must be YYYY-MM-DD', requestId });
-    }
-    if (!end || !isIsoDate(end)) {
-      return res.status(400).json({ error: 'end query param must be YYYY-MM-DD', requestId });
-    }
-
     if (!isAdmin) {
       // CANONICAL: Verify link via guardian_links
       const linked = await isGuardianLinkedToStudent(guardianId, studentId);
       if (!linked) {
         logger.warn('GUARDIAN', 'calendar_access_denied', 'Student not found or not linked', { guardianId, studentId, requestId });
+        await emitGuardianAccessEvent({
+          eventType: 'guardian_access_denied',
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: 'calendar', reason: 'not_linked' },
+        });
         return res.status(404).json({ error: 'Student not found', requestId });
       }
+    }
+
+    if (!start || !isIsoDate(start)) {
+      return res.status(400).json({ error: 'start query param must be YYYY-MM-DD', requestId });
+    }
+    if (!end || !isIsoDate(end)) {
+      return res.status(400).json({ error: 'end query param must be YYYY-MM-DD', requestId });
     }
 
     const { data: profile } = await supabaseServer
@@ -429,7 +513,7 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
       supabaseServer
         .from('student_study_plan_days')
-        .select('day_date, planned_minutes, completed_minutes, status, focus, tasks, plan_version, created_at, updated_at, is_user_override')
+        .select('day_date, planned_minutes, completed_minutes, status')
         .eq('user_id', studentId)
         .gte('day_date', start)
         .lte('day_date', end)
@@ -470,7 +554,10 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     const enrichedDays = (planDaysResult.data ?? []).map(day => {
       const dayStats = attemptsByDay.get(day.day_date);
       return {
-        ...day,
+        day_date: day.day_date,
+        planned_minutes: day.planned_minutes,
+        completed_minutes: day.completed_minutes,
+        status: day.status,
         attempt_count: dayStats?.attempts ?? 0,
         accuracy: dayStats && dayStats.attempts > 0
           ? Math.round((dayStats.correct / dayStats.attempts) * 100)
@@ -482,6 +569,13 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     });
 
     logger.info('GUARDIAN', 'calendar_view', 'Guardian viewed student calendar', { guardianId, studentId, start, end, requestId });
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_calendar_viewed',
+      guardianId,
+      studentId,
+      requestId,
+      details: { surface: 'calendar', start, end, day_count: enrichedDays.length },
+    });
 
     return res.json({
       days: enrichedDays,
@@ -507,6 +601,13 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
     const linked = await isGuardianLinkedToStudent(guardianId, studentId);
     if (!linked && req.user!.role !== 'admin') {
       logger.warn('GUARDIAN', 'weaknesses_denied', 'Guardian tried to view non-linked student', { guardianId, studentId, requestId });
+      await emitGuardianAccessEvent({
+        eventType: 'guardian_access_denied',
+        guardianId,
+        studentId,
+        requestId,
+        details: { surface: 'weaknesses', reason: 'not_linked' },
+      });
       return res.status(403).json({ error: 'Not authorized to view this student', requestId });
     }
 
@@ -526,18 +627,23 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
       limit: 20,
     });
 
-    // Transform canonical mastery-derived signals to guardian weakness payload.
+    // Transform canonical mastery-derived signals to guardian-safe weakness summaries.
     const weakestAreas = derivedWeakness.map((s) => ({
       competency_key: s.competencyKey,
       section: s.section,
       attempts: s.attempts,
-      correct: s.correct,
-      incorrect: s.incorrect,
-      skipped: s.skipped,
-      weakness_score: s.weaknessScore,
+      accuracy: s.attempts > 0 ? Math.round((s.correct / s.attempts) * 100) : null,
+      priority: toGuardianWeaknessPriority(s.weaknessScore),
       updated_at: s.updatedAt,
     }));
     logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: weakestAreas.length, requestId });
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_report_viewed',
+      guardianId,
+      studentId,
+      requestId,
+      details: { surface: 'weaknesses', count: weakestAreas.length },
+    });
 
     return res.json({
       studentId,
