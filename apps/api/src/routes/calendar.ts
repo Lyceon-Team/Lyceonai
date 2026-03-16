@@ -1,7 +1,6 @@
-import { Router, Response } from "express";
-import { supabaseServer } from "../lib/supabase-server";
-import { getWeakestSkills } from "../services/studentMastery";
+import { Router, type Response } from "express";
 import { DateTime } from "luxon";
+import { supabaseServer } from "../lib/supabase-server";
 import {
   type AuthenticatedRequest,
   type SupabaseUser,
@@ -10,32 +9,200 @@ import {
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "../services/mastery-constants";
+import {
+  DEFAULT_HORIZON_DAYS,
+  type DayStatus,
+  type FullTestCadence,
+  generateDeterministicPlan,
+  resolvePlannerWindow,
+  type SkillSignal,
+  type StudyProfileSettings,
+  type TaskType,
+} from "../services/calendar-planner";
 
 export const calendarRouter = Router();
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const DEFAULT_DAILY_MINUTES = 30;
-const DEFAULT_AUTO_REFRESH_DAYS = 7;
-const MIN_GENERATION_DAYS = 1;
-const MAX_GENERATION_DAYS = 30;
 const CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
-type CalendarEventType =
-  | "plan_generated"
-  | "day_edited"
-  | "plan_refreshed"
-  | "block_completed"
-  | "override_applied";
+
+type PlannerMode = "auto" | "custom";
+type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed";
+type CalendarEventType = "plan_generated" | "day_edited" | "plan_refreshed" | "block_completed" | "override_applied";
+type GenerationSource = "auto" | "user" | "refresh" | "regenerate" | "generate";
+
+type StudyProfileRow = {
+  user_id: string;
+  baseline_score: number | null;
+  target_score: number | null;
+  exam_date: string | null;
+  daily_minutes: number | null;
+  timezone: string | null;
+  planner_mode: PlannerMode | null;
+  full_test_cadence: FullTestCadence | null;
+  preferred_study_days: number[] | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type PlanDayRow = {
+  id: string;
+  user_id: string;
+  day_date: string;
+  planned_minutes: number;
+  completed_minutes: number;
+  focus: unknown;
+  tasks: unknown;
+  plan_version: number;
+  generated_at: string;
+  is_user_override: boolean;
+  status: DayStatus;
+  generation_source: GenerationSource;
+  is_exam_day: boolean;
+  is_taper_day: boolean;
+  is_full_test_day: boolean;
+  required_task_count: number;
+  completed_task_count: number;
+  study_minutes_target: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type PlanTaskRow = {
+  id: string;
+  day_id: string;
+  user_id: string;
+  day_date: string;
+  ordinal: number;
+  task_type: TaskType;
+  section: "MATH" | "RW" | null;
+  duration_minutes: number;
+  source_skill_code: string | null;
+  source_domain: string | null;
+  source_subskill: string | null;
+  source_reason: Record<string, unknown>;
+  status: TaskStatus;
+  is_user_override: boolean;
+  planner_owned: boolean;
+  metadata: Record<string, unknown>;
+  completed_at: string | null;
+};
+
+type AttemptRow = {
+  attempted_at: string | null;
+  is_correct: boolean | null;
+  time_spent_ms: number | null;
+  section: string | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  question_canonical_id: string | null;
+  event_type: string | null;
+};
+
+type SkillMasteryRow = {
+  section: string | null;
+  domain: string | null;
+  skill: string | null;
+  mastery_score: number | null;
+  accuracy: number | null;
+  last_attempt_at: string | null;
+};
+
+type CalendarProfileInput = {
+  baseline_score?: unknown;
+  target_score?: unknown;
+  exam_date?: unknown;
+  daily_minutes?: unknown;
+  timezone?: unknown;
+  planner_mode?: unknown;
+  full_test_cadence?: unknown;
+  preferred_study_days?: unknown;
+};
+
+type ProfileSummary = {
+  timezone: string;
+  examDate: string | null;
+  dailyMinutes: number;
+  plannerMode: PlannerMode;
+  fullTestCadence: FullTestCadence;
+  preferredStudyDays: number[];
+};
+
+function isIsoDate(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function asPlannerMode(value: unknown): PlannerMode {
+  return value === "custom" ? "custom" : "auto";
+}
+
+function asFullTestCadence(value: unknown): FullTestCadence {
+  if (value === "weekly" || value === "none") return value;
+  return "biweekly";
+}
+
+function normalizePreferredStudyDays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [1, 2, 3, 4, 5, 6, 7];
+  const days = Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === "number" ? Math.trunc(item) : Number.NaN))
+        .filter((item) => Number.isInteger(item) && item >= 1 && item <= 7),
+    ),
+  );
+  return days.length > 0 ? days.sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7];
+}
+
+function normalizeSection(value: string | null | undefined): "MATH" | "RW" | null {
+  const normalized = (value || "").toLowerCase().trim();
+  if (!normalized) return null;
+  if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
+  if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
+  return null;
+}
+
+function parseTaskStatus(value: unknown): TaskStatus {
+  if (value === "completed" || value === "in_progress" || value === "skipped" || value === "missed") return value;
+  return "planned";
+}
+
+function legacyDayStatus(status: DayStatus): "planned" | "in_progress" | "complete" | "missed" {
+  if (status === "completed") return "complete";
+  if (status === "partially_completed") return "in_progress";
+  return status;
+}
+
+function canonicalDayStatus(value: unknown): DayStatus {
+  if (value === "completed" || value === "partially_completed" || value === "missed") return value;
+  if (value === "complete") return "completed";
+  if (value === "in_progress") return "partially_completed";
+  return "planned";
+}
+
+function computeDayStatusFromTasks(dayDate: string, todayDate: string, tasks: PlanTaskRow[]): {
+  status: DayStatus;
+  requiredTaskCount: number;
+  completedTaskCount: number;
+} {
+  const requiredTasks = tasks.filter((task) => task.metadata?.required !== false);
+  const requiredTaskCount = requiredTasks.length;
+  const completedTaskCount = requiredTasks.filter((task) => task.status === "completed").length;
+  const inProgressTaskCount = requiredTasks.filter((task) => task.status === "in_progress").length;
+
+  if (requiredTaskCount === 0) return { status: "planned", requiredTaskCount, completedTaskCount };
+  if (completedTaskCount >= requiredTaskCount) return { status: "completed", requiredTaskCount, completedTaskCount };
+  if (completedTaskCount > 0 || inProgressTaskCount > 0) return { status: "partially_completed", requiredTaskCount, completedTaskCount };
+  if (dayDate < todayDate) return { status: "missed", requiredTaskCount, completedTaskCount };
+  return { status: "planned", requiredTaskCount, completedTaskCount };
+}
 
 export function isCalendarCountedEventType(eventType: string | null | undefined): boolean {
-  if (!eventType) return true; // Legacy rows before event_type migration
+  if (!eventType) return true;
   return CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
 }
 
-async function emitCalendarEvent(args: {
-  eventType: CalendarEventType;
-  userId: string;
-  details?: Record<string, unknown>;
-}): Promise<void> {
+async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: string; details?: Record<string, unknown> }): Promise<void> {
   try {
     await supabaseServer.from("system_event_logs").insert({
       event_type: args.eventType,
@@ -46,935 +213,779 @@ async function emitCalendarEvent(args: {
       details: args.details ?? null,
     });
   } catch {
-    // Best-effort observability; never break calendar runtime.
+    // best effort only
   }
 }
 
-type PlannerMode = "auto" | "custom";
-
-type HeuristicFocus = { section: string; competencies?: string[]; weight: number };
-type HeuristicTask = { type: string; section: string; mode: string; minutes: number };
-
-interface StudyProfileRow {
-  user_id: string;
-  baseline_score: number | null;
-  target_score: number | null;
-  exam_date: string | null;
-  daily_minutes: number | null;
-  timezone: string | null;
-  planner_mode?: PlannerMode | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface ExistingPlanDayRow {
-  day_date: string;
-  plan_version: number | null;
-  is_user_override?: boolean | null;
-}
-
-interface BuildPlanRowsResult {
-  endDateStr: string;
-  planDays: Array<{
-    user_id: string;
-    day_date: string;
-    planned_minutes: number;
-    focus: HeuristicFocus[];
-    tasks: HeuristicTask[];
-    plan_version: number;
-    generated_at: string;
-    is_user_override: boolean;
-  }>;
-  skippedOverrideDays: string[];
-}
-
-function isIsoDate(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function asPlannerMode(value: unknown): PlannerMode {
-  return value === "custom" ? "custom" : "auto";
-}
-
-function parseGenerationDays(rawDays: unknown, fallback: number): number | null {
-  const value = rawDays == null ? fallback : rawDays;
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return null;
-  }
-  if (value < MIN_GENERATION_DAYS || value > MAX_GENERATION_DAYS) {
-    return null;
-  }
-  return value;
-}
-
-function getLocalDayBounds(timezone: string, localDate: string): { utcStart: string; utcEnd: string } {
-  try {
-    const startOfDay = DateTime.fromISO(localDate, { zone: timezone }).startOf("day");
-    const endOfDay = startOfDay.endOf("day");
-
-    if (!startOfDay.isValid || !endOfDay.isValid) {
-      throw new Error("Invalid date or timezone");
-    }
-
-    return {
-      utcStart: startOfDay.toUTC().toISO()!,
-      utcEnd: endOfDay.toUTC().toISO()!,
-    };
-  } catch {
-    return {
-      utcStart: `${localDate}T00:00:00.000Z`,
-      utcEnd: `${localDate}T23:59:59.999Z`,
-    };
-  }
-}
-
-function computeStatus(plannedMinutes: number, completedMinutes: number): string {
-  if (plannedMinutes <= 0) return "planned";
-  if (completedMinutes === 0) return "missed";
-  if (completedMinutes < plannedMinutes) return "in_progress";
-  return "complete";
-}
-
-function buildHeuristicFocusAndTasks(
-  dailyMinutes: number,
-  weaknesses: Array<{ section?: string | null; skill?: string | null }>
-): { focus: HeuristicFocus[]; tasks: HeuristicTask[] } {
-  let focus: HeuristicFocus[] = [];
-  let tasks: HeuristicTask[] = [];
-
-  if (weaknesses.length > 0) {
-    const mathWeaknesses = weaknesses.filter(
-      (w) =>
-        w.section?.toLowerCase() === "math" ||
-        (typeof w.skill === "string" && w.skill.startsWith("math."))
-    );
-    const rwWeaknesses = weaknesses.filter(
-      (w) =>
-        w.section?.toLowerCase().includes("reading") ||
-        w.section?.toLowerCase() === "rw" ||
-        (typeof w.skill === "string" && w.skill.startsWith("rw."))
-    );
-
-    const mathCompetencies = mathWeaknesses
-      .map((w) => w.skill)
-      .filter((value): value is string => typeof value === "string")
-      .slice(0, 3);
-    const rwCompetencies = rwWeaknesses
-      .map((w) => w.skill)
-      .filter((value): value is string => typeof value === "string")
-      .slice(0, 3);
-
-    const hasMathWeakness = mathCompetencies.length > 0;
-    const hasRwWeakness = rwCompetencies.length > 0;
-
-    const mathWeight = hasMathWeakness && hasRwWeakness ? 0.6 : hasMathWeakness ? 1 : 0;
-    const rwWeight = hasMathWeakness && hasRwWeakness ? 0.4 : hasRwWeakness ? 1 : 0;
-
-    if (hasMathWeakness) {
-      focus.push({ section: "Math", competencies: mathCompetencies, weight: mathWeight });
-    }
-    if (hasRwWeakness) {
-      focus.push({ section: "Reading & Writing", competencies: rwCompetencies, weight: rwWeight });
-    }
-
-    const mathMinutes = Math.round(dailyMinutes * mathWeight);
-    const rwMinutes = dailyMinutes - mathMinutes;
-
-    if (mathMinutes > 0) {
-      tasks.push({ type: "practice", section: "Math", mode: "weakness", minutes: mathMinutes });
-    }
-    if (rwMinutes > 0) {
-      tasks.push({ type: "practice", section: "Reading & Writing", mode: "weakness", minutes: rwMinutes });
-    }
-  }
-
-  if (focus.length === 0) {
-    const mathMinutes = Math.round(dailyMinutes * 0.6);
-    const rwMinutes = dailyMinutes - mathMinutes;
-
-    focus = [
-      { section: "Math", weight: 0.6 },
-      { section: "Reading & Writing", weight: 0.4 },
-    ];
-
-    tasks = [
-      { type: "practice", section: "Math", mode: "mixed", minutes: mathMinutes },
-      { type: "practice", section: "Reading & Writing", mode: "mixed", minutes: rwMinutes },
-    ];
-  }
-
-  return { focus, tasks };
-}
-
-async function loadStudyProfile(userId: string): Promise<StudyProfileRow | null> {
-  const { data, error } = await supabaseServer
-    .from("student_study_profile")
-    .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, created_at, updated_at")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to load study profile: ${error.message}`);
-  }
-
-  return (data as StudyProfileRow | null) ?? null;
-}
-
-async function buildPlanRowsForRange(params: {
-  userId: string;
-  startDate: string;
-  days: number;
-  forceRegenerateDays?: Set<string>;
-}): Promise<BuildPlanRowsResult> {
-  const { userId, startDate, days, forceRegenerateDays = new Set<string>() } = params;
-  const profile = await loadStudyProfile(userId);
-  if (!profile) {
-    throw new Error("Study profile not found. Please create a profile first.");
-  }
-
-  const dailyMinutes = profile.daily_minutes ?? DEFAULT_DAILY_MINUTES;
-  const startDt = DateTime.fromISO(startDate);
-  const endDt = startDt.plus({ days: days - 1 });
-  const endDateStr = endDt.toISODate()!;
-
-  const { data: existingDays, error: existingDaysError } = await supabaseServer
-    .from("student_study_plan_days")
-    .select("day_date, plan_version, is_user_override")
-    .eq("user_id", userId)
-    .gte("day_date", startDate)
-    .lte("day_date", endDateStr);
-
-  if (existingDaysError) {
-    throw new Error(`Failed to load existing plan days: ${existingDaysError.message}`);
-  }
-
-  const existingByDate = new Map<string, ExistingPlanDayRow>();
-  for (const row of (existingDays as ExistingPlanDayRow[] | null) ?? []) {
-    existingByDate.set(row.day_date, row);
-  }
-
-  const weaknesses = await getWeakestSkills({ userId, limit: 10, minAttempts: 2 });
-  const { focus, tasks } = buildHeuristicFocusAndTasks(
-    dailyMinutes,
-    (weaknesses as Array<{ section?: string | null; skill?: string | null }>) ?? []
-  );
-
-  const now = new Date().toISOString();
-  const skippedOverrideDays: string[] = [];
-  const planDays: BuildPlanRowsResult["planDays"] = [];
-
-  for (let i = 0; i < days; i++) {
-    const dayDateStr = startDt.plus({ days: i }).toISODate()!;
-    const existing = existingByDate.get(dayDateStr);
-    const isForcedDay = forceRegenerateDays.has(dayDateStr);
-    const isUserOverride = existing?.is_user_override === true;
-
-    if (isUserOverride && !isForcedDay) {
-      skippedOverrideDays.push(dayDateStr);
-      continue;
-    }
-
-    const existingVersion = existing?.plan_version ?? 0;
-    planDays.push({
-      user_id: userId,
-      day_date: dayDateStr,
-      planned_minutes: dailyMinutes,
-      focus,
-      tasks,
-      plan_version: existingVersion + 1,
-      generated_at: now,
-      is_user_override: false,
-    });
-  }
-
-  return {
-    endDateStr,
-    planDays,
-    skippedOverrideDays,
-  };
-}
-
-async function ensurePlannerWriteAccess(user: SupabaseUser): Promise<{
-  hasPaidAccess: boolean;
-  reason: string;
-  plan: "free" | "paid";
-  status: "active" | "trialing" | "past_due" | "canceled" | "inactive";
-  currentPeriodEnd: string | null;
-}> {
+async function ensurePremiumAccess(
+  user: SupabaseUser,
+  res: Response,
+  requestId: string | undefined,
+  feature: string,
+): Promise<{ plan: string; status: string; reason: string; currentPeriodEnd: string | null } | null> {
   const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+  if (!access.hasPaidAccess) {
+    res.status(402).json({
+      error: "Calendar planner requires active entitlement",
+      code: "CALENDAR_PREMIUM_REQUIRED",
+      feature,
+      reason: access.reason,
+      entitlement: {
+        plan: access.plan,
+        status: access.status,
+        currentPeriodEnd: access.currentPeriodEnd,
+      },
+      requestId,
+    });
+    return null;
+  }
+
   return {
-    hasPaidAccess: access.hasPaidAccess,
-    reason: access.reason,
     plan: access.plan,
     status: access.status,
+    reason: access.reason,
     currentPeriodEnd: access.currentPeriodEnd,
   };
 }
 
-async function buildCatchUpSuggestions(params: {
-  userId: string;
-  dayDate: string;
-  dailyMinutes: number;
-}): Promise<Array<{
-  type: "catch_up_block";
-  day_date: string;
-  planned_minutes: number;
-  focus: HeuristicFocus[];
-  tasks: HeuristicTask[];
-  reason: string;
-}>> {
-  const weaknesses = await getWeakestSkills({ userId: params.userId, limit: 10, minAttempts: 2 });
-  const { focus, tasks } = buildHeuristicFocusAndTasks(
-    params.dailyMinutes,
-    (weaknesses as Array<{ section?: string | null; skill?: string | null }>) ?? []
-  );
-
-  return [
-    {
-      type: "catch_up_block",
-      day_date: params.dayDate,
-      planned_minutes: params.dailyMinutes,
-      focus,
-      tasks,
-      reason: "Custom mode keeps ownership with the student, so this remains a suggestion.",
-    },
-  ];
+async function loadProfile(userId: string): Promise<StudyProfileRow | null> {
+  const { data, error } = await supabaseServer
+    .from("student_study_profile")
+    .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, preferred_study_days, created_at, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load study profile: ${error.message}`);
+  return (data as StudyProfileRow | null) ?? null;
 }
 
-export async function syncCalendarDayFromSessions(
-  userId: string,
-  dayDate: string,
-  timezone: string = DEFAULT_TIMEZONE
-): Promise<void> {
-  try {
-    const { data: planDay, error: planError } = await supabaseServer
-      .from("student_study_plan_days")
-      .select("day_date, planned_minutes, completed_minutes")
-      .eq("user_id", userId)
-      .eq("day_date", dayDate)
-      .maybeSingle();
+async function loadDaysByRange(userId: string, start: string, end: string): Promise<PlanDayRow[]> {
+  const { data, error } = await supabaseServer
+    .from("student_study_plan_days")
+    .select("id, user_id, day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, is_user_override, status, generation_source, is_exam_day, is_taper_day, is_full_test_day, required_task_count, completed_task_count, study_minutes_target, created_at, updated_at")
+    .eq("user_id", userId)
+    .gte("day_date", start)
+    .lte("day_date", end)
+    .order("day_date", { ascending: true });
+  if (error) throw new Error(`Failed to load plan days: ${error.message}`);
+  return ((data as PlanDayRow[] | null) ?? []).map((row) => ({
+    ...row,
+    status: canonicalDayStatus(row.status),
+  }));
+}
 
-    if (planError || !planDay) {
-      return;
-    }
-
-    const { utcStart, utcEnd } = getLocalDayBounds(timezone, dayDate);
-
-    const { data: sessions, error: sessionsError } = await supabaseServer
-      .from("practice_sessions")
-      .select("actual_duration_ms, started_at, finished_at")
-      .eq("user_id", userId)
-      .gte("started_at", utcStart)
-      .lte("started_at", utcEnd);
-
-    if (sessionsError) {
-      console.warn("[calendar] syncCalendarDayFromSessions: failed to fetch sessions", sessionsError.message);
-      return;
-    }
-
-    let totalMinutes = 0;
-    for (const session of sessions ?? []) {
-      if (session.actual_duration_ms != null) {
-        totalMinutes += Math.round(session.actual_duration_ms / 60000);
-      } else if (session.started_at && session.finished_at) {
-        const startTime = new Date(session.started_at).getTime();
-        const endTime = new Date(session.finished_at).getTime();
-        totalMinutes += Math.round((endTime - startTime) / 60000);
-      }
-    }
-
-    const completedMinutes = Math.min(600, Math.max(0, totalMinutes));
-    const priorStatus = computeStatus(planDay.planned_minutes ?? 0, planDay.completed_minutes ?? 0);
-    const nextStatus = computeStatus(planDay.planned_minutes ?? 0, completedMinutes);
-
-    const { error: updateError } = await supabaseServer
-      .from("student_study_plan_days")
-      .update({ completed_minutes: completedMinutes })
-      .eq("user_id", userId)
-      .eq("day_date", dayDate);
-
-    if (updateError) {
-      console.warn("[calendar] syncCalendarDayFromSessions: failed to update", updateError.message);
-      return;
-    }
-
-    if (priorStatus !== "complete" && nextStatus === "complete") {
-      await emitCalendarEvent({
-        eventType: "block_completed",
-        userId,
-        details: {
-          day_date: dayDate,
-          planned_minutes: planDay.planned_minutes ?? 0,
-          completed_minutes: completedMinutes,
-          source: "practice_sessions_sync",
-        },
-      });
-    }
-  } catch (err: any) {
-    console.warn("[calendar] syncCalendarDayFromSessions: unexpected error", err?.message || String(err));
+async function loadTasksByRange(userId: string, start: string, end: string): Promise<PlanTaskRow[]> {
+  const { data, error } = await supabaseServer
+    .from("student_study_plan_tasks")
+    .select("id, day_id, user_id, day_date, ordinal, task_type, section, duration_minutes, source_skill_code, source_domain, source_subskill, source_reason, status, is_user_override, planner_owned, metadata, completed_at")
+    .eq("user_id", userId)
+    .gte("day_date", start)
+    .lte("day_date", end)
+    .order("day_date", { ascending: true })
+    .order("ordinal", { ascending: true });
+  if (error) {
+    // table may not exist in very old local DB snapshots
+    return [];
   }
+  return ((data as PlanTaskRow[] | null) ?? []).map((row) => ({
+    ...row,
+    status: parseTaskStatus(row.status),
+    source_reason: typeof row.source_reason === "object" && row.source_reason ? row.source_reason : {},
+    metadata: typeof row.metadata === "object" && row.metadata ? row.metadata : {},
+  }));
+}
+
+async function loadAttemptsByRange(userId: string, startUtc: string, endUtc: string): Promise<AttemptRow[]> {
+  const { data, error } = await supabaseServer
+    .from("student_question_attempts")
+    .select("attempted_at, is_correct, time_spent_ms, section, domain, skill, subskill, question_canonical_id, event_type")
+    .eq("user_id", userId)
+    .gte("attempted_at", startUtc)
+    .lte("attempted_at", endUtc)
+    .order("attempted_at", { ascending: false });
+  if (error) return [];
+  return (data as AttemptRow[] | null) ?? [];
+}
+
+async function loadSkillSignals(userId: string): Promise<SkillSignal[]> {
+  const { data, error } = await supabaseServer
+    .from("skill_mastery")
+    .select("section, domain, skill, mastery_score, accuracy, last_attempt_at")
+    .eq("student_id", userId)
+    .order("updated_at", { ascending: false })
+    .limit(400);
+
+  if (error || !data) return [];
+
+  const skillSignals: SkillSignal[] = [];
+  for (const row of data as SkillMasteryRow[]) {
+    const section = normalizeSection(row.section);
+    if (!section || !row.skill) continue;
+    skillSignals.push({
+      section,
+      skillCode: row.skill,
+      domain: row.domain ?? "general",
+      subskill: null,
+      masteryScore: typeof row.mastery_score === "number" ? row.mastery_score : 0.5,
+      accuracy: typeof row.accuracy === "number" ? row.accuracy : 0.5,
+      lastAttemptDate: row.last_attempt_at ? DateTime.fromISO(row.last_attempt_at).toISODate() : null,
+    });
+  }
+
+  return skillSignals;
+}
+
+function profileSummaryFromRow(userId: string, row: StudyProfileRow | null): ProfileSummary & { userId: string } {
+  return {
+    userId,
+    timezone: row?.timezone || DEFAULT_TIMEZONE,
+    examDate: row?.exam_date || null,
+    dailyMinutes: Math.max(10, Math.min(240, row?.daily_minutes ?? DEFAULT_DAILY_MINUTES)),
+    plannerMode: asPlannerMode(row?.planner_mode),
+    fullTestCadence: asFullTestCadence(row?.full_test_cadence),
+    preferredStudyDays: normalizePreferredStudyDays(row?.preferred_study_days),
+  };
+}
+
+function ensureIsoDateInput(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (!isIsoDate(value)) return null;
+  return value;
+}
+
+function taskTypeToLegacy(taskType: TaskType): string {
+  if (taskType === "math_practice") return "practice";
+  if (taskType === "rw_practice") return "practice";
+  if (taskType === "review_errors") return "review";
+  return "full_test";
+}
+
+function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
+  if (section === "MATH") return "Math";
+  if (section === "RW") return "Reading & Writing";
+  return null;
+}
+
+function taskModeForDay(task: PlanTaskRow): string {
+  if (task.task_type === "full_length_exam") return "full-length";
+  if (task.task_type === "review_errors") return "review";
+  return task.metadata?.compressed ? "compressed" : "mixed";
+}
+
+function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
+  return {
+    id: task.id,
+    type: taskTypeToLegacy(task.task_type),
+    section: taskSectionToLegacy(task.section),
+    mode: taskModeForDay(task),
+    minutes: task.duration_minutes,
+    task_type: task.task_type,
+    status: task.status,
+    ordinal: task.ordinal,
+    is_user_override: task.is_user_override,
+    planner_owned: task.planner_owned,
+  };
+}
+
+async function calculateStreak(userId: string, timezone: string): Promise<{ current: number; longest: number }> {
+  const today = DateTime.now().setZone(timezone).toISODate();
+  if (!today) return { current: 0, longest: 0 };
+
+  const { data, error } = await supabaseServer
+    .from("student_study_plan_days")
+    .select("day_date, status")
+    .eq("user_id", userId)
+    .order("day_date", { ascending: true })
+    .limit(365);
+  if (error || !data) return { current: 0, longest: 0 };
+
+  const completedDates = (data as Array<{ day_date: string; status: unknown }>)
+    .filter((row) => canonicalDayStatus(row.status) === "completed")
+    .map((row) => row.day_date);
+  if (completedDates.length === 0) return { current: 0, longest: 0 };
+
+  const completedSet = new Set(completedDates);
+  let current = 0;
+  let cursor = DateTime.fromISO(today, { zone: timezone });
+  while (completedSet.has(cursor.toISODate()!)) {
+    current += 1;
+    cursor = cursor.minus({ days: 1 });
+  }
+
+  let longest = 0;
+  let run = 0;
+  let previous: DateTime | null = null;
+  for (const dayDate of completedDates) {
+    const day = DateTime.fromISO(dayDate, { zone: timezone });
+    if (!previous) {
+      run = 1;
+    } else if (day.toISODate() === previous.plus({ days: 1 }).toISODate()) {
+      run += 1;
+    } else {
+      longest = Math.max(longest, run);
+      run = 1;
+    }
+    previous = day;
+  }
+  longest = Math.max(longest, run);
+  return { current, longest };
+}
+
+function parseProfilePayload(payload: CalendarProfileInput): {
+  baseline_score?: number | null;
+  target_score?: number | null;
+  exam_date?: string | null;
+  daily_minutes?: number;
+  timezone?: string;
+  planner_mode?: PlannerMode;
+  full_test_cadence?: FullTestCadence;
+  preferred_study_days?: number[];
+} {
+  const normalized: Record<string, unknown> = {};
+
+  if (payload.baseline_score !== undefined) {
+    normalized.baseline_score = payload.baseline_score == null ? null : Number(payload.baseline_score);
+  }
+  if (payload.target_score !== undefined) {
+    normalized.target_score = payload.target_score == null ? null : Number(payload.target_score);
+  }
+  if (payload.exam_date !== undefined) {
+    normalized.exam_date = payload.exam_date == null || payload.exam_date === "" ? null : ensureIsoDateInput(payload.exam_date);
+  }
+  if (payload.daily_minutes !== undefined) {
+    const value = Number(payload.daily_minutes);
+    if (Number.isFinite(value)) normalized.daily_minutes = Math.max(10, Math.min(240, Math.round(value)));
+  }
+  if (payload.timezone !== undefined && typeof payload.timezone === "string" && payload.timezone.trim()) {
+    normalized.timezone = payload.timezone.trim();
+  }
+  if (payload.planner_mode !== undefined) {
+    normalized.planner_mode = asPlannerMode(payload.planner_mode);
+  }
+  if (payload.full_test_cadence !== undefined) {
+    normalized.full_test_cadence = asFullTestCadence(payload.full_test_cadence);
+  }
+  if (payload.preferred_study_days !== undefined) {
+    normalized.preferred_study_days = normalizePreferredStudyDays(payload.preferred_study_days);
+  }
+
+  return normalized as {
+    baseline_score?: number | null;
+    target_score?: number | null;
+    exam_date?: string | null;
+    daily_minutes?: number;
+    timezone?: string;
+    planner_mode?: PlannerMode;
+    full_test_cadence?: FullTestCadence;
+    preferred_study_days?: number[];
+  };
+}
+
+async function persistGeneratedDays(params: {
+  userId: string;
+  timezone: string;
+  todayDate: string;
+  existingDays: PlanDayRow[];
+  generatedDays: ReturnType<typeof generateDeterministicPlan>["plannedDays"];
+  source: GenerationSource;
+  skipOverrides: boolean;
+}): Promise<{ upsertedDays: number; upsertedTasks: number; skippedOverrideDays: string[] }> {
+  const existingByDate = new Map(params.existingDays.map((day) => [day.day_date, day]));
+  const skippedOverrideDays: string[] = [];
+  let upsertedDays = 0;
+  let upsertedTasks = 0;
+
+  for (const day of params.generatedDays) {
+    if (day.dayDate < params.todayDate) continue;
+    const existing = existingByDate.get(day.dayDate);
+    if (params.skipOverrides && existing?.is_user_override) {
+      skippedOverrideDays.push(day.dayDate);
+      continue;
+    }
+
+    const generatedTaskRows = day.tasks.map((task, index) => {
+      const metadata: Record<string, unknown> = {
+        ...(task.metadata ?? {}),
+        required: task.required,
+      };
+      return {
+        day_id: existing?.id ?? "",
+        user_id: params.userId,
+        day_date: day.dayDate,
+        ordinal: index + 1,
+        task_type: task.taskType,
+        section: task.section,
+        duration_minutes: task.durationMinutes,
+        source_skill_code: task.sourceSkillCode,
+        source_domain: task.sourceDomain,
+        source_subskill: task.sourceSubskill,
+        source_reason: task.sourceReason,
+        status: "planned" as const,
+        is_user_override: false,
+        planner_owned: true,
+        metadata,
+        completed_at: null,
+      };
+    });
+
+    const dayRowPayload = {
+      user_id: params.userId,
+      day_date: day.dayDate,
+      planned_minutes: day.plannedMinutes,
+      completed_minutes: existing?.completed_minutes ?? 0,
+      focus: day.focus.map((focus) => ({
+        section: focus.section === "MATH" ? "Math" : "Reading & Writing",
+        weight: focus.weight,
+        competencies: focus.skill_codes,
+      })),
+      tasks: generatedTaskRows.map((task) => ({
+        type: taskTypeToLegacy(task.task_type),
+        section: taskSectionToLegacy(task.section),
+        mode: Boolean((task.metadata as Record<string, unknown>).compressed) ? "compressed" : task.task_type === "review_errors" ? "review" : "mixed",
+        minutes: task.duration_minutes,
+      })),
+      plan_version: (existing?.plan_version ?? 0) + 1,
+      generated_at: DateTime.now().toUTC().toISO(),
+      is_user_override: false,
+      status: "planned" as DayStatus,
+      generation_source: params.source,
+      is_exam_day: day.isExamDay,
+      is_taper_day: day.isTaperDay,
+      is_full_test_day: day.isFullTestDay,
+      required_task_count: generatedTaskRows.filter((task) => task.metadata.required !== false).length,
+      completed_task_count: 0,
+      study_minutes_target: day.studyMinutesTarget,
+    };
+
+    const { data: upsertedDay, error: upsertDayError } = await supabaseServer
+      .from("student_study_plan_days")
+      .upsert(dayRowPayload, { onConflict: "user_id,day_date" })
+      .select("id")
+      .single();
+
+    if (upsertDayError || !upsertedDay?.id) {
+      throw new Error(`Failed to persist study day ${day.dayDate}: ${upsertDayError?.message ?? "missing id"}`);
+    }
+    upsertedDays += 1;
+
+    const { error: deleteError } = await supabaseServer
+      .from("student_study_plan_tasks")
+      .delete()
+      .eq("user_id", params.userId)
+      .eq("day_date", day.dayDate);
+    if (deleteError) {
+      throw new Error(`Failed to clear tasks for ${day.dayDate}: ${deleteError.message}`);
+    }
+
+    if (generatedTaskRows.length > 0) {
+      const { error: insertTaskError } = await supabaseServer.from("student_study_plan_tasks").insert(
+        generatedTaskRows.map((task) => ({
+          ...task,
+          day_id: upsertedDay.id,
+        })),
+      );
+      if (insertTaskError) {
+        throw new Error(`Failed to persist tasks for ${day.dayDate}: ${insertTaskError.message}`);
+      }
+      upsertedTasks += generatedTaskRows.length;
+    }
+  }
+
+  return { upsertedDays, upsertedTasks, skippedOverrideDays };
+}
+
+function plannerSettingsFromProfile(userId: string, profile: StudyProfileRow | null): StudyProfileSettings {
+  const settings = profileSummaryFromRow(userId, profile);
+  return {
+    userId,
+    timezone: settings.timezone,
+    dailyMinutes: settings.dailyMinutes,
+    examDate: settings.examDate,
+    fullTestCadence: settings.fullTestCadence,
+    preferredStudyDays: settings.preferredStudyDays,
+  };
+}
+
+async function generatePlanForWindow(params: {
+  userId: string;
+  profile: StudyProfileRow | null;
+  todayDate: string;
+  startDate: string;
+  endDate: string;
+  skipOverrideDays: boolean;
+}) {
+  const settings = plannerSettingsFromProfile(params.userId, params.profile);
+  const startUtc = DateTime.fromISO(params.startDate, { zone: settings.timezone }).startOf("day").minus({ days: 40 }).toUTC().toISO()!;
+  const endUtc = DateTime.fromISO(params.endDate, { zone: settings.timezone }).endOf("day").toUTC().toISO()!;
+  const [existingDays, existingTasks, attempts, skillSignals, recentCompletedTests] = await Promise.all([
+    loadDaysByRange(params.userId, params.startDate, params.endDate),
+    loadTasksByRange(params.userId, DateTime.fromISO(params.startDate).minus({ days: 6 }).toISODate()!, params.endDate),
+    loadAttemptsByRange(params.userId, startUtc, endUtc),
+    loadSkillSignals(params.userId),
+    supabaseServer
+      .from("student_study_plan_tasks")
+      .select("day_date")
+      .eq("user_id", params.userId)
+      .eq("task_type", "full_length_exam")
+      .eq("status", "completed")
+      .gte("day_date", DateTime.fromISO(params.startDate).minus({ days: 30 }).toISODate()!)
+      .order("day_date", { ascending: false })
+      .limit(20),
+  ]);
+
+  const recentCompletedTestDays = ((recentCompletedTests.data as Array<{ day_date: string }> | null) ?? []).map((row) => row.day_date);
+
+  const plan = generateDeterministicPlan({
+    profile: settings,
+    todayDate: params.todayDate,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    attempts: attempts.map((attempt) => ({
+      attemptedAt: attempt.attempted_at || DateTime.fromISO(params.todayDate).toUTC().toISO()!,
+      section: normalizeSection(attempt.section),
+      skillCode: attempt.skill || null,
+      questionCanonicalId: attempt.question_canonical_id || null,
+      isCorrect: Boolean(attempt.is_correct),
+      eventType: attempt.event_type || null,
+      timeSpentMs: Math.max(0, attempt.time_spent_ms || 0),
+    })),
+    skillSignals,
+    existingDays: existingDays.map((day) => ({
+      dayDate: day.day_date,
+      isUserOverride: day.is_user_override,
+      status: day.status,
+      isFullTestDay: day.is_full_test_day,
+    })),
+    existingTasks: existingTasks.map((task) => ({
+      dayDate: task.day_date,
+      taskType: task.task_type,
+      section: task.section,
+      durationMinutes: task.duration_minutes,
+      sourceSkillCode: task.source_skill_code,
+    })),
+    recentCompletedTestDays,
+    skipOverrideDays: params.skipOverrideDays,
+  });
+
+  return { settings, plan, existingDays };
+}
+
+function parseDateWindow(req: AuthenticatedRequest, timezone: string): { startDate: string; requestedDays: number } | null {
+  const todayDate = DateTime.now().setZone(timezone).toISODate();
+  if (!todayDate) return null;
+
+  const startInput = typeof req.body?.start_date === "string" ? req.body.start_date : typeof req.query.start === "string" ? req.query.start : todayDate;
+  const requestedDaysRaw = Number(req.body?.days ?? req.query.days ?? DEFAULT_HORIZON_DAYS);
+  const requestedDays = Number.isFinite(requestedDaysRaw) ? Math.max(1, Math.min(DEFAULT_HORIZON_DAYS, Math.round(requestedDaysRaw))) : DEFAULT_HORIZON_DAYS;
+
+  if (!isIsoDate(startInput)) return null;
+  return { startDate: startInput, requestedDays };
+}
+
+async function getMonthPayload(userId: string, start: string, end: string, timezone: string) {
+  const startUtc = DateTime.fromISO(start, { zone: timezone }).startOf("day").toUTC().toISO()!;
+  const endUtc = DateTime.fromISO(end, { zone: timezone }).endOf("day").toUTC().toISO()!;
+
+  const [days, tasks, attempts, streak] = await Promise.all([
+    loadDaysByRange(userId, start, end),
+    loadTasksByRange(userId, start, end),
+    loadAttemptsByRange(userId, startUtc, endUtc),
+    calculateStreak(userId, timezone),
+  ]);
+
+  const taskByDay = new Map<string, PlanTaskRow[]>();
+  for (const task of tasks) {
+    const group = taskByDay.get(task.day_date) ?? [];
+    group.push(task);
+    taskByDay.set(task.day_date, group);
+  }
+
+  const attemptByDay = new Map<string, { attempts: number; correct: number; timeSpentMs: number }>();
+  for (const attempt of attempts) {
+    if (!isCalendarCountedEventType(attempt.event_type)) continue;
+    if (!attempt.attempted_at) continue;
+    const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
+    if (!localDate) continue;
+    const current = attemptByDay.get(localDate) ?? { attempts: 0, correct: 0, timeSpentMs: 0 };
+    current.attempts += 1;
+    if (attempt.is_correct) current.correct += 1;
+    current.timeSpentMs += Math.max(0, attempt.time_spent_ms || 0);
+    attemptByDay.set(localDate, current);
+  }
+
+  const serializedDays = days.map((day) => {
+    const dayTasks = (taskByDay.get(day.day_date) ?? []).sort((a, b) => a.ordinal - b.ordinal);
+    const stats = attemptByDay.get(day.day_date);
+    const derived = computeDayStatusFromTasks(day.day_date, DateTime.now().setZone(timezone).toISODate()!, dayTasks);
+
+    return {
+      ...day,
+      status_canonical: day.status,
+      status: legacyDayStatus(day.status),
+      required_task_count: day.required_task_count || derived.requiredTaskCount,
+      completed_task_count: day.completed_task_count || derived.completedTaskCount,
+      focus: day.focus ?? [],
+      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : Array.isArray(day.tasks) ? day.tasks : [],
+      task_items: dayTasks,
+      is_exam_day: day.is_exam_day,
+      is_taper_day: day.is_taper_day,
+      is_full_test_day: day.is_full_test_day,
+      attempt_count: stats?.attempts ?? 0,
+      accuracy: stats && stats.attempts > 0 ? Math.round((stats.correct / stats.attempts) * 100) : null,
+      avg_seconds_per_question: stats && stats.attempts > 0 ? Math.round(stats.timeSpentMs / stats.attempts / 1000) : null,
+    };
+  });
+
+  return { days: serializedDays, streak };
 }
 
 calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "profile_read");
+  if (!premium) return;
+
   try {
-    const auth = requireRequestAuthContext(req, res);
-    if (!auth) {
-      return;
-    }
-
-    const { user, supabase } = auth;
-    const userId = user.id;
-
-    const { data, error } = await supabase
-      .from("student_study_profile")
-      .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, created_at, updated_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to load study profile", details: error.message });
-    }
-
+    const profile = await loadProfile(user.id);
     return res.json({
-      profile: data
-        ? {
-            ...data,
-            planner_mode: asPlannerMode((data as StudyProfileRow).planner_mode),
-          }
-        : null,
+      profile,
+      entitlement: premium,
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load profile";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
 calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "profile_write");
+  if (!premium) return;
+
   try {
-    const auth = requireRequestAuthContext(req, res);
-    if (!auth) {
-      return;
+    const payload = parseProfilePayload((req.body ?? {}) as CalendarProfileInput);
+    if (Object.keys(payload).length === 0) {
+      return res.status(400).json({ error: "No profile fields provided", requestId: req.requestId });
     }
 
-    const { user, supabase } = auth;
-    const userId = user.id;
-
-    const {
-      baseline_score,
-      target_score,
-      exam_date,
-      daily_minutes,
-      timezone,
-      planner_mode,
-    } = req.body ?? {};
-
-    if (baseline_score != null && typeof baseline_score !== "number") {
-      return res.status(400).json({ error: "baseline_score must be a number" });
-    }
-    if (target_score != null && typeof target_score !== "number") {
-      return res.status(400).json({ error: "target_score must be a number" });
-    }
-    if (exam_date != null && !isIsoDate(exam_date)) {
-      return res.status(400).json({ error: "exam_date must be YYYY-MM-DD" });
-    }
-    if (daily_minutes != null && (typeof daily_minutes !== "number" || daily_minutes < 0 || daily_minutes > 600)) {
-      return res.status(400).json({ error: "daily_minutes must be a number between 0 and 600" });
-    }
-    if (timezone != null && typeof timezone !== "string") {
-      return res.status(400).json({ error: "timezone must be a string" });
-    }
-    if (planner_mode != null && planner_mode !== "auto" && planner_mode !== "custom") {
-      return res.status(400).json({ error: "planner_mode must be 'auto' or 'custom'" });
-    }
-
-    const payload = {
-      user_id: userId,
-      baseline_score: baseline_score ?? null,
-      target_score: target_score ?? null,
-      exam_date: exam_date ?? null,
-      daily_minutes: daily_minutes ?? undefined,
-      timezone: timezone ?? undefined,
-      planner_mode: planner_mode ?? undefined,
+    const upsertPayload = {
+      user_id: user.id,
+      ...payload,
+      updated_at: DateTime.now().toUTC().toISO(),
     };
-
-    const { data, error } = await supabase
-      .from("student_study_profile")
-      .upsert(payload, { onConflict: "user_id" })
-      .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, created_at, updated_at")
-      .single();
-
-    if (error) {
-      return res.status(500).json({ error: "Failed to save study profile", details: error.message });
-    }
-
-    return res.json({
-      profile: {
-        ...data,
-        planner_mode: asPlannerMode((data as StudyProfileRow).planner_mode),
-      },
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
-  }
-});
-
-calendarRouter.get("/mode", async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-
-    const userId = user.id;
-
-    const profile = await loadStudyProfile(userId);
-    return res.json({
-      planner_mode: asPlannerMode(profile?.planner_mode),
-    });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
-  }
-});
-
-calendarRouter.put("/mode", async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-
-    const userId = user.id;
-
-    const plannerMode = req.body?.planner_mode;
-    if (plannerMode !== "auto" && plannerMode !== "custom") {
-      return res.status(400).json({ error: "planner_mode must be 'auto' or 'custom'" });
-    }
 
     const { data, error } = await supabaseServer
       .from("student_study_profile")
-      .upsert(
-        {
-          user_id: userId,
-          planner_mode: plannerMode,
-        },
-        { onConflict: "user_id" }
-      )
-      .select("planner_mode")
+      .upsert(upsertPayload, { onConflict: "user_id" })
+      .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, preferred_study_days, created_at, updated_at")
       .single();
 
     if (error) {
-      return res.status(500).json({ error: "Failed to save planner mode", details: error.message });
+      return res.status(500).json({ error: `Failed to save profile: ${error.message}`, requestId: req.requestId });
     }
 
     return res.json({
-      planner_mode: asPlannerMode((data as StudyProfileRow).planner_mode),
+      profile: data,
+      entitlement: premium,
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
-  }
-});
-
-async function calculateStreak(userId: string, timezone: string = DEFAULT_TIMEZONE): Promise<{ current: number; longest: number }> {
-  const todayLocal = DateTime.now().setZone(timezone).toISODate();
-  if (!todayLocal) {
-    return { current: 0, longest: 0 };
-  }
-
-  const { data: completedDays, error } = await supabaseServer
-    .from("student_study_plan_days")
-    .select("day_date, completed_minutes, planned_minutes")
-    .eq("user_id", userId)
-    .lte("day_date", todayLocal)
-    .order("day_date", { ascending: false })
-    .limit(365);
-
-  if (error || !completedDays) {
-    return { current: 0, longest: 0 };
-  }
-
-  const isComplete = (day: any) => computeStatus(day.planned_minutes ?? 0, day.completed_minutes ?? 0) === "complete";
-
-  const completeDaysSet = new Set(completedDays.filter(isComplete).map((d) => d.day_date));
-
-  let currentStreak = 0;
-  let checkDate = DateTime.fromISO(todayLocal, { zone: timezone });
-
-  while (completeDaysSet.has(checkDate.toISODate()!)) {
-    currentStreak++;
-    checkDate = checkDate.minus({ days: 1 });
-  }
-
-  let longestStreak = 0;
-  let tempStreak = 0;
-  let prevDate: DateTime | null = null;
-
-  const sortedDays = completedDays
-    .filter(isComplete)
-    .sort((a, b) => a.day_date.localeCompare(b.day_date));
-
-  for (const day of sortedDays) {
-    const dayDate = DateTime.fromISO(day.day_date, { zone: timezone });
-
-    if (prevDate === null) {
-      tempStreak = 1;
-    } else {
-      const expectedNext = prevDate.plus({ days: 1 });
-
-      if (dayDate.toISODate() === expectedNext.toISODate()) {
-        tempStreak++;
-      } else {
-        longestStreak = Math.max(longestStreak, tempStreak);
-        tempStreak = 1;
-      }
-    }
-
-    prevDate = dayDate;
-  }
-
-  longestStreak = Math.max(longestStreak, tempStreak);
-
-  return { current: currentStreak, longest: longestStreak };
-}
-
-calendarRouter.get("/streak", async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-
-    const userId = user.id;
-    const supabase = req.supabase;
-
-    const { data: profile } = await (supabase || supabaseServer)
-      .from("student_study_profile")
-      .select("timezone")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const timezone = profile?.timezone || DEFAULT_TIMEZONE;
-
-    const streak = await calculateStreak(userId, timezone);
-    return res.json({ streak });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save profile";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
 calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "month_read");
+  if (!premium) return;
+
+  const start = req.query.start as string | undefined;
+  const end = req.query.end as string | undefined;
+  if (!start || !isIsoDate(start)) {
+    return res.status(400).json({ error: "start query param must be YYYY-MM-DD", requestId: req.requestId });
+  }
+  if (!end || !isIsoDate(end)) {
+    return res.status(400).json({ error: "end query param must be YYYY-MM-DD", requestId: req.requestId });
+  }
+
   try {
-    const auth = requireRequestAuthContext(req, res);
-    if (!auth) {
-      return;
-    }
-
-    const { user, supabase } = auth;
-    const userId = user.id;
-
-    const start = req.query.start as string | undefined;
-    const end = req.query.end as string | undefined;
-
-    if (!start || !isIsoDate(start)) {
-      return res.status(400).json({ error: "start query param must be YYYY-MM-DD" });
-    }
-    if (!end || !isIsoDate(end)) {
-      return res.status(400).json({ error: "end query param must be YYYY-MM-DD" });
-    }
-
-    const { data: profile } = await supabase
-      .from("student_study_profile")
-      .select("timezone, planner_mode")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const timezone = profile?.timezone || DEFAULT_TIMEZONE;
-    const plannerMode = asPlannerMode((profile as StudyProfileRow | null)?.planner_mode);
-
-    const startUtc = DateTime.fromISO(start, { zone: timezone }).startOf("day").toUTC().toISO()!;
-    const endUtc = DateTime.fromISO(end, { zone: timezone }).endOf("day").toUTC().toISO()!;
-
-    const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
-      supabase
-        .from("student_study_plan_days")
-        .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
-        .eq("user_id", userId)
-        .gte("day_date", start)
-        .lte("day_date", end)
-        .order("day_date", { ascending: true }),
-
-      supabase
-        .from("student_question_attempts")
-        .select("attempted_at, is_correct, time_spent_ms, section, domain, event_type")
-        .eq("user_id", userId)
-        .gte("attempted_at", startUtc)
-        .lte("attempted_at", endUtc),
-
-      calculateStreak(userId, timezone),
-    ]);
-
-    if (planDaysResult.error) {
-      return res.status(500).json({ error: "Failed to load calendar data", details: planDaysResult.error.message });
-    }
-
-    const attemptsByDay = new Map<
-      string,
-      {
-        attempts: number;
-        correct: number;
-        totalTimeMs: number;
-      }
-    >();
-
-    for (const attempt of attemptsResult.data || []) {
-      if (!isCalendarCountedEventType((attempt as any).event_type)) continue;
-      if (!attempt.attempted_at) continue;
-
-      const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
-      if (!localDate) continue;
-
-      if (!attemptsByDay.has(localDate)) {
-        attemptsByDay.set(localDate, { attempts: 0, correct: 0, totalTimeMs: 0 });
-      }
-
-      const dayStats = attemptsByDay.get(localDate)!;
-      dayStats.attempts++;
-      if (attempt.is_correct) dayStats.correct++;
-      dayStats.totalTimeMs += attempt.time_spent_ms || 0;
-    }
-
-    const enrichedDays = (planDaysResult.data ?? []).map((day) => {
-      const dayStats = attemptsByDay.get(day.day_date);
-
-      return {
-        ...day,
-        status: computeStatus(day.planned_minutes ?? 0, day.completed_minutes ?? 0),
-        attempt_count: dayStats?.attempts ?? 0,
-        accuracy: dayStats && dayStats.attempts > 0 ? Math.round((dayStats.correct / dayStats.attempts) * 100) : null,
-        avg_seconds_per_question:
-          dayStats && dayStats.attempts > 0 ? Math.round(dayStats.totalTimeMs / dayStats.attempts / 1000) : null,
-      };
-    });
-
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const payload = await getMonthPayload(user.id, start, end, settings.timezone);
     return res.json({
-      days: enrichedDays,
-      streak: streakResult,
-      planner_mode: plannerMode,
+      ...payload,
+      profile: {
+        exam_date: settings.examDate,
+        timezone: settings.timezone,
+        planner_mode: settings.plannerMode,
+        full_test_cadence: settings.fullTestCadence,
+      },
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load month";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
-calendarRouter.patch("/day/complete", async (_req: AuthenticatedRequest, res: Response) => {
-  return res.status(410).json({
-    error: "Completion is session-derived. Start a study session to count progress.",
-    message: "Manual completion override has been removed. Completion minutes are now computed from practice_sessions automatically.",
-  });
-});
-
 calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "generate");
+  if (!premium) return;
+
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const windowInput = parseDateWindow(req, settings.timezone);
+    if (!windowInput) {
+      return res.status(400).json({ error: "Invalid date window", requestId: req.requestId });
     }
 
-    const { start_date, days } = req.body ?? {};
-    const userId = user.id;
-
-    if (!start_date || !isIsoDate(start_date)) {
-      return res.status(400).json({ error: "start_date must be YYYY-MM-DD" });
-    }
-
-    const parsedDays = parseGenerationDays(days, 14);
-    if (parsedDays == null) {
-      return res.status(400).json({ error: "days must be an integer between 1 and 30" });
-    }
-
-    const startDt = DateTime.fromISO(start_date);
-    const endDt = startDt.plus({ days: parsedDays - 1 });
-    const endDateStr = endDt.toISODate()!;
-
-    const { data: existingDays, error: existingDaysError } = await supabaseServer
-      .from("student_study_plan_days")
-      .select("day_date")
-      .eq("user_id", userId)
-      .gte("day_date", start_date)
-      .lte("day_date", endDateStr);
-
-    if (existingDaysError) {
-      return res.status(500).json({ error: "Failed to inspect existing study plan", details: existingDaysError.message });
-    }
-
-    const isRegeneration = (existingDays ?? []).length > 0;
-    if (isRegeneration) {
-      const access = await ensurePlannerWriteAccess(user);
-      if (!access.hasPaidAccess) {
-        return res.status(402).json({
-          error: "Planner regeneration requires active entitlement",
-          code: "PLANNER_REGEN_LOCKED",
-          feature: "calendar_regeneration",
-          reason: access.reason,
-          entitlement: {
-            plan: access.plan,
-            status: access.status,
-            currentPeriodEnd: access.currentPeriodEnd,
-          },
-          requestId: (req as any).requestId,
-        });
-      }
-    }
-
-    const profile = await loadStudyProfile(userId);
-    if (!profile) {
-      return res.status(400).json({ error: "Study profile not found. Please create a profile first." });
-    }
-
-    const generated = await buildPlanRowsForRange({
-      userId,
-      startDate: start_date,
-      days: parsedDays,
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    const window = resolvePlannerWindow({
+      startDate: windowInput.startDate,
+      todayDate,
+      examDate: settings.examDate,
+      requestedDays: windowInput.requestedDays,
     });
 
-    if (generated.planDays.length > 0) {
-      const { error: upsertError } = await supabaseServer
-        .from("student_study_plan_days")
-        .upsert(generated.planDays, { onConflict: "user_id,day_date" });
+    const generated = await generatePlanForWindow({
+      userId: user.id,
+      profile,
+      todayDate,
+      startDate: window.startDate,
+      endDate: window.endDate,
+      skipOverrideDays: true,
+    });
 
-      if (upsertError) {
-        return res.status(500).json({ error: "Failed to save study plan", details: upsertError.message });
-      }
-    }
+    const persisted = await persistGeneratedDays({
+      userId: user.id,
+      timezone: settings.timezone,
+      todayDate,
+      existingDays: generated.existingDays,
+      generatedDays: generated.plan.plannedDays,
+      source: "generate",
+      skipOverrides: true,
+    });
+    const skippedOverrideDays = Array.from(new Set([...generated.plan.skippedOverrideDays, ...persisted.skippedOverrideDays]));
 
     await emitCalendarEvent({
       eventType: "plan_generated",
-      userId,
+      userId: user.id,
       details: {
-        start_date,
-        end_date: generated.endDateStr,
-        generated_days: generated.planDays.length,
-        skipped_override_days: generated.skippedOverrideDays,
-        skipped_override_count: generated.skippedOverrideDays.length,
-        planner_mode: asPlannerMode(profile.planner_mode),
+        start_date: window.startDate,
+        end_date: window.endDate,
+        horizon_days: window.horizonDays,
+        upserted_days: persisted.upsertedDays,
+        skipped_override_days: skippedOverrideDays,
       },
     });
 
     return res.json({
       generated: {
-        start_date,
-        end_date: generated.endDateStr,
-        days: generated.planDays.length,
-        used_llm: false,
-        planner_mode: asPlannerMode(profile.planner_mode),
-        skipped_override_days: generated.skippedOverrideDays,
-        skipped_override_count: generated.skippedOverrideDays.length,
+        start_date: window.startDate,
+        end_date: window.endDate,
+        horizon_days: window.horizonDays,
+        upserted_days: persisted.upsertedDays,
+        upserted_tasks: persisted.upsertedTasks,
+        skipped_override_days: skippedOverrideDays,
       },
+      entitlement: premium,
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    if (typeof err?.message === "string" && err.message.includes("Study profile not found")) {
-      return res.status(400).json({ error: err.message });
-    }
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to generate plan";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
 calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "refresh");
+  if (!premium) return;
+
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const windowInput = parseDateWindow(req, settings.timezone);
+    if (!windowInput) {
+      return res.status(400).json({ error: "Invalid date window", requestId: req.requestId });
     }
 
-    const userId = user.id;
-    const profile = await loadStudyProfile(userId);
-    if (!profile) {
-      return res.status(400).json({ error: "Study profile not found. Please create a profile first." });
-    }
-
-    const plannerMode = asPlannerMode(profile.planner_mode);
-    const rawStartDate = req.body?.start_date;
-    const startDate =
-      typeof rawStartDate === "string" && isIsoDate(rawStartDate)
-        ? rawStartDate
-        : DateTime.now().setZone(profile.timezone || DEFAULT_TIMEZONE).toISODate();
-
-    if (!startDate || !isIsoDate(startDate)) {
-      return res.status(400).json({ error: "start_date must be YYYY-MM-DD" });
-    }
-
-    const parsedDays = parseGenerationDays(req.body?.days, DEFAULT_AUTO_REFRESH_DAYS);
-    if (parsedDays == null) {
-      return res.status(400).json({ error: "days must be an integer between 1 and 30" });
-    }
-
-    if (plannerMode === "custom") {
-      const suggestions = await buildCatchUpSuggestions({
-        userId,
-        dayDate: startDate,
-        dailyMinutes: profile.daily_minutes ?? DEFAULT_DAILY_MINUTES,
-      });
-
+    if (settings.plannerMode === "custom") {
       await emitCalendarEvent({
         eventType: "plan_refreshed",
-        userId,
+        userId: user.id,
         details: {
           applied: false,
           planner_mode: "custom",
-          start_date: startDate,
-          requested_days: parsedDays,
-          reason: "Auto refresh is disabled in custom mode.",
+          reason: "custom_mode",
         },
       });
 
       return res.json({
         applied: false,
         planner_mode: "custom",
-        reason: "Auto refresh is disabled in custom mode.",
-        suggestions,
+        suggestions: [
+          {
+            type: "catch_up_block",
+            message: "Custom mode is active. Use regenerate or reset a day to apply new recommendations.",
+          },
+        ],
+        requestId: req.requestId,
       });
     }
 
-    const access = await ensurePlannerWriteAccess(user);
-    if (!access.hasPaidAccess) {
-      return res.status(402).json({
-        error: "Planner auto refresh requires active entitlement",
-        code: "PLANNER_AUTO_REFRESH_LOCKED",
-        feature: "calendar_auto_refresh",
-        reason: access.reason,
-        entitlement: {
-          plan: access.plan,
-          status: access.status,
-          currentPeriodEnd: access.currentPeriodEnd,
-        },
-        requestId: (req as any).requestId,
-      });
-    }
-
-    const generated = await buildPlanRowsForRange({
-      userId,
-      startDate,
-      days: parsedDays,
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    const window = resolvePlannerWindow({
+      startDate: windowInput.startDate,
+      todayDate,
+      examDate: settings.examDate,
+      requestedDays: windowInput.requestedDays,
     });
 
-    if (generated.planDays.length > 0) {
-      const { error: upsertError } = await supabaseServer
-        .from("student_study_plan_days")
-        .upsert(generated.planDays, { onConflict: "user_id,day_date" });
-      if (upsertError) {
-        return res.status(500).json({ error: "Failed to save auto-refreshed study plan", details: upsertError.message });
-      }
-    }
+    const generated = await generatePlanForWindow({
+      userId: user.id,
+      profile,
+      todayDate,
+      startDate: window.startDate,
+      endDate: window.endDate,
+      skipOverrideDays: true,
+    });
+
+    const persisted = await persistGeneratedDays({
+      userId: user.id,
+      timezone: settings.timezone,
+      todayDate,
+      existingDays: generated.existingDays,
+      generatedDays: generated.plan.plannedDays,
+      source: "refresh",
+      skipOverrides: true,
+    });
+    const skippedOverrideDays = Array.from(new Set([...generated.plan.skippedOverrideDays, ...persisted.skippedOverrideDays]));
 
     await emitCalendarEvent({
       eventType: "plan_refreshed",
-      userId,
+      userId: user.id,
       details: {
         applied: true,
         planner_mode: "auto",
-        start_date: startDate,
-        end_date: generated.endDateStr,
-        refreshed_days: generated.planDays.length,
-        skipped_override_days: generated.skippedOverrideDays,
-        skipped_override_count: generated.skippedOverrideDays.length,
+        start_date: window.startDate,
+        end_date: window.endDate,
+        refreshed_days: persisted.upsertedDays,
+        skipped_override_days: skippedOverrideDays,
       },
     });
 
@@ -982,189 +993,453 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
       applied: true,
       planner_mode: "auto",
       refreshed: {
-        start_date: startDate,
-        end_date: generated.endDateStr,
-        days: generated.planDays.length,
-        skipped_override_days: generated.skippedOverrideDays,
-        skipped_override_count: generated.skippedOverrideDays.length,
+        start_date: window.startDate,
+        end_date: window.endDate,
+        upserted_days: persisted.upsertedDays,
+        upserted_tasks: persisted.upsertedTasks,
+        skipped_override_days: skippedOverrideDays,
       },
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    if (typeof err?.message === "string" && err.message.includes("Study profile not found")) {
-      return res.status(400).json({ error: err.message });
-    }
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to refresh plan";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
-calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.post("/regenerate", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "regenerate");
+  if (!premium) return;
+
   try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const windowInput = parseDateWindow(req, settings.timezone);
+    if (!windowInput) {
+      return res.status(400).json({ error: "Invalid date window", requestId: req.requestId });
     }
 
-    const userId = user.id;
-
-    const dayDate = req.params.dayDate;
-    if (!isIsoDate(dayDate)) {
-      return res.status(400).json({ error: "dayDate path param must be YYYY-MM-DD" });
-    }
-
-    const plannedMinutes = req.body?.planned_minutes;
-    const focus = req.body?.focus;
-    const tasks = req.body?.tasks;
-
-    if (plannedMinutes != null && (typeof plannedMinutes !== "number" || plannedMinutes < 0 || plannedMinutes > 600)) {
-      return res.status(400).json({ error: "planned_minutes must be a number between 0 and 600" });
-    }
-    if (focus != null && !Array.isArray(focus)) {
-      return res.status(400).json({ error: "focus must be an array when provided" });
-    }
-    if (tasks != null && !Array.isArray(tasks)) {
-      return res.status(400).json({ error: "tasks must be an array when provided" });
-    }
-    if (plannedMinutes == null && focus == null && tasks == null) {
-      return res.status(400).json({ error: "At least one of planned_minutes, focus, or tasks is required" });
-    }
-
-    const { data: existingDay, error: existingDayError } = await supabaseServer
-      .from("student_study_plan_days")
-      .select("planned_minutes, focus, tasks, plan_version")
-      .eq("user_id", userId)
-      .eq("day_date", dayDate)
-      .maybeSingle();
-
-    if (existingDayError) {
-      return res.status(500).json({ error: "Failed to load existing day", details: existingDayError.message });
-    }
-
-    const profile = await loadStudyProfile(userId);
-
-    const payload = {
-      user_id: userId,
-      day_date: dayDate,
-      planned_minutes:
-        plannedMinutes ??
-        (existingDay?.planned_minutes ?? profile?.daily_minutes ?? DEFAULT_DAILY_MINUTES),
-      focus: focus ?? existingDay?.focus ?? [],
-      tasks: tasks ?? existingDay?.tasks ?? [],
-      plan_version: (existingDay?.plan_version ?? 0) + 1,
-      generated_at: new Date().toISOString(),
-      is_user_override: true,
-    };
-
-    const { data: updatedDay, error: upsertError } = await supabaseServer
-      .from("student_study_plan_days")
-      .upsert(payload, { onConflict: "user_id,day_date" })
-      .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
-      .single();
-
-    if (upsertError) {
-      return res.status(500).json({ error: "Failed to save manual day edit", details: upsertError.message });
-    }
-
-    await emitCalendarEvent({
-      eventType: "day_edited",
-      userId,
-      details: {
-        day_date: dayDate,
-        planned_minutes: payload.planned_minutes,
-        plan_version: payload.plan_version,
-      },
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    const window = resolvePlannerWindow({
+      startDate: windowInput.startDate,
+      todayDate,
+      examDate: settings.examDate,
+      requestedDays: windowInput.requestedDays,
     });
+
+    const generated = await generatePlanForWindow({
+      userId: user.id,
+      profile,
+      todayDate,
+      startDate: window.startDate,
+      endDate: window.endDate,
+      skipOverrideDays: false,
+    });
+
+    const persisted = await persistGeneratedDays({
+      userId: user.id,
+      timezone: settings.timezone,
+      todayDate,
+      existingDays: generated.existingDays,
+      generatedDays: generated.plan.plannedDays,
+      source: "regenerate",
+      skipOverrides: false,
+    });
+
     await emitCalendarEvent({
-      eventType: "override_applied",
-      userId,
+      eventType: "plan_generated",
+      userId: user.id,
       details: {
-        day_date: dayDate,
-        is_user_override: true,
+        mode: "regenerate",
+        start_date: window.startDate,
+        end_date: window.endDate,
+        upserted_days: persisted.upsertedDays,
       },
     });
 
     return res.json({
-      updated: true,
-      day: { ...updatedDay, status: computeStatus(updatedDay.planned_minutes ?? 0, updatedDay.completed_minutes ?? 0) },
+      regenerated: {
+        start_date: window.startDate,
+        end_date: window.endDate,
+        upserted_days: persisted.upsertedDays,
+        upserted_tasks: persisted.upsertedTasks,
+      },
+      requestId: req.requestId,
     });
-  } catch (err: any) {
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to regenerate plan";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
-
-async function regenerateSingleDay(req: AuthenticatedRequest, res: Response): Promise<Response | void> {
-  const user = requireRequestUser(req, res);
-  if (!user) {
-    return;
-  }
-
-  const userId = user.id;
-
-  const dayDate = req.params.dayDate;
-  if (!isIsoDate(dayDate)) {
-    return res.status(400).json({ error: "dayDate path param must be YYYY-MM-DD" });
-  }
-
-  const access = await ensurePlannerWriteAccess(user);
-  if (!access.hasPaidAccess) {
-    return res.status(402).json({
-      error: "Single-day regeneration requires active entitlement",
-      code: "PLANNER_DAY_REGEN_LOCKED",
-      feature: "calendar_day_regeneration",
-      reason: access.reason,
-      entitlement: {
-        plan: access.plan,
-        status: access.status,
-        currentPeriodEnd: access.currentPeriodEnd,
-      },
-      requestId: (req as any).requestId,
-    });
-  }
-
-  const generated = await buildPlanRowsForRange({
-    userId,
-    startDate: dayDate,
-    days: 1,
-    forceRegenerateDays: new Set([dayDate]),
-  });
-
-  if (generated.planDays.length !== 1) {
-    return res.status(500).json({ error: "Failed to build single-day regeneration payload" });
-  }
-
-  const { data: regeneratedDay, error: upsertError } = await supabaseServer
-    .from("student_study_plan_days")
-    .upsert(generated.planDays[0], { onConflict: "user_id,day_date" })
-    .select("day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, created_at, updated_at, is_user_override")
-    .single();
-
-  if (upsertError) {
-    return res.status(500).json({ error: "Failed to regenerate day", details: upsertError.message });
-  }
-
-  return res.json({
-    regenerated: true,
-    day: { ...regeneratedDay, status: computeStatus(regeneratedDay.planned_minutes ?? 0, regeneratedDay.completed_minutes ?? 0) },
-  });
-}
 
 calendarRouter.post("/day/:dayDate/regenerate", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "day_regenerate");
+  if (!premium) return;
+
+  const { dayDate } = req.params;
+  if (!isIsoDate(dayDate)) {
+    return res.status(400).json({ error: "dayDate must be YYYY-MM-DD", requestId: req.requestId });
+  }
+
   try {
-    return await regenerateSingleDay(req, res);
-  } catch (err: any) {
-    if (typeof err?.message === "string" && err.message.includes("Study profile not found")) {
-      return res.status(400).json({ error: err.message });
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    if (dayDate < todayDate) {
+      return res.status(409).json({ error: "Past days are immutable", code: "PAST_DAY_IMMUTABLE", requestId: req.requestId });
     }
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+
+    const generated = await generatePlanForWindow({
+      userId: user.id,
+      profile,
+      todayDate,
+      startDate: dayDate,
+      endDate: dayDate,
+      skipOverrideDays: false,
+    });
+
+    const persisted = await persistGeneratedDays({
+      userId: user.id,
+      timezone: settings.timezone,
+      todayDate,
+      existingDays: generated.existingDays,
+      generatedDays: generated.plan.plannedDays,
+      source: "regenerate",
+      skipOverrides: false,
+    });
+
+    const payload = await getMonthPayload(user.id, dayDate, dayDate, settings.timezone);
+    return res.json({
+      day: payload.days[0] ?? null,
+      regenerated: {
+        upserted_days: persisted.upsertedDays,
+        upserted_tasks: persisted.upsertedTasks,
+      },
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to regenerate day";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
 
-calendarRouter.post("/day/:dayDate/reset", async (req: AuthenticatedRequest, res: Response) => {
+calendarRouter.post("/day/:dayDate/reset-to-auto", async (req: AuthenticatedRequest, res: Response) => {
+  const auth = requireRequestAuthContext(req, res);
+  if (!auth) return;
+  const user = auth.user;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "day_reset_auto");
+  if (!premium) return;
+
+  const { dayDate } = req.params;
+  if (!isIsoDate(dayDate)) {
+    return res.status(400).json({ error: "dayDate must be YYYY-MM-DD", requestId: req.requestId });
+  }
+
   try {
-    return await regenerateSingleDay(req, res);
-  } catch (err: any) {
-    if (typeof err?.message === "string" && err.message.includes("Study profile not found")) {
-      return res.status(400).json({ error: err.message });
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    if (dayDate < todayDate) {
+      return res.status(409).json({ error: "Past days are immutable", code: "PAST_DAY_IMMUTABLE", requestId: req.requestId });
     }
-    return res.status(500).json({ error: "Unexpected error", details: err?.message || String(err) });
+
+    const generated = await generatePlanForWindow({
+      userId: user.id,
+      profile,
+      todayDate,
+      startDate: dayDate,
+      endDate: dayDate,
+      skipOverrideDays: false,
+    });
+
+    const persisted = await persistGeneratedDays({
+      userId: user.id,
+      timezone: settings.timezone,
+      todayDate,
+      existingDays: generated.existingDays,
+      generatedDays: generated.plan.plannedDays,
+      source: "refresh",
+      skipOverrides: false,
+    });
+
+    const payload = await getMonthPayload(user.id, dayDate, dayDate, settings.timezone);
+    return res.json({
+      day: payload.days[0] ?? null,
+      reset: {
+        upserted_days: persisted.upsertedDays,
+        upserted_tasks: persisted.upsertedTasks,
+      },
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to reset day";
+    return res.status(500).json({ error: message, requestId: req.requestId });
   }
 });
+
+calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Response) => {
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "day_edit");
+  if (!premium) return;
+
+  const { dayDate } = req.params;
+  if (!isIsoDate(dayDate)) {
+    return res.status(400).json({ error: "dayDate must be YYYY-MM-DD", requestId: req.requestId });
+  }
+
+  try {
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
+    if (dayDate < todayDate) {
+      return res.status(409).json({ error: "Past days are immutable", code: "PAST_DAY_IMMUTABLE", requestId: req.requestId });
+    }
+
+    const existing = (await loadDaysByRange(user.id, dayDate, dayDate))[0] ?? null;
+    const incomingTasks = Array.isArray(req.body?.tasks) ? req.body.tasks : [];
+    const incomingFocus = Array.isArray(req.body?.focus) ? req.body.focus : [];
+    const plannedMinutesInput = Number(req.body?.planned_minutes);
+    const plannedMinutes = Number.isFinite(plannedMinutesInput)
+      ? Math.max(0, Math.round(plannedMinutesInput))
+      : incomingTasks.reduce((sum: number, task: any) => sum + Math.max(0, Number(task?.minutes ?? 0)), 0);
+
+    const dayPayload = {
+      user_id: user.id,
+      day_date: dayDate,
+      planned_minutes: plannedMinutes,
+      completed_minutes: existing?.completed_minutes ?? 0,
+      focus: incomingFocus,
+      tasks: incomingTasks,
+      plan_version: (existing?.plan_version ?? 0) + 1,
+      generated_at: DateTime.now().toUTC().toISO(),
+      is_user_override: true,
+      status: canonicalDayStatus(existing?.status),
+      generation_source: "user" as GenerationSource,
+      is_exam_day: Boolean(existing?.is_exam_day),
+      is_taper_day: Boolean(existing?.is_taper_day),
+      is_full_test_day: Boolean(existing?.is_full_test_day),
+      required_task_count: incomingTasks.length,
+      completed_task_count: incomingTasks.filter((task: any) => task?.status === "completed").length,
+      study_minutes_target: plannedMinutes,
+    };
+
+    const { data: dayRow, error: dayError } = await supabaseServer
+      .from("student_study_plan_days")
+      .upsert(dayPayload, { onConflict: "user_id,day_date" })
+      .select("id")
+      .single();
+    if (dayError || !dayRow?.id) {
+      return res.status(500).json({ error: `Failed to save day: ${dayError?.message ?? "missing day id"}`, requestId: req.requestId });
+    }
+
+    const { error: deleteError } = await supabaseServer
+      .from("student_study_plan_tasks")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("day_date", dayDate);
+    if (deleteError) {
+      return res.status(500).json({ error: `Failed to replace day tasks: ${deleteError.message}`, requestId: req.requestId });
+    }
+
+    if (incomingTasks.length > 0) {
+      const rows = incomingTasks.map((task: any, index: number) => {
+        const section = normalizeSection(task?.section);
+        const minutes = Math.max(0, Math.round(Number(task?.minutes ?? task?.duration_minutes ?? 0)));
+        const normalizedTaskType: TaskType =
+          task?.task_type === "full_length_exam" || task?.type === "full_test"
+            ? "full_length_exam"
+            : task?.task_type === "review_errors" || task?.type === "review"
+              ? "review_errors"
+              : section === "RW"
+                ? "rw_practice"
+                : "math_practice";
+        return {
+          day_id: dayRow.id,
+          user_id: user.id,
+          day_date: dayDate,
+          ordinal: index + 1,
+          task_type: normalizedTaskType,
+          section,
+          duration_minutes: minutes,
+          source_skill_code: null,
+          source_domain: null,
+          source_subskill: null,
+          source_reason: { mode: "manual_edit" },
+          status: parseTaskStatus(task?.status),
+          is_user_override: true,
+          planner_owned: false,
+          metadata: {
+            required: true,
+            notes: typeof task?.notes === "string" ? task.notes : null,
+          },
+          completed_at: task?.status === "completed" ? DateTime.now().toUTC().toISO() : null,
+        };
+      });
+      const { error: insertError } = await supabaseServer.from("student_study_plan_tasks").insert(rows);
+      if (insertError) {
+        return res.status(500).json({ error: `Failed to save day tasks: ${insertError.message}`, requestId: req.requestId });
+      }
+    }
+
+    await emitCalendarEvent({
+      eventType: "day_edited",
+      userId: user.id,
+      details: { day_date: dayDate, task_count: incomingTasks.length },
+    });
+    await emitCalendarEvent({
+      eventType: "override_applied",
+      userId: user.id,
+      details: { day_date: dayDate, source: "manual" },
+    });
+
+    const payload = await getMonthPayload(user.id, dayDate, dayDate, settings.timezone);
+    return res.json({
+      day: payload.days[0] ?? null,
+      entitlement: premium,
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to edit day";
+    return res.status(500).json({ error: message, requestId: req.requestId });
+  }
+});
+
+calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedRequest, res: Response) => {
+  const user = requireRequestUser(req, res);
+  if (!user) return;
+  const premium = await ensurePremiumAccess(user, res, req.requestId, "task_edit");
+  if (!premium) return;
+
+  const { dayDate, taskId } = req.params;
+  if (!isIsoDate(dayDate)) {
+    return res.status(400).json({ error: "dayDate must be YYYY-MM-DD", requestId: req.requestId });
+  }
+  const status = parseTaskStatus(req.body?.status);
+  try {
+    const { data: existingTask, error: taskError } = await supabaseServer
+      .from("student_study_plan_tasks")
+      .select("id, user_id, day_id, day_date, status")
+      .eq("id", taskId)
+      .eq("user_id", user.id)
+      .eq("day_date", dayDate)
+      .maybeSingle();
+    if (taskError || !existingTask) {
+      return res.status(404).json({ error: "Task not found", requestId: req.requestId });
+    }
+
+    const { error: updateTaskError } = await supabaseServer
+      .from("student_study_plan_tasks")
+      .update({
+        status,
+        completed_at: status === "completed" ? DateTime.now().toUTC().toISO() : null,
+        updated_at: DateTime.now().toUTC().toISO(),
+      })
+      .eq("id", taskId)
+      .eq("user_id", user.id);
+    if (updateTaskError) {
+      return res.status(500).json({ error: `Failed to update task: ${updateTaskError.message}`, requestId: req.requestId });
+    }
+
+    const dayRows = await loadDaysByRange(user.id, dayDate, dayDate);
+    const day = dayRows[0];
+    if (!day) return res.status(404).json({ error: "Day not found", requestId: req.requestId });
+    const dayTasks = await loadTasksByRange(user.id, dayDate, dayDate);
+    const derived = computeDayStatusFromTasks(dayDate, DateTime.now().toISODate()!, dayTasks);
+
+    const { error: dayUpdateError } = await supabaseServer
+      .from("student_study_plan_days")
+      .update({
+        status: derived.status,
+        required_task_count: derived.requiredTaskCount,
+        completed_task_count: derived.completedTaskCount,
+        updated_at: DateTime.now().toUTC().toISO(),
+      })
+      .eq("id", day.id)
+      .eq("user_id", user.id);
+    if (dayUpdateError) {
+      return res.status(500).json({ error: `Failed to update day status: ${dayUpdateError.message}`, requestId: req.requestId });
+    }
+
+    if (status === "completed") {
+      await emitCalendarEvent({
+        eventType: "block_completed",
+        userId: user.id,
+        details: { day_date: dayDate, task_id: taskId },
+      });
+    }
+
+    const profile = await loadProfile(user.id);
+    const settings = profileSummaryFromRow(user.id, profile);
+    const payload = await getMonthPayload(user.id, dayDate, dayDate, settings.timezone);
+    return res.json({
+      day: payload.days[0] ?? null,
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update task";
+    return res.status(500).json({ error: message, requestId: req.requestId });
+  }
+});
+
+export async function syncCalendarDayFromSessions(userId: string, dayDate: string, timezone = DEFAULT_TIMEZONE): Promise<void> {
+  const startUtc = DateTime.fromISO(dayDate, { zone: timezone }).startOf("day").toUTC().toISO();
+  const endUtc = DateTime.fromISO(dayDate, { zone: timezone }).endOf("day").toUTC().toISO();
+  if (!startUtc || !endUtc) return;
+
+  const [dayResult, sessionsResult] = await Promise.all([
+    supabaseServer
+      .from("student_study_plan_days")
+      .select("id, user_id, day_date, planned_minutes, completed_minutes")
+      .eq("user_id", userId)
+      .eq("day_date", dayDate)
+      .maybeSingle(),
+    supabaseServer
+      .from("practice_sessions")
+      .select("started_at, finished_at, actual_duration_ms")
+      .eq("user_id", userId)
+      .gte("started_at", startUtc)
+      .lte("started_at", endUtc),
+  ]);
+
+  if (dayResult.error || !dayResult.data) return;
+
+  const sessions = (sessionsResult.data as Array<{ started_at: string | null; finished_at: string | null; actual_duration_ms: number | null }> | null) ?? [];
+  let totalMinutes = 0;
+  for (const session of sessions) {
+    if (typeof session.actual_duration_ms === "number" && session.actual_duration_ms > 0) {
+      totalMinutes += Math.round(session.actual_duration_ms / 60000);
+      continue;
+    }
+    if (!session.started_at || !session.finished_at) continue;
+    const duration = DateTime.fromISO(session.finished_at).diff(DateTime.fromISO(session.started_at), "minutes").minutes;
+    totalMinutes += Math.max(0, Math.round(duration));
+  }
+
+  const previousCompleted = Math.max(0, Number(dayResult.data.completed_minutes ?? 0));
+  if (previousCompleted === totalMinutes) return;
+
+  await supabaseServer
+    .from("student_study_plan_days")
+    .update({
+      completed_minutes: totalMinutes,
+      updated_at: DateTime.now().toUTC().toISO(),
+    })
+    .eq("id", dayResult.data.id)
+    .eq("user_id", userId);
+
+  const plannedMinutes = Math.max(0, Number(dayResult.data.planned_minutes ?? 0));
+  if (plannedMinutes > 0 && previousCompleted < plannedMinutes && totalMinutes >= plannedMinutes) {
+    await emitCalendarEvent({
+      eventType: "block_completed",
+      userId,
+      details: { day_date: dayDate, source: "session_sync" },
+    });
+  }
+}

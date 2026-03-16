@@ -26,11 +26,7 @@ export async function resolvePaidKpiAccessForStudent(studentUserId: string): Pro
 
     let status: KpiEntitlementAccess['status'] = 'inactive';
     let currentPeriodEnd: string | null = null;
-    let sourceAccountId: string | null = access.studentAccountId;
-
-    if (access.premiumSource === 'guardian') {
-      sourceAccountId = access.guardianAccountId;
-    }
+    const sourceAccountId = access.studentAccountId;
 
     if (sourceAccountId) {
       const sourceEntitlement = await getEntitlement(sourceAccountId);

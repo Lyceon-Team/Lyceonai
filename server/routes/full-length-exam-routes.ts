@@ -71,7 +71,7 @@ function isClientInstanceConflict(message: string): boolean {
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -164,7 +164,7 @@ router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: R
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/start", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -215,7 +215,7 @@ router.post("/sessions/:sessionId/start", csrfProtection, requireSupabaseAuth, a
  * - Idempotent
  * - Validates question belongs to current module
  */
-router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -280,7 +280,7 @@ router.post("/sessions/:sessionId/answer", csrfProtection, requireSupabaseAuth, 
  * - User ID from auth only
  * - Computes Module 2 difficulty deterministically
  */
-router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -337,7 +337,7 @@ router.post("/sessions/:sessionId/module/submit", csrfProtection, requireSupabas
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -387,7 +387,7 @@ router.post("/sessions/:sessionId/break/continue", csrfProtection, requireSupaba
  * - User ID from auth only
  * - Returns answers/explanations only after completion
  */
-router.post("/sessions/:sessionId/complete", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/complete", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {

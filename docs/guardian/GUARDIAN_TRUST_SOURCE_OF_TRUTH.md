@@ -25,22 +25,20 @@ CREATE TABLE public.guardian_links (
 Guardian visibility to student-derived product surfaces requires two independent conditions:
 
 1. Active link: the guardian is actively linked to that student in `guardian_links`.
-2. Active premium on the linked pair: at least one side has active paid entitlement (`plan='paid'` and `status IN ('active','trialing')` and not expired):
-   - linked student entitlement, or
-   - linked guardian entitlement.
+2. Active premium on the linked student account: the linked student has active paid entitlement (`plan='paid'` and `status IN ('active','trialing')` and not expired).
 
-If link or pair premium becomes inactive, guardian visibility is revoked immediately.
+If link or linked student entitlement becomes inactive, guardian visibility is revoked immediately.
 
 ## 3. Route Flow & Middleware
 Guardian routes that expose student-derived data must pass:
 
 1. Authentication: `requireSupabaseAuth`
 2. Role verification: `requireGuardianRole`
-3. Link + pair-premium enforcement: `requireGuardianEntitlement`
+3. Link + linked-student-entitlement enforcement: `requireGuardianEntitlement`
 
 `requireGuardianEntitlement` is resolved via `resolveLinkedPairPremiumAccessForGuardian(...)` and denies when:
 - guardian has no active link to requested student (`NO_LINKED_STUDENT`, 403)
-- linked pair has no active premium (`PAYMENT_REQUIRED`, 402)
+- linked student has no active premium (`PAYMENT_REQUIRED`, 402)
 
 ## 4. Canonical Runtime Paths
 - `POST /api/guardian/link` -> `createGuardianLink(...)` in `server/lib/account.ts`
@@ -51,7 +49,7 @@ Guardian routes that expose student-derived data must pass:
 ## 5. Denial Cases
 - Unlinked guardian requests linked-student data: denied.
 - Revoked link requests: denied immediately.
-- Linked guardian with no active premium on either side of pair: denied (402).
+- Linked guardian with no active premium on the linked student account: denied (402).
 - Second-link conflicts:
   - guardian already linked to different student: denied (`GUARDIAN_ALREADY_LINKED`, 409)
   - student already linked to different guardian: denied with anti-enumeration contract (404)
@@ -59,4 +57,4 @@ Guardian routes that expose student-derived data must pass:
 ## 6. Deprecated Paths Removed
 - `profiles.guardian_profile_id` is not authorization truth.
 - Runtime guardian visibility is not derived from passive profile fields.
-- Runtime relationship truth is `guardian_links` + entitlement state on the active linked pair.
+- Runtime relationship truth is `guardian_links` + the linked student's entitlement state.

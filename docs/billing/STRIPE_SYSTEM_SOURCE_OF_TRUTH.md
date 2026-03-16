@@ -6,7 +6,7 @@ This document defines canonical billing and entitlement truth in Lyceon.
 
 - Billing truth is account-scoped in `entitlements` (`account_id` unique).
 - Relationship truth is `guardian_links` (`status='active'` for linked pairs).
-- Guardian premium visibility and student premium projection are evaluated across the active linked pair.
+- Guardian premium visibility is evaluated from the linked student's entitlement state.
 
 In runtime access checks:
 - Entitlement state comes from `entitlements`.
@@ -29,12 +29,12 @@ Checkout metadata always carries billing owner context:
 - `payer_role`
 - `client_reference_id = account_id`
 
-Guardian checkout writes entitlement to the guardian billing owner account.
-Student checkout writes entitlement to the student billing owner account.
+Guardian checkout writes entitlement to the linked student account.
+Student checkout writes entitlement to the student account.
 
 ## 4. Pair Premium Projection
 
-Premium feature access is resolved over the active linked pair:
-- Student can receive premium via own active entitlement or linked guardian active entitlement.
-- Guardian requires active link, then can receive premium via linked student active entitlement or own active entitlement.
-- Unlinked guardian may retain paid billing state but does not receive student-derived premium product surfaces until linked.
+Premium feature access is resolved from the student-owned entitlement:
+- Student receives premium only through the student's active entitlement.
+- Guardian requires an active link and the linked student's active entitlement.
+- Unlinked guardian may retain billing metadata but does not receive student-derived premium product surfaces until linked and the linked student is entitled.

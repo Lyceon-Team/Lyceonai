@@ -534,22 +534,19 @@ export async function resolveLinkedPairPremiumAccessForStudent(studentUserId: st
   const guardianEntitlement = guardianAccountId ? await getEntitlement(guardianAccountId) : null;
 
   const studentActive = isEntitlementActive(studentEntitlement);
-  const guardianActive = isEntitlementActive(guardianEntitlement);
   const hasActiveLink = !!guardianLink;
-  const hasPremiumAccess = studentActive || (hasActiveLink && guardianActive);
+  const hasPremiumAccess = studentActive;
 
   return {
     role: 'student',
     hasPremiumAccess,
     hasActiveLink,
-    premiumSource: resolvePremiumSource(studentActive, guardianActive),
+    premiumSource: studentActive ? 'student' : 'none',
     reason: hasPremiumAccess
-      ? studentActive
-        ? 'Student has active premium entitlement.'
-        : 'Linked guardian has active premium entitlement.'
+      ? 'Student has active premium entitlement.'
       : hasActiveLink
-        ? 'No active paid entitlement on linked student-guardian pair.'
-        : 'No active paid entitlement on student account.',
+        ? 'Linked student account does not have an active premium entitlement.'
+        : 'Student account does not have an active premium entitlement.',
     studentUserId,
     guardianUserId,
     studentAccountId,
@@ -594,19 +591,16 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   const studentEntitlement = studentAccountId ? await getEntitlement(studentAccountId) : null;
 
   const studentActive = isEntitlementActive(studentEntitlement);
-  const guardianActive = isEntitlementActive(guardianEntitlement);
-  const hasPremiumAccess = studentActive || guardianActive;
+  const hasPremiumAccess = studentActive;
 
   return {
     role: 'guardian',
     hasPremiumAccess,
     hasActiveLink: true,
-    premiumSource: resolvePremiumSource(studentActive, guardianActive),
+    premiumSource: studentActive ? 'student' : 'none',
     reason: hasPremiumAccess
-      ? studentActive
-        ? 'Linked student has active premium entitlement.'
-        : 'Guardian has active premium entitlement.'
-      : 'No active paid entitlement on linked student-guardian pair.',
+      ? 'Linked student has active premium entitlement.'
+      : 'Linked student account does not have an active premium entitlement.',
     studentUserId: link.student_user_id,
     guardianUserId,
     studentAccountId,

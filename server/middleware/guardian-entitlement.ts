@@ -3,15 +3,15 @@ import { resolveLinkedPairPremiumAccessForGuardian } from '../lib/account';
 import { logger } from '../logger';
 
 function resolveSubscriptionDenyReason(access: Awaited<ReturnType<typeof resolveLinkedPairPremiumAccessForGuardian>>): 'subscription_expired' | 'payment_past_due' | 'subscription_canceled' | 'no_active_subscription' {
-  if (access.studentEntitlementExpired || access.guardianEntitlementExpired) {
+  if (access.studentEntitlementExpired) {
     return 'subscription_expired';
   }
 
-  if (access.studentEntitlementStatus === 'past_due' || access.guardianEntitlementStatus === 'past_due') {
+  if (access.studentEntitlementStatus === 'past_due') {
     return 'payment_past_due';
   }
 
-  if (access.studentEntitlementStatus === 'canceled' || access.guardianEntitlementStatus === 'canceled') {
+  if (access.studentEntitlementStatus === 'canceled') {
     return 'subscription_canceled';
   }
 
@@ -66,7 +66,7 @@ export async function requireGuardianEntitlement(
     if (!access.hasPremiumAccess) {
       const reason = resolveSubscriptionDenyReason(access);
 
-      logger.info('GUARDIAN_ENTITLEMENT', 'access_denied', 'Guardian lacks linked-pair premium access', {
+      logger.info('GUARDIAN_ENTITLEMENT', 'access_denied', 'Guardian lacks linked student entitlement access', {
         userId,
         guardianUserId: access.guardianUserId,
         studentUserId: access.studentUserId,
@@ -84,7 +84,7 @@ export async function requireGuardianEntitlement(
         message: reason === 'subscription_expired'
           ? 'Your subscription has expired. Please renew to continue.'
           : reason === 'payment_past_due'
-            ? 'Your payment is past due. Please update your payment method.'
+            ? 'The linked student subscription payment is past due. Please update the payment method.'
             : 'A subscription is required to access this feature.',
         redirectTo: '/guardian',
         requestId,
@@ -99,7 +99,7 @@ export async function requireGuardianEntitlement(
       guardianEntitlementStatus: access.guardianEntitlementStatus,
     };
 
-    logger.info('GUARDIAN_ENTITLEMENT', 'access_granted', 'Guardian has linked-pair premium access', {
+    logger.info('GUARDIAN_ENTITLEMENT', 'access_granted', 'Guardian has linked student entitlement access', {
       userId,
       guardianUserId: access.guardianUserId,
       studentUserId: access.studentUserId,

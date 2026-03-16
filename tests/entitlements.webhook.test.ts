@@ -94,7 +94,7 @@ describe('Webhook & Entitlements Tests', () => {
     }));
   });
 
-  it('guardian-paid checkout writes entitlement to guardian billing owner account', async () => {
+  it('guardian-paid checkout writes entitlement to the linked student account', async () => {
     mockWebhookGate(null);
 
     const { __retrieveMock } = await import('../server/lib/stripeClient');
@@ -104,9 +104,10 @@ describe('Webhook & Entitlements Tests', () => {
       customer: 'cus_guardian_paid',
       current_period_end: 9999999999,
       metadata: {
-        account_id: 'acc_guardian_owner',
+        account_id: 'acc_student_owner',
         payer_role: 'guardian',
         payer_user_id: 'guardian_1',
+        linked_student_id: 'student_1',
       },
     });
 
@@ -117,9 +118,10 @@ describe('Webhook & Entitlements Tests', () => {
         object: {
           id: 'sub_guardian_123',
           metadata: {
-            account_id: 'acc_guardian_owner',
+            account_id: 'acc_student_owner',
             payer_role: 'guardian',
             payer_user_id: 'guardian_1',
+            linked_student_id: 'student_1',
           },
           customer: 'cus_guardian_paid',
           status: 'active',
@@ -129,7 +131,7 @@ describe('Webhook & Entitlements Tests', () => {
 
     await WebhookHandlers.processWebhook(payload, 'valid_sig');
 
-    expect(upsertEntitlement).toHaveBeenCalledWith('acc_guardian_owner', expect.objectContaining({
+    expect(upsertEntitlement).toHaveBeenCalledWith('acc_student_owner', expect.objectContaining({
       stripe_subscription_id: 'sub_guardian_123',
       stripe_customer_id: 'cus_guardian_paid',
     }));

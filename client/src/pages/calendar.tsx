@@ -4,16 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw, Settings } from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
 import {
   getCalendarProfile,
   saveCalendarProfile,
   getCalendarMonth,
+  refreshCalendarPlan,
+  regenerateCalendarPlan,
+  updateCalendarDay,
   type StudyProfile,
   type StudyPlanDay,
-  type CalendarMonthResponse,
 } from "@/lib/calendarApi";
 
 type DayStatus = "planned" | "missed" | "in_progress" | "complete";
@@ -109,6 +111,7 @@ export default function CalendarPage() {
   const [streak, setStreak] = useState<{ current: number; longest: number }>({ current: 0, longest: 0 });
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const year = currentMonth.getFullYear();
@@ -218,6 +221,93 @@ export default function CalendarPage() {
     setMonthError(null);
   };
 
+  const handleRefreshPlan = async () => {
+    if (!profile) return;
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await refreshCalendarPlan(gridStartDate, 28);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to refresh plan");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRegeneratePlan = async () => {
+    if (!profile) return;
+    const confirmed = window.confirm("Regenerate will rebuild future plan days, including user overrides. Continue?");
+    if (!confirmed) return;
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await regenerateCalendarPlan(gridStartDate, 28);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to regenerate plan");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleQuickEditSettings = async () => {
+    if (!profile) return;
+    const dailyMinutesInput = window.prompt("Daily study minutes", String(profile.daily_minutes ?? 30));
+    if (dailyMinutesInput == null) return;
+    const parsedMinutes = Math.max(10, Math.min(240, parseInt(dailyMinutesInput, 10) || 30));
+    const examDateInput = window.prompt("Exam date (YYYY-MM-DD, optional)", profile.exam_date ?? "");
+    if (examDateInput == null) return;
+
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      const updated = await saveCalendarProfile({
+        daily_minutes: parsedMinutes,
+        exam_date: examDateInput.trim() ? examDateInput.trim() : null,
+      });
+      setProfile(updated);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to update settings");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditDay = async (day: CalendarDay) => {
+    const nextMinutesInput = window.prompt("Planned minutes for this day", String(day.plannedMin || 30));
+    if (nextMinutesInput == null) return;
+    const nextMinutes = Math.max(0, parseInt(nextMinutesInput, 10) || 0);
+    const tasks =
+      (day.tasks && day.tasks.length > 0
+        ? day.tasks.map((task) => ({
+            type: task.type,
+            section: task.section,
+            mode: task.mode,
+            minutes: task.minutes,
+          }))
+        : [
+            { type: "practice", section: "Math", mode: "mixed", minutes: Math.round(nextMinutes / 2) },
+            { type: "practice", section: "Reading & Writing", mode: "mixed", minutes: Math.max(0, nextMinutes - Math.round(nextMinutes / 2)) },
+          ]) || [];
+
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await updateCalendarDay(day.dateKey, {
+        planned_minutes: nextMinutes,
+        focus: day.focus ?? [],
+        tasks,
+      });
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to update day");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (profileLoading) {
     return (
       <AppShell>
@@ -243,7 +333,18 @@ export default function CalendarPage() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-foreground">Study Calendar</h1>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={handleQuickEditSettings} disabled={actionLoading}>
+              <Settings className="h-4 w-4 mr-2" />
+              Edit Settings
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRefreshPlan} disabled={actionLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${actionLoading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRegeneratePlan} disabled={actionLoading}>
+              Regenerate
+            </Button>
             <Button variant="outline" size="icon" onClick={handlePrevMonth}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -298,7 +399,7 @@ export default function CalendarPage() {
             />
           </div>
           <aside className="lg:col-span-5">
-            <DayDetailPanel day={selectedDay} />
+            <DayDetailPanel day={selectedDay} onEditDay={handleEditDay} />
           </aside>
         </div>
       </div>
@@ -478,7 +579,7 @@ function MonthGrid({
   );
 }
 
-function DayDetailPanel({ day }: { day: CalendarDay | null }) {
+function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay: (day: CalendarDay) => void }) {
   const [, navigate] = useLocation();
 
   const handleStartPractice = () => {
@@ -560,6 +661,12 @@ function DayDetailPanel({ day }: { day: CalendarDay | null }) {
           Minutes count automatically when you study.
         </p>
       </div>
+
+      {hasPlan && (
+        <Button variant="outline" className="w-full" onClick={() => onEditDay(day)}>
+          Edit This Day
+        </Button>
+      )}
 
       {hasPlan && day.status !== "complete" && (
         <Button
