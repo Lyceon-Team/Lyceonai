@@ -107,14 +107,14 @@ async function hasActiveFullLengthExam(userId: string): Promise<boolean> {
   }
 }
 
-function suppressAnswerReveal<T extends Record<string, unknown>>(question: T | null): T | null {
+function suppressAnswerReveal<T extends object>(question: T | null): T | null {
   if (!question) return null;
 
-  const sanitized: Record<string, unknown> = {
-    ...question,
+  const sanitized = {
+    ...(question as Record<string, unknown>),
     correctAnswer: null,
     explanation: null,
-  };
+  } as Record<string, unknown>;
 
   if (Object.prototype.hasOwnProperty.call(sanitized, "answer")) {
     sanitized.answer = null;
@@ -395,4 +395,5 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
 });
 
 export default router;
+
 

@@ -37,11 +37,7 @@ async function main() {
       section: question.section,
       domain: question.domain,
       skill: question.skill,
-<<<<<<< HEAD
-      difficulty: question.difficulty,
-=======
       difficulty_bucket: question.difficulty,
->>>>>>> 3f914bde83e16f71d211c467f10d3aa174d3907f
     });
 
   if (insertError) {
