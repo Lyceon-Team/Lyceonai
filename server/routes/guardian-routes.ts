@@ -224,6 +224,10 @@ router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, cs
     try {
       await revokeGuardianLink(guardianId, studentId);
     } catch (revokeError: any) {
+      if (revokeError?.code === 'LINK_NOT_ACTIVE') {
+        logger.warn('GUARDIAN', 'unlink_conflict', 'Guardian link no longer active at revoke time', { guardianId, studentId, requestId });
+        return res.status(409).json({ error: 'Link is no longer active', code: 'LINK_NOT_ACTIVE', requestId });
+      }
       logger.error('GUARDIAN', 'unlink_student', 'Failed to unlink student', { error: revokeError.message, requestId });
       return res.status(500).json({ error: 'Failed to unlink student', requestId });
     }

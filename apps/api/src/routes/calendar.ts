@@ -167,6 +167,13 @@ function parseTaskStatus(value: unknown): TaskStatus {
   return "planned";
 }
 
+function parseTaskStatusInput(value: unknown): TaskStatus | null {
+  if (value === "planned" || value === "completed" || value === "in_progress" || value === "skipped" || value === "missed") {
+    return value;
+  }
+  return null;
+}
+
 function legacyDayStatus(status: DayStatus): "planned" | "in_progress" | "complete" | "missed" {
   if (status === "completed") return "complete";
   if (status === "partially_completed") return "in_progress";
@@ -282,10 +289,7 @@ async function loadTasksByRange(userId: string, start: string, end: string): Pro
     .lte("day_date", end)
     .order("day_date", { ascending: true })
     .order("ordinal", { ascending: true });
-  if (error) {
-    // table may not exist in very old local DB snapshots
-    return [];
-  }
+  if (error) throw new Error(`Failed to load plan tasks: ${error.message}`);
   return ((data as PlanTaskRow[] | null) ?? []).map((row) => ({
     ...row,
     status: parseTaskStatus(row.status),
@@ -302,7 +306,7 @@ async function loadAttemptsByRange(userId: string, startUtc: string, endUtc: str
     .gte("attempted_at", startUtc)
     .lte("attempted_at", endUtc)
     .order("attempted_at", { ascending: false });
-  if (error) return [];
+  if (error) throw new Error(`Failed to load attempts: ${error.message}`);
   return (data as AttemptRow[] | null) ?? [];
 }
 
@@ -1149,6 +1153,14 @@ calendarRouter.post("/day/:dayDate/reset-to-auto", async (req: AuthenticatedRequ
       return res.status(409).json({ error: "Past days are immutable", code: "PAST_DAY_IMMUTABLE", requestId: req.requestId });
     }
 
+    const existing = (await loadDaysByRange(user.id, dayDate, dayDate))[0] ?? null;
+    if (!existing) {
+      return res.status(404).json({ error: "Day not found", code: "DAY_NOT_FOUND", requestId: req.requestId });
+    }
+    if (!existing.is_user_override) {
+      return res.status(409).json({ error: "Day is not user override", code: "DAY_NOT_OVERRIDDEN", requestId: req.requestId });
+    }
+
     const generated = await generatePlanForWindow({
       userId: user.id,
       profile,
@@ -1321,7 +1333,10 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
   if (!isIsoDate(dayDate)) {
     return res.status(400).json({ error: "dayDate must be YYYY-MM-DD", requestId: req.requestId });
   }
-  const status = parseTaskStatus(req.body?.status);
+  const status = parseTaskStatusInput(req.body?.status);
+  if (!status) {
+    return res.status(400).json({ error: "Invalid task status", code: "INVALID_TASK_STATUS", requestId: req.requestId });
+  }
   try {
     const { data: existingTask, error: taskError } = await supabaseServer
       .from("student_study_plan_tasks")
@@ -1332,6 +1347,16 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       .maybeSingle();
     if (taskError || !existingTask) {
       return res.status(404).json({ error: "Task not found", requestId: req.requestId });
+    }
+    const previousStatus = parseTaskStatus(existingTask.status);
+    if (previousStatus === status) {
+      const profile = await loadProfile(user.id);
+      const settings = profileSummaryFromRow(user.id, profile);
+      const payload = await getMonthPayload(user.id, dayDate, dayDate, settings.timezone);
+      return res.json({
+        day: payload.days[0] ?? null,
+        requestId: req.requestId,
+      });
     }
 
     const { error: updateTaskError } = await supabaseServer
@@ -1367,7 +1392,7 @@ calendarRouter.patch("/day/:dayDate/tasks/:taskId", async (req: AuthenticatedReq
       return res.status(500).json({ error: `Failed to update day status: ${dayUpdateError.message}`, requestId: req.requestId });
     }
 
-    if (status === "completed") {
+    if (status === "completed" && previousStatus !== "completed") {
       await emitCalendarEvent({
         eventType: "block_completed",
         userId: user.id,

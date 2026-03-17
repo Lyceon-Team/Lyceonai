@@ -449,10 +449,8 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
  */
 router.post('/refresh', csrfProtection, async (req: Request, res: Response) => {
   try {
-    // Accept refresh token from body OR from httpOnly cookie
-    const refreshToken =
-      req.body?.refresh_token ||
-      req.cookies?.['sb-refresh-token'];
+    // Cookie-only trust: refresh token must come from httpOnly cookie
+    const refreshToken = req.cookies?.['sb-refresh-token'];
 
     if (!refreshToken) {
       return res.status(401).json({ error: 'No refresh token provided' });

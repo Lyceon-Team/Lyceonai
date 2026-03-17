@@ -18,6 +18,7 @@ const kpiMocks = {
 };
 
 const systemEventInserts: Record<string, unknown>[] = [];
+const guardianAuditInserts: Record<string, unknown>[] = [];
 let attemptsSelectError: { message: string } | null = null;
 let profileSelectError: { message: string } | null = null;
 
@@ -172,7 +173,14 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
 
       if (table === 'guardian_link_audit') {
         return {
-          insert: async () => ({ error: null }),
+          insert: async (payload: any) => {
+            if (Array.isArray(payload)) {
+              guardianAuditInserts.push(...payload);
+            } else if (payload) {
+              guardianAuditInserts.push(payload);
+            }
+            return { error: null };
+          },
         };
       }
 
@@ -224,9 +232,13 @@ describe('Guardian reporting runtime contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
+    guardianAuditInserts.length = 0;
     attemptsSelectError = null;
     profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
+      { student_user_id: 'student-1', linked_at: '2026-03-01T00:00:00.000Z' },
+    ]);
 
     kpiMocks.buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
       modelVersion: 'kpi-v1',
@@ -321,6 +333,83 @@ describe('Guardian reporting runtime contract', () => {
     });
     kpiMocks.buildFullTestKpis.mockReturnValue([]);
     kpiMocks.fullTestMeasurementModel.mockReturnValue({ version: '2026-03-full-test' });
+  });
+
+  it('returns linked students list and emits guardian_dashboard_viewed', async () => {
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/students');
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(response.body.students)).toBe(true);
+    expect(response.body.students).toHaveLength(1);
+    expect(response.body.students[0]).toMatchObject({
+      id: 'student-1',
+      display_name: 'Student One',
+    });
+
+    const dashboardViewed = systemEventInserts.find((row) => row.event_type === 'guardian_dashboard_viewed');
+    expect(dashboardViewed).toBeDefined();
+    expect(dashboardViewed).toMatchObject({
+      user_id: 'guardian-1',
+      details: expect.objectContaining({
+        linked_student_count: 1,
+      }),
+    });
+  });
+
+  it('fails closed when guardian link source lookup fails for students list', async () => {
+    accountMocks.getAllGuardianStudentLinks.mockRejectedValueOnce(new Error('guardian_links_source_failed'));
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/students');
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('Internal server error');
+    const dashboardViewed = systemEventInserts.find((row) => row.event_type === 'guardian_dashboard_viewed');
+    expect(dashboardViewed).toBeUndefined();
+  });
+
+  it('fails closed on unlink conflict when link is no longer active and does not emit unlink success audit', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    const conflict = new Error('Guardian link is not active') as Error & { code?: string };
+    conflict.code = 'LINK_NOT_ACTIVE';
+    accountMocks.revokeGuardianLink.mockRejectedValueOnce(conflict);
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).delete('/api/guardian/link/student-1');
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('LINK_NOT_ACTIVE');
+    const unlinkSuccess = guardianAuditInserts.find((row: any) => row.action === 'unlink_success' && row.outcome === 'success');
+    expect(unlinkSuccess).toBeUndefined();
+  });
+
+  it('keeps valid unlink transition behavior and emits unlink success audit', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    accountMocks.revokeGuardianLink.mockResolvedValueOnce(undefined);
+    accountMocks.getAllGuardianStudentLinks.mockResolvedValueOnce([]);
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).delete('/api/guardian/link/student-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.students).toEqual([]);
+    const unlinkSuccess = guardianAuditInserts.find((row: any) => row.action === 'unlink_success' && row.outcome === 'success');
+    expect(unlinkSuccess).toBeDefined();
+    expect(unlinkSuccess).toMatchObject({
+      guardian_profile_id: 'guardian-1',
+      student_profile_id: 'student-1',
+    });
   });
 
   it('denies non-guardian users at guardian reporting routes', async () => {
