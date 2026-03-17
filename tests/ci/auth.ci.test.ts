@@ -104,47 +104,145 @@ describe('CI Auth Tests', () => {
   });
 
   describe('Admin Provisioning Guard', () => {
+    it('hard-denies admin provisioning in production even with correct passcode', async () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousEnable = process.env.ADMIN_PROVISION_ENABLE;
+      const previousPasscode = process.env.ADMN_PASSCODE;
+      process.env.NODE_ENV = 'production';
+      process.env.ADMIN_PROVISION_ENABLE = 'true';
+      process.env.ADMN_PASSCODE = 'expected-passcode';
+
+      try {
+        const res = await request(app)
+          .post('/api/auth/admin-provision')
+          .set('Origin', 'http://localhost:5000')
+          .send({
+            email: 'admin-production-deny@test.com',
+            password: 'AdminPass123!',
+            passcode: 'expected-passcode',
+          });
+
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty('error', 'Admin provisioning is disabled');
+      } finally {
+        if (previousNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = previousNodeEnv;
+        }
+        if (previousEnable === undefined) {
+          delete process.env.ADMIN_PROVISION_ENABLE;
+        } else {
+          process.env.ADMIN_PROVISION_ENABLE = previousEnable;
+        }
+        if (previousPasscode === undefined) {
+          delete process.env.ADMN_PASSCODE;
+        } else {
+          process.env.ADMN_PASSCODE = previousPasscode;
+        }
+      }
+    });
+
+    it('denies admin provisioning in non-production when ADMIN_PROVISION_ENABLE is not true', async () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousEnable = process.env.ADMIN_PROVISION_ENABLE;
+      const previousPasscode = process.env.ADMN_PASSCODE;
+      process.env.NODE_ENV = 'development';
+      delete process.env.ADMIN_PROVISION_ENABLE;
+      process.env.ADMN_PASSCODE = 'expected-passcode';
+
+      try {
+        const res = await request(app)
+          .post('/api/auth/admin-provision')
+          .set('Origin', 'http://localhost:5000')
+          .send({
+            email: 'admin-nonprod-disabled@test.com',
+            password: 'AdminPass123!',
+            passcode: 'expected-passcode',
+          });
+
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty('error', 'Admin provisioning is disabled');
+      } finally {
+        if (previousNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = previousNodeEnv;
+        }
+        if (previousEnable === undefined) {
+          delete process.env.ADMIN_PROVISION_ENABLE;
+        } else {
+          process.env.ADMIN_PROVISION_ENABLE = previousEnable;
+        }
+        if (previousPasscode === undefined) {
+          delete process.env.ADMN_PASSCODE;
+        } else {
+          process.env.ADMN_PASSCODE = previousPasscode;
+        }
+      }
+    });
+
     it('fails closed when ADMN_PASSCODE is missing', async () => {
       const previous = process.env.ADMN_PASSCODE;
+      const previousEnable = process.env.ADMIN_PROVISION_ENABLE;
+      process.env.ADMIN_PROVISION_ENABLE = 'true';
       delete process.env.ADMN_PASSCODE;
 
-      const res = await request(app)
-        .post('/api/auth/admin-provision')
-        .set('Origin', 'http://localhost:5000')
-        .send({
-          email: 'admin-missing-passcode@test.com',
-          password: 'AdminPass123!',
-          passcode: 'anything',
-        });
+      try {
+        const res = await request(app)
+          .post('/api/auth/admin-provision')
+          .set('Origin', 'http://localhost:5000')
+          .send({
+            email: 'admin-missing-passcode@test.com',
+            password: 'AdminPass123!',
+            passcode: 'anything',
+          });
 
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'Admin provisioning is disabled');
-
-      if (previous) {
-        process.env.ADMN_PASSCODE = previous;
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty('error', 'Admin provisioning is disabled');
+      } finally {
+        if (previous) {
+          process.env.ADMN_PASSCODE = previous;
+        } else {
+          delete process.env.ADMN_PASSCODE;
+        }
+        if (previousEnable === undefined) {
+          delete process.env.ADMIN_PROVISION_ENABLE;
+        } else {
+          process.env.ADMIN_PROVISION_ENABLE = previousEnable;
+        }
       }
     });
 
     it('fails closed when ADMN_PASSCODE does not match', async () => {
       const previous = process.env.ADMN_PASSCODE;
+      const previousEnable = process.env.ADMIN_PROVISION_ENABLE;
+      process.env.ADMIN_PROVISION_ENABLE = 'true';
       process.env.ADMN_PASSCODE = 'expected-passcode';
 
-      const res = await request(app)
-        .post('/api/auth/admin-provision')
-        .set('Origin', 'http://localhost:5000')
-        .send({
-          email: 'admin-bad-passcode@test.com',
-          password: 'AdminPass123!',
-          passcode: 'wrong-passcode',
-        });
+      try {
+        const res = await request(app)
+          .post('/api/auth/admin-provision')
+          .set('Origin', 'http://localhost:5000')
+          .send({
+            email: 'admin-bad-passcode@test.com',
+            password: 'AdminPass123!',
+            passcode: 'wrong-passcode',
+          });
 
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'Invalid provisioning credentials');
-
-      if (previous) {
-        process.env.ADMN_PASSCODE = previous;
-      } else {
-        delete process.env.ADMN_PASSCODE;
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty('error', 'Invalid provisioning credentials');
+      } finally {
+        if (previous) {
+          process.env.ADMN_PASSCODE = previous;
+        } else {
+          delete process.env.ADMN_PASSCODE;
+        }
+        if (previousEnable === undefined) {
+          delete process.env.ADMIN_PROVISION_ENABLE;
+        } else {
+          process.env.ADMIN_PROVISION_ENABLE = previousEnable;
+        }
       }
     });
 

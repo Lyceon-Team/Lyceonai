@@ -6,10 +6,52 @@
 
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { RagQueryRequestSchema } from '../lib/rag-types';
+import { RagQueryRequestSchema, type RagQueryResponse } from '../lib/rag-types';
 import { getRagService } from '../lib/rag-service';
 
 const router = Router();
+
+type RagQuestion = RagQueryResponse['context']['supportingQuestions'][number];
+
+function sanitizeQuestionForStudent(question: RagQuestion): RagQuestion {
+  const sanitized = {
+    ...(question as unknown as Record<string, unknown>),
+    correctAnswer: null,
+    explanation: null,
+  } as RagQuestion & Record<string, unknown>;
+  const sensitiveKeys = ['correctAnswer', 'correct_answer', 'answer', 'explanation'] as const;
+
+  for (const key of sensitiveKeys) {
+    if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+      sanitized[key] = null;
+    }
+  }
+
+  return sanitized;
+}
+
+function sanitizeRagResponseForStudent(response: RagQueryResponse): RagQueryResponse {
+  const context = response.context;
+  if (!context || typeof context !== 'object') {
+    return response;
+  }
+
+  const primaryQuestion = context.primaryQuestion
+    ? sanitizeQuestionForStudent(context.primaryQuestion)
+    : null;
+  const supportingQuestions = context.supportingQuestions.map((question) =>
+    sanitizeQuestionForStudent(question)
+  );
+
+  return {
+    ...response,
+    context: {
+      ...context,
+      primaryQuestion,
+      supportingQuestions,
+    },
+  };
+}
 
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -57,7 +99,8 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       topK: validation.data.topK,
     });
 
-    return res.json(response);
+    const sanitizedResponse = sanitizeRagResponseForStudent(response);
+    return res.json(sanitizedResponse);
   } catch (error: any) {
     console.error('[RAG-V2] Request failed:', error);
     return res.status(500).json({

@@ -75,7 +75,7 @@ describe('Practice Answer Rate Limiter', () => {
     const statuses: number[] = [];
     
     // Send 31 requests - rate limiter allows 30 requests per minute
-    // The first 30 may fail with 400/500 due to missing DB mocks, but should NOT be 429
+    // The first 30 intentionally fail pre-DB validation (missing answer fields), but should NOT be 429
     for (let i = 0; i < 31; i++) {
       const res = await request(app)
         .post('/api/practice/answer')
@@ -83,7 +83,6 @@ describe('Practice Answer Rate Limiter', () => {
         .send({
           sessionId: '00000000-0000-0000-0000-000000000001',
           sessionItemId: '00000000-0000-0000-0000-000000000101',
-          selectedOptionId: 'opt_rate_limit',
           clientAttemptId: 'attempt-rate-limit',
         });
       
@@ -96,6 +95,9 @@ describe('Practice Answer Rate Limiter', () => {
     }, {} as Record<number, number>));
     console.log(`Request 31 status: ${statuses[30]}`);
     
+    // Preserve contract: first 30 are not rate-limited
+    expect(statuses.slice(0, 30).every((status) => status !== 429)).toBe(true);
+
     // PROOF 1: Request #31 was rate-limited with status 429
     expect(statuses[30]).toBe(429);
     
@@ -106,7 +108,6 @@ describe('Practice Answer Rate Limiter', () => {
       .send({
           sessionId: '00000000-0000-0000-0000-000000000001',
           sessionItemId: '00000000-0000-0000-0000-000000000101',
-          selectedOptionId: 'opt_rate_limit',
           clientAttemptId: 'attempt-rate-limit',
         });
     

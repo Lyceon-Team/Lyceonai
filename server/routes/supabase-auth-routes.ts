@@ -185,6 +185,27 @@ router.post('/admin-provision', authRateLimiter, csrfProtection, async (req: Req
     });
   }
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isAdminProvisionEnabled = process.env.ADMIN_PROVISION_ENABLE === 'true';
+
+  if (isProduction) {
+    logger.warn('AUTH', 'admin_provision_blocked_production', 'Admin provisioning is hard-disabled in production', {
+      requestId: req.requestId,
+    });
+    return res.status(403).json({
+      error: 'Admin provisioning is disabled',
+    });
+  }
+
+  if (!isAdminProvisionEnabled) {
+    logger.warn('AUTH', 'admin_provision_disabled_by_default', 'Admin provisioning denied because ADMIN_PROVISION_ENABLE is not true', {
+      requestId: req.requestId,
+    });
+    return res.status(403).json({
+      error: 'Admin provisioning is disabled',
+    });
+  }
+
   const configuredPasscode = process.env.ADMN_PASSCODE;
   if (!configuredPasscode) {
     logger.error('AUTH', 'admin_provision_closed', 'ADMN_PASSCODE is missing; refusing admin provisioning', {
@@ -470,6 +491,10 @@ router.post('/refresh', csrfProtection, async (req: Request, res: Response) => {
  * Safe for production - no secrets exposed
  */
 router.get('/debug', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   res.setHeader('Cache-Control', 'no-store');
 
   try {

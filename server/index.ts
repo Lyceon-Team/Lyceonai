@@ -269,7 +269,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
 app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
-app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
 app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
@@ -370,6 +370,10 @@ app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLeng
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ error: "Not found" });
+  }
+
   res.json({
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
