@@ -74,6 +74,13 @@ const submitSchema = z.object({
   client_instance_id: z.string().max(128).optional().nullable(),
 });
 
+function hasLegacyFreeResponseKeys(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const record = body as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(record, "freeResponseAnswer")
+    || Object.prototype.hasOwnProperty.call(record, "free_response_answer");
+}
+
 function optionalString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -571,6 +578,14 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
   try {
     const userId = (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED", requestId });
+
+    if (hasLegacyFreeResponseKeys(req.body)) {
+      return res.status(400).json({
+        error: "free-response answers are not supported on canonical multiple-choice review submit",
+        code: "REVIEW_MC_OPTION_REQUIRED",
+        requestId,
+      });
+    }
 
     const parsed = submitSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid request body", code: "INVALID_REVIEW_ATTEMPT_PAYLOAD", details: parsed.error.issues, requestId });

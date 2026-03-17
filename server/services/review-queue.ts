@@ -58,15 +58,10 @@ export function compareReviewSnapshots(a: ReviewQueueSnapshot, b: ReviewQueueSna
   return a.attemptId.localeCompare(b.attemptId);
 }
 
-function resolveCanonicalQuestionId(rawCanonicalId: unknown, rawQuestionId: unknown): string | null {
+function resolveCanonicalQuestionId(rawCanonicalId: unknown): string | null {
   const canonicalId = typeof rawCanonicalId === "string" ? rawCanonicalId.trim() : "";
   if (isValidCanonicalId(canonicalId)) {
     return canonicalId;
-  }
-
-  const questionId = typeof rawQuestionId === "string" ? rawQuestionId.trim() : "";
-  if (isValidCanonicalId(questionId)) {
-    return questionId;
   }
 
   return null;
@@ -169,7 +164,7 @@ export async function buildReviewQueueForStudent(userId: string): Promise<Review
     combinedSnapshots.push({
       attemptId: String((row as any).id),
       questionId,
-      questionCanonicalId: resolveCanonicalQuestionId(question?.canonical_id, questionId),
+      questionCanonicalId: resolveCanonicalQuestionId(question?.canonical_id),
       attemptedAt: (row as any).attempted_at ?? null,
       isCorrect: outcome === "correct",
       outcome,
@@ -194,7 +189,7 @@ export async function buildReviewQueueForStudent(userId: string): Promise<Review
     combinedSnapshots.push({
       attemptId: "full-test:" + String(row.id),
       questionId,
-      questionCanonicalId: resolveCanonicalQuestionId(question?.canonical_id, questionId),
+      questionCanonicalId: resolveCanonicalQuestionId(question?.canonical_id),
       attemptedAt: row.answered_at ?? null,
       isCorrect,
       outcome,

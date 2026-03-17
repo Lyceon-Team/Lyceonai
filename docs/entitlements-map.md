@@ -9,7 +9,7 @@ This document provides explicit mappings between:
 - Client gate mechanisms
 - Server gate mechanisms
 
-**Last Updated:** 2026-02-02 (Sprint 2 PR-3)
+**Last Updated:** 2026-03-17 (Canonical content/review runtime truth reconciliation)
 
 ---
 
@@ -127,11 +127,11 @@ Some features are available to free tier but with **usage limits**:
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
 | `GET /api/questions/stats` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
-| `POST /api/questions/validate` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:427` |
+| `POST /api/questions/validate` | student, admin | free | UNMOUNTED in runtime (404 contract) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:237-246` |
 | `POST /api/questions/feedback` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:430` |
 | `GET /api/questions/feed` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:410` |
 | `GET /api/review-errors` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:422` |
-| `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection | `server/index.ts:425` |
+| `POST /api/review-errors/attempt` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin, csrfProtection (owner: `submitReviewSessionAnswer`) | `server/index.ts:345` |
 | `GET /api/me/mastery/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:326` |
 | `GET /api/me/weakness/skills` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
 | `GET /api/me/weakness/clusters` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:325` |
@@ -157,10 +157,10 @@ Some features are available to free tier but with **usage limits**:
 |----------|------|-------------|-------------|----------|
 | `GET /api/admin/stats` | admin | admin-only | requireSupabaseAdmin | `server/routes/admin-stats-routes.ts` |
 | `GET /api/admin/kpis` | admin | admin-only | requireSupabaseAdmin | `server/routes/admin-stats-routes.ts` |
-| `GET /api/admin/questions/needs-review` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:433` |
-| `GET /api/admin/questions/statistics` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:434` |
-| `POST /api/admin/questions/:id/approve` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:435` |
-| `POST /api/admin/questions/:id/reject` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:436` |
+| `GET /api/admin/questions/needs-review` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
+| `GET /api/admin/questions/statistics` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
+| `POST /api/admin/questions/:id/approve` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
+| `POST /api/admin/questions/:id/reject` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
 | `GET /api/admin/db-health` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:351` |
 
 ### Billing APIs

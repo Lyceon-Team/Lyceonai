@@ -136,7 +136,6 @@ const AnswerBodySchema = z.object({
   selectedAnswer: z.string().trim().max(32).optional().nullable(),
   selectedOptionId: z.string().trim().max(32).optional().nullable(),
   answer: z.string().trim().max(32).optional().nullable(),
-  freeResponseAnswer: z.string().trim().max(2000).optional().nullable(),
   clientAttemptId: z.string().max(128).optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
 });
@@ -146,7 +145,6 @@ type NormalizedAnswerPayload = {
   sessionItemId?: string;
   questionId?: string;
   selectedAnswer: string | null;
-  freeResponseAnswer: string | null;
   clientAttemptId: string | null;
   clientInstanceId: string | null;
 };
@@ -166,11 +164,6 @@ function normalizeAnswerPayload(input: z.infer<typeof AnswerBodySchema>): Normal
       ? selectedAnswerRaw.trim()
       : null;
 
-  const freeResponseAnswer =
-    typeof input.freeResponseAnswer === "string" && input.freeResponseAnswer.trim().length > 0
-      ? input.freeResponseAnswer.trim()
-      : null;
-
   const clientAttemptId =
     typeof input.clientAttemptId === "string" && input.clientAttemptId.trim().length > 0
       ? input.clientAttemptId.trim()
@@ -186,10 +179,16 @@ function normalizeAnswerPayload(input: z.infer<typeof AnswerBodySchema>): Normal
     sessionItemId: input.sessionItemId,
     questionId: input.questionId,
     selectedAnswer,
-    freeResponseAnswer,
     clientAttemptId,
     clientInstanceId,
   };
+}
+
+function hasLegacyFreeResponseKeys(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
+  const record = body as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(record, "freeResponseAnswer")
+    || Object.prototype.hasOwnProperty.call(record, "free_response_answer");
 }
 
 function asSessionMetadata(metadata: unknown): SessionMetadata {
@@ -1582,6 +1581,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  if (hasLegacyFreeResponseKeys(req.body)) {
+    return res.status(400).json({
+      error: "invalid_request",
+      code: "MC_OPTION_REQUIRED",
+      message: "free-response answers are not supported on canonical multiple-choice practice submit.",
+      requestId,
+    });
+  }
+
   const parsed = AnswerBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({
@@ -1593,7 +1601,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   const payload = normalizeAnswerPayload(parsed.data);
 
-  if (!payload.selectedAnswer && !payload.freeResponseAnswer) {
+  if (!payload.selectedAnswer) {
     return res.status(400).json({
       error: "invalid_request",
       message: "An answer is required",
@@ -1785,7 +1793,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     session_item_id: sessionItem.id,
     question_id: questionId,
     selected_answer: payload.selectedAnswer ?? null,
-    free_response_answer: payload.freeResponseAnswer ?? null,
+    free_response_answer: null,
     chosen: chosen ?? null,
     is_correct: isCorrect,
     outcome,

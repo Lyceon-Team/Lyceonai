@@ -372,6 +372,51 @@ describe('Review session lifecycle contract', () => {
     expect(queued[0].ordinal).toBe(2);
   });
 
+  it('fails closed when unresolved item lacks valid canonical_id even if question_id is canonical-shaped', async () => {
+    const state: DbState = {
+      answer_attempts: [
+        {
+          id: 'a-canonical-shaped-id',
+          question_id: 'SATM1ABC123',
+          is_correct: false,
+          outcome: 'incorrect',
+          attempted_at: '2026-03-14T09:00:00.000Z',
+          user_id: 'student-1',
+          questions: {
+            id: 'SATM1ABC123',
+            canonical_id: null,
+            stem: 'Q1',
+            section: 'Math',
+            difficulty: 'medium',
+            domain: 'alg',
+            skill: 's1',
+            subskill: 'ss1',
+          },
+        },
+      ],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [],
+      review_session_items: [],
+      review_session_events: [],
+      questions: [],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const res = makeRes();
+    await startReviewErrorSession(req, res.res);
+
+    expect(res.getStatus()).toBe(422);
+    expect(res.getBody()).toMatchObject({
+      code: 'REVIEW_QUEUE_MISSING_CANONICAL_ID',
+    });
+    expect(state.review_sessions).toHaveLength(0);
+    expect(state.review_session_items).toHaveLength(0);
+  });
+
   it('state refresh returns same served item and option tokens', async () => {
     const state: DbState = {
       answer_attempts: [],
@@ -432,6 +477,17 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
+    const preSubmitStateReq: any = {
+      user: { id: 'student-1' },
+      params: { sessionId: '11111111-1111-4111-8111-111111111111' },
+      query: { client_instance_id: 'client-a' },
+    };
+    const preSubmitStateRes = makeRes();
+    await getReviewErrorSessionState(preSubmitStateReq, preSubmitStateRes.res);
+    expect(preSubmitStateRes.getStatus()).toBe(200);
+    expect(preSubmitStateRes.getBody().currentItem.question.correct_answer).toBeNull();
+    expect(preSubmitStateRes.getBody().currentItem.question.explanation).toBeNull();
+
     const req: any = {
       user: { id: 'student-1' },
       body: {
@@ -448,6 +504,9 @@ describe('Review session lifecycle contract', () => {
     await submitReviewSessionAnswer(req, first.res);
     expect(first.getStatus()).toBe(200);
     expect(first.getBody().reviewOutcome).toBe('review_pass');
+    expect(first.getBody().correctOptionId).toBe('opt_a');
+    expect(first.getBody().correctAnswerText).toBe('1');
+    expect(first.getBody().explanation).toBe('exp');
 
     const second = makeRes();
     await submitReviewSessionAnswer(req, second.res);
@@ -494,6 +553,46 @@ describe('Review session lifecycle contract', () => {
 
     expect(res.getStatus()).toBe(400);
     expect(res.getBody().code).toBe('REVIEW_SELECTED_OPTION_REQUIRED');
+    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when legacy free-response field is sent to mounted review submit', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [
+        { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
+      ],
+      review_session_items: [
+        { id: '22222222-2222-4222-8222-222222222222', review_session_id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', ordinal: 1, question_canonical_id: 'SATM1ABC123', source_question_id: 'q-source-1', source_question_canonical_id: 'SATM1ABC123', source_origin: 'practice', retry_mode: 'same_question', status: 'served', attempt_id: null, tutor_opened_at: null, source_attempted_at: '2026-03-14T08:00:00.000Z', option_order: ['A','B','C','D'], option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' } },
+      ],
+      review_session_events: [],
+      questions: [
+        { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp' },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        review_session_item_id: '22222222-2222-4222-8222-222222222222',
+        selected_option_id: 'opt_a',
+        free_response_answer: 'A',
+        source_context: 'review_errors',
+        client_instance_id: 'client-a',
+      },
+    };
+
+    const res = makeRes();
+    await submitReviewSessionAnswer(req, res.res);
+
+    expect(res.getStatus()).toBe(400);
+    expect(res.getBody().code).toBe('REVIEW_MC_OPTION_REQUIRED');
     expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
   });
 
