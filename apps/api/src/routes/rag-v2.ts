@@ -11,6 +11,47 @@ import { getRagService } from '../lib/rag-service';
 
 const router = Router();
 
+function sanitizeQuestionForStudent<T extends Record<string, unknown> | null>(question: T): T {
+  if (!question || typeof question !== 'object') {
+    return question;
+  }
+
+  const sanitized: Record<string, unknown> = { ...question };
+  const sensitiveKeys = ['correctAnswer', 'correct_answer', 'answer', 'explanation'] as const;
+
+  for (const key of sensitiveKeys) {
+    if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+      sanitized[key] = null;
+    }
+  }
+
+  return sanitized as T;
+}
+
+function sanitizeRagResponseForStudent<T extends { context?: Record<string, unknown> }>(response: T): T {
+  const context = response?.context;
+  if (!context || typeof context !== 'object') {
+    return response;
+  }
+
+  const primaryQuestion = sanitizeQuestionForStudent(
+    (context.primaryQuestion as Record<string, unknown> | null) ?? null
+  );
+  const supportingQuestionsRaw = Array.isArray(context.supportingQuestions) ? context.supportingQuestions : [];
+  const supportingQuestions = supportingQuestionsRaw.map((question) =>
+    sanitizeQuestionForStudent((question as Record<string, unknown> | null) ?? null)
+  );
+
+  return {
+    ...response,
+    context: {
+      ...context,
+      primaryQuestion,
+      supportingQuestions,
+    },
+  };
+}
+
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = RagQueryRequestSchema.safeParse(req.body);
@@ -57,7 +98,8 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       topK: validation.data.topK,
     });
 
-    return res.json(response);
+    const sanitizedResponse = sanitizeRagResponseForStudent(response);
+    return res.json(sanitizedResponse);
   } catch (error: any) {
     console.error('[RAG-V2] Request failed:', error);
     return res.status(500).json({

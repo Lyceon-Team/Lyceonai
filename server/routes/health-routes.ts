@@ -32,6 +32,10 @@ interface HealthReport {
 }
 
 router.get('/practice', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   res.setHeader('Cache-Control', 'no-store');
 
   const report: HealthReport = {

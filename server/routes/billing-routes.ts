@@ -648,6 +648,10 @@ function safeIdInfo(id: string | undefined): { prefix: string | null; last4: str
 }
 
 router.get('/debug/env', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   const requestId = req.requestId;
   const stripeEnvRaw = process.env.STRIPE_ENV || null;
   const stripeEnvNormalized = stripeEnvRaw?.toLowerCase() === 'live' ? 'live' : 'test';
@@ -689,6 +693,10 @@ router.get('/debug/env', requireSupabaseAuth, requireGuardianBillingAccess, asyn
 });
 
 router.get('/debug/validate', requireSupabaseAuth, requireGuardianBillingAccess, async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   const requestId = req.requestId;
   const secretKey = process.env.STRIPE_SECRET_KEY || '';
   const mode = secretKey.startsWith('sk_live_') ? 'live' : secretKey.startsWith('sk_test_') ? 'test' : 'unknown';

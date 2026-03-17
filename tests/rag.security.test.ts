@@ -64,4 +64,143 @@ describe('RAG Security Surface', () => {
       expect.objectContaining({ userId: 'victim-id' })
     );
   });
+
+  it('sanitizes primary question reveal fields for student /api/rag/v2 calls', async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: {
+          canonicalId: 'q-primary',
+          stem: 'What is 2 + 2?',
+          correctAnswer: 'A',
+          correct_answer: 'A',
+          answer: 'A',
+          explanation: '2 + 2 = 4',
+        },
+        supportingQuestions: [],
+        competencyContext: {
+          studentWeakAreas: [],
+          studentStrongAreas: [],
+          competencyLabels: [],
+        },
+        studentProfile: null,
+      },
+      metadata: {
+        canonicalIdsUsed: ['q-primary'],
+        mode: 'question',
+        processingTimeMs: 2,
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/rag/v2')
+      .send({
+        userId: 'victim-id',
+        message: 'Help me solve this',
+        mode: 'question',
+        canonicalQuestionId: 'q-primary',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.context.primaryQuestion.correctAnswer).toBeNull();
+    expect(res.body.context.primaryQuestion.correct_answer).toBeNull();
+    expect(res.body.context.primaryQuestion.answer).toBeNull();
+    expect(res.body.context.primaryQuestion.explanation).toBeNull();
+  });
+
+  it('sanitizes supporting question reveal fields for student /api/rag/v2 calls', async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: null,
+        supportingQuestions: [
+          {
+            canonicalId: 'q-support-1',
+            stem: 'Support question 1',
+            correctAnswer: 'B',
+            correct_answer: 'B',
+            answer: 'B',
+            explanation: 'Because B is right',
+          },
+          {
+            canonicalId: 'q-support-2',
+            stem: 'Support question 2',
+            correctAnswer: 'C',
+            explanation: 'Because C is right',
+          },
+        ],
+        competencyContext: {
+          studentWeakAreas: [],
+          studentStrongAreas: [],
+          competencyLabels: [],
+        },
+        studentProfile: null,
+      },
+      metadata: {
+        canonicalIdsUsed: ['q-support-1', 'q-support-2'],
+        mode: 'concept',
+        processingTimeMs: 2,
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/rag/v2')
+      .send({
+        userId: 'victim-id',
+        message: 'Help me with this concept',
+        mode: 'concept',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.context.supportingQuestions[0].correctAnswer).toBeNull();
+    expect(res.body.context.supportingQuestions[0].correct_answer).toBeNull();
+    expect(res.body.context.supportingQuestions[0].answer).toBeNull();
+    expect(res.body.context.supportingQuestions[0].explanation).toBeNull();
+    expect(res.body.context.supportingQuestions[1].correctAnswer).toBeNull();
+    expect(res.body.context.supportingQuestions[1].explanation).toBeNull();
+  });
+
+  it('generic authenticated student calls cannot leak answer or explanation fields', async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: {
+          canonicalId: 'q-generic-primary',
+          stem: 'Generic primary',
+          correctAnswer: 'D',
+          explanation: 'Generic explanation',
+        },
+        supportingQuestions: [
+          {
+            canonicalId: 'q-generic-support',
+            stem: 'Generic support',
+            answer: 'A',
+            explanation: 'Support explanation',
+          },
+        ],
+        competencyContext: {
+          studentWeakAreas: [],
+          studentStrongAreas: [],
+          competencyLabels: [],
+        },
+        studentProfile: null,
+      },
+      metadata: {
+        canonicalIdsUsed: ['q-generic-primary', 'q-generic-support'],
+        mode: 'concept',
+        processingTimeMs: 2,
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/rag/v2')
+      .send({
+        userId: 'victim-id',
+        message: 'General help request',
+        mode: 'concept',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.context.primaryQuestion.correctAnswer).toBeNull();
+    expect(res.body.context.primaryQuestion.explanation).toBeNull();
+    expect(res.body.context.supportingQuestions[0].answer).toBeNull();
+    expect(res.body.context.supportingQuestions[0].explanation).toBeNull();
+  });
 });
