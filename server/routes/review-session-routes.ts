@@ -620,7 +620,12 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     const item = mapItem(itemRow);
     if (item.status !== "served") {
       if (item.attempt_id) {
-        const { data: existing } = await supabaseServer.from("review_error_attempts").select("id, is_correct").eq("id", item.attempt_id).maybeSingle();
+        const { data: existing } = await supabaseServer
+          .from("review_error_attempts")
+          .select("id, is_correct")
+          .eq("id", item.attempt_id)
+          .eq("student_id", userId)
+          .maybeSingle();
         if (existing) {
           const isCorrect = Boolean((existing as any).is_correct);
           return res.status(200).json({ ok: true, idempotent: true, sessionId: session.id, reviewSessionItemId: item.id, verified_is_correct: isCorrect, reviewOutcome: isCorrect ? "review_pass" : "review_fail", tutorVerifiedRetry: false, tutorOutcome: null, masteryApplied: false, masteryEvents: [], masteryErrors: [] });

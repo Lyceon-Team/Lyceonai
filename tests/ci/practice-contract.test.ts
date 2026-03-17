@@ -15,6 +15,7 @@ type DbState = {
 };
 
 let db: DbState;
+let activeUserId = "00000000-0000-0000-0000-000000000000";
 
 const accountMocks = vi.hoisted(() => ({
   checkUsageLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10, resetAt: "2099-01-01T00:00:00.000Z" })),
@@ -298,7 +299,7 @@ describe("Practice Runtime Contract", () => {
 
     vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation((req: Request, _res: Response, next: NextFunction) => {
       (req as any).user = {
-        id: "00000000-0000-0000-0000-000000000000",
+        id: activeUserId,
         email: "practice-contract@example.com",
         role: activeRole,
         isAdmin: false,
@@ -321,6 +322,7 @@ describe("Practice Runtime Contract", () => {
 
   beforeEach(() => {
     activeRole = "student";
+    activeUserId = "00000000-0000-0000-0000-000000000000";
     db = {
       practice_sessions: [],
       practice_session_items: [],
@@ -451,6 +453,44 @@ describe("Practice Runtime Contract", () => {
     expect(second.body.idempotentRetried).toBe(true);
     expect(db.answer_attempts).toHaveLength(1);
     expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when a foreign user's attempt exists for the same session_item_id", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const sessionItemId = next.body.sessionItemId;
+
+    db.answer_attempts.push({
+      id: "00000000-0000-0000-0000-00000000fa11",
+      user_id: "00000000-0000-0000-0000-000000000999",
+      session_id: sessionId,
+      question_id: questionA.id,
+      session_item_id: sessionItemId,
+      is_correct: false,
+      outcome: "incorrect",
+      attempted_at: "2026-03-15T00:00:00.000Z",
+      client_attempt_id: "foreign-attempt",
+    });
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId,
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "attempt-local-collision",
+      });
+
+    expect(submit.status).toBe(409);
+    expect(submit.body.error).toBe("duplicate_submission");
+    expect(submit.body.idempotentRetried).toBeUndefined();
+    expect(masteryMocks.applyMasteryUpdate).not.toHaveBeenCalled();
   });
 
   it("submit with opaque selectedOptionId resolves correctly", async () => {
@@ -614,6 +654,149 @@ describe("Practice Runtime Contract", () => {
 
     expect(submit.status).toBe(403);
     expect(submit.body.error).toBe("forbidden");
+  });
+
+  it("keeps ownership-hidden session lookup behavior on state (non-owner => 404)", async () => {
+    db.practice_sessions.push({
+      id: "00000000-0000-0000-0000-00000000f301",
+      user_id: "00000000-0000-0000-0000-000000000999",
+      section: "Math",
+      mode: "balanced",
+      status: "in_progress",
+      completed: false,
+      metadata: { client_instance_id: "tab-foreign", lifecycle_state: "active", target_question_count: 20 },
+    });
+
+    const state = await request(app)
+      .get("/api/practice/sessions/00000000-0000-0000-0000-00000000f301/state?client_instance_id=tab-1");
+
+    expect(state.status).toBe(404);
+    expect(state.body.error).toBe("session_not_found");
+  });
+
+  it("fails closed on session/item mismatch during submit", async () => {
+    const startA = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+    const sessionA = startA.body.sessionId;
+    const sessionB = "00000000-0000-0000-0000-00000000f302";
+    const sessionItemB = "00000000-0000-0000-0000-00000000f303";
+
+    db.practice_sessions.push({
+      id: sessionB,
+      user_id: "00000000-0000-0000-0000-000000000000",
+      section: "Math",
+      mode: "balanced",
+      status: "in_progress",
+      completed: false,
+      metadata: { client_instance_id: "tab-2", lifecycle_state: "active", target_question_count: 20 },
+    });
+
+    db.practice_session_items.push({
+      id: sessionItemB,
+      session_id: sessionB,
+      user_id: "00000000-0000-0000-0000-000000000000",
+      question_id: questionA.id,
+      ordinal: 1,
+      status: "served",
+      attempt_id: null,
+      option_order: ["A", "B", "C", "D"],
+      option_token_map: { opt_b1: "A", opt_b2: "B", opt_b3: "C", opt_b4: "D" },
+      client_instance_id: "tab-2",
+    });
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId: sessionA,
+        sessionItemId: sessionItemB,
+        selectedOptionId: "opt_b1",
+        clientAttemptId: "attempt-session-item-mismatch",
+      });
+
+    expect(submit.status).toBe(404);
+    expect(submit.body.error).toBe("question_not_served");
+    expect(db.answer_attempts).toHaveLength(0);
+  });
+
+  it("keeps same-user idempotent replay working with clientAttemptId", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const selectedOptionId = next.body.question.options[0].id;
+
+    const first = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        selectedOptionId,
+        clientAttemptId: "attempt-idempotent-still-works",
+      });
+
+    const second = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        selectedOptionId,
+        clientAttemptId: "attempt-idempotent-still-works",
+      });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.idempotentRetried).toBe(true);
+    expect(db.answer_attempts).toHaveLength(1);
+  });
+
+  it("fails closed when served session item has missing owner", async () => {
+    const sessionId = "00000000-0000-0000-0000-00000000f201";
+    const sessionItemId = "00000000-0000-0000-0000-00000000f202";
+
+    db.practice_sessions.push({
+      id: sessionId,
+      user_id: "00000000-0000-0000-0000-000000000000",
+      section: "Math",
+      mode: "balanced",
+      status: "in_progress",
+      completed: false,
+      metadata: { client_instance_id: "tab-1", lifecycle_state: "active", target_question_count: 20 },
+    });
+
+    db.practice_session_items.push({
+      id: sessionItemId,
+      session_id: sessionId,
+      user_id: null,
+      question_id: questionA.id,
+      ordinal: 1,
+      status: "served",
+      attempt_id: null,
+      option_order: ["A", "B", "C", "D"],
+      option_token_map: { opt_a: "A", opt_b: "B", opt_c: "C", opt_d: "D" },
+      client_instance_id: "tab-1",
+    });
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId,
+        selectedOptionId: "opt_a",
+        clientAttemptId: "attempt-missing-owner",
+      });
+
+    expect(submit.status).toBe(403);
+    expect(submit.body.error).toBe("forbidden");
+    expect(db.answer_attempts).toHaveLength(0);
   });
 
   it("denies submit after session completion", async () => {
