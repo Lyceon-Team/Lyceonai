@@ -6,17 +6,19 @@
 
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { RagQueryRequestSchema } from '../lib/rag-types';
+import { RagQueryRequestSchema, type RagQueryResponse } from '../lib/rag-types';
 import { getRagService } from '../lib/rag-service';
 
 const router = Router();
 
-function sanitizeQuestionForStudent<T extends Record<string, unknown> | null>(question: T): T {
-  if (!question || typeof question !== 'object') {
-    return question;
-  }
+type RagQuestion = RagQueryResponse['context']['supportingQuestions'][number];
 
-  const sanitized: Record<string, unknown> = { ...question };
+function sanitizeQuestionForStudent(question: RagQuestion): RagQuestion {
+  const sanitized = {
+    ...(question as unknown as Record<string, unknown>),
+    correctAnswer: null,
+    explanation: null,
+  } as RagQuestion & Record<string, unknown>;
   const sensitiveKeys = ['correctAnswer', 'correct_answer', 'answer', 'explanation'] as const;
 
   for (const key of sensitiveKeys) {
@@ -25,21 +27,20 @@ function sanitizeQuestionForStudent<T extends Record<string, unknown> | null>(qu
     }
   }
 
-  return sanitized as T;
+  return sanitized;
 }
 
-function sanitizeRagResponseForStudent<T extends { context?: Record<string, unknown> }>(response: T): T {
-  const context = response?.context;
+function sanitizeRagResponseForStudent(response: RagQueryResponse): RagQueryResponse {
+  const context = response.context;
   if (!context || typeof context !== 'object') {
     return response;
   }
 
-  const primaryQuestion = sanitizeQuestionForStudent(
-    (context.primaryQuestion as Record<string, unknown> | null) ?? null
-  );
-  const supportingQuestionsRaw = Array.isArray(context.supportingQuestions) ? context.supportingQuestions : [];
-  const supportingQuestions = supportingQuestionsRaw.map((question) =>
-    sanitizeQuestionForStudent((question as Record<string, unknown> | null) ?? null)
+  const primaryQuestion = context.primaryQuestion
+    ? sanitizeQuestionForStudent(context.primaryQuestion)
+    : null;
+  const supportingQuestions = context.supportingQuestions.map((question) =>
+    sanitizeQuestionForStudent(question)
   );
 
   return {
