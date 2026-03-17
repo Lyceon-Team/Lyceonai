@@ -9,7 +9,7 @@ This document is the single authoritative registry of:
 - Backing server API endpoints
 - Route lifecycle status (ACTIVE/STUBBED/DEPRECATED)
 
-**Last Updated:** 2026-03-11 (Wave 3 GROW1 public truth alignment)
+**Last Updated:** 2026-03-17 (Canonical content/review runtime truth reconciliation)
 
 ---
 
@@ -43,14 +43,14 @@ This document is the single authoritative registry of:
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
-| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/attempt`, `/api/questions/:id`, `/api/questions/validate` | ACTIVE |
+| `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 | `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
-| `/admin` | admin | admin-only | AdminPortal | `/api/admin/*` (all admin endpoints) | ACTIVE |
+| `/admin` | admin | admin-only | AdminPortal | `/api/admin/db-health` (mounted); content publish/review admin endpoints are service-only/unmounted from runtime | ACTIVE |
 | `/admin-dashboard` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
 | `/admin-system-config` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
 | `/admin-questions` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
@@ -140,12 +140,12 @@ Removed auth endpoints (must return 404):
 | `/api/tutor/v2` | POST | Yes | student/admin | entitled† | AI tutor chat |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
-| `/api/questions/validate` | POST | Yes | student/admin | free | Validate answer |
+| `/api/questions/validate` | POST | No (unmounted) | N/A | N/A | UNMOUNTED in runtime (404 contract) |
 | `/api/questions/feedback` | POST | Yes | student/admin | free | Submit question feedback |
 | `/api/questions/stats` | GET | Yes | student/admin | free | Question statistics |
 | `/api/questions/feed` | GET | Yes | student/admin | free | Question feed for flow-cards |
 | `/api/review-errors` | GET | Yes | student/admin | free | Get incorrect answers |
-| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Record review error attempt |
+| `/api/review-errors/attempt` | POST | Yes | student/admin | free | Submit session-based review answer (owner: `submitReviewSessionAnswer`) |
 | `/api/me/mastery/skills` | GET | Yes | student/admin | free | Mastery statistics |
 | `/api/me/weakness/skills` | GET | Yes | student/admin | free | Weakest skills analysis |
 | `/api/me/weakness/clusters` | GET | Yes | student/admin | free | Weakest topic clusters analysis |
@@ -176,10 +176,10 @@ Removed auth endpoints (must return 404):
 |----------|--------|--------------|------|---------|
 | `/api/admin/stats` | GET | Yes | admin | System statistics |
 | `/api/admin/kpis` | GET | Yes | admin | Admin KPIs |
-| `/api/admin/questions/needs-review` | GET | Yes | admin | Questions pending review |
-| `/api/admin/questions/statistics` | GET | Yes | admin | Question parsing stats |
-| `/api/admin/questions/:id/approve` | POST | Yes | admin | Approve question |
-| `/api/admin/questions/:id/reject` | POST | Yes | admin | Reject question |
+| `/api/admin/questions/needs-review` | GET | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
+| `/api/admin/questions/statistics` | GET | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
+| `/api/admin/questions/:id/approve` | POST | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
+| `/api/admin/questions/:id/reject` | POST | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
 | `/api/admin/db-health` | GET | Yes | admin | Database health check |
 
 ### Billing Endpoints

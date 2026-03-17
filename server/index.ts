@@ -121,7 +121,7 @@ app.post(
   }
 );
 
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({ limit: "1mb" }));
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
@@ -235,6 +235,12 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
+const publicQuestionSearchLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  message: { error: "Too many search requests" },
+});
+
 // RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
 app.use(
   "/api/rag/v2",
@@ -325,7 +331,7 @@ app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQ
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
 
 // Search endpoint - allow anonymous access for public search
-app.get("/api/questions/search", searchQuestions);
+app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
 
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);

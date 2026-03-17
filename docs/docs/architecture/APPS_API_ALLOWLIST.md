@@ -28,9 +28,14 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
   - `app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed)`
   - `app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById)`
   - `app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors)`
-  - `app.post("/api/review-errors/attempt", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, recordReviewErrorAttempt)`
+  - `app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer)` (owner import: `server/routes/review-session-routes.ts`)
   - `app.post("/api/questions/feedback", csrfProtection, requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback)`
 - **Transitive deps in apps/api**: `../lib/supabase-server`, `../middleware/auth`
+
+### Content/Review Runtime Truth Notes
+- `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).
+- `/api/admin/questions/*` endpoints are currently unmounted from `server/index.ts` and treated as service-only/legacy workflow paths.
+- `server/routes/review-errors-routes.ts#recordReviewErrorAttempt` is legacy/quarantined and unmounted; canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
 
 ### `../apps/api/src/routes/search`
 - **Import**: [server/index.ts](server/index.ts#L35)

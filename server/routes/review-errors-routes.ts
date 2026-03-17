@@ -1,4 +1,14 @@
 /**
+ * LEGACY / UNMOUNTED QUARANTINE
+ *
+ * This file is legacy and is not mounted in runtime.
+ * Do NOT import or mount this handler in server/index.ts.
+ *
+ * Canonical runtime owner for POST /api/review-errors/attempt:
+ *   submitReviewSessionAnswer in server/routes/review-session-routes.ts
+ */
+
+/**
  * Review Errors Routes
  *
  * Handles review error attempt submissions with canonical review/tutor event semantics.

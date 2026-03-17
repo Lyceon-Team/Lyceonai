@@ -463,6 +463,9 @@ describe("Practice Runtime Contract", () => {
     const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
     const selectedOptionId = getCorrectTokenFromSessionItem(next.body.sessionItemId);
 
+    expect(next.body.question.correct_answer).toBeNull();
+    expect(next.body.question.explanation).toBeNull();
+
     const submit = await request(app)
       .post("/api/practice/answer")
       .set("Origin", "http://localhost:5000")
@@ -476,6 +479,32 @@ describe("Practice Runtime Contract", () => {
     expect(submit.status).toBe(200);
     expect(submit.body.isCorrect).toBe(true);
     expect(submit.body).toHaveProperty("correctOptionId");
+    expect(submit.body.correctOptionId).toBe(selectedOptionId);
+    expect(submit.body.explanation).toEqual(expect.stringMatching(/\S/));
+  });
+
+  it("fails closed when payload is free-response-only on mounted MC submit", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        freeResponseAnswer: "4",
+        clientAttemptId: "attempt-free-response-only",
+      });
+
+    expect(submit.status).toBe(400);
+    expect(submit.body.code).toBe("MC_OPTION_REQUIRED");
+    expect(db.answer_attempts).toHaveLength(0);
   });
 
   it("allows current-item completion after entitlement loss but blocks next-item progression", async () => {

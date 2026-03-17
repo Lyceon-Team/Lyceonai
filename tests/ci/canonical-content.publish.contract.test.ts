@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
+import fs from "node:fs";
+import path from "node:path";
 
 import { publishQuestion, versionPublishedQuestion } from "../../server/services/question-publish";
 
 type AnyRecord = Record<string, any>;
+const repoRoot = path.resolve(__dirname, "..", "..");
 
 function buildValidOptions() {
   return [
@@ -12,6 +15,10 @@ function buildValidOptions() {
     { key: "C", text: "Option C" },
     { key: "D", text: "Option D" },
   ];
+}
+
+function readServerIndex(): string {
+  return fs.readFileSync(path.join(repoRoot, "server", "index.ts"), "utf8");
 }
 
 function createMockSupabase(initialQuestion: AnyRecord, canonicalTaken = false) {
@@ -236,6 +243,33 @@ describe("Canonical Content Publish Contract", () => {
       .send({ questionId: "q-1", studentAnswer: "A" });
 
     expect(res.status).toBe(404);
+  });
+
+  it("keeps /api/review-errors/attempt mounted to session-based owner (not legacy review-errors route)", async () => {
+    const indexContent = readServerIndex();
+
+    expect(indexContent).toContain('from "./routes/review-session-routes"');
+    expect(indexContent).toContain("submitReviewSessionAnswer");
+    expect(indexContent).toContain('app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);');
+    expect(indexContent).not.toContain("recordReviewErrorAttempt");
+    expect(indexContent).not.toContain("./routes/review-errors-routes");
+
+    const appModule = await import("../../server/index");
+    const app = appModule.default;
+    const res = await request(app).post("/api/review-errors/attempt").send({});
+
+    expect(res.status).not.toBe(404);
+  });
+
+  it("keeps /api/admin/questions/* unmounted in runtime", async () => {
+    const appModule = await import("../../server/index");
+    const app = appModule.default;
+
+    const needsReview = await request(app).get("/api/admin/questions/needs-review");
+    const approve = await request(app).post("/api/admin/questions/123/approve").send({});
+
+    expect(needsReview.status).toBe(404);
+    expect(approve.status).toBe(404);
   });
 });
 

@@ -193,4 +193,40 @@ describe('Review queue runtime contract', () => {
     expect(getStatus()).toBe(401);
     expect(getBody().error).toContain('Authentication required');
   });
+
+  it('does not derive canonical identity from canonical-shaped question_id when canonical_id is missing', async () => {
+    setupSupabase({
+      practiceRows: [
+        {
+          id: 'p-canonical-shaped-id',
+          question_id: 'SATM1ABC123',
+          is_correct: false,
+          outcome: 'incorrect',
+          attempted_at: '2026-03-12T12:00:00.000Z',
+          questions: {
+            id: 'SATM1ABC123',
+            canonical_id: null,
+            stem: 'Q stem',
+            section: 'Math',
+            difficulty: 'medium',
+            domain: 'alg',
+            skill: 's1',
+            subskill: 'ss1',
+          },
+        },
+      ],
+      fullLengthRows: [],
+      reviewRows: [],
+    });
+
+    const { res, getStatus, getBody } = makeRes();
+    const req: any = { user: { id: 'student-1' } };
+
+    await getReviewErrors(req, res);
+
+    expect(getStatus()).toBe(200);
+    expect(getBody().reviewQueue).toHaveLength(1);
+    expect(getBody().reviewQueue[0].questionId).toBe('SATM1ABC123');
+    expect(getBody().reviewQueue[0].questionCanonicalId).toBeNull();
+  });
 });
