@@ -954,7 +954,11 @@ async function startOrReplaySession(args: {
   };
 }
 
-async function loadOwnedSessionForUser(sessionId: string, userId: string): Promise<SessionRow | null> {
+async function loadOwnedSession(
+  sessionId: string,
+  userId: string,
+  options?: { hideForbidden?: boolean },
+): Promise<{ forbidden: boolean; session: SessionRow } | null> {
   const { data, error } = await supabaseServer
     .from("practice_sessions")
     .select("id, user_id, section, mode, status, completed, metadata")
@@ -962,8 +966,11 @@ async function loadOwnedSessionForUser(sessionId: string, userId: string): Promi
     .single();
 
   if (error || !data) return null;
-  if ((data as any).user_id !== userId) return null;
-  return data as SessionRow;
+  if ((data as any).user_id !== userId) {
+    if (options?.hideForbidden) return null;
+    return { forbidden: true, session: data as SessionRow };
+  }
+  return { forbidden: false, session: data as SessionRow };
 }
 
 async function findSessionItemById(sessionId: string, sessionItemId: string): Promise<SessionItemRow | null> {
@@ -981,11 +988,12 @@ async function findSessionItemById(sessionId: string, sessionItemId: string): Pr
   return (data as SessionItemRow | null) ?? null;
 }
 
-async function findAttemptBySessionItemId(sessionItemId: string): Promise<any | null> {
+async function findAttemptBySessionItemId(sessionItemId: string, userId: string): Promise<any | null> {
   const { data, error } = await supabaseServer
     .from("answer_attempts")
     .select("id, session_id, question_id, session_item_id, is_correct, outcome")
     .eq("session_item_id", sessionItemId)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
@@ -1015,7 +1023,7 @@ async function findExistingAttempt(args: {
   }
 
   if (args.sessionItemId) {
-    const bySessionItem = await findAttemptBySessionItemId(args.sessionItemId);
+    const bySessionItem = await findAttemptBySessionItemId(args.sessionItemId, args.userId);
     if (bySessionItem) return bySessionItem;
   }
 
@@ -1058,14 +1066,15 @@ async function serveNextForSession(args: {
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
 
-  const session = await loadOwnedSessionForUser(args.sessionId, args.userId);
-  if (!session) {
+  const owned = await loadOwnedSession(args.sessionId, args.userId, { hideForbidden: true });
+  if (!owned) {
     return args.res.status(404).json({
       error: "session_not_found",
       message: "Practice session not found",
       requestId,
     });
   }
+  const session = owned.session;
 
   const metadata = asSessionMetadata(session.metadata);
   const sessionState = normalizeSessionState(session.status, metadata);
@@ -1417,14 +1426,15 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     });
   }
 
-  const session = await loadOwnedSessionForUser(sessionId, userId);
-  if (!session) {
+  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
+  if (!owned) {
     return res.status(404).json({
       error: "session_not_found",
       message: "Practice session not found",
       requestId,
     });
   }
+  const session = owned.session;
 
   const metadata = asSessionMetadata(session.metadata);
   const queryClientInstanceId = getClientInstanceId(req.query.client_instance_id);
@@ -1515,29 +1525,6 @@ router.get("/next", requireSupabaseAuth, async (req, res) => {
     clientInstanceId,
   });
 });
-
-async function loadSessionById(sessionId: string) {
-  const { data, error } = await supabaseServer
-    .from("practice_sessions")
-    .select("id, user_id, status, mode, section, difficulty, metadata")
-    .eq("id", sessionId)
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
-}
-
-async function loadOwnedSession(sessionId: string, userId: string) {
-  const session = await loadSessionById(sessionId);
-  if (!session) return null;
-  if (session.user_id !== userId) {
-    return { forbidden: true as const, session };
-  }
-  return { forbidden: false as const, session };
-}
 
 async function findSessionItemForSubmission(
   sessionId: string,
@@ -1642,7 +1629,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  if (sessionItem.user_id && sessionItem.user_id !== userId) {
+  if (sessionItem.user_id !== userId) {
     return res.status(403).json({
       error: "forbidden",
       message: "You do not have access to this practice session item",

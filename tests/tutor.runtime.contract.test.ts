@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   hasActiveFullTest: false,
   hasVerifiedRetry: false,
   retryIsCorrect: false,
+  questionLookupMissing: false,
   tableCalls: [] as string[],
   rpcCalls: [] as string[],
 }));
@@ -116,9 +117,13 @@ vi.mock("../server/lib/account", () => accountMocks);
 
 vi.mock("../apps/api/src/lib/supabase-server", () => {
   function createBuilder(table: string) {
-    return {
+    const filters: Record<string, any> = {};
+    const builder: any = {
       select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
+      eq: vi.fn((column: string, value: any) => {
+        filters[column] = value;
+        return builder;
+      }),
       in: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn(async () => {
@@ -129,8 +134,22 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
           return { data: null, error: null };
         }
 
+        if (table === "questions") {
+          if (state.questionLookupMissing) {
+            return { data: null, error: null };
+          }
+          if (filters.canonical_id === "q1") {
+            return { data: { id: "question-row-q1" }, error: null };
+          }
+          return { data: null, error: null };
+        }
+
         if (table === "answer_attempts") {
-          if (state.hasVerifiedRetry) {
+          if (
+            state.hasVerifiedRetry
+            && filters.user_id === "student-auth-user"
+            && filters.question_id === "question-row-q1"
+          ) {
             return { data: { id: "attempt-1", is_correct: state.retryIsCorrect }, error: null };
           }
           return { data: null, error: null };
@@ -140,6 +159,8 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
       }),
       single: vi.fn(async () => ({ data: null, error: null })),
     };
+
+    return builder;
   }
 
   return {
@@ -230,6 +251,7 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.hasActiveFullTest = false;
     state.hasVerifiedRetry = false;
     state.retryIsCorrect = false;
+    state.questionLookupMissing = false;
     state.tableCalls = [];
     state.rpcCalls = [];
   });
@@ -318,6 +340,23 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.metadata.fullTestStrategyEnforced).toBe(false);
     expect(res.body.ragContext.primaryQuestion.answer).toBe("A");
     expect(res.body.ragContext.primaryQuestion.explanation).toBe("2 + 2 = 4");
+  });
+
+  it("fails closed when canonical question cannot be resolved for verified retry check", async () => {
+    state.hasVerifiedRetry = true;
+    state.questionLookupMissing = true;
+
+    const res = await request(app)
+      .post("/api/tutor/v2")
+      .set("Origin", "http://localhost:5000")
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.metadata.fullTestStrategyEnforced).toBe(false);
+    expect(res.body.ragContext.primaryQuestion.answer).toBeNull();
+    expect(res.body.ragContext.primaryQuestion.explanation).toBeNull();
+    expect(res.body.ragContext.supportingQuestions[0].answer).toBeNull();
+    expect(res.body.ragContext.supportingQuestions[0].explanation).toBeNull();
   });
 
   it("enforces role guard server-side (guardian blocked)", async () => {

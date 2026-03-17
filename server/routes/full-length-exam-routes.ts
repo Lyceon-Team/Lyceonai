@@ -249,6 +249,10 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, 
     if (message.includes("not found") || message.includes("access denied")) {
       return sendRouteError(req, res, 404, "Session not found");
     }
+
+    if (message.includes("already submitted with different selection")) {
+      return sendRouteError(req, res, 409, "Duplicate answer submission");
+    }
     
     if (message.includes("not in progress")) {
       return sendRouteError(req, res, 400, "Invalid exam state");

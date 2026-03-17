@@ -70,22 +70,6 @@ export interface StudentKpiView {
   };
 }
 
-export interface GuardianSummaryKpiView {
-  progress: {
-    practiceMinutesLast7Days: number;
-    sessionsLast7Days: number;
-    questionsAttempted: number;
-    accuracy: number | null;
-    explanations: Record<string, KpiExplanation>;
-  };
-  metrics: ExplainedKpiMetric[];
-  measurementModel: {
-    official: string[];
-    weighted: string[];
-    diagnostic: string[];
-  };
-}
-
 interface AttemptRow {
   is_correct: boolean | null;
   time_spent_ms: number | null;
@@ -451,83 +435,6 @@ export function buildStudentKpiView(
           : "Historical trend KPIs require an active paid entitlement.",
       },
     },
-    measurementModel: {
-      official: [],
-      weighted: [],
-      diagnostic: metrics.map((m) => m.id),
-    },
-  };
-}
-
-export function buildGuardianSummaryKpiView(snapshot: CanonicalPracticeKpiSnapshot): GuardianSummaryKpiView {
-  const metrics: ExplainedKpiMetric[] = [
-    {
-      id: "week_minutes",
-      label: "Practice Minutes (7d)",
-      kind: "diagnostic",
-      unit: "minutes",
-      value: snapshot.currentWeek.practiceMinutes,
-      explanation: buildExplanation({
-        metricId: "week_minutes",
-        whatThisMeans: "Total minutes the student practiced in the current 7-day local window.",
-        current: snapshot.currentWeek.practiceMinutes,
-        previous: snapshot.previousWeek.practiceMinutes,
-        unit: "minutes",
-      }),
-    },
-    {
-      id: "week_sessions",
-      label: "Practice Sessions (7d)",
-      kind: "diagnostic",
-      unit: "count",
-      value: snapshot.currentWeek.practiceSessions,
-      explanation: buildExplanation({
-        metricId: "week_sessions",
-        whatThisMeans: "Completed student practice sessions in the current 7-day local window.",
-        current: snapshot.currentWeek.practiceSessions,
-        previous: snapshot.previousWeek.practiceSessions,
-        unit: "count",
-      }),
-    },
-    {
-      id: "week_questions",
-      label: "Questions Attempted (7d)",
-      kind: "diagnostic",
-      unit: "count",
-      value: snapshot.currentWeek.questionsSolved,
-      explanation: buildExplanation({
-        metricId: "week_questions",
-        whatThisMeans: "Practice attempts recorded in the current 7-day local window.",
-        current: snapshot.currentWeek.questionsSolved,
-        previous: snapshot.previousWeek.questionsSolved,
-        unit: "count",
-      }),
-    },
-    {
-      id: "week_accuracy",
-      label: "Accuracy (7d)",
-      kind: "diagnostic",
-      unit: "percent",
-      value: snapshot.currentWeek.questionsSolved > 0 ? snapshot.currentWeek.accuracyPercent : null,
-      explanation: buildExplanation({
-        metricId: "week_accuracy",
-        whatThisMeans: "Percent of student practice attempts answered correctly in the current 7-day window.",
-        current: snapshot.currentWeek.accuracyPercent,
-        previous: snapshot.previousWeek.accuracyPercent,
-        unit: "percent",
-      }),
-    },
-  ];
-
-  return {
-    progress: {
-      practiceMinutesLast7Days: snapshot.currentWeek.practiceMinutes,
-      sessionsLast7Days: snapshot.currentWeek.practiceSessions,
-      questionsAttempted: snapshot.currentWeek.questionsSolved,
-      accuracy: snapshot.currentWeek.questionsSolved > 0 ? snapshot.currentWeek.accuracyPercent : null,
-      explanations: metricListToExplanationMap(metrics),
-    },
-    metrics,
     measurementModel: {
       official: [],
       weighted: [],

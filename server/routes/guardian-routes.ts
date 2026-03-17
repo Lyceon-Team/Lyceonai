@@ -11,7 +11,7 @@ import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getA
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
-import { buildCanonicalPracticeKpiSnapshot, buildGuardianSummaryKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
+import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
 import { KPI_CALENDAR_COUNTED_EVENTS } from '../../apps/api/src/services/mastery-constants';
 
 const router = Router();
@@ -282,7 +282,22 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianA
     }
 
     const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
-    const guardianView = buildGuardianSummaryKpiView(snapshot);
+    const studentView = buildStudentKpiView(snapshot, true);
+    const guardianMetricIds = new Set(['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy']);
+    const guardianMetrics = studentView.metrics.filter((metric) => guardianMetricIds.has(metric.id));
+    const metricById = new Map(guardianMetrics.map((metric) => [metric.id, metric]));
+    const progress = {
+      practiceMinutesLast7Days: Number(metricById.get('week_minutes')?.value ?? 0),
+      sessionsLast7Days: Number(metricById.get('week_sessions')?.value ?? 0),
+      questionsAttempted: Number(metricById.get('week_questions')?.value ?? 0),
+      accuracy: metricById.get('week_accuracy')?.value == null ? null : Number(metricById.get('week_accuracy')?.value),
+      explanations: Object.fromEntries(guardianMetrics.map((metric) => [metric.id, metric.explanation])),
+    };
+    const measurementModel = {
+      official: [],
+      weighted: [],
+      diagnostic: guardianMetrics.map((metric) => metric.id),
+    };
     await emitGuardianAccessEvent({
       eventType: 'guardian_report_viewed',
       guardianId,
@@ -296,10 +311,10 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianA
         id: student.id,
         displayName: student.display_name,
       },
-      progress: guardianView.progress,
-      metrics: guardianView.metrics,
-      measurementModel: guardianView.measurementModel,
-      modelVersion: snapshot.modelVersion,
+      progress,
+      metrics: guardianMetrics,
+      measurementModel,
+      modelVersion: studentView.modelVersion,
       requestId,
     });
   } catch (err) {
@@ -499,11 +514,19 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
       return res.status(400).json({ error: 'end query param must be YYYY-MM-DD', requestId });
     }
 
-    const { data: profile } = await supabaseServer
+    const { data: profile, error: profileError } = await supabaseServer
       .from('student_study_profile')
       .select('timezone')
       .eq('user_id', studentId)
       .maybeSingle();
+
+    if (profileError) {
+      logger.error('GUARDIAN', 'calendar_profile_fetch_failed', 'Failed to load student timezone for calendar', {
+        error: profileError,
+        requestId,
+      });
+      return res.status(500).json({ error: 'Failed to load calendar data', requestId });
+    }
 
     const timezone = profile?.timezone || 'America/Chicago';
 
@@ -529,8 +552,12 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
       calculateStreakForStudent(studentId, timezone),
     ]);
 
-    if (planDaysResult.error) {
-      logger.error('GUARDIAN', 'calendar_fetch_failed', 'Failed to load calendar', { error: planDaysResult.error, requestId });
+    if (planDaysResult.error || attemptsResult.error) {
+      logger.error('GUARDIAN', 'calendar_fetch_failed', 'Failed to load calendar', {
+        planDaysError: planDaysResult.error,
+        attemptsError: attemptsResult.error,
+        requestId,
+      });
       return res.status(500).json({ error: 'Failed to load calendar data', requestId });
     }
 

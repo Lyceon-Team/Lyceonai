@@ -18,7 +18,7 @@
 ## Reporting Builders Used By Guardian Runtime
 - Practice summary projection: `server/services/kpi-truth-layer.ts`
   - `buildCanonicalPracticeKpiSnapshot`
-  - `buildGuardianSummaryKpiView`
+  - `buildStudentKpiView` (guardian uses filtered shared weekly metrics only)
 - Full-length report summary projection:
   - `apps/api/src/services/fullLengthExam.ts` (`getExamReport`) + guardian-safe transform in `server/routes/guardian-routes.ts`
 - Weakness rollup source:

@@ -159,6 +159,10 @@ function parseOptionMap(raw: unknown): Record<string, string> | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+function resolveReviewQuestionId(item: ItemRow): string {
+  return item.source_question_id ?? item.source_question_canonical_id ?? item.question_canonical_id;
+}
+
 function fisherYates<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -618,10 +622,19 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     if (itemError || !itemRow) return res.status(404).json({ error: "Review session item not found", code: "REVIEW_SESSION_ITEM_NOT_FOUND", requestId });
 
     const item = mapItem(itemRow);
+    const resolvedQuestionId = resolveReviewQuestionId(item);
     if (item.status !== "served") {
       if (item.attempt_id) {
-        const { data: existing } = await supabaseServer.from("review_error_attempts").select("id, is_correct").eq("id", item.attempt_id).maybeSingle();
+        const { data: existing } = await supabaseServer
+          .from("review_error_attempts")
+          .select("id, question_id, is_correct")
+          .eq("id", item.attempt_id)
+          .eq("student_id", userId)
+          .maybeSingle();
         if (existing) {
+          if (String((existing as any).question_id ?? "") !== resolvedQuestionId) {
+            return res.status(409).json({ error: "Review session item is already resolved", code: "REVIEW_SESSION_ITEM_LOCKED", requestId });
+          }
           const isCorrect = Boolean((existing as any).is_correct);
           return res.status(200).json({ ok: true, idempotent: true, sessionId: session.id, reviewSessionItemId: item.id, verified_is_correct: isCorrect, reviewOutcome: isCorrect ? "review_pass" : "review_fail", tutorVerifiedRetry: false, tutorOutcome: null, masteryApplied: false, masteryEvents: [], masteryErrors: [] });
         }
@@ -630,12 +643,15 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       if (parsed.data.client_attempt_id) {
         const { data: existingByKey } = await supabaseServer
           .from("review_error_attempts")
-          .select("id, is_correct")
+          .select("id, question_id, is_correct")
           .eq("student_id", userId)
           .eq("client_attempt_id", parsed.data.client_attempt_id)
           .maybeSingle();
 
         if (existingByKey) {
+          if (String((existingByKey as any).question_id ?? "") !== resolvedQuestionId) {
+            return res.status(409).json({ error: "client_attempt_id is already bound to a different question", code: "IDEMPOTENCY_KEY_REUSED", requestId });
+          }
           const isCorrect = Boolean((existingByKey as any).is_correct);
           return res.status(200).json({ ok: true, idempotent: true, sessionId: session.id, reviewSessionItemId: item.id, verified_is_correct: isCorrect, reviewOutcome: isCorrect ? "review_pass" : "review_fail", tutorVerifiedRetry: false, tutorOutcome: null, masteryApplied: false, masteryEvents: [], masteryErrors: [] });
         }
@@ -668,7 +684,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     const { data: insertedAttempt, error: insertError } = await supabaseServer.from("review_error_attempts").insert({
       student_id: userId,
-      question_id: item.source_question_id ?? item.source_question_canonical_id ?? item.question_canonical_id,
+      question_id: resolvedQuestionId,
       context: "review_errors",
       selected_answer: selectedAnswerKey,
       is_correct: verifiedIsCorrect,
@@ -679,7 +695,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     if (insertError) {
       if (insertError.code === "23505" && parsed.data.client_attempt_id) {
         const { data: existing } = await supabaseServer.from("review_error_attempts").select("id, question_id, is_correct").eq("student_id", userId).eq("client_attempt_id", parsed.data.client_attempt_id).single();
-        if (existing && String((existing as any).question_id) !== (item.source_question_id ?? item.source_question_canonical_id ?? item.question_canonical_id)) {
+        if (existing && String((existing as any).question_id) !== resolvedQuestionId) {
           return res.status(409).json({ error: "client_attempt_id is already bound to a different question", code: "IDEMPOTENCY_KEY_REUSED", requestId });
         }
         const existingIsCorrect = Boolean((existing as any)?.is_correct);

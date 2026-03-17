@@ -1599,7 +1599,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
 
   const { data: existingResponse, error: existingResponseError } = await supabase
     .from("full_length_exam_responses")
-    .select("id")
+    .select("id, selected_answer")
     .eq("session_id", params.sessionId)
     .eq("module_id", currentModule.id)
     .eq("question_id", params.questionId)
@@ -1609,7 +1609,15 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error(`Failed to check existing response: ${existingResponseError.message}`);
   }
 
+  const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
+  const storedSelectedAnswer = selected.length > 0 ? selected : null;
+
   if (existingResponse) {
+    const existingSelected = String((existingResponse as any).selected_answer ?? "").trim().toUpperCase();
+    const normalizedExistingSelected = existingSelected.length > 0 ? existingSelected : null;
+    if (normalizedExistingSelected !== storedSelectedAnswer) {
+      throw new Error("Answer already submitted with different selection");
+    }
     return;
   }
 
@@ -1627,10 +1635,8 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Unsupported question type for full-length exam");
   }
 
-  const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
   const correct = String(question.correct_answer ?? "").trim().toUpperCase();
   const isCorrect = selected.length > 0 && selected === correct;
-  const storedSelectedAnswer = selected.length > 0 ? selected : null;
 
   const now = new Date().toISOString();
 
@@ -1707,57 +1713,56 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Module must be started before submitting");
   }
 
-  // Deterministic rule 2: Module must be in_progress to submit
-  if (currentModule.status !== "in_progress") {
-    // If already submitted, return cached result (idempotent)
-    if (currentModule.status === "submitted") {
-      // Re-compute the result to return
-      const { data: responses } = await supabase
-        .from("full_length_exam_responses")
-        .select("question_id, is_correct")
-        .eq("module_id", currentModule.id);
+  const buildSubmittedReplayResult = async (moduleId: string): Promise<SubmitModuleResult> => {
+    const { data: responses } = await supabase
+      .from("full_length_exam_responses")
+      .select("question_id, is_correct")
+      .eq("module_id", moduleId);
 
-      const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-      const answeredCount = responses?.length || 0;
-      const totalCount = await getModuleQuestionTotal(supabase, currentModule.id, answeredCount);
+    const correctCount = responses?.filter((r) => r.is_correct).length || 0;
+    const answeredCount = responses?.length || 0;
+    const totalCount = await getModuleQuestionTotal(supabase, moduleId, answeredCount);
 
-      const currentSection = session.current_section as SectionType;
-      const currentModuleIndex = session.current_module as ModuleIndex;
+    const currentSection = session.current_section as SectionType;
+    const currentModuleIndex = session.current_module as ModuleIndex;
 
-      let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
-      let isBreak = false;
+    let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+    let isBreak = false;
 
-      if (currentModuleIndex === 1) {
-        // Get Module 2 difficulty that was set
-        const { data: module2 } = await supabase
-          .from("full_length_exam_modules")
-          .select("difficulty_bucket")
-          .eq("session_id", params.sessionId)
-          .eq("section", currentSection)
-          .eq("module_index", 2)
-          .single();
+    if (currentModuleIndex === 1) {
+      const { data: module2 } = await supabase
+        .from("full_length_exam_modules")
+        .select("difficulty_bucket")
+        .eq("session_id", params.sessionId)
+        .eq("section", currentSection)
+        .eq("module_index", 2)
+        .single();
 
-        nextModule = {
-          section: currentSection,
-          moduleIndex: 2,
-          difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium",
-        };
-      } else if (currentSection === "rw") {
-        isBreak = true;
-      } else {
-        nextModule = null;
-      }
-
-      return {
-        moduleId: currentModule.id,
-        correctCount,
-        totalCount,
-        nextModule,
-        isBreak,
+      nextModule = {
+        section: currentSection,
+        moduleIndex: 2,
+        difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium",
       };
+    } else if (currentSection === "rw") {
+      isBreak = true;
+    } else {
+      nextModule = null;
     }
 
-    // Otherwise reject - module must be in_progress
+    return {
+      moduleId,
+      correctCount,
+      totalCount,
+      nextModule,
+      isBreak,
+    };
+  };
+
+  // Deterministic rule 2: Module must be in_progress to submit
+  if (currentModule.status !== "in_progress") {
+    if (currentModule.status === "submitted") {
+      return buildSubmittedReplayResult(currentModule.id);
+    }
     throw new Error("Module must be in progress to submit");
   }
 
@@ -1767,17 +1772,37 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   const isLate = now > endsAt;
 
   // Mark module as submitted with server-side timestamp and late flag
-  const { error: updateError } = await supabase
+  const { data: updatedModuleRows, error: updateError } = await supabase
     .from("full_length_exam_modules")
     .update({
       status: "submitted",
       submitted_at: now.toISOString(),
       submitted_late: isLate,
     })
-    .eq("id", currentModule.id);
+    .eq("id", currentModule.id)
+    .eq("status", "in_progress")
+    .select("id, status");
 
   if (updateError) {
     throw new Error(`Failed to submit module: ${updateError.message}`);
+  }
+
+  if (!updatedModuleRows || updatedModuleRows.length === 0) {
+    const { data: racedModule, error: racedModuleError } = await supabase
+      .from("full_length_exam_modules")
+      .select("*")
+      .eq("id", currentModule.id)
+      .single();
+
+    if (racedModuleError || !racedModule) {
+      throw new Error("Current module not found");
+    }
+
+    if (racedModule.status === "submitted") {
+      return buildSubmittedReplayResult(currentModule.id);
+    }
+
+    throw new Error("Module must be in progress to submit");
   }
 
   // Get module responses to compute score
