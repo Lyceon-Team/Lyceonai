@@ -342,6 +342,30 @@ describe('CI Auth Tests', () => {
     });
   });
 
+  describe('Refresh Token Trust', () => {
+    it('fails closed for body-only refresh token when refresh cookie is missing', async () => {
+      const res = await request(app)
+        .post('/api/auth/refresh')
+        .set('Origin', 'http://localhost:5000')
+        .send({ refresh_token: 'body-only-token' });
+
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ error: 'No refresh token provided' });
+      expect(res.body).not.toHaveProperty('success', true);
+    });
+
+    it('fails closed when refresh token is missing entirely', async () => {
+      const res = await request(app)
+        .post('/api/auth/refresh')
+        .set('Origin', 'http://localhost:5000')
+        .send({});
+
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ error: 'No refresh token provided' });
+      expect(res.body).not.toHaveProperty('success', true);
+    });
+  });
+
   describe('Session Exchange Endpoint - Deprecated (Must Return 404)', () => {
   it('should return 404 for deprecated exchange-session endpoint (no body)', async () => {
     const res = await request(app)

@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 const mocks = vi.hoisted(() => ({
   client: null as any,
   resolveAccess: vi.fn(),
+  readErrors: {} as Partial<Record<TableName, { message: string }>>,
 }));
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
@@ -42,6 +43,7 @@ interface FakeStore {
 class FakeQueryBuilder {
   private readonly store: FakeStore;
   private readonly table: TableName;
+  private readonly readError: { message: string } | null;
   private filters: Array<(row: TableRow) => boolean> = [];
   private sorts: Array<{ column: string; ascending: boolean }> = [];
   private maxRows: number | null = null;
@@ -49,9 +51,10 @@ class FakeQueryBuilder {
   private pendingDelete = false;
   private mutationRows: TableRow[] | null = null;
 
-  constructor(store: FakeStore, table: TableName) {
+  constructor(store: FakeStore, table: TableName, readError: { message: string } | null = null) {
     this.store = store;
     this.table = table;
+    this.readError = readError;
   }
 
   select(_columns?: string): this {
@@ -160,11 +163,17 @@ class FakeQueryBuilder {
   }
 
   async maybeSingle(): Promise<{ data: TableRow | null; error: any }> {
+    if (this.readError) {
+      return { data: null, error: this.readError };
+    }
     const rows = this.computeRows();
     return { data: rows[0] ?? null, error: null };
   }
 
   async single(): Promise<{ data: TableRow | null; error: any }> {
+    if (this.readError) {
+      return { data: null, error: this.readError };
+    }
     const rows = this.computeRows();
     if (rows.length === 0) {
       return { data: null, error: { code: "PGRST116", message: "No rows found" } };
@@ -217,6 +226,9 @@ class FakeQueryBuilder {
       };
     }
 
+    if (this.readError) {
+      return { data: [], error: this.readError };
+    }
     return { data: this.computeRows(), error: null };
   }
 
@@ -275,7 +287,7 @@ class FakeSupabaseClient {
     if (!Object.prototype.hasOwnProperty.call(this.store.tables, table)) {
       throw new Error(`Unknown table in fake supabase: ${table}`);
     }
-    return new FakeQueryBuilder(this.store, table as TableName);
+    return new FakeQueryBuilder(this.store, table as TableName, mocks.readErrors[table as TableName] ?? null);
   }
 }
 
@@ -341,6 +353,7 @@ function defaultSeed(overrides?: Partial<FakeStore["tables"]>): Partial<FakeStor
 describe("Calendar Ownership Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.readErrors = {};
     mocks.resolveAccess.mockResolvedValue({
       hasPaidAccess: true,
       reason: "active entitlement",
@@ -599,5 +612,264 @@ describe("Calendar Ownership Contract", () => {
     expect(withExam.status).toBe(200);
     expect(withExam.body.generated.end_date).toBe(examDate);
     expect(withExam.body.generated.horizon_days).toBe(5);
+  });
+
+  it("fails closed for month payload when attempts source read fails", async () => {
+    const app = buildCalendarApp("student");
+    const start = isoDatePlus(1);
+    const end = isoDatePlus(2);
+    mocks.readErrors.student_question_attempts = { message: "attempts_source_failed" };
+
+    const response = await request(app).get(`/api/calendar/month?start=${start}&end=${end}`);
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toContain("Failed to load attempts");
+    expect(mocks.client.store.writes.upsert).toBe(0);
+  });
+
+  it("fails closed for refresh when attempts source read fails without mutating planner state", async () => {
+    const app = buildCalendarApp("student");
+    const start = isoDatePlus(1);
+    mocks.readErrors.student_question_attempts = { message: "attempts_source_failed" };
+
+    const response = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toContain("Failed to load attempts");
+    expect(mocks.client.store.writes.upsert).toBe(0);
+    const refreshedEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "plan_refreshed");
+    expect(refreshedEvents).toHaveLength(0);
+  });
+
+  it("rejects reset-to-auto for nonexistent day state", async () => {
+    const app = buildCalendarApp("student");
+    const day = isoDatePlus(2);
+
+    const response = await request(app).post(`/api/calendar/day/${day}/reset-to-auto`).send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body.code).toBe("DAY_NOT_FOUND");
+    expect(mocks.client.store.writes.upsert).toBe(0);
+  });
+
+  it("rejects reset-to-auto when day is not user override", async () => {
+    const day = isoDatePlus(2);
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_plan_days: [
+          {
+            id: "day-non-override",
+            user_id: "student-1",
+            day_date: day,
+            planned_minutes: 40,
+            completed_minutes: 0,
+            focus: [],
+            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 40 }],
+            plan_version: 1,
+            generated_at: new Date().toISOString(),
+            is_user_override: false,
+            status: "planned",
+            generation_source: "generate",
+            is_exam_day: false,
+            is_taper_day: false,
+            is_full_test_day: false,
+            required_task_count: 1,
+            completed_task_count: 0,
+            study_minutes_target: 40,
+          },
+        ],
+      }),
+    );
+    const app = buildCalendarApp("student");
+
+    const response = await request(app).post(`/api/calendar/day/${day}/reset-to-auto`).send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe("DAY_NOT_OVERRIDDEN");
+    expect(mocks.client.store.writes.upsert).toBe(0);
+  });
+
+  it("reset-to-auto clears override for target day only", async () => {
+    const dayA = isoDatePlus(1);
+    const dayB = isoDatePlus(2);
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_plan_days: [
+          {
+            id: "day-a",
+            user_id: "student-1",
+            day_date: dayA,
+            planned_minutes: 50,
+            completed_minutes: 0,
+            focus: [{ section: "Math", weight: 1 }],
+            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            plan_version: 7,
+            generated_at: new Date().toISOString(),
+            is_user_override: true,
+            status: "planned",
+            generation_source: "user",
+            is_exam_day: false,
+            is_taper_day: false,
+            is_full_test_day: false,
+            required_task_count: 1,
+            completed_task_count: 0,
+            study_minutes_target: 50,
+          },
+          {
+            id: "day-b",
+            user_id: "student-1",
+            day_date: dayB,
+            planned_minutes: 50,
+            completed_minutes: 0,
+            focus: [{ section: "Math", weight: 1 }],
+            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            plan_version: 4,
+            generated_at: new Date().toISOString(),
+            is_user_override: true,
+            status: "planned",
+            generation_source: "user",
+            is_exam_day: false,
+            is_taper_day: false,
+            is_full_test_day: false,
+            required_task_count: 1,
+            completed_task_count: 0,
+            study_minutes_target: 50,
+          },
+        ],
+      }),
+    );
+    const app = buildCalendarApp("student");
+
+    const reset = await request(app).post(`/api/calendar/day/${dayB}/reset-to-auto`).send({});
+    expect(reset.status).toBe(200);
+    expect(reset.body.day.day_date).toBe(dayB);
+    expect(reset.body.day.is_user_override).toBe(false);
+
+    const month = await request(app).get(`/api/calendar/month?start=${dayA}&end=${dayB}`);
+    expect(month.status).toBe(200);
+    const persistedDayA = month.body.days.find((day: any) => day.day_date === dayA);
+    const persistedDayB = month.body.days.find((day: any) => day.day_date === dayB);
+    expect(persistedDayA.is_user_override).toBe(true);
+    expect(persistedDayB.is_user_override).toBe(false);
+  });
+
+  it("rejects invalid task status transition without completion event", async () => {
+    const day = isoDatePlus(2);
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_plan_days: [
+          {
+            id: "day-task",
+            user_id: "student-1",
+            day_date: day,
+            planned_minutes: 30,
+            completed_minutes: 0,
+            focus: [],
+            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 30 }],
+            plan_version: 1,
+            generated_at: new Date().toISOString(),
+            is_user_override: false,
+            status: "planned",
+            generation_source: "generate",
+            is_exam_day: false,
+            is_taper_day: false,
+            is_full_test_day: false,
+            required_task_count: 1,
+            completed_task_count: 0,
+            study_minutes_target: 30,
+          },
+        ],
+        student_study_plan_tasks: [
+          {
+            id: "task-1",
+            day_id: "day-task",
+            user_id: "student-1",
+            day_date: day,
+            ordinal: 1,
+            task_type: "math_practice",
+            section: "MATH",
+            duration_minutes: 30,
+            source_skill_code: null,
+            source_domain: null,
+            source_subskill: null,
+            source_reason: {},
+            status: "planned",
+            is_user_override: false,
+            planner_owned: true,
+            metadata: { required: true },
+            completed_at: null,
+          },
+        ],
+      }),
+    );
+    const app = buildCalendarApp("student");
+
+    const response = await request(app).patch(`/api/calendar/day/${day}/tasks/task-1`).send({ status: "done" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("INVALID_TASK_STATUS");
+    const completionEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "block_completed");
+    expect(completionEvents).toHaveLength(0);
+  });
+
+  it("treats no-op task status patch as read-only and does not emit duplicate completion event", async () => {
+    const day = isoDatePlus(2);
+    mocks.client = new FakeSupabaseClient(
+      defaultSeed({
+        student_study_plan_days: [
+          {
+            id: "day-task",
+            user_id: "student-1",
+            day_date: day,
+            planned_minutes: 30,
+            completed_minutes: 0,
+            focus: [],
+            tasks: [{ type: "practice", section: "Math", mode: "mixed", minutes: 30 }],
+            plan_version: 1,
+            generated_at: new Date().toISOString(),
+            is_user_override: false,
+            status: "completed",
+            generation_source: "generate",
+            is_exam_day: false,
+            is_taper_day: false,
+            is_full_test_day: false,
+            required_task_count: 1,
+            completed_task_count: 1,
+            study_minutes_target: 30,
+          },
+        ],
+        student_study_plan_tasks: [
+          {
+            id: "task-1",
+            day_id: "day-task",
+            user_id: "student-1",
+            day_date: day,
+            ordinal: 1,
+            task_type: "math_practice",
+            section: "MATH",
+            duration_minutes: 30,
+            source_skill_code: null,
+            source_domain: null,
+            source_subskill: null,
+            source_reason: {},
+            status: "completed",
+            is_user_override: false,
+            planner_owned: true,
+            metadata: { required: true },
+            completed_at: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+    const app = buildCalendarApp("student");
+    const writesBefore = { ...mocks.client.store.writes };
+
+    const response = await request(app).patch(`/api/calendar/day/${day}/tasks/task-1`).send({ status: "completed" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.day.day_date).toBe(day);
+    expect(mocks.client.store.writes.update).toBe(writesBefore.update);
+    const completionEvents = mocks.client.store.tables.system_event_logs.filter((row) => row.event_type === "block_completed");
+    expect(completionEvents).toHaveLength(0);
   });
 });

@@ -22,6 +22,10 @@ const accountMocks = vi.hoisted(() => ({
   upsertEntitlement: vi.fn(),
 }));
 
+const stripeMocks = vi.hoisted(() => ({
+  subscriptionsList: vi.fn(async () => ({ data: [] })),
+}));
+
 vi.mock('../../server/middleware/csrf', () => ({
   csrfGuard: () => (_req: any, _res: any, next: any) => next(),
 }));
@@ -90,7 +94,7 @@ vi.mock('../../server/lib/stripeClient', () => ({
       },
     },
     subscriptions: {
-      list: vi.fn(async () => ({ data: [] })),
+      list: stripeMocks.subscriptionsList,
     },
   })),
   getStripePublishableKeySafe: vi.fn(() => 'pk_test_123'),
@@ -166,6 +170,7 @@ describe('Identity + Entitlement Runtime Contract', () => {
       studentEntitlementExpired: false,
       guardianEntitlementExpired: false,
     });
+    stripeMocks.subscriptionsList.mockResolvedValue({ data: [] });
   });
 
   it('blocks direct role mutation through PATCH /api/profile and points to support', async () => {
@@ -257,6 +262,166 @@ describe('Identity + Entitlement Runtime Contract', () => {
       lockedReason: 'student_subscription_required',
       billingOwnerRole: 'student',
       premiumSource: 'none',
+    }));
+  });
+
+  it('fails closed when student-owned account resolution fails for billing status', async () => {
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    authState.currentUser = {
+      id: 'student-1',
+      role: 'student',
+      email: 'student@test.com',
+      isGuardian: false,
+      isAdmin: false,
+    } as any;
+    accountMocks.ensureAccountForUser.mockRejectedValue(new Error('account lookup failed'));
+
+    const res = await request(app).get('/api/billing/status');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual(expect.objectContaining({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+    }));
+    expect(res.body).not.toHaveProperty('effectiveAccess');
+    expect(res.body).not.toHaveProperty('billingOwnerRole');
+  });
+
+  it('fails closed when linked premium-access resolution fails for billing status', async () => {
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    accountMocks.getPrimaryGuardianLink.mockResolvedValue({
+      student_user_id: 'student-1',
+      account_id: 'acc-student-1',
+    });
+    accountMocks.resolveLinkedPairPremiumAccessForGuardian.mockRejectedValue(new Error('premium access read failed'));
+
+    const res = await request(app).get('/api/billing/status');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual(expect.objectContaining({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+    }));
+    expect(res.body).not.toHaveProperty('effectiveAccess');
+    expect(res.body).not.toHaveProperty('billingOwnerRole');
+  });
+
+  it('fails closed when Stripe self-heal reconciliation call fails', async () => {
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    authState.currentUser = {
+      id: 'student-1',
+      role: 'student',
+      email: 'student@test.com',
+      isGuardian: false,
+      isAdmin: false,
+    } as any;
+    accountMocks.getOrCreateEntitlement.mockResolvedValue({
+      account_id: 'acc-student-1',
+      plan: 'free',
+      status: 'inactive',
+      current_period_end: null,
+      stripe_subscription_id: null,
+      stripe_customer_id: 'cus_needs_reconcile',
+    });
+    stripeMocks.subscriptionsList.mockRejectedValue(new Error('stripe list failed'));
+
+    const res = await request(app).get('/api/billing/status');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual(expect.objectContaining({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+    }));
+    expect(res.body).not.toHaveProperty('effectiveAccess');
+    expect(res.body).not.toHaveProperty('billingOwnerRole');
+  });
+
+  it('preserves paid status behavior when Stripe reconciliation succeeds', async () => {
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    authState.currentUser = {
+      id: 'student-1',
+      role: 'student',
+      email: 'student@test.com',
+      isGuardian: false,
+      isAdmin: false,
+    } as any;
+
+    accountMocks.getOrCreateEntitlement
+      .mockResolvedValueOnce({
+        account_id: 'acc-student-1',
+        plan: 'free',
+        status: 'inactive',
+        current_period_end: null,
+        stripe_subscription_id: null,
+        stripe_customer_id: 'cus_reconcile',
+      })
+      .mockResolvedValueOnce({
+        account_id: 'acc-student-1',
+        plan: 'paid',
+        status: 'active',
+        current_period_end: new Date(Date.now() + 3600_000).toISOString(),
+        stripe_subscription_id: 'sub_active_1',
+        stripe_customer_id: 'cus_reconcile',
+      });
+    stripeMocks.subscriptionsList.mockResolvedValue({
+      data: [
+        {
+          id: 'sub_active_1',
+          status: 'active',
+          created: 123,
+          metadata: { account_id: 'acc-student-1' },
+          current_period_end: Math.floor(Date.now() / 1000) + 3600,
+        },
+      ],
+    });
+    accountMocks.mapStripeStatusToEntitlement.mockReturnValue({ plan: 'paid', status: 'active' });
+    accountMocks.resolveLinkedPairPremiumAccessForStudent.mockResolvedValue({
+      role: 'student',
+      hasPremiumAccess: true,
+      hasActiveLink: false,
+      premiumSource: 'student',
+      reason: 'Student account has an active premium entitlement.',
+      studentUserId: 'student-1',
+      guardianUserId: null,
+      studentAccountId: 'acc-student-1',
+      guardianAccountId: null,
+      studentEntitlementStatus: 'active',
+      guardianEntitlementStatus: 'missing',
+      studentEntitlementExpired: false,
+      guardianEntitlementExpired: false,
+    });
+
+    const res = await request(app).get('/api/billing/status');
+
+    expect(res.status).toBe(200);
+    expect(accountMocks.upsertEntitlement).toHaveBeenCalledWith(
+      'acc-student-1',
+      expect.objectContaining({
+        plan: 'paid',
+        status: 'active',
+        stripe_customer_id: 'cus_reconcile',
+        stripe_subscription_id: 'sub_active_1',
+      }),
+    );
+    expect(res.body).toEqual(expect.objectContaining({
+      accountId: 'acc-student-1',
+      plan: 'paid',
+      stripeStatus: 'active',
+      isPaid: true,
+      effectiveAccess: true,
+      billingOwnerRole: 'student',
     }));
   });
 });

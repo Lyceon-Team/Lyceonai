@@ -104,16 +104,24 @@ export async function revokeGuardianLink(
   studentId: string
 ): Promise<void> {
   // Revoke in canonical table
-  const { error } = await supabaseServer
+  const { data, error } = await supabaseServer
     .from('guardian_links')
     .update({ status: 'revoked', revoked_at: new Date().toISOString() })
     .eq('guardian_profile_id', guardianProfileId)
     .eq('student_user_id', studentId)
-    .eq('status', 'active');
+    .eq('status', 'active')
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     console.error('[Account] Failed to revoke guardian link:', error);
     throw new Error(`Failed to revoke guardian link: ${error.message}`);
+  }
+
+  if (!data?.id) {
+    const conflictErr = new Error('Guardian link is not active');
+    (conflictErr as any).code = 'LINK_NOT_ACTIVE';
+    throw conflictErr;
   }
 
 }
@@ -479,7 +487,7 @@ export async function getAllGuardianStudentLinks(guardianUserId: string): Promis
 
   if (error) {
     console.error('[Account] Failed to get guardian student links:', error);
-    return [];
+    throw new Error(`Failed to get guardian student links: ${error.message}`);
   }
 
   if ((data || []).length > 1) {

@@ -297,6 +297,11 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
     }
   } catch (err: any) {
     logger.warn('BILLING', 'status', 'Failed to ensure student-owned entitlement account', { userId, err: err.message, requestId });
+    return res.status(503).json({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+      requestId,
+    });
   }
 
   try {
@@ -305,6 +310,11 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
     }
   } catch (err: any) {
     logger.warn('BILLING', 'status', 'Failed to get entitlement', { userId, accountId, err: err.message, requestId });
+    return res.status(503).json({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+      requestId,
+    });
   }
 
   let plan = entitlement?.plan || 'free';
@@ -381,6 +391,11 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
       }
     } catch (e: any) {
       logger.warn('BILLING', 'status', 'Self-heal reconcile failed', { error: e.message, requestId });
+      return res.status(503).json({
+        error: 'Billing status unavailable',
+        code: 'BILLING_STATUS_UNAVAILABLE',
+        requestId,
+      });
     }
   }
 
@@ -417,7 +432,11 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
       error: err.message,
       requestId,
     });
-    effectiveAccess = false;
+    return res.status(503).json({
+      error: 'Billing status unavailable',
+      code: 'BILLING_STATUS_UNAVAILABLE',
+      requestId,
+    });
   }
 
   if (linkRequiredForPremium) {
