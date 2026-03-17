@@ -12,18 +12,22 @@ const accountMocks = {
 
 const kpiMocks = {
   buildCanonicalPracticeKpiSnapshot: vi.fn(),
-  buildGuardianSummaryKpiView: vi.fn(),
+  buildStudentKpiView: vi.fn(),
   buildFullTestKpis: vi.fn(),
   fullTestMeasurementModel: vi.fn(),
 };
 
 const systemEventInserts: Record<string, unknown>[] = [];
+let attemptsSelectError: { message: string } | null = null;
+let profileSelectError: { message: string } | null = null;
 
 class FakeSelectBuilder {
   private readonly rows: any[];
+  private readonly error: any;
 
-  constructor(rows: any[]) {
+  constructor(rows: any[], error: any = null) {
     this.rows = rows;
+    this.error = error;
   }
 
   eq(): this {
@@ -54,6 +58,9 @@ class FakeSelectBuilder {
   }
 
   async single() {
+    if (this.error) {
+      return { data: null, error: this.error };
+    }
     const row = this.rows[0] ?? null;
     if (!row) {
       return { data: null, error: { code: 'PGRST116', message: 'No rows found' } };
@@ -62,14 +69,17 @@ class FakeSelectBuilder {
   }
 
   async maybeSingle() {
+    if (this.error) {
+      return { data: null, error: this.error };
+    }
     return { data: this.rows[0] ?? null, error: null };
   }
 
   then<TResult1 = any, TResult2 = never>(
-    onfulfilled?: ((value: { data: any[]; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+    onfulfilled?: ((value: { data: any[]; error: any }) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
-    return Promise.resolve({ data: this.rows, error: null }).then(onfulfilled ?? undefined, onrejected ?? undefined);
+    return Promise.resolve({ data: this.error ? null : this.rows, error: this.error }).then(onfulfilled ?? undefined, onrejected ?? undefined);
   }
 }
 
@@ -167,8 +177,13 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
       }
 
       const rows = (seed as Record<string, any[]>)[table] ?? [];
+      const selectError = table === 'student_question_attempts'
+        ? attemptsSelectError
+        : table === 'student_study_profile'
+          ? profileSelectError
+          : null;
       return {
-        select: () => new FakeSelectBuilder([...rows]),
+        select: () => new FakeSelectBuilder([...rows], selectError),
         insert: async () => ({ error: null }),
       };
     },
@@ -209,23 +224,99 @@ describe('Guardian reporting runtime contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
+    attemptsSelectError = null;
+    profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
 
     kpiMocks.buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
       modelVersion: 'kpi-v1',
-      progress: {},
-      metrics: [],
-    });
-    kpiMocks.buildGuardianSummaryKpiView.mockReturnValue({
-      progress: {
-        practiceMinutesLast7Days: 120,
-        sessionsLast7Days: 4,
-        questionsAttempted: 30,
-        accuracy: 80,
+      timezone: 'America/Chicago',
+      generatedAt: '2026-03-10T00:00:00.000Z',
+      currentWeek: {
+        practiceSessions: 1,
+        practiceMinutes: 22,
+        questionsSolved: 11,
+        accuracyPercent: 55,
+        avgSecondsPerQuestion: 88.2,
       },
-      metrics: [],
+      previousWeek: {
+        practiceSessions: 1,
+        practiceMinutes: 21,
+        questionsSolved: 10,
+        accuracyPercent: 50,
+        avgSecondsPerQuestion: 90.5,
+      },
+      recency200: {
+        totalAttempts: 11,
+        accuracyPercent: 55,
+        avgSecondsPerQuestion: 88.2,
+      },
+    });
+    kpiMocks.buildStudentKpiView.mockReturnValue({
+      modelVersion: 'kpi-v1',
+      timezone: 'America/Chicago',
+      week: {
+        practiceSessions: 4,
+        questionsSolved: 30,
+        accuracy: 80,
+        explanations: {},
+      },
+      recency: {
+        window: 200,
+        totalAttempts: 200,
+        accuracy: 78,
+        avgSecondsPerQuestion: 75.3,
+        explanations: {},
+      },
+      metrics: [
+        {
+          id: 'week_minutes',
+          label: 'Practice Minutes (7d)',
+          kind: 'diagnostic',
+          unit: 'minutes',
+          value: 120,
+          explanation: { ruleId: 'RULE_WEEK_MINUTES', whatThisMeans: 'wm', whyThisChanged: 'up', whatToDoNext: 'keep going' },
+        },
+        {
+          id: 'week_sessions',
+          label: 'Practice Sessions (7d)',
+          kind: 'diagnostic',
+          unit: 'count',
+          value: 4,
+          explanation: { ruleId: 'RULE_WEEK_SESSIONS', whatThisMeans: 'ws', whyThisChanged: 'up', whatToDoNext: 'keep going' },
+        },
+        {
+          id: 'week_questions',
+          label: 'Questions Solved (7d)',
+          kind: 'diagnostic',
+          unit: 'count',
+          value: 30,
+          explanation: { ruleId: 'RULE_WEEK_QUESTIONS', whatThisMeans: 'wq', whyThisChanged: 'up', whatToDoNext: 'keep going' },
+        },
+        {
+          id: 'week_accuracy',
+          label: 'Accuracy (7d)',
+          kind: 'diagnostic',
+          unit: 'percent',
+          value: 80,
+          explanation: { ruleId: 'RULE_WEEK_ACCURACY', whatThisMeans: 'wa', whyThisChanged: 'up', whatToDoNext: 'keep going' },
+        },
+        {
+          id: 'recency_accuracy',
+          label: 'Accuracy (last 200 attempts)',
+          kind: 'diagnostic',
+          unit: 'percent',
+          value: 78,
+          explanation: { ruleId: 'RULE_RECENCY_ACCURACY', whatThisMeans: 'ra', whyThisChanged: 'flat', whatToDoNext: 'maintain' },
+        },
+      ],
+      gating: {
+        historicalTrends: { allowed: true, requiredPlan: 'paid', reason: 'allowed' },
+      },
       measurementModel: {
-        version: '2026-03-guardian-summary',
+        official: [],
+        weighted: [],
+        diagnostic: ['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy', 'recency_accuracy'],
       },
     });
     kpiMocks.buildFullTestKpis.mockReturnValue([]);
@@ -274,6 +365,36 @@ describe('Guardian reporting runtime contract', () => {
     expect(response.body.explanation).toBeUndefined();
     expect(response.body.tutorInteractions).toBeUndefined();
     expect(response.body.mastery_score).toBeUndefined();
+    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledTimes(1);
+    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledWith(expect.any(Object), true);
+    expect(response.body.progress).toEqual({
+      practiceMinutesLast7Days: 120,
+      sessionsLast7Days: 4,
+      questionsAttempted: 30,
+      accuracy: 80,
+      explanations: {
+        week_minutes: expect.objectContaining({ ruleId: 'RULE_WEEK_MINUTES' }),
+        week_sessions: expect.objectContaining({ ruleId: 'RULE_WEEK_SESSIONS' }),
+        week_questions: expect.objectContaining({ ruleId: 'RULE_WEEK_QUESTIONS' }),
+        week_accuracy: expect.objectContaining({ ruleId: 'RULE_WEEK_ACCURACY' }),
+      },
+    });
+    expect(response.body.metrics.map((metric: any) => metric.id)).toEqual([
+      'week_minutes',
+      'week_sessions',
+      'week_questions',
+      'week_accuracy',
+    ]);
+    expect(response.body.metrics.find((metric: any) => metric.id === 'week_minutes')?.value).toBe(120);
+    expect(response.body.metrics.find((metric: any) => metric.id === 'week_sessions')?.value).toBe(4);
+    expect(response.body.metrics.find((metric: any) => metric.id === 'week_questions')?.value).toBe(30);
+    expect(response.body.metrics.find((metric: any) => metric.id === 'week_accuracy')?.value).toBe(80);
+    expect(response.body.measurementModel).toEqual({
+      official: [],
+      weighted: [],
+      diagnostic: ['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy'],
+    });
+    expect(response.body.metrics.find((metric: any) => metric.id === 'recency_accuracy')).toBeUndefined();
 
     const reportViewed = systemEventInserts.find((row) => row.event_type === 'guardian_report_viewed');
     expect(reportViewed).toBeDefined();
@@ -320,6 +441,48 @@ describe('Guardian reporting runtime contract', () => {
         surface: 'calendar',
       }),
     });
+  });
+
+  it('fails closed when canonical student KPI snapshot source fails', async () => {
+    kpiMocks.buildCanonicalPracticeKpiSnapshot.mockRejectedValueOnce(new Error('snapshot_failed'));
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/students/student-1/summary');
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('Internal server error');
+    const reportViewed = systemEventInserts.find((row) => row.event_type === 'guardian_report_viewed');
+    expect(reportViewed).toBeUndefined();
+  });
+
+  it('fails closed when calendar attempt KPI source query fails', async () => {
+    attemptsSelectError = { message: 'attempts_query_failed' };
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31');
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('Failed to load calendar data');
+    const calendarViewed = systemEventInserts.find((row) => row.event_type === 'guardian_calendar_viewed');
+    expect(calendarViewed).toBeUndefined();
+  });
+
+  it('fails closed when calendar timezone source query fails', async () => {
+    profileSelectError = { message: 'profile_timezone_query_failed' };
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31');
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('Failed to load calendar data');
+    const calendarViewed = systemEventInserts.find((row) => row.event_type === 'guardian_calendar_viewed');
+    expect(calendarViewed).toBeUndefined();
   });
 
   it('denies unlinked guardian summary requests and emits denied event', async () => {

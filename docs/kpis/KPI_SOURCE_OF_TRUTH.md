@@ -4,7 +4,7 @@
 - Canonical KPI generation layer: `server/services/kpi-truth-layer.ts`.
 - Canonical student KPI snapshot builder: `buildCanonicalPracticeKpiSnapshot(userId)`.
 - Canonical student KPI projection: `buildStudentKpiView(snapshot, includeHistoricalTrends)`.
-- Canonical guardian KPI projection: `buildGuardianSummaryKpiView(snapshot)`.
+- Canonical guardian summary projection rule: derive from `buildStudentKpiView(snapshot, includeHistoricalTrends)` and apply guardian visibility filtering in `server/routes/guardian-routes.ts` only.
 - Canonical full-test KPI semantics: `buildFullTestKpis(...)` + `fullTestMeasurementModel()`.
 - Runtime mounts:
   - `GET /api/progress/kpis` -> `server/routes/legacy/progress.ts`.
