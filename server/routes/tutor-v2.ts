@@ -123,6 +123,59 @@ function suppressAnswerReveal<T extends object>(question: T | null): T | null {
   return sanitized as T;
 }
 
+async function hasVerifiedSubmission(userId: string, canonicalQuestionId: string): Promise<boolean> {
+  try {
+    const { data: questionRow, error: questionError } = await supabaseServer
+      .from("questions")
+      .select("id")
+      .eq("canonical_id", canonicalQuestionId)
+      .limit(1)
+      .maybeSingle();
+
+    if (questionError) {
+      console.warn("[tutor-v2] canonical question lookup failed, suppressing reveal", {
+        userId,
+        canonicalQuestionId,
+        message: questionError.message,
+        code: questionError.code,
+      });
+      return false;
+    }
+
+    const questionId = questionRow?.id ? String(questionRow.id) : null;
+    if (!questionId) {
+      return false;
+    }
+
+    const { data: attempt, error: attemptError } = await supabaseServer
+      .from("answer_attempts")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("question_id", questionId)
+      .limit(1)
+      .maybeSingle();
+
+    if (attemptError) {
+      console.warn("[tutor-v2] verified submission check failed, suppressing reveal", {
+        userId,
+        questionId,
+        message: attemptError.message,
+        code: attemptError.code,
+      });
+      return false;
+    }
+
+    return Boolean(attempt);
+  } catch (error: any) {
+    console.warn("[tutor-v2] verified submission check threw, suppressing reveal", {
+      userId,
+      canonicalQuestionId,
+      message: error?.message,
+    });
+    return false;
+  }
+}
+
 function buildTutorPrompt(
   message: string,
   primaryQuestion: QuestionContext | null,
@@ -267,32 +320,7 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
     } else if (isAdmin) {
       canReveal = true;
     } else if (userId && primaryQuestion?.canonicalId) {
-      try {
-        const { data: attempt, error: attemptError } = await supabaseServer
-          .from("answer_attempts")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("question_id", primaryQuestion.canonicalId)
-          .limit(1)
-          .maybeSingle();
-
-        if (attemptError) {
-          console.warn("[tutor-v2] verified submission check failed, suppressing reveal", {
-            userId,
-            questionId: primaryQuestion.canonicalId,
-            message: attemptError.message,
-            code: attemptError.code,
-          });
-        } else if (attempt) {
-          canReveal = true;
-        }
-      } catch (attemptLookupError: any) {
-        console.warn("[tutor-v2] verified submission check threw, suppressing reveal", {
-          userId,
-          questionId: primaryQuestion.canonicalId,
-          message: attemptLookupError?.message,
-        });
-      }
+      canReveal = await hasVerifiedSubmission(userId, primaryQuestion.canonicalId);
     }
 
     if (primaryQuestion && !canReveal) {

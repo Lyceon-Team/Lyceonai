@@ -644,6 +644,94 @@ describe('Review session lifecycle contract', () => {
     expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
   });
 
+  it('denies non-owner answer submit to another student review session', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [
+        { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
+      ],
+      review_session_items: [
+        { id: '22222222-2222-4222-8222-222222222222', review_session_id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', ordinal: 1, question_canonical_id: 'SATM1ABC123', source_question_id: 'q-source-1', source_question_canonical_id: 'SATM1ABC123', source_origin: 'practice', retry_mode: 'same_question', status: 'served', attempt_id: null, tutor_opened_at: null, source_attempted_at: '2026-03-14T08:00:00.000Z', option_order: ['A','B','C','D'], option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' } },
+      ],
+      review_session_events: [],
+      questions: [
+        { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp' },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = {
+      user: { id: 'student-2' },
+      body: {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        review_session_item_id: '22222222-2222-4222-8222-222222222222',
+        selected_option_id: 'opt_a',
+        source_context: 'review_errors',
+        client_instance_id: 'client-a',
+      },
+    };
+
+    const res = makeRes();
+    await submitReviewSessionAnswer(req, res.res);
+
+    expect(res.getStatus()).toBe(404);
+    expect(res.getBody().code).toBe('REVIEW_SESSION_NOT_FOUND');
+  });
+
+  it('fails closed when resolved item sees client_attempt_id bound to a different question', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [
+        {
+          id: 'attempt-student-mismatch',
+          student_id: 'student-1',
+          question_id: 'q-other',
+          context: 'review_errors',
+          selected_answer: 'A',
+          is_correct: false,
+          created_at: '2026-03-14T09:05:00.000Z',
+          client_attempt_id: 'attempt-1',
+        },
+      ],
+      review_sessions: [
+        { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
+      ],
+      review_session_items: [
+        { id: '22222222-2222-4222-8222-222222222222', review_session_id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', ordinal: 1, question_canonical_id: 'SATM1ABC123', source_question_id: 'q-source-1', source_question_canonical_id: 'SATM1ABC123', source_origin: 'practice', retry_mode: 'same_question', status: 'answered', attempt_id: null, tutor_opened_at: null, source_attempted_at: '2026-03-14T08:00:00.000Z', option_order: ['A','B','C','D'], option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' } },
+      ],
+      review_session_events: [],
+      questions: [
+        { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp' },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        review_session_item_id: '22222222-2222-4222-8222-222222222222',
+        selected_option_id: 'opt_a',
+        source_context: 'review_errors',
+        client_attempt_id: 'attempt-1',
+        client_instance_id: 'client-a',
+      },
+    };
+
+    const res = makeRes();
+    await submitReviewSessionAnswer(req, res.res);
+
+    expect(res.getStatus()).toBe(409);
+    expect(res.getBody().code).toBe('IDEMPOTENCY_KEY_REUSED');
+  });
+
   it('denies non-owner access to another student session state', async () => {
     const state: DbState = {
       answer_attempts: [],

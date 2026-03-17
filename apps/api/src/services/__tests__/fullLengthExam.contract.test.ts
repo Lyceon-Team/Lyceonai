@@ -277,7 +277,7 @@ describe('Full-Length Exam Contract Closure', () => {
     expect(sumMathSkills).toBe(result.rawScore.math.total);
   });
 
-  it('duplicate answer submission is idempotent (first write wins)', async () => {
+  it('duplicate same-answer submission is idempotent (first write wins)', async () => {
     const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
 
     let responseLookupCount = 0;
@@ -351,7 +351,7 @@ describe('Full-Length Exam Contract Closure', () => {
                       if (responseLookupCount === 1) {
                         return { data: null, error: null };
                       }
-                      return { data: { id: 'existing-response' }, error: null };
+                      return { data: { id: 'existing-response', selected_answer: 'A' }, error: null };
                     }),
                   })),
                 })),
@@ -398,8 +398,138 @@ describe('Full-Length Exam Contract Closure', () => {
       sessionId: 'session-idempotent-1',
       userId: 'student-1',
       questionId: '11111111-1111-4111-8111-111111111111',
-      selectedAnswer: 'B',
+      selectedAnswer: 'A',
     });
+
+    expect(responseLookupCount).toBe(2);
+    expect(insertCount).toBe(1);
+  });
+
+  it('fails closed when duplicate submission replays with a different answer', async () => {
+    const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+    let responseLookupCount = 0;
+    let insertCount = 0;
+
+    const mockSupabase: MockSupabaseClient = {
+      from: vi.fn((table: string) => {
+        if (table === 'full_length_exam_sessions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: {
+                      id: 'session-idempotent-2',
+                      status: 'in_progress',
+                      current_section: 'rw',
+                      current_module: 1,
+                    },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_modules') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({
+                      data: {
+                        id: 'module-rw-1',
+                        status: 'in_progress',
+                      },
+                      error: null,
+                    })),
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn(async () => ({
+                    data: { id: 'mq-1' },
+                    error: null,
+                  })),
+                })),
+              })),
+            })),
+          };
+        }
+
+        if (table === 'full_length_exam_responses') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn(async () => {
+                      responseLookupCount += 1;
+                      if (responseLookupCount === 1) {
+                        return { data: null, error: null };
+                      }
+                      return { data: { id: 'existing-response', selected_answer: 'A' }, error: null };
+                    }),
+                  })),
+                })),
+              })),
+            })),
+            insert: vi.fn(async () => {
+              insertCount += 1;
+              return { error: null };
+            }),
+          };
+        }
+
+        if (table === 'questions') {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: {
+                    id: 'q-1',
+                    question_type: 'multiple_choice',
+                    correct_answer: 'A',
+                  },
+                  error: null,
+                })),
+              })),
+            })),
+          };
+        }
+
+        return { select: vi.fn() };
+      }),
+    };
+
+    (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+    await fullLengthExamService.submitAnswer({
+      sessionId: 'session-idempotent-2',
+      userId: 'student-1',
+      questionId: '11111111-1111-4111-8111-111111111111',
+      selectedAnswer: 'A',
+    });
+
+    await expect(
+      fullLengthExamService.submitAnswer({
+        sessionId: 'session-idempotent-2',
+        userId: 'student-1',
+        questionId: '11111111-1111-4111-8111-111111111111',
+        selectedAnswer: 'B',
+      })
+    ).rejects.toThrow('Answer already submitted with different selection');
 
     expect(responseLookupCount).toBe(2);
     expect(insertCount).toBe(1);

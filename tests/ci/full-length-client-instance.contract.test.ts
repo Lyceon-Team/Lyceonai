@@ -67,4 +67,28 @@ describe('Full-Length Client Instance Conflict Contract', () => {
       requestId: 'req-full-length-client-conflict',
     });
   });
+
+  it('returns 409 when duplicate answer submit replays with a conflicting answer', async () => {
+    serviceMocks.submitAnswer.mockRejectedValue(new Error('Answer already submitted with different selection'));
+
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app)
+      .post('/api/full-length/sessions/550e8400-e29b-41d4-a716-446655440000/answer')
+      .send({
+        questionId: '550e8400-e29b-41d4-a716-446655440001',
+        selectedAnswer: 'B',
+        client_instance_id: '550e8400-e29b-41d4-a716-446655440002',
+        client_attempt_id: '550e8400-e29b-41d4-a716-446655440003',
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'Duplicate answer submission',
+      requestId: 'req-full-length-client-conflict',
+    });
+  });
 });
