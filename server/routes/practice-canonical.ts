@@ -2450,6 +2450,47 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   const questionId = String(qRow.id);
+  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
+
+  if (sessionItem.status !== "served") {
+    if (sessionItem.status === "answered" && payload.clientAttemptId) {
+      const { data: retriedAttempt, error: retriedAttemptError } = await supabaseServer
+        .from("answer_attempts")
+        .select("id, session_id, question_id, session_item_id, is_correct, outcome")
+        .eq("user_id", userId)
+        .eq("client_attempt_id", payload.clientAttemptId)
+        .maybeSingle();
+
+      if (retriedAttemptError) {
+        throw new Error(`attempt_lookup_by_client_attempt_id_failed: ${retriedAttemptError.message}`);
+      }
+
+      if (
+        retriedAttempt
+        && retriedAttempt.session_id === payload.sessionId
+        && retriedAttempt.session_item_id === sessionItem.id
+        && retriedAttempt.question_id === questionId
+      ) {
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!retriedAttempt.is_correct,
+          mode: "multiple_choice",
+          correctOptionId,
+          explanation,
+          feedback: retriedAttempt.is_correct ? "Correct" : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          idempotentRetried: true,
+        });
+      }
+    }
+
+    return res.status(409).json({
+      error: "session_item_not_open",
+      message: "This practice item is already resolved.",
+      requestId,
+    });
+  }
 
   const existingAttempt = await findExistingAttempt({
     userId,
@@ -2458,8 +2499,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     sessionItemId: sessionItem.id,
     idempotencyKey: payload.clientAttemptId,
   });
-
-  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
 
   if (existingAttempt) {
     if (existingAttempt.session_id !== payload.sessionId || existingAttempt.question_id !== questionId) {
@@ -2480,14 +2519,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       feedback: existingAttempt.is_correct ? "Correct" : existingAttempt.outcome === "skipped" ? "Skipped" : "Incorrect",
       stats: await getSessionStats(payload.sessionId, userId),
       idempotentRetried: true,
-    });
-  }
-
-  if (sessionItem.status !== "served") {
-    return res.status(409).json({
-      error: "session_item_not_open",
-      message: "This practice item is already resolved.",
-      requestId,
     });
   }
 

@@ -31,6 +31,7 @@ const serviceMocks = {
   getCurrentSession: vi.fn(),
   startExam: vi.fn(),
   submitAnswer: vi.fn(),
+  persistModuleCalculatorState: vi.fn(),
   submitModule: vi.fn(),
   continueFromBreak: vi.fn(),
   completeExam: vi.fn(),
@@ -88,6 +89,49 @@ describe('Full-Length Client Instance Conflict Contract', () => {
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
       error: 'Duplicate answer submission',
+      requestId: 'req-full-length-client-conflict',
+    });
+  });
+
+  it('returns 409 when calculator-state write comes from a conflicting client instance', async () => {
+    serviceMocks.persistModuleCalculatorState.mockRejectedValue(new Error('Session client instance conflict'));
+
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app)
+      .post('/api/full-length/sessions/550e8400-e29b-41d4-a716-446655440000/modules/550e8400-e29b-41d4-a716-446655440100/calculator-state')
+      .send({
+        calculator_state: { expressions: [{ id: '1', latex: 'y=x' }] },
+        client_instance_id: '550e8400-e29b-41d4-a716-446655440002',
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      error: 'Session client instance conflict',
+      requestId: 'req-full-length-client-conflict',
+    });
+  });
+
+  it('returns 400 when calculator-state write targets non-math module', async () => {
+    serviceMocks.persistModuleCalculatorState.mockRejectedValue(new Error('Calculator state is only available for math modules'));
+
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app)
+      .post('/api/full-length/sessions/550e8400-e29b-41d4-a716-446655440000/modules/550e8400-e29b-41d4-a716-446655440101/calculator-state')
+      .send({
+        calculator_state: { expressions: [] },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      error: 'Invalid module state',
       requestId: 'req-full-length-client-conflict',
     });
   });

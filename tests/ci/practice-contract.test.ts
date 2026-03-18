@@ -759,7 +759,10 @@ describe("Practice Runtime Contract", () => {
         client_instance_id: "tab-1",
       });
     expect(skip.status).toBe(200);
+    expect(db.answer_attempts).toHaveLength(1);
 
+    const beforeAttempts = db.answer_attempts.length;
+    const beforeMasteryWrites = masteryMocks.applyMasteryUpdate.mock.calls.length;
     const answerLater = await request(app)
       .post("/api/practice/answer")
       .set("Origin", "http://localhost:5000")
@@ -770,9 +773,10 @@ describe("Practice Runtime Contract", () => {
         clientAttemptId: "answer-after-skip-1",
       });
 
-    expect(answerLater.status).toBe(200);
-    expect(answerLater.body.feedback).toBe("Skipped");
-    expect(answerLater.body.isCorrect).toBe(false);
+    expect(answerLater.status).toBe(409);
+    expect(answerLater.body.error).toBe("session_item_not_open");
+    expect(db.answer_attempts).toHaveLength(beforeAttempts);
+    expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(beforeMasteryWrites);
   });
 
   it("terminated session blocks skip", async () => {

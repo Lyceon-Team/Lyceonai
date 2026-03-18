@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 declare global {
   interface DesmosCalculatorInstance {
@@ -21,6 +21,7 @@ declare global {
 }
 
 let desmosScriptPromise: Promise<void> | null = null;
+let desmosScriptLoaded = false;
 
 function loadDesmosScriptOnce(): Promise<void> {
   if (typeof window === "undefined") {
@@ -28,6 +29,11 @@ function loadDesmosScriptOnce(): Promise<void> {
   }
 
   if (window.Desmos?.GraphingCalculator) {
+    desmosScriptLoaded = true;
+    return Promise.resolve();
+  }
+
+  if (desmosScriptLoaded) {
     return Promise.resolve();
   }
 
@@ -35,21 +41,41 @@ function loadDesmosScriptOnce(): Promise<void> {
     return desmosScriptPromise;
   }
 
+  const rawApiKey = import.meta.env.VITE_DESMOS_API_KEY;
+  const apiKey = typeof rawApiKey === "string" ? rawApiKey.trim() : "";
+  if (!apiKey) {
+    return Promise.reject(new Error("Desmos calculator unavailable: missing VITE_DESMOS_API_KEY"));
+  }
+
   desmosScriptPromise = new Promise<void>((resolve, reject) => {
+    const fail = () => {
+      desmosScriptPromise = null;
+      reject(new Error("Failed to load Desmos script"));
+    };
+
     const existing = document.querySelector<HTMLScriptElement>('script[data-desmos="graphing-calculator"]');
     if (existing) {
+      if (existing.dataset.loaded === "true") {
+        desmosScriptLoaded = true;
+        resolve();
+        return;
+      }
       existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Failed to load Desmos script")), { once: true });
+      existing.addEventListener("error", fail, { once: true });
       return;
     }
 
     const script = document.createElement("script");
-    script.src = "https://www.desmos.com/api/v1.10/calculator.js?apiKey=desmos";
+    script.src = `https://www.desmos.com/api/v1.11/calculator.js?apiKey=${encodeURIComponent(apiKey)}`;
     script.async = true;
     script.defer = true;
     script.dataset.desmos = "graphing-calculator";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Desmos script"));
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      desmosScriptLoaded = true;
+      resolve();
+    };
+    script.onerror = fail;
     document.head.appendChild(script);
   });
 
@@ -75,6 +101,8 @@ export default function DesmosCalculator({
   const calcRef = useRef<DesmosCalculatorInstance | null>(null);
   const stateDebounceRef = useRef<number | null>(null);
   const onStateChangeRef = useRef(onStateChange);
+  const initialStateRef = useRef<unknown | null>(initialState ?? null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const initialStateKey = useMemo(() => JSON.stringify(initialState ?? null), [initialState]);
 
   useEffect(() => {
@@ -82,7 +110,12 @@ export default function DesmosCalculator({
   }, [onStateChange]);
 
   useEffect(() => {
+    initialStateRef.current = initialState ?? null;
+  }, [initialStateKey, initialState]);
+
+  useEffect(() => {
     let mounted = true;
+    setLoadError(null);
 
     void loadDesmosScriptOnce()
       .then(() => {
@@ -98,8 +131,8 @@ export default function DesmosCalculator({
 
         calcRef.current = calculator;
 
-        if (initialState) {
-          calculator.setState(initialState);
+        if (initialStateRef.current) {
+          calculator.setState(initialStateRef.current);
         }
 
         const handleChange = () => {
@@ -116,14 +149,14 @@ export default function DesmosCalculator({
 
         calculator.observeEvent("change", handleChange);
 
-        if (expanded) {
-          window.setTimeout(() => calculator.resize(), 0);
-        }
+        window.setTimeout(() => calculator.resize(), 0);
 
         (calculator as any).__lyceonChangeHandler = handleChange;
       })
       .catch(() => {
-        // Fail silent to keep question UI stable if third-party script fails.
+        if (!mounted) return;
+        // Fail closed but keep question UI stable if script or env wiring is unavailable.
+        setLoadError("Desmos calculator unavailable. Configure VITE_DESMOS_API_KEY.");
       });
 
     return () => {
@@ -144,14 +177,12 @@ export default function DesmosCalculator({
       }
       calcRef.current = null;
     };
-  }, [debounceMs, expanded, initialState, initialStateKey]);
+  }, [debounceMs]);
 
   useEffect(() => {
     const calculator = calcRef.current;
     if (!calculator) return;
-    if (expanded) {
-      window.setTimeout(() => calculator.resize(), 0);
-    }
+    window.setTimeout(() => calculator.resize(), 0);
   }, [expanded]);
 
   useEffect(() => {
@@ -171,6 +202,11 @@ export default function DesmosCalculator({
       aria-hidden={!expanded}
       data-testid="desmos-calculator-shell"
     >
+      {loadError && (
+        <div className="mb-2 text-sm text-red-600" data-testid="desmos-calculator-error">
+          {loadError}
+        </div>
+      )}
       <div ref={hostRef} className="h-full w-full rounded-md border border-slate-200" data-testid="desmos-calculator" />
     </div>
   );
