@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   hasActiveFullTest: false,
   hasVerifiedRetry: false,
   retryIsCorrect: false,
+  retryOutcome: "incorrect" as "correct" | "incorrect" | "skipped",
   questionLookupMissing: false,
   tableCalls: [] as string[],
   rpcCalls: [] as string[],
@@ -150,7 +151,7 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
             && filters.user_id === "student-auth-user"
             && filters.question_id === "question-row-q1"
           ) {
-            return { data: { id: "attempt-1", is_correct: state.retryIsCorrect }, error: null };
+            return { data: { id: "attempt-1", is_correct: state.retryIsCorrect, outcome: state.retryOutcome }, error: null };
           }
           return { data: null, error: null };
         }
@@ -251,6 +252,7 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.hasActiveFullTest = false;
     state.hasVerifiedRetry = false;
     state.retryIsCorrect = false;
+    state.retryOutcome = "incorrect";
     state.questionLookupMissing = false;
     state.tableCalls = [];
     state.rpcCalls = [];
@@ -330,6 +332,7 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   ])("verified retry ($label) enables downstream tutor reveal behavior", async ({ retryIsCorrect }) => {
     state.hasVerifiedRetry = true;
     state.retryIsCorrect = retryIsCorrect;
+    state.retryOutcome = retryIsCorrect ? "correct" : "incorrect";
 
     const res = await request(app)
       .post("/api/tutor/v2")
@@ -340,6 +343,23 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.metadata.fullTestStrategyEnforced).toBe(false);
     expect(res.body.ragContext.primaryQuestion.answer).toBe("A");
     expect(res.body.ragContext.primaryQuestion.explanation).toBe("2 + 2 = 4");
+  });
+
+  it("skipped attempt does not unlock tutor reveal", async () => {
+    state.hasVerifiedRetry = true;
+    state.retryIsCorrect = false;
+    state.retryOutcome = "skipped";
+
+    const res = await request(app)
+      .post("/api/tutor/v2")
+      .set("Origin", "http://localhost:5000")
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ragContext.primaryQuestion.answer).toBeNull();
+    expect(res.body.ragContext.primaryQuestion.explanation).toBeNull();
+    expect(res.body.ragContext.supportingQuestions[0].answer).toBeNull();
+    expect(res.body.ragContext.supportingQuestions[0].explanation).toBeNull();
   });
 
   it("fails closed when canonical question cannot be resolved for verified retry check", async () => {

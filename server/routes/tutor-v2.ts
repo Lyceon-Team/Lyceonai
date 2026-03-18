@@ -149,7 +149,7 @@ async function hasVerifiedSubmission(userId: string, canonicalQuestionId: string
 
     const { data: attempt, error: attemptError } = await supabaseServer
       .from("answer_attempts")
-      .select("id")
+      .select("id, outcome")
       .eq("user_id", userId)
       .eq("question_id", questionId)
       .limit(1)
@@ -165,7 +165,8 @@ async function hasVerifiedSubmission(userId: string, canonicalQuestionId: string
       return false;
     }
 
-    return Boolean(attempt);
+    if (!attempt) return false;
+    return String((attempt as any).outcome ?? "").toLowerCase() !== "skipped";
   } catch (error: any) {
     console.warn("[tutor-v2] verified submission check threw, suppressing reveal", {
       userId,
