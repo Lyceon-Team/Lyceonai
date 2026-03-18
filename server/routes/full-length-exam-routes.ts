@@ -9,9 +9,10 @@
  * - Server-authoritative timing
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, type NextFunction } from "express";
 import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
+import { buildAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
@@ -20,6 +21,11 @@ import { z } from "zod";
 
 const router = Router();
 const csrfProtection = csrfGuard();
+const fullLengthMutatingGetAllowedOrigins = buildAllowedOrigins({
+  nodeEnv: process.env.NODE_ENV,
+  corsOriginsCsv: process.env.CORS_ORIGINS,
+  csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
+}).normalized;
 
 // ============================================================================
 // VALIDATION SCHEMAS
@@ -62,6 +68,32 @@ function sendRouteError(
 
 function isClientInstanceConflict(message: string): boolean {
   return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
+}
+
+function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction) {
+  const origin = req.headers.origin ? String(req.headers.origin) : "";
+  const referer = req.headers.referer ? String(req.headers.referer) : "";
+
+  if (!origin && !referer) {
+    return sendRouteError(req, res, 403, "csrf_blocked", {
+      message: "Cross-site request blocked by CSRF protection",
+    });
+  }
+
+  const originNorm = origin ? normalizeOrigin(origin) : "";
+  const refererNorm = referer ? normalizeOrigin(referer) : "";
+  const allowed =
+    (originNorm && fullLengthMutatingGetAllowedOrigins.has(originNorm)) ||
+    (refererNorm && fullLengthMutatingGetAllowedOrigins.has(refererNorm));
+
+  if (allowed) {
+    return next();
+  }
+
+  return sendRouteError(req, res, 403, "csrf_blocked", {
+    message: "Cross-site request blocked by CSRF protection",
+    origin: origin || null,
+  });
 }
 // ============================================================================
 // ROUTES
@@ -128,7 +160,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Reques
  * - Returns only user's own sessions
  * - No answers/explanations in response (anti-leak)
  */
-router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: Response) => {
+router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {

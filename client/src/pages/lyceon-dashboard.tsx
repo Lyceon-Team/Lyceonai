@@ -3,14 +3,13 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { SectionHeader } from "@/components/common/section-header";
-import { Tag } from "@/components/common/tag";
 import { LoadingSkeleton } from "@/components/common/loading-skeleton";
 import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar, Target, TrendingUp, Clock, BookOpen, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
+import { Calendar, Target, TrendingUp, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScoreProjectionCard } from "@/components/progress/ScoreProjectionCard";
@@ -365,22 +364,9 @@ export default function LyceonDashboard() {
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
                   <div className="flex items-start gap-3">
                     <Brain className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium mb-1">Top Recommendation</p>
-                      <p className="text-sm text-muted-foreground">
-                        Focus on <span className="font-semibold text-foreground">Reading Comprehension</span> — you'll see the biggest score gains here.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Confidence Level</span>
-                    <span className="text-sm font-semibold text-primary shrink-0">78%</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <Progress value={78} className="w-full h-2" />
+                    <p className="text-sm text-muted-foreground">
+                      Personalized tutor recommendations are being rebuilt from backend KPI truth data.
+                    </p>
                   </div>
                 </div>
 
@@ -405,22 +391,15 @@ export default function LyceonDashboard() {
             <PageCard title="Next Topic to Master">
               <div className="space-y-4">
                 <div className="p-4 rounded-lg bg-muted/50 border">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
                     <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
                       <TrendingUp className="h-4 w-4 text-primary" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-sm">Quadratic Equations</p>
-                      <p className="text-xs text-muted-foreground">Math • Algebra</p>
-                    </div>
+                    <p className="font-semibold text-sm">Topic recommendations coming soon</p>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Build on your linear equations mastery
+                  <p className="text-sm text-muted-foreground">
+                    We are connecting this card to canonical mastery and weakness signals.
                   </p>
-                  <div className="flex items-center gap-2">
-                    <Tag variant="warning">5 questions</Tag>
-                    <Tag variant="muted">~10 min</Tag>
-                  </div>
                 </div>
 
                 <Button asChild className="w-full" data-testid="button-practice-topic">

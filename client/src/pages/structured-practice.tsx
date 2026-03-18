@@ -51,6 +51,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     submitAnswer,
     skipQuestion,
     startSession,
+    endSession,
     resetSession,
   } = useAdaptivePractice({
     section: sectionNormalized,
@@ -102,11 +103,12 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
 
   const handleExitSession = async () => {
     timer.pause();
+    await endSession();
     setIsSessionActive(false);
     resetSession();
     toast({
       title: "Session ended",
-      description: "This session was ended locally. Your stats reflect the answers submitted so far."
+      description: "Session was closed and synced with your backend progress."
     });
   };
 

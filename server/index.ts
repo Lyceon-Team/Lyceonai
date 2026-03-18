@@ -274,7 +274,7 @@ app.use("/api/notifications", notificationRoutes);
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter);
+app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
