@@ -1,9 +1,7 @@
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import {
-  getWeakestSkills,
-  getWeakestClusters,
-} from '../services/studentMastery';
+import { getWeakestClusters } from '../services/studentMastery';
+import { buildWeaknessSkillsView } from '../services/weakness-view';
 
 const router = Router();
 
@@ -18,19 +16,14 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 10;
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
-    const skills = await getWeakestSkills({
+    const view = await buildWeaknessSkillsView({
       userId: user.id,
       section,
       limit,
       minAttempts,
-      failOnError: true,
     });
 
-    res.json({
-      ok: true,
-      count: skills.length,
-      skills,
-    });
+    res.json(view);
   } catch (error) {
     console.error('[Weakness] Error getting weakest skills:', error);
     res.status(500).json({ error: 'Failed to get weakness data' });

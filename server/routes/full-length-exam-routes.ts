@@ -15,7 +15,7 @@ import { csrfGuard } from "../middleware/csrf";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
-import { buildFullTestKpis, fullTestMeasurementModel } from "../services/kpi-truth-layer";
+import { buildStudentFullLengthReportView } from "../services/kpi-truth-layer";
 import { z } from "zod";
 
 const router = Router();
@@ -469,19 +469,7 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
       userId: user.id,
     });
 
-    const kpis = buildFullTestKpis({
-      scaledTotal: result.scaledScore.total,
-      scaledRw: result.scaledScore.rw,
-      scaledMath: result.scaledScore.math,
-      totalCorrect: result.rawScore.total.correct,
-      totalQuestions: result.rawScore.total.total,
-    });
-
-    return res.json({
-      ...result,
-      kpis,
-      measurementModel: fullTestMeasurementModel(),
-    });
+    return res.json(buildStudentFullLengthReportView(result));
   } catch (error: unknown) {
     console.error("[FULL-LENGTH] Get report error:", error);
     const message = error instanceof Error ? error.message : "";
