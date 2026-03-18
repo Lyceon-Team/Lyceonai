@@ -610,6 +610,7 @@ describe("Practice Runtime Contract", () => {
     const attempt = db.answer_attempts.find((row) => row.session_item_id === sessionItemId);
     if (!attempt) throw new Error("missing skip attempt fixture");
     expect(attempt.outcome).toBe("skipped");
+    expect(masteryMocks.applyMasteryUpdate).not.toHaveBeenCalled();
   });
 
   it("skip advances deterministically to next queued item without regenerating items", async () => {
@@ -643,6 +644,38 @@ describe("Practice Runtime Contract", () => {
     expect(second.status).toBe(200);
     expect(second.body.ordinal).toBe(2);
     expect(db.practice_session_items).toHaveLength(prebuiltCount);
+  });
+
+  it("fails closed when answering a queued prebuilt item directly", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(first.status).toBe(200);
+
+    const queuedItem = db.practice_session_items.find((row) => row.session_id === sessionId && row.status === "queued");
+    if (!queuedItem) throw new Error("missing queued session item fixture");
+
+    const beforeAttempts = db.answer_attempts.length;
+    const directAnswer = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: queuedItem.id,
+        selectedOptionId: first.body.question.options[0].id,
+        clientAttemptId: "queued-direct-answer-1",
+      });
+
+    expect(directAnswer.status).toBe(409);
+    expect(db.answer_attempts).toHaveLength(beforeAttempts);
   });
 
   it("state counts keep skipped separate from answered and track completed progress", async () => {
