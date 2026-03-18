@@ -19,6 +19,7 @@ export type PracticeNextResponse = {
   sessionId?: string;
   sessionItemId?: string;
   ordinal?: number;
+  calculatorState?: unknown | null;
   question: PracticeQuestion | null;
   totalQuestions?: number;
   currentIndex?: number;
@@ -133,6 +134,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<"created" | "active" | "completed" | "abandoned">("created");
+  const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
 
   const [score, setScore] = useState({
     correct: 0,
@@ -190,12 +192,15 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       throw new Error(`Failed to start practice session (${startRes.status})`);
     }
 
-    const started = (await startRes.json()) as { sessionId?: string };
+    const started = (await startRes.json()) as { sessionId?: string; calculatorState?: unknown | null };
     if (!started.sessionId) {
       throw new Error("Server did not return a sessionId");
     }
 
     setSessionId(started.sessionId);
+    if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
+      setCalculatorState(started.calculatorState ?? null);
+    }
     return started.sessionId;
   }, [clientInstanceId, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
 
@@ -224,6 +229,9 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       setSessionItemId(data.sessionItemId ?? null);
       setQuestion(normalizeQuestion(data.question ?? null));
       if (data.state) setSessionState(data.state);
+      if (Object.prototype.hasOwnProperty.call(data, "calculatorState")) {
+        setCalculatorState(data.calculatorState ?? null);
+      }
 
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
@@ -380,8 +388,39 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       setSessionState("abandoned");
       setSessionItemId(null);
       setQuestion(null);
+      setCalculatorState(null);
     }
     return data;
+  }, [clientInstanceId, sessionId, sessionState]);
+
+  const persistCalculatorState = useCallback(async (nextCalculatorState: unknown | null) => {
+    if (!sessionId) return null;
+    if (sessionState === "completed" || sessionState === "abandoned") return null;
+
+    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_instance_id: clientInstanceId,
+        calculator_state: nextCalculatorState,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to persist calculator state (${res.status})`);
+    }
+
+    const data = await res.json() as { calculatorState?: unknown | null };
+    const value = Object.prototype.hasOwnProperty.call(data, "calculatorState")
+      ? data.calculatorState ?? null
+      : nextCalculatorState;
+
+    setCalculatorState(value ?? null);
+    return value ?? null;
   }, [clientInstanceId, sessionId, sessionState]);
 
   useEffect(() => {
@@ -417,5 +456,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     nextQuestion,
     handleMissingMcChoices,
     terminateSession,
+    calculatorState,
+    persistCalculatorState,
   };
 }

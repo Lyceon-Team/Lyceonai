@@ -4,6 +4,13 @@ import QuestionRenderer from "@/components/question-renderer";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCanonicalPractice, PracticeSectionParam } from "@/hooks/useCanonicalPractice";
+import DesmosCalculator from "@/components/math/DesmosCalculator";
+
+function isMathSection(section: string | null | undefined): boolean {
+  if (!section) return false;
+  const normalized = section.trim().toLowerCase();
+  return normalized === "math" || normalized === "m" || normalized === "m1" || normalized === "m2";
+}
 
 export default function CanonicalPracticePage(props: {
   title: string;
@@ -32,9 +39,17 @@ export default function CanonicalPracticePage(props: {
     nextQuestion,
     handleMissingMcChoices,
     terminateSession,
+    calculatorState,
+    persistCalculatorState,
   } = useCanonicalPractice(props.section);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
+  const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
+  const [localCalculatorState, setLocalCalculatorState] = React.useState<unknown | null>(null);
+
+  React.useEffect(() => {
+    setLocalCalculatorState(calculatorState ?? null);
+  }, [calculatorState]);
 
   const endSession = React.useCallback(async () => {
     if (isEndingSession) return;
@@ -46,6 +61,15 @@ export default function CanonicalPracticePage(props: {
       setIsEndingSession(false);
     }
   }, [isEndingSession, terminateSession]);
+
+  const onCalculatorStateChange = React.useCallback((nextState: unknown) => {
+    setLocalCalculatorState(nextState);
+    void persistCalculatorState(nextState).catch(() => {
+      // Keep practice flow resilient even if calculator persistence fails.
+    });
+  }, [persistCalculatorState]);
+
+  const showCalculator = isMathSection(question?.section);
 
   return (
     <PracticeShell
@@ -114,6 +138,28 @@ export default function CanonicalPracticePage(props: {
               disabled={isSubmitting || isLoading}
               onMissingMcChoices={handleMissingMcChoices}
             />
+
+            {showCalculator && (
+              <div className="mt-6">
+                <div className="mb-3 flex items-center justify-end">
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+                    aria-expanded={isCalculatorExpanded}
+                    data-testid="practice-calculator-toggle"
+                  >
+                    {isCalculatorExpanded ? "Hide Calculator" : "Calculator"}
+                  </Button>
+                </div>
+                <DesmosCalculator
+                  expanded={isCalculatorExpanded}
+                  initialState={localCalculatorState}
+                  onStateChange={onCalculatorStateChange}
+                  className="w-full"
+                />
+              </div>
+            )}
 
             <div className="mt-6 flex items-center justify-between">
               {!showResult ? (
