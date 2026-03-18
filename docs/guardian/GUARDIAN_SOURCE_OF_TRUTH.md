@@ -19,6 +19,9 @@
 - Practice summary projection: `server/services/kpi-truth-layer.ts`
   - `buildCanonicalPracticeKpiSnapshot`
   - `buildStudentKpiView` (guardian uses filtered shared weekly metrics only)
+- Calendar month projection:
+  - `apps/api/src/services/calendar-month-view.ts` -> `buildCalendarMonthView(userId, start, end, timezone)`
+  - guardian route only applies entitlement/link checks and visibility filtering of returned day fields
 - Full-length report summary projection:
   - `apps/api/src/services/fullLengthExam.ts` (`getExamReport`) + guardian-safe transform in `server/routes/guardian-routes.ts`
 - Weakness rollup source:

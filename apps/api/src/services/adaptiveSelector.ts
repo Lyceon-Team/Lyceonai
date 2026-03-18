@@ -30,6 +30,7 @@ export interface SelectionRationale {
   relaxStepUsed?: number;
   filterPath?: string[];
   candidateCount?: number;
+  sourceWarnings?: string[];
 }
 
 export interface SelectNextResult {
@@ -282,10 +283,23 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
   let weaknessKey: string | undefined;
   let targetDomain: string | undefined = target?.domain;
   let targetSkill: string | undefined = target?.skill;
+  const sourceWarnings: string[] = [];
 
   if ((mode === "skill" || mode === "balanced") && !targetSkill) {
     const sectionMap = section === "math" ? "math" : "reading";
-    const weakSkills = await getWeakestSkills({ userId, section: sectionMap, minAttempts: 1, limit: 10 });
+    let weakSkills: Array<{ domain: string | null; skill: string; accuracy: number }> = [];
+    try {
+      weakSkills = await getWeakestSkills({
+        userId,
+        section: sectionMap,
+        minAttempts: 1,
+        limit: 10,
+        failOnError: true,
+      });
+    } catch {
+      sourceWarnings.push("weak_skills_source_failed");
+      filterPath.push("weakest-skills-source-failed");
+    }
 
     if (weakSkills.length > 0) {
       const picked = weightedDeterministicPick(weakSkills, determineSeed + ":skill");
@@ -329,6 +343,7 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
           relaxStepUsed: stepIndex,
           filterPath,
           candidateCount: candidates.length,
+          sourceWarnings: sourceWarnings.length > 0 ? sourceWarnings : undefined,
         },
       };
     }
@@ -353,6 +368,7 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
         relaxStepUsed: 4,
         filterPath,
         candidateCount: lastResort.length,
+        sourceWarnings: sourceWarnings.length > 0 ? sourceWarnings : undefined,
       },
     };
   }

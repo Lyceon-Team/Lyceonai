@@ -168,7 +168,7 @@ Removed auth endpoints (must return 404):
 | `/api/guardian/link` | POST | Yes | guardian/admin | free | Link student account |
 | `/api/guardian/link/:studentId` | DELETE | Yes | guardian/admin | free | Unlink student |
 | `/api/guardian/students/:studentId/summary` | GET | Yes | guardian/admin | entitled | Student progress summary |
-| `/api/guardian/students/:studentId/calendar/month` | GET | Yes | guardian/admin | entitled | Student calendar data |
+| `/api/guardian/students/:studentId/calendar/month` | GET | Yes | guardian/admin | entitled | Student calendar data (projection of canonical student month payload via `buildCalendarMonthView`) |
 | `/api/guardian/weaknesses/:studentId` | GET | Yes | guardian/admin | entitled | Student weaknesses |
 
 ### Admin Endpoints

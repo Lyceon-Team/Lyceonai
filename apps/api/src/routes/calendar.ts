@@ -8,7 +8,6 @@ import {
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
-import { KPI_CALENDAR_COUNTED_EVENTS } from "../services/mastery-constants";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
@@ -19,12 +18,13 @@ import {
   type StudyProfileSettings,
   type TaskType,
 } from "../services/calendar-planner";
+import { buildCalendarMonthView, isCalendarCountedEventType } from "../services/calendar-month-view";
+export { isCalendarCountedEventType };
 
 export const calendarRouter = Router();
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const DEFAULT_DAILY_MINUTES = 30;
-const CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
 
 type PlannerMode = "auto" | "custom";
 type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed";
@@ -202,11 +202,6 @@ function computeDayStatusFromTasks(dayDate: string, todayDate: string, tasks: Pl
   if (completedTaskCount > 0 || inProgressTaskCount > 0) return { status: "partially_completed", requiredTaskCount, completedTaskCount };
   if (dayDate < todayDate) return { status: "missed", requiredTaskCount, completedTaskCount };
   return { status: "planned", requiredTaskCount, completedTaskCount };
-}
-
-export function isCalendarCountedEventType(eventType: string | null | undefined): boolean {
-  if (!eventType) return true;
-  return CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
 }
 
 async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: string; details?: Record<string, unknown> }): Promise<void> {
@@ -685,62 +680,7 @@ function parseDateWindow(req: AuthenticatedRequest, timezone: string): { startDa
   return { startDate: startInput, requestedDays };
 }
 
-async function getMonthPayload(userId: string, start: string, end: string, timezone: string) {
-  const startUtc = DateTime.fromISO(start, { zone: timezone }).startOf("day").toUTC().toISO()!;
-  const endUtc = DateTime.fromISO(end, { zone: timezone }).endOf("day").toUTC().toISO()!;
-
-  const [days, tasks, attempts, streak] = await Promise.all([
-    loadDaysByRange(userId, start, end),
-    loadTasksByRange(userId, start, end),
-    loadAttemptsByRange(userId, startUtc, endUtc),
-    calculateStreak(userId, timezone),
-  ]);
-
-  const taskByDay = new Map<string, PlanTaskRow[]>();
-  for (const task of tasks) {
-    const group = taskByDay.get(task.day_date) ?? [];
-    group.push(task);
-    taskByDay.set(task.day_date, group);
-  }
-
-  const attemptByDay = new Map<string, { attempts: number; correct: number; timeSpentMs: number }>();
-  for (const attempt of attempts) {
-    if (!isCalendarCountedEventType(attempt.event_type)) continue;
-    if (!attempt.attempted_at) continue;
-    const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
-    if (!localDate) continue;
-    const current = attemptByDay.get(localDate) ?? { attempts: 0, correct: 0, timeSpentMs: 0 };
-    current.attempts += 1;
-    if (attempt.is_correct) current.correct += 1;
-    current.timeSpentMs += Math.max(0, attempt.time_spent_ms || 0);
-    attemptByDay.set(localDate, current);
-  }
-
-  const serializedDays = days.map((day) => {
-    const dayTasks = (taskByDay.get(day.day_date) ?? []).sort((a, b) => a.ordinal - b.ordinal);
-    const stats = attemptByDay.get(day.day_date);
-    const derived = computeDayStatusFromTasks(day.day_date, DateTime.now().setZone(timezone).toISODate()!, dayTasks);
-
-    return {
-      ...day,
-      status_canonical: day.status,
-      status: legacyDayStatus(day.status),
-      required_task_count: day.required_task_count || derived.requiredTaskCount,
-      completed_task_count: day.completed_task_count || derived.completedTaskCount,
-      focus: day.focus ?? [],
-      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : Array.isArray(day.tasks) ? day.tasks : [],
-      task_items: dayTasks,
-      is_exam_day: day.is_exam_day,
-      is_taper_day: day.is_taper_day,
-      is_full_test_day: day.is_full_test_day,
-      attempt_count: stats?.attempts ?? 0,
-      accuracy: stats && stats.attempts > 0 ? Math.round((stats.correct / stats.attempts) * 100) : null,
-      avg_seconds_per_question: stats && stats.attempts > 0 ? Math.round(stats.timeSpentMs / stats.attempts / 1000) : null,
-    };
-  });
-
-  return { days: serializedDays, streak };
-}
+export const getMonthPayload = buildCalendarMonthView;
 
 calendarRouter.get("/profile", async (req: AuthenticatedRequest, res: Response) => {
   const auth = requireRequestAuthContext(req, res);

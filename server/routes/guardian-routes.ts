@@ -5,28 +5,21 @@ import { requireGuardianRole } from '../middleware/guardian-role';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
-import { DateTime } from 'luxon';
 import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks, ensureAccountForUser } from '../lib/account';
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
-import { getDerivedWeaknessSignals } from '../../apps/api/src/services/mastery-derived';
-import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildFullTestKpis, fullTestMeasurementModel, type ExplainedKpiMetric } from '../services/kpi-truth-layer';
-import { KPI_CALENDAR_COUNTED_EVENTS } from '../../apps/api/src/services/mastery-constants';
+import { buildWeaknessSkillsView } from '../../apps/api/src/services/weakness-view';
+import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildStudentFullLengthReportView, projectGuardianFullLengthReportView } from '../services/kpi-truth-layer';
+import { buildCalendarMonthView } from '../../apps/api/src/services/calendar-month-view';
 
 const router = Router();
 const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
-const GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
 const requireGuardianAccess = requireGuardianRole({
   message: 'You do not have permission to access guardian resources',
 });
-
-export function isGuardianCalendarCountedEventType(eventType: string | null | undefined): boolean {
-  if (!eventType) return true; // Legacy rows before event_type migration
-  return GUARDIAN_CALENDAR_COUNTED_EVENT_TYPES.has(eventType);
-}
 
 type GuardianAccessEventType =
   | 'guardian_dashboard_viewed'
@@ -58,12 +51,6 @@ async function emitGuardianAccessEvent(args: {
   } catch {
     // Best effort only.
   }
-}
-
-function toGuardianWeaknessPriority(score: number): 'low' | 'medium' | 'high' {
-  if (score >= 0.66) return 'high';
-  if (score >= 0.33) return 'medium';
-  return 'low';
 }
 
 async function auditLog(
@@ -330,90 +317,6 @@ function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-async function calculateStreakForStudent(userId: string, timezone: string): Promise<{ current: number; longest: number }> {
-  const todayLocal = DateTime.now().setZone(timezone).toISODate();
-  if (!todayLocal) return { current: 0, longest: 0 };
-
-  const { data: completedDays, error } = await supabaseServer
-    .from('student_study_plan_days')
-    .select('day_date, status')
-    .eq('user_id', userId)
-    .order('day_date', { ascending: false })
-    .limit(365);
-
-  if (error || !completedDays || completedDays.length === 0) {
-    return { current: 0, longest: 0 };
-  }
-
-  const isComplete = (day: any) => day.status === 'complete';
-  const completeDaysSet = new Set(completedDays.filter(isComplete).map(d => d.day_date));
-
-  let currentStreak = 0;
-  let checkDate = DateTime.fromISO(todayLocal, { zone: timezone });
-
-  while (completeDaysSet.has(checkDate.toISODate()!)) {
-    currentStreak++;
-    checkDate = checkDate.minus({ days: 1 });
-  }
-
-  let longestStreak = 0;
-  let tempStreak = 0;
-  let prevDate: DateTime | null = null;
-
-  const sortedDays = completedDays.filter(isComplete).sort((a, b) => a.day_date.localeCompare(b.day_date));
-
-  for (const day of sortedDays) {
-    const dayDate = DateTime.fromISO(day.day_date, { zone: timezone });
-    if (prevDate === null) {
-      tempStreak = 1;
-    } else {
-      const expectedNext = prevDate.plus({ days: 1 });
-      if (dayDate.toISODate() === expectedNext.toISODate()) {
-        tempStreak++;
-      } else {
-        longestStreak = Math.max(longestStreak, tempStreak);
-        tempStreak = 1;
-      }
-    }
-    prevDate = dayDate;
-  }
-
-  longestStreak = Math.max(longestStreak, tempStreak);
-  return { current: currentStreak, longest: longestStreak };
-}
-
-
-type GuardianSafeExamReport = {
-  sessionId: string;
-  estimatedScore: {
-    rw: number;
-    math: number;
-    total: number;
-  };
-  completedAt: Date;
-  kpis: ExplainedKpiMetric[];
-  measurementModel: ReturnType<typeof fullTestMeasurementModel>;
-};
-
-function toGuardianSafeExamReport(report: fullLengthExamService.CompleteExamResult): GuardianSafeExamReport {
-  return {
-    sessionId: report.sessionId,
-    estimatedScore: {
-      rw: report.scaledScore.rw,
-      math: report.scaledScore.math,
-      total: report.scaledScore.total,
-    },
-    completedAt: report.completedAt,
-    kpis: buildFullTestKpis({
-      scaledTotal: report.scaledScore.total,
-      scaledRw: report.scaledScore.rw,
-      scaledMath: report.scaledScore.math,
-      totalCorrect: report.rawScore.total.correct,
-      totalQuestions: report.rawScore.total.total,
-    }),
-    measurementModel: fullTestMeasurementModel(),
-  };
-}
 
 // ============================================================================
 // GUARDIAN FULL-LENGTH EXAM REPORTING
@@ -449,6 +352,7 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
       sessionId,
       userId: studentId,
     });
+    const studentView = buildStudentFullLengthReportView(report);
 
     logger.info('GUARDIAN', 'full_length_report_view', 'Guardian viewed full-length exam report', {
       guardianId,
@@ -467,7 +371,7 @@ router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSu
     return res.json({
       studentId,
       sessionId,
-      report: toGuardianSafeExamReport(report),
+      report: projectGuardianFullLengthReportView(studentView),
       requestId,
     });
   } catch (err: unknown) {
@@ -533,71 +437,16 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
     }
 
     const timezone = profile?.timezone || 'America/Chicago';
-
-    const startUtc = DateTime.fromISO(start, { zone: timezone }).startOf('day').toUTC().toISO()!;
-    const endUtc = DateTime.fromISO(end, { zone: timezone }).endOf('day').toUTC().toISO()!;
-
-    const [planDaysResult, attemptsResult, streakResult] = await Promise.all([
-      supabaseServer
-        .from('student_study_plan_days')
-        .select('day_date, planned_minutes, completed_minutes, status')
-        .eq('user_id', studentId)
-        .gte('day_date', start)
-        .lte('day_date', end)
-        .order('day_date', { ascending: true }),
-
-      supabaseServer
-        .from('student_question_attempts')
-        .select('attempted_at, is_correct, time_spent_ms, event_type')
-        .eq('user_id', studentId)
-        .gte('attempted_at', startUtc)
-        .lte('attempted_at', endUtc),
-
-      calculateStreakForStudent(studentId, timezone),
-    ]);
-
-    if (planDaysResult.error || attemptsResult.error) {
-      logger.error('GUARDIAN', 'calendar_fetch_failed', 'Failed to load calendar', {
-        planDaysError: planDaysResult.error,
-        attemptsError: attemptsResult.error,
-        requestId,
-      });
-      return res.status(500).json({ error: 'Failed to load calendar data', requestId });
-    }
-
-    const attemptsByDay = new Map<string, { attempts: number; correct: number; totalTimeMs: number }>();
-
-    for (const attempt of attemptsResult.data || []) {
-      if (!isGuardianCalendarCountedEventType((attempt as any).event_type)) continue;
-      if (!attempt.attempted_at) continue;
-      const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
-      if (!localDate) continue;
-
-      if (!attemptsByDay.has(localDate)) {
-        attemptsByDay.set(localDate, { attempts: 0, correct: 0, totalTimeMs: 0 });
-      }
-      const dayStats = attemptsByDay.get(localDate)!;
-      dayStats.attempts++;
-      if (attempt.is_correct) dayStats.correct++;
-      dayStats.totalTimeMs += attempt.time_spent_ms || 0;
-    }
-
-    const enrichedDays = (planDaysResult.data ?? []).map(day => {
-      const dayStats = attemptsByDay.get(day.day_date);
-      return {
-        day_date: day.day_date,
-        planned_minutes: day.planned_minutes,
-        completed_minutes: day.completed_minutes,
-        status: day.status,
-        attempt_count: dayStats?.attempts ?? 0,
-        accuracy: dayStats && dayStats.attempts > 0
-          ? Math.round((dayStats.correct / dayStats.attempts) * 100)
-          : null,
-        avg_seconds_per_question: dayStats && dayStats.attempts > 0
-          ? Math.round(dayStats.totalTimeMs / dayStats.attempts / 1000)
-          : null,
-      };
-    });
+    const payload = await buildCalendarMonthView(studentId, start, end, timezone);
+    const projectedDays = payload.days.map((day: any) => ({
+      day_date: day.day_date,
+      planned_minutes: day.planned_minutes,
+      completed_minutes: day.completed_minutes,
+      status: day.status,
+      attempt_count: day.attempt_count,
+      accuracy: day.accuracy,
+      avg_seconds_per_question: day.avg_seconds_per_question,
+    }));
 
     logger.info('GUARDIAN', 'calendar_view', 'Guardian viewed student calendar', { guardianId, studentId, start, end, requestId });
     await emitGuardianAccessEvent({
@@ -605,12 +454,12 @@ router.get('/students/:studentId/calendar/month', requireSupabaseAuth, requireGu
       guardianId,
       studentId,
       requestId,
-      details: { surface: 'calendar', start, end, day_count: enrichedDays.length },
+      details: { surface: 'calendar', start, end, day_count: projectedDays.length },
     });
 
     return res.json({
-      days: enrichedDays,
-      streak: streakResult,
+      days: projectedDays,
+      streak: payload.streak,
       requestId,
     });
   } catch (err) {
@@ -627,6 +476,9 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
   try {
     const guardianId = req.user!.id;
     const { studentId } = req.params;
+    const section = typeof req.query.section === 'string' ? req.query.section : undefined;
+    const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
+    const minAttempts = Number.parseInt(String(req.query.minAttempts ?? ''), 10);
 
     // CANONICAL: Verify guardian-student link via guardian_links
     const linked = await isGuardianLinkedToStudent(guardianId, studentId);
@@ -642,44 +494,23 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
       return res.status(403).json({ error: 'Not authorized to view this student', requestId });
     }
 
-    const { data: student, error: studentError } = await supabaseServer
-      .from('profiles')
-      .select('id, display_name')
-      .eq('id', studentId)
-      .eq('role', 'student')
-      .single();
-
-    if (studentError || !student) {
-      return res.status(404).json({ error: 'Student not found', requestId });
-    }
-
-    const derivedWeakness = await getDerivedWeaknessSignals(studentId, {
-      minAttempts: 1,
-      limit: 20,
+    const view = await buildWeaknessSkillsView({
+      userId: studentId,
+      section,
+      limit: Number.isFinite(limit) ? limit : undefined,
+      minAttempts: Number.isFinite(minAttempts) ? minAttempts : undefined,
     });
-
-    // Transform canonical mastery-derived signals to guardian-safe weakness summaries.
-    const weakestAreas = derivedWeakness.map((s) => ({
-      competency_key: s.competencyKey,
-      section: s.section,
-      attempts: s.attempts,
-      accuracy: s.attempts > 0 ? Math.round((s.correct / s.attempts) * 100) : null,
-      priority: toGuardianWeaknessPriority(s.weaknessScore),
-      updated_at: s.updatedAt,
-    }));
-    logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: weakestAreas.length, requestId });
+    logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: view.count, requestId });
     await emitGuardianAccessEvent({
       eventType: 'guardian_report_viewed',
       guardianId,
       studentId,
       requestId,
-      details: { surface: 'weaknesses', count: weakestAreas.length },
+      details: { surface: 'weaknesses', count: view.count },
     });
 
     return res.json({
-      studentId,
-      studentName: student.display_name,
-      weakestAreas,
+      ...view,
       requestId,
     });
   } catch (err) {

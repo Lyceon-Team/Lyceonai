@@ -629,6 +629,7 @@ if (isMainModule) {
     console.log(`  POST   /api/questions/feedback`);
     console.log(`\n📚 Practice (requires Supabase auth):`);
     console.log(`  POST   /api/practice/sessions`);
+    console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
     console.log(`  GET    /api/practice/sessions/:sessionId/next`);
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
     console.log(`  GET    /api/practice/next (legacy compatibility)`);

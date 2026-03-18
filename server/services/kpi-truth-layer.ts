@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "../../apps/api/src/services/mastery-constants";
+import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
 
 export const KPI_TRUTH_LAYER_VERSION = "kpi_truth_v1";
 
@@ -528,5 +529,38 @@ export function fullTestMeasurementModel() {
     official: ["official_sat_score"],
     weighted: ["estimated_scaled_total", "estimated_scaled_rw", "estimated_scaled_math"],
     diagnostic: ["diagnostic_accuracy"],
+  };
+}
+
+export type StudentFullLengthReportView = CompleteExamResult & {
+  kpis: ExplainedKpiMetric[];
+  measurementModel: ReturnType<typeof fullTestMeasurementModel>;
+};
+
+export function buildStudentFullLengthReportView(report: CompleteExamResult): StudentFullLengthReportView {
+  return {
+    ...report,
+    kpis: buildFullTestKpis({
+      scaledTotal: report.scaledScore.total,
+      scaledRw: report.scaledScore.rw,
+      scaledMath: report.scaledScore.math,
+      totalCorrect: report.rawScore.total.correct,
+      totalQuestions: report.rawScore.total.total,
+    }),
+    measurementModel: fullTestMeasurementModel(),
+  };
+}
+
+export function projectGuardianFullLengthReportView(view: StudentFullLengthReportView) {
+  return {
+    sessionId: view.sessionId,
+    estimatedScore: {
+      rw: view.scaledScore.rw,
+      math: view.scaledScore.math,
+      total: view.scaledScore.total,
+    },
+    completedAt: view.completedAt,
+    kpis: view.kpis,
+    measurementModel: view.measurementModel,
   };
 }

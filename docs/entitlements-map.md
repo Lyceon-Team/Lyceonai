@@ -73,7 +73,7 @@ Some features are available to free tier but with **usage limits**:
 | `/profile/complete` | student, guardian, admin | free | RequireRole allow=['student', 'guardian', 'admin'] | requireSupabaseAuth | `client/src/App.tsx:102` |
 | **Guardian Routes** | | | | | |
 | `/guardian` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'], SubscriptionPaywall | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:105`, `client/src/pages/guardian-dashboard.tsx:175-188`, `server/routes/guardian-routes.ts:51-72` |
-| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'] | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:106`, `server/routes/guardian-routes.ts:323-430` |
+| `/guardian/students/:studentId/calendar` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'] | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:106`, `server/routes/guardian-routes.ts` (canonical month projection via `buildCalendarMonthView`) |
 | **Admin Routes** | | | | | |
 | `/admin` | admin | admin-only | AdminGuard (internal) | requireSupabaseAdmin | `client/src/App.tsx:109`, `client/src/pages/AdminPortal.tsx:22-36`, `server/index.ts:336-339` |
 | `/admin-dashboard` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:112` |
@@ -148,7 +148,7 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/guardian/link` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:74-135` |
 | `DELETE /api/guardian/link/:studentId` | guardian, admin | free | requireSupabaseAuth, requireGuardianRole | `server/routes/guardian-routes.ts:135` |
 | `GET /api/guardian/students/:studentId/summary` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:184-265` |
-| `GET /api/guardian/students/:studentId/calendar/month` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:323-430` |
+| `GET /api/guardian/students/:studentId/calendar/month` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts` + `apps/api/src/services/calendar-month-view.ts#buildCalendarMonthView` |
 | `GET /api/guardian/weaknesses/:studentId` | guardian, admin | entitled | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `server/routes/guardian-routes.ts:435-517` |
 
 ### Admin APIs

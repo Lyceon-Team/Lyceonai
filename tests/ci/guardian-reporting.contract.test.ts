@@ -13,13 +13,18 @@ const accountMocks = {
 const kpiMocks = {
   buildCanonicalPracticeKpiSnapshot: vi.fn(),
   buildStudentKpiView: vi.fn(),
-  buildFullTestKpis: vi.fn(),
-  fullTestMeasurementModel: vi.fn(),
+  buildStudentFullLengthReportView: vi.fn(),
+  projectGuardianFullLengthReportView: vi.fn(),
+};
+const calendarMocks = {
+  buildCalendarMonthView: vi.fn(),
+};
+const weaknessViewMocks = {
+  buildWeaknessSkillsView: vi.fn(async () => ({ ok: true, count: 0, skills: [] })),
 };
 
 const systemEventInserts: Record<string, unknown>[] = [];
 const guardianAuditInserts: Record<string, unknown>[] = [];
-let attemptsSelectError: { message: string } | null = null;
 let profileSelectError: { message: string } | null = null;
 
 class FakeSelectBuilder {
@@ -185,9 +190,7 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
       }
 
       const rows = (seed as Record<string, any[]>)[table] ?? [];
-      const selectError = table === 'student_question_attempts'
-        ? attemptsSelectError
-        : table === 'student_study_profile'
+      const selectError = table === 'student_study_profile'
           ? profileSelectError
           : null;
       return {
@@ -209,8 +212,11 @@ vi.mock('../../server/logger', () => ({
 vi.mock('../../apps/api/src/services/fullLengthExam', () => ({
   getExamReport: vi.fn(),
 }));
-vi.mock('../../apps/api/src/services/mastery-derived', () => ({
-  getDerivedWeaknessSignals: vi.fn(async () => []),
+vi.mock('../../apps/api/src/services/weakness-view', () => ({
+  buildWeaknessSkillsView: weaknessViewMocks.buildWeaknessSkillsView,
+}));
+vi.mock('../../apps/api/src/services/calendar-month-view', () => ({
+  buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
 vi.mock('../../server/services/kpi-truth-layer', () => kpiMocks);
 
@@ -233,7 +239,6 @@ describe('Guardian reporting runtime contract', () => {
     vi.clearAllMocks();
     systemEventInserts.length = 0;
     guardianAuditInserts.length = 0;
-    attemptsSelectError = null;
     profileSelectError = null;
     accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
     accountMocks.getAllGuardianStudentLinks.mockResolvedValue([
@@ -331,8 +336,27 @@ describe('Guardian reporting runtime contract', () => {
         diagnostic: ['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy', 'recency_accuracy'],
       },
     });
-    kpiMocks.buildFullTestKpis.mockReturnValue([]);
-    kpiMocks.fullTestMeasurementModel.mockReturnValue({ version: '2026-03-full-test' });
+    kpiMocks.buildStudentFullLengthReportView.mockImplementation((report: any) => report);
+    kpiMocks.projectGuardianFullLengthReportView.mockImplementation((view: any) => view);
+    weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({ ok: true, count: 0, skills: [] });
+    calendarMocks.buildCalendarMonthView.mockResolvedValue({
+      days: [
+        {
+          day_date: '2026-03-01',
+          planned_minutes: 45,
+          completed_minutes: 30,
+          status: 'in_progress',
+          attempt_count: 1,
+          accuracy: 100,
+          avg_seconds_per_question: 120,
+          focus: [{ section: 'Math' }],
+          tasks: [{ type: 'practice' }],
+          plan_version: 3,
+          is_user_override: true,
+        },
+      ],
+      streak: { current: 2, longest: 4 },
+    });
   });
 
   it('returns linked students list and emits guardian_dashboard_viewed', async () => {
@@ -520,6 +544,7 @@ describe('Guardian reporting runtime contract', () => {
     expect(day.tasks).toBeUndefined();
     expect(day.plan_version).toBeUndefined();
     expect(day.is_user_override).toBeUndefined();
+    expect(calendarMocks.buildCalendarMonthView).toHaveBeenCalledWith('student-1', '2026-03-01', '2026-03-31', 'America/Chicago');
 
     const calendarViewed = systemEventInserts.find((row) => row.event_type === 'guardian_calendar_viewed');
     expect(calendarViewed).toBeDefined();
@@ -546,8 +571,8 @@ describe('Guardian reporting runtime contract', () => {
     expect(reportViewed).toBeUndefined();
   });
 
-  it('fails closed when calendar attempt KPI source query fails', async () => {
-    attemptsSelectError = { message: 'attempts_query_failed' };
+  it('fails closed when canonical student calendar source fails', async () => {
+    calendarMocks.buildCalendarMonthView.mockRejectedValueOnce(new Error('calendar_source_failed'));
     const router = (await import('../../server/routes/guardian-routes')).default;
     const app = buildApp('guardian');
     app.use('/api/guardian', router);
@@ -555,7 +580,7 @@ describe('Guardian reporting runtime contract', () => {
     const response = await request(app).get('/api/guardian/students/student-1/calendar/month?start=2026-03-01&end=2026-03-31');
 
     expect(response.status).toBe(500);
-    expect(response.body.error).toBe('Failed to load calendar data');
+    expect(response.body.error).toBe('Internal server error');
     const calendarViewed = systemEventInserts.find((row) => row.event_type === 'guardian_calendar_viewed');
     expect(calendarViewed).toBeUndefined();
   });
@@ -572,6 +597,125 @@ describe('Guardian reporting runtime contract', () => {
     expect(response.body.error).toBe('Failed to load calendar data');
     const calendarViewed = systemEventInserts.find((row) => row.event_type === 'guardian_calendar_viewed');
     expect(calendarViewed).toBeUndefined();
+  });
+
+  it('fails closed when canonical weakness view source fails', async () => {
+    weaknessViewMocks.buildWeaknessSkillsView.mockRejectedValueOnce(new Error('weakness_view_failed'));
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/weaknesses/student-1');
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe('Internal server error');
+    const weaknessViewed = systemEventInserts.find((row) =>
+      row.event_type === 'guardian_report_viewed'
+      && (row.details as any)?.surface === 'weaknesses');
+    expect(weaknessViewed).toBeUndefined();
+  });
+
+  it('returns canonical student weakness view payload', async () => {
+    weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValueOnce({
+      ok: true,
+      count: 1,
+      skills: [
+        {
+          section: 'math',
+          domain: 'Algebra',
+          skill: 'Linear Equations',
+          attempts: 8,
+          correct: 2,
+          accuracy: 25,
+          mastery_score: 25,
+        },
+      ],
+    });
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = buildApp('guardian');
+    app.use('/api/guardian', router);
+
+    const response = await request(app).get('/api/guardian/weaknesses/student-1');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(expect.objectContaining({
+      ok: true,
+      count: 1,
+      skills: [
+        expect.objectContaining({
+          section: 'math',
+          domain: 'Algebra',
+          skill: 'Linear Equations',
+          attempts: 8,
+          correct: 2,
+          accuracy: 25,
+          mastery_score: 25,
+        }),
+      ],
+    }));
+    expect(weaknessViewMocks.buildWeaknessSkillsView).toHaveBeenCalledWith({
+      userId: 'student-1',
+      section: undefined,
+      limit: undefined,
+      minAttempts: undefined,
+    });
+    const weaknessViewed = systemEventInserts.find((row) =>
+      row.event_type === 'guardian_report_viewed'
+      && (row.details as any)?.surface === 'weaknesses');
+    expect(weaknessViewed).toBeDefined();
+  });
+
+  it('matches student weakness view output for the same student input', async () => {
+    weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
+      ok: true,
+      count: 2,
+      skills: [
+        {
+          section: 'math',
+          domain: 'Algebra',
+          skill: 'Linear Equations',
+          attempts: 8,
+          correct: 2,
+          accuracy: 25,
+          mastery_score: 25,
+        },
+        {
+          section: 'rw',
+          domain: 'Information and Ideas',
+          skill: 'Main Idea',
+          attempts: 6,
+          correct: 3,
+          accuracy: 50,
+          mastery_score: 50,
+        },
+      ],
+    });
+
+    const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
+    const studentApp = express();
+    studentApp.use(express.json());
+    studentApp.use((req: any, _res, next) => {
+      req.user = { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false };
+      next();
+    });
+    studentApp.use('/api/me/weakness', weaknessRouter);
+
+    const guardianRouter = (await import('../../server/routes/guardian-routes')).default;
+    const guardianApp = buildApp('guardian');
+    guardianApp.use('/api/guardian', guardianRouter);
+
+    const studentResponse = await request(studentApp).get('/api/me/weakness/skills');
+    const guardianResponse = await request(guardianApp).get('/api/guardian/weaknesses/student-1');
+
+    expect(studentResponse.status).toBe(200);
+    expect(guardianResponse.status).toBe(200);
+    expect(guardianResponse.body).toEqual(expect.objectContaining({
+      ok: studentResponse.body.ok,
+      count: studentResponse.body.count,
+      skills: studentResponse.body.skills,
+    }));
   });
 
   it('denies unlinked guardian summary requests and emits denied event', async () => {
