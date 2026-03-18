@@ -656,6 +656,7 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
     const derivedWeakness = await getDerivedWeaknessSignals(studentId, {
       minAttempts: 1,
       limit: 20,
+      failOnError: true,
     });
 
     // Transform canonical mastery-derived signals to guardian-safe weakness summaries.

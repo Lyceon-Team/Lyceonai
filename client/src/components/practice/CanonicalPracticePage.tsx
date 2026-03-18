@@ -31,7 +31,21 @@ export default function CanonicalPracticePage(props: {
     submitAnswer,
     nextQuestion,
     handleMissingMcChoices,
+    terminateSession,
   } = useCanonicalPractice(props.section);
+
+  const [isEndingSession, setIsEndingSession] = React.useState(false);
+
+  const endSession = React.useCallback(async () => {
+    if (isEndingSession) return;
+    setIsEndingSession(true);
+    try {
+      await terminateSession();
+      window.location.assign("/practice");
+    } finally {
+      setIsEndingSession(false);
+    }
+  }, [isEndingSession, terminateSession]);
 
   return (
     <PracticeShell
@@ -106,21 +120,29 @@ export default function CanonicalPracticePage(props: {
                 <>
                   <Button
                     variant="outline"
-                    disabled={isSubmitting || isLoading}
+                    disabled={isSubmitting || isLoading || isEndingSession}
                     onClick={() => submitAnswer({ skipped: true })}
                   >
                     Skip
                   </Button>
 
                   <Button
-                    disabled={isSubmitting || isLoading || !canSubmit}
+                    variant="ghost"
+                    disabled={isSubmitting || isLoading || isEndingSession}
+                    onClick={endSession}
+                  >
+                    End Session
+                  </Button>
+
+                  <Button
+                    disabled={isSubmitting || isLoading || !canSubmit || isEndingSession}
                     onClick={() => submitAnswer({ skipped: false })}
                   >
                     Check Answer
                   </Button>
                 </>
               ) : (
-                <Button className="w-full" disabled={isSubmitting || isLoading} onClick={nextQuestion}>
+                <Button className="w-full" disabled={isSubmitting || isLoading || isEndingSession} onClick={nextQuestion}>
                   Next Question
                 </Button>
               )}

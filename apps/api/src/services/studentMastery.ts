@@ -77,6 +77,7 @@ export interface WeaknessQuery {
   section?: string;
   limit?: number;
   minAttempts?: number;
+  failOnError?: boolean;
 }
 
 export interface SkillWeakness {
@@ -117,6 +118,9 @@ export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakn
   const { data, error } = await q;
 
   if (error) {
+    if (query.failOnError) {
+      throw new Error(`weakest_skills_query_failed: ${error.message}`);
+    }
     return [];
   }
 
@@ -137,6 +141,9 @@ export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterW
     .limit(limit);
 
   if (error) {
+    if (query.failOnError) {
+      throw new Error(`weakest_clusters_query_failed: ${error.message}`);
+    }
     return [];
   }
 

@@ -23,6 +23,7 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
       section,
       limit,
       minAttempts,
+      failOnError: true,
     });
 
     res.json({
@@ -50,6 +51,7 @@ router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
       userId: user.id,
       limit,
       minAttempts,
+      failOnError: true,
     });
 
     res.json({

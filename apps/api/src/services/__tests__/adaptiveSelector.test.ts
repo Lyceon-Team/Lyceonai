@@ -73,7 +73,8 @@ function createChainableMock(returnData: any[] = []) {
     mock[method] = vi.fn(() => mock);
   });
 
-  mock.limit = vi.fn(() => Promise.resolve({ data: returnData, error: null }));
+  mock.then = (resolve: (value: { data: any[]; error: null }) => any, reject?: (reason: any) => any) =>
+    Promise.resolve({ data: returnData, error: null }).then(resolve, reject);
 
   return mock;
 }
@@ -152,6 +153,41 @@ describe('adaptiveSelector', () => {
     expect(result.rationale.mode).toBe('skill');
   });
 
+  it('marks bounded degraded fallback when weak-skill source fails', async () => {
+    (getWeakestSkills as Mock).mockRejectedValueOnce(new Error('weakest_skills_query_failed'));
+
+    const result = await selectNextQuestionForStudent({
+      userId: 'user-123',
+      section: 'math',
+      sessionId: 'session-123',
+      target: { mode: 'skill' },
+    });
+
+    expect(result.question).toBeDefined();
+    expect(result.rationale.mode).toBe('skill');
+    expect(result.rationale.pickedFrom).toBe('fallback');
+    expect(result.rationale.weaknessKey).toBeUndefined();
+    expect(result.rationale.sourceWarnings).toEqual(['weak_skills_source_failed']);
+    expect(result.rationale.filterPath).toContain('weakest-skills-source-failed');
+  });
+
+  it('does not emit source warning when weak-skill source is healthy', async () => {
+    (getWeakestSkills as Mock).mockResolvedValueOnce([
+      { section: 'math', domain: 'Algebra', skill: 'Linear equations', accuracy: 0.4, attempts: 10, correct: 4, mastery_score: 0.4 },
+    ]);
+
+    const result = await selectNextQuestionForStudent({
+      userId: 'user-123',
+      section: 'math',
+      sessionId: 'session-123',
+      target: { mode: 'skill' },
+    });
+
+    expect(result.rationale.pickedFrom).toBe('skill');
+    expect(result.rationale.sourceWarnings).toBeUndefined();
+    expect(result.rationale.filterPath?.includes('weakest-skills-source-failed')).toBe(false);
+  });
+
   it('should respect fixed difficulty policy', async () => {
     const result = await selectNextQuestionForStudent({
       userId: 'user-123',
@@ -161,7 +197,7 @@ describe('adaptiveSelector', () => {
     });
 
     expect(result.rationale.filterPath).toBeDefined();
-    expect(result.rationale.filterPath).toContain('difficulty=3');
+    expect(result.rationale.filterPath).toContain('fixed-difficulty=3');
   });
 
   it('should include rationale with filter path', async () => {
@@ -198,7 +234,7 @@ describe('adaptiveSelector', () => {
     expect(q.canonicalId).toBeDefined();
     expect(q.stem).toBeDefined();
     expect(q.section).toBeDefined();
-    expect(q.question_type).toBe('multiple_choice');
+    expect(q.questionType).toBe('multiple_choice');
     expect(Array.isArray(q.options)).toBe(true);
     expect([1, 2, 3]).toContain(q.difficulty);
   });

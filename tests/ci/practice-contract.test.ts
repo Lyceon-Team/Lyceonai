@@ -271,6 +271,48 @@ describe("Practice Runtime Contract", () => {
     difficulty: "medium",
   };
 
+  const questionC = {
+    id: "00000000-0000-0000-0000-000000000003",
+    canonical_id: "SATM1ABC125",
+    section: "Math",
+    section_code: "MATH",
+    status: "published",
+    stem: "Solve for x: x + 5 = 8",
+    question_type: "multiple_choice",
+    options: JSON.stringify([
+      { key: "A", text: "1" },
+      { key: "B", text: "2" },
+      { key: "C", text: "3" },
+      { key: "D", text: "4" },
+    ]),
+    correct_answer: "C",
+    explanation: "x=3",
+    domain: "Geometry",
+    skill: "Lines and angles",
+    difficulty: "hard",
+  };
+
+  const questionRw = {
+    id: "00000000-0000-0000-0000-000000000004",
+    canonical_id: "SATRW2ABC123",
+    section: "RW",
+    section_code: "RW",
+    status: "published",
+    stem: "Choose the best transition.",
+    question_type: "multiple_choice",
+    options: JSON.stringify([
+      { key: "A", text: "However" },
+      { key: "B", text: "Therefore" },
+      { key: "C", text: "Meanwhile" },
+      { key: "D", text: "Likewise" },
+    ]),
+    correct_answer: "A",
+    explanation: "Transition logic",
+    domain: "Grammar",
+    skill: "Transitions",
+    difficulty: "easy",
+  };
+
   function getCorrectTokenFromSessionItem(sessionItemId: string): string {
     const item = db.practice_session_items.find((row) => row.id === sessionItemId);
     if (!item || !item.option_token_map) {
@@ -361,7 +403,443 @@ describe("Practice Runtime Contract", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(first.body.sessionId).toBe(second.body.sessionId);
+    expect(first.body.targetQuestionCount).toBe(20);
     expect(db.practice_sessions).toHaveLength(1);
+  });
+
+  it("accepts multi-select start payload and persists normalized canonical session spec metadata", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "random",
+        sections: ["rw", "math", "rw"],
+        domains: [" Algebra ", "Geometry", "algebra"],
+        difficulties: ["hard", "2", "easy", "hard"],
+        target_question_count: 12,
+        mode: "balanced",
+        client_instance_id: "tab-1",
+      });
+
+    expect(start.status).toBe(200);
+    expect(start.body.targetQuestionCount).toBe(12);
+
+    const session = db.practice_sessions.find((row) => row.id === start.body.sessionId);
+    if (!session) throw new Error("missing session fixture");
+
+    expect(session.section).toBe("Random");
+    expect(session.metadata.session_spec).toEqual({
+      sections: ["Math", "RW"],
+      domains: ["algebra", "geometry"],
+      difficulties: ["easy", "medium", "hard"],
+      target_minutes: null,
+      target_question_count: 12,
+      mode: "balanced",
+    });
+  });
+
+  it("derives deterministic target question count from target_minutes when count is absent", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_minutes: 25,
+        client_instance_id: "tab-1",
+      });
+
+    expect(start.status).toBe(200);
+    expect(start.body.targetQuestionCount).toBe(17);
+
+    const session = db.practice_sessions.find((row) => row.id === start.body.sessionId);
+    if (!session) throw new Error("missing session fixture");
+    expect(session.metadata.target_question_count).toBe(17);
+    expect(session.metadata.session_spec).toEqual(expect.objectContaining({
+      target_minutes: 25,
+      target_question_count: 17,
+    }));
+  });
+
+  it("selection consumes persisted session_spec sections/domains/difficulties", async () => {
+    db.questions.push(cloneRow(questionC), cloneRow(questionRw));
+
+    const sessionId = "00000000-0000-0000-0000-00000000aa09";
+    db.practice_sessions.push({
+      id: sessionId,
+      user_id: "00000000-0000-0000-0000-000000000000",
+      section: "Random",
+      mode: "balanced",
+      status: "in_progress",
+      completed: false,
+      metadata: {
+        client_instance_id: "tab-1",
+        lifecycle_state: "created",
+        target_question_count: 20,
+        session_spec: {
+          sections: ["RW"],
+          domains: ["grammar"],
+          difficulties: ["easy"],
+          target_minutes: null,
+          target_question_count: 20,
+          mode: "balanced",
+        },
+      },
+    });
+
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(next.status).toBe(200);
+
+    const served = db.practice_session_items.find((row) => row.id === next.body.sessionItemId);
+    if (!served) throw new Error("missing served item fixture");
+    expect(served.question_id).toBe(questionRw.id);
+  });
+
+  it("session start prebuilds full persisted item count", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 5,
+        client_instance_id: "tab-1",
+      });
+
+    expect(start.status).toBe(200);
+    expect(db.practice_session_items).toHaveLength(5);
+    expect(db.practice_session_items.map((row) => row.ordinal)).toEqual([1, 2, 3, 4, 5]);
+    expect(db.practice_session_items.filter((row) => row.status === "served")).toHaveLength(1);
+    expect(db.practice_session_items.filter((row) => row.status === "queued")).toHaveLength(4);
+    expect(db.practice_session_items.some((row) => row.status === "answered" && row.attempt_id == null)).toBe(false);
+  });
+
+  it("fills smaller exact pool via deterministic exact-only reuse", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        domains: ["algebra"],
+        difficulties: ["easy"],
+        target_question_count: 4,
+        client_instance_id: "tab-1",
+      });
+
+    expect(start.status).toBe(200);
+    expect(db.practice_session_items).toHaveLength(4);
+    expect(new Set(db.practice_session_items.map((row) => row.question_id))).toEqual(new Set([questionA.id]));
+
+    const session = db.practice_sessions.find((row) => row.id === start.body.sessionId);
+    if (!session) throw new Error("missing session fixture");
+    expect(session.metadata.selection_mode).toBe("exact_reuse");
+    expect(session.metadata.source_pool_count).toBe(1);
+    expect(session.metadata.requested_count).toBe(4);
+  });
+
+  it("next serves prebuilt ordinals without dynamic row creation", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const prebuiltCount = db.practice_session_items.length;
+
+    const nextOne = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(nextOne.status).toBe(200);
+    expect(nextOne.body.ordinal).toBe(1);
+    expect(db.practice_session_items).toHaveLength(prebuiltCount);
+    expect(db.practice_session_items.filter((row) => row.status === "served")).toHaveLength(1);
+    expect(db.practice_session_items.filter((row) => row.status === "queued")).toHaveLength(2);
+    expect(db.practice_session_items.filter((row) => row.status === "answered")).toHaveLength(0);
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: nextOne.body.sessionItemId,
+        selectedOptionId: nextOne.body.question.options[0].id,
+        clientAttemptId: "prebuilt-next-step-1",
+      });
+    expect(submit.status).toBe(200);
+
+    const nextTwo = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(nextTwo.status).toBe(200);
+    expect(nextTwo.body.ordinal).toBe(2);
+    expect(db.practice_session_items).toHaveLength(prebuiltCount);
+    expect(db.practice_session_items.filter((row) => row.status === "served")).toHaveLength(1);
+    expect(db.practice_session_items.filter((row) => row.status === "queued")).toHaveLength(1);
+    expect(db.practice_session_items.filter((row) => row.status === "answered" && row.attempt_id == null)).toHaveLength(0);
+  });
+
+  it("skip persists attempt truth and marks served item as skipped", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const sessionItemId = next.body.sessionItemId as string;
+
+    const skip = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId,
+        clientAttemptId: "skip-attempt-1",
+        client_instance_id: "tab-1",
+      });
+
+    expect(skip.status).toBe(200);
+    expect(skip.body.skipped).toBe(true);
+
+    const item = db.practice_session_items.find((row) => row.id === sessionItemId);
+    if (!item) throw new Error("missing skipped session item fixture");
+    expect(item.status).toBe("skipped");
+    expect(item.attempt_id).toBeTruthy();
+
+    const attempt = db.answer_attempts.find((row) => row.session_item_id === sessionItemId);
+    if (!attempt) throw new Error("missing skip attempt fixture");
+    expect(attempt.outcome).toBe("skipped");
+  });
+
+  it("skip advances deterministically to next queued item without regenerating items", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const prebuiltCount = db.practice_session_items.length;
+
+    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(first.status).toBe(200);
+    expect(first.body.ordinal).toBe(1);
+
+    const skipped = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId: first.body.sessionItemId,
+        clientAttemptId: "skip-attempt-2",
+        client_instance_id: "tab-1",
+      });
+    expect(skipped.status).toBe(200);
+
+    const second = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(second.status).toBe(200);
+    expect(second.body.ordinal).toBe(2);
+    expect(db.practice_session_items).toHaveLength(prebuiltCount);
+  });
+
+  it("state counts keep skipped separate from answered and track completed progress", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const skip = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId: next.body.sessionItemId,
+        clientAttemptId: "skip-attempt-3",
+        client_instance_id: "tab-1",
+      });
+    expect(skip.status).toBe(200);
+
+    const state = await request(app).get(`/api/practice/sessions/${sessionId}/state?client_instance_id=tab-1`);
+    expect(state.status).toBe(200);
+    expect(state.body.answeredCount).toBe(0);
+    expect(state.body.skippedCount).toBe(1);
+    expect(state.body.completedCount).toBe(1);
+  });
+
+  it("final-item skip closes session and blocks further progression", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 1,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+
+    const skip = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId: first.body.sessionItemId,
+        clientAttemptId: "skip-final-1",
+        client_instance_id: "tab-1",
+      });
+
+    expect(skip.status).toBe(200);
+    expect(skip.body.state).toBe("completed");
+
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(next.status).toBe(409);
+    expect(next.body.error).toBe("session_closed");
+  });
+
+  it("skipped item cannot later be answered through normal submit path", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+
+    const skip = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId: first.body.sessionItemId,
+        clientAttemptId: "skip-then-answer-1",
+        client_instance_id: "tab-1",
+      });
+    expect(skip.status).toBe(200);
+
+    const answerLater = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: first.body.sessionItemId,
+        selectedOptionId: first.body.question.options[0].id,
+        clientAttemptId: "answer-after-skip-1",
+      });
+
+    expect(answerLater.status).toBe(200);
+    expect(answerLater.body.feedback).toBe("Skipped");
+    expect(answerLater.body.isCorrect).toBe(false);
+  });
+
+  it("terminated session blocks skip", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+
+    const terminated = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/terminate`)
+      .set("Origin", "http://localhost:5000")
+      .send({});
+    expect(terminated.status).toBe(200);
+
+    const skipAfterTerminate = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionItemId: first.body.sessionItemId,
+        clientAttemptId: "skip-after-terminate-1",
+        client_instance_id: "tab-1",
+      });
+
+    expect(skipAfterTerminate.status).toBe(409);
+    expect(skipAfterTerminate.body.error).toBe("session_closed");
+  });
+
+  it("state answeredCount is driven by real attempts, not queued prebuilt rows", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 3,
+        client_instance_id: "tab-1",
+      });
+
+    const sessionId = start.body.sessionId;
+    const before = await request(app).get(`/api/practice/sessions/${sessionId}/state?client_instance_id=tab-1`);
+    expect(before.status).toBe(200);
+    expect(before.body.answeredCount).toBe(0);
+
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "count-real-attempts-1",
+      });
+
+    expect(submit.status).toBe(200);
+    const after = await request(app).get(`/api/practice/sessions/${sessionId}/state?client_instance_id=tab-1`);
+    expect(after.status).toBe(200);
+    expect(after.body.answeredCount).toBe(1);
+  });
+
+  it("replay start does not duplicate prebuilt session items", async () => {
+    const payload = {
+      section: "math",
+      target_question_count: 6,
+      idempotency_key: "prebuild-replay-1",
+      client_instance_id: "tab-1",
+    };
+
+    const first = await request(app).post("/api/practice/sessions").set("Origin", "http://localhost:5000").send(payload);
+    const second = await request(app).post("/api/practice/sessions").set("Origin", "http://localhost:5000").send(payload);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body.sessionId).toBe(second.body.sessionId);
+    expect(db.practice_session_items).toHaveLength(6);
+  });
+
+  it("fails closed when exact filtered pool is empty", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sections: ["rw"],
+        domains: ["grammar"],
+        difficulties: ["hard"],
+        target_question_count: 4,
+        client_instance_id: "tab-1",
+      });
+
+    expect(start.status).toBe(422);
+    expect(start.body).toEqual(expect.objectContaining({
+      error: "empty_exact_pool",
+      code: "PRACTICE_EXACT_POOL_EMPTY",
+    }));
   });
 
   it("replays same unanswered session item and enforces anti-leak on /next", async () => {
@@ -395,7 +873,7 @@ describe("Practice Runtime Contract", () => {
     expect(nextB.status).toBe(200);
     expect(nextB.body.sessionItemId).toBe(nextA.body.sessionItemId);
     expect(nextB.body.question.options).toEqual(nextA.body.question.options);
-    expect(db.practice_session_items).toHaveLength(1);
+    expect(db.practice_session_items).toHaveLength(20);
   });
 
   it("returns authoritative state with ordinal + unresolved item", async () => {
@@ -838,6 +1316,55 @@ describe("Practice Runtime Contract", () => {
     expect(second.status).toBe(409);
     expect(second.body.error).toBe("session_closed");
   });
+
+  it("terminate endpoint marks session abandoned and closed", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const terminated = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/terminate`)
+      .set("Origin", "http://localhost:5000")
+      .send({});
+
+    expect(terminated.status).toBe(200);
+    expect(terminated.body.state).toBe("abandoned");
+    expect(terminated.body.readOnly).toBe(true);
+
+    const session = db.practice_sessions.find((row) => row.id === sessionId);
+    if (!session) throw new Error("missing session fixture");
+    expect(session.status).toBe("abandoned");
+    expect(session.completed).toBe(true);
+    expect(session.metadata.lifecycle_state).toBe("abandoned");
+  });
+
+  it("terminated session is no longer resumable as active", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    await request(app)
+      .post(`/api/practice/sessions/${sessionId}/terminate`)
+      .set("Origin", "http://localhost:5000")
+      .send({});
+
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(next.status).toBe(409);
+    expect(next.body.error).toBe("session_closed");
+
+    const restarted = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    expect(restarted.status).toBe(200);
+    expect(restarted.body.sessionId).not.toBe(sessionId);
+  });
+
   it("denies guardian practice writes", async () => {
     activeRole = "guardian";
 

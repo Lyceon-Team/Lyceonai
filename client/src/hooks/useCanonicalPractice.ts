@@ -46,6 +46,28 @@ export type PracticeAnswerResponse = {
   };
 };
 
+export type PracticeSkipResponse = {
+  skipped: true;
+  feedback: "Skipped";
+  state?: "active" | "completed" | "abandoned";
+  stats?: {
+    correct?: number;
+    incorrect?: number;
+    skipped?: number;
+    total?: number;
+    streak?: number;
+  };
+};
+
+export type PracticeSessionSpecInput = {
+  sections?: string[];
+  domains?: string[];
+  difficulties?: string[];
+  targetMinutes?: number;
+  targetQuestionCount?: number;
+  mode?: string;
+};
+
 function mergeStats(
   prev: { correct: number; incorrect: number; skipped: number; total: number; streak: number },
   next?: PracticeNextResponse["stats"] | PracticeAnswerResponse["stats"]
@@ -91,7 +113,7 @@ function normalizeQuestion(raw: PracticeQuestion | null): PracticeQuestion | nul
   };
 }
 
-export function useCanonicalPractice(section: PracticeSectionParam) {
+export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?: PracticeSessionSpecInput) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionItemId, setSessionItemId] = useState<string | null>(null);
   const [clientInstanceId] = useState(() => crypto.randomUUID());
@@ -110,6 +132,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [sessionState, setSessionState] = useState<"created" | "active" | "completed" | "abandoned">("created");
 
   const [score, setScore] = useState({
     correct: 0,
@@ -141,6 +164,18 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
   const ensureSession = useCallback(async () => {
     if (sessionId) return sessionId;
 
+    const startPayload: Record<string, unknown> = {
+      section,
+      mode: sessionSpec?.mode ?? "balanced",
+      client_instance_id: clientInstanceId,
+    };
+
+    if (Array.isArray(sessionSpec?.sections)) startPayload.sections = sessionSpec.sections;
+    if (Array.isArray(sessionSpec?.domains)) startPayload.domains = sessionSpec.domains;
+    if (Array.isArray(sessionSpec?.difficulties)) startPayload.difficulties = sessionSpec.difficulties;
+    if (typeof sessionSpec?.targetMinutes === "number") startPayload.target_minutes = sessionSpec.targetMinutes;
+    if (typeof sessionSpec?.targetQuestionCount === "number") startPayload.target_question_count = sessionSpec.targetQuestionCount;
+
     const startRes = await fetch("/api/practice/sessions", {
       method: "POST",
       credentials: "include",
@@ -148,11 +183,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({
-        section,
-        mode: "balanced",
-        client_instance_id: clientInstanceId,
-      }),
+      body: JSON.stringify(startPayload),
     });
 
     if (!startRes.ok) {
@@ -166,7 +197,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
 
     setSessionId(started.sessionId);
     return started.sessionId;
-  }, [clientInstanceId, section, sessionId]);
+  }, [clientInstanceId, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
 
   const fetchNextQuestion = useCallback(async () => {
     setIsLoading(true);
@@ -192,6 +223,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       if (data.sessionId) setSessionId(data.sessionId);
       setSessionItemId(data.sessionItemId ?? null);
       setQuestion(normalizeQuestion(data.question ?? null));
+      if (data.state) setSessionState(data.state);
 
       if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
       if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
@@ -229,14 +261,24 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           throw new Error("No active session item. Please load the next question.");
         }
 
-        const payload = {
-          sessionId: effectiveSessionId,
-          sessionItemId: effectiveSessionItemId,
-          selectedOptionId: opts.skipped ? null : selectedAnswer,
-          clientAttemptId,
-        };
+        const endpoint = opts.skipped
+          ? `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/skip`
+          : "/api/practice/answer";
 
-        const res = await fetch("/api/practice/answer", {
+        const payload = opts.skipped
+          ? {
+              sessionItemId: effectiveSessionItemId,
+              clientAttemptId,
+              client_instance_id: clientInstanceId,
+            }
+          : {
+              sessionId: effectiveSessionId,
+              sessionItemId: effectiveSessionItemId,
+              selectedOptionId: selectedAnswer,
+              clientAttemptId,
+            };
+
+        const res = await fetch(endpoint, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -247,7 +289,8 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           throw new Error(`Failed to submit answer (${res.status})`);
         }
 
-        const data = (await res.json()) as PracticeAnswerResponse;
+        const data = (await res.json()) as PracticeAnswerResponse | PracticeSkipResponse;
+        if (data.state) setSessionState(data.state);
 
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));
@@ -262,7 +305,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
               return next;
             }
 
-            if (data.isCorrect) {
+            if (!opts.skipped && "isCorrect" in data && data.isCorrect) {
               next.correct = prev.correct + 1;
               next.streak = prev.streak + 1;
             } else {
@@ -278,11 +321,12 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
           return;
         }
 
-        setIsCorrect(!!data.isCorrect);
-        setCorrectOptionId(data.correctOptionId ?? null);
-        setExplanation(data.explanation ?? null);
+        const answerData = data as PracticeAnswerResponse;
+        setIsCorrect(!!answerData.isCorrect);
+        setCorrectOptionId(answerData.correctOptionId ?? null);
+        setExplanation(answerData.explanation ?? null);
         setShowResult(true);
-        return data;
+        return answerData;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to submit answer";
         setError(message);
@@ -292,6 +336,7 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
       }
     },
     [
+      clientInstanceId,
       clientAttemptId,
       ensureSession,
       fetchNextQuestion,
@@ -310,6 +355,34 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     if (!isMultipleChoice(question)) return;
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
+
+  const terminateSession = useCallback(async () => {
+    if (!sessionId) return null;
+    if (sessionState === "completed" || sessionState === "abandoned") return { state: sessionState };
+
+    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ client_instance_id: clientInstanceId }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to terminate session (${res.status})`);
+    }
+
+    const data = await res.json() as { state?: "abandoned" };
+    if (data.state === "abandoned") {
+      setSessionState("abandoned");
+      setSessionItemId(null);
+      setQuestion(null);
+    }
+    return data;
+  }, [clientInstanceId, sessionId, sessionState]);
 
   useEffect(() => {
     fetchNextQuestion();
@@ -343,5 +416,6 @@ export function useCanonicalPractice(section: PracticeSectionParam) {
     submitAnswer,
     nextQuestion,
     handleMissingMcChoices,
+    terminateSession,
   };
 }

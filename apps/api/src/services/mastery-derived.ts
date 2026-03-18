@@ -76,7 +76,7 @@ export function buildDerivedWeaknessSignal(row: MasterySkillRow): DerivedWeaknes
 
 export async function getDerivedWeaknessSignals(
   userId: string,
-  options?: { section?: string; minAttempts?: number; limit?: number }
+  options?: { section?: string; minAttempts?: number; limit?: number; failOnError?: boolean }
 ): Promise<DerivedWeaknessSignal[]> {
   const section = options?.section;
   const minAttempts = Math.max(0, options?.minAttempts ?? 1);
@@ -94,6 +94,9 @@ export async function getDerivedWeaknessSignals(
 
   const { data, error } = await query;
   if (error || !data) {
+    if (options?.failOnError) {
+      throw new Error(`derived_weakness_query_failed: ${error?.message || "empty_data"}`);
+    }
     return [];
   }
 
