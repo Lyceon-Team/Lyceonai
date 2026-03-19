@@ -89,6 +89,21 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => {
     };
 });
 
+vi.mock('../../apps/api/src/lib/supabase-admin', () => {
+    const chain: any = {
+        then: (resolve: any) => resolve({ data: [], error: null })
+    };
+    const identity = () => chain;
+    Object.assign(chain, {
+        eq: identity, is: identity, in: identity, match: identity, order: identity, limit: identity, select: identity, update: identity, insert: identity, upsert: identity,
+        single: () => Promise.resolve({ data: { student_id: 'test-user', correct_answer: 'B', answer_text: null, explanation: null }, error: null }),
+        maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    });
+    return {
+        getSupabaseAdmin: () => ({ from: vi.fn(() => chain) }),
+    };
+});
+
 vi.mock('../../server/logger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
@@ -111,8 +126,11 @@ function buildApp(): Express {
     app.use(authMocks.requireSupabaseAuth);
     app.use('/api/practice', practiceCanonicalRouter);
     app.use('/api/full-length', fullLengthExamRouter);
-    app.use('/api/guardian', guardianRoutes);
-    app.use('/api/diagnostic', diagnosticRouter);
+    app.use('/api/guardian', (req: any, _res, next) => {
+        req.user = { id: 'guardian-1', role: 'guardian' };
+        next();
+    }, guardianRoutes);
+    app.use('/api/me/mastery/diagnostic', diagnosticRouter);
     return app;
 }
 
@@ -145,7 +163,9 @@ describe('Mutation Ownership Contract', () => {
             accountMocks.revokeGuardianLink.mockResolvedValue(undefined);
             accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
 
-            const res = await request(app).delete('/api/guardian/link/student-1');
+            const res = await request(app)
+                .delete('/api/guardian/link/student-1')
+                .set('Origin', 'http://localhost:5000');
             // If it hits the service call, the ownership is correct. 
             // We tolerate 500/403 if it happens after the service call or during post-processing
             // but here we just want to ensure it calls revokeGuardianLink.
@@ -154,9 +174,12 @@ describe('Mutation Ownership Contract', () => {
 
         it('Diagnostic: answer delegates to diagnostic service', async () => {
             diagnosticMocks.recordDiagnosticAnswer.mockResolvedValue({ success: true, isComplete: false });
-            await request(app).post('/api/diagnostic/answer').send({
-                sessionId: 'd-1', questionCanonicalId: 'q-1', selectedChoice: 'A', timeSpentMs: 1000
-            });
+            await request(app)
+                .post('/api/me/mastery/diagnostic/answer')
+                .set('Origin', 'http://localhost:5000')
+                .send({
+                    sessionId: 'd-1', questionCanonicalId: 'q-1', selectedChoice: 'A', timeSpentMs: 1000
+                });
             expect(diagnosticMocks.recordDiagnosticAnswer).toHaveBeenCalled();
         });
 
