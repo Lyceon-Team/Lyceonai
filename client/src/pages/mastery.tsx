@@ -92,12 +92,28 @@ export default function MasteryPage() {
 
         {/* Error State */}
         {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Failed to load mastery data. Please try again later.
-            </AlertDescription>
-          </Alert>
+          (() => {
+            const message = error instanceof Error ? error.message : "";
+            const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_KPI_REQUIRED");
+            return isPremiumLocked ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>Mastery details are part of premium KPI access.</span>
+                  <Button asChild variant="outline" size="sm">
+                    <a href="/">View Upgrade Options</a>
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Failed to load mastery data. Please try again later.
+                </AlertDescription>
+              </Alert>
+            );
+          })()
         )}
 
         {/* Empty State */}

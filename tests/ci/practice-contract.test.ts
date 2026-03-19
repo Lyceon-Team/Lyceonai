@@ -759,7 +759,10 @@ describe("Practice Runtime Contract", () => {
         client_instance_id: "tab-1",
       });
     expect(skip.status).toBe(200);
+    expect(db.answer_attempts).toHaveLength(1);
 
+    const beforeAttempts = db.answer_attempts.length;
+    const beforeMasteryWrites = masteryMocks.applyMasteryUpdate.mock.calls.length;
     const answerLater = await request(app)
       .post("/api/practice/answer")
       .set("Origin", "http://localhost:5000")
@@ -770,9 +773,10 @@ describe("Practice Runtime Contract", () => {
         clientAttemptId: "answer-after-skip-1",
       });
 
-    expect(answerLater.status).toBe(200);
-    expect(answerLater.body.feedback).toBe("Skipped");
-    expect(answerLater.body.isCorrect).toBe(false);
+    expect(answerLater.status).toBe(409);
+    expect(answerLater.body.error).toBe("session_item_not_open");
+    expect(db.answer_attempts).toHaveLength(beforeAttempts);
+    expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(beforeMasteryWrites);
   });
 
   it("terminated session blocks skip", async () => {
@@ -1371,6 +1375,72 @@ describe("Practice Runtime Contract", () => {
     expect(session.status).toBe("abandoned");
     expect(session.completed).toBe(true);
     expect(session.metadata.lifecycle_state).toBe("abandoned");
+  });
+
+  it("persists and restores calculator state in practice session metadata", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const calculatorState = {
+      version: 10,
+      expressions: {
+        list: [
+          {
+            id: "1",
+            latex: "y=x^2",
+          },
+        ],
+      },
+    };
+
+    const save = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/calculator-state`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        client_instance_id: "tab-1",
+        calculator_state: calculatorState,
+      });
+
+    expect(save.status).toBe(200);
+    expect(save.body.calculatorState).toEqual(calculatorState);
+
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+    expect(next.status).toBe(200);
+    expect(next.body.calculatorState).toEqual(calculatorState);
+
+    const state = await request(app).get(`/api/practice/sessions/${sessionId}/state?client_instance_id=tab-1`);
+    expect(state.status).toBe(200);
+    expect(state.body.calculatorState).toEqual(calculatorState);
+  });
+
+  it("terminate clears persisted calculator state", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+
+    await request(app)
+      .post(`/api/practice/sessions/${sessionId}/calculator-state`)
+      .set("Origin", "http://localhost:5000")
+      .send({
+        client_instance_id: "tab-1",
+        calculator_state: { version: 10, expressions: { list: [{ id: "1", latex: "y=2x" }] } },
+      });
+
+    const terminated = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/terminate`)
+      .set("Origin", "http://localhost:5000")
+      .send({});
+
+    expect(terminated.status).toBe(200);
+    const session = db.practice_sessions.find((row) => row.id === sessionId);
+    if (!session) throw new Error("missing session fixture");
+    expect(session.metadata.calculator_state).toBeNull();
   });
 
   it("terminated session is no longer resumable as active", async () => {

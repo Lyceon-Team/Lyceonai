@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { TrendingUp, Target, AlertCircle } from "lucide-react";
 import { fetchScoreProjection, getConfidenceLabel, getConfidenceColor } from "@/lib/projectionApi";
 
@@ -11,6 +12,9 @@ export function ScoreProjectionCard() {
     queryFn: fetchScoreProjection,
     staleTime: 5 * 60 * 1000,
   });
+  const errorMessage = error instanceof Error ? error.message : "";
+  const isPremiumLocked =
+    errorMessage.includes("402") || errorMessage.includes("PREMIUM_KPI_REQUIRED");
 
   if (isLoading) {
     return (
@@ -40,10 +44,22 @@ export function ScoreProjectionCard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <AlertCircle className="h-4 w-4" />
-            <span>Start practicing to see your projected score</span>
-          </div>
+          {isPremiumLocked ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <AlertCircle className="h-4 w-4" />
+                <span>Score projection is a premium KPI feature.</span>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <a href="/">View Upgrade Options</a>
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <AlertCircle className="h-4 w-4" />
+              <span>Start practicing to see your projected score</span>
+            </div>
+          )}
         </CardContent>
       </Card>
     );

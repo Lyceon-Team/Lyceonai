@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import QuestionRenderer from "@/components/question-renderer";
+import DesmosCalculator from "@/components/math/DesmosCalculator";
 import { 
   Clock, 
   ChevronLeft, 
@@ -134,6 +135,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<CompleteExamResult | null>(null);
+  const [isCalculatorExpanded, setIsCalculatorExpanded] = useState(false);
+  const [calculatorStatesByModule, setCalculatorStatesByModule] = useState<Record<string, unknown>>({});
+  const calculatorPersistTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Timer sync
   const [displayTime, setDisplayTime] = useState<number | null>(null);
@@ -156,6 +160,18 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       
       const data: SessionState = await response.json();
       setSessionState(data);
+
+      const moduleId = data.currentModule?.id;
+      const moduleSection = String(data.currentModule?.section ?? "").toLowerCase();
+      const moduleCalculatorState = (data.currentModule as any)?.calculator_state;
+      if (moduleId && moduleSection === "math" && moduleCalculatorState !== undefined) {
+        setCalculatorStatesByModule((prev) => {
+          if (Object.prototype.hasOwnProperty.call(prev, moduleId)) {
+            return prev;
+          }
+          return { ...prev, [moduleId]: moduleCalculatorState };
+        });
+      }
       
       // Set display time from server
       if (data.timeRemaining !== null) {
@@ -236,6 +252,15 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       }
     };
   }, [sessionState, fetchSessionState]);
+
+  useEffect(() => {
+    return () => {
+      if (calculatorPersistTimerRef.current) {
+        clearTimeout(calculatorPersistTimerRef.current);
+        calculatorPersistTimerRef.current = null;
+      }
+    };
+  }, []);
   
   // ============================================================================
   // ANSWER SUBMISSION
@@ -623,6 +648,37 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   
   const allAnswered = currentQuestion.answeredCount >= currentQuestion.moduleQuestionCount;
   const progressPercent = (currentQuestion.answeredCount / currentQuestion.moduleQuestionCount) * 100;
+  const isMathModule = String(currentModule.section ?? sessionState.session.current_section ?? "").toLowerCase() === "math";
+  const calculatorModuleKey = currentModule.id || `${sessionState.session.current_section ?? "none"}:${sessionState.session.current_module ?? 0}`;
+  const calculatorState = calculatorStatesByModule[calculatorModuleKey] ?? null;
+
+  const handleCalculatorStateChange = (nextState: unknown) => {
+    setCalculatorStatesByModule((prev) => ({ ...prev, [calculatorModuleKey]: nextState }));
+
+    if (!isMathModule || !currentModule?.id) {
+      return;
+    }
+
+    if (calculatorPersistTimerRef.current) {
+      clearTimeout(calculatorPersistTimerRef.current);
+    }
+
+    calculatorPersistTimerRef.current = setTimeout(async () => {
+      try {
+        await apiRequest(
+          `/api/full-length/sessions/${sessionId}/modules/${currentModule.id}/calculator-state`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              calculator_state: nextState ?? null,
+            }),
+          }
+        );
+      } catch (error) {
+        console.warn("Failed to persist full-length calculator state", error);
+      }
+    }, 500);
+  };
   
   return (
     <AppShell>
@@ -632,7 +688,8 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           <div>
             <h1 className="text-2xl font-bold">
               {getSectionLabel(sessionState.session.current_section, sessionState.session.current_module)}
-            </h1>`r`n          </div>
+            </h1>
+          </div>
           
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -680,6 +737,29 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             />
           </CardContent>
         </Card>
+
+        {isMathModule && (
+          <Card className="mb-6">
+            <CardContent className="pt-4">
+              <div className="mb-3 flex items-center justify-end">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+                  aria-expanded={isCalculatorExpanded}
+                  data-testid="full-length-calculator-toggle"
+                >
+                  {isCalculatorExpanded ? "Hide Calculator" : "Calculator"}
+                </Button>
+              </div>
+              <DesmosCalculator
+                expanded={isCalculatorExpanded}
+                initialState={calculatorState}
+                onStateChange={handleCalculatorStateChange}
+              />
+            </CardContent>
+          </Card>
+        )}
         
         {/* Navigation */}
         <div className="flex justify-between items-center">

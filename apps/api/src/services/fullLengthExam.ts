@@ -165,6 +165,14 @@ export interface SubmitAnswerParams {
   clientAttemptId?: string;
 }
 
+export interface PersistModuleCalculatorStateParams {
+  sessionId: string;
+  moduleId: string;
+  userId: string;
+  calculatorState: unknown | null;
+  clientInstanceId?: string;
+}
+
 export interface SubmitModuleParams {
   sessionId: string;
   userId: string;
@@ -1669,6 +1677,72 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
       clientAttemptId: params.clientAttemptId ?? null,
     },
   });
+}
+
+/**
+ * Persist calculator state for a math module only.
+ * Isolated from scoring/timing logic.
+ */
+export async function persistModuleCalculatorState(params: PersistModuleCalculatorStateParams): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: session, error: sessionError } = await supabase
+    .from("full_length_exam_sessions")
+    .select("id, status, client_instance_id")
+    .eq("id", params.sessionId)
+    .eq("user_id", params.userId)
+    .single();
+
+  if (sessionError || !session) {
+    throw new Error("Session not found or access denied");
+  }
+
+  assertClientInstanceAccess(session, params.clientInstanceId);
+
+  if (!["in_progress", "break", "not_started"].includes(String(session.status ?? ""))) {
+    throw new Error("Session is not active");
+  }
+
+  const { data: module, error: moduleError } = await supabase
+    .from("full_length_exam_modules")
+    .select("id, section, session_id")
+    .eq("id", params.moduleId)
+    .eq("session_id", params.sessionId)
+    .single();
+
+  if (moduleError || !module) {
+    throw new Error("Module not found");
+  }
+
+  if (String(module.section ?? "").toLowerCase() !== "math") {
+    throw new Error("Calculator state is only available for math modules");
+  }
+
+  let normalizedState: unknown = null;
+  if (params.calculatorState !== undefined && params.calculatorState !== null) {
+    let serialized = "";
+    try {
+      serialized = JSON.stringify(params.calculatorState);
+    } catch {
+      throw new Error("Invalid calculator state payload");
+    }
+    if (serialized.length > 200_000) {
+      throw new Error("Invalid calculator state payload");
+    }
+    normalizedState = JSON.parse(serialized);
+  }
+
+  const { error: updateError } = await supabase
+    .from("full_length_exam_modules")
+    .update({
+      calculator_state: normalizedState,
+    })
+    .eq("id", params.moduleId)
+    .eq("session_id", params.sessionId);
+
+  if (updateError) {
+    throw new Error(`Failed to persist calculator state: ${updateError.message}`);
+  }
 }
 
 /**

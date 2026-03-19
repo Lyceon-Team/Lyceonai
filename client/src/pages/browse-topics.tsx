@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, BookOpen, AlertCircle, Search } from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
+import { apiRequest } from "@/lib/queryClient";
 
 interface PracticeTopics {
   sections?: Array<{
@@ -77,6 +78,12 @@ function BrowseTopics() {
       skill: selectedSkill, 
       limit: selectedLimit 
     }],
+    queryFn: async () => {
+      const query = buildQueryParams();
+      const endpoint = query ? `/api/practice/questions?${query}` : '/api/practice/questions';
+      const response = await apiRequest(endpoint);
+      return response.json();
+    },
     enabled: false, // Don't auto-fetch, only on manual search
   });
 

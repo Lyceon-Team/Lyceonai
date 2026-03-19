@@ -86,6 +86,7 @@ type SessionMetadata = {
   client_instance_id?: string | null;
   lifecycle_state?: PracticeLifecycleState;
   active_session_item_id?: string | null;
+  calculator_state?: unknown | null;
   target_question_count?: number;
   session_spec?: CanonicalSessionSpec;
   prebuilt?: boolean;
@@ -163,6 +164,11 @@ const SkipBodySchema = z.object({
   sessionItemId: z.string().uuid().optional(),
   questionId: z.string().uuid().optional(),
   clientAttemptId: z.string().max(128).optional().nullable(),
+  client_instance_id: z.string().max(128).optional().nullable(),
+});
+
+const CalculatorStateBodySchema = z.object({
+  calculator_state: z.unknown().optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
 });
 
@@ -1651,6 +1657,7 @@ async function serveNextForSession(args: {
       sessionItemId: unresolved.id,
       ordinal: unresolved.ordinal,
       state: "active",
+      calculatorState: metadata.calculator_state ?? null,
       question: toStudentSafeQuestionDTO({
         sessionItemId: unresolved.id,
         question: canonicalQuestion,
@@ -1742,6 +1749,7 @@ async function serveNextForSession(args: {
       sessionItemId: promoted.id,
       ordinal: promoted.ordinal,
       state: "active",
+      calculatorState: metadata.calculator_state ?? null,
       question: toStudentSafeQuestionDTO({
         sessionItemId: promoted.id,
         question: canonicalQuestion,
@@ -1826,6 +1834,7 @@ async function serveNextForSession(args: {
           sessionItemId: deduped.id,
           ordinal: deduped.ordinal,
           state: "active",
+          calculatorState: metadata.calculator_state ?? null,
           question: toStudentSafeQuestionDTO({
             sessionItemId: deduped.id,
             question: canonicalQuestion,
@@ -1887,6 +1896,7 @@ async function serveNextForSession(args: {
     sessionItemId: insertedItem.id,
     ordinal: insertedItem.ordinal,
     state: "active",
+    calculatorState: metadata.calculator_state ?? null,
     question: toStudentSafeQuestionDTO({
       sessionItemId: insertedItem.id,
       question: picked.question,
@@ -1955,6 +1965,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) =
     replayed: sessionResult.replayed,
     clientInstanceId,
     targetQuestionCount: coerceTargetQuestionCount(sessionResult.metadata.target_question_count),
+    calculatorState: sessionResult.metadata.calculator_state ?? null,
   });
 });
 
@@ -1993,6 +2004,7 @@ router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtectio
   metadata.lifecycle_state = "abandoned";
   metadata.active_session_item_id = null;
   metadata.client_instance_id = null;
+  metadata.calculator_state = null;
 
   await updateSessionLifecycle(sessionId, metadata, {
     status: "abandoned",
@@ -2004,6 +2016,77 @@ router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtectio
     sessionId,
     state: "abandoned",
     readOnly: true,
+  });
+});
+
+router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, csrfProtection, async (req, res) => {
+  const requestId = (req as any).requestId;
+  const user = (req as any).user;
+  const userId = user?.id;
+
+  if (!userId) {
+    return res.status(401).json({
+      error: "Authentication required",
+      message: "You must be signed in",
+      requestId,
+    });
+  }
+
+  const sessionId = String(req.params.sessionId || "").trim();
+  if (!sessionId) {
+    return res.status(400).json({
+      error: "invalid_session_id",
+      message: "sessionId is required",
+      requestId,
+    });
+  }
+
+  const parsed = CalculatorStateBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "invalid_payload",
+      issues: parsed.error.issues,
+      requestId,
+    });
+  }
+
+  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
+  if (!owned) {
+    return res.status(404).json({
+      error: "session_not_found",
+      message: "Practice session not found",
+      requestId,
+    });
+  }
+
+  const metadata = asSessionMetadata(owned.session.metadata);
+  const sessionState = normalizeSessionState(owned.session.status, metadata);
+
+  if (sessionState === "completed" || sessionState === "abandoned" || TERMINAL_DB_STATUSES.includes(owned.session.status as any)) {
+    return res.status(409).json({
+      error: "session_closed",
+      message: "Practice session is read-only",
+      requestId,
+    });
+  }
+
+  const queryClientInstanceId = getClientInstanceId(parsed.data.client_instance_id);
+  const boundClient = getClientInstanceId(metadata.client_instance_id);
+  if (queryClientInstanceId && boundClient && queryClientInstanceId !== boundClient) {
+    return sendClientConflict(res, requestId, queryClientInstanceId);
+  }
+
+  if (queryClientInstanceId) {
+    metadata.client_instance_id = queryClientInstanceId;
+  }
+
+  metadata.calculator_state = parsed.data.calculator_state ?? null;
+
+  await updateSessionLifecycle(sessionId, metadata);
+
+  return res.json({
+    sessionId,
+    calculatorState: metadata.calculator_state ?? null,
   });
 });
 
@@ -2103,6 +2186,7 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     skippedCount: progressCounts.skippedCount,
     completedCount: progressCounts.completedCount,
     targetQuestionCount,
+    calculatorState: metadata.calculator_state ?? null,
     lastServedUnansweredItem: unresolved
       ? {
           sessionItemId: unresolved.id,
@@ -2366,6 +2450,47 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   const questionId = String(qRow.id);
+  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
+
+  if (sessionItem.status !== "served") {
+    if (sessionItem.status === "answered" && payload.clientAttemptId) {
+      const { data: retriedAttempt, error: retriedAttemptError } = await supabaseServer
+        .from("answer_attempts")
+        .select("id, session_id, question_id, session_item_id, is_correct, outcome")
+        .eq("user_id", userId)
+        .eq("client_attempt_id", payload.clientAttemptId)
+        .maybeSingle();
+
+      if (retriedAttemptError) {
+        throw new Error(`attempt_lookup_by_client_attempt_id_failed: ${retriedAttemptError.message}`);
+      }
+
+      if (
+        retriedAttempt
+        && retriedAttempt.session_id === payload.sessionId
+        && retriedAttempt.session_item_id === sessionItem.id
+        && retriedAttempt.question_id === questionId
+      ) {
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!retriedAttempt.is_correct,
+          mode: "multiple_choice",
+          correctOptionId,
+          explanation,
+          feedback: retriedAttempt.is_correct ? "Correct" : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          idempotentRetried: true,
+        });
+      }
+    }
+
+    return res.status(409).json({
+      error: "session_item_not_open",
+      message: "This practice item is already resolved.",
+      requestId,
+    });
+  }
 
   const existingAttempt = await findExistingAttempt({
     userId,
@@ -2374,8 +2499,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     sessionItemId: sessionItem.id,
     idempotencyKey: payload.clientAttemptId,
   });
-
-  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
 
   if (existingAttempt) {
     if (existingAttempt.session_id !== payload.sessionId || existingAttempt.question_id !== questionId) {
@@ -2396,14 +2519,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       feedback: existingAttempt.is_correct ? "Correct" : existingAttempt.outcome === "skipped" ? "Skipped" : "Incorrect",
       stats: await getSessionStats(payload.sessionId, userId),
       idempotentRetried: true,
-    });
-  }
-
-  if (sessionItem.status !== "served") {
-    return res.status(409).json({
-      error: "session_item_not_open",
-      message: "This practice item is already resolved.",
-      requestId,
     });
   }
 

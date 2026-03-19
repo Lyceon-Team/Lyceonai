@@ -351,6 +351,13 @@ function ensureIsoDateInput(value: unknown): string | null {
   return value;
 }
 
+// WRITE-PATH HELPERS (plan generation/persistence only)
+// These helpers serve persistGeneratedDays / generatePlanForWindow.
+// They are intentionally separate from the read-path equivalents in calendar-month-view.ts,
+// which serve buildCalendarMonthView via getMonthPayload (line 683 below).
+// Do NOT merge these into the service — the write path operates on planner types,
+// not on the serialized view shape.
+
 function taskTypeToLegacy(taskType: TaskType): string {
   if (taskType === "math_practice") return "practice";
   if (taskType === "rw_practice") return "practice";
@@ -364,6 +371,7 @@ function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
   return null;
 }
 
+// NOTE: taskModeForDay / planTaskToLegacy are used only inside persistGeneratedDays below.
 function taskModeForDay(task: PlanTaskRow): string {
   if (task.task_type === "full_length_exam") return "full-length";
   if (task.task_type === "review_errors") return "review";
@@ -385,49 +393,10 @@ function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
   };
 }
 
-async function calculateStreak(userId: string, timezone: string): Promise<{ current: number; longest: number }> {
-  const today = DateTime.now().setZone(timezone).toISODate();
-  if (!today) return { current: 0, longest: 0 };
-
-  const { data, error } = await supabaseServer
-    .from("student_study_plan_days")
-    .select("day_date, status")
-    .eq("user_id", userId)
-    .order("day_date", { ascending: true })
-    .limit(365);
-  if (error || !data) return { current: 0, longest: 0 };
-
-  const completedDates = (data as Array<{ day_date: string; status: unknown }>)
-    .filter((row) => canonicalDayStatus(row.status) === "completed")
-    .map((row) => row.day_date);
-  if (completedDates.length === 0) return { current: 0, longest: 0 };
-
-  const completedSet = new Set(completedDates);
-  let current = 0;
-  let cursor = DateTime.fromISO(today, { zone: timezone });
-  while (completedSet.has(cursor.toISODate()!)) {
-    current += 1;
-    cursor = cursor.minus({ days: 1 });
-  }
-
-  let longest = 0;
-  let run = 0;
-  let previous: DateTime | null = null;
-  for (const dayDate of completedDates) {
-    const day = DateTime.fromISO(dayDate, { zone: timezone });
-    if (!previous) {
-      run = 1;
-    } else if (day.toISODate() === previous.plus({ days: 1 }).toISODate()) {
-      run += 1;
-    } else {
-      longest = Math.max(longest, run);
-      run = 1;
-    }
-    previous = day;
-  }
-  longest = Math.max(longest, run);
-  return { current, longest };
-}
+// calculateStreak REMOVED: was a dead-code duplicate of the private calculateStreak
+// inside apps/api/src/services/calendar-month-view.ts. It was never called in this file.
+// The canonical streak computation lives in buildCalendarMonthView (used via getMonthPayload).
+// Removed 2026-03-18 as part of final-view duplication hard-kill pass.
 
 function parseProfilePayload(payload: CalendarProfileInput): {
   baseline_score?: number | null;

@@ -9,9 +9,10 @@
  * - Server-authoritative timing
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, type NextFunction } from "express";
 import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
 import { csrfGuard } from "../middleware/csrf";
+import { buildAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
@@ -20,6 +21,11 @@ import { z } from "zod";
 
 const router = Router();
 const csrfProtection = csrfGuard();
+const fullLengthMutatingGetAllowedOrigins = buildAllowedOrigins({
+  nodeEnv: process.env.NODE_ENV,
+  corsOriginsCsv: process.env.CORS_ORIGINS,
+  csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
+}).normalized;
 
 // ============================================================================
 // VALIDATION SCHEMAS
@@ -41,6 +47,11 @@ const submitAnswerSchema = z.object({
   client_attempt_id: z.string().uuid().optional(),
 });
 
+const calculatorStateSchema = z.object({
+  calculator_state: z.unknown().nullable().optional(),
+  client_instance_id: z.string().uuid().optional(),
+});
+
 function sendRouteError(
   req: Request,
   res: Response,
@@ -57,6 +68,32 @@ function sendRouteError(
 
 function isClientInstanceConflict(message: string): boolean {
   return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
+}
+
+function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction) {
+  const origin = req.headers.origin ? String(req.headers.origin) : "";
+  const referer = req.headers.referer ? String(req.headers.referer) : "";
+
+  if (!origin && !referer) {
+    return sendRouteError(req, res, 403, "csrf_blocked", {
+      message: "Cross-site request blocked by CSRF protection",
+    });
+  }
+
+  const originNorm = origin ? normalizeOrigin(origin) : "";
+  const refererNorm = referer ? normalizeOrigin(referer) : "";
+  const allowed =
+    (originNorm && fullLengthMutatingGetAllowedOrigins.has(originNorm)) ||
+    (refererNorm && fullLengthMutatingGetAllowedOrigins.has(refererNorm));
+
+  if (allowed) {
+    return next();
+  }
+
+  return sendRouteError(req, res, 403, "csrf_blocked", {
+    message: "Cross-site request blocked by CSRF protection",
+    origin: origin || null,
+  });
 }
 // ============================================================================
 // ROUTES
@@ -123,7 +160,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Reques
  * - Returns only user's own sessions
  * - No answers/explanations in response (anti-leak)
  */
-router.get("/sessions/current", requireSupabaseAuth, async (req: Request, res: Response) => {
+router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -273,6 +310,69 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, 
     return sendRouteError(req, res, 500, "Internal error");
   }
 });
+
+/**
+ * POST /api/full-length/sessions/:sessionId/modules/:moduleId/calculator-state
+ * Persist module-scoped calculator state for math modules.
+ */
+router.post(
+  "/sessions/:sessionId/modules/:moduleId/calculator-state",
+  requireSupabaseAuth,
+  csrfProtection,
+  async (req: Request, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+
+      const { sessionId, moduleId } = req.params;
+      if (!sessionId || !moduleId) {
+        return sendRouteError(req, res, 400, "sessionId and moduleId required");
+      }
+
+      const parsed = calculatorStateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return sendRouteError(req, res, 400, "Invalid request body", { details: parsed.error.errors });
+      }
+
+      await fullLengthExamService.persistModuleCalculatorState({
+        sessionId,
+        moduleId,
+        userId: user.id,
+        calculatorState: parsed.data.calculator_state ?? null,
+        clientInstanceId: parsed.data.client_instance_id,
+      });
+
+      return res.json({ success: true });
+    } catch (error: unknown) {
+      console.error("[FULL-LENGTH] Persist calculator state error:", error);
+      const message = error instanceof Error ? error.message : "";
+
+      if (message.includes("not found") || message.includes("access denied")) {
+        return sendRouteError(req, res, 404, "Session not found");
+      }
+
+      if (message.includes("only available for math modules")) {
+        return sendRouteError(req, res, 400, "Invalid module state");
+      }
+
+      if (message.includes("Invalid calculator state payload")) {
+        return sendRouteError(req, res, 400, "Invalid request body");
+      }
+
+      if (message.includes("Session is not active")) {
+        return sendRouteError(req, res, 400, "Invalid exam state");
+      }
+
+      if (isClientInstanceConflict(message)) {
+        return sendRouteError(req, res, 409, "Session client instance conflict");
+      }
+
+      return sendRouteError(req, res, 500, "Internal error");
+    }
+  }
+);
 
 /**
  * POST /api/full-length/sessions/:sessionId/module/submit
