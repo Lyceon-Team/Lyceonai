@@ -22,15 +22,16 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import QuestionRenderer from "@/components/question-renderer";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
+import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { 
   Clock, 
-  ChevronLeft, 
   ChevronRight, 
   CheckCircle2, 
   AlertCircle,
   Coffee,
   Trophy,
-  ArrowRight
+  ArrowRight,
+  Share2
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -136,6 +137,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<CompleteExamResult | null>(null);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = useState(false);
+  const [isReferenceOpen, setIsReferenceOpen] = useState(false);
   const [calculatorStatesByModule, setCalculatorStatesByModule] = useState<Record<string, unknown>>({});
   const calculatorPersistTimerRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -424,6 +426,44 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       setSubmitting(false);
     }
   }, [sessionId, toast]);
+
+  const shareResults = useCallback(async () => {
+    if (!results) return;
+
+    const text = `I just completed a full-length SAT run on Lyceon: ${results.overallScore.totalCorrect}/${results.overallScore.totalQuestions} correct (${results.overallScore.percentageCorrect.toFixed(1)}%).`;
+
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({
+          title: "Lyceon SAT Results",
+          text,
+        });
+        return;
+      }
+
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        toast({
+          title: "Results copied",
+          description: "Your exam summary was copied to the clipboard.",
+        });
+        return;
+      }
+
+      toast({
+        title: "Sharing unavailable",
+        description: "Your browser does not support native share or clipboard.",
+      });
+    } catch (error) {
+      const maybeAbort = error as { name?: string };
+      if (maybeAbort?.name === "AbortError") return;
+      toast({
+        variant: "destructive",
+        title: "Unable to share",
+        description: "Please try again.",
+      });
+    }
+  }, [results, toast]);
   
   // ============================================================================
   // AUTO-SUBMIT ON TIME EXPIRY
@@ -497,89 +537,81 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   if (results) {
     return (
       <AppShell>
-        <div className="container mx-auto px-4 py-8 max-w-5xl">
+        <div className="container mx-auto px-4 py-8 max-w-6xl">
           <div className="text-center mb-8">
-            <Trophy className="h-20 w-20 text-yellow-500 mx-auto mb-4" />
-            <h1 className="text-3xl font-bold mb-2">Exam Complete!</h1>
-            <p className="text-muted-foreground">
-              Great job completing the full-length SAT exam
-            </p>
+            <Trophy className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-3xl font-bold tracking-tight mb-2">Exam Complete</h1>
+            <p className="text-muted-foreground">Results below reflect your completed runtime session data.</p>
           </div>
-          
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle>Overall Score</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center mb-6">
-                <div className="text-6xl font-bold text-primary mb-2">
-                  {results.overallScore.percentageCorrect.toFixed(1)}%
-                </div>
-                <p className="text-muted-foreground">
-                  {results.overallScore.totalCorrect} / {results.overallScore.totalQuestions} correct
-                </p>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-6">
+
+          <Card className="mb-6 bg-card/90 border-border/60">
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap items-start justify-between gap-6 mb-6">
                 <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Overall</p>
+                  <div className="text-6xl font-bold text-primary mb-1">
+                    {results.overallScore.percentageCorrect.toFixed(1)}%
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {results.overallScore.totalCorrect} / {results.overallScore.totalQuestions} correct
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={shareResults}>
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share Results
+                  </Button>
+                  <Button asChild>
+                    <Link href="/dashboard">Return to Dashboard</Link>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-5">
+                <div className="rounded-xl bg-secondary/50 p-5">
                   <h3 className="font-semibold mb-4">Reading & Writing</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span>Module 1:</span>
-                      <span className="font-medium">
-                        {results.rwScore.module1.correct} / {results.rwScore.module1.total}
-                      </span>
+                      <span>Module 1</span>
+                      <span className="font-medium">{results.rwScore.module1.correct} / {results.rwScore.module1.total}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Module 2:</span>
-                      <span className="font-medium">
-                        {results.rwScore.module2.correct} / {results.rwScore.module2.total}
-                      </span>
+                      <span>Module 2</span>
+                      <span className="font-medium">{results.rwScore.module2.correct} / {results.rwScore.module2.total}</span>
                     </div>
-                    <div className="flex justify-between font-semibold pt-2 border-t">
-                      <span>Total:</span>
-                      <span>
-                        {results.rwScore.totalCorrect} / {results.rwScore.totalQuestions}
-                      </span>
+                    <div className="flex justify-between font-semibold pt-2 border-t border-border/50">
+                      <span>Total</span>
+                      <span>{results.rwScore.totalCorrect} / {results.rwScore.totalQuestions}</span>
                     </div>
                   </div>
                 </div>
-                
-                <div>
+
+                <div className="rounded-xl bg-secondary/50 p-5">
                   <h3 className="font-semibold mb-4">Math</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span>Module 1:</span>
-                      <span className="font-medium">
-                        {results.mathScore.module1.correct} / {results.mathScore.module1.total}
-                      </span>
+                      <span>Module 1</span>
+                      <span className="font-medium">{results.mathScore.module1.correct} / {results.mathScore.module1.total}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Module 2:</span>
-                      <span className="font-medium">
-                        {results.mathScore.module2.correct} / {results.mathScore.module2.total}
-                      </span>
+                      <span>Module 2</span>
+                      <span className="font-medium">{results.mathScore.module2.correct} / {results.mathScore.module2.total}</span>
                     </div>
-                    <div className="flex justify-between font-semibold pt-2 border-t">
-                      <span>Total:</span>
-                      <span>
-                        {results.mathScore.totalCorrect} / {results.mathScore.totalQuestions}
-                      </span>
+                    <div className="flex justify-between font-semibold pt-2 border-t border-border/50">
+                      <span>Total</span>
+                      <span>{results.mathScore.totalCorrect} / {results.mathScore.totalQuestions}</span>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button variant="outline" onClick={onExit || (() => (window.location.href = "/full-test"))}>
+                  Start New Exam
+                </Button>
+              </div>
             </CardContent>
           </Card>
-          
-          <div className="flex gap-4 justify-center">
-            <Button asChild>
-              <Link href="/dashboard">Return to Dashboard</Link>
-            </Button>
-            <Button variant="outline" onClick={onExit || (() => window.location.href = "/full-test")}>
-              Start New Exam
-            </Button>
-          </div>
         </div>
       </AppShell>
     );
@@ -717,49 +749,57 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           <Progress value={progressPercent} className="h-2" />
         </div>
         
-        {/* Question */}
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <QuestionRenderer
-              question={{
-                id: currentQuestion.id,
-                stem: currentQuestion.stem,
-                question_type: "multiple_choice",
-                section: currentQuestion.section,
-                options: currentQuestion.options,
-              }}
-              selectedAnswer={selectedAnswer}
-              onSelectAnswer={setSelectedAnswer}
-              freeResponseAnswer=""
-              onFreeResponseAnswerChange={() => {}}
-              showResult={false}
-              disabled={submitting}
-            />
-          </CardContent>
-        </Card>
-
-        {isMathModule && (
-          <Card className="mb-6">
-            <CardContent className="pt-4">
-              <div className="mb-3 flex items-center justify-end">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setIsCalculatorExpanded((prev) => !prev)}
-                  aria-expanded={isCalculatorExpanded}
-                  data-testid="full-length-calculator-toggle"
-                >
-                  {isCalculatorExpanded ? "Hide Calculator" : "Calculator"}
-                </Button>
-              </div>
-              <DesmosCalculator
-                expanded={isCalculatorExpanded}
-                initialState={calculatorState}
-                onStateChange={handleCalculatorStateChange}
+        <div className={`mb-6 ${isMathModule && isCalculatorExpanded ? "grid lg:grid-cols-2 gap-6" : "space-y-6"}`}>
+          {/* Question */}
+          <Card>
+            <CardContent className="pt-6">
+              <QuestionRenderer
+                question={{
+                  id: currentQuestion.id,
+                  stem: currentQuestion.stem,
+                  question_type: "multiple_choice",
+                  section: currentQuestion.section,
+                  options: currentQuestion.options,
+                }}
+                selectedAnswer={selectedAnswer}
+                onSelectAnswer={setSelectedAnswer}
+                freeResponseAnswer=""
+                onFreeResponseAnswerChange={() => {}}
+                showResult={false}
+                disabled={submitting}
               />
             </CardContent>
           </Card>
-        )}
+
+          {isMathModule && (
+            <Card>
+              <CardContent className="pt-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Calculator</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" type="button" onClick={() => setIsReferenceOpen(true)}>
+                      Reference Sheet
+                    </Button>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+                      aria-expanded={isCalculatorExpanded}
+                      data-testid="full-length-calculator-toggle"
+                    >
+                      {isCalculatorExpanded ? "Hide Calculator" : "Open Calculator"}
+                    </Button>
+                  </div>
+                </div>
+                <DesmosCalculator
+                  expanded={isCalculatorExpanded}
+                  initialState={calculatorState}
+                  onStateChange={handleCalculatorStateChange}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
         
         {/* Navigation */}
         <div className="flex justify-between items-center">
@@ -811,6 +851,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           </div>
         )}
       </div>
+      <MathReferenceSheet open={isReferenceOpen} onOpenChange={setIsReferenceOpen} />
     </AppShell>
   );
 }

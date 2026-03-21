@@ -189,16 +189,17 @@ export default function UserProfile() {
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 max-w-6xl">
         {/* Page Header */}
         <div className="mb-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Account Center</p>
           <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
             Profile & Settings
           </h1>
           <p className="text-muted-foreground">
-            Manage your account, track your progress, and customize your experience
+            Manage your account identity, guardian linking, and current runtime-backed settings.
           </p>
         </div>
         {/* Profile Header */}
         {profileUser && (
-          <PageCard className="mb-8">
+          <PageCard className="mb-8 bg-card/80 border-border/60">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
               <div className="relative">
                 <Avatar className="h-24 w-24">
@@ -273,7 +274,7 @@ export default function UserProfile() {
 
         {/* Profile Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
             <TabsTrigger value="profile" data-testid="tab-profile">
               <User className="h-4 w-4 mr-2" />
               Profile
@@ -456,8 +457,8 @@ export default function UserProfile() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Detailed progress tracking is currently being rebuilt.
-                Visit the Dashboard for your current stats and progress insights.
+                Detailed progress tracking on this page is intentionally disabled until the rebuild is complete.
+                Visit the Dashboard for the current live KPI truth.
               </AlertDescription>
             </Alert>
 
@@ -542,7 +543,7 @@ export default function UserProfile() {
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Notification settings are coming soon. We'll let you know when this feature is available!
+                    Notification settings UI is not yet wired to a persistent backend contract.
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -559,7 +560,7 @@ export default function UserProfile() {
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Data management features (export, reset, delete) are coming soon.
+                    Data export/reset/delete controls are intentionally withheld until safe ownership flows are finalized.
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -594,8 +595,8 @@ export default function UserProfile() {
                 <Alert>
                   <Star className="h-4 w-4" />
                   <AlertDescription>
-                    Premium subscriptions coming soon! Upgrade to unlock unlimited practice tests,
-                    detailed analytics, and personalized study plans.
+                    Billing management is currently handled outside this settings surface.
+                    When in-product controls are fully runtime-backed, they will appear here.
                   </AlertDescription>
                 </Alert>
               </CardContent>

@@ -192,14 +192,15 @@ export default function GuardianDashboard() {
 
   return (
     <SubscriptionPaywall>
-      <div className="min-h-screen bg-[#FFFAEF] p-6">
+      <div className="min-h-screen bg-background p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="flex items-center justify-between gap-3 mb-8">
             <div className="flex items-center gap-3">
               <Users className="h-8 w-8 text-[#0F2E48]" />
               <div>
-                <h1 className="text-3xl font-bold text-[#0F2E48]">Guardian Dashboard</h1>
-                <p className="text-[#0F2E48]/60 text-sm">Monitor your student's SAT preparation progress</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0F2E48]/60 mb-1">Guardian Portal</p>
+                <h1 className="text-3xl font-bold text-[#0F2E48] tracking-tight">Student Performance Data</h1>
+                <p className="text-[#0F2E48]/60 text-sm">Read-only reporting from linked student runtime records.</p>
               </div>
             </div>
             <ManageSubscriptionButton />
@@ -226,7 +227,26 @@ export default function GuardianDashboard() {
             </Alert>
           )}
 
-        <Card className="bg-white border-[#0F2E48]/10">
+          {students.length === 0 && (
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <CardTitle className="text-[#0F2E48]">Connection Required</CardTitle>
+                <CardDescription>
+                  Enter a valid 8-character student link code to activate guardian reporting.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-3 text-sm text-[#0F2E48]/80">
+                <div className="rounded-lg bg-secondary/50 p-3">
+                  Progress summaries appear after a student is linked.
+                </div>
+                <div className="rounded-lg bg-secondary/50 p-3">
+                  Calendar access is read-only and respects student ownership.
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+        <Card className="bg-card border-border/60">
           <CardHeader>
             <CardTitle className="text-[#0F2E48] flex items-center gap-2">
               <Plus className="h-5 w-5" />
@@ -278,7 +298,7 @@ export default function GuardianDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white border-[#0F2E48]/10">
+        <Card className="bg-card border-border/60">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-[#0F2E48]">Linked Students</CardTitle>
@@ -334,7 +354,7 @@ export default function GuardianDashboard() {
                     className={`p-4 rounded-lg border transition-colors ${
                       selectedStudentId === student.id
                         ? 'bg-[#0F2E48] text-white border-[#0F2E48]'
-                        : 'bg-[#FFFAEF] border-[#0F2E48]/20 hover:border-[#0F2E48]/40'
+                        : 'bg-secondary/50 border-[#0F2E48]/20 hover:border-[#0F2E48]/40'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -381,7 +401,7 @@ export default function GuardianDashboard() {
         </Card>
 
         {selectedStudentId && (
-          <Card className="bg-white border-[#0F2E48]/10">
+          <Card className="bg-card border-border/60">
             <CardHeader>
               <CardTitle className="text-[#0F2E48]">Student Progress</CardTitle>
               <CardDescription>

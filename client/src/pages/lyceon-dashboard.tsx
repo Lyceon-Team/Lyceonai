@@ -1,162 +1,217 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { AppShell } from "@/components/layout/app-shell";
-import { PageCard } from "@/components/common/page-card";
-import { SectionHeader } from "@/components/common/section-header";
-import { LoadingSkeleton } from "@/components/common/loading-skeleton";
-import { EmptyState } from "@/components/common/empty-state";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calendar, Target, TrendingUp, Zap, ArrowRight, Brain, Award, Flame, Play, Calculator, MessageCircle } from "lucide-react";
-import { Link, useLocation } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
-import { ScoreProjectionCard } from "@/components/progress/ScoreProjectionCard";
-import { getCalendarMonth, getCalendarProfile, StudyProfile, StudyPlanDay } from "@/lib/calendarApi";
 import { DateTime } from "luxon";
+import { Link } from "wouter";
+import { AppShell } from "@/components/layout/app-shell";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ArrowRight,
+  Calendar,
+  FileText,
+  MessageCircle,
+  Play,
+  Target,
+  TrendingUp,
+} from "lucide-react";
+import {
+  getCalendarMonth,
+  getCalendarProfile,
+  type StudyPlanDay,
+  type StudyProfile,
+} from "@/lib/calendarApi";
+import {
+  fetchScoreProjection,
+  getConfidenceLabel,
+  type ProjectionResponse,
+} from "@/lib/projectionApi";
 
-interface ProgressTotals {
-  correct: number;
-  incorrect: number;
-  skipped: number;
+interface KpiExplanation {
+  ruleId: string;
+  whatThisMeans: string;
+  whyThisChanged: string;
+  whatToDoNext: string;
 }
 
-interface SectionTotals {
-  correct: number;
-  incorrect: number;
-  skipped: number;
-}
-
-interface CompetencySummary {
-  key: string;
-  section: string | null;
-  score: number;
-  incorrectCount?: number | null;
-}
-
-interface ProgressData {
-  totals: ProgressTotals;
-  bySection: Record<string, SectionTotals>;
-  weakestCompetencies: CompetencySummary[];
-  improvingCompetencies: CompetencySummary[];
-  accuracy: number;
-  currentScore: number;
-  totalAttempts: number;
-}
-
-interface RecentActivity {
+interface KpiMetric {
   id: string;
-  type: 'practice' | 'test' | 'tutor';
-  title: string;
-  timestamp: Date;
-  result?: string;
+  label: string;
+  kind: "official" | "weighted" | "diagnostic";
+  unit: "count" | "percent" | "minutes" | "seconds" | "score";
+  value: number | null;
+  explanation: KpiExplanation;
+}
+
+interface KpiResponse {
+  timezone: string;
+  week: {
+    practiceSessions: number;
+    questionsSolved: number;
+    accuracy: number;
+    explanations?: Record<string, KpiExplanation>;
+  };
+  recency: {
+    window: number;
+    totalAttempts: number;
+    accuracy: number;
+    avgSecondsPerQuestion: number;
+    explanations?: Record<string, KpiExplanation>;
+  } | null;
+  metrics?: KpiMetric[];
+  gating?: {
+    historicalTrends?: {
+      allowed: boolean;
+      requiredPlan: "paid";
+      reason: string;
+    };
+  };
+}
+
+function ScoreSnapshotRow({
+  label,
+  value,
+  max,
+}: {
+  label: string;
+  value: number | null;
+  max: number;
+}) {
+  if (value === null) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium">{label}</span>
+          <span className="text-muted-foreground">No data</span>
+        </div>
+        <div className="h-2 rounded-full bg-muted/60" />
+      </div>
+    );
+  }
+
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm gap-3">
+        <span className="font-medium truncate">{label}</span>
+        <span className="font-semibold shrink-0">{value.toLocaleString()}</span>
+      </div>
+      <div className="h-2 rounded-full bg-muted/60 overflow-hidden">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
 }
 
 export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
-  const [, navigate] = useLocation();
 
-  // Progress and activity data removed - endpoints not implemented
-  // const { data: progressData, isLoading: progressLoading } = useQuery<ProgressData>({
-  //   queryKey: ['/api/progress'],
-  //   enabled: !!user,
-  // });
-  // const { data: recentActivity, isLoading: activityLoading } = useQuery<RecentActivity[]>({
-  //   queryKey: ['/api/recent-activity'],
-  //   enabled: !!user,
-  // });
-
-  // Calendar profile query (provides timezone, baseline, target, exam date)
-  const { data: profileData, isLoading: profileLoading, error: profileError } = useQuery<StudyProfile | null>({
-    queryKey: ['calendar-profile'],
+  const { data: profileData, error: profileError } = useQuery<StudyProfile | null>({
+    queryKey: ["calendar-profile"],
     queryFn: getCalendarProfile,
     enabled: !!user,
     staleTime: 60000,
   });
 
-  // Derive timezone from profile (default: America/Chicago)
-  const userTimezone = profileData?.timezone || 'America/Chicago';
-  const todayISO = DateTime.now().setZone(userTimezone).toISODate()!;
+  const userTimezone = profileData?.timezone || "America/Chicago";
+  const nowInUserTz = DateTime.now().setZone(userTimezone);
+  const todayISO = nowInUserTz.toISODate()!;
+  const nextWeekISO = nowInUserTz.plus({ days: 7 }).toISODate()!;
 
-  const { data: calendarData, isLoading: streakLoading, error: calendarError } = useQuery({
-    queryKey: ['calendar-month', userTimezone],
+  const { data: calendarData, isLoading: calendarLoading, error: calendarError } = useQuery({
+    queryKey: ["calendar-month", userTimezone],
     queryFn: async () => {
-      const now = DateTime.now().setZone(userTimezone);
-      const start = now.startOf('month').toISODate() ?? now.toISODate()!;
-      const end = now.endOf('month').toISODate() ?? now.toISODate()!;
+      const start = nowInUserTz.startOf("month").toISODate() ?? nowInUserTz.toISODate()!;
+      const end = nowInUserTz.endOf("month").toISODate() ?? nowInUserTz.toISODate()!;
       return getCalendarMonth(start, end);
     },
     enabled: !!user,
     refetchInterval: 60000,
   });
 
-  // Find today's plan day from calendar data
-  const todayPlan: StudyPlanDay | undefined = calendarData?.days?.find(
-    (day) => day.day_date === todayISO
-  );
-
-  // Weekly KPIs query
-  interface KpiResponse {
-    timezone: string;
-    week: {
-      practiceSessions: number;
-      questionsSolved: number;
-      accuracy: number;
-    };
-    recency: {
-      window: number;
-      totalAttempts: number;
-      accuracy: number;
-      avgSecondsPerQuestion: number;
-    };
-  }
-
   const { data: kpiData, isLoading: kpiLoading, error: kpiError } = useQuery<KpiResponse>({
-    queryKey: ['/api/progress/kpis'],
+    queryKey: ["/api/progress/kpis"],
     enabled: !!user,
     refetchInterval: 60000,
   });
 
-  // Derive focus areas from weakest competencies (removed - API not implemented)
-  // const focusAreas = progressData?.weakestCompetencies ?? [];
-  // const hasFocusAreas = !!focusAreas && focusAreas.length > 0;
+  const {
+    data: projectionData,
+    isLoading: projectionLoading,
+    error: projectionError,
+  } = useQuery<ProjectionResponse>({
+    queryKey: ["/api/progress/projection"],
+    queryFn: fetchScoreProjection,
+    enabled: !!user,
+    staleTime: 60000,
+  });
 
-  // Derive values from calendar profile (deterministic)
-  const baselineScore = profileData?.baseline_score ?? 400;
+  const projectionErrorMessage = projectionError instanceof Error ? projectionError.message : "";
+  const projectionPremiumLocked =
+    projectionErrorMessage.includes("402") || projectionErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+
+  const todayPlan: StudyPlanDay | undefined = useMemo(
+    () => calendarData?.days?.find((day) => day.day_date === todayISO),
+    [calendarData?.days, todayISO],
+  );
+
+  const upcomingMilestones = useMemo(
+    () =>
+      (calendarData?.days ?? []).filter(
+        (day) => day.day_date >= todayISO && day.day_date <= nextWeekISO && day.planned_minutes > 0,
+      ).length,
+    [calendarData?.days, nextWeekISO, todayISO],
+  );
+
+  const metricById = useMemo(
+    () => new Map((kpiData?.metrics ?? []).map((metric) => [metric.id, metric])),
+    [kpiData?.metrics],
+  );
+
+  const weekMinutes = Number(metricById.get("week_minutes")?.value ?? 0);
+  const weekStudyHours = (weekMinutes / 60).toFixed(1);
+  const weekAccuracy = Number(kpiData?.week?.accuracy ?? 0);
+  const weekQuestions = Number(kpiData?.week?.questionsSolved ?? 0);
+  const weekSessions = Number(kpiData?.week?.practiceSessions ?? 0);
+  const weekMinutesChange =
+    metricById.get("week_minutes")?.explanation?.whyThisChanged ?? "Current 7-day local window.";
+  const weekAccuracyChange =
+    metricById.get("week_accuracy")?.explanation?.whyThisChanged ?? "Current 7-day local window.";
+
+  const baselineScore = profileData?.baseline_score ?? null;
   const targetScore = profileData?.target_score ?? null;
-  const examDateStr = profileData?.exam_date ?? null;
-  const examDate = examDateStr ? DateTime.fromISO(examDateStr) : null;
-  const daysUntilTest = examDate
-    ? Math.ceil(examDate.diff(DateTime.now(), 'days').days)
-    : null;
-
-  // Today's plan progress
-  const plannedMinutes = todayPlan?.planned_minutes ?? 0;
-  const completedMinutes = todayPlan?.completed_minutes ?? 0;
-  const minutesProgress = plannedMinutes > 0 ? Math.min(1, completedMinutes / plannedMinutes) * 100 : 0;
+  const examDate = profileData?.exam_date ? DateTime.fromISO(profileData.exam_date).setZone(userTimezone) : null;
   const streakCurrent = calendarData?.streak?.current ?? 0;
 
   const getGreeting = () => {
-    const hour = new Date().getHours();
+    const hour = nowInUserTz.hour;
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
   };
 
+  const nextMilestone = (() => {
+    if (todayPlan && todayPlan.planned_minutes > 0) {
+      return `Complete today's ${todayPlan.planned_minutes}-minute study plan.`;
+    }
+    if (examDate?.isValid) {
+      return `Stay on track for your ${examDate.toFormat("MMM d")} SAT date.`;
+    }
+    return "Complete one focused SAT practice block today.";
+  })();
+
   return (
     <AppShell showFooter>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-            {getGreeting()}, {user?.display_name || 'Student'}
+        <div className="mb-10">
+          <h1 className="text-3xl md:text-4xl font-semibold text-foreground mb-2 tracking-tight" data-testid="page-title">
+            Welcome back, {user?.display_name || "Student"}
           </h1>
-          <p className="text-muted-foreground">
-            {daysUntilTest !== null && daysUntilTest > 0
-              ? `Your test is in ${daysUntilTest} days. Let's keep the momentum going!`
-              : "Ready to ace your SAT? Let's practice!"
-            }
+          <p className="text-muted-foreground text-base">
+            {getGreeting()}. Your next milestone: <span className="text-foreground font-medium">{nextMilestone}</span>
           </p>
         </div>
 
@@ -168,285 +223,278 @@ export default function LyceonDashboard() {
           </Alert>
         )}
 
-        {/* FlowCards Featured Hero */}
-        <Card className="relative overflow-hidden border-0 bg-background from-purple-900 via-pink-900 to-indigo-900 mb-8" data-testid="card-flowcards-hero">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(120,119,198,0.3),transparent),radial-gradient(circle_at_80%_20%,rgba(255,119,198,0.3),transparent)]"></div>
-          <CardContent className="relative p-6 sm:p-8">
-            <div className="flex flex-col lg:flex-row items-center gap-6">
-              {/* Left: Content */}
-              <div className="flex-1 text-center lg:text-left">
-                <div className="flex items-center justify-center lg:justify-start gap-2 mb-3">
-                  <div className="p-2 bg-white/10 backdrop-blur-sm rounded-full">
-                    <Zap className="h-5 w-5 text-pink-400" />
-                  </div>
-                  <span className="text-sm font-medium text-pink-300 uppercase tracking-wide">Featured</span>
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
+          <Card className="lg:col-span-8 border-border/40 bg-card">
+            <CardContent className="p-6 sm:p-8">
+              <div className="space-y-8">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold">
+                    Weekly Progress Summary
+                  </p>
                 </div>
-                <h2 className="text-2xl lg:text-3xl font-bold text-white mb-3">
-                  FlowCards
-                </h2>
-                <p className="text-base text-white/80 mb-4 max-w-lg">
-                  TikTok-style SAT practice. Swipe through questions, build streaks, and master the SAT one card at a time.
-                </p>
-                <div className="flex flex-wrap justify-center lg:justify-start gap-3 mb-5">
-                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                    <Flame className="h-3.5 w-3.5 text-orange-400" />
-                    <span className="text-xs text-white">
-                      {streakLoading ? "..." : `${calendarData?.streak?.current || 0} Day Streak`}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                    <Zap className="h-3.5 w-3.5 text-yellow-400" />
-                    <span className="text-xs text-white">Auto-Submit</span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                    <MessageCircle className="h-3.5 w-3.5 text-blue-400" />
-                    <span className="text-xs text-white">AI Explanations</span>
-                  </div>
-                </div>
-                <div className="flex flex-wrap justify-center lg:justify-start gap-3">
-                  <Button
-                    size="lg"
-                    className="bg-white text-purple-900 hover:bg-white/90 font-semibold"
-                    data-testid="button-start-flowcards"
-                    asChild
-                  >
-                    <Link href="/flow-cards">
-                      <Play className="h-4 w-4 mr-2" />
-                      Start FlowCards
-                    </Link>
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="border-white/30 text-white hover:bg-white/10 hover:text-white"
-                    data-testid="button-flowcards-math"
-                    asChild
-                  >
-                    <Link href="/flow-cards?section=math">
-                      <Calculator className="h-4 w-4 mr-2" />
-                      Math Only
-                    </Link>
-                  </Button>
-                </div>
-              </div>
 
-              {/* Right: Preview Card Stack (hidden on mobile) */}
-              <div className="hidden lg:block relative w-48 h-64">
-                <div className="absolute top-3 left-3 w-full h-full bg-white/10 rounded-2xl transform rotate-6"></div>
-                <div className="absolute top-1.5 left-1.5 w-full h-full bg-white/20 rounded-2xl transform rotate-3"></div>
-                <div className="absolute inset-0 w-full h-full bg-white/95 rounded-2xl shadow-xl p-4 flex flex-col justify-between">
+                <div className="grid sm:grid-cols-2 gap-8">
                   <div>
-                    <div className="flex items-center gap-1.5 mb-3">
-                      <div className="px-1.5 py-0.5 bg-blue-100 rounded text-[10px] font-medium text-blue-600">Math</div>
-                      <div className="px-1.5 py-0.5 bg-yellow-100 rounded text-[10px] font-medium text-yellow-600">Medium</div>
-                    </div>
-                    <p className="text-gray-800 text-xs leading-relaxed">
-                      If 3x + 7 = 22, what is the value of x?
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-3">
+                      Study Hours (7d)
                     </p>
+                    {kpiLoading ? (
+                      <Skeleton className="h-10 w-28 mb-2" />
+                    ) : (
+                      <p className="text-5xl font-semibold text-foreground leading-none">{weekStudyHours}</p>
+                    )}
+                    <p className="text-sm text-muted-foreground mt-3">{weekMinutesChange}</p>
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600">A) 3</div>
-                    <div className="p-2 bg-indigo-100 rounded-lg text-xs text-indigo-700 font-medium border border-indigo-300">B) 5</div>
-                    <div className="p-2 bg-gray-50 rounded-lg text-xs text-gray-600">C) 7</div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground font-semibold mb-3">
+                      Accuracy (7d)
+                    </p>
+                    {kpiLoading ? (
+                      <Skeleton className="h-10 w-28 mb-2" />
+                    ) : (
+                      <p className="text-5xl font-semibold text-foreground leading-none">
+                        {weekQuestions > 0 ? `${weekAccuracy}%` : "-"}
+                      </p>
+                    )}
+                    <p className="text-sm text-muted-foreground mt-3">{weekAccuracyChange}</p>
                   </div>
+                </div>
+
+                <div className="pt-6 border-t border-border/50 flex flex-wrap gap-3">
+                  <Button asChild data-testid="button-dashboard-view-details">
+                    <Link href="/calendar">View Details</Link>
+                  </Button>
+                  <Button asChild variant="secondary" data-testid="button-dashboard-set-goal">
+                    <Link href="/calendar">Set Goal</Link>
+                  </Button>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        <div className="grid lg:grid-cols-3 gap-6 min-w-0">
-          {/* Left Column (2/3 width) */}
-          <div className="lg:col-span-2 space-y-6 min-w-0">
-            {/* Today's Focus Card */}
-            <PageCard
-              title="Today's Focus"
-              description="Your personalized practice plan for today"
-              className="border-2 border-primary/20 shadow-lg"
-            >
-              {(profileLoading || streakLoading) ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-24 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
+          <Card className="lg:col-span-4 border-0 bg-primary text-primary-foreground">
+            <CardContent className="p-6 sm:p-8 h-full flex flex-col justify-between gap-6">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] font-semibold text-primary-foreground/80">
+                  Predicted SAT Score
+                </p>
+                <p className="text-sm text-primary-foreground/70 mt-2">
+                  Based on weighted mastery evidence from live runtime data.
+                </p>
+              </div>
+
+              {projectionLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-12 w-48 bg-primary-foreground/20" />
+                  <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
-              ) : profileData === null ? (
-                <EmptyState
-                  title="Set up your study plan"
-                  description="Add your baseline score and test date to see your personalized plan."
-                />
+              ) : projectionPremiumLocked ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-primary-foreground/80">
+                    Score projection is a premium KPI surface.
+                  </p>
+                  <Button asChild variant="secondary" className="w-fit">
+                    <Link href="/">Upgrade to Premium</Link>
+                  </Button>
+                </div>
+              ) : projectionData ? (
+                <div className="space-y-4">
+                  <p className="text-5xl font-semibold leading-none tracking-tight">
+                    {projectionData.projection.range.low}-{projectionData.projection.range.high}
+                  </p>
+                  <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-primary-foreground/15 text-primary-foreground">
+                    {getConfidenceLabel(projectionData.projection.confidence)} confidence
+                  </div>
+                  <p className="text-xs text-primary-foreground/80">
+                    Based on {projectionData.totalQuestionsAttempted} attempted questions.
+                  </p>
+                </div>
               ) : (
-                <div className="space-y-6">
-                  {/* Score Overview + Streak */}
-                  <div className="grid sm:grid-cols-4 gap-4">
-                    <div className="flex items-center gap-3 p-4 rounded-lg bg-primary/5" data-testid="current-score">
-                      <div className="p-2 rounded-full bg-primary/10">
-                        <Award className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Current</p>
-                        <p className="text-2xl font-bold text-foreground">{baselineScore}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-4 rounded-lg bg-green-50" data-testid="target-score">
-                      <div className="p-2 rounded-full bg-green-100">
-                        <Target className="h-5 w-5 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Target</p>
-                        <p className="text-2xl font-bold text-foreground">{targetScore ?? "—"}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50" data-testid="test-date">
-                      <div className="p-2 rounded-full bg-amber-100">
-                        <Calendar className="h-5 w-5 text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Test Date</p>
-                        <p className="text-lg font-semibold text-foreground">
-                          {examDate ? examDate.toFormat('MMM d') : "—"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 p-4 rounded-lg bg-orange-50" data-testid="streak">
-                      <div className="p-2 rounded-full bg-orange-100">
-                        <Flame className="h-5 w-5 text-orange-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Streak</p>
-                        <p className="text-2xl font-bold text-foreground">{streakCurrent} days</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Minutes Progress Bar */}
-                  <div className="p-4 rounded-lg bg-muted/50 border">
-                    <div className="flex items-center justify-between gap-3 min-w-0 mb-2">
-                      <span className="text-sm font-medium min-w-0 truncate">Today's Progress</span>
-                      <span className="text-sm font-semibold text-primary shrink-0">{completedMinutes} / {plannedMinutes} min</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <Progress value={minutesProgress} className="w-full h-3" />
-                    </div>
-                    {plannedMinutes === 0 && (
-                      <p className="text-xs text-muted-foreground mt-2">No plan for today. Go to Calendar to generate one.</p>
-                    )}
-                  </div>
-
-                  {/* CTA */}
-                  <div className="flex flex-col sm:flex-row gap-3 min-w-0">
-                    <Button asChild className="w-full sm:flex-1 h-12 text-base font-medium" size="lg" data-testid="button-start-practice">
-                      <Link href="/practice">
-                        <Zap className="mr-2 h-5 w-5" />
-                        Start Today's Practice
-                      </Link>
-                    </Button>
-                    <Button asChild variant="outline" className="w-full sm:w-auto sm:flex-none h-12 text-base font-medium" size="lg" data-testid="button-calendar">
-                      <Link href="/calendar">
-                        <Calendar className="mr-2 h-4 w-4" />
-                        Calendar
-                      </Link>
-                    </Button>
-                  </div>
+                <div className="space-y-4">
+                  <p className="text-sm text-primary-foreground/80">
+                    Start practicing to unlock score projection.
+                  </p>
+                  <Button asChild variant="secondary" className="w-fit">
+                    <Link href="/practice">Start Practice</Link>
+                  </Button>
                 </div>
               )}
-            </PageCard>
+            </CardContent>
+          </Card>
+        </section>
 
-            {/* Score Projection */}
-            <ScoreProjectionCard />
-          </div>
+        <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-10">
+          <Link href="/practice">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <Play className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">Practice</h2>
+              <p className="text-sm text-muted-foreground">
+                {todayPlan?.planned_minutes ? `${todayPlan.planned_minutes} minutes planned today` : "Start a focused SAT block"}
+              </p>
+            </a>
+          </Link>
 
-          {/* Right Column (1/3 width) */}
-          <div className="space-y-6 min-w-0">
-            {/* Tutor Insights */}
-            <PageCard title="Lisa Insights">
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <div className="flex items-start gap-3">
-                    <Brain className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-muted-foreground">
-                      Personalized tutor recommendations are being rebuilt from backend KPI truth data.
-                    </p>
-                  </div>
+          <Link href="/full-test">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <FileText className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">Full-Length Exam</h2>
+              <p className="text-sm text-muted-foreground">Run a timed SAT simulation.</p>
+            </a>
+          </Link>
+
+          <Link href="/review-errors">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <Target className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">Review Errors</h2>
+              <p className="text-sm text-muted-foreground">
+                {weekQuestions > 0 ? "Analyze misses from your recent attempts." : "Complete practice first to populate your error queue."}
+              </p>
+            </a>
+          </Link>
+
+          <Link href="/calendar">
+            <a className="block rounded-xl border border-border/40 bg-card hover:bg-card/90 transition-colors p-6 min-h-[190px]">
+              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center mb-6">
+                <Calendar className="h-5 w-5" />
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight mb-1">Study Plan</h2>
+              <p className="text-sm text-muted-foreground">
+                {calendarLoading
+                  ? "Loading schedule..."
+                  : `${upcomingMilestones} planned study day${upcomingMilestones === 1 ? "" : "s"} in the next 7 days`}
+              </p>
+            </a>
+          </Link>
+        </section>
+
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <Card className="lg:col-span-7 border-border/40 bg-card">
+            <CardContent className="p-6 sm:p-8 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-3xl font-semibold tracking-tight">Score Trend Analysis</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Section breakdown from live projection truth.
+                  </p>
                 </div>
-
-                <Button asChild variant="outline" className="w-full" data-testid="button-ask-tutor">
-                  <Link href="/chat">
-                    Ask Lisa
+                <Button asChild variant="ghost" className="w-fit px-0">
+                  <Link href="/mastery">
+                    View Full Breakdown
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
               </div>
-            </PageCard>
 
-            {/* Focus Areas - Temporarily Disabled */}
-            <PageCard title="Focus Areas">
-              <EmptyState
-                title="Coming Soon"
-                description="Detailed progress tracking is being rebuilt. Continue practicing and we'll show your focus areas soon!"
-              />
-            </PageCard>
+              <div className="rounded-lg bg-muted/45 p-4 text-sm text-muted-foreground">
+                Historical score trend points are not currently exposed by this runtime contract. This card shows live snapshot values only.
+              </div>
 
-            {/* Next Topic */}
-            <PageCard title="Next Topic to Master">
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-muted/50 border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <TrendingUp className="h-4 w-4 text-primary" />
-                    </div>
-                    <p className="font-semibold text-sm">Topic recommendations coming soon</p>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    We are connecting this card to canonical mastery and weakness signals.
-                  </p>
+              {projectionLoading ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
+                  <Skeleton className="h-5 w-full" />
                 </div>
+              ) : projectionPremiumLocked ? (
+                <div className="rounded-lg bg-muted/45 p-5 space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Detailed score breakdown is locked behind paid KPI access.
+                  </p>
+                  <Button asChild variant="outline">
+                    <Link href="/">Upgrade to Premium</Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <ScoreSnapshotRow
+                    label="Composite"
+                    value={projectionData?.projection.composite ?? null}
+                    max={1600}
+                  />
+                  <ScoreSnapshotRow
+                    label="Reading & Writing"
+                    value={projectionData?.projection.rw ?? null}
+                    max={800}
+                  />
+                  <ScoreSnapshotRow
+                    label="Math"
+                    value={projectionData?.projection.math ?? null}
+                    max={800}
+                  />
+                </div>
+              )}
 
-                <Button asChild className="w-full" data-testid="button-practice-topic">
-                  <Link href="/practice">
-                    Practice Now
+              <div className="pt-4 border-t border-border/50 grid sm:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-lg bg-muted/35 p-3">
+                  <p className="text-muted-foreground">Current Baseline</p>
+                  <p className="font-semibold text-lg mt-1">{baselineScore ?? "-"}</p>
+                </div>
+                <div className="rounded-lg bg-muted/35 p-3">
+                  <p className="text-muted-foreground">Target Score</p>
+                  <p className="font-semibold text-lg mt-1">{targetScore ?? "-"}</p>
+                </div>
+                <div className="rounded-lg bg-muted/35 p-3">
+                  <p className="text-muted-foreground">Current Streak</p>
+                  <p className="font-semibold text-lg mt-1">{streakCurrent} day{streakCurrent === 1 ? "" : "s"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-5 border-border/40 bg-card">
+            <CardContent className="p-6 sm:p-8 space-y-6 h-full">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-3xl font-semibold tracking-tight">Personalized Recommendations</h2>
+                <span className="text-[10px] tracking-[0.18em] uppercase font-semibold text-muted-foreground bg-muted rounded-full px-2 py-1">
+                  Alpha
+                </span>
+              </div>
+
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                The Stitch mock shows placeholder recommendation cards. In Lyceon runtime, this feed is still rebuilding against live KPI truth sources, so we show transparent status instead of fake suggestions.
+              </p>
+
+              <div className="rounded-lg bg-muted/45 p-4 space-y-2">
+                <p className="text-sm font-medium">Current live signals</p>
+                <p className="text-sm text-muted-foreground">{weekSessions} sessions in the last 7 days.</p>
+                <p className="text-sm text-muted-foreground">
+                  {weekQuestions} questions solved this week{weekQuestions > 0 ? ` at ${weekAccuracy}% accuracy` : "."}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {examDate?.isValid ? `Exam date set for ${examDate.toFormat("MMM d, yyyy")}.` : "Exam date not set yet."}
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-card border border-border/60 p-4">
+                <p className="text-sm font-medium italic text-foreground">"Rebuilding from live data"</p>
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mt-2">
+                  Recommendation model wiring in progress
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button asChild data-testid="button-dashboard-ask-lisa">
+                  <Link href="/chat">
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Ask Lisa
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/calendar">
+                    <TrendingUp className="h-4 w-4 mr-2" />
+                    Open Study Plan
                   </Link>
                 </Button>
               </div>
-            </PageCard>
-
-            {/* Quick Stats */}
-            <PageCard title="This Week">
-              {kpiLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-6 w-full" />
-                  <Skeleton className="h-6 w-full" />
-                  <Skeleton className="h-6 w-full" />
-                </div>
-              ) : kpiError ? (
-                <div className="text-sm text-destructive">Unable to load weekly stats.</div>
-              ) : !kpiData ? (
-                <div className="text-sm text-muted-foreground">No weekly stats yet.</div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Practice Sessions</span>
-                    <span className="text-2xl font-bold shrink-0">
-                      {kpiData.week?.practiceSessions ?? 0}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Questions Solved</span>
-                    <span className="text-2xl font-bold shrink-0">
-                      {kpiData.week?.questionsSolved ?? 0}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 min-w-0">
-                    <span className="text-sm text-muted-foreground min-w-0 truncate">Accuracy</span>
-                    <span className="text-2xl font-bold text-green-600 shrink-0">
-                      {kpiData.week?.questionsSolved === 0 ? "—" : `${kpiData.week?.accuracy ?? 0}%`}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </PageCard>
-          </div>
-        </div>
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </AppShell>
   );

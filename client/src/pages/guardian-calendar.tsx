@@ -191,14 +191,14 @@ export default function GuardianCalendarPage() {
 
   if (!studentId) {
     return (
-      <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <p className="text-[#0F2E48]">No student selected</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FFFAEF] p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-4 mb-6">
           <Link href="/guardian">
@@ -211,8 +211,9 @@ export default function GuardianCalendarPage() {
 
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#0F2E48]">{studentName}'s Calendar</h1>
-            <p className="text-[#0F2E48]/60 text-sm">Read-only view of study progress</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0F2E48]/60 mb-1">Guardian Calendar</p>
+            <h1 className="text-2xl font-bold text-[#0F2E48] tracking-tight">{studentName}'s Calendar</h1>
+            <p className="text-[#0F2E48]/60 text-sm">Read-only view of study progress and schedule status.</p>
           </div>
           {streak.current > 0 && (
             <div className="flex items-center gap-2 bg-orange-100 px-3 py-2 rounded-lg">
@@ -222,7 +223,7 @@ export default function GuardianCalendarPage() {
           )}
         </div>
 
-        <Card className="bg-white border-[#0F2E48]/10">
+        <Card className="bg-card border-border/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <Button variant="ghost" size="sm" onClick={goToPrevMonth}>
@@ -300,7 +301,7 @@ export default function GuardianCalendarPage() {
         </Card>
 
         {selectedDay && selectedDay.isCurrentMonth && (
-          <Card className="bg-white border-[#0F2E48]/10">
+          <Card className="bg-card border-border/60">
             <CardHeader>
               <CardTitle className="text-[#0F2E48]">
                 {new Date(selectedDay.dateKey + 'T12:00:00').toLocaleDateString("en-US", {
