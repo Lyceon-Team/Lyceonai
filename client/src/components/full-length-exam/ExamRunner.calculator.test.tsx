@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ExamRunner from "./ExamRunner";
 
 const queryMocks = vi.hoisted(() => ({
@@ -180,68 +180,67 @@ describe("ExamRunner calculator behavior", () => {
   });
 
   it("preserves in-memory calculator state per module across navigation within loaded session", async () => {
-    queryMocks.apiRequest
-      .mockResolvedValueOnce(
-        response(
-          stateFixture({
-            section: "math",
-            moduleIndex: 1,
-            moduleId: "math-1",
-            questionId: "m1-q1",
-            stem: "Math Q1",
-            answeredCount: 0,
-            totalCount: 3,
-          }),
-        ),
-      )
-      .mockResolvedValueOnce(response({ ok: true }))
-      .mockResolvedValueOnce(
-        response(
-          stateFixture({
-            section: "math",
-            moduleIndex: 1,
-            moduleId: "math-1",
-            questionId: "m1-q2",
-            stem: "Math Q2",
-            answeredCount: 1,
-            totalCount: 3,
-          }),
-        ),
-      )
-      .mockResolvedValueOnce(response({ ok: true }))
-      .mockResolvedValueOnce(
-        response(
-          stateFixture({
-            section: "rw",
-            moduleIndex: 1,
-            moduleId: "rw-1",
-            questionId: "rw-q1",
-            stem: "RW Q1",
-            answeredCount: 0,
-            totalCount: 2,
-          }),
-        ),
-      )
-      .mockResolvedValueOnce(response({ ok: true }))
-      .mockResolvedValueOnce(
-        response(
-          stateFixture({
-            section: "math",
-            moduleIndex: 1,
-            moduleId: "math-1",
-            questionId: "m1-q3",
-            stem: "Math Q3",
-            answeredCount: 2,
-            totalCount: 3,
-          }),
-        ),
-      );
+    const sessionSnapshots = [
+      stateFixture({
+        section: "math",
+        moduleIndex: 1,
+        moduleId: "math-1",
+        questionId: "m1-q1",
+        stem: "Math Q1",
+        answeredCount: 0,
+        totalCount: 3,
+      }),
+      stateFixture({
+        section: "math",
+        moduleIndex: 1,
+        moduleId: "math-1",
+        questionId: "m1-q2",
+        stem: "Math Q2",
+        answeredCount: 1,
+        totalCount: 3,
+      }),
+      stateFixture({
+        section: "rw",
+        moduleIndex: 1,
+        moduleId: "rw-1",
+        questionId: "rw-q1",
+        stem: "RW Q1",
+        answeredCount: 0,
+        totalCount: 2,
+      }),
+      stateFixture({
+        section: "math",
+        moduleIndex: 1,
+        moduleId: "math-1",
+        questionId: "m1-q3",
+        stem: "Math Q3",
+        answeredCount: 2,
+        totalCount: 3,
+      }),
+    ];
+
+    queryMocks.apiRequest.mockImplementation(async (url: unknown) => {
+      const endpoint = String(url);
+      if (endpoint.includes("/api/full-length/sessions/current")) {
+        const snapshot = sessionSnapshots.shift() ?? sessionSnapshots[sessionSnapshots.length - 1];
+        return response(snapshot);
+      }
+      if (
+        endpoint.includes("/api/full-length/sessions/session-1/answer") ||
+        endpoint.includes("/api/full-length/sessions/session-1/modules/math-1/calculator-state")
+      ) {
+        return response({ ok: true });
+      }
+      return response({ success: true });
+    });
 
     render(<ExamRunner sessionId="session-1" />);
 
     await waitFor(() => expect(screen.getByTestId("full-length-calculator-toggle")).not.toBeNull());
     const persistedState = { expressions: [{ id: "1", latex: "y=x^2" }] };
-    desmosMocks.renders[desmosMocks.renders.length - 1]?.onStateChange?.(persistedState);
+    act(() => {
+      desmosMocks.renders[desmosMocks.renders.length - 1]?.onStateChange?.(persistedState);
+    });
 
     fireEvent.click(screen.getByTestId("pick-answer"));
     fireEvent.click(screen.getByRole("button", { name: /next/i }));

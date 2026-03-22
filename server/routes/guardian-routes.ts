@@ -321,6 +321,80 @@ function isIsoDate(value: unknown): value is string {
 // ============================================================================
 // GUARDIAN FULL-LENGTH EXAM REPORTING
 // ============================================================================
+router.get('/students/:studentId/exams/full-length/sessions', requireSupabaseAuth, requireGuardianAccess, requireGuardianEntitlement, async (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  try {
+    const guardianId = req.user!.id;
+    const isAdmin = req.user!.role === 'admin';
+    const { studentId } = req.params;
+
+    if (!isAdmin) {
+      const linked = await isGuardianLinkedToStudent(guardianId, studentId);
+      if (!linked) {
+        logger.warn('GUARDIAN', 'full_length_history_denied', 'Guardian tried to view non-linked student full-length history', {
+          guardianId,
+          studentId,
+          requestId,
+        });
+        await emitGuardianAccessEvent({
+          eventType: 'guardian_access_denied',
+          guardianId,
+          studentId,
+          requestId,
+          details: { surface: 'full_length_history', reason: 'not_linked' },
+        });
+        return res.status(403).json({ error: 'Not authorized to view this student', requestId });
+      }
+    }
+
+    const rawLimit = Number(req.query.limit ?? 20);
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(Math.trunc(rawLimit), 50)) : 20;
+    const includeIncompleteRaw = String(req.query.include_incomplete ?? '').toLowerCase();
+    const includeIncomplete = includeIncompleteRaw === '1' || includeIncompleteRaw === 'true';
+
+    // Canonical projection: guardian history reuses the same student truth model.
+    const sessions = await fullLengthExamService.listExamSessions({
+      userId: studentId,
+      limit,
+      includeIncomplete,
+    });
+
+    const projected = sessions.map((session) => ({
+      sessionId: session.sessionId,
+      status: session.status,
+      startedAt: session.startedAt,
+      completedAt: session.completedAt,
+      createdAt: session.createdAt,
+      reportAvailable: session.status === 'completed',
+      // Guardian review endpoint is not mounted; fail closed by exposing false.
+      reviewAvailable: false,
+    }));
+
+    logger.info('GUARDIAN', 'full_length_history_view', 'Guardian viewed student full-length history', {
+      guardianId,
+      studentId,
+      count: projected.length,
+      requestId,
+    });
+    await emitGuardianAccessEvent({
+      eventType: 'guardian_report_viewed',
+      guardianId,
+      studentId,
+      requestId,
+      details: { surface: 'full_length_history', count: projected.length },
+    });
+
+    return res.json({
+      studentId,
+      sessions: projected,
+      requestId,
+    });
+  } catch (err) {
+    logger.error('GUARDIAN', 'full_length_history', 'Error', { err, requestId });
+    return res.status(500).json({ error: 'Internal server error', requestId });
+  }
+});
+
 router.get('/students/:studentId/exams/full-length/:sessionId/report', requireSupabaseAuth, requireGuardianAccess, requireGuardianEntitlement, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {

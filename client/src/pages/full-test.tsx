@@ -2,29 +2,177 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, FileText, Users, Info, TrendingUp, Play, CheckCircle2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Clock, FileText, Users, Info, TrendingUp, Play, CheckCircle2, Search, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import ExamRunner from "@/components/full-length-exam/ExamRunner";
+import FullLengthResultsView, { type FullLengthResultsData } from "@/components/full-length-exam/FullLengthResultsView";
+import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
+
+interface FullLengthHistorySession {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+}
+
+interface FullLengthHistoryData {
+  sessions: FullLengthHistorySession[];
+  reportAccess: {
+    hasPaidAccess: boolean;
+    reason?: string | null;
+  };
+}
 
 export default function FullTest() {
   const { user, authLoading } = useSupabaseAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [reportLookupSessionId, setReportLookupSessionId] = useState("");
+  const [reportSessionId, setReportSessionId] = useState<string | null>(null);
+  const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get("sessionId");
+    const reportSid = params.get("reportSessionId");
+    const reviewSid = params.get("reviewSessionId");
     if (sid) {
       setActiveSessionId(sid);
       setIsStarted(true);
+      return;
+    }
+
+    if (reportSid) {
+      const normalized = reportSid.trim();
+      setReportSessionId(normalized);
+      setReportLookupSessionId(normalized);
+      if (reviewSid) {
+        setReviewSessionId(reviewSid.trim());
+      }
+      return;
+    }
+
+    if (reviewSid) {
+      const normalized = reviewSid.trim();
+      setReportSessionId(normalized);
+      setReportLookupSessionId(normalized);
+      setReviewSessionId(normalized);
+      return;
+    }
+
+    try {
+      const lastSession = window.localStorage.getItem("lyceon:lastFullLengthSessionId");
+      if (lastSession) {
+        setReportSessionId(lastSession);
+        setReportLookupSessionId(lastSession);
+      }
+    } catch {
+      // Ignore storage errors.
     }
   }, []);
+
+  const {
+    data: reportData,
+    isLoading: reportLoading,
+    error: reportError,
+  } = useQuery<FullLengthResultsData>({
+    queryKey: ["full-length-report", reportSessionId],
+    enabled: !!reportSessionId && !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      if (!reportSessionId) {
+        throw new Error("Session ID is required");
+      }
+
+      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const code = payload?.code ? ` ${payload.code}` : "";
+        const message = payload?.message || payload?.error || "Failed to load exam report";
+        throw new Error(`${res.status}:${code} ${message}`);
+      }
+
+      return payload as FullLengthResultsData;
+    },
+  });
+
+  const {
+    data: reviewData,
+    isLoading: reviewLoading,
+    error: reviewError,
+  } = useQuery<FullLengthReviewData>({
+    queryKey: ["full-length-review", reviewSessionId],
+    enabled: !!reviewSessionId && !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      if (!reviewSessionId) {
+        throw new Error("Session ID is required");
+      }
+
+      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = payload?.message || payload?.error || "Failed to load exam review";
+        throw new Error(`${res.status}: ${message}`);
+      }
+
+      return payload as FullLengthReviewData;
+    },
+  });
+  const {
+    data: historyData,
+    isLoading: historyLoading,
+    error: historyError,
+  } = useQuery<FullLengthHistoryData>({
+    queryKey: ["full-length-history"],
+    enabled: !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      const res = await fetch("/api/full-length/sessions?limit=15", {
+        method: "GET",
+        credentials: "include",
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = payload?.message || payload?.error || "Failed to load full-length history";
+        throw new Error(`${res.status}: ${message}`);
+      }
+      return payload as FullLengthHistoryData;
+    },
+  });
+
+  const reportErrorMessage = reportError instanceof Error ? reportError.message : "";
+  const reportPremiumLocked =
+    reportErrorMessage.includes("402") || reportErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+  const reportLocked = reportErrorMessage.includes("423") || reportErrorMessage.toLowerCase().includes("locked");
+  const reportNotFound = reportErrorMessage.includes("404");
+  const reviewErrorMessage = reviewError instanceof Error ? reviewError.message : "";
+  const reviewLocked = reviewErrorMessage.includes("423") || reviewErrorMessage.toLowerCase().includes("locked");
+  const reviewNotFound = reviewErrorMessage.includes("404");
+  const historyErrorMessage = historyError instanceof Error ? historyError.message : "";
 
   const createSessionMutation = useMutation({
     mutationFn: async () => {
@@ -91,6 +239,8 @@ export default function FullTest() {
   });
 
   const handleCreateSession = () => {
+    setReportSessionId(null);
+    setReviewSessionId(null);
     createSessionMutation.mutate();
   };
 
@@ -105,6 +255,66 @@ export default function FullTest() {
     setActiveSessionId(null);
     setSessionId(null);
     window.history.pushState({}, "", "/full-test");
+  };
+
+  const loadReportSessionById = (value: string) => {
+    const normalized = value.trim();
+    if (!normalized) {
+      toast({
+        variant: "destructive",
+        title: "Session ID required",
+        description: "Enter a full-length session ID to load report truth.",
+      });
+      return;
+    }
+
+    setReportSessionId(normalized);
+    setReviewSessionId(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("sessionId");
+    params.set("reportSessionId", normalized);
+    params.delete("reviewSessionId");
+    window.history.pushState({}, "", `/full-test?${params.toString()}`);
+  };
+
+  const handleLoadReport = (event: React.FormEvent) => {
+    event.preventDefault();
+    loadReportSessionById(reportLookupSessionId);
+  };
+
+  const handleLoadReview = (sourceSessionId?: string) => {
+    const sessionToLoad = (sourceSessionId ?? reportLookupSessionId).trim();
+    if (!sessionToLoad) {
+      toast({
+        variant: "destructive",
+        title: "Session ID required",
+        description: "Enter a full-length session ID to load review truth.",
+      });
+      return;
+    }
+
+    setReviewSessionId(sessionToLoad);
+    if (!reportSessionId) {
+      setReportSessionId(sessionToLoad);
+      setReportLookupSessionId(sessionToLoad);
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.delete("sessionId");
+    params.set("reportSessionId", reportSessionId ?? sessionToLoad);
+    params.set("reviewSessionId", sessionToLoad);
+    window.history.pushState({}, "", `/full-test?${params.toString()}`);
+  };
+
+  const handleClearReport = () => {
+    setReportSessionId(null);
+    setReviewSessionId(null);
+    setReportLookupSessionId("");
+    const params = new URLSearchParams(window.location.search);
+    params.delete("reportSessionId");
+    params.delete("reviewSessionId");
+    params.delete("sessionId");
+    const query = params.toString();
+    window.history.pushState({}, "", query ? `/full-test?${query}` : "/full-test");
   };
 
   if (!authLoading && !user) {
@@ -179,6 +389,195 @@ export default function FullTest() {
           </h1>
           <p className="text-muted-foreground">Take a complete timed run under official structure and session controls.</p>
         </header>
+
+        <section className="mb-8">
+          <PageCard title="Exam Results Surface" className="bg-card/80 border-border/50">
+            <p className="text-sm text-muted-foreground mb-4">
+              Reopen full-length report truth by session ID or select from canonical runtime-backed history.
+            </p>
+            {historyLoading && (
+              <p className="text-xs text-muted-foreground mb-4">Loading session history...</p>
+            )}
+            {historyError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{historyErrorMessage}</AlertDescription>
+              </Alert>
+            )}
+            {historyData && historyData.sessions.length > 0 && (
+              <div className="mb-4 rounded-lg border border-border/50 bg-secondary/35 p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mb-3">Recent completed sessions</p>
+                <div className="space-y-2">
+                  {historyData.sessions.map((session) => (
+                    <div key={session.sessionId} className="flex flex-col gap-2 rounded-md border border-border/40 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium break-all">{session.sessionId}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Status: {session.status} {session.completedAt ? `• Completed ${new Date(session.completedAt).toLocaleString()}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setReportLookupSessionId(session.sessionId);
+                            loadReportSessionById(session.sessionId);
+                          }}
+                          disabled={!session.reportAvailable}
+                        >
+                          {session.reportAvailable ? "Open Report" : "Report Locked"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setReportLookupSessionId(session.sessionId);
+                            handleLoadReview(session.sessionId);
+                          }}
+                          disabled={!session.reviewAvailable}
+                        >
+                          {session.reviewAvailable ? "Open Review" : "Review Locked"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {historyData && historyData.sessions.length === 0 && (
+              <p className="text-xs text-muted-foreground mb-4">
+                No completed sessions found yet. Complete one full-length exam to populate history.
+              </p>
+            )}
+            <form onSubmit={handleLoadReport} className="flex flex-col sm:flex-row gap-3 mb-4">
+              <Input
+                value={reportLookupSessionId}
+                onChange={(event) => setReportLookupSessionId(event.target.value.trim())}
+                placeholder="Paste completed exam session ID"
+                aria-label="Full-length report session ID"
+              />
+              <Button type="submit" variant="outline" disabled={!reportLookupSessionId || reportLoading}>
+                {reportLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4 mr-2" />
+                    Load Report
+                  </>
+                )}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => handleLoadReview()} disabled={!reportLookupSessionId || reviewLoading}>
+                {reviewLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading Review...
+                  </>
+                ) : (
+                  "Load Review"
+                )}
+              </Button>
+              <Button type="button" variant="ghost" onClick={handleClearReport} disabled={!reportSessionId && !reportLookupSessionId}>
+                Clear
+              </Button>
+            </form>
+            {historyData && !historyData.reportAccess.hasPaidAccess && (
+              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
+                <AlertDescription className="text-[#0F2E48]">
+                  Report actions remain premium-gated by runtime entitlement checks. Review is available after completion.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportPremiumLocked && (
+              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
+                <AlertDescription className="text-[#0F2E48]">
+                  Full-test analytics are premium-gated by runtime contract. Upgrade access is required for this report endpoint.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportLocked && !reportPremiumLocked && (
+              <Alert className="mb-4 border-amber-200 bg-amber-50">
+                <AlertDescription className="text-amber-800">
+                  This session is not completed yet. Reports unlock only after exam completion.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportNotFound && !reportPremiumLocked && !reportLocked && (
+              <Alert className="mb-4">
+                <AlertDescription>
+                  No report was found for that session ID under your account. Verify the ID and try again.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportError && !reportPremiumLocked && !reportLocked && !reportNotFound && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>
+                  {(reportError as Error).message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewLocked && (
+              <Alert className="mb-4 border-amber-200 bg-amber-50">
+                <AlertDescription className="text-amber-800">
+                  Review unlocks only after completion. This session does not have an unlocked review payload yet.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewNotFound && !reviewLocked && (
+              <Alert className="mb-4">
+                <AlertDescription>
+                  No review payload was found for that session ID under your account.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewError && !reviewLocked && !reviewNotFound && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>
+                  {(reviewError as Error).message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportData && (
+              <FullLengthResultsView
+                data={reportData}
+                title="Reusable Full-Length Report"
+                description="This view reuses the same results surface as completion and is sourced from the persisted report endpoint."
+                shareEnabled
+                actions={
+                  <>
+                    <Button variant="outline" onClick={() => handleLoadReview(reportData.sessionId)}>
+                      Open Review
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/dashboard">Open Dashboard KPIs</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/mastery">Open Mastery</Link>
+                    </Button>
+                  </>
+                }
+              />
+            )}
+
+            {reviewData && (
+              <div className="mt-5">
+                <FullLengthReviewView data={reviewData} />
+              </div>
+            )}
+          </PageCard>
+        </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
           <PageCard title="Exam Overview" className="lg:col-span-8 bg-card/80 border-border/50">

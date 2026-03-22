@@ -6,7 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
 
 interface SkillNode {
   id: string;
@@ -75,12 +77,24 @@ export default function MasteryPage() {
 
   const sections = data?.sections ?? [];
   const hasAnyMastery = sections.some((section) => section.avgMastery > 0);
-  const domains = sections.flatMap((section) => section.domains.map((domain) => ({ sectionLabel: section.label, ...domain })));
-  const algebraDomain = domains.find((domain) => /algebra/i.test(domain.label));
-  const algebraWeakSkills = (algebraDomain?.skills ?? [])
-    .filter((skill) => skill.attempts > 0)
-    .sort((a, b) => a.mastery_score - b.mastery_score)
-    .slice(0, 4);
+  const domains = useMemo(
+    () => sections.flatMap((section) => section.domains.map((domain) => ({ sectionLabel: section.label, ...domain }))),
+    [sections],
+  );
+  const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (domains.length === 0) {
+      setSelectedDomainId(null);
+      return;
+    }
+
+    if (!selectedDomainId || !domains.some((domain) => domain.id === selectedDomainId)) {
+      setSelectedDomainId(domains[0].id);
+    }
+  }, [domains, selectedDomainId]);
+
+  const selectedDomain = domains.find((domain) => domain.id === selectedDomainId) ?? null;
 
   return (
     <AppShell showFooter>
@@ -174,42 +188,72 @@ export default function MasteryPage() {
                   <h2 className="text-xl font-semibold tracking-tight">{section.label} Domains</h2>
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Live mastery breakdown</p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Accordion
+                  type="single"
+                  collapsible
+                  value={selectedDomainId ?? undefined}
+                  onValueChange={(value) => setSelectedDomainId(value || null)}
+                  className="space-y-3"
+                >
                   {section.domains.map((domain) => (
-                    <Card key={domain.id} className="bg-card/80 border-border/50">
-                      <CardContent className="pt-5">
-                        <p className="text-sm font-semibold leading-snug mb-2">{domain.label}</p>
-                        <div className="flex items-center justify-between mb-3">
-                          <Badge className={getStatusTone(domain.status)}>{getStatusLabel(domain.status)}</Badge>
-                          <span className="text-sm font-semibold">{domain.avgMastery}%</span>
+                    <AccordionItem key={domain.id} value={domain.id} className="rounded-lg border border-border/60 bg-card/80 px-4">
+                      <AccordionTrigger className="hover:no-underline">
+                        <div className="flex-1 text-left">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <p className="text-sm font-semibold leading-snug">{domain.label}</p>
+                            <span className="text-sm font-semibold">{domain.avgMastery}%</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <Badge className={getStatusTone(domain.status)}>{getStatusLabel(domain.status)}</Badge>
+                            <span className="text-xs text-muted-foreground">{domain.skills.length} skills</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-secondary/60 overflow-hidden">
+                            <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, domain.avgMastery))}%` }} />
+                          </div>
                         </div>
-                        <div className="h-1.5 w-full rounded-full bg-secondary/60 overflow-hidden mb-2">
-                          <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, domain.avgMastery))}%` }} />
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
+                          {domain.skills.map((skill) => (
+                            <div key={skill.id} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
+                              <p className="text-sm font-medium mb-1">{skill.label}</p>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{skill.correct}/{skill.attempts} correct</span>
+                                <span>{skill.mastery_score}% mastery</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <p className="text-xs text-muted-foreground">{domain.skills.length} skills</p>
-                      </CardContent>
-                    </Card>
+                      </AccordionContent>
+                    </AccordionItem>
                   ))}
-                </div>
+                </Accordion>
               </section>
             ))}
 
-            {algebraDomain && (
+            {selectedDomain && (
               <section>
                 <Card className="bg-card/90 border-border/60">
                   <CardHeader>
-                    <CardDescription className="uppercase tracking-[0.2em] text-[10px]">Algebra Domain Insight</CardDescription>
-                    <CardTitle className="text-2xl tracking-tight">{algebraDomain.label}</CardTitle>
+                    <CardDescription className="uppercase tracking-[0.2em] text-[10px]">Selected Domain Insight</CardDescription>
+                    <CardTitle className="text-2xl tracking-tight">{selectedDomain.label}</CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Section: {algebraDomain.sectionLabel} · Current domain mastery: {algebraDomain.avgMastery}%
+                      Section: {selectedDomain.sectionLabel} · Current domain mastery: {selectedDomain.avgMastery}%
                     </p>
                   </CardHeader>
                   <CardContent>
-                    {algebraWeakSkills.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No attempted algebra skills yet.</p>
+                    {selectedDomain.skills.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No skills are currently mapped to this domain.</p>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {algebraWeakSkills.map((skill) => (
+                        {selectedDomain.skills
+                          .slice()
+                          .sort((a, b) => {
+                            if (a.attempts === 0 && b.attempts > 0) return 1;
+                            if (b.attempts === 0 && a.attempts > 0) return -1;
+                            return a.mastery_score - b.mastery_score;
+                          })
+                          .map((skill) => (
                           <div key={skill.id} className="rounded-lg border border-border/60 bg-secondary/40 p-3">
                             <p className="text-sm font-medium mb-1">{skill.label}</p>
                             <div className="flex items-center justify-between text-xs text-muted-foreground">

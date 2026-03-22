@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { Redirect } from 'wouter';
@@ -17,9 +17,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Users, Plus, Clock, Target, AlertCircle, CheckCircle, UserMinus, RefreshCw, AlertTriangle, Calendar, CreditCard } from 'lucide-react';
+import { Users, Plus, Clock, Target, AlertCircle, CheckCircle, UserMinus, RefreshCw, AlertTriangle, Calendar, CreditCard, Search, Loader2 } from 'lucide-react';
 import { Link } from 'wouter';
 import { SubscriptionPaywall, ManageSubscriptionButton } from '@/components/guardian/SubscriptionPaywall';
+import FullLengthResultsView, { type FullLengthResultsData } from '@/components/full-length-exam/FullLengthResultsView';
 
 interface LinkedStudent {
   id: string;
@@ -39,6 +40,51 @@ interface StudentSummary {
     questionsAttempted: number;
     accuracy: number | null;
   };
+  metrics?: Array<{
+    id: string;
+    label: string;
+    kind: 'official' | 'weighted' | 'diagnostic';
+    unit: 'count' | 'percent' | 'minutes' | 'seconds' | 'score';
+    value: number | null;
+    explanation?: {
+      whatThisMeans?: string;
+    };
+  }>;
+}
+
+interface GuardianWeaknessResponse {
+  ok: true;
+  count: number;
+  skills: Array<{
+    section: string;
+    domain: string | null;
+    skill: string;
+    attempts: number;
+    correct: number;
+    accuracy: number;
+    mastery_score: number;
+  }>;
+}
+
+interface GuardianFullLengthReportResponse {
+  studentId: string;
+  sessionId: string;
+  report: FullLengthResultsData;
+}
+
+interface GuardianFullLengthHistorySession {
+  sessionId: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+}
+
+interface GuardianFullLengthHistoryResponse {
+  studentId: string;
+  sessions: GuardianFullLengthHistorySession[];
 }
 
 interface GuardianBillingStatus {
@@ -59,6 +105,8 @@ export default function GuardianDashboard() {
   const [unlinkStudentName, setUnlinkStudentName] = useState<string>('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
+  const [reportSessionInput, setReportSessionInput] = useState('');
+  const [requestedReportSessionId, setRequestedReportSessionId] = useState<string | null>(null);
 
   const { data: studentsData, isLoading: studentsLoading, error: studentsError, refetch: refetchStudents } = useQuery({
     queryKey: ['guardian-students'],
@@ -82,6 +130,79 @@ export default function GuardianDashboard() {
     },
     enabled: !!selectedStudentId,
   });
+
+  const {
+    data: weaknessData,
+    isLoading: weaknessLoading,
+    error: weaknessError,
+    refetch: refetchWeakness,
+  } = useQuery({
+    queryKey: ['guardian-weaknesses', selectedStudentId],
+    queryFn: async () => {
+      const res = await fetch(`/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`, { credentials: 'include' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to load weaknesses');
+      }
+      return res.json() as Promise<GuardianWeaknessResponse>;
+    },
+    enabled: !!selectedStudentId,
+  });
+
+  const {
+    data: guardianExamHistoryData,
+    isLoading: guardianExamHistoryLoading,
+    error: guardianExamHistoryError,
+  } = useQuery<GuardianFullLengthHistoryResponse>({
+    queryKey: ['guardian-full-length-history', selectedStudentId],
+    queryFn: async () => {
+      if (!selectedStudentId) {
+        throw new Error('Select student first');
+      }
+
+      const res = await fetch(
+        `/api/guardian/students/${selectedStudentId}/exams/full-length/sessions?limit=12&include_incomplete=true`,
+        { credentials: 'include' },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${data.error || 'Failed to load full-length history'}`);
+      }
+      return data as GuardianFullLengthHistoryResponse;
+    },
+    enabled: !!selectedStudentId,
+    retry: false,
+  });
+
+  const {
+    data: guardianExamReportData,
+    isLoading: guardianExamReportLoading,
+    error: guardianExamReportError,
+  } = useQuery<GuardianFullLengthReportResponse>({
+    queryKey: ['guardian-full-length-report', selectedStudentId, requestedReportSessionId],
+    queryFn: async () => {
+      if (!selectedStudentId || !requestedReportSessionId) {
+        throw new Error('Select student and session ID first');
+      }
+
+      const res = await fetch(
+        `/api/guardian/students/${selectedStudentId}/exams/full-length/${encodeURIComponent(requestedReportSessionId)}/report`,
+        { credentials: 'include' },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(`${res.status}: ${data.error || 'Failed to load full-length report'}`);
+      }
+      return data as GuardianFullLengthReportResponse;
+    },
+    enabled: !!selectedStudentId && !!requestedReportSessionId,
+    retry: false,
+  });
+
+  useEffect(() => {
+    setRequestedReportSessionId(null);
+    setReportSessionInput('');
+  }, [selectedStudentId]);
 
   const { data: billingStatus } = useQuery({
     queryKey: ['guardian-billing-status'],
@@ -170,6 +291,16 @@ export default function GuardianDashboard() {
     }
   };
 
+  const handleLoadGuardianExamReport = (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = reportSessionInput.trim();
+    if (!normalized) {
+      setRequestedReportSessionId(null);
+      return;
+    }
+    setRequestedReportSessionId(normalized);
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center">
@@ -189,6 +320,10 @@ export default function GuardianDashboard() {
   const students = studentsData?.students || [];
   const showPaidUnlinkedCta = !!billingStatus?.linkRequiredForPremium && !!billingStatus?.isPaid;
   const showUnlinkedLinkFirstHint = !!billingStatus?.linkRequiredForPremium && !billingStatus?.isPaid;
+  const guardianExamReportErrorMessage = guardianExamReportError instanceof Error ? guardianExamReportError.message : '';
+  const guardianReportNotFound = guardianExamReportErrorMessage.includes('404');
+  const guardianReportLocked = guardianExamReportErrorMessage.includes('423');
+  const guardianExamHistoryErrorMessage = guardianExamHistoryError instanceof Error ? guardianExamHistoryError.message : '';
 
   return (
     <SubscriptionPaywall>
@@ -401,74 +536,242 @@ export default function GuardianDashboard() {
         </Card>
 
         {selectedStudentId && (
-          <Card className="bg-card border-border/60">
-            <CardHeader>
-              <CardTitle className="text-[#0F2E48]">Student Progress</CardTitle>
-              <CardDescription>
-                {summaryData?.student?.displayName || 'Student'}'s activity in the last 7 days
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {summaryLoading ? (
-                <div className="text-center py-8 text-[#0F2E48]/60">Loading progress...</div>
-              ) : summaryError ? (
-                <div className="text-center py-8">
-                  <p className="text-red-600 mb-4">Failed to load progress data</p>
-                  <Button variant="outline" onClick={() => refetchSummary()}>
-                    <RefreshCw className="h-4 w-4 mr-2" /> Retry
+          <>
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <CardTitle className="text-[#0F2E48]">Student Progress</CardTitle>
+                <CardDescription>
+                  {summaryData?.student?.displayName || 'Student'}'s activity in the last 7 days
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {summaryLoading ? (
+                  <div className="text-center py-8 text-[#0F2E48]/60">Loading progress...</div>
+                ) : summaryError ? (
+                  <div className="text-center py-8">
+                    <p className="text-red-600 mb-4">Failed to load progress data</p>
+                    <Button variant="outline" onClick={() => refetchSummary()}>
+                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                    </Button>
+                  </div>
+                ) : summaryData ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
+                        <Clock className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
+                        <div className="text-2xl font-bold text-[#0F2E48]">
+                          {summaryData.progress.practiceMinutesLast7Days}
+                        </div>
+                        <div className="text-xs text-[#0F2E48]/60">Minutes Practiced</div>
+                      </div>
+                      <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
+                        <Target className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
+                        <div className="text-2xl font-bold text-[#0F2E48]">
+                          {summaryData.progress.sessionsLast7Days}
+                        </div>
+                        <div className="text-xs text-[#0F2E48]/60">Practice Sessions</div>
+                      </div>
+                      <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
+                        <div className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2 flex items-center justify-center font-bold">Q</div>
+                        <div className="text-2xl font-bold text-[#0F2E48]">
+                          {summaryData.progress.questionsAttempted}
+                        </div>
+                        <div className="text-xs text-[#0F2E48]/60">Questions Attempted</div>
+                      </div>
+                      <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
+                        <div className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2 flex items-center justify-center font-bold">%</div>
+                        <div className="text-2xl font-bold text-[#0F2E48]">
+                          {summaryData.progress.accuracy !== null ? `${summaryData.progress.accuracy}%` : '--'}
+                        </div>
+                        <div className="text-xs text-[#0F2E48]/60">Accuracy</div>
+                      </div>
+                    </div>
+                    {summaryData.metrics && summaryData.metrics.length > 0 && (
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {summaryData.metrics.slice(0, 4).map((metric) => (
+                          <div key={metric.id} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
+                            <p className="text-sm font-medium text-[#0F2E48]">{metric.label}</p>
+                            <p className="text-xs text-[#0F2E48]/65 mt-1">{metric.explanation?.whatThisMeans || 'Runtime-backed KPI metric'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {summaryData.progress.sessionsLast7Days === 0 && (
+                      <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-amber-800 text-sm">
+                          No practice activity in the last 7 days. Encourage your student to start a practice session.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 px-4">
+                    <AlertCircle className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-[#0F2E48] mb-2">No Progress Data Available</h3>
+                    <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
+                      Unable to load progress data for this student. This may be because the student hasn't started any practice sessions yet.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-[#0F2E48]">Weakest Skills (Live)</CardTitle>
+                    <CardDescription>
+                      Runtime-backed weaknesses from `/api/guardian/weaknesses/:studentId`.
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => refetchWeakness()}>
+                    <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>
-              ) : summaryData ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                      <Clock className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-[#0F2E48]">
-                        {summaryData.progress.practiceMinutesLast7Days}
-                      </div>
-                      <div className="text-xs text-[#0F2E48]/60">Minutes Practiced</div>
-                    </div>
-                    <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                      <Target className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2" />
-                      <div className="text-2xl font-bold text-[#0F2E48]">
-                        {summaryData.progress.sessionsLast7Days}
-                      </div>
-                      <div className="text-xs text-[#0F2E48]/60">Practice Sessions</div>
-                    </div>
-                    <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                      <div className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2 flex items-center justify-center font-bold">Q</div>
-                      <div className="text-2xl font-bold text-[#0F2E48]">
-                        {summaryData.progress.questionsAttempted}
-                      </div>
-                      <div className="text-xs text-[#0F2E48]/60">Questions Attempted</div>
-                    </div>
-                    <div className="bg-[#FFFAEF] p-4 rounded-lg text-center">
-                      <div className="h-5 w-5 text-[#0F2E48]/60 mx-auto mb-2 flex items-center justify-center font-bold">%</div>
-                      <div className="text-2xl font-bold text-[#0F2E48]">
-                        {summaryData.progress.accuracy !== null ? `${summaryData.progress.accuracy}%` : '--'}
-                      </div>
-                      <div className="text-xs text-[#0F2E48]/60">Accuracy</div>
-                    </div>
+              </CardHeader>
+              <CardContent>
+                {weaknessLoading ? (
+                  <div className="text-center py-8 text-[#0F2E48]/60">Loading weaknesses...</div>
+                ) : weaknessError ? (
+                  <div className="text-center py-8">
+                    <p className="text-red-600 mb-4">Failed to load weakness data</p>
+                    <Button variant="outline" onClick={() => refetchWeakness()}>
+                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                    </Button>
                   </div>
-                  {summaryData.progress.sessionsLast7Days === 0 && (
-                    <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-amber-800 text-sm">
-                        No practice activity in the last 7 days. Encourage your student to start a practice session!
-                      </p>
+                ) : !weaknessData || weaknessData.count === 0 ? (
+                  <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
+                    No weakness rows are currently available for this student.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {weaknessData.skills.map((skill) => (
+                      <div key={`${skill.section}-${skill.skill}`} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <p className="text-sm font-medium text-[#0F2E48]">{skill.skill}</p>
+                          <p className="text-sm font-semibold text-[#0F2E48]">{skill.mastery_score}%</p>
+                        </div>
+                        <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
+                          <span>{skill.section} · {skill.domain || 'Unspecified domain'}</span>
+                          <span>{skill.correct}/{skill.attempts} correct</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card border-border/60">
+              <CardHeader>
+                <CardTitle className="text-[#0F2E48]">Full-Length Exam Report</CardTitle>
+                <CardDescription>
+                  Load guardian read-only report projection using a real exam session ID.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {guardianExamHistoryLoading && (
+                  <p className="text-sm text-[#0F2E48]/70">Loading full-length session history...</p>
+                )}
+                {guardianExamHistoryError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{guardianExamHistoryErrorMessage}</AlertDescription>
+                  </Alert>
+                )}
+                {guardianExamHistoryData && guardianExamHistoryData.sessions.length > 0 && (
+                  <div className="rounded-lg border border-border/60 bg-secondary/35 p-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-[#0F2E48]/60 mb-3">Linked student session history</p>
+                    <div className="space-y-2">
+                      {guardianExamHistoryData.sessions.map((session) => (
+                        <div key={session.sessionId} className="rounded-md border border-border/50 bg-card/80 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-[#0F2E48] break-all">{session.sessionId}</p>
+                            <p className="text-xs text-[#0F2E48]/65">
+                              Status: {session.status}{' '}
+                              {session.completedAt ? `• Completed ${new Date(session.completedAt).toLocaleString()}` : ''}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setReportSessionInput(session.sessionId);
+                              setRequestedReportSessionId(session.sessionId);
+                            }}
+                            disabled={!session.reportAvailable}
+                          >
+                            {session.reportAvailable ? 'Open Report' : 'Report Locked'}
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-12 px-4">
-                  <AlertCircle className="h-12 w-12 text-[#0F2E48]/30 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-[#0F2E48] mb-2">No Progress Data Available</h3>
-                  <p className="text-[#0F2E48]/60 max-w-sm mx-auto">
-                    Unable to load progress data for this student. This may be because the student hasn't started any practice sessions yet.
+                    <p className="text-xs text-[#0F2E48]/60 mt-3">
+                      Guardian review is not mounted for full-length exams yet; history remains report-only.
+                    </p>
+                  </div>
+                )}
+                {guardianExamHistoryData && guardianExamHistoryData.sessions.length === 0 && (
+                  <p className="text-sm text-[#0F2E48]/70">
+                    No full-length sessions are available yet for this linked student.
                   </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                )}
+
+                <form onSubmit={handleLoadGuardianExamReport} className="flex flex-col sm:flex-row gap-3">
+                  <Input
+                    value={reportSessionInput}
+                    onChange={(event) => setReportSessionInput(event.target.value.trim())}
+                    placeholder="Enter student full-length session ID"
+                    aria-label="Guardian exam report session ID"
+                  />
+                  <Button type="submit" variant="outline" disabled={!reportSessionInput || guardianExamReportLoading}>
+                    {guardianExamReportLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4 mr-2" />
+                        Load Report
+                      </>
+                    )}
+                  </Button>
+                </form>
+
+                {guardianReportLocked && (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertDescription className="text-amber-800">
+                      This exam session is not completed yet, so guardian report projection is still locked.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {guardianReportNotFound && !guardianReportLocked && (
+                  <Alert>
+                    <AlertDescription>
+                      No full-length report was found for that session ID under the linked student.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {guardianExamReportError && !guardianReportNotFound && !guardianReportLocked && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{guardianExamReportErrorMessage}</AlertDescription>
+                  </Alert>
+                )}
+
+                {guardianExamReportData?.report && (
+                  <FullLengthResultsView
+                    data={guardianExamReportData.report}
+                    title="Guardian Report Projection"
+                    description="Read-only student-truth projection from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
       </div>
 

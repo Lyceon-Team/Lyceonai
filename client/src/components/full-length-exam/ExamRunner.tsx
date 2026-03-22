@@ -23,15 +23,14 @@ import { Progress } from "@/components/ui/progress";
 import QuestionRenderer from "@/components/question-renderer";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
+import FullLengthResultsView from "@/components/full-length-exam/FullLengthResultsView";
 import { 
   Clock, 
   ChevronRight, 
   CheckCircle2, 
   AlertCircle,
   Coffee,
-  Trophy,
   ArrowRight,
-  Share2
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -160,7 +159,14 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         { method: "GET" }
       );
       
-      const data: SessionState = await response.json();
+      const payload = await response.json();
+      if (!payload || typeof payload !== "object" || !("session" in payload)) {
+        // Ignore malformed refresh payloads so we never clobber current UI state with non-session data.
+        setLoading(false);
+        return;
+      }
+
+      const data = payload as SessionState;
       setSessionState(data);
 
       const moduleId = data.currentModule?.id;
@@ -408,6 +414,12 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       
       const result: CompleteExamResult = await response.json();
       setResults(result);
+
+      try {
+        window.localStorage.setItem("lyceon:lastFullLengthSessionId", result.sessionId);
+      } catch {
+        // Ignore storage failures; session/runtime truth remains server-authoritative.
+      }
       
       toast({
         title: "Exam Complete!",
@@ -427,44 +439,6 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     }
   }, [sessionId, toast]);
 
-  const shareResults = useCallback(async () => {
-    if (!results) return;
-
-    const text = `I just completed a full-length SAT run on Lyceon: ${results.overallScore.totalCorrect}/${results.overallScore.totalQuestions} correct (${results.overallScore.percentageCorrect.toFixed(1)}%).`;
-
-    try {
-      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        await navigator.share({
-          title: "Lyceon SAT Results",
-          text,
-        });
-        return;
-      }
-
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        toast({
-          title: "Results copied",
-          description: "Your exam summary was copied to the clipboard.",
-        });
-        return;
-      }
-
-      toast({
-        title: "Sharing unavailable",
-        description: "Your browser does not support native share or clipboard.",
-      });
-    } catch (error) {
-      const maybeAbort = error as { name?: string };
-      if (maybeAbort?.name === "AbortError") return;
-      toast({
-        variant: "destructive",
-        title: "Unable to share",
-        description: "Please try again.",
-      });
-    }
-  }, [results, toast]);
-  
   // ============================================================================
   // AUTO-SUBMIT ON TIME EXPIRY
   // ============================================================================
@@ -538,80 +512,27 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     return (
       <AppShell>
         <div className="container mx-auto px-4 py-8 max-w-6xl">
-          <div className="text-center mb-8">
-            <Trophy className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-            <h1 className="text-3xl font-bold tracking-tight mb-2">Exam Complete</h1>
-            <p className="text-muted-foreground">Results below reflect your completed runtime session data.</p>
-          </div>
-
-          <Card className="mb-6 bg-card/90 border-border/60">
-            <CardContent className="pt-6">
-              <div className="flex flex-wrap items-start justify-between gap-6 mb-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Overall</p>
-                  <div className="text-6xl font-bold text-primary mb-1">
-                    {results.overallScore.percentageCorrect.toFixed(1)}%
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {results.overallScore.totalCorrect} / {results.overallScore.totalQuestions} correct
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={shareResults}>
-                    <Share2 className="h-4 w-4 mr-2" />
-                    Share Results
-                  </Button>
-                  <Button asChild>
-                    <Link href="/dashboard">Return to Dashboard</Link>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-5">
-                <div className="rounded-xl bg-secondary/50 p-5">
-                  <h3 className="font-semibold mb-4">Reading & Writing</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Module 1</span>
-                      <span className="font-medium">{results.rwScore.module1.correct} / {results.rwScore.module1.total}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Module 2</span>
-                      <span className="font-medium">{results.rwScore.module2.correct} / {results.rwScore.module2.total}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold pt-2 border-t border-border/50">
-                      <span>Total</span>
-                      <span>{results.rwScore.totalCorrect} / {results.rwScore.totalQuestions}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl bg-secondary/50 p-5">
-                  <h3 className="font-semibold mb-4">Math</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Module 1</span>
-                      <span className="font-medium">{results.mathScore.module1.correct} / {results.mathScore.module1.total}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Module 2</span>
-                      <span className="font-medium">{results.mathScore.module2.correct} / {results.mathScore.module2.total}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold pt-2 border-t border-border/50">
-                      <span>Total</span>
-                      <span>{results.mathScore.totalCorrect} / {results.mathScore.totalQuestions}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
+          <FullLengthResultsView
+            data={results}
+            title="Exam Complete"
+            description="Results below reflect your completed runtime session data."
+            shareEnabled
+            actions={
+              <>
+                <Button asChild>
+                  <Link href={`/full-test?reportSessionId=${encodeURIComponent(results.sessionId)}&reviewSessionId=${encodeURIComponent(results.sessionId)}`}>
+                    Open Report Surface
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/dashboard">Return to Dashboard</Link>
+                </Button>
                 <Button variant="outline" onClick={onExit || (() => (window.location.href = "/full-test"))}>
                   Start New Exam
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </>
+            }
+          />
         </div>
       </AppShell>
     );

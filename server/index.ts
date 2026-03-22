@@ -641,6 +641,7 @@ if (isMainModule) {
     console.log(`  PATCH  /api/notifications/mark-all-read`);
     console.log(`\n📝 Full-Length SAT Exam (requires Supabase auth):`);
     console.log(`  POST   /api/full-length/sessions`);
+    console.log(`  GET    /api/full-length/sessions`);
     console.log(`  GET    /api/full-length/sessions/current`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/start`);
     console.log(`  POST   /api/full-length/sessions/:sessionId/answer`);
