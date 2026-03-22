@@ -5,6 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useCanonicalPractice, PracticeSectionParam } from "@/hooks/useCanonicalPractice";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
+import MathReferenceSheet from "@/components/math/MathReferenceSheet";
+import { Badge } from "@/components/ui/badge";
+import { Calculator, Flag, Loader2 } from "lucide-react";
 
 function isMathSection(section: string | null | undefined): boolean {
   if (!section) return false;
@@ -45,6 +48,7 @@ export default function CanonicalPracticePage(props: {
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
+  const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<unknown | null>(null);
 
   React.useEffect(() => {
@@ -62,12 +66,15 @@ export default function CanonicalPracticePage(props: {
     }
   }, [isEndingSession, terminateSession]);
 
-  const onCalculatorStateChange = React.useCallback((nextState: unknown) => {
-    setLocalCalculatorState(nextState);
-    void persistCalculatorState(nextState).catch(() => {
-      // Keep practice flow resilient even if calculator persistence fails.
-    });
-  }, [persistCalculatorState]);
+  const onCalculatorStateChange = React.useCallback(
+    (nextState: unknown) => {
+      setLocalCalculatorState(nextState);
+      void persistCalculatorState(nextState).catch(() => {
+        // Keep practice flow resilient even if calculator persistence fails.
+      });
+    },
+    [persistCalculatorState],
+  );
 
   const showCalculator = isMathSection(question?.section);
 
@@ -86,116 +93,139 @@ export default function CanonicalPracticePage(props: {
       currentIndex={currentIndex}
       totalQuestions={totalQuestions}
     >
-      <Card className="rounded-2xl border border-slate-200 bg-white p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-sm text-slate-600">
-            Question {currentIndex + 1}
-            {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        <Card className="xl:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
+                Question {currentIndex + 1}
+                {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
+              </Badge>
+              <Badge className="bg-primary-container text-primary-foreground">{props.badgeLabel}</Badge>
+            </div>
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Flag className="h-3.5 w-3.5" />
+              Review tagging is available in full-length exam mode.
+            </div>
           </div>
-          <div className="text-xs font-medium rounded-full bg-slate-100 px-3 py-1 text-slate-700">
-            {props.badgeLabel}
-          </div>
-        </div>
 
-        {isLoading && !question ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-600">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
-            <p className="mt-3 text-sm">Loading your next question...</p>
-          </div>
-        ) : error && !question ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <p className="font-medium">Unable to load a question.</p>
-            <p className="mt-1">{error}</p>
-            <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
-              Retry
-            </Button>
-          </div>
-        ) : !question ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <p className="font-medium">No questions available right now.</p>
-            <p className="mt-1">Try again in a moment or switch sections.</p>
-            <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
-              Check Again
-            </Button>
-          </div>
-        ) : (
-          <>
-            {error && (
-              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                {error}
+          {isLoading && !question ? (
+            <div className="flex flex-col items-center justify-center py-14 text-slate-600">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="mt-3 text-sm">Loading your next question...</p>
+            </div>
+          ) : error && !question ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p className="font-medium">Unable to load a question.</p>
+              <p className="mt-1">{error}</p>
+              <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
+                Retry
+              </Button>
+            </div>
+          ) : !question ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p className="font-medium">No questions available right now.</p>
+              <p className="mt-1">Try again in a moment or switch sections.</p>
+              <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
+                Check Again
+              </Button>
+            </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">{error}</div>
+              )}
+
+              <QuestionRenderer
+                question={question}
+                selectedAnswer={selectedAnswer}
+                onSelectAnswer={setSelectedAnswer}
+                freeResponseAnswer={freeResponseAnswer}
+                onFreeResponseAnswerChange={setFreeResponseAnswer}
+                showResult={showResult}
+                isCorrect={isCorrect}
+                correctOptionId={correctOptionId}
+                explanation={explanation}
+                disabled={isSubmitting || isLoading}
+                onMissingMcChoices={handleMissingMcChoices}
+              />
+
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                {!showResult ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      disabled={isSubmitting || isLoading || isEndingSession}
+                      onClick={() => submitAnswer({ skipped: true })}
+                    >
+                      Skip
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      disabled={isSubmitting || isLoading || isEndingSession}
+                      onClick={endSession}
+                    >
+                      End Session
+                    </Button>
+
+                    <Button
+                      disabled={isSubmitting || isLoading || !canSubmit || isEndingSession}
+                      onClick={() => submitAnswer({ skipped: false })}
+                    >
+                      Check Answer
+                    </Button>
+                  </>
+                ) : (
+                  <Button className="w-full" disabled={isSubmitting || isLoading || isEndingSession} onClick={nextQuestion}>
+                    Next Question
+                  </Button>
+                )}
               </div>
-            )}
-            <QuestionRenderer
-              question={question}
-              selectedAnswer={selectedAnswer}
-              onSelectAnswer={setSelectedAnswer}
-              freeResponseAnswer={freeResponseAnswer}
-              onFreeResponseAnswerChange={setFreeResponseAnswer}
-              showResult={showResult}
-              isCorrect={isCorrect}
-              correctOptionId={correctOptionId}
-              explanation={explanation}
-              disabled={isSubmitting || isLoading}
-              onMissingMcChoices={handleMissingMcChoices}
-            />
+            </>
+          )}
+        </Card>
 
-            {showCalculator && (
-              <div className="mt-6">
-                <div className="mb-3 flex items-center justify-end">
+        <div className="xl:col-span-4 space-y-4">
+          <Card className="rounded-2xl border border-border/60 bg-card p-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Session Guidance</p>
+            <p className="text-sm text-foreground/90 leading-relaxed">
+              Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.
+            </p>
+          </Card>
+
+          {showCalculator && (
+            <Card className="rounded-2xl border border-border/60 bg-card p-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Math Tools</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" type="button" size="sm" onClick={() => setIsReferenceOpen(true)}>
+                    Reference Sheet
+                  </Button>
                   <Button
                     variant="outline"
                     type="button"
+                    size="sm"
                     onClick={() => setIsCalculatorExpanded((prev) => !prev)}
                     aria-expanded={isCalculatorExpanded}
                     data-testid="practice-calculator-toggle"
                   >
-                    {isCalculatorExpanded ? "Hide Calculator" : "Calculator"}
+                    <Calculator className="h-3.5 w-3.5 mr-1" />
+                    {isCalculatorExpanded ? "Hide" : "Open"}
                   </Button>
                 </div>
-                <DesmosCalculator
-                  expanded={isCalculatorExpanded}
-                  initialState={localCalculatorState}
-                  onStateChange={onCalculatorStateChange}
-                  className="w-full"
-                />
               </div>
-            )}
-
-            <div className="mt-6 flex items-center justify-between">
-              {!showResult ? (
-                <>
-                  <Button
-                    variant="outline"
-                    disabled={isSubmitting || isLoading || isEndingSession}
-                    onClick={() => submitAnswer({ skipped: true })}
-                  >
-                    Skip
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    disabled={isSubmitting || isLoading || isEndingSession}
-                    onClick={endSession}
-                  >
-                    End Session
-                  </Button>
-
-                  <Button
-                    disabled={isSubmitting || isLoading || !canSubmit || isEndingSession}
-                    onClick={() => submitAnswer({ skipped: false })}
-                  >
-                    Check Answer
-                  </Button>
-                </>
-              ) : (
-                <Button className="w-full" disabled={isSubmitting || isLoading || isEndingSession} onClick={nextQuestion}>
-                  Next Question
-                </Button>
-              )}
-            </div>
-          </>
-        )}
-      </Card>
+              <DesmosCalculator
+                expanded={isCalculatorExpanded}
+                initialState={localCalculatorState}
+                onStateChange={onCalculatorStateChange}
+                className="w-full"
+              />
+            </Card>
+          )}
+        </div>
+      </div>
+      <MathReferenceSheet open={isReferenceOpen} onOpenChange={setIsReferenceOpen} />
     </PracticeShell>
   );
 }

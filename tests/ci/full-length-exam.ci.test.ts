@@ -50,6 +50,14 @@ describe('Full-Length Exam API Tests', () => {
       expect(res.body).toHaveProperty('error');
     });
 
+    it('should reject GET /api/full-length/sessions without auth', async () => {
+      const res = await request(app)
+        .get('/api/full-length/sessions');
+
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
+    });
+
     it('should reject POST /api/full-length/sessions/:sessionId/answer without auth', async () => {
       const res = await request(app)
         .post('/api/full-length/sessions/test-session-id/answer')
@@ -291,6 +299,14 @@ describe('Full-Length Exam API Tests', () => {
       const res = await request(app)
         .post('/api/full-length/sessions')
         .send({});
+
+      // Should respond (even if with error), not 404
+      expect(res.status).not.toBe(404);
+    });
+
+    it('should have GET /api/full-length/sessions endpoint', async () => {
+      const res = await request(app)
+        .get('/api/full-length/sessions');
 
       // Should respond (even if with error), not 404
       expect(res.status).not.toBe(404);

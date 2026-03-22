@@ -1,10 +1,14 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Brain, ArrowLeft, Target, TrendingUp, AlertCircle } from "lucide-react";
+import { ArrowLeft, Target, AlertCircle, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
 
 interface SkillNode {
   id: string;
@@ -35,21 +39,29 @@ interface MasteryResponse {
   sections: SectionNode[];
 }
 
-function getStatusColor(status: string): string {
+function getStatusTone(status: string): string {
   switch (status) {
-    case "proficient": return "text-green-600 bg-green-50";
-    case "improving": return "text-blue-600 bg-blue-50";
-    case "weak": return "text-orange-600 bg-orange-50";
-    default: return "text-gray-600 bg-gray-50";
+    case "proficient":
+      return "bg-emerald-100 text-emerald-700";
+    case "improving":
+      return "bg-blue-100 text-blue-700";
+    case "weak":
+      return "bg-amber-100 text-amber-800";
+    default:
+      return "bg-muted text-muted-foreground";
   }
 }
 
 function getStatusLabel(status: string): string {
   switch (status) {
-    case "proficient": return "Proficient";
-    case "improving": return "Improving";
-    case "weak": return "Needs Work";
-    default: return "Not Started";
+    case "proficient":
+      return "Proficient";
+    case "improving":
+      return "Improving";
+    case "weak":
+      return "Needs Focus";
+    default:
+      return "Not Started";
   }
 }
 
@@ -58,135 +70,213 @@ export default function MasteryPage() {
     window.history.back();
   };
 
-  // Fetch mastery data from the real API endpoint
   const { data, isLoading, error } = useQuery<MasteryResponse>({
-    queryKey: ['/api/me/mastery/skills'],
+    queryKey: ["/api/me/mastery/skills"],
     retry: 1,
   });
+
+  const sections = data?.sections ?? [];
+  const hasAnyMastery = sections.some((section) => section.avgMastery > 0);
+  const domains = useMemo(
+    () => sections.flatMap((section) => section.domains.map((domain) => ({ sectionLabel: section.label, ...domain }))),
+    [sections],
+  );
+  const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (domains.length === 0) {
+      setSelectedDomainId(null);
+      return;
+    }
+
+    if (!selectedDomainId || !domains.some((domain) => domain.id === selectedDomainId)) {
+      setSelectedDomainId(domains[0].id);
+    }
+  }, [domains, selectedDomainId]);
+
+  const selectedDomain = domains.find((domain) => domain.id === selectedDomainId) ?? null;
 
   return (
     <AppShell showFooter>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Button variant="ghost" size="sm" onClick={handleBack} className="mr-2">
+        <header className="mb-8">
+          <div className="flex items-center gap-3 mb-3">
+            <Button variant="ghost" size="sm" onClick={handleBack} className="mr-1">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
-            <Brain className="h-8 w-8 text-foreground" />
-            <h1 className="text-3xl font-bold text-foreground">Skill Mastery</h1>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Mastery & Insights</p>
           </div>
-          <p className="text-muted-foreground">
-            Track your progress across all SAT skills.
-          </p>
-        </div>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2">Domain Mastery</h1>
+          <p className="text-muted-foreground max-w-3xl">All scores and status badges below come from live mastery runtime data. No projected placeholders are shown.</p>
+        </header>
 
-        {/* Loading State */}
         {isLoading && (
           <div className="space-y-4">
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-36 w-full" />
+            <Skeleton className="h-36 w-full" />
           </div>
         )}
 
-        {/* Error State */}
-        {error && (
-          (() => {
-            const message = error instanceof Error ? error.message : "";
-            const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_KPI_REQUIRED");
-            return isPremiumLocked ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className="flex items-center justify-between gap-3">
-                  <span>Mastery details are part of premium KPI access.</span>
-                  <Button asChild variant="outline" size="sm">
+        {error && (() => {
+          const message = error instanceof Error ? error.message : "";
+          const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_KPI_REQUIRED");
+
+          if (isPremiumLocked) {
+            return (
+              <Card className="bg-primary-container text-primary-foreground border-transparent">
+                <CardContent className="pt-6">
+                  <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70 mb-3">Premium Insight</p>
+                  <h2 className="text-2xl font-bold mb-2">Mastery analytics are locked</h2>
+                  <p className="text-sm text-primary-foreground/85 mb-5">This account needs premium KPI access before `/api/me/mastery/skills` can be displayed in the dashboard.</p>
+                  <Button asChild variant="secondary" size="sm">
                     <a href="/">View Upgrade Options</a>
                   </Button>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Failed to load mastery data. Please try again later.
-                </AlertDescription>
-              </Alert>
+                </CardContent>
+              </Card>
             );
-          })()
-        )}
+          }
 
-        {/* Empty State */}
-        {!isLoading && !error && data && data.sections.every(s => s.avgMastery === 0) && (
+          return (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>Failed to load mastery data. Please try again later.</AlertDescription>
+            </Alert>
+          );
+        })()}
+
+        {!isLoading && !error && !hasAnyMastery && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-5 w-5" />
-                No Practice Data Yet
+                No Mastery Data Yet
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">
-                Start practicing to see your skill mastery progress. Complete some practice questions to build your mastery profile.
-              </p>
+              <p className="text-muted-foreground">Start practice sessions to generate domain-level mastery evidence.</p>
+              <Button asChild className="mt-4">
+                <Link href="/practice">Start Practice</Link>
+              </Button>
             </CardContent>
           </Card>
         )}
 
-        {/* Data Display */}
-        {!isLoading && !error && data && data.sections.some(s => s.avgMastery > 0) && (
-          <div className="space-y-6">
-            {data.sections.map((section) => (
-              <Card key={section.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>{section.label}</CardTitle>
-                    <div className="text-sm text-muted-foreground">
-                      Average Mastery: {section.avgMastery}%
+        {!isLoading && !error && hasAnyMastery && (
+          <div className="space-y-8">
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {sections.map((section) => (
+                <Card key={section.id} className="bg-card/80 border-border/50">
+                  <CardHeader>
+                    <CardDescription className="uppercase tracking-[0.2em] text-[10px]">{section.label}</CardDescription>
+                    <CardTitle className="text-4xl tracking-tight">{section.avgMastery}%</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-2 w-full rounded-full bg-secondary/60 overflow-hidden mb-3">
+                      <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, section.avgMastery))}%` }} />
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {section.domains.map((domain) => (
-                      <div key={domain.id} className="border-l-2 border-primary/20 pl-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="font-semibold">{domain.label}</h3>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(domain.status)}`}>
-                              {getStatusLabel(domain.status)}
-                            </span>
-                            <span className="text-sm text-muted-foreground">
-                              {domain.avgMastery}%
-                            </span>
+                    <p className="text-sm text-muted-foreground">{section.domains.length} domains tracked</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </section>
+
+            {sections.map((section) => (
+              <section key={`domains-${section.id}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold tracking-tight">{section.label} Domains</h2>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Live mastery breakdown</p>
+                </div>
+                <Accordion
+                  type="single"
+                  collapsible
+                  value={selectedDomainId ?? undefined}
+                  onValueChange={(value) => setSelectedDomainId(value || null)}
+                  className="space-y-3"
+                >
+                  {section.domains.map((domain) => (
+                    <AccordionItem key={domain.id} value={domain.id} className="rounded-lg border border-border/60 bg-card/80 px-4">
+                      <AccordionTrigger className="hover:no-underline">
+                        <div className="flex-1 text-left">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <p className="text-sm font-semibold leading-snug">{domain.label}</p>
+                            <span className="text-sm font-semibold">{domain.avgMastery}%</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <Badge className={getStatusTone(domain.status)}>{getStatusLabel(domain.status)}</Badge>
+                            <span className="text-xs text-muted-foreground">{domain.skills.length} skills</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-secondary/60 overflow-hidden">
+                            <div className="h-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, domain.avgMastery))}%` }} />
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
                           {domain.skills.map((skill) => (
-                            <div 
-                              key={skill.id} 
-                              className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm"
-                            >
-                              <span className="truncate">{skill.label}</span>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(skill.status)}`}>
-                                  {skill.mastery_score}%
-                                </span>
-                                {skill.attempts > 0 && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {skill.correct}/{skill.attempts}
-                                  </span>
-                                )}
+                            <div key={skill.id} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
+                              <p className="text-sm font-medium mb-1">{skill.label}</p>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>{skill.correct}/{skill.attempts} correct</span>
+                                <span>{skill.mastery_score}% mastery</span>
                               </div>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </section>
             ))}
+
+            {selectedDomain && (
+              <section>
+                <Card className="bg-card/90 border-border/60">
+                  <CardHeader>
+                    <CardDescription className="uppercase tracking-[0.2em] text-[10px]">Selected Domain Insight</CardDescription>
+                    <CardTitle className="text-2xl tracking-tight">{selectedDomain.label}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Section: {selectedDomain.sectionLabel} · Current domain mastery: {selectedDomain.avgMastery}%
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedDomain.skills.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No skills are currently mapped to this domain.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {selectedDomain.skills
+                          .slice()
+                          .sort((a, b) => {
+                            if (a.attempts === 0 && b.attempts > 0) return 1;
+                            if (b.attempts === 0 && a.attempts > 0) return -1;
+                            return a.mastery_score - b.mastery_score;
+                          })
+                          .map((skill) => (
+                          <div key={skill.id} className="rounded-lg border border-border/60 bg-secondary/40 p-3">
+                            <p className="text-sm font-medium mb-1">{skill.label}</p>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{skill.correct}/{skill.attempts} correct</span>
+                              <span>{skill.mastery_score}% mastery</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+            )}
+
+            <div className="flex justify-end">
+              <Button asChild variant="outline">
+                <Link href="/practice">
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Continue Practice
+                </Link>
+              </Button>
+            </div>
           </div>
         )}
       </div>

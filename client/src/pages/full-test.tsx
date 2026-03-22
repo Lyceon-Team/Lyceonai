@@ -1,48 +1,192 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
-import { Tag } from "@/components/common/tag";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, FileText, Users, Info, TrendingUp, Play, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Clock, FileText, Users, Info, TrendingUp, Play, CheckCircle2, Search, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import ExamRunner from "@/components/full-length-exam/ExamRunner";
+import FullLengthResultsView, { type FullLengthResultsData } from "@/components/full-length-exam/FullLengthResultsView";
+import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
+
+interface FullLengthHistorySession {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reportAvailable: boolean;
+  reviewAvailable: boolean;
+}
+
+interface FullLengthHistoryData {
+  sessions: FullLengthHistorySession[];
+  reportAccess: {
+    hasPaidAccess: boolean;
+    reason?: string | null;
+  };
+}
 
 export default function FullTest() {
   const { user, authLoading } = useSupabaseAuth();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isStarted, setIsStarted] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [reportLookupSessionId, setReportLookupSessionId] = useState("");
+  const [reportSessionId, setReportSessionId] = useState<string | null>(null);
+  const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Check for existing session on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const sid = params.get('sessionId');
+    const sid = params.get("sessionId");
+    const reportSid = params.get("reportSessionId");
+    const reviewSid = params.get("reviewSessionId");
     if (sid) {
       setActiveSessionId(sid);
       setIsStarted(true);
+      return;
+    }
+
+    if (reportSid) {
+      const normalized = reportSid.trim();
+      setReportSessionId(normalized);
+      setReportLookupSessionId(normalized);
+      if (reviewSid) {
+        setReviewSessionId(reviewSid.trim());
+      }
+      return;
+    }
+
+    if (reviewSid) {
+      const normalized = reviewSid.trim();
+      setReportSessionId(normalized);
+      setReportLookupSessionId(normalized);
+      setReviewSessionId(normalized);
+      return;
+    }
+
+    try {
+      const lastSession = window.localStorage.getItem("lyceon:lastFullLengthSessionId");
+      if (lastSession) {
+        setReportSessionId(lastSession);
+        setReportLookupSessionId(lastSession);
+      }
+    } catch {
+      // Ignore storage errors.
     }
   }, []);
 
-  // Mutation to create a new exam session
+  const {
+    data: reportData,
+    isLoading: reportLoading,
+    error: reportError,
+  } = useQuery<FullLengthResultsData>({
+    queryKey: ["full-length-report", reportSessionId],
+    enabled: !!reportSessionId && !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      if (!reportSessionId) {
+        throw new Error("Session ID is required");
+      }
+
+      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const code = payload?.code ? ` ${payload.code}` : "";
+        const message = payload?.message || payload?.error || "Failed to load exam report";
+        throw new Error(`${res.status}:${code} ${message}`);
+      }
+
+      return payload as FullLengthResultsData;
+    },
+  });
+
+  const {
+    data: reviewData,
+    isLoading: reviewLoading,
+    error: reviewError,
+  } = useQuery<FullLengthReviewData>({
+    queryKey: ["full-length-review", reviewSessionId],
+    enabled: !!reviewSessionId && !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      if (!reviewSessionId) {
+        throw new Error("Session ID is required");
+      }
+
+      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = payload?.message || payload?.error || "Failed to load exam review";
+        throw new Error(`${res.status}: ${message}`);
+      }
+
+      return payload as FullLengthReviewData;
+    },
+  });
+  const {
+    data: historyData,
+    isLoading: historyLoading,
+    error: historyError,
+  } = useQuery<FullLengthHistoryData>({
+    queryKey: ["full-length-history"],
+    enabled: !!user && !isStarted,
+    retry: false,
+    queryFn: async () => {
+      const res = await fetch("/api/full-length/sessions?limit=15", {
+        method: "GET",
+        credentials: "include",
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message = payload?.message || payload?.error || "Failed to load full-length history";
+        throw new Error(`${res.status}: ${message}`);
+      }
+      return payload as FullLengthHistoryData;
+    },
+  });
+
+  const reportErrorMessage = reportError instanceof Error ? reportError.message : "";
+  const reportPremiumLocked =
+    reportErrorMessage.includes("402") || reportErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+  const reportLocked = reportErrorMessage.includes("423") || reportErrorMessage.toLowerCase().includes("locked");
+  const reportNotFound = reportErrorMessage.includes("404");
+  const reviewErrorMessage = reviewError instanceof Error ? reviewError.message : "";
+  const reviewLocked = reviewErrorMessage.includes("423") || reviewErrorMessage.toLowerCase().includes("locked");
+  const reviewNotFound = reviewErrorMessage.includes("404");
+  const historyErrorMessage = historyError instanceof Error ? historyError.message : "";
+
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/full-length/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const res = await fetch("/api/full-length/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
       });
-      
+
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || 'Failed to create exam session');
+        throw new Error(error.message || "Failed to create exam session");
       }
-      
+
       return res.json();
     },
     onSuccess: (data) => {
@@ -61,30 +205,28 @@ export default function FullTest() {
     },
   });
 
-  // Mutation to start the exam
   const startExamMutation = useMutation({
     mutationFn: async (sid: string) => {
       const res = await fetch(`/api/full-length/sessions/${sid}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
       });
-      
+
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || 'Failed to start exam');
+        throw new Error(error.message || "Failed to start exam");
       }
-      
+
       return res.json();
     },
     onSuccess: (_, sid) => {
       setIsStarted(true);
       setActiveSessionId(sid);
-      // Update URL to include sessionId for refresh support
-      window.history.pushState({}, '', `/full-test?sessionId=${sid}`);
+      window.history.pushState({}, "", `/full-test?sessionId=${sid}`);
       toast({
         title: "Exam Started",
-        description: "Good luck! Begin with Reading & Writing Module 1.",
+        description: "Good luck. Begin with Reading & Writing Module 1.",
       });
     },
     onError: (error: Error) => {
@@ -97,6 +239,8 @@ export default function FullTest() {
   });
 
   const handleCreateSession = () => {
+    setReportSessionId(null);
+    setReviewSessionId(null);
     createSessionMutation.mutate();
   };
 
@@ -110,23 +254,78 @@ export default function FullTest() {
     setIsStarted(false);
     setActiveSessionId(null);
     setSessionId(null);
-    window.history.pushState({}, '', '/full-test');
+    window.history.pushState({}, "", "/full-test");
   };
 
-  // If not authenticated, show login prompt
+  const loadReportSessionById = (value: string) => {
+    const normalized = value.trim();
+    if (!normalized) {
+      toast({
+        variant: "destructive",
+        title: "Session ID required",
+        description: "Enter a full-length session ID to load report truth.",
+      });
+      return;
+    }
+
+    setReportSessionId(normalized);
+    setReviewSessionId(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("sessionId");
+    params.set("reportSessionId", normalized);
+    params.delete("reviewSessionId");
+    window.history.pushState({}, "", `/full-test?${params.toString()}`);
+  };
+
+  const handleLoadReport = (event: React.FormEvent) => {
+    event.preventDefault();
+    loadReportSessionById(reportLookupSessionId);
+  };
+
+  const handleLoadReview = (sourceSessionId?: string) => {
+    const sessionToLoad = (sourceSessionId ?? reportLookupSessionId).trim();
+    if (!sessionToLoad) {
+      toast({
+        variant: "destructive",
+        title: "Session ID required",
+        description: "Enter a full-length session ID to load review truth.",
+      });
+      return;
+    }
+
+    setReviewSessionId(sessionToLoad);
+    if (!reportSessionId) {
+      setReportSessionId(sessionToLoad);
+      setReportLookupSessionId(sessionToLoad);
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.delete("sessionId");
+    params.set("reportSessionId", reportSessionId ?? sessionToLoad);
+    params.set("reviewSessionId", sessionToLoad);
+    window.history.pushState({}, "", `/full-test?${params.toString()}`);
+  };
+
+  const handleClearReport = () => {
+    setReportSessionId(null);
+    setReviewSessionId(null);
+    setReportLookupSessionId("");
+    const params = new URLSearchParams(window.location.search);
+    params.delete("reportSessionId");
+    params.delete("reviewSessionId");
+    params.delete("sessionId");
+    const query = params.toString();
+    window.history.pushState({}, "", query ? `/full-test?${query}` : "/full-test");
+  };
+
   if (!authLoading && !user) {
     return (
       <AppShell>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-          <div className="text-center py-12">
-            <h1 className="text-3xl font-bold text-foreground mb-4">Full Length SAT Test</h1>
-            <p className="text-muted-foreground mb-8">
-              Please log in to access full-length practice tests
-            </p>
+          <div className="text-center py-14">
+            <h1 className="text-3xl font-bold text-foreground mb-3">Full-Length SAT Exam</h1>
+            <p className="text-muted-foreground mb-8">Please sign in to access full-length exam sessions.</p>
             <Button asChild>
-              <Link href="/login">
-                Log In
-              </Link>
+              <Link href="/login">Log In</Link>
             </Button>
           </div>
         </div>
@@ -134,43 +333,33 @@ export default function FullTest() {
     );
   }
 
-  // If exam is started, show exam runner
   if (isStarted && activeSessionId) {
     return <ExamRunner sessionId={activeSessionId} onExit={handleExitExam} />;
   }
 
-  // If session created but not started, show start screen
   if (sessionId && !isStarted) {
     return (
       <AppShell>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-          <div className="mb-8">
+          <header className="mb-8">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Full-Length Exam Runner</p>
             <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
               Ready to Begin
             </h1>
-            <p className="text-muted-foreground">
-              Your exam session is ready. Click Start when you're prepared.
-            </p>
-          </div>
+            <p className="text-muted-foreground">Your server-authoritative exam session has been created.</p>
+          </header>
 
-          <PageCard title="Important Reminders" className="mb-8">
-            <div className="p-4 rounded-lg bg-amber-50 mb-6">
-              <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-amber-600 " />
-                <div>
-                  <h4 className="font-semibold text-amber-800 mb-2">Before You Begin</h4>
-                  <ul className="text-sm text-amber-700 space-y-1">
-                    <li>• Find a quiet space with minimal distractions</li>
-                    <li>• Ensure you have 3+ hours available (plus optional breaks)</li>
-                    <li>• Have scratch paper and a calculator ready</li>
-                    <li>• Close other browser tabs and applications</li>
-                    <li>• Make sure you have a stable internet connection</li>
-                  </ul>
-                </div>
-              </div>
+          <PageCard title="Pre-Exam Checklist" className="bg-card/80 border-border/50 mb-8">
+            <div className="rounded-xl bg-secondary/60 p-5 mb-6 text-sm text-foreground/90">
+              <ul className="space-y-2">
+                <li>Use a quiet environment and keep focus for the full run.</li>
+                <li>Allow 2+ hours with a short break between sections.</li>
+                <li>Keep scratch paper available; calculator appears in math modules.</li>
+                <li>Your timing and progression are controlled by backend session truth.</li>
+              </ul>
             </div>
 
-            <div className="flex gap-4 justify-center">
+            <div className="flex flex-wrap gap-3 justify-center">
               <Button
                 size="lg"
                 onClick={handleStartExam}
@@ -178,14 +367,9 @@ export default function FullTest() {
                 data-testid="button-confirm-start"
               >
                 <Play className="h-5 w-5 mr-2" />
-                {startExamMutation.isPending ? 'Starting...' : 'Start Exam Now'}
+                {startExamMutation.isPending ? "Starting..." : "Start Exam Now"}
               </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => setSessionId(null)}
-                disabled={startExamMutation.isPending}
-              >
+              <Button size="lg" variant="outline" onClick={() => setSessionId(null)} disabled={startExamMutation.isPending}>
                 Cancel
               </Button>
             </div>
@@ -195,151 +379,301 @@ export default function FullTest() {
     );
   }
 
-  // Default: Show exam overview and create session button
   return (
     <AppShell>
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-        {/* Header */}
-        <div className="mb-8">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-6xl">
+        <header className="mb-8">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">Assessment</p>
           <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-            Full Length SAT Test
+            Full-Length SAT Test
           </h1>
-          <p className="text-muted-foreground">
-            Take a complete practice test under realistic timed conditions
-          </p>
-        </div>
+          <p className="text-muted-foreground">Take a complete timed run under official structure and session controls.</p>
+        </header>
 
-        {/* Test Information */}
-        <PageCard
-          title="Test Overview"
-          description="Complete SAT Practice Test"
-          className="mb-8"
-        >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-            <div className="text-center p-4 rounded-lg bg-muted/50">
-              <div className="inline-flex p-3 rounded-full bg-blue-100 ">
-                <Clock className="h-6 w-6 text-blue-600 " />
+        <section className="mb-8">
+          <PageCard title="Exam Results Surface" className="bg-card/80 border-border/50">
+            <p className="text-sm text-muted-foreground mb-4">
+              Reopen full-length report truth by session ID or select from canonical runtime-backed history.
+            </p>
+            {historyLoading && (
+              <p className="text-xs text-muted-foreground mb-4">Loading session history...</p>
+            )}
+            {historyError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>{historyErrorMessage}</AlertDescription>
+              </Alert>
+            )}
+            {historyData && historyData.sessions.length > 0 && (
+              <div className="mb-4 rounded-lg border border-border/50 bg-secondary/35 p-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground mb-3">Recent completed sessions</p>
+                <div className="space-y-2">
+                  {historyData.sessions.map((session) => (
+                    <div key={session.sessionId} className="flex flex-col gap-2 rounded-md border border-border/40 bg-card/80 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium break-all">{session.sessionId}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Status: {session.status} {session.completedAt ? `• Completed ${new Date(session.completedAt).toLocaleString()}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setReportLookupSessionId(session.sessionId);
+                            loadReportSessionById(session.sessionId);
+                          }}
+                          disabled={!session.reportAvailable}
+                        >
+                          {session.reportAvailable ? "Open Report" : "Report Locked"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setReportLookupSessionId(session.sessionId);
+                            handleLoadReview(session.sessionId);
+                          }}
+                          disabled={!session.reviewAvailable}
+                        >
+                          {session.reviewAvailable ? "Open Review" : "Review Locked"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <h3 className="font-semibold text-foreground mb-1">Duration</h3>
-              <p className="text-sm text-muted-foreground">2 hours 14 minutes + break</p>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-muted/50">
-              <div className="inline-flex p-3 rounded-full bg-green-100 ">
-                <FileText className="h-6 w-6 text-green-600 " />
-              </div>
-              <h3 className="font-semibold text-foreground mb-1">Questions</h3>
-              <p className="text-sm text-muted-foreground">98 total (54 RW + 44 Math)</p>
-            </div>
-            <div className="text-center p-4 rounded-lg bg-muted/50">
-              <div className="inline-flex p-3 rounded-full bg-purple-100 ">
-                <Users className="h-6 w-6 text-purple-600 " />
-              </div>
-              <h3 className="font-semibold text-foreground mb-1">Format</h3>
-              <p className="text-sm text-muted-foreground">Adaptive, Digital</p>
-            </div>
-          </div>
+            )}
+            {historyData && historyData.sessions.length === 0 && (
+              <p className="text-xs text-muted-foreground mb-4">
+                No completed sessions found yet. Complete one full-length exam to populate history.
+              </p>
+            )}
+            <form onSubmit={handleLoadReport} className="flex flex-col sm:flex-row gap-3 mb-4">
+              <Input
+                value={reportLookupSessionId}
+                onChange={(event) => setReportLookupSessionId(event.target.value.trim())}
+                placeholder="Paste completed exam session ID"
+                aria-label="Full-length report session ID"
+              />
+              <Button type="submit" variant="outline" disabled={!reportLookupSessionId || reportLoading}>
+                {reportLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Search className="h-4 w-4 mr-2" />
+                    Load Report
+                  </>
+                )}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => handleLoadReview()} disabled={!reportLookupSessionId || reviewLoading}>
+                {reviewLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading Review...
+                  </>
+                ) : (
+                  "Load Review"
+                )}
+              </Button>
+              <Button type="button" variant="ghost" onClick={handleClearReport} disabled={!reportSessionId && !reportLookupSessionId}>
+                Clear
+              </Button>
+            </form>
+            {historyData && !historyData.reportAccess.hasPaidAccess && (
+              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
+                <AlertDescription className="text-[#0F2E48]">
+                  Report actions remain premium-gated by runtime entitlement checks. Review is available after completion.
+                </AlertDescription>
+              </Alert>
+            )}
 
-          {/* Test Structure */}
-          <div className="mb-8">
-            <h4 className="font-semibold text-foreground mb-4">Test Structure</h4>
+            {reportPremiumLocked && (
+              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
+                <AlertDescription className="text-[#0F2E48]">
+                  Full-test analytics are premium-gated by runtime contract. Upgrade access is required for this report endpoint.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportLocked && !reportPremiumLocked && (
+              <Alert className="mb-4 border-amber-200 bg-amber-50">
+                <AlertDescription className="text-amber-800">
+                  This session is not completed yet. Reports unlock only after exam completion.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportNotFound && !reportPremiumLocked && !reportLocked && (
+              <Alert className="mb-4">
+                <AlertDescription>
+                  No report was found for that session ID under your account. Verify the ID and try again.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportError && !reportPremiumLocked && !reportLocked && !reportNotFound && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>
+                  {(reportError as Error).message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewLocked && (
+              <Alert className="mb-4 border-amber-200 bg-amber-50">
+                <AlertDescription className="text-amber-800">
+                  Review unlocks only after completion. This session does not have an unlocked review payload yet.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewNotFound && !reviewLocked && (
+              <Alert className="mb-4">
+                <AlertDescription>
+                  No review payload was found for that session ID under your account.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reviewError && !reviewLocked && !reviewNotFound && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertDescription>
+                  {(reviewError as Error).message}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {reportData && (
+              <FullLengthResultsView
+                data={reportData}
+                title="Reusable Full-Length Report"
+                description="This view reuses the same results surface as completion and is sourced from the persisted report endpoint."
+                shareEnabled
+                actions={
+                  <>
+                    <Button variant="outline" onClick={() => handleLoadReview(reportData.sessionId)}>
+                      Open Review
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/dashboard">Open Dashboard KPIs</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/mastery">Open Mastery</Link>
+                    </Button>
+                  </>
+                }
+              />
+            )}
+
+            {reviewData && (
+              <div className="mt-5">
+                <FullLengthReviewView data={reviewData} />
+              </div>
+            )}
+          </PageCard>
+        </section>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
+          <PageCard title="Exam Overview" className="lg:col-span-8 bg-card/80 border-border/50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
+              <div className="rounded-xl bg-secondary/60 p-4 text-center">
+                <Clock className="h-5 w-5 mx-auto mb-2" />
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Duration</p>
+                <p className="font-semibold">2h 14m + break</p>
+              </div>
+              <div className="rounded-xl bg-secondary/60 p-4 text-center">
+                <FileText className="h-5 w-5 mx-auto mb-2" />
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Questions</p>
+                <p className="font-semibold">98 total</p>
+              </div>
+              <div className="rounded-xl bg-secondary/60 p-4 text-center">
+                <Users className="h-5 w-5 mx-auto mb-2" />
+                <p className="text-xs uppercase tracking-widest text-muted-foreground">Format</p>
+                <p className="font-semibold">Adaptive digital</p>
+              </div>
+            </div>
+
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between rounded-lg bg-secondary/40 px-4 py-3">
                 <div>
-                  <p className="font-medium text-foreground">Reading & Writing Module 1</p>
-                  <p className="text-sm text-muted-foreground">27 questions</p>
+                  <p className="font-medium">Reading & Writing Module 1</p>
+                  <p className="text-xs text-muted-foreground">27 questions</p>
                 </div>
                 <Badge>32 min</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between rounded-lg bg-secondary/40 px-4 py-3">
                 <div>
-                  <p className="font-medium text-foreground">Reading & Writing Module 2</p>
-                  <p className="text-sm text-muted-foreground">27 questions (adaptive)</p>
+                  <p className="font-medium">Reading & Writing Module 2</p>
+                  <p className="text-xs text-muted-foreground">27 questions (adaptive)</p>
                 </div>
                 <Badge>32 min</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
-                <p className="font-medium text-amber-800">10-Minute Break</p>
-                <Badge variant="outline">Optional</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between rounded-lg bg-secondary/40 px-4 py-3">
                 <div>
-                  <p className="font-medium text-foreground">Math Module 1</p>
-                  <p className="text-sm text-muted-foreground">22 questions</p>
+                  <p className="font-medium">Math Module 1</p>
+                  <p className="text-xs text-muted-foreground">22 questions</p>
                 </div>
                 <Badge>35 min</Badge>
               </div>
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center justify-between rounded-lg bg-secondary/40 px-4 py-3">
                 <div>
-                  <p className="font-medium text-foreground">Math Module 2</p>
-                  <p className="text-sm text-muted-foreground">22 questions (adaptive)</p>
+                  <p className="font-medium">Math Module 2</p>
+                  <p className="text-xs text-muted-foreground">22 questions (adaptive)</p>
                 </div>
                 <Badge>35 min</Badge>
               </div>
             </div>
-          </div>
+          </PageCard>
 
-          {/* Before You Begin Info */}
-          <div className="p-4 rounded-lg bg-amber-50 mb-6">
-            <div className="flex items-start gap-3">
-              <Info className="h-5 w-5 text-amber-600 " />
-              <div>
-                <h4 className="font-semibold text-amber-800 mb-2">Before You Begin</h4>
-                <ul className="text-sm text-amber-700 space-y-1">
-                  <li>• Find a quiet space with minimal distractions</li>
-                  <li>• Ensure you have 3+ hours available</li>
-                  <li>• Have scratch paper and a calculator ready</li>
-                  <li>• Close other browser tabs and applications</li>
-                </ul>
+          <PageCard title="Before You Begin" className="lg:col-span-4 bg-card/80 border-border/50">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 mb-5">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 mt-0.5" />
+                <p className="text-sm">Complete the exam in one uninterrupted sitting whenever possible for the most reliable signal.</p>
               </div>
             </div>
-          </div>
 
-          {/* CTA */}
-          <div className="flex flex-col items-center gap-4">
-            <Button 
-              size="lg" 
-              className="px-12" 
+            <Button
+              size="lg"
+              className="w-full"
               data-testid="button-start-full-test"
               onClick={handleCreateSession}
               disabled={createSessionMutation.isPending}
             >
               <Play className="h-5 w-5 mr-2" />
-              {createSessionMutation.isPending ? 'Creating Session...' : 'Begin Full Test'}
+              {createSessionMutation.isPending ? "Creating Session..." : "Begin Full Test"}
             </Button>
-          </div>
-        </PageCard>
+          </PageCard>
+        </div>
 
-        {/* Alternative Options */}
         <div className="grid sm:grid-cols-2 gap-6">
-          <PageCard title="Section Practice">
-            <p className="text-sm text-muted-foreground mb-4">
-              Practice individual sections with timing (32-64 minutes per section)
-            </p>
+          <PageCard title="Section Practice" className="bg-card/80 border-border/50">
+            <p className="text-sm text-muted-foreground mb-4">Run shorter section-specific practice sessions when you do not have time for a full exam.</p>
             <div className="flex gap-2 mb-4">
-              <Tag variant="muted">Math</Tag>
-              <Tag variant="muted">Reading</Tag>
-              <Tag variant="muted">Writing</Tag>
+              <Badge variant="outline">Math</Badge>
+              <Badge variant="outline">Reading & Writing</Badge>
             </div>
             <Button asChild variant="outline" className="w-full" data-testid="button-section-practice">
-              <Link href="/practice">
-                Practice Sections
-              </Link>
+              <Link href="/practice">Practice Sections</Link>
             </Button>
           </PageCard>
 
-          <PageCard title="Test History">
-            <p className="text-sm text-muted-foreground mb-4">
-              View your previous test scores and track your improvement over time
-            </p>
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="h-4 w-4 text-green-600 " />
-              <span className="text-sm text-green-600 ">
-                Track your progress
-              </span>
+          <PageCard title="Performance Review" className="bg-card/80 border-border/50">
+            <p className="text-sm text-muted-foreground mb-4">After completion, review section-level performance and progress trajectory in dashboard and mastery views.</p>
+            <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+              <TrendingUp className="h-4 w-4" />
+              Live reporting sourced from exam runtime session records
             </div>
             <Button asChild variant="outline" className="w-full" data-testid="button-view-scores">
               <Link href="/dashboard">
-                View Test History
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                View Dashboard
               </Link>
             </Button>
           </PageCard>

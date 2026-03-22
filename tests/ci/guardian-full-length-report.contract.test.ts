@@ -11,6 +11,7 @@ const accountMocks = {
 
 const reportServiceMocks = {
   getExamReport: vi.fn(),
+  listExamSessions: vi.fn(),
 };
 
 vi.mock('../../server/middleware/supabase-auth', async () => {
@@ -35,7 +36,12 @@ vi.mock('../../server/middleware/supabase-auth', async () => {
 });
 
 vi.mock('../../server/middleware/guardian-entitlement', () => ({
-  requireGuardianEntitlement: (_req: any, _res: any, next: any) => next(),
+  requireGuardianEntitlement: (req: any, res: any, next: any) => {
+    if (req.headers['x-test-entitlement'] === 'deny') {
+      return res.status(402).json({ error: 'Guardian premium required', requestId: req.requestId });
+    }
+    return next();
+  },
 }));
 
 vi.mock('../../server/middleware/csrf', () => ({
@@ -99,6 +105,92 @@ describe('Guardian Full-Length Report Visibility Contract', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Not authorized to view this student');
     expect(reportServiceMocks.getExamReport).not.toHaveBeenCalled();
+  });
+
+  it('returns guardian full-length history as linked student projection', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+    reportServiceMocks.listExamSessions.mockResolvedValue([
+      {
+        sessionId: 'sess-completed-1',
+        status: 'completed',
+        currentSection: 'math',
+        currentModule: 2,
+        testFormId: 'form-1',
+        startedAt: '2026-03-20T09:00:00.000Z',
+        completedAt: '2026-03-20T11:15:00.000Z',
+        createdAt: '2026-03-20T08:58:00.000Z',
+        updatedAt: '2026-03-20T11:15:00.000Z',
+      },
+      {
+        sessionId: 'sess-live-1',
+        status: 'in_progress',
+        currentSection: 'rw',
+        currentModule: 1,
+        testFormId: 'form-1',
+        startedAt: '2026-03-21T10:00:00.000Z',
+        completedAt: null,
+        createdAt: '2026-03-21T09:58:00.000Z',
+        updatedAt: '2026-03-21T10:10:00.000Z',
+      },
+    ]);
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/guardian', router);
+
+    const res = await request(app).get('/api/guardian/students/student-1/exams/full-length/sessions?limit=20&include_incomplete=true');
+
+    expect(res.status).toBe(200);
+    expect(reportServiceMocks.listExamSessions).toHaveBeenCalledWith({
+      userId: 'student-1',
+      limit: 20,
+      includeIncomplete: true,
+    });
+    expect(res.body.studentId).toBe('student-1');
+    expect(res.body.sessions).toEqual([
+      expect.objectContaining({
+        sessionId: 'sess-completed-1',
+        reportAvailable: true,
+        reviewAvailable: false,
+      }),
+      expect.objectContaining({
+        sessionId: 'sess-live-1',
+        reportAvailable: false,
+        reviewAvailable: false,
+      }),
+    ]);
+  });
+
+  it('denies unlinked guardian for full-length history projection', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(false);
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/guardian', router);
+
+    const res = await request(app).get('/api/guardian/students/student-404/exams/full-length/sessions');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Not authorized to view this student');
+    expect(reportServiceMocks.listExamSessions).not.toHaveBeenCalled();
+  });
+
+  it('denies free guardian access for full-length history when entitlement is missing', async () => {
+    accountMocks.isGuardianLinkedToStudent.mockResolvedValue(true);
+
+    const router = (await import('../../server/routes/guardian-routes')).default;
+    const app = express();
+    app.use(express.json());
+    app.use('/api/guardian', router);
+
+    const res = await request(app)
+      .get('/api/guardian/students/student-1/exams/full-length/sessions')
+      .set('x-test-entitlement', 'deny');
+
+    expect(res.status).toBe(402);
+    expect(reportServiceMocks.listExamSessions).not.toHaveBeenCalled();
   });
 
   it('never includes question-level, mastery, tutor, or raw-delta internals in guardian report payload', async () => {

@@ -123,24 +123,25 @@ export default function Chat() {
         <div className="mb-6">
           <div className="flex items-center justify-between">
             <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">AI Tutor</p>
               <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
                 Chat with Lisa
               </h1>
               <p className="text-muted-foreground">
-                Ask Lisa and get personalized SAT help
+                Ask questions against the live tutor runtime endpoint.
               </p>
             </div>
             
             {/* AI Provider Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border/60">
               <Sparkles className="h-4 w-4 text-foreground" />
-              <span className="text-sm font-medium text-foreground">Lisa, your SAT tutor</span>
+              <span className="text-sm font-medium text-foreground">Lisa · /api/tutor/v2</span>
             </div>
           </div>
         </div>
 
         {/* Info Banner */}
-        <div className="mb-6 p-4 rounded-lg bg-secondary border border-border">
+        <div className="mb-6 p-4 rounded-lg bg-secondary/60 border border-border/60">
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-foreground flex-shrink-0 mt-0.5" />
             <div className="text-sm text-foreground">
@@ -155,7 +156,7 @@ export default function Chat() {
         </div>
 
         {/* Chat Container */}
-        <div className="rounded-lg border bg-card shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/90 shadow-sm">
           {/* Messages Area */}
           <div 
             className="h-[500px] overflow-y-auto p-6 space-y-6"

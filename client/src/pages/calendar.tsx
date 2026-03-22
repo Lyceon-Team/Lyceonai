@@ -331,8 +331,12 @@ export default function CalendarPage() {
   return (
     <AppShell>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-foreground">Study Calendar</h1>
+        <div className="flex items-start justify-between mb-8 gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Study Plan</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Academic Projection</h1>
+            <p className="text-sm text-muted-foreground mt-1">Live calendar generated from your profile, progress, and plan services.</p>
+          </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <Button variant="outline" size="sm" onClick={handleQuickEditSettings} disabled={actionLoading}>
               <Settings className="h-4 w-4 mr-2" />
@@ -380,12 +384,12 @@ export default function CalendarPage() {
         )}
 
         {/* Streak Display */}
-        <div className="mb-6 flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-2 rounded-lg">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-2 rounded-lg border border-orange-200/70">
             <Flame className="h-5 w-5" />
             <span className="text-sm font-semibold">{streak.current} day streak</span>
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground bg-secondary/50 px-3 py-2 rounded-lg">
             Longest: {streak.longest} days
           </div>
         </div>
@@ -438,7 +442,8 @@ function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void
 
   return (
     <div className="max-w-md mx-auto">
-      <div className="bg-card rounded-lg border border-border p-6">
+      <div className="bg-card rounded-xl border border-border/60 p-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Initial Setup</p>
         <h2 className="text-xl font-semibold text-foreground mb-4">Set Up Your Study Plan</h2>
         <p className="text-sm text-muted-foreground mb-6">
           Tell us about your goals so we can create a personalized study calendar.
@@ -517,7 +522,7 @@ function MonthGrid({
   const today = formatDateKey(new Date());
 
   return (
-    <div className="bg-card rounded-lg border border-border p-4">
+    <div className="bg-card rounded-xl border border-border/60 p-4">
       <div className="grid grid-cols-7 gap-1 mb-2">
         {WEEKDAYS.map((wd) => (
           <div
@@ -539,8 +544,8 @@ function MonthGrid({
               onClick={() => d.isCurrentMonth && onSelectDay(d.dateKey)}
               disabled={!d.isCurrentMonth}
               className={`
-                relative aspect-square p-1 rounded-md text-left transition-colors
-                ${d.isCurrentMonth ? "hover:bg-secondary cursor-pointer" : "cursor-default opacity-40"}
+                relative aspect-square p-1.5 rounded-md text-left transition-colors
+                ${d.isCurrentMonth ? "hover:bg-secondary/70 cursor-pointer" : "cursor-default opacity-40"}
                 ${isSelected && d.isCurrentMonth ? "ring-2 ring-foreground" : ""}
                 ${isToday ? "bg-primary/10" : ""}
               `}
@@ -591,7 +596,7 @@ function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay
 
   if (!day || !day.isCurrentMonth) {
     return (
-      <div className="bg-card rounded-lg border border-border p-6">
+      <div className="bg-card rounded-xl border border-border/60 p-6">
         <p className="text-muted-foreground text-sm">Select a day to view details</p>
       </div>
     );
@@ -610,7 +615,7 @@ function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay
   const hasPlan = day.plannedMin > 0;
 
   return (
-    <div className="bg-card rounded-lg border border-border p-6 space-y-4">
+    <div className="bg-card rounded-xl border border-border/60 p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">{dateLabel}</h2>
         <span className={`px-2 py-1 rounded text-xs font-medium ${badge.className}`}>

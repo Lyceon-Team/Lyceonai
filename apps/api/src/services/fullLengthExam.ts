@@ -259,6 +259,24 @@ export interface CompleteExamResult {
   completedAt: Date;
 }
 
+export interface FullLengthSessionHistoryItem {
+  sessionId: string;
+  status: string;
+  currentSection: string | null;
+  currentModule: number | null;
+  testFormId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListExamSessionsParams {
+  userId: string;
+  limit?: number;
+  includeIncomplete?: boolean;
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -1544,6 +1562,49 @@ async function startModule(
       },
     });
   }
+}
+
+/**
+ * List full-length sessions for a user (canonical history truth).
+ */
+export async function listExamSessions(
+  params: ListExamSessionsParams
+): Promise<FullLengthSessionHistoryItem[]> {
+  const supabase = getSupabaseAdmin();
+  const limit = Math.max(1, Math.min(params.limit ?? 20, 50));
+
+  let query = supabase
+    .from("full_length_exam_sessions")
+    .select("id, status, current_section, current_module, test_form_id, started_at, completed_at, created_at, updated_at")
+    .eq("user_id", params.userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!params.includeIncomplete) {
+    query = query.eq("status", "completed");
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Failed to fetch sessions: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => ({
+    sessionId: String(row.id),
+    status: String(row.status ?? "unknown"),
+    currentSection: (row.current_section as string | null) ?? null,
+    currentModule:
+      typeof row.current_module === "number"
+        ? row.current_module
+        : row.current_module === null || row.current_module === undefined
+          ? null
+          : Number(row.current_module),
+    testFormId: (row.test_form_id as string | null) ?? null,
+    startedAt: (row.started_at as string | null) ?? null,
+    completedAt: (row.completed_at as string | null) ?? null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  }));
 }
 /**
  * Submit an answer to a question

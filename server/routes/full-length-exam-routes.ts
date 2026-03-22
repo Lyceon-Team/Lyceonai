@@ -152,6 +152,47 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Reques
 });
 
 /**
+ * GET /api/full-length/sessions
+ * List user's full-length sessions for history/report navigation.
+ */
+router.get("/sessions", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    const rawLimit = Number(req.query.limit ?? 20);
+    const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(Math.trunc(rawLimit), 50)) : 20;
+    const includeIncompleteRaw = String(req.query.include_incomplete ?? "").toLowerCase();
+    const includeIncomplete = includeIncompleteRaw === "1" || includeIncompleteRaw === "true";
+
+    const sessions = await fullLengthExamService.listExamSessions({
+      userId: user.id,
+      limit,
+      includeIncomplete,
+    });
+    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
+
+    return res.json({
+      sessions: sessions.map((session) => ({
+        ...session,
+        reportAvailable: session.status === "completed" && access.hasPaidAccess,
+        reviewAvailable: session.status === "completed",
+      })),
+      reportAccess: {
+        hasPaidAccess: access.hasPaidAccess,
+        reason: access.reason,
+      },
+      requestId: req.requestId,
+    });
+  } catch (error: unknown) {
+    console.error("[FULL-LENGTH] List sessions error:", error);
+    return sendRouteError(req, res, 500, "Internal error");
+  }
+});
+
+/**
  * GET /api/full-length/sessions/current
  * Get current session state with current question
  * 

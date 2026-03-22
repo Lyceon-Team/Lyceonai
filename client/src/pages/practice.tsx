@@ -4,11 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BookOpen, Calculator, Clock, Target, Flame, TrendingUp, Award } from "lucide-react";
+import {
+  BookOpen,
+  Calculator,
+  Clock,
+  Target,
+  Flame,
+  TrendingUp,
+  Award,
+  ArrowRight,
+  Timer,
+  Sparkles,
+  AlertCircle,
+} from "lucide-react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
 import { DateTime } from "luxon";
 
@@ -35,49 +47,70 @@ interface PracticeTopics {
   }>;
 }
 
+interface KpiResponse {
+  timezone: string;
+  week: {
+    practiceSessions: number;
+    questionsSolved: number;
+    accuracy: number;
+  };
+  recency: {
+    window: number;
+    totalAttempts: number;
+    accuracy: number;
+    avgSecondsPerQuestion: number;
+  };
+}
+
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
 
-  const { data: stats, isLoading: statsLoading, isError: statsError, error: statsErrorObj, refetch: refetchStats } = useQuery<QuestionStats>({
-    queryKey: ['/api/questions/stats'],
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsError,
+    error: statsErrorObj,
+    refetch: refetchStats,
+  } = useQuery<QuestionStats>({
+    queryKey: ["/api/questions/stats"],
     enabled: !!user && !authLoading,
   });
 
-  // Fetch practice topics from the new endpoint
-  const { data: topicsData, isLoading: topicsLoading, isError: topicsError, error: topicsErrorObj, refetch: refetchTopics } = useQuery<PracticeTopics>({
-    queryKey: ['/api/practice/topics'],
+  const {
+    data: topicsData,
+    isLoading: topicsLoading,
+    isError: topicsError,
+    error: topicsErrorObj,
+    refetch: refetchTopics,
+  } = useQuery<PracticeTopics>({
+    queryKey: ["/api/practice/topics"],
     enabled: !!user && !authLoading,
   });
 
-  // Weekly KPIs query (same as dashboard)
-  interface KpiResponse {
-    timezone: string;
-    week: {
-      practiceSessions: number;
-      questionsSolved: number;
-      accuracy: number;
-    };
-    recency: {
-      window: number;
-      totalAttempts: number;
-      accuracy: number;
-      avgSecondsPerQuestion: number;
-    };
-  }
-
-  const { data: kpiData, isLoading: kpiLoading, isError: kpiError, error: kpiErrorObj, refetch: refetchKpis } = useQuery<KpiResponse>({
-    queryKey: ['/api/progress/kpis'],
+  const {
+    data: kpiData,
+    isLoading: kpiLoading,
+    isError: kpiError,
+    error: kpiErrorObj,
+    refetch: refetchKpis,
+  } = useQuery<KpiResponse>({
+    queryKey: ["/api/progress/kpis"],
     enabled: !!user && !authLoading,
   });
 
-  // Streak query (from calendar month)
-  const { data: calendarData, isLoading: streakLoading, isError: streakError, error: streakErrorObj, refetch: refetchStreak } = useQuery({
-    queryKey: ['calendar-streak-practice'],
+  const {
+    data: calendarData,
+    isLoading: streakLoading,
+    isError: streakError,
+    error: streakErrorObj,
+    refetch: refetchStreak,
+  } = useQuery({
+    queryKey: ["calendar-streak-practice"],
     queryFn: async () => {
       const now = DateTime.local();
-      const start = now.startOf('month').toISODate() ?? now.toISODate()!;
-      const end = now.endOf('month').toISODate() ?? now.toISODate()!;
+      const start = now.startOf("month").toISODate() ?? now.toISODate()!;
+      const end = now.endOf("month").toISODate() ?? now.toISODate()!;
       return getCalendarMonth(start, end);
     },
     enabled: !!user && !authLoading,
@@ -86,36 +119,70 @@ function Practice() {
   const streakCurrent = calendarData?.streak?.current ?? 0;
   const weekSessions = kpiData?.week?.practiceSessions ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
+  const mathDomains = topicsData?.sections?.find((s: any) => s.section === "math")?.domains ?? [];
+  const readingDomains = topicsData?.sections?.find((s: any) => s.section === "reading_writing")?.domains ?? [];
+
   const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
-  const mathDomains = topicsData?.sections?.find((s: any) => s.section === 'math')?.domains ?? [];
-  const readingDomains = topicsData?.sections?.find((s: any) => s.section === 'reading_writing')?.domains ?? [];
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
   const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
+
+  const quickFocus = useMemo(
+    () => [
+      {
+        href: "/practice/reading-writing",
+        title: "Reading & Writing",
+        subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
+        icon: BookOpen,
+        testId: "button-practice-reading",
+        variant: "outline" as const,
+      },
+      {
+        href: "/practice/math",
+        title: "Math",
+        subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
+        icon: Calculator,
+        testId: "button-practice-math",
+        variant: "default" as const,
+      },
+    ],
+    [stats?.math, stats?.reading_writing, statsError, statsLoading],
+  );
+
+  const secondaryActions = [
+    { href: "/review-errors", title: "Review Errors", icon: AlertCircle, caption: "Resolve unresolved mistakes" },
+    { href: "/flow-cards", title: "FlowCards", icon: Sparkles, caption: "Fast adaptive drill mode" },
+    { href: "/full-test", title: "Full-Length Exam", icon: Target, caption: "Run a timed full SAT" },
+    { href: "/mastery", title: "Mastery", icon: TrendingUp, caption: "Domain-level performance" },
+  ];
 
   return (
     <AppShell showFooter>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-            Practice Questions
+        <header className="mb-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">Practice Center</p>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2" data-testid="page-title">
+            Deliberate SAT Practice
           </h1>
-          <p className="text-muted-foreground">
-            Choose your practice mode and start improving your SAT score
+          <p className="text-muted-foreground max-w-3xl">
+            Start focused sessions, continue your current section flow naturally, and keep all activity synced to live Lyceon runtime progress.
           </p>
-        </div>
+        </header>
 
-        <div className="grid lg:grid-cols-4 gap-6">
-          {/* Main Content (3/4 width) */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Quick Practice Card */}
-            <PageCard title="Quick Practice" description="Start a focused practice session">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8 space-y-6">
+            <PageCard
+              title="Session Setup"
+              description="Configure your next focused run. Starting a section reuses any compatible active canonical session on the backend."
+              className="bg-card/80 border-border/50"
+            >
               <div className="space-y-6">
-                {/* Time Selector */}
-                <div className="flex items-center gap-4">
-                  <label className="text-sm font-medium">Practice Duration:</label>
+                <div className="flex flex-wrap items-center gap-3 rounded-xl bg-secondary/50 p-4">
+                  <Timer className="h-4 w-4 text-foreground" />
+                  <p className="text-sm text-foreground/90">
+                    Session target duration
+                  </p>
                   <Select value={timePreference} onValueChange={setTimePreference}>
-                    <SelectTrigger className="w-40" data-testid="select-duration">
+                    <SelectTrigger className="w-44 bg-background" data-testid="select-duration">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -127,55 +194,32 @@ function Practice() {
                   </Select>
                 </div>
 
-                {/* Section Buttons */}
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <Button
-                    asChild
-                    size="lg"
-                    className="h-auto py-6 flex-col items-start gap-2"
-                    data-testid="button-practice-math"
-                  >
-                    <Link href="/practice/math">
-                      <div className="flex items-center gap-3 w-full">
-                        <div className="p-2 rounded-lg bg-primary/20">
-                          <Calculator className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1 text-left">
-                          <div className="font-semibold text-base">Math</div>
-                          <div className="text-xs opacity-90">
-                            {statsLoading ? '--' : statsError ? '—' : stats?.math || 0} questions
+                  {quickFocus.map((focus) => (
+                    <Button
+                      key={focus.href}
+                      asChild
+                      size="lg"
+                      variant={focus.variant}
+                      className="h-auto justify-start py-5 px-5"
+                      data-testid={focus.testId}
+                    >
+                      <Link href={focus.href}>
+                        <div className="w-full flex items-start justify-between gap-4 text-left">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <focus.icon className="h-4 w-4" />
+                              <span className="font-semibold">{focus.title}</span>
+                            </div>
+                            <p className="text-xs opacity-85">{focus.subtitle}</p>
                           </div>
+                          <ArrowRight className="h-4 w-4 shrink-0" />
                         </div>
-                      </div>
-                    </Link>
-                  </Button>
-
-                  <Button
-                    asChild
-                    size="lg"
-                    variant="outline"
-                    className="h-auto py-6 flex-col items-start gap-2"
-                    data-testid="button-practice-reading"
-                  >
-                    <Link href="/practice/reading-writing">
-                      <div className="flex items-center gap-3 w-full">
-                        <div className="p-2 rounded-lg bg-secondary">
-                          <BookOpen className="h-6 w-6 text-foreground" />
-                        </div>
-                        <div className="flex-1 text-left">
-                          <div className="font-semibold text-base">Reading & Writing</div>
-                          <div className="text-xs text-muted-foreground">
-                            {statsLoading
-                              ? '--'
-                              : statsError
-                                ? '—'
-                                : (Number(stats?.reading_writing || 0))} questions
-                          </div>
-                        </div>
-                      </div>
-                    </Link>
-                  </Button>
+                      </Link>
+                    </Button>
+                  ))}
                 </div>
+
                 {statsError && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <p className="font-medium">We couldn't load question totals.</p>
@@ -188,8 +232,11 @@ function Practice() {
               </div>
             </PageCard>
 
-            {/* Browse by Topic - Math */}
-            <PageCard title="Browse Math Topics" description="Topic-specific practice available through section practice">
+            <PageCard
+              title="Domain Library"
+              description="Browse available domains from live taxonomy before launching a filtered topic run."
+              className="bg-card/80 border-border/50"
+            >
               {topicsLoading ? (
                 <div className="grid sm:grid-cols-2 gap-3">
                   <Skeleton className="h-20 w-full" />
@@ -199,156 +246,63 @@ function Practice() {
                 </div>
               ) : topicsError ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn't load math topics.</p>
+                  <p className="font-medium">We couldn't load domain taxonomy.</p>
                   <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
                   <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
                     Retry
                   </Button>
                 </div>
-              ) : mathDomains.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  <p className="font-medium">No math topics available yet.</p>
-                  <p className="mt-1">Check back soon for curated topic sets.</p>
-                </div>
               ) : (
-                <div>
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {mathDomains.map((domain: any) => (
-                      <div
-                        key={domain.domain}
-                        className="p-4 rounded-lg border text-left bg-muted/20"
-                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">
-                            {domain.domain}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {domain.skills?.length || 0} skills
-                        </p>
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Math Domains</p>
+                    {mathDomains.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No math domains published yet.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {mathDomains.map((domain: any) => (
+                          <Badge key={`math-${domain.domain}`} variant="outline" className="px-3 py-1">
+                            {domain.domain} · {domain.skills?.length || 0}
+                          </Badge>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                  <div className="flex justify-center">
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Reading & Writing Domains</p>
+                    {readingDomains.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No reading & writing domains published yet.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {readingDomains.map((domain: any) => (
+                          <Badge key={`rw-${domain.domain}`} variant="outline" className="px-3 py-1">
+                            {domain.domain} · {domain.skills?.length || 0}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
                     <Button asChild variant="outline" size="sm">
                       <Link href="/practice/topics">
                         <BookOpen className="h-4 w-4 mr-2" />
-                        Browse & Filter All Topics
+                        Open Topic Explorer
                       </Link>
                     </Button>
                   </div>
                 </div>
               )}
-            </PageCard>
-
-            {/* Browse by Topic - Reading & Writing */}
-            <PageCard title="Browse Reading & Writing Topics" description="Topic-specific practice available through section practice">
-              {topicsLoading ? (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ) : topicsError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn't load reading &amp; writing topics.</p>
-                  <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
-                  <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
-                    Retry
-                  </Button>
-                </div>
-              ) : readingDomains.length === 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  <p className="font-medium">No reading &amp; writing topics available yet.</p>
-                  <p className="mt-1">Check back soon for curated topic sets.</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="grid sm:grid-cols-2 gap-3 mb-4">
-                    {readingDomains.map((domain: any) => (
-                      <div
-                        key={domain.domain}
-                        className="p-4 rounded-lg border text-left bg-muted/20"
-                        data-testid={`topic-${domain.domain.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-sm">
-                            {domain.domain}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {domain.skills?.length || 0} skills
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-center">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href="/practice/topics">
-                        <BookOpen className="h-4 w-4 mr-2" />
-                        Browse & Filter All Topics
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </PageCard>
-
-            {/* Other Options */}
-            <PageCard title="More Practice Modes">
-              <div className="grid sm:grid-cols-3 gap-4">
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-auto py-4 flex-col gap-2"
-                  data-testid="button-random-practice"
-                >
-                  <Link href="/practice/random">
-                    <Target className="h-5 w-5" />
-                    <span className="text-sm font-medium">Mixed Practice</span>
-                  </Link>
-                </Button>
-
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-auto py-4 flex-col gap-2"
-                  data-testid="button-flow-cards"
-                >
-                  <Link href="/flow-cards">
-                    <div className="relative">
-                      <BookOpen className="h-5 w-5" />
-                      <Badge className="absolute -top-2 -right-2 h-4 px-1 text-[10px]">New</Badge>
-                    </div>
-                    <span className="text-sm font-medium">FlowCards</span>
-                  </Link>
-                </Button>
-
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-auto py-4 flex-col gap-2"
-                  data-testid="button-review-errors"
-                >
-                  <Link href="/review-errors">
-                    <TrendingUp className="h-5 w-5" />
-                    <span className="text-sm font-medium">Review Errors</span>
-                  </Link>
-                </Button>
-              </div>
             </PageCard>
           </div>
 
-          {/* Sidebar (1/4 width) */}
-          <div className="space-y-6">
-            {/* Stats Card */}
-            <PageCard title="Your Stats">
+          <aside className="lg:col-span-4 space-y-6">
+            <PageCard title="Weekly Activity" className="bg-card/80 border-border/50">
               <div className="space-y-4">
                 {(kpiError || streakError) && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                    <p className="font-medium">We couldn't load your stats.</p>
+                    <p className="font-medium">We couldn't load your activity summary.</p>
                     <p className="mt-1">
                       {(kpiErrorObj as Error)?.message || (streakErrorObj as Error)?.message || "Please try again."}
                     </p>
@@ -362,93 +316,64 @@ function Practice() {
                     </div>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Flame className="h-5 w-5 text-foreground" />
-                    <span className="text-sm text-muted-foreground">Streak</span>
+
+                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-foreground/80">
+                    <Flame className="h-4 w-4" />
+                    Streak
                   </div>
-                  <span className="text-2xl font-bold">
-                    {streakLoading ? "—" : streakError ? "—" : streakEmpty ? "0" : streakCurrent}
+                  <span className="text-xl font-semibold">{streakLoading ? "—" : streakError ? "—" : streakEmpty ? "0" : streakCurrent}</span>
+                </div>
+
+                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-foreground/80">
+                    <Clock className="h-4 w-4" />
+                    Sessions (7d)
+                  </div>
+                  <span className="text-xl font-semibold">{kpiLoading ? "—" : kpiError ? "—" : kpiEmpty ? "0" : weekSessions}</span>
+                </div>
+
+                <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-foreground/80">
+                    <Award className="h-4 w-4" />
+                    Accuracy
+                  </div>
+                  <span className="text-xl font-semibold">
+                    {kpiLoading ? "—" : kpiError ? "—" : kpiData?.week?.questionsSolved === 0 ? "—" : `${weekAccuracy}%`}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-foreground" />
-                    <span className="text-sm text-muted-foreground">This Week</span>
-                  </div>
-                  <span className="text-2xl font-bold">
-                    {kpiLoading ? "—" : kpiError ? "—" : kpiEmpty ? "0" : weekSessions}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Award className="h-5 w-5 text-foreground" />
-                    <span className="text-sm text-muted-foreground">Accuracy</span>
-                  </div>
-                  <span className="text-2xl font-bold text-foreground">
-                    {kpiLoading
-                      ? "—"
-                      : kpiError
-                        ? "—"
-                        : kpiData?.week?.questionsSolved === 0
-                          ? "—"
-                          : `${weekAccuracy}%`}
-                  </span>
-                </div>
-                {kpiEmpty && (
-                  <p className="text-xs text-muted-foreground">No weekly activity recorded yet.</p>
-                )}
-                {streakEmpty && (
-                  <p className="text-xs text-muted-foreground">No practice streak yet.</p>
-                )}
+
+                {kpiEmpty && <p className="text-xs text-muted-foreground">No weekly KPI activity recorded yet.</p>}
+                {streakEmpty && <p className="text-xs text-muted-foreground">No streak data for this month yet.</p>}
               </div>
             </PageCard>
 
-            {/* Total Questions */}
-            <PageCard>
-              <div className="text-center py-4">
-                {statsError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    <p className="font-medium">Unable to load totals.</p>
-                    <p className="mt-1">{(statsErrorObj as Error)?.message ?? "Please try again."}</p>
-                    <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchStats()}>
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-4xl font-bold text-primary mb-2">
-                      {statsLoading ? '--' : stats?.total || 0}
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {statsEmpty ? "No questions available yet" : "Total Questions Available"}
-                    </p>
-                  </>
-                )}
+            <PageCard className="bg-primary-container text-primary-foreground border-transparent">
+              <div className="space-y-2 text-center py-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70">Question Bank</p>
+                <p className="text-5xl font-bold">{statsError ? "—" : statsLoading ? "--" : stats?.total || 0}</p>
+                <p className="text-sm text-primary-foreground/80">
+                  {statsEmpty ? "No questions available yet" : "Total questions currently available"}
+                </p>
               </div>
             </PageCard>
 
-            {/* Quick Links */}
-            <PageCard title="Quick Links">
-              <div className="space-y-2">
-                <Button asChild variant="ghost" className="w-full justify-start" size="sm">
-                  <Link href="/full-test">
-                    Take Full Test
-                  </Link>
-                </Button>
-                <Button asChild variant="ghost" className="w-full justify-start" size="sm">
-                  <Link href="/chat">
-                    Ask Lisa
-                  </Link>
-                </Button>
-                <Button asChild variant="ghost" className="w-full justify-start" size="sm">
-                  <Link href="/dashboard">
-                    View Progress
-                  </Link>
-                </Button>
+            <PageCard title="Quick Actions" className="bg-card/80 border-border/50">
+              <div className="space-y-3">
+                {secondaryActions.map((item) => (
+                  <Button key={item.href} asChild variant="ghost" className="h-auto w-full justify-between px-3 py-3">
+                    <Link href={item.href}>
+                      <span className="flex items-center gap-2 text-sm">
+                        <item.icon className="h-4 w-4" />
+                        {item.title}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{item.caption}</span>
+                    </Link>
+                  </Button>
+                ))}
               </div>
             </PageCard>
-          </div>
+          </aside>
         </div>
       </div>
     </AppShell>
