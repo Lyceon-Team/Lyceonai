@@ -12,6 +12,7 @@ import HomePage from "@/pages/home";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
+import UpdatePassword from "@/pages/update-password";
 
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const CalendarPage = lazy(() => import("@/pages/calendar"));
@@ -40,6 +41,7 @@ const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
+const GuardianConsentVerify = lazy(() => import("@/pages/guardian-consent-verify"));
 
 function PageLoader() {
   return (
@@ -101,8 +103,11 @@ function Router() {
         {/* Profile routes - allow all authenticated roles */}
         <Route path="/profile" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UserProfile /></RequireRole>} />
         <Route path="/profile/complete" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><ProfileComplete /></RequireRole>} />
+        <Route path="/update-password" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UpdatePassword /></RequireRole>} />
+        <Route path="/reset-password" component={UpdatePassword} />
 
         {/* Guardian routes - require guardian or admin role */}
+        <Route path="/guardian/verify-consent" component={GuardianConsentVerify} />
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
 

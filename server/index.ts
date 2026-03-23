@@ -62,6 +62,7 @@ import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
 import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
+import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
@@ -262,6 +263,9 @@ app.get("/auth/google/callback", googleCallbackHandler);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
+
+// Guardian Consent Routes (Publicly accessible for verification)
+app.use("/api/consent", guardianConsentRoutes);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
