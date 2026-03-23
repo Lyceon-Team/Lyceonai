@@ -50,7 +50,7 @@ export function buildAllowedOrigins(opts: {
 
   const DEV_DEFAULTS = isDev ? [
     "http://localhost:5173",
-    "http://localhost:5000",
+    "http://localhost:" + (process.env.PORT || 5000),
   ] : [];
 
   const fromCors = splitCsv(opts.corsOriginsCsv);

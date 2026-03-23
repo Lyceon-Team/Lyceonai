@@ -18,6 +18,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { recordAcceptance, getLegalDocByKey, legalDocs } from "@/lib/legal";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 
 // Comprehensive profile validation schema
 const profileSchema = z.object({
@@ -48,6 +49,7 @@ const profileSchema = z.object({
     message: "You must accept the Community Guidelines"
   }),
   parentGuardianAccepted: z.boolean().default(false),
+  password: z.string().min(6, "Password must be at least 6 characters").optional().or(z.literal("")),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -69,6 +71,7 @@ export default function ProfileComplete() {
   const [currentStep, setCurrentStep] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const { toast } = useToast();
+  const { updatePassword } = useSupabaseAuth();
 
   const totalSteps = 3;
   const progress = (currentStep / totalSteps) * 100;
@@ -115,6 +118,7 @@ export default function ProfileComplete() {
       honorCodeAccepted: false,
       communityGuidelinesAccepted: false,
       parentGuardianAccepted: false,
+      password: "",
     }
   });
 
@@ -298,6 +302,16 @@ export default function ProfileComplete() {
       console.error('Failed to record legal acceptances:', err);
     }
 
+    if (data.password) {
+      try {
+        await updatePassword(data.password);
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Failed to set password');
+        toast({ title: 'Password setup failed', description: err.message || 'Failed to set password', variant: 'destructive' });
+        return;
+      }
+    }
+
     // Call the profile completion mutation
     await completeProfileMutation.mutateAsync(data);
   };
@@ -392,6 +406,28 @@ export default function ProfileComplete() {
             </FormControl>
             <FormDescription>
               {field.value && `Age: ${calculateAge(field.value)} years old`}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="password"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Set Password (Optional)</FormLabel>
+            <FormControl>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                data-testid="input-password"
+                {...field}
+              />
+            </FormControl>
+            <FormDescription>
+              If you used an email link to sign in, set a password now to use next time.
             </FormDescription>
             <FormMessage />
           </FormItem>
