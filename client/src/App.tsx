@@ -104,7 +104,7 @@ function Router() {
         <Route path="/profile" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UserProfile /></RequireRole>} />
         <Route path="/profile/complete" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><ProfileComplete /></RequireRole>} />
         <Route path="/update-password" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UpdatePassword /></RequireRole>} />
-        <Route path="/reset-password" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UpdatePassword /></RequireRole>} />
+        <Route path="/reset-password" component={UpdatePassword} />
 
         {/* Guardian routes - require guardian or admin role */}
         <Route path="/guardian/verify-consent" component={GuardianConsentVerify} />
