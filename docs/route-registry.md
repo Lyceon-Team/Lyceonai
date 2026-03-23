@@ -52,6 +52,7 @@ This document is the single authoritative registry of:
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 | `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
+| `/guardian/verify-consent` | guardian, admin | entitled | GuardianVerifyConsent | `/api/guardian/verify-consent` | ACTIVE |
 | `/admin` | admin | admin-only | AdminPortal | `/api/admin/db-health` (mounted); content publish/review admin endpoints are service-only/unmounted from runtime | ACTIVE |
 | `/admin-dashboard` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
 | `/admin-system-config` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
