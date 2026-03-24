@@ -14,6 +14,8 @@ interface SupabaseAuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   submitConsent: (guardianEmail: string, consent: boolean) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -226,6 +228,67 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    setAuthLoading(true);
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to send reset email';
+        try {
+          const data = await response.json();
+          errorMsg = data.error || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error (${response.status}): ${response.statusText || 'No response body'}`;
+        }
+        throw new Error(errorMsg);
+      }
+
+      // Successful response should be JSON, but let's be safe
+      return await response.json().catch(() => ({ success: true }));
+    } catch (error: any) {
+      console.error('[AUTH] Reset password error:', error);
+      throw new Error(error.message || 'Failed to send reset email');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const updatePassword = async (password: string) => {
+    setAuthLoading(true);
+    try {
+      const response = await fetch('/api/auth/update-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password }),
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to update password';
+        try {
+          const data = await response.json();
+          errorMsg = data.error || errorMsg;
+        } catch (e) {
+          errorMsg = `Server error (${response.status}): ${response.statusText || 'No response body'}`;
+        }
+        throw new Error(errorMsg);
+      }
+
+      return await response.json().catch(() => ({ success: true }));
+    } catch (error: any) {
+      console.error('[AUTH] Update password error:', error);
+      throw new Error(error.message || 'Failed to update password');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const submitConsent = async (guardianEmail: string, consent: boolean) => {
     if (!user?.is_under_13) {
       throw new Error('Consent is only required for users under 13');
@@ -276,6 +339,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     signIn,
     signInWithGoogle,
     signOut,
+    resetPassword,
+    updatePassword,
     submitConsent,
     refreshUser,
   };

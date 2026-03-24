@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   Brain,
   Target,
@@ -11,8 +11,12 @@ import {
   Clock,
   Shield,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  LogOut,
+  LayoutDashboard
 } from "lucide-react";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { useToast } from "@/hooks/use-toast";
 import { SEO, JsonLd, organizationJsonLd, websiteJsonLd } from "@/components/SEO";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
@@ -23,6 +27,29 @@ type HeroVariant = "A" | "B";
 export default function HomePage() {
   const [demoState, setDemoState] = useState<DemoState>("idle");
   const [variant, setVariant] = useState<HeroVariant | null>(null);
+
+  const { isAuthenticated, signOut } = useSupabaseAuth();
+  const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      toast({ title: "Signed out successfully" });
+      navigate('/login');
+    } catch (error: any) {
+      console.error('Sign out failed:', error);
+      toast({
+        title: "Sign out failed",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -115,15 +142,38 @@ export default function HomePage() {
                     {variant === "A" ? "Start free practice" : "See how Lyceon works"}
                   </a>
                 </Link>
-                <Link href="/login">
-                  <a
-                    className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
-                    data-testid="button-sign-in-dashboard"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Sign in to your dashboard
-                  </a>
-                </Link>
+                {isAuthenticated ? (
+                  <>
+                    <Link href="/dashboard">
+                      <a
+                        className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
+                        data-testid="button-go-to-dashboard"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        Go to dashboard
+                      </a>
+                    </Link>
+                    <button
+                      onClick={handleSignOut}
+                      disabled={isSigningOut}
+                      className="px-6 py-3 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-destructive/20 disabled:opacity-50"
+                      data-testid="button-sign-out"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {isSigningOut ? "Signing out..." : "Sign out"}
+                    </button>
+                  </>
+                ) : (
+                  <Link href="/login">
+                    <a
+                      className="px-6 py-3 bg-secondary border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary/80"
+                      data-testid="button-sign-in-dashboard"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Sign in to your dashboard
+                    </a>
+                  </Link>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-border">
@@ -585,11 +635,31 @@ export default function HomePage() {
                   Start a free SAT session
                 </a>
               </Link>
-              <Link href="/login">
-                <a className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg" data-testid="button-footer-signin">
-                  Sign in to your dashboard
-                </a>
-              </Link>
+              {isAuthenticated ? (
+                <>
+                  <Link href="/dashboard">
+                    <a className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2" data-testid="button-footer-dashboard">
+                      <LayoutDashboard className="w-5 h-5" />
+                      Go to dashboard
+                    </a>
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className="px-8 py-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg font-medium hover:bg-destructive/20 transition-colors text-center text-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                    data-testid="button-footer-signout"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    {isSigningOut ? "Signing out..." : "Sign out"}
+                  </button>
+                </>
+              ) : (
+                <Link href="/login">
+                  <a className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg" data-testid="button-footer-signin">
+                    Sign in to your dashboard
+                  </a>
+                </Link>
+              )}
             </div>
           </div>
         </Container>
