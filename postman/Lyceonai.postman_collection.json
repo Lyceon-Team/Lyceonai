@@ -1,0 +1,756 @@
+{
+	"info": {
+		"_postman_id": "lyceon-api",
+		"name": "Lyceon - APIs",
+		"description": "Complete API collection for testing mounted endpoints locally.\n\nSee docs/route-registry.md and docs/entitlements-map.md for the canonical source of truth.\n\n## Quick Start\n1. Sign in via `POST /api/auth/signin` — cookies are set automatically.\n2. All subsequent requests use the stored cookies for auth.\n3. Update collection variables (studentId, sessionId, etc.) as needed.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:5000", "type": "string" },
+		{ "key": "siteUrl", "value": "http://localhost:5173", "type": "string" },
+		{ "key": "testEmail", "value": "test@example.com", "type": "string" },
+		{ "key": "testPassword", "value": "TestPassword123!", "type": "string" },
+		{ "key": "adminEmail", "value": "admin@example.com", "type": "string" },
+		{ "key": "adminPassword", "value": "AdminPassword123!", "type": "string" },
+		{ "key": "adminPasscode", "value": "", "type": "string" },
+		{ "key": "guardianEmail", "value": "guardian@example.com", "type": "string" },
+		{ "key": "guardianPassword", "value": "GuardianPass123!", "type": "string" },
+		{ "key": "questionId", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "studentId", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "sessionId", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "reviewSessionId", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "notificationId", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "studentLinkCode", "value": "REPLACE_ME", "type": "string" },
+		{ "key": "fullLengthSessionId", "value": "REPLACE_ME", "type": "string" }
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Set Origin header for CSRF protection (must match allowed origins)",
+					"pm.request.headers.upsert({ key: 'Origin', value: pm.collectionVariables.get('siteUrl') });"
+				]
+			}
+		}
+	],
+	"item": [
+		{
+			"name": "🔐 Authentication",
+			"item": [
+				{
+					"name": "Sign Up",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\",\n  \"role\": \"student\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/signup", "host": ["{{baseUrl}}"], "path": ["api","auth","signup"] }
+					}
+				},
+				{
+					"name": "Sign In (Student)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Sign in successful', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/signin", "host": ["{{baseUrl}}"], "path": ["api","auth","signin"] }
+					}
+				},
+				{
+					"name": "Sign In (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/signin", "host": ["{{baseUrl}}"], "path": ["api","auth","signin"] }
+					}
+				},
+				{
+					"name": "Sign In (Guardian)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{guardianEmail}}\",\n  \"password\": \"{{guardianPassword}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/signin", "host": ["{{baseUrl}}"], "path": ["api","auth","signin"] }
+					}
+				},
+				{
+					"name": "Sign Out",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/auth/signout", "host": ["{{baseUrl}}"], "path": ["api","auth","signout"] }
+					}
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","auth","refresh"] }
+					}
+				},
+				{
+					"name": "Google OAuth Start",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/auth/google/start", "host": ["{{baseUrl}}"], "path": ["api","auth","google","start"] }
+					}
+				},
+				{
+					"name": "Submit Consent",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"consentType\": \"guardian\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/consent", "host": ["{{baseUrl}}"], "path": ["api","auth","consent"] }
+					}
+				},
+				{
+					"name": "Admin Provision",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"passcode\": \"{{adminPasscode}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/admin-provision", "host": ["{{baseUrl}}"], "path": ["api","auth","admin-provision"] }
+					}
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{testEmail}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api","auth","reset-password"] }
+					}
+				},
+				{
+					"name": "Update Password",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"password\": \"NewPassword123!\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/auth/update-password", "host": ["{{baseUrl}}"], "path": ["api","auth","update-password"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "👤 Profile",
+			"item": [
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/profile", "host": ["{{baseUrl}}"], "path": ["api","profile"] }
+					}
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"display_name\": \"Test User\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/profile", "host": ["{{baseUrl}}"], "path": ["api","profile"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "⚖️ Legal",
+			"item": [
+				{
+					"name": "Accept Legal Document",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"documentSlug\": \"student-terms\",\n  \"version\": \"1.0\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/legal/accept", "host": ["{{baseUrl}}"], "path": ["api","legal","accept"] }
+					}
+				},
+				{
+					"name": "Get Legal Acceptances",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/legal/acceptances", "host": ["{{baseUrl}}"], "path": ["api","legal","acceptances"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "📊 Progress & Calendar",
+			"item": [
+				{
+					"name": "Get Weekly KPIs",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/progress/kpis", "host": ["{{baseUrl}}"], "path": ["api","progress","kpis"] }
+					}
+				},
+				{
+					"name": "Get SAT Projection",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/progress/projection", "host": ["{{baseUrl}}"], "path": ["api","progress","projection"] }
+					}
+				},
+				{
+					"name": "Get Calendar Profile",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/calendar/profile", "host": ["{{baseUrl}}"], "path": ["api","calendar","profile"] }
+					}
+				},
+				{
+					"name": "Get Calendar Month",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/calendar/month?year=2026&month=3",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","calendar","month"],
+							"query": [
+								{ "key": "year", "value": "2026" },
+								{ "key": "month", "value": "3" }
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "📝 Practice",
+			"item": [
+				{
+					"name": "Get Topics",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/practice/topics", "host": ["{{baseUrl}}"], "path": ["api","practice","topics"] }
+					}
+				},
+				{
+					"name": "Get Questions (Filtered)",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/practice/questions?section=math&topic=algebra",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","practice","questions"],
+							"query": [
+								{ "key": "section", "value": "math" },
+								{ "key": "topic", "value": "algebra", "description": "Optional topic filter" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Next Question (Math)",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/practice/next?section=math",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","practice","next"],
+							"query": [
+								{ "key": "section", "value": "math" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Next Question (Reading/Writing)",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/practice/next?section=reading-writing",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","practice","next"],
+							"query": [
+								{ "key": "section", "value": "reading-writing" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Next Question (Random)",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/practice/next",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","practice","next"]
+						}
+					}
+				},
+				{
+					"name": "Submit Practice Answer",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"A\",\n  \"sessionId\": \"{{sessionId}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/practice/answer", "host": ["{{baseUrl}}"], "path": ["api","practice","answer"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "📋 Full-Length Exams",
+			"item": [
+				{
+					"name": "Create Exam Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    if (json.id) pm.collectionVariables.set('fullLengthSessionId', json.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions"] }
+					}
+				},
+				{
+					"name": "Get Current Session",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/current", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","current"] }
+					}
+				},
+				{
+					"name": "Start Exam",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/start", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","start"] }
+					}
+				},
+				{
+					"name": "Submit Exam Answer",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"A\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/answer", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","answer"] }
+					}
+				},
+				{
+					"name": "Submit Module",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/module/submit", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","module","submit"] }
+					}
+				},
+				{
+					"name": "Continue from Break",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/break/continue", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","break","continue"] }
+					}
+				},
+				{
+					"name": "Complete Exam",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/complete", "host": ["{{baseUrl}}"], "path": ["api","full-length","sessions","{{fullLengthSessionId}}","complete"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "🤖 AI Tutor",
+			"item": [
+				{
+					"name": "Chat with Tutor (v2)",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Can you help me understand quadratic equations?\",\n  \"questionId\": \"{{questionId}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/tutor/v2", "host": ["{{baseUrl}}"], "path": ["api","tutor","v2"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "❓ Questions",
+			"item": [
+				{
+					"name": "Get Questions List",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/questions", "host": ["{{baseUrl}}"], "path": ["api","questions"] }
+					}
+				},
+				{
+					"name": "Get Question by ID",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/questions/{{questionId}}", "host": ["{{baseUrl}}"], "path": ["api","questions","{{questionId}}"] }
+					}
+				},
+				{
+					"name": "Get Question Stats",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/questions/stats", "host": ["{{baseUrl}}"], "path": ["api","questions","stats"] }
+					}
+				},
+				{
+					"name": "Get Question Feed",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/questions/feed", "host": ["{{baseUrl}}"], "path": ["api","questions","feed"] }
+					}
+				},
+				{
+					"name": "Submit Question Feedback",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"feedback\": \"This question has a typo in option B.\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/questions/feedback", "host": ["{{baseUrl}}"], "path": ["api","questions","feedback"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "🧠 Mastery & Weakness",
+			"item": [
+				{
+					"name": "Get Mastery Skills",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/me/mastery/skills", "host": ["{{baseUrl}}"], "path": ["api","me","mastery","skills"] }
+					}
+				},
+				{
+					"name": "Get Weakness Skills",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/me/weakness/skills", "host": ["{{baseUrl}}"], "path": ["api","me","weakness","skills"] }
+					}
+				},
+				{
+					"name": "Get Weakness Clusters",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/me/weakness/clusters", "host": ["{{baseUrl}}"], "path": ["api","me","weakness","clusters"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "🔄 Review Errors",
+			"item": [
+				{
+					"name": "Get Incorrect Answers",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/review-errors", "host": ["{{baseUrl}}"], "path": ["api","review-errors"] }
+					}
+				},
+				{
+					"name": "Start Review Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    var json = pm.response.json();",
+									"    if (json.sessionId) pm.collectionVariables.set('reviewSessionId', json.sessionId);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions"] }
+					}
+				},
+				{
+					"name": "Get Review Session State",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/review-errors/sessions/{{reviewSessionId}}/state", "host": ["{{baseUrl}}"], "path": ["api","review-errors","sessions","{{reviewSessionId}}","state"] }
+					}
+				},
+				{
+					"name": "Submit Review Answer",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questionId\": \"{{questionId}}\",\n  \"answer\": \"B\",\n  \"sessionId\": \"{{reviewSessionId}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/review-errors/attempt", "host": ["{{baseUrl}}"], "path": ["api","review-errors","attempt"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "🔔 Notifications",
+			"item": [
+				{
+					"name": "Get Notifications",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/notifications", "host": ["{{baseUrl}}"], "path": ["api","notifications"] }
+					}
+				},
+				{
+					"name": "Get Unread Count",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/notifications/unread-count", "host": ["{{baseUrl}}"], "path": ["api","notifications","unread-count"] }
+					}
+				},
+				{
+					"name": "Mark Notification as Read",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read", "host": ["{{baseUrl}}"], "path": ["api","notifications","{{notificationId}}","read"] }
+					}
+				},
+				{
+					"name": "Mark All Notifications Read",
+					"request": {
+						"method": "PATCH",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/notifications/mark-all-read", "host": ["{{baseUrl}}"], "path": ["api","notifications","mark-all-read"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "👨‍👧 Guardian",
+			"item": [
+				{
+					"name": "List Linked Students",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/guardian/students", "host": ["{{baseUrl}}"], "path": ["api","guardian","students"] }
+					}
+				},
+				{
+					"name": "Link Student",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"linkCode\": \"{{studentLinkCode}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/guardian/link", "host": ["{{baseUrl}}"], "path": ["api","guardian","link"] }
+					}
+				},
+				{
+					"name": "Unlink Student",
+					"request": {
+						"method": "DELETE",
+						"url": { "raw": "{{baseUrl}}/api/guardian/link/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["api","guardian","link","{{studentId}}"] }
+					}
+				},
+				{
+					"name": "Get Student Summary",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/guardian/students/{{studentId}}/summary", "host": ["{{baseUrl}}"], "path": ["api","guardian","students","{{studentId}}","summary"] }
+					}
+				},
+				{
+					"name": "Get Student Calendar Month",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "{{baseUrl}}/api/guardian/students/{{studentId}}/calendar/month?year=2026&month=3",
+							"host": ["{{baseUrl}}"],
+							"path": ["api","guardian","students","{{studentId}}","calendar","month"],
+							"query": [
+								{ "key": "year", "value": "2026" },
+								{ "key": "month", "value": "3" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Student Weaknesses",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/guardian/weaknesses/{{studentId}}", "host": ["{{baseUrl}}"], "path": ["api","guardian","weaknesses","{{studentId}}"] }
+					}
+				},
+				{
+					"name": "Get Student Full-Length Sessions",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/guardian/students/{{studentId}}/exams/full-length/sessions", "host": ["{{baseUrl}}"], "path": ["api","guardian","students","{{studentId}}","exams","full-length","sessions"] }
+					}
+				},
+				{
+					"name": "Get Student Full-Length Report",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/guardian/students/{{studentId}}/exams/full-length/{{fullLengthSessionId}}/report", "host": ["{{baseUrl}}"], "path": ["api","guardian","students","{{studentId}}","exams","full-length","{{fullLengthSessionId}}","report"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "🛡️ Admin",
+			"item": [
+				{
+					"name": "Get System Stats",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/admin/stats", "host": ["{{baseUrl}}"], "path": ["api","admin","stats"] }
+					}
+				},
+				{
+					"name": "Get Admin KPIs",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/admin/kpis", "host": ["{{baseUrl}}"], "path": ["api","admin","kpis"] }
+					}
+				},
+				{
+					"name": "DB Health Check",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/admin/db-health", "host": ["{{baseUrl}}"], "path": ["api","admin","db-health"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "💳 Billing",
+			"item": [
+				{
+					"name": "Get Prices (Public)",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/billing/prices", "host": ["{{baseUrl}}"], "path": ["api","billing","prices"] }
+					}
+				},
+				{
+					"name": "Create Checkout Session",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"priceId\": \"price_REPLACE_ME\",\n  \"studentId\": \"{{studentId}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/billing/checkout", "host": ["{{baseUrl}}"], "path": ["api","billing","checkout"] }
+					}
+				},
+				{
+					"name": "Get Billing Status",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/billing/status", "host": ["{{baseUrl}}"], "path": ["api","billing","status"] }
+					}
+				},
+				{
+					"name": "Open Customer Portal",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{baseUrl}}/api/billing/portal", "host": ["{{baseUrl}}"], "path": ["api","billing","portal"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "💚 Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/healthz", "host": ["{{baseUrl}}"], "path": ["healthz"] }
+					}
+				},
+				{
+					"name": "Health Check (Legacy)",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api","health"] }
+					}
+				}
+			]
+		}
+	]
+}
