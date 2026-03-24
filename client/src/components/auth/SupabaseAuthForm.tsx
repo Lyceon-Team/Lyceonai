@@ -68,7 +68,7 @@ export function SupabaseAuthForm() {
         if (isUnder13) {
           toast({ 
             title: 'Account created!', 
-            description: 'Guardian consent is required. Please check your guardian\'s email.',
+            description: 'Guardian consent is required before continuing.',
             variant: 'default'
           });
         } else {
@@ -279,7 +279,7 @@ export function SupabaseAuthForm() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    A consent request will be sent to your guardian's email
+                    This email is stored with the consent record for compliance.
                   </p>
                 </div>
               )}

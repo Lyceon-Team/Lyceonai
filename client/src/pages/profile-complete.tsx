@@ -17,7 +17,7 @@ import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { recordAcceptance, getLegalDocByKey, legalDocs } from "@/lib/legal";
+import { recordAcceptance } from "@/lib/legal";
 
 // Comprehensive profile validation schema
 const profileSchema = z.object({
@@ -62,6 +62,46 @@ interface AuthUserResponse {
 
 function isAuthUserResponse(data: unknown): data is AuthUserResponse {
   return typeof data === 'object' && data !== null;
+}
+
+type RecordAcceptanceFn = typeof recordAcceptance;
+
+export async function persistRequiredLegalAcceptances(args: {
+  isMinor: boolean;
+  parentGuardianAccepted: boolean;
+  recordAcceptanceFn?: RecordAcceptanceFn;
+}): Promise<void> {
+  const recordFn = args.recordAcceptanceFn ?? recordAcceptance;
+  const docsToAccept = [
+    { docKey: "student_terms", version: "2024-12-20" },
+    { docKey: "privacy_policy", version: "2024-12-22" },
+    { docKey: "honor_code", version: "2024-12-22" },
+    { docKey: "community_guidelines", version: "2024-12-22" },
+  ] as const;
+
+  for (const doc of docsToAccept) {
+    const result = await recordFn({
+      docKey: doc.docKey,
+      docVersion: doc.version,
+      actorType: "student",
+      minor: args.isMinor,
+    });
+    if (!result.success) {
+      throw new Error(result.error || `Failed to record ${doc.docKey}`);
+    }
+  }
+
+  if (args.isMinor && args.parentGuardianAccepted) {
+    const guardianResult = await recordFn({
+      docKey: "parent_guardian_terms",
+      docVersion: "2024-12-22",
+      actorType: "parent",
+      minor: true,
+    });
+    if (!guardianResult.success) {
+      throw new Error(guardianResult.error || "Failed to record parent_guardian_terms");
+    }
+  }
 }
 
 export default function ProfileComplete() {
@@ -270,32 +310,19 @@ export default function ProfileComplete() {
     }
 
     try {
-      const docsToAccept = [
-        { docKey: 'student_terms', version: '2024-12-20' },
-        { docKey: 'privacy_policy', version: '2024-12-22' },
-        { docKey: 'honor_code', version: '2024-12-22' },
-        { docKey: 'community_guidelines', version: '2024-12-22' },
-      ];
-
-      for (const doc of docsToAccept) {
-        await recordAcceptance({
-          docKey: doc.docKey,
-          docVersion: doc.version,
-          actorType: 'student',
-          minor: userIsMinor,
-        });
-      }
-
-      if (userIsMinor && data.parentGuardianAccepted) {
-        await recordAcceptance({
-          docKey: 'parent_guardian_terms',
-          docVersion: '2024-12-22',
-          actorType: 'parent',
-          minor: true,
-        });
-      }
-    } catch (err) {
-      console.error('Failed to record legal acceptances:', err);
+      await persistRequiredLegalAcceptances({
+        isMinor: userIsMinor,
+        parentGuardianAccepted: data.parentGuardianAccepted,
+      });
+    } catch (err: any) {
+      const message = err?.message || "Failed to record required legal agreements.";
+      setErrorMessage(message);
+      toast({
+        title: "Legal acceptance failed",
+        description: message,
+        variant: "destructive",
+      });
+      return;
     }
 
     // Call the profile completion mutation

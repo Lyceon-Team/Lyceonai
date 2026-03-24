@@ -13,7 +13,6 @@ interface ChatMessage {
   type: 'user' | 'tutor';
   content: string;
   timestamp: Date;
-  provider?: 'gemini' | 'chatgpt';
   sources?: Array<{
     questionId: string;
     documentName: string;
@@ -58,7 +57,6 @@ export default function Chat() {
       const response = await apiRequest('/api/tutor/v2', {
         method: 'POST',
         body: JSON.stringify({
-          userId: user?.id || 'anonymous',
           message: messageContent,
           mode: 'concept',
           testCode: 'SAT'
@@ -72,7 +70,6 @@ export default function Chat() {
         type: 'tutor',
         content: result.answer,
         timestamp: new Date(),
-        provider: 'gemini',
         sources: result.ragContext?.primaryQuestion ? [{
           questionId: result.ragContext.primaryQuestion.canonicalId || '',
           documentName: `SAT ${result.ragContext.primaryQuestion.sectionCode || 'Question'}`,

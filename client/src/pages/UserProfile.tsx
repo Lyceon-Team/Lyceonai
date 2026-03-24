@@ -580,17 +580,12 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">Free Plan</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Access to basic SAT practice features
-                      </p>
-                    </div>
-                    <Badge variant="secondary">Current Plan</Badge>
-                  </div>
-                </div>
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Plan details are not runtime-backed on this page yet. Use the guardian dashboard paywall and billing portal flow for live subscription state.
+                  </AlertDescription>
+                </Alert>
 
                 <Alert>
                   <Star className="h-4 w-4" />

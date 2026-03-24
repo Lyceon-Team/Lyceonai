@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
+import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
 import { DateTime } from "luxon";
 
 interface QuestionStats {
@@ -40,10 +41,7 @@ interface PracticeTopics {
   sections?: Array<{
     section: string;
     label: string;
-    domains?: Array<{
-      domain: string;
-      skills: string[];
-    }>;
+    domains?: RawPracticeTopicDomain[];
   }>;
 }
 
@@ -119,8 +117,8 @@ function Practice() {
   const streakCurrent = calendarData?.streak?.current ?? 0;
   const weekSessions = kpiData?.week?.practiceSessions ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
-  const mathDomains = topicsData?.sections?.find((s: any) => s.section === "math")?.domains ?? [];
-  const readingDomains = topicsData?.sections?.find((s: any) => s.section === "reading_writing")?.domains ?? [];
+  const mathDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "math")?.domains);
+  const readingDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "reading_writing")?.domains);
 
   const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
@@ -262,7 +260,8 @@ function Practice() {
                       <div className="flex flex-wrap gap-2">
                         {mathDomains.map((domain: any) => (
                           <Badge key={`math-${domain.domain}`} variant="outline" className="px-3 py-1">
-                            {domain.domain} · {domain.skills?.length || 0}
+                            {domain.domain}
+                            {domain.skills.length > 0 ? ` · ${domain.skills.length}` : ""}
                           </Badge>
                         ))}
                       </div>
@@ -277,7 +276,8 @@ function Practice() {
                       <div className="flex flex-wrap gap-2">
                         {readingDomains.map((domain: any) => (
                           <Badge key={`rw-${domain.domain}`} variant="outline" className="px-3 py-1">
-                            {domain.domain} · {domain.skills?.length || 0}
+                            {domain.domain}
+                            {domain.skills.length > 0 ? ` · ${domain.skills.length}` : ""}
                           </Badge>
                         ))}
                       </div>

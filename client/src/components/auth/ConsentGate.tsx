@@ -30,7 +30,7 @@ export function ConsentGate() {
       if (consent) {
         toast({
           title: 'Consent submitted!',
-          description: 'Your guardian will receive a consent request via email.',
+          description: 'Consent details were recorded for your account.',
         });
       } else {
         toast({
@@ -83,7 +83,7 @@ export function ConsentGate() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              We'll send a consent request to this email address
+              This email is stored with the consent record for compliance.
             </p>
           </div>
 
