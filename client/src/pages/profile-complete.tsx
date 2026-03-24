@@ -17,7 +17,7 @@ import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { recordAcceptance } from "@/lib/legal";
+import { fetchUserAcceptances, hasAccepted, recordAcceptance } from "@/lib/legal";
 
 // Comprehensive profile validation schema
 const profileSchema = z.object({
@@ -52,6 +52,49 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 
+const REQUIRED_STUDENT_LEGAL_DOCS = [
+  { docKey: "student_terms", version: "2024-12-20" },
+  { docKey: "privacy_policy", version: "2024-12-22" },
+  { docKey: "honor_code", version: "2024-12-22" },
+  { docKey: "community_guidelines", version: "2024-12-22" },
+] as const;
+
+const REQUIRED_PARENT_GUARDIAN_DOC = {
+  docKey: "parent_guardian_terms",
+  version: "2024-12-22",
+} as const;
+
+type LegalAcceptanceRow = {
+  doc_key: string;
+  doc_version: string;
+};
+
+export function deriveLegalAcceptanceDefaults(args: {
+  acceptances: LegalAcceptanceRow[];
+  isMinor: boolean;
+}): Pick<
+  ProfileFormData,
+  | "studentTermsAccepted"
+  | "privacyPolicyAccepted"
+  | "honorCodeAccepted"
+  | "communityGuidelinesAccepted"
+  | "parentGuardianAccepted"
+> {
+  return {
+    studentTermsAccepted: hasAccepted(args.acceptances, "student_terms", "2024-12-20"),
+    privacyPolicyAccepted: hasAccepted(args.acceptances, "privacy_policy", "2024-12-22"),
+    honorCodeAccepted: hasAccepted(args.acceptances, "honor_code", "2024-12-22"),
+    communityGuidelinesAccepted: hasAccepted(args.acceptances, "community_guidelines", "2024-12-22"),
+    parentGuardianAccepted:
+      args.isMinor &&
+      hasAccepted(
+        args.acceptances,
+        REQUIRED_PARENT_GUARDIAN_DOC.docKey,
+        REQUIRED_PARENT_GUARDIAN_DOC.version,
+      ),
+  };
+}
+
 interface AuthUserResponse {
   user?: {
     profileCompletedAt?: string;
@@ -66,20 +109,25 @@ function isAuthUserResponse(data: unknown): data is AuthUserResponse {
 
 type RecordAcceptanceFn = typeof recordAcceptance;
 
+function calculateAge(birthDate: string): number {
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 export async function persistRequiredLegalAcceptances(args: {
   isMinor: boolean;
   parentGuardianAccepted: boolean;
   recordAcceptanceFn?: RecordAcceptanceFn;
 }): Promise<void> {
   const recordFn = args.recordAcceptanceFn ?? recordAcceptance;
-  const docsToAccept = [
-    { docKey: "student_terms", version: "2024-12-20" },
-    { docKey: "privacy_policy", version: "2024-12-22" },
-    { docKey: "honor_code", version: "2024-12-22" },
-    { docKey: "community_guidelines", version: "2024-12-22" },
-  ] as const;
 
-  for (const doc of docsToAccept) {
+  for (const doc of REQUIRED_STUDENT_LEGAL_DOCS) {
     const result = await recordFn({
       docKey: doc.docKey,
       docVersion: doc.version,
@@ -93,8 +141,8 @@ export async function persistRequiredLegalAcceptances(args: {
 
   if (args.isMinor && args.parentGuardianAccepted) {
     const guardianResult = await recordFn({
-      docKey: "parent_guardian_terms",
-      docVersion: "2024-12-22",
+      docKey: REQUIRED_PARENT_GUARDIAN_DOC.docKey,
+      docVersion: REQUIRED_PARENT_GUARDIAN_DOC.version,
       actorType: "parent",
       minor: true,
     });
@@ -105,9 +153,10 @@ export async function persistRequiredLegalAcceptances(args: {
 }
 
 export default function ProfileComplete() {
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [legalDefaultsApplied, setLegalDefaultsApplied] = useState(false);
   const { toast } = useToast();
 
   const totalSteps = 3;
@@ -182,6 +231,19 @@ export default function ProfileComplete() {
       setErrorMessage(errorMessage);
       toast({ title: "Profile completion failed", description: errorMessage, variant: "destructive" });
     }
+  });
+
+  const { data: legalAcceptances = [], isLoading: legalAcceptancesLoading, error: legalAcceptancesError } = useQuery<LegalAcceptanceRow[]>({
+    queryKey: ['/api/legal/acceptances'],
+    enabled: Boolean(userProfile?.authenticated),
+    retry: false,
+    queryFn: async () => {
+      const result = await fetchUserAcceptances();
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result.acceptances;
+    },
   });
 
   // Redirect if not authenticated
@@ -286,17 +348,6 @@ export default function ProfileComplete() {
       </div>
     );
   }
-
-  const calculateAge = (birthDate: string): number => {
-    const today = new Date();
-    const birth = new Date(birthDate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
 
   const onSubmit = async (data: ProfileFormData) => {
     setErrorMessage("");
@@ -606,7 +657,48 @@ export default function ProfileComplete() {
   );
 
   const dateOfBirth = form.watch("dateOfBirth");
-  const isMinor = dateOfBirth ? calculateAge(dateOfBirth) < 18 : true;
+  const isMinor = dateOfBirth ? calculateAge(dateOfBirth) < 18 : false;
+
+  useEffect(() => {
+    if (legalDefaultsApplied || legalAcceptancesLoading) return;
+    const defaults = deriveLegalAcceptanceDefaults({
+      acceptances: legalAcceptances,
+      isMinor,
+    });
+    form.setValue("studentTermsAccepted", defaults.studentTermsAccepted, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    form.setValue("privacyPolicyAccepted", defaults.privacyPolicyAccepted, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    form.setValue("honorCodeAccepted", defaults.honorCodeAccepted, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    form.setValue("communityGuidelinesAccepted", defaults.communityGuidelinesAccepted, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+    setLegalDefaultsApplied(true);
+  }, [form, isMinor, legalAcceptances, legalAcceptancesLoading, legalDefaultsApplied]);
+
+  const currentVersionAcceptance = deriveLegalAcceptanceDefaults({
+    acceptances: legalAcceptances,
+    isMinor,
+  });
+  const acceptedStudentDocCount = [
+    currentVersionAcceptance.studentTermsAccepted,
+    currentVersionAcceptance.privacyPolicyAccepted,
+    currentVersionAcceptance.honorCodeAccepted,
+    currentVersionAcceptance.communityGuidelinesAccepted,
+  ].filter(Boolean).length;
+  const priorParentAcceptance = hasAccepted(
+    legalAcceptances,
+    REQUIRED_PARENT_GUARDIAN_DOC.docKey,
+    REQUIRED_PARENT_GUARDIAN_DOC.version,
+  );
 
   // Step 3: Legal & Marketing
   const renderLegalMarketing = () => (
@@ -619,6 +711,23 @@ export default function ProfileComplete() {
         <p className="text-sm text-muted-foreground mb-4">
           Please review and accept the following documents to continue. Each link opens in a new tab.
         </p>
+        {legalAcceptancesLoading ? (
+          <p className="text-xs text-muted-foreground mb-4">
+            Loading your recorded legal acceptances...
+          </p>
+        ) : legalAcceptancesError ? (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Could not load previously recorded legal acceptances. You can still continue by accepting all required agreements below.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <p className="text-xs text-muted-foreground mb-4">
+            Current-version student agreements on file: {acceptedStudentDocCount}/{REQUIRED_STUDENT_LEGAL_DOCS.length}.
+            Required acceptances are persisted before profile completion is finalized.
+          </p>
+        )}
         
         <FormField
           control={form.control}
@@ -759,7 +868,12 @@ export default function ProfileComplete() {
             <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
               Because you are under 18, a parent or legal guardian must consent to your use of Lyceon.
             </p>
-            
+            {priorParentAcceptance && (
+              <p className="text-xs text-amber-700 dark:text-amber-300 mb-3">
+                A current parent/guardian terms acceptance is already on file for this account.
+              </p>
+            )}
+             
             <FormField
               control={form.control}
               name="parentGuardianAccepted"

@@ -279,7 +279,7 @@ export function SupabaseAuthForm() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    This email is stored with the consent record for compliance.
+                    This email is stored on the student profile so guardian consent can be completed before protected access.
                   </p>
                 </div>
               )}
@@ -341,7 +341,10 @@ export function SupabaseAuthForm() {
         </Button>
       </CardContent>
       <CardFooter className="flex justify-center text-sm text-muted-foreground">
-        By signing in, you agree to our Terms of Service and Privacy Policy
+        Legal acceptance is completed during onboarding. Review our&nbsp;
+        <a href="/legal/student-terms" className="underline hover:no-underline">Student Terms</a>
+        &nbsp;and&nbsp;
+        <a href="/legal/privacy-policy" className="underline hover:no-underline">Privacy Policy</a>.
       </CardFooter>
     </Card>
   );
