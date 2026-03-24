@@ -1,9 +1,10 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-// import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  return {
   plugins: [
     react(),
     // runtimeErrorOverlay(),
@@ -46,13 +47,14 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        target: "http://localhost:" + (env.PORT || 5000),
         changeOrigin: true,
       },
       "/auth": {
-        target: "http://localhost:5000",
+        target: "http://localhost:" + (env.PORT || 5000),
         changeOrigin: true,
       },
     },
   },
+  };
 });

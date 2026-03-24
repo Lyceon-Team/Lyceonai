@@ -8,6 +8,8 @@ import { BUILD } from '../lib/build.js';
 import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
 import { z } from 'zod';
 import { isAdminRoleRequest, normalizeSignupRole } from '../lib/auth-role.js';
+import { sendEmail } from '../lib/email.js';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -133,6 +135,60 @@ router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res
         error: updateError
       });
       // Don't fail the signup - profile exists
+    }
+
+    // Handle Guardian Consent Request for under-13s
+    if (isUnder13) {
+      try {
+        const requestId = crypto.randomUUID();
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 14); // 14 days expiry
+
+        // Insert consent request
+        const { error: requestError } = await admin
+          .from('guardian_consent_requests')
+          .insert({
+            id: requestId,
+            child_id: authData.user.id,
+            guardian_email: guardianEmail,
+            status: 'pending',
+            expires_at: expiresAt.toISOString()
+          });
+
+        if (requestError) {
+          logger.error('AUTH', 'consent_request_failed', 'Failed to create guardian consent request', {
+            userId: authData.user.id,
+            error: requestError
+          });
+        } else {
+          // Send email to guardian
+          const protocol = req.protocol;
+          const host = req.get('host');
+          const siteUrl = process.env.PUBLIC_SITE_URL || `${protocol}://${host}`;
+          const verificationLink = `${siteUrl}/guardian/verify-consent?requestId=${requestId}`;
+
+          await sendEmail({
+            to: guardianEmail,
+            subject: `Consent Required: ${displayName || 'A child'} wants to join Lyceon`,
+            html: `
+              <h1>Guardian Consent Required</h1>
+              <p>${displayName || email} has created an account on Lyceon and specified you as their guardian.</p>
+              <p>To comply with COPPA regulations, we require you to verify your identity and grant consent for them to use the platform.</p>
+              <p>Please click the link below to complete the verification (a $0.50 temporary authorization will be required):</p>
+              <p><a href="${verificationLink}">${verificationLink}</a></p>
+              <p>This link will expire in 14 days.</p>
+            `
+          });
+
+          logger.info('AUTH', 'consent_email_sent', 'Guardian consent email sent', {
+            userId: authData.user.id,
+            guardianEmail,
+            requestId
+          });
+        }
+      } catch (err) {
+        logger.error('AUTH', 'consent_flow_error', 'Unexpected error in guardian consent flow', err);
+      }
     }
 
     // Set session cookies using helper (correct maxAge based on expires_in)
@@ -595,7 +651,92 @@ router.get('/debug', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/auth/reset-password
+ * Send password reset email
+ */
+router.post('/reset-password', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    if (runningAgainstPlaceholder()) return res.json({ success: true });
+
+    const admin = getSupabaseAdmin();
+    const siteUrl = process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get('host')}`;
+
+    // Generate recovery link
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: email,
+      options: {
+        redirectTo: `${siteUrl}/update-password`
+      }
+    });
+
+    if (error) {
+      logger.error('AUTH', 'reset_password_error', 'Supabase generateLink failed', { error });
+      return res.status(400).json({ error: error.message });
+    }
+
+    if (data?.properties?.action_link) {
+      await sendEmail({
+        to: email,
+        subject: 'Reset your Lyceon password',
+        html: `
+          <h1>Password Reset Request</h1>
+          <p>We received a request to reset your password. Please click the link below to set a new one:</p>
+          <p><a href="${data.properties.action_link}">Reset Password</a></p>
+          <p>This link will take you to your dashboard where you can update your password.</p>
+          <p>If you did not request this, you can safely ignore this email.</p>
+        `
+      });
+    }
+
+    res.json({ success: true, message: 'Password reset instructions sent.' });
+  } catch (error: any) {
+    logger.error('AUTH', 'reset_password_exception', 'Failed to send reset email', error);
+    res.status(500).json({ error: 'Failed to send reset email' });
+  }
+});
+
+/**
+ * POST /api/auth/update-password
+ * Update password (requires authentication)
+ */
+router.post('/update-password', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password is required' });
+
+    if (runningAgainstPlaceholder()) return res.json({ success: true });
+
+    const admin = getSupabaseAdmin();
+    const tokenResult = resolveTokenFromRequest(req);
+    const userId = await resolveUserIdFromToken(tokenResult.token);
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      password: password
+    });
+
+    if (error) {
+      logger.error('AUTH', 'update_password_error', 'Supabase update password failed', { error });
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  } catch (error: any) {
+    logger.error('AUTH', 'update_password_exception', 'Failed to update password', error);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
+/**
  * POST /exchange-session - DEPRECATED & REMOVED
+
  * 
  * This endpoint has been deprecated in favor of server-only httpOnly cookie auth.
  * It is permanently removed and will return 404.

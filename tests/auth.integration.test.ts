@@ -149,7 +149,8 @@ describe('Auth Integration Tests', () => {
       
       // Public endpoints should not set auth cookies
       if (cookies) {
-        const authCookies = cookies.filter((c: string) => 
+        const cookiesArray = Array.isArray(cookies) ? cookies : [cookies];
+        const authCookies = cookiesArray.filter((c: string) => 
           c.includes('sb-access-token') || c.includes('sb-refresh-token')
         );
         expect(authCookies).toHaveLength(0);

@@ -12,11 +12,11 @@ import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
 
 export function SupabaseAuthForm() {
-  const { signIn, signUp, signInWithGoogle, isLoading } = useSupabaseAuth();
+  const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } = useSupabaseAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -34,6 +34,27 @@ export function SupabaseAuthForm() {
       return role === 'guardian' ? '/guardian' : '/dashboard';
     } catch {
       return '/dashboard';
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    try {
+      await resetPassword(email);
+      toast({
+        title: 'Check your email',
+        description: 'Password reset instructions have been sent.',
+      });
+      setMode('signin');
+    } catch (err: any) {
+      setError(err.message || 'Failed to send reset email');
     }
   };
 
@@ -114,13 +135,58 @@ export function SupabaseAuthForm() {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <CardTitle className="text-2xl">SAT Learning Copilot</CardTitle>
+        <CardTitle className="text-2xl">
+          {mode === 'reset' ? 'Reset Password' : 'SAT Learning Copilot'}
+        </CardTitle>
         <CardDescription>
-          Sign in to continue your SAT prep journey
+          {mode === 'reset' 
+            ? 'Enter your email to receive a password reset link' 
+            : 'Sign in to continue your SAT prep journey'}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Tabs value={mode} onValueChange={(v) => setMode(v as 'signin' | 'signup')}>
+        {mode === 'reset' ? (
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+            
+            {error && (
+              <Alert variant="destructive" data-testid="alert-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
+            <div className="flex flex-col space-y-2 mt-4">
+              <Button type="submit" disabled={isLoading} className="w-full" data-testid="button-reset">
+                {isLoading ? 'Sending...' : 'Send Reset Link'}
+              </Button>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                onClick={() => { setMode('signin'); setError(''); }}
+                className="w-full"
+              >
+                Back to Sign In
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <Tabs value={mode} onValueChange={(v) => setMode(v as 'signin' | 'signup')}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="signin" data-testid="tab-signin">Sign In</TabsTrigger>
             <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
@@ -146,7 +212,16 @@ export function SupabaseAuthForm() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="signin-password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="signin-password">Password</Label>
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-xs text-muted-foreground font-normal" 
+                    onClick={(e) => { e.preventDefault(); setMode('reset'); setError(''); }}
+                  >
+                    Forgot password?
+                  </Button>
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -339,6 +414,8 @@ export function SupabaseAuthForm() {
           </svg>
           Sign in with Google
         </Button>
+          </>
+        )}
       </CardContent>
       <CardFooter className="flex justify-center text-sm text-muted-foreground">
         Legal acceptance is completed during onboarding. Review our&nbsp;
