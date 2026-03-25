@@ -320,20 +320,6 @@ export default function NotificationDropdown() {
           </ScrollArea>
         )}
         
-        {(notifications as Notification[]).length > 0 && (
-          <>
-            <Separator />
-            <div className="p-2">
-              <Button 
-                variant="ghost" 
-                className="w-full text-xs justify-center"
-                data-testid="button-view-all-notifications"
-              >
-                View all notifications
-              </Button>
-            </div>
-          </>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
