@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -226,7 +226,7 @@ export default function ProfileComplete() {
     onSuccess: () => {
       toast({ 
         title: "Profile completed!", 
-        description: "Welcome to SAT Learning Copilot! Let's start improving your SAT scores." 
+        description: "Welcome to Lyceon! Let's start improving your SAT scores." 
       });
       navigate('/');
     },
@@ -252,8 +252,7 @@ export default function ProfileComplete() {
 
   // Redirect if not authenticated
   if (!authLoading && !authError && !userProfile?.authenticated) {
-    navigate('/login');
-    return null;
+    return <Redirect to="/login" />;
   }
 
   // Show error state if auth check failed
@@ -301,8 +300,7 @@ export default function ProfileComplete() {
 
   // Redirect if profile already completed
   if (userProfile?.user?.profileCompletedAt) {
-    navigate('/');
-    return null;
+    return <Redirect to="/" />;
   }
 
   if (authLoading) {
@@ -1111,7 +1109,7 @@ export default function ProfileComplete() {
             data-testid="button-skip"
             className="text-muted-foreground hover:text-primary"
           >
-            Skip for now (you can complete this later in settings)
+            Skip for now
           </Button>
         </div>
       </div>
