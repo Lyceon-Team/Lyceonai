@@ -293,14 +293,12 @@ export default function FullTest() {
       return;
     }
 
+    setReportSessionId(sessionToLoad);
     setReviewSessionId(sessionToLoad);
-    if (!reportSessionId) {
-      setReportSessionId(sessionToLoad);
-      setReportLookupSessionId(sessionToLoad);
-    }
+    setReportLookupSessionId(sessionToLoad);
     const params = new URLSearchParams(window.location.search);
     params.delete("sessionId");
-    params.set("reportSessionId", reportSessionId ?? sessionToLoad);
+    params.set("reportSessionId", sessionToLoad);
     params.set("reviewSessionId", sessionToLoad);
     window.history.pushState({}, "", `/full-test?${params.toString()}`);
   };

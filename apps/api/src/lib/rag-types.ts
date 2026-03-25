@@ -85,15 +85,13 @@ export interface RagQueryResponse {
 export const RagModeSchema = z.enum(["question", "concept", "strategy"]);
 
 export const RagQueryRequestSchema = z.object({
-  userId: z.string().min(1),
   message: z.string().min(1).max(2000),
-  mode: RagModeSchema,
+  mode: RagModeSchema.default("concept"),
   canonicalQuestionId: z.string().optional(),
   testCode: z.string().optional(),
   sectionCode: z.string().optional(),
   studentProfile: z
     .object({
-      userId: z.string(),
       overallLevel: z.number().min(1).max(5).optional(),
       competencyMap: z
         .record(

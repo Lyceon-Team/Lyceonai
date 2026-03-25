@@ -19,7 +19,13 @@ export default function CanonicalPracticePage(props: {
   title: string;
   badgeLabel: string;
   section: PracticeSectionParam;
+  targetMinutes?: number;
 }) {
+  const sessionSpec = React.useMemo(
+    () => (typeof props.targetMinutes === "number" ? { targetMinutes: props.targetMinutes } : undefined),
+    [props.targetMinutes],
+  );
+
   const {
     question,
     isLoading,
@@ -44,7 +50,7 @@ export default function CanonicalPracticePage(props: {
     terminateSession,
     calculatorState,
     persistCalculatorState,
-  } = useCanonicalPractice(props.section);
+  } = useCanonicalPractice(props.section, sessionSpec);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);

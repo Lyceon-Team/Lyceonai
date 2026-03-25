@@ -4,8 +4,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx --env-file=.env server/index.ts",
-    "dev:server": "NODE_ENV=development tsx --env-file=.env server/index.ts",
+    "dev": "NODE_ENV=development tsx --env-file=.env.local server/index.ts",
+    "dev:server": "NODE_ENV=development tsx --env-file=.env.local server/index.ts",
     "dev:client": "vite",
     "dev:all": "npx concurrently -n server,client -c blue,green \"pnpm dev:server\" \"pnpm dev:client\"",
     "prebuild": "rimraf dist client/dist",

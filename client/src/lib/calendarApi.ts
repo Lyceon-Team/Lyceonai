@@ -18,15 +18,29 @@ export interface StudyPlanDay {
   completed_minutes: number | null;
   status: string | null;
   focus: Array<{ section: string; weight: number }> | null;
-  tasks: Array<{ type: string; section: string; mode: string; minutes: number }> | null;
+  tasks: CalendarTask[] | null;
   plan_version: number;
   generated_at: string;
   created_at: string;
   updated_at: string;
+  is_user_override?: boolean;
   is_exam_day?: boolean;
   is_taper_day?: boolean;
   is_full_test_day?: boolean;
   status_canonical?: string | null;
+}
+
+export interface CalendarTask {
+  id: string;
+  type: string;
+  section: string | null;
+  mode: string;
+  minutes: number;
+  task_type?: string;
+  status?: "planned" | "in_progress" | "completed" | "skipped" | "missed";
+  ordinal?: number;
+  is_user_override?: boolean;
+  planner_owned?: boolean;
 }
 
 export async function getCalendarProfile(): Promise<StudyProfile | null> {
@@ -139,6 +153,52 @@ export async function updateCalendarDay(
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || 'Failed to update day');
+  }
+  return data;
+}
+
+export async function regenerateCalendarDay(dayDate: string): Promise<any> {
+  const response = await fetch(`/api/calendar/day/${dayDate}/regenerate`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to regenerate day");
+  }
+  return data;
+}
+
+export async function resetCalendarDayToAuto(dayDate: string): Promise<any> {
+  const response = await fetch(`/api/calendar/day/${dayDate}/reset-to-auto`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to reset day to auto");
+  }
+  return data;
+}
+
+export async function updateCalendarTaskStatus(
+  dayDate: string,
+  taskId: string,
+  status: "planned" | "in_progress" | "completed" | "skipped" | "missed",
+): Promise<any> {
+  const response = await fetch(`/api/calendar/day/${dayDate}/tasks/${taskId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to update task status");
   }
   return data;
 }
