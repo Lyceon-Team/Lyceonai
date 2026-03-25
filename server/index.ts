@@ -260,6 +260,8 @@ app.use("/api/auth/google", googleOAuthRoutes);
 
 // Google OAuth Callback (PUBLIC_SITE_URL/auth/google/callback)
 app.get("/auth/google/callback", googleCallbackHandler);
+// Vercel callback alias when `/auth/google/callback` is rewritten into `/api/*`.
+app.get("/api/auth/google/callback", googleCallbackHandler);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);

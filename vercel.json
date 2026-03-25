@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm build",
+  "outputDirectory": "dist/public",
+  "routes": [
+    {
+      "src": "^/api(?:/.*)?$",
+      "dest": "/api/index"
+    },
+    {
+      "src": "^/auth/google/callback$",
+      "dest": "/api/index"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/(?!api/).*",
+      "dest": "/index.html"
+    }
+  ]
+}
