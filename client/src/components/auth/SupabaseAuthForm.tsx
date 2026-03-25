@@ -136,7 +136,7 @@ export function SupabaseAuthForm() {
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <CardTitle className="text-2xl">
-          {mode === 'reset' ? 'Reset Password' : 'SAT Learning Copilot'}
+          {mode === 'reset' ? 'Reset Password' : 'Lyceon'}
         </CardTitle>
         <CardDescription>
           {mode === 'reset' 

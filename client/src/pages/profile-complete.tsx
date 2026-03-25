@@ -17,13 +17,8 @@ import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-<<<<<<< HEAD
 import { fetchUserAcceptances, hasAccepted, recordAcceptance } from "@/lib/legal";
-=======
-import { recordAcceptance } from "@/lib/legal";
-import { recordAcceptance, getLegalDocByKey, legalDocs } from "@/lib/legal";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
->>>>>>> a4c6956e7f0a424aeed5c1f1c03495fc069579fc
 
 // Comprehensive profile validation schema
 const profileSchema = z.object({

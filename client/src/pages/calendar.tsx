@@ -57,15 +57,29 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
   }
 }
 
-function formatDateKey(date: Date): string {
+export function formatDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
-function isDateBeforeToday(dateKey: string): boolean {
-  return dateKey < formatDateKey(new Date());
+export function getDateKeyInTimeZone(timeZone: string | null | undefined, date: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+export function isDateBeforeToday(dateKey: string, todayDateKey: string): boolean {
+  return dateKey < todayDateKey;
 }
 
 function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
@@ -127,6 +141,7 @@ export default function CalendarPage() {
   const month = currentMonth.getMonth();
 
   const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const todayDateKey = useMemo(() => getDateKeyInTimeZone(profile?.timezone), [profile?.timezone]);
 
   const gridStartDate = monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
   const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? formatDateKey(new Date(year, month + 1, 0));
@@ -286,7 +301,7 @@ export default function CalendarPage() {
   };
 
   const handleEditDay = async (day: CalendarDay) => {
-    if (isDateBeforeToday(day.dateKey)) {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
       setMonthError("Past days are immutable.");
       return;
     }
@@ -324,7 +339,7 @@ export default function CalendarPage() {
   };
 
   const handleRegenerateDay = async (day: CalendarDay) => {
-    if (isDateBeforeToday(day.dateKey)) {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
       setMonthError("Past days are immutable.");
       return;
     }
@@ -341,7 +356,7 @@ export default function CalendarPage() {
   };
 
   const handleResetDayToAuto = async (day: CalendarDay) => {
-    if (isDateBeforeToday(day.dateKey)) {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
       setMonthError("Past days are immutable.");
       return;
     }
@@ -362,7 +377,7 @@ export default function CalendarPage() {
     taskId: string,
     nextStatus: "planned" | "in_progress" | "completed" | "skipped" | "missed",
   ) => {
-    if (isDateBeforeToday(day.dateKey)) {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
       setMonthError("Past days are immutable.");
       return;
     }
@@ -470,6 +485,7 @@ export default function CalendarPage() {
               days={calendarDays}
               selectedDateKey={selectedDateKey}
               onSelectDay={setSelectedDateKey}
+              todayDateKey={todayDateKey}
             />
           </div>
           <aside className="lg:col-span-5">
@@ -480,6 +496,7 @@ export default function CalendarPage() {
               onResetDayToAuto={handleResetDayToAuto}
               onTaskStatusChange={handleTaskStatusChange}
               actionLoading={actionLoading}
+              todayDateKey={todayDateKey}
             />
           </aside>
         </div>
@@ -591,13 +608,13 @@ function MonthGrid({
   days,
   selectedDateKey,
   onSelectDay,
+  todayDateKey,
 }: {
   days: CalendarDay[];
   selectedDateKey: string | null;
   onSelectDay: (dateKey: string) => void;
+  todayDateKey: string;
 }) {
-  const today = formatDateKey(new Date());
-
   return (
     <div className="bg-card rounded-xl border border-border/60 p-4">
       <div className="grid grid-cols-7 gap-1 mb-2">
@@ -613,7 +630,7 @@ function MonthGrid({
       <div className="grid grid-cols-7 gap-1">
         {days.map((d) => {
           const isSelected = selectedDateKey === d.dateKey;
-          const isToday = d.dateKey === today;
+          const isToday = d.dateKey === todayDateKey;
 
           return (
             <button
@@ -669,6 +686,7 @@ function DayDetailPanel({
   onResetDayToAuto,
   onTaskStatusChange,
   actionLoading,
+  todayDateKey,
 }: {
   day: CalendarDay | null;
   onEditDay: (day: CalendarDay) => void;
@@ -680,6 +698,7 @@ function DayDetailPanel({
     status: "planned" | "in_progress" | "completed" | "skipped" | "missed",
   ) => void;
   actionLoading: boolean;
+  todayDateKey: string;
 }) {
   const [, navigate] = useLocation();
 
@@ -711,7 +730,7 @@ function DayDetailPanel({
     day.tasks?.filter((t) => t.minutes > 0 && Boolean(t.section)).map((t) => t.section as string) ?? [];
   const hasPlan = day.plannedMin > 0;
   const hasTasks = (day.tasks?.length ?? 0) > 0;
-  const isPastDay = isDateBeforeToday(day.dateKey);
+  const isPastDay = isDateBeforeToday(day.dateKey, todayDateKey);
   const canMutate = !isPastDay && !actionLoading;
   const canResetToAuto = canMutate && day.isUserOverride;
 

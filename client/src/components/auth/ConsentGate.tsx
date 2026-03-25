@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 export function ConsentGate() {
   const { user, submitConsent, signOut } = useSupabaseAuth();
   const { toast } = useToast();
-  const [guardianEmail, setGuardianEmail] = useState(user?.guardian_consent ? '' : '');
+  const [guardianEmail, setGuardianEmail] = useState(user?.guardian_email ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,14 +56,14 @@ export function ConsentGate() {
           </div>
           <CardTitle className="text-2xl">Guardian Consent Required</CardTitle>
           <CardDescription className="text-center">
-            Users under 13 need guardian permission to use SAT Learning Copilot
+            Users under 13 need guardian permission to use Lyceon
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              This requirement is part of our commitment to FERPA compliance and student data privacy.
+              This requirement supports COPPA compliance and student data privacy.
             </AlertDescription>
           </Alert>
 

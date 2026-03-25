@@ -62,6 +62,14 @@ function buildRoleSwitchTemplate(args: {
     args.displayName || args.accountEmail,
   ].join('\n');
 }
+
+export function formatMemberSince(createdAt?: string): string {
+  if (!createdAt) return "Unavailable";
+  const parsed = new Date(createdAt);
+  if (Number.isNaN(parsed.getTime())) return "Unavailable";
+  return parsed.toLocaleDateString();
+}
+
 // Note: UserStats are not currently tracked by backend
 // Progress tracking uses /api/progress/kpis and /api/progress/projection
 // These features are temporarily disabled and shown as placeholders
@@ -110,6 +118,7 @@ export default function UserProfile() {
   const currentRole = user?.role || 'student';
   const accountEmail = user?.email || profileUser?.email || '';
   const accountName = profileUser?.name || user?.display_name || '';
+  const memberSinceLabel = formatMemberSince(profileUser?.createdAt);
 
   useEffect(() => {
     if (!accountEmail) {
@@ -225,7 +234,7 @@ export default function UserProfile() {
                   )}
                   <Badge variant="outline" data-testid="badge-member-since">
                     <Calendar className="h-3 w-3 mr-1" />
-                    Member since {new Date(profileUser.createdAt || '').toLocaleDateString()}
+                    Member since {memberSinceLabel}
                   </Badge>
                 </div>
                 {user?.role === 'student' && profileUser?.studentLinkCode && (
@@ -332,7 +341,7 @@ export default function UserProfile() {
                       data-testid="input-email"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Email cannot be changed as it's linked to your Google account
+                      Email changes are currently support-managed
                     </p>
                   </div>
                 </div>
@@ -344,7 +353,7 @@ export default function UserProfile() {
               <CardHeader>
                 <CardTitle>Account Security</CardTitle>
                 <CardDescription>
-                  Your account is secured with Google OAuth
+                  Account authentication status and protections
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -352,9 +361,9 @@ export default function UserProfile() {
                   <div className="flex items-center space-x-3">
                     <Shield className="h-5 w-5 text-green-500" />
                     <div>
-                      <p className="font-medium">Google OAuth</p>
+                      <p className="font-medium">Authentication Enabled</p>
                       <p className="text-sm text-muted-foreground">
-                        Secured with Google authentication
+                        Session and role protections are active
                       </p>
                     </div>
                   </div>
@@ -363,8 +372,8 @@ export default function UserProfile() {
                 <Alert>
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Your account is protected by Google's security infrastructure.
-                    You can manage your password and 2FA settings in your Google account.
+                    This account is protected by runtime authentication controls.
+                    Use the password reset/update flow for credential changes when using email sign-in.
                   </AlertDescription>
                 </Alert>
               </CardContent>

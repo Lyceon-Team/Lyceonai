@@ -23,6 +23,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
 import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
+import { appendPracticeDuration } from "@/lib/practice-duration";
 import { DateTime } from "luxon";
 
 interface QuestionStats {
@@ -127,7 +128,7 @@ function Practice() {
   const quickFocus = useMemo(
     () => [
       {
-        href: "/practice/reading-writing",
+        href: appendPracticeDuration("/practice/reading-writing", timePreference),
         title: "Reading & Writing",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
         icon: BookOpen,
@@ -135,7 +136,7 @@ function Practice() {
         variant: "outline" as const,
       },
       {
-        href: "/practice/math",
+        href: appendPracticeDuration("/practice/math", timePreference),
         title: "Math",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
         icon: Calculator,
@@ -143,7 +144,7 @@ function Practice() {
         variant: "default" as const,
       },
     ],
-    [stats?.math, stats?.reading_writing, statsError, statsLoading],
+    [stats?.math, stats?.reading_writing, statsError, statsLoading, timePreference],
   );
 
   const secondaryActions = [
