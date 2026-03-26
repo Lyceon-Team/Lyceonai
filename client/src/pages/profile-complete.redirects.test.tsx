@@ -81,7 +81,7 @@ describe("ProfileComplete redirect continuity", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("redirects already-complete profiles declaratively to /", () => {
+  it("redirects already-complete profiles declaratively to /dashboard", () => {
     profilePayload = {
       authenticated: true,
       user: { profileCompletedAt: "2026-03-24T10:00:00.000Z" },
@@ -89,7 +89,7 @@ describe("ProfileComplete redirect continuity", () => {
 
     render(<ProfileComplete />);
 
-    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe("/");
+    expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe("/dashboard");
     expect(navigateMock).not.toHaveBeenCalled();
   });
 });

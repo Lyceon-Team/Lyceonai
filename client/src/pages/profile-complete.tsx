@@ -15,7 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fetchUserAcceptances, hasAccepted, recordAcceptance } from "@/lib/legal";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -103,6 +103,12 @@ interface AuthUserResponse {
     [key: string]: any;
   } | null;
   authenticated?: boolean;
+}
+
+function resolvePostCompletionPath(profile?: AuthUserResponse["user"] | null): string {
+  const role = profile?.role;
+  if (role === "guardian") return "/guardian";
+  return "/dashboard";
 }
 
 function isAuthUserResponse(data: unknown): data is AuthUserResponse {
@@ -228,7 +234,9 @@ export default function ProfileComplete() {
         title: "Profile completed!", 
         description: "Welcome to Lyceon! Let's start improving your SAT scores." 
       });
-      navigate('/');
+      void queryClient.invalidateQueries({ queryKey: ["/api/profile"] }).then(() => {
+        navigate(resolvePostCompletionPath(userProfile?.user));
+      });
     },
     onError: (error: any) => {
       const errorMessage = error.message || 'Failed to complete profile. Please try again.';
@@ -300,7 +308,7 @@ export default function ProfileComplete() {
 
   // Redirect if profile already completed
   if (userProfile?.user?.profileCompletedAt) {
-    return <Redirect to="/" />;
+    return <Redirect to={resolvePostCompletionPath(userProfile?.user)} />;
   }
 
   if (authLoading) {
@@ -1103,9 +1111,10 @@ export default function ProfileComplete() {
         {/* Skip Option */}
         <div className="text-center">
           <Button
+            type="button"
             variant="link"
             size="sm"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(resolvePostCompletionPath(userProfile?.user))}
             data-testid="button-skip"
             className="text-muted-foreground hover:text-primary"
           >
@@ -1116,6 +1125,3 @@ export default function ProfileComplete() {
     </div>
   );
 }
-
-
-
