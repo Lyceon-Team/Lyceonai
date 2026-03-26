@@ -7,7 +7,7 @@ import { buildReviewQueueForStudent } from "../services/review-queue";
 import {
   hasCanonicalOptionSet,
   hasSingleCanonicalCorrectAnswer,
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   normalizeAnswerKey,
 } from "../../shared/question-bank-contract";
 import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
@@ -43,6 +43,12 @@ type ItemRow = {
   source_attempted_at: string | null;
   option_order: string[] | null;
   option_token_map: Record<string, string> | null;
+  question_section: string | null;
+  question_stem: string | null;
+  question_options: McOption[];
+  question_difficulty: string | number | null;
+  question_correct_answer: string | null;
+  question_explanation: string | null;
 };
 
 type McOption = { key: string; text: string };
@@ -56,6 +62,8 @@ type CanonicalQuestion = {
   correct_answer: string;
   explanation: string | null;
 };
+
+const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_correct_answer, question_explanation";
 
 const startSchema = z.object({
   filter: z.enum(["all", "incorrect", "skipped"]).optional().default("all"),
@@ -116,6 +124,12 @@ function mapItem(row: any): ItemRow {
     source_attempted_at: row.source_attempted_at ?? null,
     option_order: Array.isArray(row.option_order) ? row.option_order : null,
     option_token_map: row.option_token_map && typeof row.option_token_map === "object" ? row.option_token_map : null,
+    question_section: optionalString(row.question_section),
+    question_stem: optionalString(row.question_stem),
+    question_options: parseOptions(row.question_options),
+    question_difficulty: row.question_difficulty ?? null,
+    question_correct_answer: optionalString(row.question_correct_answer),
+    question_explanation: optionalString(row.question_explanation),
   };
 }
 
@@ -211,7 +225,7 @@ async function getSession(sessionId: string, studentId: string): Promise<Session
 async function getItems(sessionId: string, studentId: string): Promise<ItemRow[]> {
   const { data, error } = await supabaseServer
     .from("review_session_items")
-    .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+    .select(REVIEW_ITEM_SELECT)
     .eq("review_session_id", sessionId)
     .eq("student_id", studentId)
     .order("ordinal", { ascending: true });
@@ -219,30 +233,19 @@ async function getItems(sessionId: string, studentId: string): Promise<ItemRow[]
   return (data ?? []).map(mapItem);
 }
 
-async function loadQuestion(canonicalId: string): Promise<CanonicalQuestion | null> {
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("canonical_id, status, section, section_code, question_type, stem, options, difficulty, correct_answer, explanation")
-    .eq("canonical_id", canonicalId)
-    .eq("status", "published")
-    .eq("question_type", "multiple_choice")
-    .single();
-
-  if (error || !data) return null;
-  if (!isCanonicalPublishedMcQuestion(data as any)) return null;
-
-  const options = parseOptions((data as any).options);
-  const correct = normalizeAnswerKey((data as any).correct_answer);
+function loadQuestionFromItem(item: ItemRow): CanonicalQuestion | null {
+  const options = item.question_options;
+  const correct = normalizeAnswerKey(item.question_correct_answer);
   if (!correct || !hasCanonicalOptionSet(options) || !hasSingleCanonicalCorrectAnswer(correct, options)) return null;
 
   return {
-    canonical_id: String((data as any).canonical_id),
-    section: String((data as any).section ?? (data as any).section_code ?? ""),
-    stem: String((data as any).stem ?? ""),
+    canonical_id: String(item.question_canonical_id),
+    section: String(item.question_section ?? ""),
+    stem: String(item.question_stem ?? ""),
     options,
-    difficulty: (data as any).difficulty ?? null,
+    difficulty: item.question_difficulty ?? null,
     correct_answer: correct,
-    explanation: typeof (data as any).explanation === "string" && (data as any).explanation.trim().length > 0 ? (data as any).explanation : null,
+    explanation: item.question_explanation ?? null,
   };
 }
 
@@ -260,7 +263,7 @@ async function ensureServedItem(session: SessionRow, studentId: string, clientIn
     .eq("id", queued.id)
     .eq("review_session_id", session.id)
     .eq("student_id", studentId)
-    .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+    .select(REVIEW_ITEM_SELECT)
     .single();
 
   if (error || !data) throw new Error(`review_promote_served_failed:${error?.message ?? "unknown"}`);
@@ -296,7 +299,7 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
     };
   }
 
-  const question = await loadQuestion(served.question_canonical_id);
+  const question = loadQuestionFromItem(served);
   if (!question) throw new Error("review_question_unavailable");
 
   let optionMap = parseOptionMap(served.option_token_map);
@@ -505,19 +508,61 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
     const session = mapSession(createdSessionRow);
 
-    const materializedRows = unresolved.map((snapshot, index) => ({
-      review_session_id: session.id,
-      student_id: user.id,
-      ordinal: index + 1,
-      question_canonical_id: String(snapshot.questionCanonicalId),
-      source_question_id: snapshot.questionId,
-      source_question_canonical_id: snapshot.questionCanonicalId,
-      source_origin: snapshot.source,
-      retry_mode: "same_question",
-      status: index === 0 ? "served" : "queued",
-      source_attempted_at: snapshot.attemptedAt,
-      client_instance_id: clientInstanceId,
-    }));
+    const canonicalIds = Array.from(new Set(unresolved.map((snapshot) => String(snapshot.questionCanonicalId)).filter(Boolean)));
+    const { data: questionRows, error: questionRowsError } = await supabaseServer
+      .from("questions")
+      .select("id, canonical_id, section, section_code, question_type, stem, options, difficulty, correct_answer, explanation")
+      .in("canonical_id", canonicalIds);
+
+    if (questionRowsError) {
+      return res.status(500).json({ error: "Failed to load canonical review question snapshots", code: "REVIEW_QUESTION_SNAPSHOT_LOAD_FAILED", detail: questionRowsError.message, requestId });
+    }
+
+    const questionByCanonical = new Map<string, any>();
+    for (const row of questionRows ?? []) {
+      if (isCanonicalRuntimeMcQuestion(row as any)) {
+        questionByCanonical.set(String((row as any).canonical_id), row);
+      }
+    }
+
+    const materializedRows = unresolved.map((snapshot, index) => {
+      const canonicalId = String(snapshot.questionCanonicalId);
+      const row = questionByCanonical.get(canonicalId);
+      if (!row) {
+        throw new Error(`review_question_snapshot_missing:${canonicalId}`);
+      }
+
+      const options = parseOptions((row as any).options);
+      const correctAnswer = normalizeAnswerKey((row as any).correct_answer);
+      if (!correctAnswer || !hasCanonicalOptionSet(options) || !hasSingleCanonicalCorrectAnswer(correctAnswer, options)) {
+        throw new Error(`review_question_snapshot_invalid:${canonicalId}`);
+      }
+
+      const served = buildServedOptions(options);
+      return {
+        review_session_id: session.id,
+        student_id: user.id,
+        ordinal: index + 1,
+        question_canonical_id: canonicalId,
+        source_question_id: snapshot.questionId,
+        source_question_canonical_id: snapshot.questionCanonicalId,
+        source_origin: snapshot.source,
+        retry_mode: "same_question",
+        status: index === 0 ? "served" : "queued",
+        source_attempted_at: snapshot.attemptedAt,
+        client_instance_id: clientInstanceId,
+        option_order: served.optionOrder,
+        option_token_map: served.optionTokenMap,
+        question_section: String((row as any).section ?? (row as any).section_code ?? ""),
+        question_stem: String((row as any).stem ?? ""),
+        question_options: options,
+        question_difficulty: (row as any).difficulty ?? null,
+        question_correct_answer: correctAnswer,
+        question_explanation: typeof (row as any).explanation === "string" && (row as any).explanation.trim().length > 0
+          ? (row as any).explanation
+          : null,
+      };
+    });
 
     const { data: insertedItems, error: insertItemsError } = await supabaseServer
       .from("review_session_items")
@@ -613,7 +658,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     const { data: itemRow, error: itemError } = await supabaseServer
       .from("review_session_items")
-      .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+      .select(REVIEW_ITEM_SELECT)
       .eq("id", parsed.data.review_session_item_id)
       .eq("review_session_id", parsed.data.session_id)
       .eq("student_id", userId)
@@ -670,7 +715,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       return res.status(200).json({ ok: true, skipped: true, sessionId: session.id, reviewSessionItemId: item.id });
     }
 
-    const question = await loadQuestion(item.question_canonical_id);
+    const question = loadQuestionFromItem(item);
     if (!question) return res.status(422).json({ error: "Question could not be loaded for review submission", code: "INVALID_QUESTION_DATA", requestId });
 
     const optionMap = parseOptionMap(item.option_token_map);
@@ -776,6 +821,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     return res.status(500).json({ error: "Internal server error", detail: error?.message ?? "unknown", requestId: req.requestId });
   }
 }
+
 
 
 

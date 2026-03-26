@@ -147,6 +147,20 @@ export function isCanonicalPublishedMcQuestion(row: CanonicalQuestionRowLike): b
   return true;
 }
 
+/**
+ * Runtime-safe canonical MC validation that does NOT depend on questions.status.
+ * Use this for student runtime delivery where status may be unavailable/drifted.
+ */
+export function isCanonicalRuntimeMcQuestion(row: CanonicalQuestionRowLike): boolean {
+  if (row.question_type !== "multiple_choice") return false;
+  if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
+  if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) return false;
+  if (!hasCanonicalOptionSet(row.options ?? null)) return false;
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) return false;
+  if (!normalizeText(row.stem)) return false;
+  return true;
+}
+
 export interface StudentSafeQuestionProjection {
   id: string;
   canonical_id: string | null;

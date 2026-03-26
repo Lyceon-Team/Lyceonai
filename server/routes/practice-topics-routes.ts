@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
@@ -47,9 +47,8 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     let query = supabaseServer
       .from("questions")
       .select(
-        "id, canonical_id, status, stem, section, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, competencies"
+        "id, canonical_id, stem, section, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, competencies"
       )
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -69,7 +68,7 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     }
 
     const safeQuestions = ((data ?? []) as CanonicalQuestionRowLike[])
-      .filter((row) => isCanonicalPublishedMcQuestion(row))
+      .filter((row) => isCanonicalRuntimeMcQuestion(row))
       .map((row) => {
         const safe = projectStudentSafeQuestion(row);
         return {

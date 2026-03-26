@@ -3,7 +3,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { generateEmbedding } from "../../apps/api/src/lib/embeddings";
 import { searchSimilarQuestions, getSupabaseClient } from "../../apps/api/src/lib/supabase";
 import {
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
@@ -39,11 +39,10 @@ export const searchQuestions = async (req: Request, res: Response) => {
     let detailsQuery = supabaseServer
       .from("questions")
       .select(
-        "id, canonical_id, status, section, section_code, question_type, stem, options, difficulty, domain, skill, subskill, skill_code, tags, competencies"
+        "id, canonical_id, section, section_code, question_type, stem, options, difficulty, domain, skill, subskill, skill_code, tags, competencies"
       )
       .in("id", questionIds)
-      .eq("question_type", "multiple_choice")
-      .eq("status", "published");
+      .eq("question_type", "multiple_choice");
 
     const sectionFilters = resolveSectionFilterValues(section);
     if (sectionFilters && sectionFilters.length > 0) {
@@ -58,7 +57,7 @@ export const searchQuestions = async (req: Request, res: Response) => {
 
     const detailMap = new Map<string, CanonicalQuestionRowLike>();
     for (const row of (data ?? []) as CanonicalQuestionRowLike[]) {
-      if (!isCanonicalPublishedMcQuestion(row)) {
+      if (!isCanonicalRuntimeMcQuestion(row)) {
         continue;
       }
       detailMap.set(String(row.id), row);

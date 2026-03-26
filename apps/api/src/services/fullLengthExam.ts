@@ -90,7 +90,6 @@ const FORM_STRUCTURE_INCOMPLETE_MESSAGE = "Test form is structurally incomplete"
 const FORM_DUPLICATE_ORDINAL_MESSAGE = "Test form has duplicate ordinals";
 const FORM_INVALID_ORDINAL_MESSAGE = "Test form has invalid ordinal sequence";
 const FORM_UNKNOWN_QUESTION_MESSAGE = "Test form references unknown canonical question";
-const FORM_UNPUBLISHED_QUESTION_MESSAGE = "Test form references unpublished question";
 const FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE = "Test form references unsupported question type";
 const FORM_SECTION_MISMATCH_MESSAGE = "Test form question section mismatch";
 
@@ -125,6 +124,31 @@ type ResolvedFormItem = {
 type ResolvedPublishedForm = {
   formId: string;
   itemsByModule: Map<string, ResolvedFormItem[]>;
+};
+
+type FullLengthQuestionSnapshotRow = {
+  id: string;
+  canonical_id: string | null;
+  question_type: string | null;
+  stem: string | null;
+  section: string | null;
+  section_code: string | null;
+  options: unknown;
+  difficulty: unknown;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  source_type: unknown;
+  diagram_present: boolean | null;
+  tags: unknown;
+  competencies: unknown;
+  correct_answer: string | null;
+  answer_text: string | null;
+  explanation: string | null;
+  option_metadata: unknown;
+  exam: string | null;
+  structure_cluster_id: string | null;
 };
 
 export interface CreateSessionParams {
@@ -374,6 +398,105 @@ function requireModuleItems(
   return items;
 }
 
+function normalizeQuestionType(value: unknown): "multiple_choice" | null {
+  if (typeof value !== "string") return null;
+  return value.trim().toLowerCase() === "multiple_choice" ? "multiple_choice" : null;
+}
+
+function normalizeQuestionDifficultyValue(value: unknown): QuestionDifficulty | null {
+  if (value === 1 || value === 2 || value === 3) {
+    return value as QuestionDifficulty;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "easy") return 1;
+    if (normalized === "medium") return 2;
+    if (normalized === "hard") return 3;
+    const parsed = Number.parseInt(normalized, 10);
+    if (parsed === 1 || parsed === 2 || parsed === 3) {
+      return parsed as QuestionDifficulty;
+    }
+  }
+  return null;
+}
+
+function normalizeQuestionOptions(value: unknown): QuestionOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const out: QuestionOption[] = [];
+  for (const option of value) {
+    if (!option || typeof option !== "object") continue;
+    const key = typeof (option as any).key === "string" ? (option as any).key.trim().toUpperCase() : "";
+    const text = typeof (option as any).text === "string" ? (option as any).text : "";
+    if (!key || !text) continue;
+    out.push({ key, text });
+  }
+  return out;
+}
+
+function normalizeMcAnswerKey(value: unknown): "A" | "B" | "C" | "D" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "A" || normalized === "B" || normalized === "C" || normalized === "D") {
+    return normalized;
+  }
+  return null;
+}
+
+function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) {
+  if (normalizeQuestionType(row.question_type) !== "multiple_choice") {
+    throw new Error(FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE);
+  }
+
+  const options = normalizeQuestionOptions(row.options);
+  if (options.length === 0) {
+    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question options missing`);
+  }
+
+  const correctAnswer = normalizeMcAnswerKey(row.correct_answer);
+  if (!correctAnswer || !options.some((option) => option.key === correctAnswer)) {
+    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question correct answer missing`);
+  }
+
+  const sectionCode = normalizeCanonicalSectionCode(row.section_code ?? row.section ?? null);
+  const fallbackSection = sectionCode === "M" ? "math" : sectionCode === "RW" ? "rw" : "";
+  const section = typeof row.section === "string" && row.section.trim().length > 0
+    ? row.section
+    : fallbackSection;
+
+  const sourceType = typeof row.source_type === "number"
+    ? row.source_type
+    : typeof row.source_type === "string" && row.source_type.trim().length > 0
+      ? Number(row.source_type)
+      : null;
+
+  return {
+    question_canonical_id: typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0 ? row.canonical_id : null,
+    question_stem: typeof row.stem === "string" ? row.stem : "",
+    question_section: section,
+    question_section_code: sectionCode === "M" ? "MATH" : sectionCode,
+    question_type: "multiple_choice" as const,
+    question_options: options,
+    question_difficulty: normalizeQuestionDifficultyValue(row.difficulty),
+    question_domain: row.domain ?? null,
+    question_skill: row.skill ?? null,
+    question_subskill: row.subskill ?? null,
+    question_skill_code: row.skill_code ?? null,
+    question_source_type: Number.isFinite(sourceType as number) ? sourceType : null,
+    question_diagram_present: row.diagram_present ?? null,
+    question_tags: row.tags ?? null,
+    question_competencies: row.competencies ?? null,
+    question_correct_answer: correctAnswer,
+    question_answer_text: row.answer_text ?? null,
+    question_explanation: row.explanation ?? null,
+    question_option_metadata: row.option_metadata ?? null,
+    question_exam: row.exam ?? null,
+    question_structure_cluster_id: row.structure_cluster_id ?? null,
+  };
+}
+
 async function resolvePublishedFormForSession(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   requestedFormId?: string
@@ -486,7 +609,7 @@ async function resolvePublishedFormForSession(
 
   const { data: questionRows, error: questionRowsError } = await supabase
     .from("questions")
-    .select("id, canonical_id, status, question_type, section_code")
+    .select("id, canonical_id, question_type, section_code")
     .in("canonical_id", Array.from(canonicalQuestionIds));
 
   if (questionRowsError) {
@@ -496,7 +619,6 @@ async function resolvePublishedFormForSession(
   const questionByCanonicalId = new Map<string, {
     id: string;
     canonical_id: string;
-    status: string;
     question_type: string;
     section_code: string | null;
   }>();
@@ -506,7 +628,6 @@ async function resolvePublishedFormForSession(
       questionByCanonicalId.set(row.canonical_id, {
         id: row.id,
         canonical_id: row.canonical_id,
-        status: row.status,
         question_type: row.question_type,
         section_code: row.section_code,
       });
@@ -519,10 +640,6 @@ async function resolvePublishedFormForSession(
     const question = questionByCanonicalId.get(item.canonicalQuestionId);
     if (!question) {
       throw new Error(FORM_UNKNOWN_QUESTION_MESSAGE);
-    }
-
-    if (question.status !== "published") {
-      throw new Error(FORM_UNPUBLISHED_QUESTION_MESSAGE);
     }
 
     if (question.question_type !== "multiple_choice") {
@@ -892,7 +1009,7 @@ async function computeDiagnosticRows(
 
     const { data: moduleQuestions, error: moduleQuestionsError } = await supabase
       .from("full_length_exam_questions")
-      .select("module_id, question_id")
+      .select("module_id, question_id, question_domain, question_skill, question_subskill, question_tags, question_competencies")
       .in("module_id", moduleIds);
 
     if (moduleQuestionsError || !moduleQuestions || moduleQuestions.length === 0) {
@@ -914,26 +1031,15 @@ async function computeDiagnosticRows(
       responseMap.set(key, Boolean(response.is_correct));
     }
 
-    const questionIds = Array.from(new Set(moduleQuestions.map((mq) => mq.question_id).filter(Boolean)));
-    const questionMap = new Map<string, Record<string, unknown>>();
-
-    if (questionIds.length > 0) {
-      const { data: questionsData, error: questionsError } = await supabase
-        .from("questions")
-        .select("id, domain, skill, subskill, tags, competencies")
-        .in("id", questionIds);
-
-      if (!questionsError && questionsData) {
-        for (const question of questionsData as Array<Record<string, unknown>>) {
-          questionMap.set(question.id as string, question);
-        }
-      }
-    }
-
     return moduleQuestions.map((moduleQuestion) => {
       const section = moduleSectionById.get(moduleQuestion.module_id) || "rw";
-      const question = questionMap.get(moduleQuestion.question_id);
-      const diagnostic = extractDomainAndSkill(section, question);
+      const diagnostic = extractDomainAndSkill(section, {
+        domain: (moduleQuestion as any).question_domain,
+        skill: (moduleQuestion as any).question_skill,
+        subskill: (moduleQuestion as any).question_subskill,
+        tags: (moduleQuestion as any).question_tags,
+        competencies: (moduleQuestion as any).question_competencies,
+      });
       const responseKey = `${moduleQuestion.module_id}::${moduleQuestion.question_id}`;
 
       return {
@@ -1071,46 +1177,85 @@ async function applyFullLengthMasterySignals(
   if (!questionIds.length) return;
 
   try {
-    const { data: questionRows, error: questionError } = await supabase
-      .from("questions")
-      .select("id, canonical_id, exam, section, domain, skill, subskill, skill_code, difficulty, structure_cluster_id")
-      .in("id", questionIds);
+    const { data: moduleRows, error: moduleError } = await supabase
+      .from("full_length_exam_modules")
+      .select("id")
+      .eq("session_id", sessionId);
 
-    if (questionError) {
-      console.warn(`[FULL-LENGTH] Failed to load question metadata for mastery updates: ${questionError.message}`);
+    if (moduleError) {
+      console.warn(`[FULL-LENGTH] Failed to load modules for mastery updates: ${moduleError.message}`);
       return;
     }
 
-    const metadataByQuestionId = new Map((questionRows || []).map((q) => [q.id, q]));
+    const moduleIds = (moduleRows ?? []).map((row: any) => String(row.id)).filter(Boolean);
+    if (moduleIds.length === 0) {
+      return;
+    }
+
+    const { data: materializedRows, error: materializedError } = await supabase
+      .from("full_length_exam_questions")
+      .select("question_id, question_canonical_id, question_exam, question_section, question_domain, question_skill, question_subskill, question_skill_code, question_difficulty, question_structure_cluster_id")
+      .in("module_id", moduleIds)
+      .in("question_id", questionIds);
+
+    if (materializedError) {
+      console.warn(`[FULL-LENGTH] Failed to load materialized question metadata for mastery updates: ${materializedError.message}`);
+      return;
+    }
+
+    const metadataByQuestionId = new Map<string, {
+      question_canonical_id: string | null;
+      question_exam: string | null;
+      question_section: string | null;
+      question_domain: string | null;
+      question_skill: string | null;
+      question_subskill: string | null;
+      question_skill_code: string | null;
+      question_difficulty: unknown;
+      question_structure_cluster_id: string | null;
+    }>();
+    for (const row of (materializedRows ?? []) as any[]) {
+      metadataByQuestionId.set(String(row.question_id), {
+        question_canonical_id: typeof row.question_canonical_id === "string" ? row.question_canonical_id : null,
+        question_exam: typeof row.question_exam === "string" ? row.question_exam : null,
+        question_section: typeof row.question_section === "string" ? row.question_section : null,
+        question_domain: typeof row.question_domain === "string" ? row.question_domain : null,
+        question_skill: typeof row.question_skill === "string" ? row.question_skill : null,
+        question_subskill: typeof row.question_subskill === "string" ? row.question_subskill : null,
+        question_skill_code: typeof row.question_skill_code === "string" ? row.question_skill_code : null,
+        question_difficulty: row.question_difficulty ?? null,
+        question_structure_cluster_id: typeof row.question_structure_cluster_id === "string" ? row.question_structure_cluster_id : null,
+      });
+    }
 
     for (const response of responses) {
       const question = metadataByQuestionId.get(response.question_id);
-      if (!question?.canonical_id) continue;
+      if (!question?.question_canonical_id) continue;
 
       try {
         const result = await applyMasteryUpdate({
           userId,
-          questionCanonicalId: question.canonical_id,
+          questionCanonicalId: question.question_canonical_id,
           sessionId,
           isCorrect: !!response.is_correct,
           eventType: response.is_correct ? MasteryEventType.TEST_PASS : MasteryEventType.TEST_FAIL,
           metadata: {
-            exam: question.exam || null,
-            section: question.section || null,
-            domain: question.domain || null,
-            skill: question.skill || null,
-            subskill: question.subskill || null,
-            skill_code: question.skill_code || null,
-            difficulty: question.difficulty || null,
-            structure_cluster_id: question.structure_cluster_id || null,
+            exam: question.question_exam || null,
+            section: question.question_section || null,
+            domain: question.question_domain || null,
+            skill: question.question_skill || null,
+            subskill: question.question_subskill || null,
+            skill_code: question.question_skill_code || null,
+            difficulty: normalizeQuestionDifficultyValue(question.question_difficulty),
+            structure_cluster_id: question.question_structure_cluster_id || null,
           },
         });
 
         if (result.error) {
-          console.warn(`[FULL-LENGTH] Canonical mastery update warning for ${question.canonical_id}: ${result.error}`);
+          console.warn(`[FULL-LENGTH] Canonical mastery update warning for ${question.question_canonical_id}: ${result.error}`);
         }
       } catch (masteryErr: any) {
-        console.warn(`[FULL-LENGTH] Canonical mastery update failed for ${question.canonical_id}: ${masteryErr?.message}`);
+        console.warn(`[FULL-LENGTH] Canonical mastery update failed for ${question.question_canonical_id}: ${masteryErr?.message}`);
       }
     }
   } catch (err: any) {
@@ -1263,7 +1408,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     moduleIdByKey.set(moduleKey(section, moduleRow.module_index as ModuleIndex), moduleRow.id);
   }
 
-  const sessionQuestions: Array<{ module_id: string; question_id: string; order_index: number }> = [];
+  const sessionQuestionPointers: Array<{ module_id: string; question_id: string; order_index: number }> = [];
 
   for (const section of ["rw", "math"] as const) {
     for (const moduleIndex of [1, 2] as const) {
@@ -1275,7 +1420,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
 
       const formItems = requireModuleItems(resolvedForm.itemsByModule, section, moduleIndex);
       for (const item of formItems) {
-        sessionQuestions.push({
+        sessionQuestionPointers.push({
           module_id: moduleId,
           question_id: item.questionId,
           order_index: item.ordinal - 1,
@@ -1283,6 +1428,34 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
       }
     }
   }
+
+  const uniqueQuestionIds = Array.from(new Set(sessionQuestionPointers.map((row) => row.question_id)));
+  const { data: questionSnapshotRows, error: questionSnapshotError } = await supabase
+    .from("questions")
+    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, skill_code, source_type, diagram_present, tags, competencies, correct_answer, answer_text, explanation, option_metadata, exam, structure_cluster_id")
+    .in("id", uniqueQuestionIds);
+
+  if (questionSnapshotError) {
+    throw new Error(`Failed to load question snapshots for session materialization: ${questionSnapshotError.message}`);
+  }
+
+  const snapshotById = new Map<string, FullLengthQuestionSnapshotRow>();
+  for (const row of (questionSnapshotRows ?? []) as FullLengthQuestionSnapshotRow[]) {
+    snapshotById.set(String(row.id), row);
+  }
+
+  const sessionQuestions = sessionQuestionPointers.map((pointer) => {
+    const snapshot = snapshotById.get(pointer.question_id);
+    if (!snapshot) {
+      throw new Error(`${FORM_UNKNOWN_QUESTION_MESSAGE}: missing snapshot for materialization`);
+    }
+    return {
+      module_id: pointer.module_id,
+      question_id: pointer.question_id,
+      order_index: pointer.order_index,
+      ...materializeSessionQuestionSnapshot(snapshot),
+    };
+  });
 
   const { error: sessionQuestionsError } = await supabase
     .from("full_length_exam_questions")
@@ -1374,27 +1547,10 @@ export async function getCurrentSession(
     }
   }
 
-  // Get questions for this module (whitelist safe fields only - no answer/explanation leakage)
+  // Get persisted module question snapshots (runtime truth; no raw questions table reads).
   const { data: moduleQuestions, error: questionsError } = await supabase
     .from("full_length_exam_questions")
-    .select(`
-      id,
-      question_id,
-      order_index,
-      questions (
-        id,
-        canonical_id,
-        stem,
-        section,
-        question_type,
-        options,
-        difficulty,
-        domain,
-        skill,
-        subskill,
-        skill_code
-      )
-    `)
+    .select("id, question_id, order_index, question_canonical_id, question_stem, question_section, question_type, question_options, question_difficulty")
     .eq("module_id", currentModule.id)
     .order("order_index", { ascending: true });
 
@@ -1420,42 +1576,40 @@ export async function getCurrentSession(
   );
   const answeredQuestionIds = new Set(responses?.map((r) => r.question_id) || []);
 
-  // Type guard for module question with embedded question data
-  interface ModuleQuestionWithData {
+  interface MaterializedModuleQuestion {
     id: string;
     question_id: string;
     order_index: number;
-    questions: {
-      id: string;
-      canonical_id: string | null;
-      stem: string;
-      section: string;
-      question_type: string;
-      options: QuestionOption[] | null;
-      difficulty: number | null;
-    } | null;
+    question_canonical_id: string | null;
+    question_stem: string | null;
+    question_section: string | null;
+    question_type: string | null;
+    question_options: unknown;
+    question_difficulty: unknown;
   }
 
   // Find first unanswered question
   let currentQuestion = null;
   if (moduleQuestions && moduleQuestions.length > 0) {
-    const typedQuestions = moduleQuestions as unknown as ModuleQuestionWithData[];
+    const typedQuestions = moduleQuestions as unknown as MaterializedModuleQuestion[];
     const unanswered = typedQuestions.find((mq) => !answeredQuestionIds.has(mq.question_id));
     const target = unanswered || typedQuestions[0];
 
-    if (target?.questions) {
-      const q = target.questions;
-      const submittedAnswer = responseMap.get(q.id);
-      const options = Array.isArray(q.options) ? q.options : [];
-      const difficulty = q.difficulty === 1 || q.difficulty === 2 || q.difficulty === 3
-        ? (q.difficulty as QuestionDifficulty)
-        : null;
+    if (target) {
+      const questionType = normalizeQuestionType(target.question_type);
+      const options = normalizeQuestionOptions(target.question_options);
+      if (questionType !== "multiple_choice" || options.length === 0 || !target.question_stem) {
+        throw new Error("Materialized full-length question snapshot is invalid");
+      }
+
+      const submittedAnswer = responseMap.get(target.question_id);
+      const difficulty = normalizeQuestionDifficultyValue(target.question_difficulty);
 
       currentQuestion = {
-        id: q.id,
-        canonicalId: q.canonical_id ?? null,
-        stem: q.stem,
-        section: q.section,
+        id: target.question_id,
+        canonicalId: target.question_canonical_id ?? null,
+        stem: target.question_stem,
+        section: target.question_section ?? "",
         question_type: "multiple_choice" as const,
         options,
         difficulty,
@@ -1657,7 +1811,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
 
   const { data: moduleQuestion, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("id")
+    .select("id, question_type, question_correct_answer")
     .eq("module_id", currentModule.id)
     .eq("question_id", params.questionId)
     .single();
@@ -1690,21 +1844,14 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     return;
   }
 
-  const { data: question, error: questionError } = await supabase
-    .from("questions")
-    .select("id, question_type, correct_answer")
-    .eq("id", params.questionId)
-    .single();
-
-  if (questionError || !question) {
-    throw new Error("Question not found");
-  }
-
-  if (question.question_type !== "multiple_choice") {
+  if (normalizeQuestionType((moduleQuestion as any).question_type) !== "multiple_choice") {
     throw new Error("Unsupported question type for full-length exam");
   }
 
-  const correct = String(question.correct_answer ?? "").trim().toUpperCase();
+  const correct = normalizeMcAnswerKey((moduleQuestion as any).question_correct_answer);
+  if (!correct) {
+    throw new Error("Materialized question answer key is missing");
+  }
   const isCorrect = selected.length > 0 && selected === correct;
 
   const now = new Date().toISOString();
@@ -2334,19 +2481,6 @@ export const ANSWER_FIELDS_POST_COMPLETION = [
   "option_metadata",
 ] as const;
 
-/**
- * Supabase select string for pre-completion question queries.
- * Only fetches safe fields - answer/explanation never leave the DB pre-completion.
- */
-const SAFE_QUESTION_SELECT_PRE_COMPLETION = SAFE_QUESTION_FIELDS_PRE_COMPLETION.join(",");
-
-/**
- * Supabase select string for post-completion question queries.
- * Fetches safe fields plus answer/explanation fields.
- */
-const SAFE_QUESTION_SELECT_POST_COMPLETION =
-  [...SAFE_QUESTION_FIELDS_PRE_COMPLETION, ...ANSWER_FIELDS_POST_COMPLETION].join(",");
-
 type CanonicalSectionCode = "MATH" | "RW";
 type CanonicalSourceType = 0 | 1 | 2 | 3;
 
@@ -2485,7 +2619,7 @@ function normalizeReviewSectionCode(value: unknown): CanonicalSectionCode | null
 }
 
 function normalizeDifficulty(value: unknown): QuestionDifficulty | null {
-  return value === 1 || value === 2 || value === 3 ? (value as QuestionDifficulty) : null;
+  return normalizeQuestionDifficultyValue(value);
 }
 
 function normalizeSourceType(value: unknown): CanonicalSourceType | null {
@@ -2605,52 +2739,58 @@ export async function getExamReview(
     throw new Error(`Failed to fetch modules: ${modulesError.message}`);
   }
 
-  // Load all module questions with their question data
+  // Load all materialized module question snapshots (runtime truth).
   const moduleIds = (modules || []).map((m) => m.id);
-  
-  // Get question IDs from module questions
   const { data: moduleQuestions, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("question_id, module_id, order_index")
-    .in("module_id", moduleIds.length > 0 ? moduleIds : ['__none__']);
+    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_skill_code, question_difficulty, question_source_type, question_diagram_present, question_tags, question_competencies, question_correct_answer, question_answer_text, question_explanation, question_option_metadata")
+    .in("module_id", moduleIds.length > 0 ? moduleIds : ["__none__"])
+    .order("module_id", { ascending: true })
+    .order("order_index", { ascending: true });
 
   if (mqError) {
     throw new Error(`Failed to fetch module questions: ${mqError.message}`);
   }
 
-  const questionIds = (moduleQuestions || []).map((mq) => mq.question_id);
-
   // Determine if session is completed (needed for query projection below)
   const isCompleted = session.status === "completed";
 
-  // Fetch questions - use query-level projection to prevent answer/explanation
-  // from ever leaving the DB pre-completion (stronger than output-only projection).
-  const questionSelectFields = isCompleted
-    ? SAFE_QUESTION_SELECT_POST_COMPLETION
-    : SAFE_QUESTION_SELECT_PRE_COMPLETION;
-
-  // Type the questions array based on completion status
-  // The Supabase select() ensures only these fields are returned from the DB
   let questions: Record<string, unknown>[] = [];
-  
-  if (questionIds.length > 0) {
-    const { data: questionsData, error: questionsError } = await supabase
-      .from("questions")
-      .select(questionSelectFields)
-      .in("id", questionIds);
 
-    if (questionsError) {
-      throw new Error(`Failed to fetch questions: ${questionsError.message}`);
+  if (moduleQuestions && moduleQuestions.length > 0) {
+    const questionById = new Map<string, Record<string, unknown>>();
+    for (const row of moduleQuestions as Array<Record<string, unknown>>) {
+      const questionId = String(row.question_id ?? "");
+      if (!questionId || questionById.has(questionId)) continue;
+
+      questionById.set(questionId, {
+        id: questionId,
+        canonical_id: (row.question_canonical_id as string | null) ?? null,
+        stem: (row.question_stem as string | null) ?? "",
+        section: (row.question_section as string | null) ?? "",
+        section_code: (row.question_section_code as string | null) ?? null,
+        question_type: (row.question_type as string | null) ?? "multiple_choice",
+        options: row.question_options ?? [],
+        domain: (row.question_domain as string | null) ?? null,
+        skill: (row.question_skill as string | null) ?? null,
+        subskill: (row.question_subskill as string | null) ?? null,
+        skill_code: (row.question_skill_code as string | null) ?? null,
+        difficulty: row.question_difficulty ?? null,
+        source_type: row.question_source_type ?? null,
+        diagram_present: (row.question_diagram_present as boolean | null) ?? null,
+        tags: row.question_tags ?? null,
+        competencies: row.question_competencies ?? null,
+        correct_answer: (row.question_correct_answer as string | null) ?? null,
+        answer_text: (row.question_answer_text as string | null) ?? null,
+        explanation: (row.question_explanation as string | null) ?? null,
+        option_metadata: row.question_option_metadata ?? null,
+      });
     }
 
-    questions = (questionsData as unknown as Record<string, unknown>[]) || [];
-    // Safe assignment: The select string above guarantees that questionsData contains
-    // exactly the fields defined in Question schema matching our allowlist constants.
-    // We cast to the specific type based on completion status for better type precision.
-    // TypeScript doesn't know Supabase's runtime projection, so we cast through unknown.
+    const materializedQuestions = Array.from(questionById.values());
     questions = isCompleted
-      ? (questionsData ?? []) as unknown as QuestionRowPostCompletion[]
-      : (questionsData ?? []) as unknown as QuestionRowPreCompletion[];
+      ? (materializedQuestions as QuestionRowPostCompletion[])
+      : (materializedQuestions as QuestionRowPreCompletion[]);
   }
 
   // Load user responses
