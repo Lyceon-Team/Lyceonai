@@ -83,17 +83,24 @@ const formatTimeAgo = (date: Date) => {
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const [, navigate] = useLocation();
+  const getPollingInterval = (ms: number) => (query: { state: { error: unknown } }) => {
+    const error = query.state.error;
+    if (error instanceof Error && (error.message.startsWith('401:') || error.message.startsWith('403:'))) {
+      return false;
+    }
+    return ms;
+  };
 
   // Fetch notifications
   const { data: notifications = [], isLoading, error: notificationsError, refetch: refetchNotifications } = useQuery<Notification[]>({
     queryKey: ['/api/notifications'],
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: getPollingInterval(30000), // Refetch every 30s, stop polling when unauthorized
   });
 
   // Fetch unread count
   const { data: unreadData, error: unreadError, refetch: refetchUnreadCount } = useQuery<{ count: number }>({
     queryKey: ['/api/notifications/unread-count'],
-    refetchInterval: 15000, // Check unread count more frequently
+    refetchInterval: getPollingInterval(15000), // Check unread count more frequently
   });
 
   const unreadCount = unreadData?.count || 0;
