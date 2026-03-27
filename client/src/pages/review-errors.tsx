@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, ArrowRight, CheckCircle, SkipForward, RefreshCw, AlertCircle, BookOpen, XCircle } from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import {
@@ -37,6 +38,8 @@ interface ReviewQueueItem {
 interface SessionSummary {
   sessionId: string | null;
   sessionStartedAt: string | null;
+  sessionMode?: string;
+  sessionSection?: string;
   correctCount: number;
   incorrectCount: number;
   skippedCount: number;
@@ -53,7 +56,8 @@ interface ReviewErrorsResponse {
 }
 
 type ReviewFilter = "all" | "incorrect" | "skipped";
-type ReviewMode = "summary" | "sequential";
+type ReviewScope = "all_past_mistakes" | "by_practice_session" | "by_full_length_session";
+type ReviewViewMode = "summary" | "sequential";
 
 interface ReviewSessionQuestion {
   sessionItemId: string;
@@ -109,9 +113,12 @@ function buildClientInstanceId() {
 }
 
 function ReviewErrors() {
-  const [mode, setMode] = useState<ReviewMode>("summary");
+  const [mode, setMode] = useState<ReviewViewMode>("summary");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<ReviewFilter>("all");
+  const [reviewScope, setReviewScope] = useState<ReviewScope>("all_past_mistakes");
+  const [practiceSessionId, setPracticeSessionId] = useState<string>("");
+  const [fullLengthSessionId, setFullLengthSessionId] = useState<string>("");
   const [clientInstanceId] = useState<string>(() => buildClientInstanceId());
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -120,6 +127,31 @@ function ReviewErrors() {
   const [runStats, setRunStats] = useState({ correct: 0, incorrect: 0, skipped: 0, total: 0 });
   const [manualDisabledState, setManualDisabledState] = useState<RuntimeContractDisabledState | null>(null);
 
+  const reviewScopeReady = useMemo(() => {
+    if (reviewScope === "by_practice_session") {
+      return Boolean(practiceSessionId.trim());
+    }
+    if (reviewScope === "by_full_length_session") {
+      return Boolean(fullLengthSessionId.trim());
+    }
+    return true;
+  }, [fullLengthSessionId, practiceSessionId, reviewScope]);
+
+  const reviewSummaryUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (reviewScope !== "all_past_mistakes") {
+      params.set("mode", reviewScope);
+    }
+    if (reviewScope === "by_practice_session" && practiceSessionId.trim()) {
+      params.set("practice_session_id", practiceSessionId.trim());
+    }
+    if (reviewScope === "by_full_length_session" && fullLengthSessionId.trim()) {
+      params.set("full_length_session_id", fullLengthSessionId.trim());
+    }
+    const qs = params.toString();
+    return qs ? `/api/review-errors?${qs}` : "/api/review-errors";
+  }, [fullLengthSessionId, practiceSessionId, reviewScope]);
+
   const {
     data: reviewData,
     isLoading,
@@ -127,7 +159,8 @@ function ReviewErrors() {
     error: reviewError,
     refetch: refetchSummary,
   } = useQuery<ReviewErrorsResponse>({
-    queryKey: ["/api/review-errors"],
+    queryKey: [reviewSummaryUrl],
+    enabled: reviewScopeReady,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -167,9 +200,26 @@ function ReviewErrors() {
     setRecordError(null);
   }, []);
 
+  useEffect(() => {
+    if (mode !== "sequential") return;
+    setMode("summary");
+    setActiveSessionId(null);
+    resetPerItemState();
+  }, [fullLengthSessionId, mode, practiceSessionId, resetPerItemState, reviewScope]);
+
   const startReview = useCallback(async (filter: ReviewFilter) => {
     if (reviewUnavailable) {
       setRecordError(reviewDisabledState?.message ?? "Review is temporarily unavailable.");
+      return;
+    }
+
+    if (reviewScope === "by_practice_session" && !practiceSessionId.trim()) {
+      setRecordError("Enter a practice session ID to start a session-scoped review.");
+      return;
+    }
+
+    if (reviewScope === "by_full_length_session" && !fullLengthSessionId.trim()) {
+      setRecordError("Enter a full-length session ID to start a session-scoped review.");
       return;
     }
 
@@ -181,8 +231,11 @@ function ReviewErrors() {
         method: "POST",
         body: JSON.stringify({
           filter,
+          mode: reviewScope,
+          practice_session_id: reviewScope === "by_practice_session" ? practiceSessionId.trim() : null,
+          full_length_session_id: reviewScope === "by_full_length_session" ? fullLengthSessionId.trim() : null,
           client_instance_id: clientInstanceId,
-          idempotency_key: `review-session:${filter}:${clientInstanceId}`,
+          idempotency_key: `review-session:${reviewScope}:${filter}:${clientInstanceId}`,
         }),
       });
       const payload = (await response.json()) as ReviewStartResponse;
@@ -211,7 +264,15 @@ function ReviewErrors() {
       const message = error instanceof Error ? error.message : "Unable to start review session";
       setRecordError(message);
     }
-  }, [clientInstanceId, resetPerItemState, reviewDisabledState?.message, reviewUnavailable]);
+  }, [
+    clientInstanceId,
+    fullLengthSessionId,
+    practiceSessionId,
+    resetPerItemState,
+    reviewDisabledState?.message,
+    reviewScope,
+    reviewUnavailable,
+  ]);
 
   const submitAnswer = useCallback(async () => {
     if (!activeSessionId || !currentItem || !selectedOptionId || isSubmitting) return;
@@ -544,7 +605,63 @@ function ReviewErrors() {
           </Card>
         )}
 
-        {summary && summary.totalCount > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Review Scope</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Button
+                variant={reviewScope === "all_past_mistakes" ? "default" : "outline"}
+                onClick={() => setReviewScope("all_past_mistakes")}
+              >
+                All Past Mistakes
+              </Button>
+              <Button
+                variant={reviewScope === "by_practice_session" ? "default" : "outline"}
+                onClick={() => setReviewScope("by_practice_session")}
+              >
+                By Practice Session
+              </Button>
+              <Button
+                variant={reviewScope === "by_full_length_session" ? "default" : "outline"}
+                onClick={() => setReviewScope("by_full_length_session")}
+              >
+                By Full-Length Session
+              </Button>
+            </div>
+
+            {reviewScope === "by_practice_session" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Practice Session ID</label>
+                <Input
+                  value={practiceSessionId}
+                  onChange={(event) => setPracticeSessionId(event.target.value)}
+                  placeholder="Enter practice session ID"
+                />
+              </div>
+            )}
+
+            {reviewScope === "by_full_length_session" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Full-Length Session ID</label>
+                <Input
+                  value={fullLengthSessionId}
+                  onChange={(event) => setFullLengthSessionId(event.target.value)}
+                  placeholder="Enter full-length session ID"
+                />
+              </div>
+            )}
+
+            {!reviewScopeReady && (
+              <p className="text-sm text-muted-foreground">
+                Enter a session ID to load a session-scoped review queue.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {reviewScopeReady && summary && summary.totalCount > 0 && (
           <Card className="mb-6">
             <CardContent className="pt-6">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -563,33 +680,35 @@ function ReviewErrors() {
           </Card>
         )}
 
-        {incorrectAttempts.length === 0 && skippedAttempts.length === 0 ? (
-          <Card className="text-center py-12">
-            <CardContent>
-              <BookOpen className="h-16 w-16 mx-auto mb-4 text-green-600" />
-              <h3 className="text-xl font-semibold mb-2">No Questions to Review</h3>
-              <p className="text-muted-foreground mb-6">You currently have no unresolved misses in your review queue.</p>
-              <Button asChild><Link href="/practice">Start Practice</Link></Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader><CardTitle>Incorrect ({incorrectAttempts.length})</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {incorrectAttempts.slice(0, 10).map((attempt) => (
-                  <div key={attempt.id} className="p-3 rounded border bg-muted/30">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline">{attempt.section}</Badge>
-                      {attempt.difficulty ? <Badge variant="secondary">{attempt.difficulty}</Badge> : null}
-                    </div>
-                    <p className="text-sm text-foreground truncate">{attempt.questionText}</p>
-                  </div>
-                ))}
+        {reviewScopeReady ? (
+          incorrectAttempts.length === 0 && skippedAttempts.length === 0 ? (
+            <Card className="text-center py-12">
+              <CardContent>
+                <BookOpen className="h-16 w-16 mx-auto mb-4 text-green-600" />
+                <h3 className="text-xl font-semibold mb-2">No Questions to Review</h3>
+                <p className="text-muted-foreground mb-6">You currently have no unresolved misses in your review queue.</p>
+                <Button asChild><Link href="/practice">Start Practice</Link></Button>
               </CardContent>
             </Card>
-          </div>
-        )}
+          ) : (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader><CardTitle>Incorrect ({incorrectAttempts.length})</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {incorrectAttempts.slice(0, 10).map((attempt) => (
+                    <div key={attempt.id} className="p-3 rounded border bg-muted/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline">{attempt.section}</Badge>
+                        {attempt.difficulty ? <Badge variant="secondary">{attempt.difficulty}</Badge> : null}
+                      </div>
+                      <p className="text-sm text-foreground truncate">{attempt.questionText}</p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          )
+        ) : null}
       </div>
     </div>
   );

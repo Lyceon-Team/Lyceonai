@@ -37,6 +37,10 @@ interface CalendarDay {
   focus: Array<{ section: string; weight: number; competencies?: string[] }> | null;
   tasks: CalendarTask[] | null;
   isUserOverride: boolean;
+  replacesOverride: boolean;
+  replacedOverrideDayId: string | null;
+  replacementSource: string | null;
+  replacementAt: string | null;
 }
 
 function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: number): { label: string; className: string } {
@@ -223,6 +227,10 @@ export default function CalendarPage() {
         focus: plan?.focus ?? null,
         tasks: plan?.tasks ?? null,
         isUserOverride: Boolean(plan?.is_user_override),
+        replacesOverride: Boolean(plan?.replaces_override),
+        replacedOverrideDayId: plan?.replaced_override_day_id ?? null,
+        replacementSource: plan?.replacement_source ?? null,
+        replacementAt: plan?.replacement_at ?? null,
       };
     });
   }, [monthGrid, monthDataMap]);
@@ -308,19 +316,104 @@ export default function CalendarPage() {
     const nextMinutesInput = window.prompt("Planned minutes for this day", String(day.plannedMin || 30));
     if (nextMinutesInput == null) return;
     const nextMinutes = Math.max(0, parseInt(nextMinutesInput, 10) || 0);
-    const tasks =
-      (day.tasks && day.tasks.length > 0
-        ? day.tasks.map((task) => ({
-            type: task.type,
-            section: task.section ?? "",
-            mode: task.mode,
-            minutes: task.minutes,
-            status: task.status,
-          }))
-        : [
-            { type: "practice", section: "Math", mode: "mixed", minutes: Math.round(nextMinutes / 2) },
-            { type: "practice", section: "Reading & Writing", mode: "mixed", minutes: Math.max(0, nextMinutes - Math.round(nextMinutes / 2)) },
-          ]) || [];
+    const currentTask = day.tasks?.[0];
+    const currentKind =
+      currentTask?.task_type === "full_length"
+        ? "full_length"
+        : currentTask?.task_type === "review_practice" || currentTask?.task_type === "review_full_length"
+          ? "review"
+          : "practice";
+    const taskKindInput = window.prompt("Override task type (practice/review/full_length)", currentKind);
+    if (taskKindInput == null) return;
+    const taskKindNormalized = taskKindInput.trim().toLowerCase();
+    const taskKind: "practice" | "review" | "full_length" =
+      taskKindNormalized === "full_length" || taskKindNormalized === "full-length"
+        ? "full_length"
+        : taskKindNormalized === "review"
+          ? "review"
+          : "practice";
+
+    let section = currentTask?.section ?? "Math";
+    let taskType: "practice" | "review_practice" | "full_length" = "practice";
+    let mode = "mixed";
+    const target: {
+      section: string | null;
+      domain: string | null;
+      skill_code: string | null;
+      subskill: string | null;
+      target_type: "practice_target" | "review_session" | "scheduled_full_length";
+      review_session_id: string | null;
+      exam_id: string | null;
+    } = {
+      section: null,
+      domain: null,
+      skill_code: null,
+      subskill: null,
+      target_type: "practice_target",
+      review_session_id: null,
+      exam_id: null,
+    };
+
+    if (taskKind === "practice") {
+      const sectionInput = window.prompt("Practice section (Math/RW)", section);
+      if (sectionInput == null) return;
+      section = sectionInput.toLowerCase().includes("rw") ? "Reading & Writing" : "Math";
+      target.section = section === "Math" ? "MATH" : "RW";
+      taskType = "practice";
+      mode = "focused";
+      const domainInput = window.prompt("Practice target domain (required)", currentTask?.target?.domain ?? "");
+      if (domainInput == null) return;
+      const skillInput = window.prompt("Practice target skill code (required)", currentTask?.target?.skill_code ?? "");
+      if (skillInput == null) return;
+      target.domain = domainInput.trim() || null;
+      target.skill_code = skillInput.trim() || null;
+      target.target_type = "practice_target";
+      if (!target.domain && !target.skill_code) {
+        setMonthError("Practice overrides require a domain or skill target.");
+        return;
+      }
+    } else if (taskKind === "review") {
+      taskType = "review_practice";
+      section = "";
+      mode = "review";
+      target.target_type = "review_session";
+      const reviewSessionId = window.prompt("Review session ID (required)", currentTask?.target?.review_session_id ?? "");
+      if (reviewSessionId == null) return;
+      target.review_session_id = reviewSessionId.trim() || null;
+      if (!target.review_session_id) {
+        setMonthError("Review overrides require an exact review session ID.");
+        return;
+      }
+    } else {
+      taskType = "full_length";
+      section = "";
+      mode = "full-length";
+      target.target_type = "scheduled_full_length";
+      const examId = window.prompt("Full-length exam ID (required)", currentTask?.target?.exam_id ?? "");
+      if (examId == null) return;
+      target.exam_id = examId.trim() || null;
+      if (!target.exam_id) {
+        setMonthError("Full-length overrides require a scheduled exam ID.");
+        return;
+      }
+    }
+
+    const tasks = [
+      {
+        type: taskType,
+        task_type: taskType,
+        section,
+        mode,
+        minutes: nextMinutes,
+        status: currentTask?.status ?? "planned",
+        target,
+        override_target_type: target.target_type,
+        override_target_domain: target.domain,
+        override_target_skill: target.skill_code,
+        override_target_session_id: target.review_session_id,
+        override_target_exam_id: target.exam_id,
+      },
+    ];
 
     setActionLoading(true);
     setMonthError(null);
@@ -754,6 +847,16 @@ function DayDetailPanel({
         </div>
       </div>
 
+      {day.replacesOverride && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            This day replaced a prior override-owned plan row
+            {day.replacementSource ? ` via ${day.replacementSource}` : ""}.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {studiedSections.length > 0 && (
         <div>
           <p className="text-xs text-muted-foreground mb-2">Focus Areas</p>
@@ -804,6 +907,21 @@ function DayDetailPanel({
                     <p className="text-xs text-muted-foreground">
                       {task.minutes} min - {statusLabel}
                     </p>
+                    {task.target && (
+                      <p className="text-xs text-muted-foreground">
+                        Target: {task.target.target_type ?? "practice_target"}
+                        {task.target.domain ? ` | ${task.target.domain}` : ""}
+                        {task.target.skill_code ? ` | ${task.target.skill_code}` : ""}
+                        {task.target.review_session_id ? ` | session ${task.target.review_session_id}` : ""}
+                        {task.target.exam_id ? ` | exam ${task.target.exam_id}` : ""}
+                      </p>
+                    )}
+                    {task.replaces_override && (
+                      <p className="text-xs text-orange-600">
+                        Replaced override task
+                        {task.replacement_source ? ` via ${task.replacement_source}` : ""}.
+                      </p>
+                    )}
                   </div>
                   <Button
                     type="button"

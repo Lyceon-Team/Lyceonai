@@ -59,4 +59,16 @@ ALTER TABLE public.student_study_plan_tasks
   ADD CONSTRAINT student_study_plan_tasks_task_type_check
   CHECK (task_type IN ('practice', 'focused_drill', 'review_practice', 'review_full_length', 'full_length', 'tutor_support'));
 
+ALTER TABLE public.student_study_plan_days
+  ADD COLUMN IF NOT EXISTS replaces_override BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS replaced_override_day_id UUID NULL,
+  ADD COLUMN IF NOT EXISTS replacement_source TEXT NULL,
+  ADD COLUMN IF NOT EXISTS replacement_at TIMESTAMPTZ NULL;
+
+ALTER TABLE public.student_study_plan_tasks
+  ADD COLUMN IF NOT EXISTS replaces_override BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS replaced_override_task_id UUID NULL,
+  ADD COLUMN IF NOT EXISTS replacement_source TEXT NULL,
+  ADD COLUMN IF NOT EXISTS replacement_at TIMESTAMPTZ NULL;
+
 COMMIT;

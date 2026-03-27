@@ -199,7 +199,7 @@ export default function NotificationDropdown() {
               className="h-6 w-6"
               onClick={() => {
                 setIsOpen(false);
-                navigate('/profile');
+                navigate('/profile?tab=settings');
               }}
               data-testid="button-notification-settings"
               title="Notification Settings"

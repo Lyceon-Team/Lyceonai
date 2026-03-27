@@ -14,6 +14,7 @@ class FakeQueryBuilder {
   private filters: Array<(row: Row) => boolean> = [];
   private sorts: Array<{ column: string; ascending: boolean }> = [];
   private rangeWindow: { from: number; to: number } | null = null;
+  private pendingInsert: Row[] | null = null;
   private pendingUpdate: Record<string, any> | null = null;
   private pendingUpsert: { row: Row; onConflict: string[] } | null = null;
   private head = false;
@@ -63,6 +64,11 @@ class FakeQueryBuilder {
     return this;
   }
 
+  insert(values: Row | Row[]): this {
+    this.pendingInsert = Array.isArray(values) ? values.map((row) => ({ ...row })) : [{ ...values }];
+    return this;
+  }
+
   upsert(values: Row | Row[], options?: { onConflict?: string }): this {
     const row = Array.isArray(values) ? values[0] : values;
     this.pendingUpsert = {
@@ -93,6 +99,20 @@ class FakeQueryBuilder {
   }
 
   private execute(): { data: Row[]; error: any; count?: number } {
+    if (this.pendingInsert) {
+      const tableRows = this.store.tables[this.table];
+      const now = new Date().toISOString();
+      const inserted = this.pendingInsert.map((row, index) => ({
+        id: row.id ?? `${this.table}-${tableRows.length + index + 1}`,
+        created_at: row.created_at ?? now,
+        updated_at: row.updated_at ?? now,
+        ...row,
+      }));
+      tableRows.push(...inserted);
+      this.pendingInsert = null;
+      return { data: inserted.map((row) => ({ ...row })), error: null };
+    }
+
     if (this.pendingUpsert) {
       const tableRows = this.store.tables[this.table];
       const { row, onConflict } = this.pendingUpsert;
@@ -202,12 +222,33 @@ vi.mock("../../server/middleware/csrf.js", () => ({
 }));
 
 import notificationRoutes from "../../server/routes/notification-routes";
+import {
+  fanoutNotificationDecisions,
+  writeNotificationDecision,
+} from "../../server/services/notification-authority";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use("/api/notifications", notificationRoutes);
   return app;
+}
+
+function buildPreferenceRow(userId: string, overrides: Partial<Row> = {}): Row {
+  return {
+    user_id: userId,
+    email_enabled: false,
+    study_reminders_enabled: true,
+    streak_enabled: true,
+    plan_updates_enabled: true,
+    guardian_updates_enabled: true,
+    marketing_enabled: false,
+    digest_frequency: "daily",
+    quiet_hours: null,
+    created_at: "2026-03-26T12:00:00.000Z",
+    updated_at: "2026-03-26T12:00:00.000Z",
+    ...overrides,
+  };
 }
 
 describe("Notification contract", () => {
@@ -339,5 +380,64 @@ describe("Notification contract", () => {
       digestFrequency: "weekly",
       quietHours: { start: "21:00", end: "07:00" },
     });
+  });
+
+  it("suppresses study reminders when the central writer sees them disabled", async () => {
+    mocks.client = new FakeSupabaseClient({
+      notifications: [],
+      user_notification_preferences: [
+        buildPreferenceRow("student-1", {
+          study_reminders_enabled: false,
+        }),
+      ],
+    });
+
+    const result = await writeNotificationDecision({
+      recipientUserIds: ["student-1"],
+      kind: "study_reminder",
+      type: "study_reminder",
+      category: "study_progress",
+      title: "Time to study",
+      body: "Your plan is ready.",
+      channelOrigin: "planner",
+    });
+
+    expect(result).toMatchObject({
+      userId: "student-1",
+      delivered: false,
+      suppressed: true,
+      reason: "study_reminders_disabled",
+      notificationId: null,
+    });
+    expect(mocks.client.store.tables.notifications).toHaveLength(0);
+  });
+
+  it("fans out user-facing notifications through the central writer", async () => {
+    mocks.client = new FakeSupabaseClient({
+      notifications: [],
+      user_notification_preferences: [
+        buildPreferenceRow("student-1"),
+        buildPreferenceRow("student-2"),
+      ],
+    });
+
+    const result = await fanoutNotificationDecisions({
+      recipientUserIds: ["student-1", "student-2"],
+      kind: "system",
+      type: "plan_refreshed",
+      category: "study_progress",
+      title: "Study plan updated",
+      body: "Your study plan has been refreshed.",
+      channelOrigin: "planner",
+      priority: "normal",
+    });
+
+    expect(result.delivered).toBe(2);
+    expect(result.suppressed).toBe(0);
+    expect(mocks.client.store.tables.notifications).toHaveLength(2);
+    expect(mocks.client.store.tables.notifications.map((row) => row.user_id)).toEqual([
+      "student-1",
+      "student-2",
+    ]);
   });
 });

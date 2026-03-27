@@ -762,18 +762,7 @@ async function resolveTimezone(userId: string): Promise<string> {
 
 export async function buildCanonicalPracticeKpiSnapshot(userId: string): Promise<CanonicalPracticeKpiSnapshot> {
   const timezone = await resolveTimezone(userId);
-  let [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
-
-  if (!latestSnapshot) {
-    // Bootstrap the persisted history table the first time a student requests KPI view.
-    await persistCanonicalPracticeKpiSnapshot({
-      userId,
-      sourceVersion: KPI_TRUTH_LAYER_VERSION,
-      triggerEventType: "snapshot_bootstrap",
-      triggerEventId: null,
-    });
-    [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
-  }
+  const [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
 
   return {
     modelVersion: latestSnapshot?.source_version || KPI_TRUTH_LAYER_VERSION,

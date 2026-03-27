@@ -92,6 +92,8 @@ const FORM_INVALID_ORDINAL_MESSAGE = "Test form has invalid ordinal sequence";
 const FORM_UNKNOWN_QUESTION_MESSAGE = "Test form references unknown canonical question";
 const FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE = "Test form references unsupported question type";
 const FORM_SECTION_MISMATCH_MESSAGE = "Test form question section mismatch";
+const MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED =
+  "Module 2 bucket persisted without deferred materialization proof from persisted Module 1 outcomes";
 
 // ============================================================================
 // TYPES
@@ -522,7 +524,8 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
 
 async function resolvePublishedFormForSession(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  requestedFormId?: string
+  requestedFormId?: string,
+  options?: { allowUnpublishedRequestedForm?: boolean }
 ): Promise<ResolvedPublishedForm> {
   let formId = requestedFormId ?? null;
 
@@ -541,7 +544,7 @@ async function resolvePublishedFormForSession(
       throw new Error(FORM_NOT_FOUND_MESSAGE);
     }
 
-    if (form.status !== "published") {
+    if (!options?.allowUnpublishedRequestedForm && form.status !== "published") {
       throw new Error(FORM_NOT_PUBLISHED_MESSAGE);
     }
   } else {
@@ -728,6 +731,158 @@ async function resolvePublishedFormForSession(
     formId,
     itemsByModule,
   };
+}
+
+function isDuplicateWriteError(error: unknown): boolean {
+  const message = String((error as any)?.message ?? "").toLowerCase();
+  const code = String((error as any)?.code ?? "").toLowerCase();
+  return code === "23505" || message.includes("duplicate");
+}
+
+async function countMaterializedModuleQuestions(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  moduleId: string
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("full_length_exam_questions")
+    .select("id")
+    .eq("module_id", moduleId);
+
+  if (error) {
+    throw new Error(`Failed to load materialized module questions: ${error.message}`);
+  }
+
+  return (data ?? []).length;
+}
+
+async function materializeModuleFromResolvedForm(args: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  resolvedForm: ResolvedPublishedForm;
+  moduleId: string;
+  section: SectionType;
+  moduleIndex: ModuleIndex;
+  proofErrorMessage?: string;
+}): Promise<void> {
+  const expectedCount = MODULE_CONFIG[args.section][`module${args.moduleIndex}`].questionCount;
+  const existingCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+
+  if (existingCount === expectedCount) {
+    return;
+  }
+
+  if (existingCount > 0) {
+    const prefix = args.proofErrorMessage ?? FORM_STRUCTURE_INCOMPLETE_MESSAGE;
+    throw new Error(
+      `${prefix}: ${args.section} module ${args.moduleIndex} has partial materialization (${existingCount}/${expectedCount})`
+    );
+  }
+
+  const formItems = requireModuleItems(args.resolvedForm.itemsByModule, args.section, args.moduleIndex);
+  const uniqueQuestionIds = Array.from(new Set(formItems.map((item) => item.questionId)));
+
+  const primaryQuestionSnapshotResult = await args.supabase
+    .from("questions")
+    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, source_type, diagram_present, tags, competencies, answer_choice, answer, answer_text, explanation, exam, structure_cluster_id")
+    .in("id", uniqueQuestionIds);
+
+  if (primaryQuestionSnapshotResult.error) {
+    throw new Error(
+      `Failed to load question snapshots for deferred materialization: ${primaryQuestionSnapshotResult.error.message}`
+    );
+  }
+  const questionSnapshotRows = (primaryQuestionSnapshotResult.data ?? []) as FullLengthQuestionSnapshotRow[];
+
+  const snapshotById = new Map<string, FullLengthQuestionSnapshotRow>();
+  for (const row of questionSnapshotRows) {
+    snapshotById.set(String(row.id), row);
+  }
+
+  const sessionQuestions = formItems.map((item) => {
+    const snapshot = snapshotById.get(item.questionId);
+    if (!snapshot) {
+      throw new Error(`${FORM_UNKNOWN_QUESTION_MESSAGE}: missing snapshot for materialization`);
+    }
+    return {
+      module_id: args.moduleId,
+      question_id: item.questionId,
+      order_index: item.ordinal - 1,
+      ...materializeSessionQuestionSnapshot(snapshot),
+    };
+  });
+
+  const { error: sessionQuestionsError } = await args.supabase
+    .from("full_length_exam_questions")
+    .insert(sessionQuestions);
+
+  if (sessionQuestionsError && !isDuplicateWriteError(sessionQuestionsError)) {
+    throw new Error(`Failed to materialize form questions for module: ${sessionQuestionsError.message}`);
+  }
+
+  const persistedCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  if (persistedCount !== expectedCount) {
+    const prefix = args.proofErrorMessage ?? FORM_STRUCTURE_INCOMPLETE_MESSAGE;
+    throw new Error(
+      `${prefix}: ${args.section} module ${args.moduleIndex} expected ${expectedCount} persisted rows, found ${persistedCount}`
+    );
+  }
+}
+
+async function prepareDeferredModule2FromPersistedOutcome(args: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sessionId: string;
+  testFormId: string | null;
+  section: SectionType;
+  module1CorrectCount: number;
+}): Promise<{ difficultyBucket: DifficultyBucket }> {
+  const derivedDifficulty = determineModule2Difficulty(args.section, args.module1CorrectCount);
+
+  const { error: difficultyUpdateError } = await args.supabase
+    .from("full_length_exam_modules")
+    .update({ difficulty_bucket: derivedDifficulty })
+    .eq("session_id", args.sessionId)
+    .eq("section", args.section)
+    .eq("module_index", 2)
+    .is("difficulty_bucket", null);
+
+  if (difficultyUpdateError) {
+    throw new Error(`Failed to set Module 2 difficulty: ${difficultyUpdateError.message}`);
+  }
+
+  const { data: module2, error: module2Error } = await args.supabase
+    .from("full_length_exam_modules")
+    .select("id, difficulty_bucket")
+    .eq("session_id", args.sessionId)
+    .eq("section", args.section)
+    .eq("module_index", 2)
+    .single();
+
+  if (module2Error || !module2) {
+    throw new Error(`Failed to load Module 2 state: ${module2Error?.message || "module missing"}`);
+  }
+
+  const finalDifficulty =
+    module2.difficulty_bucket === "easy" || module2.difficulty_bucket === "medium" || module2.difficulty_bucket === "hard"
+      ? (module2.difficulty_bucket as DifficultyBucket)
+      : derivedDifficulty;
+
+  if (!args.testFormId) {
+    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: session missing test form id`);
+  }
+
+  const resolvedForm = await resolvePublishedFormForSession(args.supabase, args.testFormId, {
+    allowUnpublishedRequestedForm: true,
+  });
+
+  await materializeModuleFromResolvedForm({
+    supabase: args.supabase,
+    resolvedForm,
+    moduleId: String(module2.id),
+    section: args.section,
+    moduleIndex: 2,
+    proofErrorMessage: MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED,
+  });
+
+  return { difficultyBucket: finalDifficulty };
 }
 
 function assertClientInstanceAccess(
@@ -1450,62 +1605,21 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     moduleIdByKey.set(moduleKey(section, moduleRow.module_index as ModuleIndex), moduleRow.id);
   }
 
-  const sessionQuestionPointers: Array<{ module_id: string; question_id: string; order_index: number }> = [];
-
+  // Contract gate: at session start only module 1 rows may be materialized.
   for (const section of ["rw", "math"] as const) {
-    for (const moduleIndex of [1, 2] as const) {
-      const key = moduleKey(section, moduleIndex);
-      const moduleId = moduleIdByKey.get(key);
-      if (!moduleId) {
-        throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: module mapping missing for ${section} module ${moduleIndex}`);
-      }
-
-      const formItems = requireModuleItems(resolvedForm.itemsByModule, section, moduleIndex);
-      for (const item of formItems) {
-        sessionQuestionPointers.push({
-          module_id: moduleId,
-          question_id: item.questionId,
-          order_index: item.ordinal - 1,
-        });
-      }
+    const key = moduleKey(section, 1);
+    const moduleId = moduleIdByKey.get(key);
+    if (!moduleId) {
+      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: module mapping missing for ${section} module 1`);
     }
-  }
 
-  const uniqueQuestionIds = Array.from(new Set(sessionQuestionPointers.map((row) => row.question_id)));
-  const primaryQuestionSnapshotResult = await supabase
-    .from("questions")
-    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, source_type, diagram_present, tags, competencies, answer_choice, answer, answer_text, explanation, exam, structure_cluster_id")
-    .in("id", uniqueQuestionIds);
-
-  if (primaryQuestionSnapshotResult.error) {
-    throw new Error(`Failed to load question snapshots for session materialization: ${primaryQuestionSnapshotResult.error.message}`);
-  }
-  const questionSnapshotRows = (primaryQuestionSnapshotResult.data ?? []) as FullLengthQuestionSnapshotRow[];
-
-  const snapshotById = new Map<string, FullLengthQuestionSnapshotRow>();
-  for (const row of questionSnapshotRows) {
-    snapshotById.set(String(row.id), row);
-  }
-
-  const sessionQuestions = sessionQuestionPointers.map((pointer) => {
-    const snapshot = snapshotById.get(pointer.question_id);
-    if (!snapshot) {
-      throw new Error(`${FORM_UNKNOWN_QUESTION_MESSAGE}: missing snapshot for materialization`);
-    }
-    return {
-      module_id: pointer.module_id,
-      question_id: pointer.question_id,
-      order_index: pointer.order_index,
-      ...materializeSessionQuestionSnapshot(snapshot),
-    };
-  });
-
-  const { error: sessionQuestionsError } = await supabase
-    .from("full_length_exam_questions")
-    .insert(sessionQuestions);
-
-  if (sessionQuestionsError) {
-    throw new Error(`Failed to materialize form questions for session: ${sessionQuestionsError.message}`);
+    await materializeModuleFromResolvedForm({
+      supabase,
+      resolvedForm,
+      moduleId,
+      section,
+      moduleIndex: 1,
+    });
   }
 
   return session;
@@ -2057,18 +2171,17 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     let isBreak = false;
 
     if (currentModuleIndex === 1) {
-      const { data: module2 } = await supabase
-        .from("full_length_exam_modules")
-        .select("difficulty_bucket")
-        .eq("session_id", params.sessionId)
-        .eq("section", currentSection)
-        .eq("module_index", 2)
-        .single();
-
+      const deferred = await prepareDeferredModule2FromPersistedOutcome({
+        supabase,
+        sessionId: params.sessionId,
+        testFormId: typeof session.test_form_id === "string" ? session.test_form_id : null,
+        section: currentSection,
+        module1CorrectCount: correctCount,
+      });
       nextModule = {
         section: currentSection,
         moduleIndex: 2,
-        difficultyBucket: (module2?.difficulty_bucket as DifficultyBucket) || "medium",
+        difficultyBucket: deferred.difficultyBucket,
       };
     } else if (currentSection === "rw") {
       isBreak = true;
@@ -2161,42 +2274,17 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   let isBreak = false;
 
   if (currentModuleIndex === 1) {
-    // Moving to Module 2 of same section
-    const difficulty = determineModule2Difficulty(currentSection, correctCount);
+    // Moving to Module 2 of same section. Contract gate:
+    // bucket persistence alone is insufficient; deferred module-2 materialization proof is required.
+    const deferred = await prepareDeferredModule2FromPersistedOutcome({
+      supabase,
+      sessionId: params.sessionId,
+      testFormId: typeof session.test_form_id === "string" ? session.test_form_id : null,
+      section: currentSection,
+      module1CorrectCount: correctCount,
+    });
 
-    // Update Module 2 difficulty - single-write guarantee
-    // Only set difficulty_bucket if it's currently NULL to prevent overwrites
-    const { data: updatedModules, error: difficultyError } = await supabase
-      .from("full_length_exam_modules")
-      .update({ difficulty_bucket: difficulty })
-      .eq("session_id", params.sessionId)
-      .eq("section", currentSection)
-      .eq("module_index", 2)
-      .is("difficulty_bucket", null)
-      .select();
-
-    // If no rows were updated, difficulty_bucket was already set
-    // Fetch the existing value
-    let finalDifficulty: DifficultyBucket = difficulty;
-    if (!updatedModules || updatedModules.length === 0) {
-      const { data: existingModule } = await supabase
-        .from("full_length_exam_modules")
-        .select("difficulty_bucket")
-        .eq("session_id", params.sessionId)
-        .eq("section", currentSection)
-        .eq("module_index", 2)
-        .single();
-
-      if (existingModule?.difficulty_bucket) {
-        finalDifficulty = existingModule.difficulty_bucket as DifficultyBucket;
-      }
-    }
-
-    if (difficultyError) {
-      throw new Error(`Failed to set Module 2 difficulty: ${difficultyError.message}`);
-    }
-
-    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: finalDifficulty };
+    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: deferred.difficultyBucket };
 
     // Update session
     await supabase

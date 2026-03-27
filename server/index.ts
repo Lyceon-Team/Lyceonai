@@ -399,16 +399,15 @@ app.use("/api/account", accountRoutes);
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
 
-// Practice Topics Routes (for browsing and filtering)
+// Practice reference routes (bootstrap/filtering only; not runtime delivery)
 app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
-app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+app.get("/api/practice/reference/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
 app.use(
   "/api/practice",
-  runtimeContractDisableMiddleware("practice"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   practiceCanonicalRouter
@@ -682,8 +681,8 @@ if (isMainModule) {
     console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
     console.log(`  GET    /api/practice/sessions/:sessionId/next`);
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
-    console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
+    console.log(`  GET    /api/practice/reference/questions`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);

@@ -74,7 +74,7 @@ function BrowseTopics() {
     error: questionsError,
     refetch: searchQuestions 
   } = useQuery<QuestionsResponse>({
-    queryKey: ['/api/practice/questions', { 
+    queryKey: ['/api/practice/reference/questions', { 
       section: selectedSection, 
       domain: selectedDomain, 
       skill: selectedSkill, 
@@ -82,7 +82,9 @@ function BrowseTopics() {
     }],
     queryFn: async () => {
       const query = buildQueryParams();
-      const endpoint = query ? `/api/practice/questions?${query}` : '/api/practice/questions';
+      const endpoint = query
+        ? `/api/practice/reference/questions?${query}`
+        : '/api/practice/reference/questions';
       const response = await apiRequest(endpoint);
       return response.json();
     },
