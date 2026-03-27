@@ -1,8 +1,12 @@
--- 20260327_canonical_runtime_rebuild_additive.sql
--- Canonical runtime rebuild additive migration.
--- Safe for production: additive columns/tables/indexes/policies + idempotent backfills.
-
 BEGIN;
+
+-- =============================================================================
+-- Canonical runtime rebuild additive migration
+-- Full rewrite:
+-- - fixes text/uuid COALESCE issue
+-- - keeps additive/idempotent posture
+-- - creates review canonical runtime tables if absent
+-- =============================================================================
 
 -- -----------------------------------------------------------------------------
 -- Practice session item snapshot parity for canonical runtime-only reads
@@ -12,7 +16,8 @@ ALTER TABLE public.practice_session_items
   ADD COLUMN IF NOT EXISTS question_skill text,
   ADD COLUMN IF NOT EXISTS question_subskill text,
   ADD COLUMN IF NOT EXISTS question_exam text,
-  ADD COLUMN IF NOT EXISTS question_structure_cluster_id text;
+  ADD COLUMN IF NOT EXISTS question_structure_cluster_id text,
+  ADD COLUMN IF NOT EXISTS question_correct_answer text;
 
 DO $$
 BEGIN
@@ -89,7 +94,10 @@ BEGIN
   ) THEN
     EXECUTE $sql$
       UPDATE public.practice_session_items psi
-      SET question_structure_cluster_id = COALESCE(NULLIF(psi.question_structure_cluster_id, ''), q.structure_cluster_id)
+      SET question_structure_cluster_id = COALESCE(
+            NULLIF(psi.question_structure_cluster_id, ''),
+            q.structure_cluster_id::text
+          )
       FROM public.questions q
       WHERE q.id = psi.question_id
         AND (psi.question_structure_cluster_id IS NULL OR psi.question_structure_cluster_id = '')
@@ -130,7 +138,7 @@ BEGIN
 END $$;
 
 -- -----------------------------------------------------------------------------
--- Full-length snapshot parity: ensure persisted answer-key column exists
+-- Full-length snapshot parity: persisted answer key
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.full_length_exam_questions
   ADD COLUMN IF NOT EXISTS question_correct_answer text;
@@ -171,7 +179,7 @@ BEGIN
 END $$;
 
 -- -----------------------------------------------------------------------------
--- Review canonical runtime tables (idempotent create + additive parity)
+-- Review canonical runtime tables
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.review_error_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -196,7 +204,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_review_error_attempts_client_id
 CREATE TABLE IF NOT EXISTS public.review_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  status text NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'active', 'completed', 'abandoned')),
+  status text NOT NULL DEFAULT 'created'
+    CHECK (status IN ('created', 'active', 'completed', 'abandoned')),
   source_context text NOT NULL DEFAULT 'review_errors',
   started_at timestamptz NULL,
   completed_at timestamptz NULL,
@@ -210,6 +219,7 @@ CREATE TABLE IF NOT EXISTS public.review_sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_review_sessions_single_active
   ON public.review_sessions(student_id)
   WHERE status IN ('created', 'active');
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_review_sessions_student_idempotency
   ON public.review_sessions(student_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
@@ -223,8 +233,10 @@ CREATE TABLE IF NOT EXISTS public.review_session_items (
   source_question_id text NULL,
   source_question_canonical_id text NULL,
   source_origin text NOT NULL CHECK (source_origin IN ('practice', 'full_test')),
-  retry_mode text NOT NULL DEFAULT 'same_question' CHECK (retry_mode IN ('same_question', 'similar_question')),
-  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'served', 'answered', 'skipped')),
+  retry_mode text NOT NULL DEFAULT 'same_question'
+    CHECK (retry_mode IN ('same_question', 'similar_question')),
+  status text NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'served', 'answered', 'skipped')),
   attempt_id uuid NULL REFERENCES public.review_error_attempts(id) ON DELETE SET NULL,
   tutor_opened_at timestamptz NULL,
   answered_at timestamptz NULL,
@@ -246,13 +258,6 @@ CREATE TABLE IF NOT EXISTS public.review_session_items (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
-ALTER TABLE public.review_session_items
-  ADD COLUMN IF NOT EXISTS question_domain text,
-  ADD COLUMN IF NOT EXISTS question_skill text,
-  ADD COLUMN IF NOT EXISTS question_subskill text,
-  ADD COLUMN IF NOT EXISTS question_exam text,
-  ADD COLUMN IF NOT EXISTS question_structure_cluster_id text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_review_session_items_session_ordinal
   ON public.review_session_items(review_session_id, ordinal);
@@ -283,7 +288,9 @@ ALTER TABLE public.review_session_events ENABLE ROW LEVEL SECURITY;
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_error_attempts' AND policyname='review_error_attempts_select_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_error_attempts'
+      AND policyname = 'review_error_attempts_select_own'
   ) THEN
     CREATE POLICY review_error_attempts_select_own
       ON public.review_error_attempts
@@ -292,7 +299,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_error_attempts' AND policyname='review_error_attempts_insert_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_error_attempts'
+      AND policyname = 'review_error_attempts_insert_own'
   ) THEN
     CREATE POLICY review_error_attempts_insert_own
       ON public.review_error_attempts
@@ -301,7 +310,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_sessions' AND policyname='review_sessions_select_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_sessions'
+      AND policyname = 'review_sessions_select_own'
   ) THEN
     CREATE POLICY review_sessions_select_own
       ON public.review_sessions
@@ -310,7 +321,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_sessions' AND policyname='review_sessions_insert_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_sessions'
+      AND policyname = 'review_sessions_insert_own'
   ) THEN
     CREATE POLICY review_sessions_insert_own
       ON public.review_sessions
@@ -319,7 +332,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_sessions' AND policyname='review_sessions_update_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_sessions'
+      AND policyname = 'review_sessions_update_own'
   ) THEN
     CREATE POLICY review_sessions_update_own
       ON public.review_sessions
@@ -329,7 +344,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_session_items' AND policyname='review_session_items_select_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_session_items'
+      AND policyname = 'review_session_items_select_own'
   ) THEN
     CREATE POLICY review_session_items_select_own
       ON public.review_session_items
@@ -338,7 +355,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_session_items' AND policyname='review_session_items_insert_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_session_items'
+      AND policyname = 'review_session_items_insert_own'
   ) THEN
     CREATE POLICY review_session_items_insert_own
       ON public.review_session_items
@@ -347,7 +366,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_session_items' AND policyname='review_session_items_update_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_session_items'
+      AND policyname = 'review_session_items_update_own'
   ) THEN
     CREATE POLICY review_session_items_update_own
       ON public.review_session_items
@@ -357,7 +378,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_session_events' AND policyname='review_session_events_select_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_session_events'
+      AND policyname = 'review_session_events_select_own'
   ) THEN
     CREATE POLICY review_session_events_select_own
       ON public.review_session_events
@@ -366,7 +389,9 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='review_session_events' AND policyname='review_session_events_insert_own'
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'review_session_events'
+      AND policyname = 'review_session_events_insert_own'
   ) THEN
     CREATE POLICY review_session_events_insert_own
       ON public.review_session_events
