@@ -1,7 +1,3 @@
--- 20260327_usage_daily_canonical_create.sql
--- Canonical usage_daily table for account-level daily quota counters.
--- Additive migration.
-
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.usage_daily (
@@ -18,6 +14,23 @@ CREATE TABLE IF NOT EXISTS public.usage_daily (
 CREATE INDEX IF NOT EXISTS idx_usage_daily_account_day
   ON public.usage_daily(account_id, day DESC);
 
+-- Remove any pre-existing FK on this table so we can re-add the canonical one cleanly.
+DO $$
+DECLARE
+  rec record;
+BEGIN
+  FOR rec IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.usage_daily'::regclass
+      AND contype = 'f'
+      AND conname IN ('usage_daily_account_id_fkey', 'usage_daily_account_id_accounts_fkey')
+  LOOP
+    EXECUTE format('ALTER TABLE public.usage_daily DROP CONSTRAINT IF EXISTS %I', rec.conname);
+  END LOOP;
+END $$;
+
+-- Add canonical FK as NOT VALID so historical orphan rows do not fail the migration.
 DO $$
 BEGIN
   IF EXISTS (
@@ -35,11 +48,15 @@ BEGIN
       ADD CONSTRAINT usage_daily_account_id_fkey
       FOREIGN KEY (account_id)
       REFERENCES public.lyceon_accounts(id)
-      ON DELETE CASCADE;
+      ON DELETE CASCADE
+      NOT VALID;
   END IF;
 END $$;
 
 ALTER TABLE public.usage_daily ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS usage_daily_select_own ON public.usage_daily;
+DROP POLICY IF EXISTS usage_daily_service_role_all ON public.usage_daily;
 
 DO $$
 BEGIN
@@ -49,7 +66,6 @@ BEGIN
     WHERE table_schema = 'public'
       AND table_name = 'lyceon_account_members'
   ) THEN
-    DROP POLICY IF EXISTS usage_daily_select_own ON public.usage_daily;
     CREATE POLICY usage_daily_select_own
       ON public.usage_daily
       FOR SELECT
@@ -65,7 +81,6 @@ BEGIN
   END IF;
 END $$;
 
-DROP POLICY IF EXISTS usage_daily_service_role_all ON public.usage_daily;
 CREATE POLICY usage_daily_service_role_all
   ON public.usage_daily
   FOR ALL
@@ -73,9 +88,21 @@ CREATE POLICY usage_daily_service_role_all
   WITH CHECK ((auth.jwt() ->> 'role') = 'service_role');
 
 DROP TRIGGER IF EXISTS set_usage_daily_updated_at ON public.usage_daily;
-CREATE TRIGGER set_usage_daily_updated_at
-  BEFORE UPDATE ON public.usage_daily
-  FOR EACH ROW
-  EXECUTE FUNCTION public.set_updated_at();
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'set_updated_at'
+  ) THEN
+    CREATE TRIGGER set_usage_daily_updated_at
+      BEFORE UPDATE ON public.usage_daily
+      FOR EACH ROW
+      EXECUTE FUNCTION public.set_updated_at();
+  END IF;
+END $$;
 
 COMMIT;
