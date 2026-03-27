@@ -139,9 +139,7 @@ function ReviewErrors() {
 
   const reviewSummaryUrl = useMemo(() => {
     const params = new URLSearchParams();
-    if (reviewScope !== "all_past_mistakes") {
-      params.set("mode", reviewScope);
-    }
+    params.set("mode", reviewScope);
     if (reviewScope === "by_practice_session" && practiceSessionId.trim()) {
       params.set("practice_session_id", practiceSessionId.trim());
     }

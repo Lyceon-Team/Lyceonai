@@ -6,6 +6,7 @@ type DbState = {
   test_forms: TableRow[];
   test_form_items: TableRow[];
   questions: TableRow[];
+  full_length_adaptive_config: TableRow[];
   full_length_exam_sessions: TableRow[];
   full_length_exam_modules: TableRow[];
   full_length_exam_questions: TableRow[];
@@ -229,6 +230,7 @@ describe("Full-length deferred materialization gates", () => {
       test_forms: [],
       test_form_items: [],
       questions: [],
+      full_length_adaptive_config: [],
       full_length_exam_sessions: [],
       full_length_exam_modules: [],
       full_length_exam_questions: [],
@@ -273,6 +275,15 @@ describe("Full-length deferred materialization gates", () => {
       current_section: "rw",
       current_module: 1,
       test_form_id: null,
+      seed: "seed-1",
+    });
+
+    db.full_length_adaptive_config.push({
+      id: "cfg-rw",
+      section: "rw",
+      hard_cutoff: 21,
+      bucket_mode: "two_bucket",
+      active: true,
     });
 
     db.full_length_exam_modules.push(

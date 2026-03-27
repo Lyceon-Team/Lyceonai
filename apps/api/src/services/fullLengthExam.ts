@@ -69,17 +69,60 @@ export const BREAK_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 export const ADAPTIVE_THRESHOLDS = {
   rw: {
     // For RW Module 1 (27 questions)
-    // ≥ 18 correct (66.7%) → hard
-    // < 18 correct → medium
-    hardThreshold: 18,
+    // ≥ 21 correct → hard
+    // < 21 correct → medium
+    hardThreshold: 21,
   },
   math: {
     // For Math Module 1 (22 questions)
-    // ≥ 15 correct (68.2%) → hard
+    // ≥ 15 correct → hard
     // < 15 correct → medium
     hardThreshold: 15,
   },
 } as const;
+
+const ADAPTIVE_BUCKET_MODE = "two_bucket" as const;
+
+type AdaptiveConfigRow = {
+  id: string;
+  section: string;
+  hard_cutoff: number;
+  bucket_mode: string | null;
+  active: boolean | null;
+};
+
+type Module2DomainKey =
+  | "information_and_ideas"
+  | "craft_and_structure"
+  | "expression_of_ideas"
+  | "standard_english_conventions"
+  | "algebra"
+  | "advanced_math"
+  | "problem_solving_data_analysis"
+  | "geometry_trigonometry";
+
+const MODULE2_DOMAIN_QUOTAS: Record<SectionType, Record<Module2DomainKey, number>> = {
+  rw: {
+    information_and_ideas: 7,
+    craft_and_structure: 8,
+    expression_of_ideas: 5,
+    standard_english_conventions: 7,
+    algebra: 0,
+    advanced_math: 0,
+    problem_solving_data_analysis: 0,
+    geometry_trigonometry: 0,
+  },
+  math: {
+    algebra: 8,
+    advanced_math: 8,
+    problem_solving_data_analysis: 3,
+    geometry_trigonometry: 3,
+    information_and_ideas: 0,
+    craft_and_structure: 0,
+    expression_of_ideas: 0,
+    standard_english_conventions: 0,
+  },
+};
 
 const ACTIVE_SESSION_STATUSES = ["not_started", "in_progress", "break"] as const;
 const CLIENT_INSTANCE_CONFLICT_MESSAGE = "Session client instance conflict";
@@ -153,6 +196,30 @@ type FullLengthQuestionSnapshotRow = {
   exam: string | null;
   structure_cluster_id: string | null;
 };
+
+const QUESTION_SNAPSHOT_SELECT = [
+  "id",
+  "canonical_id",
+  "question_type",
+  "stem",
+  "section",
+  "section_code",
+  "options",
+  "difficulty",
+  "domain",
+  "skill",
+  "subskill",
+  "source_type",
+  "diagram_present",
+  "tags",
+  "competencies",
+  "answer_choice",
+  "answer",
+  "answer_text",
+  "explanation",
+  "exam",
+  "structure_cluster_id",
+].join(", ");
 
 export interface CreateSessionParams {
   userId: string;
@@ -317,11 +384,130 @@ function generateSeed(userId: string): string {
  * Determine Module 2 difficulty based on Module 1 performance
  */
 function determineModule2Difficulty(
-  section: SectionType,
+  config: AdaptiveConfigRow,
   module1CorrectCount: number
 ): DifficultyBucket {
-  const threshold = ADAPTIVE_THRESHOLDS[section].hardThreshold;
-  return module1CorrectCount >= threshold ? "hard" : "medium";
+  const hardCutoff = Number(config.hard_cutoff);
+  if (!Number.isFinite(hardCutoff)) {
+    throw new Error("Adaptive config missing hard_cutoff");
+  }
+  return module1CorrectCount >= hardCutoff ? "hard" : "medium";
+}
+
+function simpleHash(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function stableSeedSort<T>(items: T[], seed: string, keyFn: (item: T) => string): T[] {
+  return [...items].sort((a, b) => {
+    const keyA = keyFn(a);
+    const keyB = keyFn(b);
+    const hashA = simpleHash(`${seed}:${keyA}`);
+    const hashB = simpleHash(`${seed}:${keyB}`);
+    if (hashA !== hashB) {
+      return hashA - hashB;
+    }
+    return keyA.localeCompare(keyB);
+  });
+}
+
+function normalizeDomainKey(section: SectionType, value: unknown): Module2DomainKey | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
+
+  if (section === "rw") {
+    if (normalized.includes("information") || normalized.includes("idea")) {
+      return "information_and_ideas";
+    }
+    if (normalized.includes("craft") || normalized.includes("structure")) {
+      return "craft_and_structure";
+    }
+    if (normalized.includes("expression") || normalized.includes("rhetoric")) {
+      return "expression_of_ideas";
+    }
+    if (normalized.includes("standard") || normalized.includes("convention") || normalized.includes("english")) {
+      return "standard_english_conventions";
+    }
+  } else {
+    if (normalized.includes("geometry") || normalized.includes("trigonometry") || normalized.includes("trig")) {
+      return "geometry_trigonometry";
+    }
+    if (normalized.includes("problem") || normalized.includes("data") || normalized.includes("analysis")) {
+      return "problem_solving_data_analysis";
+    }
+    if (normalized.includes("advanced")) {
+      return "advanced_math";
+    }
+    if (normalized.includes("algebra")) {
+      return "algebra";
+    }
+  }
+
+  return null;
+}
+
+function normalizeDifficultyBucket(value: unknown): DifficultyBucket | null {
+  if (value === 1 || value === 2 || value === 3) {
+    return value === 1 ? "easy" : value === 2 ? "medium" : "hard";
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "easy") return "easy";
+    if (normalized === "medium") return "medium";
+    if (normalized === "hard") return "hard";
+    const parsed = Number.parseInt(normalized, 10);
+    if (parsed === 1) return "easy";
+    if (parsed === 2) return "medium";
+    if (parsed === 3) return "hard";
+  }
+  return null;
+}
+
+function bucketMatchesDifficulty(target: DifficultyBucket, value: unknown): boolean {
+  const bucket = normalizeDifficultyBucket(value);
+  if (!bucket) return false;
+  if (target === "hard") return bucket === "hard";
+  if (target === "medium") return bucket === "medium" || bucket === "easy";
+  return bucket === target;
+}
+
+async function loadAdaptiveConfig(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  section: SectionType
+): Promise<AdaptiveConfigRow> {
+  const { data, error } = await supabase
+    .from("full_length_adaptive_config")
+    .select("id, section, hard_cutoff, bucket_mode, active")
+    .eq("section", section)
+    .eq("active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load adaptive config: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error(`Missing adaptive config for section=${section}`);
+  }
+
+  if (data.bucket_mode && data.bucket_mode !== ADAPTIVE_BUCKET_MODE) {
+    throw new Error(`Unsupported adaptive bucket mode: ${data.bucket_mode}`);
+  }
+
+  return {
+    id: String(data.id),
+    section: String(data.section),
+    hard_cutoff: Number(data.hard_cutoff),
+    bucket_mode: data.bucket_mode ?? ADAPTIVE_BUCKET_MODE,
+    active: data.active ?? true,
+  };
 }
 
 interface DiagnosticInputRow {
@@ -782,7 +968,7 @@ async function materializeModuleFromResolvedForm(args: {
 
   const primaryQuestionSnapshotResult = await args.supabase
     .from("questions")
-    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, source_type, diagram_present, tags, competencies, answer_choice, answer, answer_text, explanation, exam, structure_cluster_id")
+    .select(QUESTION_SNAPSHOT_SELECT)
     .in("id", uniqueQuestionIds);
 
   if (primaryQuestionSnapshotResult.error) {
@@ -827,30 +1013,171 @@ async function materializeModuleFromResolvedForm(args: {
   }
 }
 
+function sectionCodeFilter(section: SectionType): string[] {
+  return section === "rw" ? ["RW"] : ["M", "MATH"];
+}
+
+function getCandidateKey(row: FullLengthQuestionSnapshotRow): string {
+  const canonical = typeof row.canonical_id === "string" ? row.canonical_id.trim() : "";
+  return canonical.length > 0 ? canonical : String(row.id);
+}
+
+function pickDeterministic<T>(items: T[], count: number, seed: string, keyFn: (item: T) => string): T[] {
+  if (count <= 0) return [];
+  const ordered = stableSeedSort(items, seed, keyFn);
+  return ordered.slice(0, count);
+}
+
+async function materializeModule2FromBlueprint(args: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  sessionId: string;
+  moduleId: string;
+  section: SectionType;
+  difficultyBucket: DifficultyBucket;
+  seed: string;
+  excludeCanonicalIds: string[];
+}): Promise<void> {
+  const expectedCount = MODULE_CONFIG[args.section].module2.questionCount;
+  const existingCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+
+  if (existingCount === expectedCount) {
+    return;
+  }
+
+  if (existingCount > 0) {
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 has partial materialization (${existingCount}/${expectedCount})`
+    );
+  }
+
+  const { data, error } = await args.supabase
+    .from("questions")
+    .select(QUESTION_SNAPSHOT_SELECT)
+    .eq("question_type", "multiple_choice")
+    .in("section_code", sectionCodeFilter(args.section))
+    .limit(1200);
+
+  if (error) {
+    throw new Error(`Failed to load module-2 candidate questions: ${error.message}`);
+  }
+
+  const pool = (data ?? []) as FullLengthQuestionSnapshotRow[];
+  const excludeSet = new Set(
+    args.excludeCanonicalIds
+      .map((id) => (typeof id === "string" ? id.trim() : ""))
+      .filter((id) => id.length > 0)
+  );
+
+  const bucketed = pool.filter((row) => bucketMatchesDifficulty(args.difficultyBucket, row.difficulty));
+  const candidates = bucketed.filter((row) => !excludeSet.has(getCandidateKey(row)));
+
+  const quotas = MODULE2_DOMAIN_QUOTAS[args.section];
+  const selected: FullLengthQuestionSnapshotRow[] = [];
+  const selectedKeys = new Set<string>();
+
+  const byDomain = new Map<Module2DomainKey, FullLengthQuestionSnapshotRow[]>();
+  const remainder: FullLengthQuestionSnapshotRow[] = [];
+
+  for (const row of candidates) {
+    const domainKey = normalizeDomainKey(args.section, row.domain);
+    if (domainKey && quotas[domainKey] > 0) {
+      if (!byDomain.has(domainKey)) {
+        byDomain.set(domainKey, []);
+      }
+      byDomain.get(domainKey)!.push(row);
+    } else {
+      remainder.push(row);
+    }
+  }
+
+  const domainOrder = Object.keys(quotas).filter((key) => quotas[key as Module2DomainKey] > 0) as Module2DomainKey[];
+
+  for (const domain of domainOrder) {
+    const needed = quotas[domain];
+    const candidatesForDomain = byDomain.get(domain) ?? [];
+    const picks = pickDeterministic(
+      candidatesForDomain.filter((row) => !selectedKeys.has(getCandidateKey(row))),
+      needed,
+      `${args.seed}:${args.section}:module2:${domain}`,
+      getCandidateKey
+    );
+    for (const row of picks) {
+      const key = getCandidateKey(row);
+      if (selectedKeys.has(key)) continue;
+      selectedKeys.add(key);
+      selected.push(row);
+    }
+  }
+
+  if (selected.length < expectedCount) {
+    const remainingPool = candidates.filter((row) => !selectedKeys.has(getCandidateKey(row)));
+    const filler = pickDeterministic(
+      remainingPool,
+      expectedCount - selected.length,
+      `${args.seed}:${args.section}:module2:fill`,
+      getCandidateKey
+    );
+    for (const row of filler) {
+      const key = getCandidateKey(row);
+      if (selectedKeys.has(key)) continue;
+      selectedKeys.add(key);
+      selected.push(row);
+    }
+  }
+
+  if (selected.length !== expectedCount) {
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: insufficient module-2 candidates (${selected.length}/${expectedCount}) for ${args.section}`
+    );
+  }
+
+  const ordered = stableSeedSort(
+    selected,
+    `${args.seed}:${args.section}:module2:order`,
+    getCandidateKey
+  );
+
+  const sessionQuestions = ordered.map((item, index) => {
+    return {
+      module_id: args.moduleId,
+      question_id: item.id,
+      order_index: index,
+      ...materializeSessionQuestionSnapshot(item),
+    };
+  });
+
+  const { error: insertError } = await args.supabase
+    .from("full_length_exam_questions")
+    .insert(sessionQuestions);
+
+  if (insertError && !isDuplicateWriteError(insertError)) {
+    throw new Error(`Failed to materialize module-2 questions: ${insertError.message}`);
+  }
+
+  const persistedCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  if (persistedCount !== expectedCount) {
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 expected ${expectedCount} persisted rows, found ${persistedCount}`
+    );
+  }
+}
+
 async function prepareDeferredModule2FromPersistedOutcome(args: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   sessionId: string;
-  testFormId: string | null;
   section: SectionType;
+  seed: string;
   module1CorrectCount: number;
 }): Promise<{ difficultyBucket: DifficultyBucket }> {
-  const derivedDifficulty = determineModule2Difficulty(args.section, args.module1CorrectCount);
-
-  const { error: difficultyUpdateError } = await args.supabase
-    .from("full_length_exam_modules")
-    .update({ difficulty_bucket: derivedDifficulty })
-    .eq("session_id", args.sessionId)
-    .eq("section", args.section)
-    .eq("module_index", 2)
-    .is("difficulty_bucket", null);
-
-  if (difficultyUpdateError) {
-    throw new Error(`Failed to set Module 2 difficulty: ${difficultyUpdateError.message}`);
+  if (!args.seed) {
+    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: session seed missing`);
   }
+  const adaptiveConfig = await loadAdaptiveConfig(args.supabase, args.section);
+  const derivedDifficulty = determineModule2Difficulty(adaptiveConfig, args.module1CorrectCount);
 
   const { data: module2, error: module2Error } = await args.supabase
     .from("full_length_exam_modules")
-    .select("id, difficulty_bucket")
+    .select("id, difficulty_bucket, module1_correct_count, adaptive_config_id, materialized_at")
     .eq("session_id", args.sessionId)
     .eq("section", args.section)
     .eq("module_index", 2)
@@ -865,22 +1192,67 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
       ? (module2.difficulty_bucket as DifficultyBucket)
       : derivedDifficulty;
 
-  if (!args.testFormId) {
-    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: session missing test form id`);
+  const { error: updateError } = await args.supabase
+    .from("full_length_exam_modules")
+    .update({
+      difficulty_bucket: finalDifficulty,
+      module1_correct_count: args.module1CorrectCount,
+      adaptive_config_id: adaptiveConfig.id,
+    })
+    .eq("id", module2.id)
+    .is("difficulty_bucket", null);
+
+  if (updateError) {
+    throw new Error(`Failed to set Module 2 difficulty: ${updateError.message}`);
   }
 
-  const resolvedForm = await resolvePublishedFormForSession(args.supabase, args.testFormId, {
-    allowUnpublishedRequestedForm: true,
-  });
+  const { data: module1, error: module1Error } = await args.supabase
+    .from("full_length_exam_modules")
+    .select("id")
+    .eq("session_id", args.sessionId)
+    .eq("section", args.section)
+    .eq("module_index", 1)
+    .single();
 
-  await materializeModuleFromResolvedForm({
+  if (module1Error || !module1) {
+    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: module 1 state missing`);
+  }
+
+  const { data: module1Rows, error: module1RowsError } = await args.supabase
+    .from("full_length_exam_questions")
+    .select("question_canonical_id, question_id")
+    .eq("module_id", module1.id);
+
+  if (module1RowsError) {
+    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: failed to load module 1 questions`);
+  }
+
+  const excludeCanonicalIds = (module1Rows ?? []).map((row: any) => row.question_canonical_id || row.question_id).filter(Boolean);
+
+  await materializeModule2FromBlueprint({
     supabase: args.supabase,
-    resolvedForm,
+    sessionId: args.sessionId,
     moduleId: String(module2.id),
     section: args.section,
-    moduleIndex: 2,
-    proofErrorMessage: MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED,
+    difficultyBucket: finalDifficulty,
+    seed: args.seed,
+    excludeCanonicalIds,
   });
+
+  const now = new Date().toISOString();
+  const { error: materializedUpdateError } = await args.supabase
+    .from("full_length_exam_modules")
+    .update({
+      difficulty_bucket: finalDifficulty,
+      materialized_at: module2.materialized_at ?? now,
+      module1_correct_count: args.module1CorrectCount,
+      adaptive_config_id: adaptiveConfig.id,
+    })
+    .eq("id", module2.id);
+
+  if (materializedUpdateError) {
+    throw new Error(`Failed to persist module-2 materialization provenance: ${materializedUpdateError.message}`);
+  }
 
   return { difficultyBucket: finalDifficulty };
 }
@@ -2174,8 +2546,8 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       const deferred = await prepareDeferredModule2FromPersistedOutcome({
         supabase,
         sessionId: params.sessionId,
-        testFormId: typeof session.test_form_id === "string" ? session.test_form_id : null,
         section: currentSection,
+        seed: typeof session.seed === "string" ? session.seed : "",
         module1CorrectCount: correctCount,
       });
       nextModule = {
@@ -2279,8 +2651,8 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     const deferred = await prepareDeferredModule2FromPersistedOutcome({
       supabase,
       sessionId: params.sessionId,
-      testFormId: typeof session.test_form_id === "string" ? session.test_form_id : null,
       section: currentSection,
+      seed: typeof session.seed === "string" ? session.seed : "",
       module1CorrectCount: correctCount,
     });
 

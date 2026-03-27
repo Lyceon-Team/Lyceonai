@@ -167,6 +167,9 @@ export interface FullLengthExamModule {
   section?: string;
   module_index?: number;
   difficulty_bucket?: string | null;
+  module1_correct_count?: number | null;
+  adaptive_config_id?: string | null;
+  materialized_at?: string | null;
   target_duration_ms?: number;
   started_at?: string | null;
   ends_at?: string | null;

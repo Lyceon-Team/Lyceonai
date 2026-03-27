@@ -344,7 +344,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const first = makeRes();
     await startReviewErrorSession(req, first.res);
     expect(first.getStatus()).toBe(201);
@@ -389,7 +389,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', idempotency_key: 'idem-1', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', idempotency_key: 'idem-1', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 
@@ -435,7 +435,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 
@@ -447,6 +447,28 @@ describe('Review session lifecycle contract', () => {
     expect(queued).toHaveLength(1);
     expect(served[0].ordinal).toBe(1);
     expect(queued[0].ordinal).toBe(2);
+  });
+
+  it('requires explicit review mode on session start', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [],
+      review_session_items: [],
+      review_session_events: [],
+      questions: [],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const res = makeRes();
+    await startReviewErrorSession(req, res.res);
+
+    expect(res.getStatus()).toBe(400);
+    expect(res.getBody()).toMatchObject({ code: 'REVIEW_MODE_REQUIRED' });
   });
 
   it('fails closed when unresolved item lacks valid canonical_id even if question_id is canonical-shaped', async () => {
@@ -482,7 +504,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 

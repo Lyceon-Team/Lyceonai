@@ -307,7 +307,14 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
 
     const query = (req as any).query ?? {};
     const rawMode = typeof query.mode === "string" ? query.mode.trim() : "";
-    const normalizedMode = rawMode || "all_past_mistakes";
+    if (!rawMode) {
+      return res.status(400).json({
+        error: "mode is required",
+        code: "REVIEW_MODE_REQUIRED",
+        requestId: req.requestId,
+      });
+    }
+    const normalizedMode = rawMode;
     const allowedModes: ReviewQueueMode[] = ["all_past_mistakes", "by_practice_session", "by_full_length_session"];
     if (!allowedModes.includes(normalizedMode as ReviewQueueMode)) {
       return res.status(400).json({

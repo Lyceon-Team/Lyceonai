@@ -194,7 +194,7 @@ describe('Review queue runtime contract', () => {
     });
 
     const { res, getStatus, getBody } = makeRes();
-    const req: any = { user: { id: 'student-1' } };
+    const req: any = { user: { id: 'student-1' }, query: { mode: 'all_past_mistakes' } };
 
     await getReviewErrors(req, res);
 
@@ -225,7 +225,7 @@ describe('Review queue runtime contract', () => {
     });
 
     const { res, getStatus, getBody } = makeRes();
-    const req: any = { user: { id: 'student-1' } };
+    const req: any = { user: { id: 'student-1' }, query: { mode: 'all_past_mistakes' } };
 
     await getReviewErrors(req, res);
 
@@ -249,6 +249,22 @@ describe('Review queue runtime contract', () => {
 
     expect(getStatus()).toBe(401);
     expect(getBody().error).toContain('Authentication required');
+  });
+
+  it('requires explicit review mode', async () => {
+    setupSupabase({
+      practiceRows: [],
+      fullLengthRows: [],
+      reviewRows: [],
+    });
+
+    const { res, getStatus, getBody } = makeRes();
+    const req: any = { user: { id: 'student-1' }, query: {} };
+
+    await getReviewErrors(req, res);
+
+    expect(getStatus()).toBe(400);
+    expect(getBody()).toMatchObject({ code: 'REVIEW_MODE_REQUIRED' });
   });
 
   it('does not derive canonical identity from canonical-shaped question_id when canonical_id is missing', async () => {
@@ -278,7 +294,7 @@ describe('Review queue runtime contract', () => {
     });
 
     const { res, getStatus, getBody } = makeRes();
-    const req: any = { user: { id: 'student-1' } };
+    const req: any = { user: { id: 'student-1' }, query: { mode: 'all_past_mistakes' } };
 
     await getReviewErrors(req, res);
 

@@ -73,7 +73,7 @@ type CanonicalQuestion = {
 const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
 
 const startSchema = z.object({
-  mode: z.enum(["all_past_mistakes", "by_practice_session", "by_full_length_session"]).optional().default("all_past_mistakes"),
+  mode: z.enum(["all_past_mistakes", "by_practice_session", "by_full_length_session"]),
   practice_session_id: z.string().uuid().optional().nullable(),
   full_length_session_id: z.string().uuid().optional().nullable(),
   filter: z.enum(["all", "incorrect", "skipped"]).optional().default("all"),
@@ -389,12 +389,18 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
     const parsed = startSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request body", code: "INVALID_REVIEW_SESSION_START_PAYLOAD", details: parsed.error.issues, requestId });
+      const missingMode = parsed.error.issues.some((issue) => issue.path[0] === "mode");
+      return res.status(400).json({
+        error: missingMode ? "mode is required" : "Invalid request body",
+        code: missingMode ? "REVIEW_MODE_REQUIRED" : "INVALID_REVIEW_SESSION_START_PAYLOAD",
+        details: parsed.error.issues,
+        requestId,
+      });
     }
 
     const clientInstanceId = optionalString(parsed.data.client_instance_id);
     const idempotencyKey = optionalString(parsed.data.idempotency_key);
-    const mode: ReviewSessionMode = parsed.data.mode ?? "all_past_mistakes";
+    const mode: ReviewSessionMode = parsed.data.mode;
     const practiceSessionId = optionalString(parsed.data.practice_session_id);
     const fullLengthSessionId = optionalString(parsed.data.full_length_session_id);
 
