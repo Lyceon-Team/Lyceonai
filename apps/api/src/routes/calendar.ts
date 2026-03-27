@@ -42,6 +42,25 @@ type TaskTarget = {
   exam_id: string | null;
 };
 
+type ManualCalendarTaskInput = {
+  section?: unknown;
+  task_type?: unknown;
+  type?: unknown;
+  mode?: unknown;
+  target?: Record<string, unknown> | null;
+  override_target_session_id?: unknown;
+  review_session_id?: unknown;
+  override_target_exam_id?: unknown;
+  exam_id?: unknown;
+  source_skill_code?: unknown;
+  source_domain?: unknown;
+  source_subskill?: unknown;
+  minutes?: unknown;
+  duration_minutes?: unknown;
+  status?: unknown;
+  notes?: unknown;
+};
+
 type StudyProfileRow = {
   user_id: string;
   baseline_score: number | null;
@@ -242,8 +261,8 @@ function normalizeBlockedWindows(value: unknown): BlockedWindow[] {
   return windows;
 }
 
-function normalizeSection(value: string | null | undefined): "MATH" | "RW" | null {
-  const normalized = (value || "").toLowerCase().trim();
+function normalizeSection(value: unknown): "MATH" | "RW" | null {
+  const normalized = typeof value === "string" ? value.toLowerCase().trim() : "";
   if (!normalized) return null;
   if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
   if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
@@ -1509,14 +1528,18 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     }
 
     const existing = (await loadDaysByRange(user.id, dayDate, dayDate))[0] ?? null;
-    const incomingTasks = Array.isArray(req.body?.tasks) ? req.body.tasks : [];
+    const incomingTasks: ManualCalendarTaskInput[] = Array.isArray(req.body?.tasks)
+      ? req.body.tasks.filter(
+        (task: unknown): task is ManualCalendarTaskInput => typeof task === "object" && task !== null,
+      )
+      : [];
     const incomingFocus = Array.isArray(req.body?.focus) ? req.body.focus : [];
     const plannedMinutesInput = Number(req.body?.planned_minutes);
     const plannedMinutes = Number.isFinite(plannedMinutesInput)
       ? Math.max(0, Math.round(plannedMinutesInput))
-      : incomingTasks.reduce((sum: number, task: any) => sum + Math.max(0, Number(task?.minutes ?? 0)), 0);
+      : incomingTasks.reduce((sum, task) => sum + Math.max(0, Number(task.minutes ?? 0)), 0);
 
-    const normalizedManualTasks = incomingTasks.map((task: any, index: number) => {
+    const normalizedManualTasks = incomingTasks.map((task, index) => {
       const section = normalizeSection(task?.section);
       const taskType = normalizeTaskType(task?.task_type ?? task?.type, section, task?.mode);
       const target = normalizeTaskTarget(task, section, taskType);
