@@ -1,0 +1,303 @@
+[31;1m=development: [31;1mThe term '=development' is not recognized as a name of a cmdlet, function, script file, or executable program.[0m
+[31;1m[31;1mCheck the spelling of the name, or if a path was included, verify that the path is correct and try again.[0m
+⚠️  09:15:54 WARN  [API]        request: GET / 401 (5ms) [32eb93d7-0c12-48a3-aa36-4cbf0ecf7796]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 5,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:15:54 WARN  [API]        request: GET / 401 (2ms) [21fd150f-36d8-406f-a481-a316f1bf17c0]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:15:54 WARN  [API]        request: POST /refresh 401 (58ms) [c4852abb-be03-4ba1-91a7-64a147aa7e36]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 58,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:15:54 WARN  [API]        request: POST /refresh 401 (6ms) [586440d3-a613-4b76-bcd3-347df7a9320d]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 6,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:27:22 WARN  [AUTH]       signin_failed: Sign in failed
+   Data: { email: '[REDACTED]', error: 'Invalid login credentials' }
+⚠️  09:27:22 WARN  [API]        request: POST /signin 401 (1206ms) [4dc89298-a9a2-4d27-969e-4698c399ba69]
+   Data: {
+  method: 'POST',
+  path: '/signin',
+  statusCode: 401,
+  duration: 1206,
+  responseSize: 37,
+  requestBodySize: 0
+}
+🚨 09:30:36 ERROR [API]        request: GET /api/review-errors 503 (5ms) [73ed25dd-bc96-4bf5-a24f-109a2f862d9d]
+   Context: {
+  method: 'GET',
+  path: '/api/review-errors',
+  statusCode: 503,
+  duration: 5,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:30:49 ERROR [API]        request: POST /api/review-errors/sessions 503 (4ms) [64c98096-83c5-4a4c-b863-a9c4e95ae148]
+   Context: {
+  method: 'POST',
+  path: '/api/review-errors/sessions',
+  statusCode: 503,
+  duration: 4,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:30:58 ERROR [API]        request: GET /api/review-errors/sessions/11111111-1111-4111-8111-111111111111/state 503 (6ms) [b42a9982-a0cd-46e9-bfdc-af56a91f58fc]
+   Context: {
+  method: 'GET',
+  path: '/api/review-errors/sessions/11111111-1111-4111-8111-111111111111/state',
+  statusCode: 503,
+  duration: 6,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:31:07 ERROR [API]        request: POST /api/review-errors/attempt 503 (4ms) [184e6661-8f40-4a8c-987d-4ae71d3c0e28]
+   Context: {
+  method: 'POST',
+  path: '/api/review-errors/attempt',
+  statusCode: 503,
+  duration: 4,
+  responseSize: 242,
+  requestBodySize: 0
+}
+⚠️  09:38:56 WARN  [API]        request: GET / 401 (3ms) [13956462-5459-4665-97a0-c7573900a71a]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 3,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:38:56 WARN  [API]        request: GET / 401 (1ms) [4bea38ed-fcbe-4f47-9834-29e988c87107]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 1,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:38:56 WARN  [API]        request: POST /refresh 401 (2ms) [7f45293e-8e7d-4740-821e-96c1872a6c95]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:38:56 WARN  [API]        request: POST /refresh 401 (5ms) [9f0fb99d-f679-489e-badd-afbb94f66015]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 5,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:41:16 WARN  [API]        request: GET / 401 (1ms) [39fe3024-5686-4425-a652-3a98bc5af486]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 1,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:41:16 WARN  [API]        request: GET / 401 (2ms) [5a622334-9a19-4c81-9d52-f3671c740ae4]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:41:17 WARN  [API]        request: POST /refresh 401 (2ms) [55652823-2c20-4b47-8849-e7606f1cef59]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:41:17 WARN  [API]        request: POST /refresh 401 (2ms) [f472d6bc-93f7-4685-959b-1805fb71024a]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:42:33 WARN  [API]        request: GET / 401 (2ms) [dc93da7d-fc39-401c-b6e8-6dc5667db228]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:42:33 WARN  [API]        request: GET / 401 (1ms) [e0e63bfa-1414-4e9a-b7cf-90ec5f5aa5cf]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 1,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:42:33 WARN  [API]        request: POST /refresh 401 (2ms) [59e7854d-0b57-415c-9d1d-b76f21cabe5f]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:42:33 WARN  [API]        request: POST /refresh 401 (2ms) [6295845b-5cbc-40b7-a3de-c57b989eacd3]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:48:05 WARN  [API]        request: GET / 401 (2ms) [cdba4076-58b5-48fe-985d-625343533eb6]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:48:05 WARN  [API]        request: GET / 401 (2ms) [72a73987-7b48-4520-b2cd-4fa34077b0c3]
+   Data: {
+  method: 'GET',
+  path: '/',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 144,
+  requestBodySize: 0
+}
+⚠️  09:48:05 WARN  [API]        request: POST /refresh 401 (2ms) [da73d60b-4154-4990-8036-9f8004bdba31]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 2,
+  responseSize: 37,
+  requestBodySize: 0
+}
+⚠️  09:48:05 WARN  [API]        request: POST /refresh 401 (3ms) [f7019494-d316-46d7-83b6-6c7a8ee280e5]
+   Data: {
+  method: 'POST',
+  path: '/refresh',
+  statusCode: 401,
+  duration: 3,
+  responseSize: 37,
+  requestBodySize: 0
+}
+🚨 09:55:14 ERROR [API]        request: GET /api/review-errors 503 (849ms) [6ba7abd3-9351-4263-bfc6-a73f3b005efe] [user:f4e5f3e7-8540-49b7-9010-f634242fd586]
+   Context: {
+  method: 'GET',
+  path: '/api/review-errors',
+  statusCode: 503,
+  duration: 849,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:55:23 ERROR [HTTP]       unhandled_error: Unhandled error in POST /api/review-errors/sessions [5ee7adc0-321d-4fe5-a638-744945c5c037]
+   Error details: {
+  name: 'SyntaxError',
+  message: "Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+  stack: "SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n" +
+    '    at JSON.parse (<anonymous>)\n' +
+    '    at parse (C:\\Users\\14438\\projects\\Lyceonai\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\body-parser\\lib\\types\\json.js:92:19)\n' +
+    '    at C:\\Users\\14438\\projects\\Lyceonai\\node_modules\\.pnpm\\body-parser@1.20.4\\node_modules\\body-parser\\lib\\read.js:128:18\n' +
+    '    at AsyncResource.runInAsyncScope (node:async_hooks:214:14)\n' +
+    '    at invokeCallback (C:\\Users\\14438\\projects\\Lyceonai\\node_modules\\.pnpm\\raw-body@2.5.3\\node_modules\\raw-body\\index.js:238:16)\n' +
+    '    at done (C:\\Users\\14438\\projects\\Lyceonai\\node_modules\\.pnpm\\raw-body@2.5.3\\node_modules\\raw-body\\index.js:227:7)\n' +
+    '    at IncomingMessage.onEnd (C:\\Users\\14438\\projects\\Lyceonai\\node_modules\\.pnpm\\raw-body@2.5.3\\node_modules\\raw-body\\index.js:287:7)\n' +
+    '    at IncomingMessage.emit (node:events:519:28)\n' +
+    '    at endReadableNT (node:internal/streams/readable:1698:12)\n' +
+    '    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)',
+  expose: true,
+  statusCode: 400,
+  status: 400,
+  body: '[REDACTED]',
+  type: 'entity.parse.failed'
+}
+   Context: {
+  method: 'POST',
+  path: '/api/review-errors/sessions',
+  statusCode: 400,
+  hasBody: true,
+  hasCookieHeader: '[REDACTED]',
+  hasAuthorizationHeader: '[REDACTED]'
+}
+⚠️  09:55:23 WARN  [API]        request: POST /api/review-errors/sessions 400 (23ms) [5ee7adc0-321d-4fe5-a638-744945c5c037]
+   Data: {
+  method: 'POST',
+  path: '/api/review-errors/sessions',
+  statusCode: 400,
+  duration: 23,
+  responseSize: 84,
+  requestBodySize: 0
+}
+🚨 09:56:02 ERROR [API]        request: POST /api/review-errors/sessions 503 (726ms) [d4b7e4d7-cebd-4677-b5c7-ad683fa91f54] [user:f4e5f3e7-8540-49b7-9010-f634242fd586]
+   Context: {
+  method: 'POST',
+  path: '/api/review-errors/sessions',
+  statusCode: 503,
+  duration: 726,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:56:13 ERROR [API]        request: GET /api/review-errors/sessions/11111111-1111-4111-8111-111111111111/state 503 (468ms) [2307f3e2-6439-404a-a872-0b937fe69b8d] [user:f4e5f3e7-8540-49b7-9010-f634242fd586]
+   Context: {
+  method: 'GET',
+  path: '/api/review-errors/sessions/11111111-1111-4111-8111-111111111111/state',
+  statusCode: 503,
+  duration: 468,
+  responseSize: 242,
+  requestBodySize: 0
+}
+🚨 09:56:22 ERROR [API]        request: POST /api/review-errors/attempt 503 (330ms) [ebdf6038-1a6f-45ae-b4e9-8a238f8c6523] [user:f4e5f3e7-8540-49b7-9010-f634242fd586]
+   Context: {
+  method: 'POST',
+  path: '/api/review-errors/attempt',
+  statusCode: 503,
+  duration: 330,
+  responseSize: 242,
+  requestBodySize: 0
+}
