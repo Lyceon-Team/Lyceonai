@@ -75,11 +75,17 @@ function parseTaskStatus(value: unknown): TaskStatus {
   return "planned";
 }
 
-function taskTypeToLegacy(taskType: TaskType): string {
-  if (taskType === "math_practice") return "practice";
-  if (taskType === "rw_practice") return "practice";
-  if (taskType === "review_errors") return "review";
-  return "full_test";
+function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+  const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
+  const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
+  if (raw === "full_length" || raw === "full_length_exam" || raw === "full_test" || raw === "full-length") return "full_length";
+  if (raw === "review_full_length" || rawMode === "review_full_length" || rawMode === "full-length-review") return "review_full_length";
+  if (raw === "review_practice" || raw === "review_errors" || raw === "review") return "review_practice";
+  if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
+  if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
+  if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
+  if (section === "MATH" || section === "RW") return "practice";
+  return "practice";
 }
 
 function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
@@ -88,16 +94,19 @@ function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
   return null;
 }
 
-function taskModeForDay(task: PlanTaskRow): string {
-  if (task.task_type === "full_length_exam") return "full-length";
-  if (task.task_type === "review_errors") return "review";
+function taskModeForDay(task: Pick<PlanTaskRow, "task_type" | "metadata">): string {
+  if (task.task_type === "full_length") return "full-length";
+  if (task.task_type === "review_full_length") return "review-full-length";
+  if (task.task_type === "review_practice") return "review";
+  if (task.task_type === "focused_drill") return task.metadata?.compressed ? "compressed" : "focused";
+  if (task.task_type === "tutor_support") return "support";
   return task.metadata?.compressed ? "compressed" : "mixed";
 }
 
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
   return {
     id: task.id,
-    type: taskTypeToLegacy(task.task_type),
+    type: task.task_type,
     section: taskSectionToLegacy(task.section),
     mode: taskModeForDay(task),
     minutes: task.duration_minutes,
@@ -255,6 +264,29 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
     const dayTasks = (taskByDay.get(day.day_date) ?? []).sort((a, b) => a.ordinal - b.ordinal);
     const stats = attemptByDay.get(day.day_date);
     const derived = computeDayStatusFromTasks(day.day_date, DateTime.now().setZone(timezone).toISODate()!, dayTasks);
+    const fallbackTasks = Array.isArray(day.tasks)
+      ? day.tasks.map((task: any) => {
+          const section = typeof task?.section === "string" ? (task.section.includes("Math") ? "MATH" : task.section.includes("Writing") ? "RW" : null) : null;
+          const canonicalType = normalizeTaskType(task?.task_type ?? task?.type, section, task?.mode);
+          return {
+            ...task,
+            type: canonicalType,
+            task_type: canonicalType,
+            mode:
+              typeof task?.mode === "string"
+                ? task.mode
+                : canonicalType === "full_length"
+                  ? "full-length"
+                  : canonicalType === "review_full_length"
+                    ? "review-full-length"
+                    : canonicalType === "review_practice"
+                      ? "review"
+                      : canonicalType === "focused_drill"
+                        ? "focused"
+                        : "mixed",
+          };
+        })
+      : [];
 
     return {
       ...day,
@@ -263,7 +295,7 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
       required_task_count: day.required_task_count || derived.requiredTaskCount,
       completed_task_count: day.completed_task_count || derived.completedTaskCount,
       focus: day.focus ?? [],
-      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : Array.isArray(day.tasks) ? day.tasks : [],
+      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : fallbackTasks,
       task_items: dayTasks,
       is_exam_day: day.is_exam_day,
       is_taper_day: day.is_taper_day,

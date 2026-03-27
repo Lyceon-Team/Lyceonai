@@ -2,6 +2,514 @@ import { DateTime } from "luxon";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "../../apps/api/src/services/mastery-constants";
 import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import { calculateScore, type DomainMastery, type ScoreProjection } from "./score-projection";
+
+type KpiSection = "math" | "rw";
+type KpiSourceFamily = "practice" | "review" | "full_length" | "flowcard";
+
+export const KPI_SOURCE_VERSION = "kpi_truth_v1";
+
+export const KPI_DOMAIN_DEFINITIONS = [
+  {
+    section: "math" as const,
+    domain: "algebra",
+    skills: [
+      "linear_equations",
+      "linear_inequalities",
+      "linear_functions",
+      "systems_of_equations",
+      "absolute_value",
+    ],
+  },
+  {
+    section: "math" as const,
+    domain: "advanced_math",
+    skills: [
+      "quadratics",
+      "polynomials",
+      "exponential_functions",
+      "radical_expressions",
+      "rational_expressions",
+    ],
+  },
+  {
+    section: "math" as const,
+    domain: "problem_solving",
+    skills: [
+      "ratios_rates_proportions",
+      "percentages",
+      "unit_conversions",
+      "linear_growth",
+      "data_interpretation",
+      "probability",
+      "statistics",
+    ],
+  },
+  {
+    section: "math" as const,
+    domain: "geometry",
+    skills: [
+      "area_volume",
+      "lines_angles",
+      "triangles",
+      "circles",
+      "trigonometry",
+      "coordinate_geometry",
+    ],
+  },
+  {
+    section: "rw" as const,
+    domain: "craft_structure",
+    skills: [
+      "words_in_context",
+      "text_structure",
+      "cross_text_connections",
+      "purpose",
+    ],
+  },
+  {
+    section: "rw" as const,
+    domain: "information_ideas",
+    skills: [
+      "central_ideas",
+      "command_of_evidence_textual",
+      "command_of_evidence_quantitative",
+      "inferences",
+    ],
+  },
+  {
+    section: "rw" as const,
+    domain: "standard_english",
+    skills: [
+      "boundaries",
+      "form_structure_sense",
+      "punctuation",
+      "verb_tense",
+      "pronoun_agreement",
+    ],
+  },
+  {
+    section: "rw" as const,
+    domain: "expression_ideas",
+    skills: [
+      "rhetorical_synthesis",
+      "transitions",
+      "sentence_placement",
+    ],
+  },
+] as const;
+
+const KPI_SOURCE_FAMILY_BY_EVENT_TYPE: Record<string, KpiSourceFamily> = {
+  practice_pass: "practice",
+  practice_fail: "practice",
+  review_pass: "review",
+  review_fail: "review",
+  test_pass: "full_length",
+  test_fail: "full_length",
+  tutor_helped: "flowcard",
+  tutor_fail: "flowcard",
+};
+
+const KPI_DOMAIN_LOOKUP = new Map<string, { section: KpiSection; domain: string; skills: readonly string[] }>(
+  KPI_DOMAIN_DEFINITIONS.map((definition) => [
+    `${definition.section}:${definition.domain}`,
+    definition as { section: KpiSection; domain: string; skills: readonly string[] },
+  ])
+);
+
+const KPI_DOMAIN_COLUMN_PREFIX: Record<string, string> = {
+  "math:algebra": "m_alg",
+  "math:advanced_math": "m_advm",
+  "math:problem_solving": "m_prob",
+  "math:geometry": "m_geo",
+  "rw:craft_structure": "rw_craft",
+  "rw:information_ideas": "rw_info",
+  "rw:standard_english": "rw_stdeng",
+  "rw:expression_ideas": "rw_expr",
+};
+
+const KPI_SKILL_COLUMN_SUFFIX: Record<string, string> = {
+  linear_equations: "leq",
+  linear_inequalities: "linq",
+  linear_functions: "lfn",
+  systems_of_equations: "syseq",
+  absolute_value: "absv",
+  quadratics: "quad",
+  polynomials: "poly",
+  exponential_functions: "expfn",
+  radical_expressions: "radexp",
+  rational_expressions: "ratexp",
+  ratios_rates_proportions: "rrp",
+  percentages: "pct",
+  unit_conversions: "unitc",
+  linear_growth: "lg",
+  data_interpretation: "dint",
+  probability: "prob",
+  statistics: "stat",
+  area_volume: "arvol",
+  lines_angles: "lang",
+  triangles: "tri",
+  circles: "circ",
+  trigonometry: "trig",
+  coordinate_geometry: "cgeo",
+  words_in_context: "wic",
+  text_structure: "txts",
+  cross_text_connections: "ctxt",
+  purpose: "purp",
+  central_ideas: "cidea",
+  command_of_evidence_textual: "coet",
+  command_of_evidence_quantitative: "coeq",
+  inferences: "inf",
+  boundaries: "bnd",
+  form_structure_sense: "fss",
+  punctuation: "punc",
+  verb_tense: "vten",
+  pronoun_agreement: "prag",
+  rhetorical_synthesis: "rsy",
+  transitions: "tran",
+  sentence_placement: "spla",
+};
+
+function getKpiDomainCounterPrefix(section: KpiSection, domain: string): string | null {
+  const key = `${section}:${domain}`;
+  return KPI_DOMAIN_COLUMN_PREFIX[key] ?? null;
+}
+
+function getKpiSkillCounterPrefix(section: KpiSection, domain: string, skill: string): string | null {
+  const domainPrefix = getKpiDomainCounterPrefix(section, domain);
+  if (!domainPrefix) return null;
+  const skillSuffix = KPI_SKILL_COLUMN_SUFFIX[skill];
+  if (!skillSuffix) return null;
+  return `${domainPrefix}_${skillSuffix}`;
+}
+
+function normalizeKpiToken(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/_+/g, "_");
+  return normalized.replace(/^_|_$/g, "") || null;
+}
+
+export function normalizeKpiSection(value: unknown): KpiSection | null {
+  const normalized = normalizeKpiToken(value);
+  if (normalized === "math" || normalized === "rw") {
+    return normalized;
+  }
+  return null;
+}
+
+export function normalizeKpiDomain(value: unknown): string | null {
+  return normalizeKpiToken(value);
+}
+
+export function normalizeKpiSkill(value: unknown): string | null {
+  return normalizeKpiToken(value);
+}
+
+export function isKnownKpiTaxonomyPath(section: unknown, domain: unknown, skill: unknown): boolean {
+  const normalizedSection = normalizeKpiSection(section);
+  const normalizedDomain = normalizeKpiDomain(domain);
+  const normalizedSkill = normalizeKpiSkill(skill);
+
+  if (!normalizedSection || !normalizedDomain || !normalizedSkill) {
+    return false;
+  }
+
+  const definition = KPI_DOMAIN_LOOKUP.get(`${normalizedSection}:${normalizedDomain}`);
+  return definition?.skills.includes(normalizedSkill) ?? false;
+}
+
+export function getKpiSourceFamily(eventType: string | null | undefined): KpiSourceFamily | null {
+  if (!eventType) return null;
+  return KPI_SOURCE_FAMILY_BY_EVENT_TYPE[eventType] ?? null;
+}
+
+function getCounterValue(row: Record<string, unknown> | null | undefined, columnName: string): number {
+  if (!row) return 0;
+  const value = row[columnName];
+  return typeof value === "number" ? value : Number(value ?? 0) || 0;
+}
+
+function getStringValue(row: Record<string, unknown> | null | undefined, columnName: string): string | null {
+  if (!row) return null;
+  const value = row[columnName];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function getTimestampValue(row: Record<string, unknown> | null | undefined, columnName: string): string | null {
+  const value = getStringValue(row, columnName);
+  return value;
+}
+
+function buildDomainMasteryFromCounterRow(row: Record<string, unknown> | null | undefined): DomainMastery[] {
+  const mastery: DomainMastery[] = [];
+
+  for (const definition of KPI_DOMAIN_DEFINITIONS) {
+    const prefix = getKpiDomainCounterPrefix(definition.section, definition.domain);
+    if (!prefix) continue;
+    const attempts = getCounterValue(row, `${prefix}_answered_count`);
+    const correct = getCounterValue(row, `${prefix}_correct_count`);
+    mastery.push({
+      section: definition.section,
+      domain: definition.domain,
+      mastery_score: attempts > 0 ? Math.round((correct / attempts) * 100) : 0,
+      attempts,
+      last_activity: getTimestampValue(row, "updated_at") || getTimestampValue(row, "last_recalculated_at"),
+    });
+  }
+
+  return mastery;
+}
+
+interface PersistedKpiCountersCurrentRow extends Record<string, unknown> {
+  user_id: string;
+  total_answered_count?: number;
+  total_correct_count?: number;
+  total_wrong_count?: number;
+  overall_score_projection?: number | null;
+  math_score_projection?: number | null;
+  rw_score_projection?: number | null;
+  readiness_metric?: number | null;
+  confidence_metric?: number | null;
+  consistency_metric?: number | null;
+  last_recalculated_at?: string | null;
+  last_event_type?: string | null;
+  last_event_id?: string | null;
+  source_version?: string | null;
+  updated_at?: string | null;
+}
+
+interface PersistedKpiSnapshotRow extends Record<string, unknown> {
+  id: string;
+  user_id: string;
+  snapshot_at?: string | null;
+  source_version?: string | null;
+  trigger_event_type?: string | null;
+  trigger_event_id?: string | null;
+  current_week_practice_sessions?: number | null;
+  current_week_practice_minutes?: number | null;
+  current_week_questions_solved?: number | null;
+  current_week_accuracy_percent?: number | null;
+  current_week_avg_seconds_per_question?: number | null;
+  previous_week_practice_sessions?: number | null;
+  previous_week_practice_minutes?: number | null;
+  previous_week_questions_solved?: number | null;
+  previous_week_accuracy_percent?: number | null;
+  previous_week_avg_seconds_per_question?: number | null;
+  recency_200_total_attempts?: number | null;
+  recency_200_accuracy_percent?: number | null;
+  recency_200_avg_seconds_per_question?: number | null;
+}
+
+export interface PersistedScoreProjectionResult {
+  totalQuestions: number;
+  projection: ScoreProjection;
+  lastUpdated: string;
+  masteryData: DomainMastery[];
+}
+
+function buildScoreProjectionFromCounterRow(row: PersistedKpiCountersCurrentRow | null | undefined): PersistedScoreProjectionResult {
+  const masteryData = buildDomainMasteryFromCounterRow(row);
+  const totalQuestions = getCounterValue(row, "total_answered_count");
+  const projection = calculateScore(masteryData, totalQuestions);
+  return {
+    totalQuestions,
+    projection,
+    lastUpdated: getTimestampValue(row, "updated_at") || new Date().toISOString(),
+    masteryData,
+  };
+}
+
+async function fetchPersistedKpiCountersCurrent(userId: string): Promise<PersistedKpiCountersCurrentRow | null> {
+  const { data, error } = await supabaseServer
+    .from("student_kpi_counters_current")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch persisted KPI counters: ${error.message}`);
+  }
+
+  return (data || null) as PersistedKpiCountersCurrentRow | null;
+}
+
+async function fetchPersistedKpiSnapshots(userId: string, limit = 2): Promise<PersistedKpiSnapshotRow[]> {
+  const { data, error } = await supabaseServer
+    .from("student_kpi_snapshots")
+    .select("*")
+    .eq("user_id", userId)
+    .order("snapshot_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to fetch persisted KPI snapshots: ${error.message}`);
+  }
+
+  return ((data || []) as PersistedKpiSnapshotRow[]).filter(Boolean);
+}
+
+export async function buildPersistedScoreProjection(userId: string): Promise<PersistedScoreProjectionResult> {
+  const countersRow = await fetchPersistedKpiCountersCurrent(userId);
+  if (!countersRow) {
+    return {
+      totalQuestions: 0,
+      projection: calculateScore([], 0),
+      lastUpdated: new Date().toISOString(),
+      masteryData: [],
+    };
+  }
+
+  return buildScoreProjectionFromCounterRow(countersRow);
+}
+
+export async function upsertStudentKpiCountersCurrent(input: {
+  userId: string;
+  eventType: string;
+  isCorrect: boolean;
+  section: string;
+  domain: string;
+  skill: string;
+  timeSpentMs?: number | null;
+  eventId?: string | null;
+  sourceVersion?: string;
+}): Promise<PersistedKpiCountersCurrentRow> {
+  const normalizedSection = normalizeKpiSection(input.section);
+  const normalizedDomain = normalizeKpiDomain(input.domain);
+  const normalizedSkill = normalizeKpiSkill(input.skill);
+
+  if (!normalizedSection || !normalizedDomain || !normalizedSkill) {
+    throw new Error("Missing canonical KPI taxonomy path");
+  }
+
+  if (!isKnownKpiTaxonomyPath(normalizedSection, normalizedDomain, normalizedSkill)) {
+    throw new Error(`Unknown canonical KPI taxonomy path: ${normalizedSection}:${normalizedDomain}:${normalizedSkill}`);
+  }
+
+  const domainPrefix = getKpiDomainCounterPrefix(normalizedSection, normalizedDomain);
+  const skillPrefix = getKpiSkillCounterPrefix(normalizedSection, normalizedDomain, normalizedSkill);
+  if (!domainPrefix || !skillPrefix) {
+    throw new Error(`Missing KPI DB column mapping for taxonomy path: ${normalizedSection}:${normalizedDomain}:${normalizedSkill}`);
+  }
+
+  const { data, error } = await supabaseServer.rpc("upsert_student_kpi_counters_current", {
+    p_user_id: input.userId,
+    p_event_type: input.eventType,
+    p_is_correct: input.isCorrect,
+    p_section: normalizedSection,
+    p_domain: normalizedDomain,
+    p_skill: normalizedSkill,
+    p_domain_prefix: domainPrefix,
+    p_skill_prefix: skillPrefix,
+    p_time_spent_ms: input.timeSpentMs ?? null,
+    p_event_id: input.eventId ?? null,
+    p_source_version: input.sourceVersion || KPI_SOURCE_VERSION,
+  });
+
+  if (error) {
+    throw new Error(`Failed to persist KPI counters: ${error.message}`);
+  }
+
+  return (data || null) as PersistedKpiCountersCurrentRow;
+}
+
+function readPracticeWindowStats(row: PersistedKpiSnapshotRow | null | undefined, prefix: "current_week" | "previous_week"): PracticeWindowStats {
+  if (!row) {
+    return {
+      practiceSessions: 0,
+      practiceMinutes: 0,
+      questionsSolved: 0,
+      accuracyPercent: 0,
+      avgSecondsPerQuestion: 0,
+    };
+  }
+
+  return {
+    practiceSessions: Math.round(getCounterValue(row, `${prefix}_practice_sessions`)),
+    practiceMinutes: Math.round(getCounterValue(row, `${prefix}_practice_minutes`)),
+    questionsSolved: Math.round(getCounterValue(row, `${prefix}_questions_solved`)),
+    accuracyPercent: Math.round(getCounterValue(row, `${prefix}_accuracy_percent`)),
+    avgSecondsPerQuestion: Math.round(getCounterValue(row, `${prefix}_avg_seconds_per_question`) * 10) / 10,
+  };
+}
+
+function readRecencyStats(row: PersistedKpiSnapshotRow | null | undefined): CanonicalPracticeKpiSnapshot["recency200"] {
+  if (!row) {
+    return {
+      totalAttempts: 0,
+      accuracyPercent: 0,
+      avgSecondsPerQuestion: 0,
+    };
+  }
+
+  return {
+    totalAttempts: Math.round(getCounterValue(row, "recency_200_total_attempts")),
+    accuracyPercent: Math.round(getCounterValue(row, "recency_200_accuracy_percent")),
+    avgSecondsPerQuestion: Math.round(getCounterValue(row, "recency_200_avg_seconds_per_question") * 10) / 10,
+  };
+}
+
+function buildKpiSnapshotInsertRow(args: {
+  userId: string;
+  sourceVersion: string;
+  triggerEventType?: string | null;
+  triggerEventId?: string | null;
+  currentWeek: PracticeWindowStats;
+  previousWeek: PracticeWindowStats;
+  recency200: CanonicalPracticeKpiSnapshot["recency200"];
+  currentProjection: PersistedScoreProjectionResult;
+  currentRow: PersistedKpiCountersCurrentRow;
+}): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    user_id: args.userId,
+    snapshot_at: new Date().toISOString(),
+    source_version: args.sourceVersion,
+    trigger_event_type: args.triggerEventType || null,
+    trigger_event_id: args.triggerEventId || null,
+    current_week_practice_sessions: args.currentWeek.practiceSessions,
+    current_week_practice_minutes: args.currentWeek.practiceMinutes,
+    current_week_questions_solved: args.currentWeek.questionsSolved,
+    current_week_accuracy_percent: args.currentWeek.accuracyPercent,
+    current_week_avg_seconds_per_question: args.currentWeek.avgSecondsPerQuestion,
+    previous_week_practice_sessions: args.previousWeek.practiceSessions,
+    previous_week_practice_minutes: args.previousWeek.practiceMinutes,
+    previous_week_questions_solved: args.previousWeek.questionsSolved,
+    previous_week_accuracy_percent: args.previousWeek.accuracyPercent,
+    previous_week_avg_seconds_per_question: args.previousWeek.avgSecondsPerQuestion,
+    recency_200_total_attempts: args.recency200.totalAttempts,
+    recency_200_accuracy_percent: args.recency200.accuracyPercent,
+    recency_200_avg_seconds_per_question: args.recency200.avgSecondsPerQuestion,
+    overall_score_projection: args.currentRow.overall_score_projection ?? args.currentProjection.projection.composite,
+    math_score_projection: args.currentRow.math_score_projection ?? args.currentProjection.projection.math,
+    rw_score_projection: args.currentRow.rw_score_projection ?? args.currentProjection.projection.rw,
+    readiness_metric: args.currentRow.readiness_metric ?? null,
+    confidence_metric: args.currentRow.confidence_metric ?? args.currentProjection.projection.confidence * 100,
+    consistency_metric: args.currentRow.consistency_metric ?? null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  for (const definition of KPI_DOMAIN_DEFINITIONS) {
+    const domainPrefix = getKpiDomainCounterPrefix(definition.section, definition.domain);
+    if (!domainPrefix) continue;
+    const domainAnswered = getCounterValue(args.currentRow, `${domainPrefix}_answered_count`);
+    const domainCorrect = getCounterValue(args.currentRow, `${domainPrefix}_correct_count`);
+    row[`${domainPrefix}_score_projection`] = domainAnswered > 0 ? Math.round((domainCorrect / domainAnswered) * 100) : 0;
+
+    for (const skill of definition.skills) {
+      const skillPrefix = getKpiSkillCounterPrefix(definition.section, definition.domain, skill);
+      if (!skillPrefix) continue;
+      const skillAnswered = getCounterValue(args.currentRow, `${skillPrefix}_answered_count`);
+      const skillCorrect = getCounterValue(args.currentRow, `${skillPrefix}_correct_count`);
+      row[`${skillPrefix}_score_projection`] = skillAnswered > 0 ? Math.round((skillCorrect / skillAnswered) * 100) : 0;
+    }
+  }
+
+  return row;
+}
+
+async function fetchCanonicalPracticeKpiSnapshotRows(userId: string): Promise<PersistedKpiSnapshotRow[]> {
+  return fetchPersistedKpiSnapshots(userId, 2);
+}
 
 export const KPI_TRUTH_LAYER_VERSION = "kpi_truth_v1";
 
@@ -254,11 +762,45 @@ async function resolveTimezone(userId: string): Promise<string> {
 
 export async function buildCanonicalPracticeKpiSnapshot(userId: string): Promise<CanonicalPracticeKpiSnapshot> {
   const timezone = await resolveTimezone(userId);
+  let [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
 
+  if (!latestSnapshot) {
+    // Bootstrap the persisted history table the first time a student requests KPI view.
+    await persistCanonicalPracticeKpiSnapshot({
+      userId,
+      sourceVersion: KPI_TRUTH_LAYER_VERSION,
+      triggerEventType: "snapshot_bootstrap",
+      triggerEventId: null,
+    });
+    [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
+  }
+
+  return {
+    modelVersion: latestSnapshot?.source_version || KPI_TRUTH_LAYER_VERSION,
+    timezone,
+    generatedAt: latestSnapshot?.snapshot_at || new Date().toISOString(),
+    currentWeek: readPracticeWindowStats(latestSnapshot, "current_week"),
+    previousWeek: readPracticeWindowStats(previousSnapshot, "previous_week"),
+    recency200: readRecencyStats(latestSnapshot),
+  };
+}
+
+export async function persistCanonicalPracticeKpiSnapshot(args: {
+  userId: string;
+  triggerEventType?: string | null;
+  triggerEventId?: string | null;
+  sourceVersion?: string;
+  currentRow?: PersistedKpiCountersCurrentRow | null;
+}): Promise<void> {
+  const currentRow = args.currentRow || (await fetchPersistedKpiCountersCurrent(args.userId));
+  if (!currentRow) {
+    return;
+  }
+
+  const timezone = await resolveTimezone(args.userId);
   const nowLocal = DateTime.now().setZone(timezone);
   const currentWeekEndLocal = nowLocal.endOf("day");
   const currentWeekStartLocal = currentWeekEndLocal.minus({ days: 6 }).startOf("day");
-
   const previousWeekEndLocal = currentWeekStartLocal.minus({ days: 1 }).endOf("day");
   const previousWeekStartLocal = previousWeekEndLocal.minus({ days: 6 }).startOf("day");
 
@@ -269,29 +811,39 @@ export async function buildCanonicalPracticeKpiSnapshot(userId: string): Promise
     previousWeekSessions,
     recencyAttempts,
   ] = await Promise.all([
-    fetchAttemptRows(userId, currentWeekStartLocal.toUTC().toISO()!, currentWeekEndLocal.toUTC().toISO()!),
-    fetchSessionRows(userId, currentWeekStartLocal.toUTC().toISO()!, currentWeekEndLocal.toUTC().toISO()!),
-    fetchAttemptRows(userId, previousWeekStartLocal.toUTC().toISO()!, previousWeekEndLocal.toUTC().toISO()!),
-    fetchSessionRows(userId, previousWeekStartLocal.toUTC().toISO()!, previousWeekEndLocal.toUTC().toISO()!),
-    fetchRecencyRows(userId),
+    fetchAttemptRows(args.userId, currentWeekStartLocal.toUTC().toISO()!, currentWeekEndLocal.toUTC().toISO()!),
+    fetchSessionRows(args.userId, currentWeekStartLocal.toUTC().toISO()!, currentWeekEndLocal.toUTC().toISO()!),
+    fetchAttemptRows(args.userId, previousWeekStartLocal.toUTC().toISO()!, previousWeekEndLocal.toUTC().toISO()!),
+    fetchSessionRows(args.userId, previousWeekStartLocal.toUTC().toISO()!, previousWeekEndLocal.toUTC().toISO()!),
+    fetchRecencyRows(args.userId),
   ]);
 
+  const currentWeek = buildWindowStats(currentWeekAttempts, currentWeekSessions);
+  const previousWeek = buildWindowStats(previousWeekAttempts, previousWeekSessions);
   const recencySolved = recencyAttempts.length;
-  const recencyCorrect = recencyAttempts.filter((a) => !!a.is_correct).length;
-  const recencyTimeMs = recencyAttempts.reduce((sum, a) => sum + (a.time_spent_ms || 0), 0);
-
-  return {
-    modelVersion: KPI_TRUTH_LAYER_VERSION,
-    timezone,
-    generatedAt: new Date().toISOString(),
-    currentWeek: buildWindowStats(currentWeekAttempts, currentWeekSessions),
-    previousWeek: buildWindowStats(previousWeekAttempts, previousWeekSessions),
+  const recencyCorrect = recencyAttempts.filter((attempt) => !!attempt.is_correct).length;
+  const recencyTimeMs = recencyAttempts.reduce((sum, attempt) => sum + (attempt.time_spent_ms || 0), 0);
+  const currentProjection = buildScoreProjectionFromCounterRow(currentRow);
+  const snapshotRow = buildKpiSnapshotInsertRow({
+    userId: args.userId,
+    sourceVersion: args.sourceVersion || KPI_SOURCE_VERSION,
+    triggerEventType: args.triggerEventType,
+    triggerEventId: args.triggerEventId,
+    currentWeek,
+    previousWeek,
     recency200: {
       totalAttempts: recencySolved,
       accuracyPercent: toPercent(recencyCorrect, recencySolved),
       avgSecondsPerQuestion: toSeconds(recencyTimeMs, recencySolved),
     },
-  };
+    currentProjection,
+    currentRow,
+  });
+
+  const { error } = await supabaseServer.from("student_kpi_snapshots").insert(snapshotRow);
+  if (error && error.code !== "23505") {
+    throw new Error(`Failed to persist KPI snapshot: ${error.message}`);
+  }
 }
 
 function buildStudentMetrics(snapshot: CanonicalPracticeKpiSnapshot, includeHistoricalTrends: boolean): ExplainedKpiMetric[] {

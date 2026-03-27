@@ -140,9 +140,8 @@ export async function recordReviewErrorAttempt(req: Request, res: Response) {
 
     const { data: question, error: questionError } = await supabaseServer
       .from("questions")
-      .select("id, canonical_id, status, question_type, correct_answer, answer_text, explanation, options")
+      .select("id, canonical_id, question_type, correct_answer, answer_text, explanation, options")
       .eq("id", question_id)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .single();
 

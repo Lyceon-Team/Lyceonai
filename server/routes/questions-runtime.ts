@@ -2,17 +2,17 @@ import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { type AuthenticatedRequest, requireRequestUser } from "../middleware/supabase-auth";
 import {
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
 import { buildReviewQueueForStudent } from "../services/review-queue";
+import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 
 const QUESTION_SAFE_SELECT = [
   "id",
   "canonical_id",
-  "status",
   "section",
   "section_code",
   "question_type",
@@ -61,7 +61,6 @@ async function fetchPublishedQuestions(params: {
     .from("questions")
     .select(QUESTION_SAFE_SELECT)
     .eq("question_type", "multiple_choice")
-    .eq("status", "published")
     .order("created_at", { ascending: false });
 
   query = applySectionFilter(query, params.section);
@@ -82,7 +81,7 @@ async function fetchPublishedQuestions(params: {
   }
 
   const rows = (data ?? []) as unknown as CanonicalQuestionRowLike[];
-  const validRows = rows.filter((row) => isCanonicalPublishedMcQuestion(row));
+  const validRows = rows.filter((row) => isCanonicalRuntimeMcQuestion(row));
   return { data: validRows, error: null };
 }
 
@@ -170,7 +169,6 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
     const { count, error } = await supabaseServer
       .from("questions")
       .select("id", { count: "exact", head: true })
-      .eq("status", "published")
       .eq("question_type", "multiple_choice");
 
     if (error) {
@@ -189,7 +187,6 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select("section_code, difficulty")
-      .eq("status", "published")
       .eq("question_type", "multiple_choice");
 
     if (error) {
@@ -277,7 +274,6 @@ export const getQuestionById = async (req: Request, res: Response) => {
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
       .eq("id", id)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .single();
 
@@ -286,7 +282,7 @@ export const getQuestionById = async (req: Request, res: Response) => {
     }
 
     const row = data as unknown as CanonicalQuestionRowLike;
-    if (!isCanonicalPublishedMcQuestion(row)) {
+    if (!isCanonicalRuntimeMcQuestion(row)) {
       return res.status(404).json({ error: "Question not found" });
     }
 
@@ -299,6 +295,11 @@ export const getQuestionById = async (req: Request, res: Response) => {
 // GET /api/review-errors - canonical review queue builder
 export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, req.requestId, availability.missingTable);
+    }
+
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
@@ -394,7 +395,6 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .eq("unit_tag", unitTag)
       .order("created_at", { ascending: false })
@@ -404,7 +404,7 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalPublishedMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
@@ -428,7 +428,6 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .eq("difficulty", difficultyLevel)
       .order("created_at", { ascending: false })
@@ -438,7 +437,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalPublishedMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
@@ -477,7 +476,6 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
       .from("questions")
       .select("id")
       .eq("id", questionId)
-      .eq("status", "published")
       .single();
 
     if (questionError || !question) {

@@ -203,11 +203,9 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
       subskill,
       skill_code,
       correct_answer,
-      answer_text,
-      status
+      answer_text
     `)
     .eq("question_type", "multiple_choice")
-    .eq("status", "published")
     .limit(limit * 2);
 
   if (params.section === "math") {

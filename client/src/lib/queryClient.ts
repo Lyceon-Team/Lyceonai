@@ -7,6 +7,65 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+function normalizeApiRequestUrl(rawUrl: string): string {
+  const url = String(rawUrl || "").trim();
+  if (!url) return rawUrl;
+
+  // Keep relative paths as-is.
+  if (url.startsWith("/")) return url;
+
+  if (typeof window === "undefined") {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const isApiPath = parsed.pathname === "/api" || parsed.pathname.startsWith("/api/");
+
+    // For app API calls, always use a same-origin path to avoid apex/www drift.
+    if (isApiPath) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+  } catch {
+    // Fall through to original value when URL parsing fails.
+  }
+
+  return url;
+}
+
+async function fetchWithSessionRefresh(
+  url: string,
+  init?: RequestInit
+): Promise<Response> {
+  const requestUrl = normalizeApiRequestUrl(url);
+
+  const doFetch = () =>
+    fetch(requestUrl, {
+      ...init,
+      credentials: "include",
+    });
+
+  let res = await doFetch();
+
+  const isAuthEndpoint = requestUrl.startsWith("/api/auth/");
+  const shouldAttemptRefresh = !isAuthEndpoint && (res.status === 401 || res.status === 403);
+
+  if (shouldAttemptRefresh) {
+    const refreshRes = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({}),
+    });
+
+    if (refreshRes.ok) {
+      res = await doFetch();
+    }
+  }
+
+  return res;
+}
+
 export async function apiRequest(
   url: string,
   options?: {
@@ -20,14 +79,13 @@ export async function apiRequest(
   // For FormData, let the browser set Content-Type automatically with boundary
   const isFormData = body instanceof FormData;
   
-  const res = await fetch(url, {
+  const res = await fetchWithSessionRefresh(url, {
     method,
     headers: {
       ...(!isFormData && body ? { "Content-Type": "application/json" } : {}),
-      ...headers
+      ...headers,
     },
     body,
-    credentials: "include",
   });
 
   await throwIfResNotOk(res);
@@ -41,9 +99,7 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const url = queryKey.join("/") as string;
-    const res = await fetch(url, {
-      credentials: "include",
-    });
+    const res = await fetchWithSessionRefresh(url);
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

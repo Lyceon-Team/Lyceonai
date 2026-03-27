@@ -107,18 +107,40 @@ export type NotificationPriority = "low" | "normal" | "high" | "urgent";
 
 export interface Notification {
   id: string;
-  userId: string | null;
+  userId: string;
   type: NotificationType;
   category: NotificationCategory;
   priority: NotificationPriority;
   title: string;
-  message: string;
-  actionUrl: string | null;
+  body: string;
+  ctaUrl: string | null;
+  ctaText?: string | null;
+  channelOrigin: string | null;
   metadata: Record<string, unknown> | null;
   isRead: boolean;
-  createdAt: Date;
-  readAt: Date | null;
-  expiresAt: Date | null;
+  createdAt: string;
+  readAt: string | null;
+  archivedAt: string | null;
+  expiresAt: string | null;
+  updatedAt?: string | null;
+  message?: string;
+  actionUrl?: string | null;
+  actionText?: string | null;
+}
+
+export type NotificationDigestFrequency = "never" | "daily" | "weekly";
+
+export interface UserNotificationPreferences {
+  userId: string;
+  emailEnabled: boolean;
+  studyRemindersEnabled: boolean;
+  streakEnabled: boolean;
+  planUpdatesEnabled: boolean;
+  guardianUpdatesEnabled: boolean;
+  marketingEnabled: boolean;
+  digestFrequency: NotificationDigestFrequency;
+  quietHours: Record<string, unknown> | null;
+  updatedAt: string | null;
 }
 
 // Full-length exam runtime types (service-owned supabase rows).

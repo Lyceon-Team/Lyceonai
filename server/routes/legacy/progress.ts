@@ -5,11 +5,10 @@
 
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
-import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
-import { calculateScore, DomainMastery, ScoreProjection } from "../../services/score-projection";
 import {
   KPI_TRUTH_LAYER_VERSION,
   buildCanonicalPracticeKpiSnapshot,
+  buildPersistedScoreProjection,
   buildStudentKpiView,
 } from "../../services/kpi-truth-layer";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
@@ -53,49 +52,8 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
     }
 
-    const { data: masteryRows, error: masteryError } = await supabaseServer
-      .from("student_skill_mastery")
-      .select("section, domain, skill, mastery_score, attempts, updated_at")
-      .eq("user_id", user.id);
-
-    if (masteryError) {
-      return res.status(500).json({ error: "Failed to fetch mastery data", requestId: req.requestId });
-    }
-
-    const domainMastery: Record<string, DomainMastery> = {};
-    let totalQuestions = 0;
-
-    for (const row of masteryRows || []) {
-      const section = row.section?.toLowerCase() === "math" ? "math" : "rw";
-      const domain = row.domain || "unknown";
-      const key = `${section}:${domain}`;
-
-      if (!domainMastery[key]) {
-        domainMastery[key] = {
-          domain,
-          section: section as "math" | "rw",
-          mastery_score: 0,
-          attempts: 0,
-          last_activity: null,
-        };
-      }
-
-      domainMastery[key].mastery_score = Math.max(domainMastery[key].mastery_score, row.mastery_score || 0);
-      domainMastery[key].attempts += row.attempts || 0;
-      totalQuestions += row.attempts || 0;
-
-      if (row.updated_at) {
-        const rowDate = new Date(row.updated_at);
-        const existingDate = domainMastery[key].last_activity
-          ? new Date(domainMastery[key].last_activity as string)
-          : null;
-        if (!existingDate || rowDate > existingDate) {
-          domainMastery[key].last_activity = row.updated_at;
-        }
-      }
-    }
-
-    const masteryArray = Object.values(domainMastery);
+    const scoreProjection = await buildPersistedScoreProjection(user.id);
+    const totalQuestions = scoreProjection.totalQuestions;
 
     if (totalQuestions === 0) {
       return res.json({
@@ -131,8 +89,6 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       });
     }
 
-    const projection: ScoreProjection = calculateScore(masteryArray, totalQuestions);
-
     return res.json({
       modelVersion: KPI_TRUTH_LAYER_VERSION,
       measurementModel: {
@@ -140,7 +96,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
         weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
         diagnostic: ["mastery_evidence_count"],
       },
-      projection,
+      projection: scoreProjection.projection,
       explanations: {
         estimated_scaled_total: projectionExplanation(
           "Estimated scaled total",

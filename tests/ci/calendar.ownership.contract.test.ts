@@ -25,7 +25,7 @@ type TableName =
   | "student_study_plan_tasks"
   | "student_question_attempts"
   | "practice_sessions"
-  | "skill_mastery"
+  | "student_skill_mastery"
   | "system_event_logs";
 
 type TableRow = Record<string, any>;
@@ -271,7 +271,7 @@ class FakeSupabaseClient {
         student_study_plan_tasks: seed?.student_study_plan_tasks ? [...seed.student_study_plan_tasks] : [],
         student_question_attempts: seed?.student_question_attempts ? [...seed.student_question_attempts] : [],
         practice_sessions: seed?.practice_sessions ? [...seed.practice_sessions] : [],
-        skill_mastery: seed?.skill_mastery ? [...seed.skill_mastery] : [],
+        student_skill_mastery: seed?.student_skill_mastery ? [...seed.student_skill_mastery] : [],
         system_event_logs: seed?.system_event_logs ? [...seed.system_event_logs] : [],
       },
       writes: {
@@ -338,13 +338,17 @@ function defaultSeed(overrides?: Partial<FakeStore["tables"]>): Partial<FakeStor
         timezone: "America/Chicago",
         planner_mode: "auto",
         full_test_cadence: "biweekly",
+        study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
         preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+        blocked_weekdays: [],
+        blocked_dates: [],
+        blocked_windows: [],
       },
     ],
     student_study_plan_days: [],
     student_study_plan_tasks: [],
     student_question_attempts: [],
-    skill_mastery: [],
+    student_skill_mastery: [],
     system_event_logs: [],
     ...overrides,
   };
@@ -506,7 +510,11 @@ describe("Calendar Ownership Contract", () => {
             timezone: "America/Chicago",
             planner_mode: "custom",
             full_test_cadence: "biweekly",
+            study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
             preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+            blocked_weekdays: [],
+            blocked_dates: [],
+            blocked_windows: [],
           },
         ],
       }),
@@ -786,7 +794,7 @@ describe("Calendar Ownership Contract", () => {
             user_id: "student-1",
             day_date: day,
             ordinal: 1,
-            task_type: "math_practice",
+            task_type: "practice",
             section: "MATH",
             duration_minutes: 30,
             source_skill_code: null,
@@ -845,7 +853,7 @@ describe("Calendar Ownership Contract", () => {
             user_id: "student-1",
             day_date: day,
             ordinal: 1,
-            task_type: "math_practice",
+            task_type: "practice",
             section: "MATH",
             duration_minutes: 30,
             source_skill_code: null,

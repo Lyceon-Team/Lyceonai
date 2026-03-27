@@ -8,6 +8,11 @@ import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { useCallback, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import {
+  parseRuntimeContractDisabledFromError,
+  type RuntimeContractDisabledState,
+} from "@/lib/runtime-contract-disable";
 
 interface AttemptHistory {
   id: string;
@@ -113,6 +118,7 @@ function ReviewErrors() {
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
   const [runStats, setRunStats] = useState({ correct: 0, incorrect: 0, skipped: 0, total: 0 });
+  const [manualDisabledState, setManualDisabledState] = useState<RuntimeContractDisabledState | null>(null);
 
   const {
     data: reviewData,
@@ -122,6 +128,9 @@ function ReviewErrors() {
     refetch: refetchSummary,
   } = useQuery<ReviewErrorsResponse>({
     queryKey: ["/api/review-errors"],
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const {
@@ -131,12 +140,20 @@ function ReviewErrors() {
   } = useQuery<ReviewSessionState>({
     queryKey: ["/api/review-errors/sessions", activeSessionId, clientInstanceId],
     enabled: mode === "sequential" && !!activeSessionId,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
       const response = await apiRequest(`/api/review-errors/sessions/${activeSessionId}/state?client_instance_id=${encodeURIComponent(clientInstanceId)}`);
       return response.json();
     },
   });
 
+  const reviewDisabledState = useMemo(
+    () => manualDisabledState ?? parseRuntimeContractDisabledFromError("review", reviewError),
+    [manualDisabledState, reviewError],
+  );
+  const reviewUnavailable = !!reviewDisabledState;
   const summary = reviewData?.summary;
   const incorrectAttempts = reviewData?.incorrectAttempts ?? [];
   const skippedAttempts = reviewData?.skippedAttempts ?? [];
@@ -151,6 +168,11 @@ function ReviewErrors() {
   }, []);
 
   const startReview = useCallback(async (filter: ReviewFilter) => {
+    if (reviewUnavailable) {
+      setRecordError(reviewDisabledState?.message ?? "Review is temporarily unavailable.");
+      return;
+    }
+
     setActiveFilter(filter);
     setRecordError(null);
 
@@ -180,10 +202,16 @@ function ReviewErrors() {
       resetPerItemState();
       setMode("sequential");
     } catch (error) {
+      const disabled = parseRuntimeContractDisabledFromError("review", error);
+      if (disabled) {
+        setManualDisabledState(disabled);
+        setRecordError(disabled.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unable to start review session";
       setRecordError(message);
     }
-  }, [clientInstanceId, resetPerItemState]);
+  }, [clientInstanceId, resetPerItemState, reviewDisabledState?.message, reviewUnavailable]);
 
   const submitAnswer = useCallback(async () => {
     if (!activeSessionId || !currentItem || !selectedOptionId || isSubmitting) return;
@@ -223,6 +251,12 @@ function ReviewErrors() {
         explanation: payload.explanation ?? null,
       });
     } catch (error) {
+      const disabled = parseRuntimeContractDisabledFromError("review", error);
+      if (disabled) {
+        setManualDisabledState(disabled);
+        setRecordError(disabled.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unable to submit answer";
       setRecordError(message);
     } finally {
@@ -255,6 +289,12 @@ function ReviewErrors() {
       resetPerItemState();
       await refetchSessionState();
     } catch (error) {
+      const disabled = parseRuntimeContractDisabledFromError("review", error);
+      if (disabled) {
+        setManualDisabledState(disabled);
+        setRecordError(disabled.message);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unable to skip review item";
       setRecordError(message);
     } finally {
@@ -278,6 +318,21 @@ function ReviewErrors() {
         <div className="text-center">
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-foreground" />
           <p className="text-muted-foreground">Loading your review queue...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (reviewUnavailable) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="max-w-xl w-full space-y-4">
+          <RuntimeContractDisabledCard domain="review" code={reviewDisabledState?.code ?? null} />
+          <div className="flex justify-center">
+            <Button variant="outline" asChild>
+              <Link href="/practice">Back to Practice</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );

@@ -8,6 +8,7 @@ import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
 import { Calculator, Flag, Loader2 } from "lucide-react";
+import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 
 function isMathSection(section: string | null | undefined): boolean {
   if (!section) return false;
@@ -50,6 +51,7 @@ export default function CanonicalPracticePage(props: {
     terminateSession,
     calculatorState,
     persistCalculatorState,
+    runtimeDisabled,
   } = useCanonicalPractice(props.section, sessionSpec);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
@@ -83,7 +85,6 @@ export default function CanonicalPracticePage(props: {
   );
 
   const showCalculator = isMathSection(question?.section);
-
   return (
     <PracticeShell
       title={props.title}
@@ -115,7 +116,9 @@ export default function CanonicalPracticePage(props: {
             </div>
           </div>
 
-          {isLoading && !question ? (
+          {runtimeDisabled ? (
+            <RuntimeContractDisabledCard domain="practice" code={runtimeDisabled.code} />
+          ) : isLoading && !question ? (
             <div className="flex flex-col items-center justify-center py-14 text-slate-600">
               <Loader2 className="h-8 w-8 animate-spin" />
               <p className="mt-3 text-sm">Loading your next question...</p>
