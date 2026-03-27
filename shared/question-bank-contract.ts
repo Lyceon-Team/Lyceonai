@@ -23,6 +23,8 @@ export interface CanonicalQuestionRowLike {
   question_type?: string | null;
   options?: unknown;
   correct_answer?: string | null;
+  answer_choice?: string | null;
+  answer?: string | null;
   explanation?: string | null;
   status?: string | null;
   stem?: string | null;
@@ -43,7 +45,11 @@ function normalizeText(value: unknown): string {
 }
 
 export function isValidCanonicalId(value: unknown): value is string {
-  return typeof value === "string" && CANONICAL_ID_PATTERN.test(value);
+  if (typeof value !== "string") return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (CANONICAL_ID_PATTERN.test(normalized)) return true;
+  return /^[A-Za-z0-9._:-]{6,128}$/.test(normalized);
 }
 
 export function normalizeSectionCode(value: unknown): CanonicalSectionCode | null {
@@ -142,7 +148,7 @@ export function isCanonicalPublishedMcQuestion(row: CanonicalQuestionRowLike): b
   if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
   if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) return false;
   if (!hasCanonicalOptionSet(row.options ?? null)) return false;
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) return false;
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) return false;
   if (!normalizeText(row.stem)) return false;
   return true;
 }
@@ -156,7 +162,7 @@ export function isCanonicalRuntimeMcQuestion(row: CanonicalQuestionRowLike): boo
   if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
   if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) return false;
   if (!hasCanonicalOptionSet(row.options ?? null)) return false;
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) return false;
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) return false;
   if (!normalizeText(row.stem)) return false;
   return true;
 }
@@ -254,7 +260,7 @@ export function validateQuestionForPublish(row: CanonicalQuestionRowLike): Publi
   if (!hasCanonicalOptionSet(row.options ?? null)) {
     errors.push("options must be exactly 4 choices with keys A/B/C/D");
   }
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) {
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) {
     errors.push("correct_answer must be one of A/B/C/D and match options");
   }
   return { ok: errors.length === 0, errors };

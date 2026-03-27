@@ -1,3 +1,19 @@
+export type CalendarTaskType =
+  | "practice"
+  | "focused_drill"
+  | "review_practice"
+  | "review_full_length"
+  | "full_length"
+  | "tutor_support";
+
+export interface BlockedWindow {
+  date?: string;
+  start?: string;
+  end?: string;
+  all_day?: boolean;
+  reason?: string;
+}
+
 export interface StudyProfile {
   user_id: string;
   baseline_score: number | null;
@@ -7,7 +23,11 @@ export interface StudyProfile {
   timezone: string | null;
   planner_mode?: "auto" | "custom" | null;
   full_test_cadence?: "weekly" | "biweekly" | "none" | null;
+  study_days_of_week?: number[] | null;
   preferred_study_days?: number[] | null;
+  blocked_weekdays?: number[] | null;
+  blocked_dates?: string[] | null;
+  blocked_windows?: BlockedWindow[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,11 +52,11 @@ export interface StudyPlanDay {
 
 export interface CalendarTask {
   id: string;
-  type: string;
+  type: CalendarTaskType;
   section: string | null;
   mode: string;
   minutes: number;
-  task_type?: string;
+  task_type?: CalendarTaskType;
   status?: "planned" | "in_progress" | "completed" | "skipped" | "missed";
   ordinal?: number;
   is_user_override?: boolean;
@@ -60,6 +80,11 @@ export async function saveCalendarProfile(profile: {
   exam_date?: string | null;
   daily_minutes?: number | null;
   timezone?: string | null;
+  study_days_of_week?: number[] | null;
+  preferred_study_days?: number[] | null;
+  blocked_weekdays?: number[] | null;
+  blocked_dates?: string[] | null;
+  blocked_windows?: BlockedWindow[] | null;
 }): Promise<StudyProfile> {
   const response = await fetch('/api/calendar/profile', {
     method: 'PUT',

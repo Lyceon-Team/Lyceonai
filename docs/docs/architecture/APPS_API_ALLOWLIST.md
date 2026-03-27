@@ -56,10 +56,9 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 - **Transitive deps in apps/api**: `../middleware/auth`, `../services/studentMastery`, `../lib/supabase-admin`, `../services/mastery-projection`
 
 ### `../apps/api/src/routes/diagnostic`
-- **Import**: [server/index.ts](server/index.ts#L67)
-- **Symbols**: `diagnosticRouter`
-- **Mount**: `app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter)`
-- **Transitive deps in apps/api**: `../middleware/auth`, `../services/diagnostic-service`, `../services/mastery-write`, `../services/mastery-constants`, `../lib/supabase-admin`
+- **Status**: hard-killed runtime surface (contract-disabled at mount).
+- **Mount**: `app.use("/api/me/mastery/diagnostic", runtimeContractDisableMiddleware("diagnostic"), ...)`
+- **Notes**: kept in repo as compatibility-only code path; not part of mounted student runtime.
 
 ### `../apps/api/src/routes/calendar`
 - **Import**: [server/index.ts](server/index.ts#L68)

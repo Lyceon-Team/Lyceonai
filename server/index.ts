@@ -50,7 +50,6 @@ import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-
 import { csrfGuard } from "./middleware/csrf";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
-import { diagnosticRouter } from "./routes/legacy/diagnostic";
 import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
@@ -67,6 +66,7 @@ import guardianConsentRoutes from "./routes/guardian-consent-routes";
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
+import { runtimeContractDisableMiddleware } from "./lib/runtime-contract-disable";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
@@ -279,8 +279,14 @@ app.use("/api/notifications", notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+app.use(
+  "/api/me/mastery/diagnostic",
+  runtimeContractDisableMiddleware("diagnostic"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
@@ -343,12 +349,38 @@ app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
 // Review errors endpoint - authenticated students can review their failed attempts
-app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
+app.get(
+  "/api/review-errors",
+  runtimeContractDisableMiddleware("review"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrors
+);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/sessions", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, startReviewErrorSession);
-app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
-app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);
+app.post(
+  "/api/review-errors/sessions",
+  runtimeContractDisableMiddleware("review"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+  startReviewErrorSession
+);
+app.get(
+  "/api/review-errors/sessions/:sessionId/state",
+  runtimeContractDisableMiddleware("review"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrorSessionState
+);
+app.post(
+  "/api/review-errors/attempt",
+  runtimeContractDisableMiddleware("review"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+  submitReviewSessionAnswer
+);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
@@ -374,11 +406,23 @@ app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, g
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
-app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+app.use(
+  "/api/practice",
+  runtimeContractDisableMiddleware("practice"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  practiceCanonicalRouter
+);
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)
 // All routes require Supabase auth and are student-only
-app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+app.use(
+  "/api/full-length",
+  runtimeContractDisableMiddleware("full-length"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  fullLengthExamRouter
+);
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {

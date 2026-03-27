@@ -8,6 +8,7 @@ import {
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
 import { buildReviewQueueForStudent } from "../services/review-queue";
+import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 
 const QUESTION_SAFE_SELECT = [
   "id",
@@ -294,6 +295,11 @@ export const getQuestionById = async (req: Request, res: Response) => {
 // GET /api/review-errors - canonical review queue builder
 export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, req.requestId, availability.missingTable);
+    }
+
     const user = requireRequestUser(req, res);
     if (!user) {
       return;

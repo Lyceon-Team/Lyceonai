@@ -5,7 +5,6 @@ import express, { Express } from 'express';
 import practiceCanonicalRouter from '../../server/routes/practice-canonical';
 import fullLengthExamRouter from '../../server/routes/full-length-exam-routes';
 import guardianRoutes from '../../server/routes/guardian-routes';
-import { diagnosticRouter } from '../../apps/api/src/routes/diagnostic';
 
 // HOISTED MOCKS
 const examMocks = vi.hoisted(() => ({
@@ -18,10 +17,6 @@ const accountMocks = vi.hoisted(() => ({
     revokeGuardianLink: vi.fn(),
     isGuardianLinkedToStudent: vi.fn(),
     getAllGuardianStudentLinks: vi.fn(),
-}));
-
-const diagnosticMocks = vi.hoisted(() => ({
-    recordDiagnosticAnswer: vi.fn(),
 }));
 
 const authMocks = vi.hoisted(() => ({
@@ -57,12 +52,6 @@ vi.mock('../../server/lib/account', () => ({
     getAllGuardianStudentLinks: accountMocks.getAllGuardianStudentLinks,
     ensureAccountForUser: vi.fn(),
     getAccountIdForUser: vi.fn(),
-}));
-
-vi.mock('../../apps/api/src/services/diagnostic-service', () => ({
-    recordDiagnosticAnswer: diagnosticMocks.recordDiagnosticAnswer,
-    startDiagnosticSession: vi.fn(),
-    getCurrentDiagnosticQuestion: vi.fn(),
 }));
 
 vi.mock('../../server/middleware/supabase-auth', () => ({
@@ -130,7 +119,6 @@ function buildApp(): Express {
         req.user = { id: 'guardian-1', role: 'guardian' };
         next();
     }, guardianRoutes);
-    app.use('/api/me/mastery/diagnostic', diagnosticRouter);
     return app;
 }
 
@@ -170,17 +158,6 @@ describe('Mutation Ownership Contract', () => {
             // We tolerate 500/403 if it happens after the service call or during post-processing
             // but here we just want to ensure it calls revokeGuardianLink.
             expect(accountMocks.revokeGuardianLink).toHaveBeenCalledWith('guardian-1', 'student-1');
-        });
-
-        it('Diagnostic: answer delegates to diagnostic service', async () => {
-            diagnosticMocks.recordDiagnosticAnswer.mockResolvedValue({ success: true, isComplete: false });
-            await request(app)
-                .post('/api/me/mastery/diagnostic/answer')
-                .set('Origin', 'http://localhost:5000')
-                .send({
-                    sessionId: 'd-1', questionCanonicalId: 'q-1', selectedChoice: 'A', timeSpentMs: 1000
-                });
-            expect(diagnosticMocks.recordDiagnosticAnswer).toHaveBeenCalled();
         });
 
         it('Practice: answer is unified in practice-canonical router', async () => {

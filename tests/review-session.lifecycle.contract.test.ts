@@ -136,7 +136,73 @@ function setupSupabase(state: DbState) {
     }
 
     private getRows() {
-      return state[this.table] ?? [];
+      const baseRows = state[this.table] ?? [];
+
+      if (this.table === 'answer_attempts') {
+        return (baseRows as Row[]).map((row, index) => ({
+          ...row,
+          session_id: row.session_id ?? `legacy-session-${row.user_id ?? 'student'}`,
+          session_item_id: row.session_item_id ?? `legacy-item-${index + 1}`,
+          created_at: row.created_at ?? row.attempted_at ?? null,
+        }));
+      }
+
+      if (this.table === 'practice_session_items' && baseRows.length === 0) {
+        const attempts = (state.answer_attempts ?? []) as Row[];
+        const questionsByCanonicalId = new Map<string, Row>();
+        for (const q of (state.questions ?? []) as Row[]) {
+          if (typeof q.canonical_id === 'string') {
+            questionsByCanonicalId.set(q.canonical_id, q);
+          }
+        }
+
+        return attempts.map((row, index) => {
+          const question = row.questions ?? {};
+          const canonicalId = question.canonical_id ?? null;
+          const fallbackQuestion = canonicalId ? questionsByCanonicalId.get(canonicalId) : null;
+          return {
+            id: row.session_item_id ?? `legacy-item-${index + 1}`,
+            session_id: row.session_id ?? `legacy-session-${row.user_id ?? 'student'}`,
+            question_id: row.question_id ?? question.id ?? `legacy-question-${index + 1}`,
+            question_canonical_id: canonicalId,
+            question_stem: question.stem ?? fallbackQuestion?.stem ?? null,
+            question_section: question.section ?? fallbackQuestion?.section ?? null,
+            question_difficulty: question.difficulty ?? fallbackQuestion?.difficulty ?? null,
+            question_domain: question.domain ?? fallbackQuestion?.domain ?? null,
+            question_skill: question.skill ?? fallbackQuestion?.skill ?? null,
+            question_subskill: question.subskill ?? fallbackQuestion?.subskill ?? null,
+            question_options: question.options ?? fallbackQuestion?.options ?? null,
+            question_correct_answer: question.correct_answer ?? fallbackQuestion?.correct_answer ?? null,
+            question_explanation: question.explanation ?? fallbackQuestion?.explanation ?? null,
+            created_at: row.created_at ?? row.attempted_at ?? null,
+          };
+        });
+      }
+
+      if (this.table === 'review_session_items') {
+        const questionsByCanonicalId = new Map<string, Row>();
+        for (const question of (state.questions ?? []) as Row[]) {
+          const canonicalId = typeof question.canonical_id === 'string' ? question.canonical_id : null;
+          if (!canonicalId) continue;
+          questionsByCanonicalId.set(canonicalId, question);
+        }
+
+        return (baseRows as Row[]).map((row) => {
+          const canonicalId = typeof row.question_canonical_id === 'string' ? row.question_canonical_id : null;
+          const question = canonicalId ? questionsByCanonicalId.get(canonicalId) : null;
+          return {
+            ...row,
+            question_section: row.question_section ?? question?.section ?? null,
+            question_stem: row.question_stem ?? question?.stem ?? null,
+            question_options: row.question_options ?? question?.options ?? null,
+            question_difficulty: row.question_difficulty ?? question?.difficulty ?? null,
+            question_correct_answer: row.question_correct_answer ?? question?.correct_answer ?? null,
+            question_explanation: row.question_explanation ?? question?.explanation ?? null,
+          };
+        });
+      }
+
+      return baseRows;
     }
 
     private applyFilters(rows: Row[]) {

@@ -108,9 +108,11 @@ type QuestionOption = { key: string; text: string };
 
 type TestFormItemRecord = {
   section: string;
-  module_index: number;
+  module_index?: number | null;
   ordinal: number;
   question_id: string;
+  form_id?: string | null;
+  test_form_id?: string | null;
 };
 
 type ResolvedFormItem = {
@@ -138,15 +140,14 @@ type FullLengthQuestionSnapshotRow = {
   domain: string | null;
   skill: string | null;
   subskill: string | null;
-  skill_code: string | null;
   source_type: unknown;
   diagram_present: boolean | null;
   tags: unknown;
   competencies: unknown;
-  correct_answer: string | null;
+  answer_choice?: string | null;
+  answer?: string | null;
   answer_text: string | null;
   explanation: string | null;
-  option_metadata: unknown;
   exam: string | null;
   structure_cluster_id: string | null;
 };
@@ -385,6 +386,28 @@ function moduleKey(section: SectionType, moduleIndex: ModuleIndex): string {
   return `${section}:${moduleIndex}`;
 }
 
+function deriveModulePositionFromOrdinal(
+  section: SectionType,
+  ordinal: number
+): { moduleIndex: ModuleIndex; moduleOrdinal: number } | null {
+  const module1Count = MODULE_CONFIG[section].module1.questionCount;
+  const module2Count = MODULE_CONFIG[section].module2.questionCount;
+  const total = module1Count + module2Count;
+
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > total) {
+    return null;
+  }
+
+  if (ordinal <= module1Count) {
+    return { moduleIndex: 1, moduleOrdinal: ordinal };
+  }
+
+  return {
+    moduleIndex: 2,
+    moduleOrdinal: ordinal - module1Count,
+  };
+}
+
 function requireModuleItems(
   itemsByModule: Map<string, ResolvedFormItem[]>,
   section: SectionType,
@@ -455,7 +478,7 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question options missing`);
   }
 
-  const correctAnswer = normalizeMcAnswerKey(row.correct_answer);
+  const correctAnswer = normalizeMcAnswerKey((row as any).answer_choice ?? (row as any).answer);
   if (!correctAnswer || !options.some((option) => option.key === correctAnswer)) {
     throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question correct answer missing`);
   }
@@ -483,7 +506,7 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     question_domain: row.domain ?? null,
     question_skill: row.skill ?? null,
     question_subskill: row.subskill ?? null,
-    question_skill_code: row.skill_code ?? null,
+    question_skill_code: null,
     question_source_type: Number.isFinite(sourceType as number) ? sourceType : null,
     question_diagram_present: row.diagram_present ?? null,
     question_tags: row.tags ?? null,
@@ -491,7 +514,7 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     question_correct_answer: correctAnswer,
     question_answer_text: row.answer_text ?? null,
     question_explanation: row.explanation ?? null,
-    question_option_metadata: row.option_metadata ?? null,
+    question_option_metadata: null,
     question_exam: row.exam ?? null,
     question_structure_cluster_id: row.structure_cluster_id ?? null,
   };
@@ -546,19 +569,32 @@ async function resolvePublishedFormForSession(
     throw new Error(FORM_NOT_FOUND_MESSAGE);
   }
 
-  const { data: rawItems, error: itemsError } = await supabase
+  let formItems: TestFormItemRecord[] = [];
+  const legacyItemsResult = await supabase
     .from("test_form_items")
-    .select("section, module_index, ordinal, question_id")
+    .select("section, module_index, ordinal, question_id, form_id")
     .eq("form_id", formId)
     .order("section", { ascending: true })
     .order("module_index", { ascending: true })
     .order("ordinal", { ascending: true });
 
-  if (itemsError) {
-    throw new Error(`Failed to load test form items: ${itemsError.message}`);
+  if (legacyItemsResult.error) {
+    const fallbackItemsResult = await supabase
+      .from("test_form_items")
+      .select("section, ordinal, question_id, test_form_id")
+      .eq("test_form_id", formId)
+      .order("section", { ascending: true })
+      .order("ordinal", { ascending: true });
+
+    if (fallbackItemsResult.error) {
+      throw new Error(`Failed to load test form items: ${fallbackItemsResult.error.message}`);
+    }
+
+    formItems = (fallbackItemsResult.data ?? []) as TestFormItemRecord[];
+  } else {
+    formItems = (legacyItemsResult.data ?? []) as TestFormItemRecord[];
   }
 
-  const formItems = (rawItems ?? []) as TestFormItemRecord[];
   if (!formItems.length) {
     throw new Error(FORM_ITEMS_MISSING_MESSAGE);
   }
@@ -578,12 +614,18 @@ async function resolvePublishedFormForSession(
       throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid section in test_form_items`);
     }
 
-    if (item.module_index !== 1 && item.module_index !== 2) {
-      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid module index in test_form_items`);
-    }
-
     if (!Number.isInteger(item.ordinal) || item.ordinal < 1) {
       throw new Error(`${FORM_INVALID_ORDINAL_MESSAGE}: ordinals must start at 1`);
+    }
+
+    const explicitModuleIndex = item.module_index;
+    const derivedPosition =
+      explicitModuleIndex === 1 || explicitModuleIndex === 2
+        ? { moduleIndex: explicitModuleIndex as ModuleIndex, moduleOrdinal: item.ordinal }
+        : deriveModulePositionFromOrdinal(section, item.ordinal);
+
+    if (!derivedPosition) {
+      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid module index/ordinal in test_form_items`);
     }
 
     const canonicalQuestionId = String(item.question_id ?? "").trim();
@@ -591,7 +633,7 @@ async function resolvePublishedFormForSession(
       throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing canonical question id`);
     }
 
-    const ordinalKey = `${section}:${item.module_index}:${item.ordinal}`;
+    const ordinalKey = `${section}:${derivedPosition.moduleIndex}:${derivedPosition.moduleOrdinal}`;
     if (seenModuleOrdinals.has(ordinalKey)) {
       throw new Error(FORM_DUPLICATE_ORDINAL_MESSAGE);
     }
@@ -601,8 +643,8 @@ async function resolvePublishedFormForSession(
 
     orderedDraftItems.push({
       section,
-      moduleIndex: item.module_index as ModuleIndex,
-      ordinal: item.ordinal,
+      moduleIndex: derivedPosition.moduleIndex,
+      ordinal: derivedPosition.moduleOrdinal,
       canonicalQuestionId,
     });
   }
@@ -1194,7 +1236,7 @@ async function applyFullLengthMasterySignals(
 
     const { data: materializedRows, error: materializedError } = await supabase
       .from("full_length_exam_questions")
-      .select("question_id, question_canonical_id, question_exam, question_section, question_domain, question_skill, question_subskill, question_skill_code, question_difficulty, question_structure_cluster_id")
+      .select("question_id, question_canonical_id, question_exam, question_section, question_domain, question_skill, question_subskill, question_difficulty, question_structure_cluster_id")
       .in("module_id", moduleIds)
       .in("question_id", questionIds);
 
@@ -1222,7 +1264,7 @@ async function applyFullLengthMasterySignals(
         question_domain: typeof row.question_domain === "string" ? row.question_domain : null,
         question_skill: typeof row.question_skill === "string" ? row.question_skill : null,
         question_subskill: typeof row.question_subskill === "string" ? row.question_subskill : null,
-        question_skill_code: typeof row.question_skill_code === "string" ? row.question_skill_code : null,
+        question_skill_code: null,
         question_difficulty: row.question_difficulty ?? null,
         question_structure_cluster_id: typeof row.question_structure_cluster_id === "string" ? row.question_structure_cluster_id : null,
       });
@@ -1430,17 +1472,18 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
   }
 
   const uniqueQuestionIds = Array.from(new Set(sessionQuestionPointers.map((row) => row.question_id)));
-  const { data: questionSnapshotRows, error: questionSnapshotError } = await supabase
+  const primaryQuestionSnapshotResult = await supabase
     .from("questions")
-    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, skill_code, source_type, diagram_present, tags, competencies, correct_answer, answer_text, explanation, option_metadata, exam, structure_cluster_id")
+    .select("id, canonical_id, question_type, stem, section, section_code, options, difficulty, domain, skill, subskill, source_type, diagram_present, tags, competencies, answer_choice, answer, answer_text, explanation, exam, structure_cluster_id")
     .in("id", uniqueQuestionIds);
 
-  if (questionSnapshotError) {
-    throw new Error(`Failed to load question snapshots for session materialization: ${questionSnapshotError.message}`);
+  if (primaryQuestionSnapshotResult.error) {
+    throw new Error(`Failed to load question snapshots for session materialization: ${primaryQuestionSnapshotResult.error.message}`);
   }
+  const questionSnapshotRows = (primaryQuestionSnapshotResult.data ?? []) as FullLengthQuestionSnapshotRow[];
 
   const snapshotById = new Map<string, FullLengthQuestionSnapshotRow>();
-  for (const row of (questionSnapshotRows ?? []) as FullLengthQuestionSnapshotRow[]) {
+  for (const row of questionSnapshotRows) {
     snapshotById.set(String(row.id), row);
   }
 
@@ -1811,7 +1854,7 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
 
   const { data: moduleQuestion, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("id, question_type, question_correct_answer")
+    .select("id, question_type, question_id, question_correct_answer")
     .eq("module_id", currentModule.id)
     .eq("question_id", params.questionId)
     .single();
@@ -1850,7 +1893,9 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
 
   const correct = normalizeMcAnswerKey((moduleQuestion as any).question_correct_answer);
   if (!correct) {
-    throw new Error("Materialized question answer key is missing");
+    throw new Error(
+      "Materialized full-length question snapshot is missing a correct answer key. Runtime fallback to raw questions is disabled by contract."
+    );
   }
   const isCorrect = selected.length > 0 && selected === correct;
 
@@ -2743,7 +2788,7 @@ export async function getExamReview(
   const moduleIds = (modules || []).map((m) => m.id);
   const { data: moduleQuestions, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_skill_code, question_difficulty, question_source_type, question_diagram_present, question_tags, question_competencies, question_correct_answer, question_answer_text, question_explanation, question_option_metadata")
+    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_difficulty, question_source_type, question_diagram_present, question_tags, question_competencies, question_correct_answer, question_answer_text, question_explanation")
     .in("module_id", moduleIds.length > 0 ? moduleIds : ["__none__"])
     .order("module_id", { ascending: true })
     .order("order_index", { ascending: true });
@@ -2774,7 +2819,7 @@ export async function getExamReview(
         domain: (row.question_domain as string | null) ?? null,
         skill: (row.question_skill as string | null) ?? null,
         subskill: (row.question_subskill as string | null) ?? null,
-        skill_code: (row.question_skill_code as string | null) ?? null,
+        skill_code: null,
         difficulty: row.question_difficulty ?? null,
         source_type: row.question_source_type ?? null,
         diagram_present: (row.question_diagram_present as boolean | null) ?? null,
@@ -2783,7 +2828,7 @@ export async function getExamReview(
         correct_answer: (row.question_correct_answer as string | null) ?? null,
         answer_text: (row.question_answer_text as string | null) ?? null,
         explanation: (row.question_explanation as string | null) ?? null,
-        option_metadata: row.question_option_metadata ?? null,
+        option_metadata: null,
       });
     }
 
@@ -2791,6 +2836,12 @@ export async function getExamReview(
     questions = isCompleted
       ? (materializedQuestions as QuestionRowPostCompletion[])
       : (materializedQuestions as QuestionRowPreCompletion[]);
+  }
+
+  if (isCompleted && questions.some((question) => !normalizeMcAnswerKey((question as any).correct_answer))) {
+    throw new Error(
+      "Materialized full-length review snapshots are missing correct-answer keys. Runtime fallback to raw questions is disabled by contract."
+    );
   }
 
   // Load user responses
