@@ -7,7 +7,7 @@ import {
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
-import { buildReviewQueueForStudent } from "../services/review-queue";
+import { buildReviewQueueForStudent, type ReviewQueueMode } from "../services/review-queue";
 import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 
 const QUESTION_SAFE_SELECT = [
@@ -305,7 +305,58 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       return;
     }
 
-    const queue = await buildReviewQueueForStudent(user.id);
+    const query = (req as any).query ?? {};
+    const rawMode = typeof query.mode === "string" ? query.mode.trim() : "";
+    if (!rawMode) {
+      return res.status(400).json({
+        error: "mode is required",
+        code: "REVIEW_MODE_REQUIRED",
+        requestId: req.requestId,
+      });
+    }
+    const normalizedMode = rawMode;
+    const allowedModes: ReviewQueueMode[] = ["all_past_mistakes", "by_practice_session", "by_full_length_session"];
+    if (!allowedModes.includes(normalizedMode as ReviewQueueMode)) {
+      return res.status(400).json({
+        error: "Invalid review mode",
+        code: "REVIEW_MODE_INVALID",
+        requestId: req.requestId,
+      });
+    }
+
+    const mode = normalizedMode as ReviewQueueMode;
+    const practiceSessionId = typeof query.practice_session_id === "string" ? query.practice_session_id.trim() : "";
+    const fullLengthSessionId = typeof query.full_length_session_id === "string" ? query.full_length_session_id.trim() : "";
+
+    if (mode === "by_practice_session" && !practiceSessionId) {
+      return res.status(400).json({
+        error: "practice_session_id is required for by_practice_session review mode",
+        code: "REVIEW_MODE_MISSING_PRACTICE_SESSION_ID",
+        requestId: req.requestId,
+      });
+    }
+
+    if (mode === "by_full_length_session" && !fullLengthSessionId) {
+      return res.status(400).json({
+        error: "full_length_session_id is required for by_full_length_session review mode",
+        code: "REVIEW_MODE_MISSING_FULL_LENGTH_SESSION_ID",
+        requestId: req.requestId,
+      });
+    }
+
+    if (mode === "all_past_mistakes" && (practiceSessionId || fullLengthSessionId)) {
+      return res.status(400).json({
+        error: "session-specific filters require by_practice_session or by_full_length_session mode",
+        code: "REVIEW_MODE_CONFLICT",
+        requestId: req.requestId,
+      });
+    }
+
+    const queue = await buildReviewQueueForStudent(user.id, {
+      mode,
+      practiceSessionId: practiceSessionId || null,
+      fullLengthSessionId: fullLengthSessionId || null,
+    });
 
     if (queue.latestSnapshots.length === 0) {
       return res.json({
@@ -314,8 +365,10 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
         skippedAttempts: [],
         reviewQueue: [],
         summary: {
-          sessionId: null,
+          sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
           sessionStartedAt: null,
+          sessionMode: mode,
+          sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
           correctCount: 0,
           incorrectCount: 0,
           skippedCount: 0,
@@ -363,10 +416,10 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       skippedAttempts,
       reviewQueue,
       summary: {
-        sessionId: null,
+        sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
         sessionStartedAt: queue.latestAttemptAt,
-        sessionMode: "mixed",
-        sessionSection: "mixed",
+        sessionMode: mode,
+        sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
         correctCount: queue.correctCount,
         incorrectCount: queue.incorrectCount,
         skippedCount: queue.skippedCount,

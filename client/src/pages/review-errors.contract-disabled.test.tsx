@@ -44,7 +44,7 @@ describe("ReviewErrors contract-disable behavior", () => {
   it("renders terminal-disabled state on contract 503 with no retry loop UI", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = asUrl(input);
-      if (url === "/api/review-errors") {
+      if (url === "/api/review-errors?mode=all_past_mistakes") {
         return jsonResponse(
           {
             code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
@@ -66,7 +66,7 @@ describe("ReviewErrors contract-disable behavior", () => {
 
     const reviewCalls = fetchMock.mock.calls
       .map(([input]) => asUrl(input))
-      .filter((url) => url === "/api/review-errors");
+      .filter((url) => url === "/api/review-errors?mode=all_past_mistakes");
     expect(reviewCalls).toHaveLength(1);
     expect(screen.queryByText("Loading your review queue...")).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();

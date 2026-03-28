@@ -60,18 +60,35 @@ describe("Canonical runtime materialization law invariants", () => {
       "export async function createExamSession",
       "export async function getCurrentSession"
     );
+    const materializeBlock = extractBetween(
+      source,
+      "async function materializeModuleFromResolvedForm",
+      "async function prepareDeferredModule2FromPersistedOutcome"
+    );
     const submitBlock = extractBetween(
       source,
       "export async function submitAnswer",
       "export async function persistModuleCalculatorState"
     );
+    const submitModuleBlock = extractBetween(
+      source,
+      "export async function submitModule",
+      "export async function startExam"
+    );
     const reviewBlock = extractFrom(source, "export async function getExamReview(");
 
-    expect(createBlock).toContain('.from("questions")');
+    expect(createBlock).toContain("moduleKey(section, 1)");
+    expect(createBlock).toContain("moduleIndex: 1");
+    expect(createBlock).not.toContain("for (const moduleIndex of [1, 2] as const)");
+    expect(materializeBlock).toContain('.from("questions")');
     expect(submitBlock.includes('.from("questions")')).toBe(false);
     expect(reviewBlock.includes('.from("questions")')).toBe(false);
     expect(submitBlock).toContain("Runtime fallback to raw questions is disabled by contract.");
     expect(reviewBlock).toContain("Runtime fallback to raw questions is disabled by contract.");
+    expect(submitModuleBlock).toContain("prepareDeferredModule2FromPersistedOutcome");
+    expect(source).toContain(
+      "Module 2 bucket persisted without deferred materialization proof from persisted Module 1 outcomes"
+    );
   });
 
   it("review runtime queue/session builders do not use raw questions lookups", () => {

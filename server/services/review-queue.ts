@@ -3,6 +3,13 @@ import { isValidCanonicalId } from "../../shared/question-bank-contract";
 
 export type ReviewOrigin = "practice" | "full_test";
 export type ReviewOutcome = "correct" | "incorrect" | "skipped";
+export type ReviewQueueMode = "all_past_mistakes" | "by_practice_session" | "by_full_length_session";
+
+export type ReviewQueueOptions = {
+  mode?: ReviewQueueMode;
+  practiceSessionId?: string | null;
+  fullLengthSessionId?: string | null;
+};
 
 export type ReviewQueueSnapshot = {
   attemptId: string;
@@ -81,22 +88,58 @@ function snapshotRecoveryKeys(snapshot: ReviewQueueSnapshot): string[] {
   return keys;
 }
 
-export async function buildReviewQueueForStudent(userId: string): Promise<ReviewQueueBuildResult> {
-  const [practiceAttemptsResult, fullLengthResponseResult] = await Promise.all([
-    supabaseServer
-      .from("answer_attempts")
-      .select("id, session_id, session_item_id, question_id, is_correct, outcome, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(2000),
-    supabaseServer
-      .from("full_length_exam_responses")
-      .select("id, module_id, question_id, is_correct, answered_at, full_length_exam_sessions!inner(user_id, status)")
-      .eq("full_length_exam_sessions.user_id", userId)
-      .eq("full_length_exam_sessions.status", "completed")
-      .order("answered_at", { ascending: false })
-      .limit(2000),
-  ]);
+export async function buildReviewQueueForStudent(userId: string, options: ReviewQueueOptions = {}): Promise<ReviewQueueBuildResult> {
+  const mode: ReviewQueueMode = options.mode ?? "all_past_mistakes";
+  const practiceSessionId = options.practiceSessionId ?? null;
+  const fullLengthSessionId = options.fullLengthSessionId ?? null;
+
+  if (mode === "by_practice_session" && !practiceSessionId) {
+    throw new Error("review_queue_missing_practice_session_id");
+  }
+
+  if (mode === "by_full_length_session" && !fullLengthSessionId) {
+    throw new Error("review_queue_missing_full_length_session_id");
+  }
+
+  const includePractice = mode !== "by_full_length_session";
+  const includeFullLength = mode !== "by_practice_session";
+
+  const practicePromise = includePractice
+    ? (() => {
+      let query = supabaseServer
+        .from("answer_attempts")
+        .select("id, session_id, session_item_id, question_id, is_correct, outcome, created_at")
+        .eq("user_id", userId);
+
+      if (mode === "by_practice_session" && practiceSessionId) {
+        query = query.eq("session_id", practiceSessionId);
+      }
+
+      return query
+        .order("created_at", { ascending: false })
+        .limit(2000);
+    })()
+    : Promise.resolve({ data: [], error: null });
+
+  const fullLengthPromise = includeFullLength
+    ? (() => {
+      let query = supabaseServer
+        .from("full_length_exam_responses")
+        .select("id, module_id, question_id, is_correct, answered_at, full_length_exam_sessions!inner(user_id, status)")
+        .eq("full_length_exam_sessions.user_id", userId)
+        .eq("full_length_exam_sessions.status", "completed");
+
+      if (mode === "by_full_length_session" && fullLengthSessionId) {
+        query = query.eq("session_id", fullLengthSessionId);
+      }
+
+      return query
+        .order("answered_at", { ascending: false })
+        .limit(2000);
+    })()
+    : Promise.resolve({ data: [], error: null });
+
+  const [practiceAttemptsResult, fullLengthResponseResult] = await Promise.all([practicePromise, fullLengthPromise]);
 
   if (practiceAttemptsResult.error) {
     throw new Error(`review_queue_practice_fetch_failed:${practiceAttemptsResult.error.message}`);

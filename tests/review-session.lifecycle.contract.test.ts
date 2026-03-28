@@ -80,6 +80,17 @@ function setupSupabase(state: DbState) {
     }
 
     eq(column: string, value: any) {
+      if (column.includes('.')) {
+        this.filters.push((row) => {
+          const [prefix, field] = column.split('.');
+          const nested = row[prefix];
+          if (nested && typeof nested === 'object') {
+            return nested[field] === value;
+          }
+          return true;
+        });
+        return this;
+      }
       this.filters.push((row) => row[column] === value);
       return this;
     }
@@ -333,7 +344,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const first = makeRes();
     await startReviewErrorSession(req, first.res);
     expect(first.getStatus()).toBe(201);
@@ -378,7 +389,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', idempotency_key: 'idem-1', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', idempotency_key: 'idem-1', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 
@@ -424,7 +435,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 
@@ -436,6 +447,28 @@ describe('Review session lifecycle contract', () => {
     expect(queued).toHaveLength(1);
     expect(served[0].ordinal).toBe(1);
     expect(queued[0].ordinal).toBe(2);
+  });
+
+  it('requires explicit review mode on session start', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [],
+      review_session_items: [],
+      review_session_events: [],
+      questions: [],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const res = makeRes();
+    await startReviewErrorSession(req, res.res);
+
+    expect(res.getStatus()).toBe(400);
+    expect(res.getBody()).toMatchObject({ code: 'REVIEW_MODE_REQUIRED' });
   });
 
   it('fails closed when unresolved item lacks valid canonical_id even if question_id is canonical-shaped', async () => {
@@ -471,7 +504,7 @@ describe('Review session lifecycle contract', () => {
 
     setupSupabase(state);
 
-    const req: any = { user: { id: 'student-1' }, body: { filter: 'all', client_instance_id: 'client-a' } };
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'all_past_mistakes', filter: 'all', client_instance_id: 'client-a' } };
     const res = makeRes();
     await startReviewErrorSession(req, res.res);
 
@@ -820,6 +853,158 @@ describe('Review session lifecycle contract', () => {
 
     expect(res.getStatus()).toBe(404);
     expect(res.getBody().code).toBe('REVIEW_SESSION_NOT_FOUND');
+  });
+
+  it('filters review session start by practice session when mode=by_practice_session', async () => {
+    const state: DbState = {
+      answer_attempts: [
+        {
+          id: 'a1',
+          session_id: '11111111-1111-4111-8111-111111111111',
+          session_item_id: 'item-a',
+          question_id: 'q-source-1',
+          is_correct: false,
+          outcome: 'incorrect',
+          attempted_at: '2026-03-14T09:00:00.000Z',
+          user_id: 'student-1',
+          questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+        },
+        {
+          id: 'a2',
+          session_id: '22222222-2222-4222-8222-222222222222',
+          session_item_id: 'item-b',
+          question_id: 'q-source-2',
+          is_correct: false,
+          outcome: 'incorrect',
+          attempted_at: '2026-03-14T08:59:00.000Z',
+          user_id: 'student-1',
+          questions: { id: 'q-source-2', canonical_id: 'SATM1DEF456', stem: 'Q2', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+        },
+      ],
+      full_length_exam_responses: [],
+      full_length_exam_questions: [],
+      review_error_attempts: [],
+      review_sessions: [],
+      review_session_items: [],
+      review_session_events: [],
+      questions: [
+        {
+          canonical_id: 'SATM1ABC123',
+          status: 'published',
+          question_type: 'multiple_choice',
+          section: 'Math',
+          stem: 'Q1',
+          options: [
+            { key: 'A', text: '1' },
+            { key: 'B', text: '2' },
+            { key: 'C', text: '3' },
+            { key: 'D', text: '4' },
+          ],
+          difficulty: 'easy',
+          correct_answer: 'A',
+          explanation: 'exp1',
+        },
+        {
+          canonical_id: 'SATM1DEF456',
+          status: 'published',
+          question_type: 'multiple_choice',
+          section: 'Math',
+          stem: 'Q2',
+          options: [
+            { key: 'A', text: '1' },
+            { key: 'B', text: '2' },
+            { key: 'C', text: '3' },
+            { key: 'D', text: '4' },
+          ],
+          difficulty: 'easy',
+          correct_answer: 'A',
+          explanation: 'exp2',
+        },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'by_practice_session', practice_session_id: '11111111-1111-4111-8111-111111111111', filter: 'all', client_instance_id: 'client-a' } };
+    const res = makeRes();
+    await startReviewErrorSession(req, res.res);
+
+    expect(res.getStatus()).toBe(201);
+    expect(state.review_session_items).toHaveLength(1);
+    expect(state.review_session_items[0].source_question_id).toBe('q-source-1');
+  });
+
+  it('filters review session start by full-length session when mode=by_full_length_session', async () => {
+    const state: DbState = {
+      answer_attempts: [],
+      full_length_exam_responses: [
+        {
+          id: 'f1',
+          session_id: '33333333-3333-4333-8333-333333333333',
+          module_id: 'module-a',
+          question_id: 'q10',
+          is_correct: false,
+          answered_at: '2026-03-14T09:10:00.000Z',
+        },
+        {
+          id: 'f2',
+          session_id: '44444444-4444-4444-8444-444444444444',
+          module_id: 'module-b',
+          question_id: 'q11',
+          is_correct: false,
+          answered_at: '2026-03-14T09:11:00.000Z',
+        },
+      ],
+      full_length_exam_questions: [
+        {
+          module_id: 'module-a',
+          question_id: 'q10',
+          question_canonical_id: 'SATM1GHI789',
+          question_stem: 'Q10',
+          question_section: 'Math',
+          question_options: [
+            { key: 'A', text: '1' },
+            { key: 'B', text: '2' },
+            { key: 'C', text: '3' },
+            { key: 'D', text: '4' },
+          ],
+          question_correct_answer: 'A',
+          question_explanation: 'exp',
+        },
+        {
+          module_id: 'module-b',
+          question_id: 'q11',
+          question_canonical_id: 'SATM1JKL012',
+          question_stem: 'Q11',
+          question_section: 'Math',
+          question_options: [
+            { key: 'A', text: '1' },
+            { key: 'B', text: '2' },
+            { key: 'C', text: '3' },
+            { key: 'D', text: '4' },
+          ],
+          question_correct_answer: 'A',
+          question_explanation: 'exp',
+        },
+      ],
+      review_error_attempts: [],
+      review_sessions: [],
+      review_session_items: [],
+      review_session_events: [],
+      questions: [],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = { user: { id: 'student-1' }, body: { mode: 'by_full_length_session', full_length_session_id: '33333333-3333-4333-8333-333333333333', filter: 'all', client_instance_id: 'client-a' } };
+    const res = makeRes();
+    await startReviewErrorSession(req, res.res);
+
+    expect(res.getStatus()).toBe(201);
+    expect(state.review_session_items).toHaveLength(1);
+    expect(state.review_session_items[0].source_origin).toBe('full_test');
   });
 });
 

@@ -25,23 +25,6 @@ describe("Runtime law lockdown API enforcement", () => {
   it.each([
     {
       method: "post",
-      path: "/api/practice/sessions",
-      code: "PRACTICE_RUNTIME_DISABLED_BY_CONTRACT",
-      body: {},
-    },
-    {
-      method: "get",
-      path: "/api/practice/sessions/11111111-1111-4111-8111-111111111111/next?client_instance_id=tab-1",
-      code: "PRACTICE_RUNTIME_DISABLED_BY_CONTRACT",
-    },
-    {
-      method: "post",
-      path: "/api/practice/answer",
-      code: "PRACTICE_RUNTIME_DISABLED_BY_CONTRACT",
-      body: {},
-    },
-    {
-      method: "post",
       path: "/api/full-length/sessions",
       code: "FULL_LENGTH_RUNTIME_DISABLED_BY_CONTRACT",
       body: {},
@@ -113,11 +96,14 @@ describe("Runtime law lockdown API enforcement", () => {
 describe("Runtime law lockdown route coverage proof", () => {
   const indexPath = path.join(repoRoot, "server", "index.ts");
   const indexSource = fs.readFileSync(indexPath, "utf8");
+  const practiceSource = fs.readFileSync(path.join(repoRoot, "server", "routes", "practice-canonical.ts"), "utf8");
 
-  it("keeps guarded runtime mounts in server/index.ts", () => {
+  it("keeps full-length/diagnostic guarded mounts in server/index.ts and leaves practice unlocked", () => {
     expect(indexSource).toMatch(
-      /app\.use\(\s*"\/api\/practice",\s*runtimeContractDisableMiddleware\("practice"\),\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*practiceCanonicalRouter/s
+      /app\.use\(\s*"\/api\/practice",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*practiceCanonicalRouter/s
     );
+    expect(indexSource).not.toMatch(/runtimeContractDisableMiddleware\("practice"\)/s);
+
     expect(indexSource).toMatch(
       /app\.use\(\s*"\/api\/full-length",\s*runtimeContractDisableMiddleware\("full-length"\),\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*fullLengthExamRouter/s
     );
@@ -141,12 +127,16 @@ describe("Runtime law lockdown route coverage proof", () => {
 
     const allowedDirectPaths = new Set<string>([
       "/api/practice/topics",
-      "/api/practice/questions",
+      "/api/practice/reference/questions",
     ]);
 
     for (const pathName of directPracticePaths) {
       expect(allowedDirectPaths.has(pathName)).toBe(true);
     }
+  });
+
+  it("removes overlapping legacy practice runtime compatibility paths after unlock", () => {
+    expect(practiceSource).not.toMatch(/router\.get\(\s*"\/next"/s);
   });
 
   it("keeps full-length runtime under a single guarded mount with no direct app.* route leaks", () => {

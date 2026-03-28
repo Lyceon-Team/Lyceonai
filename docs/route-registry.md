@@ -38,7 +38,7 @@ This document is the single authoritative registry of:
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
-| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/questions` | ACTIVE |
+| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -139,7 +139,7 @@ Removed auth endpoints (must return 404):
 | `/api/practice/next` | GET | Yes | student/admin | entitled† | Get next practice question |
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
-| `/api/practice/questions` | GET | Yes | student/admin | free | Get filtered questions for practice |
+| `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
 | `/api/tutor/v2` | POST | Yes | student/admin | entitled† | AI tutor chat |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |

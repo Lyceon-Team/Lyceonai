@@ -48,6 +48,20 @@ export interface StudyPlanDay {
   is_taper_day?: boolean;
   is_full_test_day?: boolean;
   status_canonical?: string | null;
+  replaces_override?: boolean;
+  replaced_override_day_id?: string | null;
+  replacement_source?: string | null;
+  replacement_at?: string | null;
+}
+
+export interface CalendarTaskTarget {
+  section: string | null;
+  skill_code: string | null;
+  domain: string | null;
+  subskill: string | null;
+  target_type?: "practice_target" | "review_session" | "scheduled_full_length" | null;
+  review_session_id?: string | null;
+  exam_id?: string | null;
 }
 
 export interface CalendarTask {
@@ -57,10 +71,25 @@ export interface CalendarTask {
   mode: string;
   minutes: number;
   task_type?: CalendarTaskType;
+  target?: CalendarTaskTarget;
+  source_skill_code?: string | null;
+  source_domain?: string | null;
+  source_subskill?: string | null;
+  source_reason?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   status?: "planned" | "in_progress" | "completed" | "skipped" | "missed";
   ordinal?: number;
   is_user_override?: boolean;
   planner_owned?: boolean;
+  replaces_override?: boolean;
+  replaced_override_task_id?: string | null;
+  replacement_source?: string | null;
+  replacement_at?: string | null;
+  override_target_type?: "practice_target" | "review_session" | "scheduled_full_length" | null;
+  override_target_domain?: string | null;
+  override_target_skill?: string | null;
+  override_target_session_id?: string | null;
+  override_target_exam_id?: string | null;
 }
 
 export async function getCalendarProfile(): Promise<StudyProfile | null> {
@@ -166,7 +195,29 @@ export async function updateCalendarDay(
   payload: {
     planned_minutes: number;
     focus?: Array<{ section: string; weight: number; competencies?: string[] }>;
-    tasks: Array<{ type: string; section: string; mode: string; minutes: number; status?: string }>;
+    tasks: Array<{
+      type?: string;
+      task_type?: string;
+      section: string;
+      mode: string;
+      minutes: number;
+      status?: string;
+      target?: CalendarTaskTarget;
+      override_target_type?: "practice_target" | "review_session" | "scheduled_full_length" | null;
+      override_target_domain?: string | null;
+      override_target_skill?: string | null;
+      override_target_session_id?: string | null;
+      override_target_exam_id?: string | null;
+      source_skill_code?: string | null;
+      source_domain?: string | null;
+      source_subskill?: string | null;
+      source_reason?: Record<string, unknown>;
+      metadata?: Record<string, unknown>;
+      replaces_override?: boolean;
+      replaced_override_task_id?: string | null;
+      replacement_source?: string | null;
+      replacement_at?: string | null;
+    }>;
   },
 ): Promise<any> {
   const response = await fetch(`/api/calendar/day/${dayDate}`, {
