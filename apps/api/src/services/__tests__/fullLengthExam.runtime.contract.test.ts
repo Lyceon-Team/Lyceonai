@@ -12,6 +12,14 @@ import {
   startExam,
 } from '../fullLengthExam';
 
+function buildQueryResult<T>(data: T, error: unknown = null) {
+  const chain: any = {};
+  chain.returns = vi.fn(() => chain);
+  chain.then = (resolve: (value: { data: T; error: unknown }) => void, reject: (reason: unknown) => void) =>
+    Promise.resolve({ data, error }).then(resolve, reject);
+  return chain;
+}
+
 function buildPublishedFormFixture(formId: string) {
   const formItems: Array<{
     section: 'rw' | 'math';
@@ -26,6 +34,23 @@ function buildPublishedFormFixture(formId: string) {
     status: string;
     question_type: string;
     section_code: string;
+    section: string;
+    stem: string;
+    options: Array<{ key: string; text: string }>;
+    difficulty: number;
+    domain: string;
+    skill: string;
+    subskill: string;
+    source_type: number;
+    diagram_present: boolean;
+    tags: string[];
+    competencies: any[];
+    answer_choice: string;
+    answer: string;
+    answer_text: string;
+    explanation: string;
+    exam: string;
+    structure_cluster_id: null;
   }> = [];
 
   const addModule = (section: 'rw' | 'math', moduleIndex: 1 | 2, count: number) => {
@@ -43,6 +68,28 @@ function buildPublishedFormFixture(formId: string) {
         status: 'published',
         question_type: 'multiple_choice',
         section_code: section === 'rw' ? 'RW' : 'MATH',
+        section: section === 'rw' ? 'RW' : 'Math',
+        stem: `Q${canonicalId}`,
+        options: [
+          { key: 'A', text: 'A' },
+          { key: 'B', text: 'B' },
+          { key: 'C', text: 'C' },
+          { key: 'D', text: 'D' },
+        ],
+        difficulty: 2,
+        domain: 'Domain',
+        skill: 'Skill',
+        subskill: 'Subskill',
+        source_type: 0,
+        diagram_present: false,
+        tags: [],
+        competencies: [],
+        answer_choice: 'A',
+        answer: 'A',
+        answer_text: 'Answer',
+        explanation: 'Because',
+        exam: 'SAT',
+        structure_cluster_id: null,
       });
     }
   };
@@ -138,7 +185,7 @@ describe('Full-Length Runtime Contract Additions', () => {
         if (table === 'questions') {
           return {
             select: vi.fn(() => ({
-              in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+              in: vi.fn(() => buildQueryResult(fixture.questionRows)),
             })),
           };
         }
@@ -161,6 +208,21 @@ describe('Full-Length Runtime Contract Additions', () => {
 
         if (table === 'full_length_exam_questions') {
           return {
+            select: vi.fn(() => ({
+              eq: vi.fn((column: string, value: string) => {
+                const chain: any = {
+                  then: (resolve: any, reject: any) => {
+                    const data = column === 'module_id'
+                      ? insertedSessionQuestions
+                          .filter((row) => row.module_id === value)
+                          .map((row, idx) => ({ id: row.id ?? `row-${idx}` }))
+                      : [];
+                    return Promise.resolve({ data, error: null }).then(resolve, reject);
+                  },
+                };
+                return chain;
+              }),
+            })),
             insert: vi.fn(async (rows: Array<{ module_id: string; question_id: string; order_index: number }>) => {
               insertedSessionQuestions.push(...rows);
               return { error: null };
@@ -181,7 +243,7 @@ describe('Full-Length Runtime Contract Additions', () => {
     });
 
     expect(result.test_form_id).toBe(formId);
-    expect(insertedSessionQuestions.length).toBe(98);
+    expect(insertedSessionQuestions.length).toBe(49);
 
     const rw1 = insertedSessionQuestions.filter((row) => row.module_id === 'mod-rw-1');
     expect(rw1.length).toBe(27);
@@ -191,11 +253,7 @@ describe('Full-Length Runtime Contract Additions', () => {
     expect(rw1[26].question_id).toBe('q_RW_1_27');
 
     const math2 = insertedSessionQuestions.filter((row) => row.module_id === 'mod-math-2');
-    expect(math2.length).toBe(22);
-    expect(math2[0].order_index).toBe(0);
-    expect(math2[21].order_index).toBe(21);
-    expect(math2[0].question_id).toBe('q_MATH_2_01');
-    expect(math2[21].question_id).toBe('q_MATH_2_22');
+    expect(math2.length).toBe(0);
   });
   it('replays an active session without re-materializing questions (no reshuffle on resume/replay)', async () => {
     const formId = '66666666-6666-4666-8666-666666666666';

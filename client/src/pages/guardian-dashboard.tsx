@@ -329,10 +329,10 @@ export default function GuardianDashboard() {
     <SubscriptionPaywall>
       <div className="min-h-screen bg-background p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          <div className="flex items-center justify-between gap-3 mb-8">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
+            <div className="flex items-center gap-3 min-w-0">
               <Users className="h-8 w-8 text-[#0F2E48]" />
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#0F2E48]/60 mb-1">Guardian Portal</p>
                 <h1 className="text-3xl font-bold text-[#0F2E48] tracking-tight">Student Performance Data</h1>
                 <p className="text-[#0F2E48]/60 text-sm">Read-only reporting from linked student runtime records.</p>
@@ -392,7 +392,7 @@ export default function GuardianDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLink} className="flex gap-4">
+            <form onSubmit={handleLink} className="flex flex-col sm:flex-row gap-3">
               <div className="flex-1">
                 <Label htmlFor="linkCode" className="sr-only">Student Link Code</Label>
                 <Input
@@ -407,7 +407,7 @@ export default function GuardianDashboard() {
               <Button 
                 type="submit" 
                 disabled={linkMutation.isPending || linkCode.length !== 8}
-                className="bg-[#0F2E48] hover:bg-[#0F2E48]/90"
+                className="bg-[#0F2E48] hover:bg-[#0F2E48]/90 sm:w-auto w-full"
               >
                 {linkMutation.isPending ? 'Linking...' : 'Link Student'}
               </Button>

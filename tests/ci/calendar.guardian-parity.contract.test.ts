@@ -32,6 +32,7 @@ type TableName =
   | "student_study_plan_days"
   | "student_study_plan_tasks"
   | "student_question_attempts"
+  | "student_skill_mastery"
   | "system_event_logs";
 
 class FakeSelectBuilder {
@@ -108,7 +109,18 @@ class FakeSelectBuilder {
 
 const tables = vi.hoisted((): Record<TableName, Record<string, any>[]> => ({
   student_study_profile: [
-    { user_id: "student-1", timezone: "America/Chicago", daily_minutes: 40, planner_mode: "auto", full_test_cadence: "biweekly", preferred_study_days: [1, 2, 3, 4, 5, 6, 7] },
+    {
+      user_id: "student-1",
+      timezone: "America/Chicago",
+      daily_minutes: 40,
+      planner_mode: "auto",
+      full_test_cadence: "biweekly",
+      study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+      blocked_weekdays: [],
+      blocked_dates: [],
+      blocked_windows: [],
+    },
   ],
   student_study_plan_days: [
     {
@@ -139,7 +151,7 @@ const tables = vi.hoisted((): Record<TableName, Record<string, any>[]> => ({
       user_id: "student-1",
       day_date: "2026-03-01",
       ordinal: 1,
-      task_type: "math_practice",
+      task_type: "practice",
       section: "MATH",
       duration_minutes: 45,
       source_skill_code: null,
@@ -162,6 +174,7 @@ const tables = vi.hoisted((): Record<TableName, Record<string, any>[]> => ({
       event_type: "practice_pass",
     },
   ],
+  student_skill_mastery: [],
   system_event_logs: [],
 }));
 

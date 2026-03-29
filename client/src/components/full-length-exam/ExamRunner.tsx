@@ -24,6 +24,11 @@ import QuestionRenderer from "@/components/question-renderer";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import FullLengthResultsView from "@/components/full-length-exam/FullLengthResultsView";
+import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import {
+  parseRuntimeContractDisabledFromError,
+  type RuntimeContractDisabledState,
+} from "@/lib/runtime-contract-disable";
 import { 
   Clock, 
   ChevronRight, 
@@ -138,6 +143,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const [isCalculatorExpanded, setIsCalculatorExpanded] = useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = useState(false);
   const [calculatorStatesByModule, setCalculatorStatesByModule] = useState<Record<string, unknown>>({});
+  const [runtimeDisabled, setRuntimeDisabled] = useState<RuntimeContractDisabledState | null>(null);
   const calculatorPersistTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Timer sync
@@ -147,6 +153,12 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   
   // Track last question ID to avoid clearing answers when re-fetching same question
   const lastQuestionIdRef = useRef<string | null>(null);
+  const markRuntimeDisabled = useCallback((error: unknown): boolean => {
+    const disabled = parseRuntimeContractDisabledFromError("full-length", error);
+    if (!disabled) return false;
+    setRuntimeDisabled(disabled);
+    return true;
+  }, []);
   
   // ============================================================================
   // SESSION MANAGEMENT
@@ -212,6 +224,10 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       
       setLoading(false);
     } catch (error: unknown) {
+      if (markRuntimeDisabled(error)) {
+        setLoading(false);
+        return;
+      }
       console.error("Failed to fetch session state:", error);
       const message = error instanceof Error ? error.message : "Failed to load exam session";
       toast({
@@ -275,7 +291,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   // ============================================================================
   
   const submitAnswer = useCallback(async (questionId: string) => {
-    if (!sessionId) return;
+    if (!sessionId || runtimeDisabled) return;
     
     setSubmitting(true);
     
@@ -299,6 +315,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       await fetchSessionState();
       
     } catch (error: unknown) {
+      if (markRuntimeDisabled(error)) {
+        return;
+      }
       console.error("Failed to submit answer:", error);
       const message = error instanceof Error ? error.message : "Failed to submit answer";
       toast({
@@ -309,14 +328,14 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [sessionId, selectedAnswer, fetchSessionState, toast]);
+  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, selectedAnswer, sessionId, toast]);
   
   // ============================================================================
   // MODULE SUBMISSION
   // ============================================================================
   
   const submitModule = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || runtimeDisabled) return;
     
     setSubmitting(true);
     
@@ -341,6 +360,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       await fetchSessionState();
       
     } catch (error: unknown) {
+      if (markRuntimeDisabled(error)) {
+        return;
+      }
       console.error("Failed to submit module:", error);
       const message = error instanceof Error ? error.message : "Failed to submit module";
       toast({
@@ -351,14 +373,14 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [sessionId, fetchSessionState, toast]);
+  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, sessionId, toast]);
   
   // ============================================================================
   // BREAK CONTINUATION
   // ============================================================================
   
   const continueFromBreak = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || runtimeDisabled) return;
     
     setSubmitting(true);
     
@@ -381,6 +403,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       await fetchSessionState();
       
     } catch (error: unknown) {
+      if (markRuntimeDisabled(error)) {
+        return;
+      }
       console.error("Failed to continue from break:", error);
       const message = error instanceof Error ? error.message : "Failed to continue from break";
       toast({
@@ -391,14 +416,14 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [sessionId, fetchSessionState, toast]);
+  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, sessionId, toast]);
   
   // ============================================================================
   // EXAM COMPLETION
   // ============================================================================
   
   const completeExam = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || runtimeDisabled) return;
     
     setSubmitting(true);
     
@@ -427,6 +452,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       });
       
     } catch (error: unknown) {
+      if (markRuntimeDisabled(error)) {
+        return;
+      }
       console.error("Failed to complete exam:", error);
       const message = error instanceof Error ? error.message : "Failed to complete exam";
       toast({
@@ -437,7 +465,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [sessionId, toast]);
+  }, [markRuntimeDisabled, runtimeDisabled, sessionId, toast]);
 
   // ============================================================================
   // AUTO-SUBMIT ON TIME EXPIRY
@@ -477,6 +505,16 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   // RENDER
   // ============================================================================
   
+  if (runtimeDisabled) {
+    return (
+      <AppShell>
+        <div className="container mx-auto px-4 py-8 max-w-5xl">
+          <RuntimeContractDisabledCard domain="full-length" code={runtimeDisabled.code} />
+        </div>
+      </AppShell>
+    );
+  }
+
   // Loading state
   if (loading) {
     return (
@@ -628,6 +666,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           }
         );
       } catch (error) {
+        if (markRuntimeDisabled(error)) {
+          return;
+        }
         console.warn("Failed to persist full-length calculator state", error);
       }
     }, 500);

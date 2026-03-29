@@ -2,17 +2,17 @@ import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { type AuthenticatedRequest, requireRequestUser } from "../middleware/supabase-auth";
 import {
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
-import { buildReviewQueueForStudent } from "../services/review-queue";
+import { buildReviewQueueForStudent, type ReviewQueueMode } from "../services/review-queue";
+import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 
 const QUESTION_SAFE_SELECT = [
   "id",
   "canonical_id",
-  "status",
   "section",
   "section_code",
   "question_type",
@@ -61,7 +61,6 @@ async function fetchPublishedQuestions(params: {
     .from("questions")
     .select(QUESTION_SAFE_SELECT)
     .eq("question_type", "multiple_choice")
-    .eq("status", "published")
     .order("created_at", { ascending: false });
 
   query = applySectionFilter(query, params.section);
@@ -82,7 +81,7 @@ async function fetchPublishedQuestions(params: {
   }
 
   const rows = (data ?? []) as unknown as CanonicalQuestionRowLike[];
-  const validRows = rows.filter((row) => isCanonicalPublishedMcQuestion(row));
+  const validRows = rows.filter((row) => isCanonicalRuntimeMcQuestion(row));
   return { data: validRows, error: null };
 }
 
@@ -170,7 +169,6 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
     const { count, error } = await supabaseServer
       .from("questions")
       .select("id", { count: "exact", head: true })
-      .eq("status", "published")
       .eq("question_type", "multiple_choice");
 
     if (error) {
@@ -189,7 +187,6 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select("section_code, difficulty")
-      .eq("status", "published")
       .eq("question_type", "multiple_choice");
 
     if (error) {
@@ -277,7 +274,6 @@ export const getQuestionById = async (req: Request, res: Response) => {
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
       .eq("id", id)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .single();
 
@@ -286,7 +282,7 @@ export const getQuestionById = async (req: Request, res: Response) => {
     }
 
     const row = data as unknown as CanonicalQuestionRowLike;
-    if (!isCanonicalPublishedMcQuestion(row)) {
+    if (!isCanonicalRuntimeMcQuestion(row)) {
       return res.status(404).json({ error: "Question not found" });
     }
 
@@ -299,12 +295,68 @@ export const getQuestionById = async (req: Request, res: Response) => {
 // GET /api/review-errors - canonical review queue builder
 export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, req.requestId, availability.missingTable);
+    }
+
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
     }
 
-    const queue = await buildReviewQueueForStudent(user.id);
+    const query = (req as any).query ?? {};
+    const rawMode = typeof query.mode === "string" ? query.mode.trim() : "";
+    if (!rawMode) {
+      return res.status(400).json({
+        error: "mode is required",
+        code: "REVIEW_MODE_REQUIRED",
+        requestId: req.requestId,
+      });
+    }
+    const normalizedMode = rawMode;
+    const allowedModes: ReviewQueueMode[] = ["all_past_mistakes", "by_practice_session", "by_full_length_session"];
+    if (!allowedModes.includes(normalizedMode as ReviewQueueMode)) {
+      return res.status(400).json({
+        error: "Invalid review mode",
+        code: "REVIEW_MODE_INVALID",
+        requestId: req.requestId,
+      });
+    }
+
+    const mode = normalizedMode as ReviewQueueMode;
+    const practiceSessionId = typeof query.practice_session_id === "string" ? query.practice_session_id.trim() : "";
+    const fullLengthSessionId = typeof query.full_length_session_id === "string" ? query.full_length_session_id.trim() : "";
+
+    if (mode === "by_practice_session" && !practiceSessionId) {
+      return res.status(400).json({
+        error: "practice_session_id is required for by_practice_session review mode",
+        code: "REVIEW_MODE_MISSING_PRACTICE_SESSION_ID",
+        requestId: req.requestId,
+      });
+    }
+
+    if (mode === "by_full_length_session" && !fullLengthSessionId) {
+      return res.status(400).json({
+        error: "full_length_session_id is required for by_full_length_session review mode",
+        code: "REVIEW_MODE_MISSING_FULL_LENGTH_SESSION_ID",
+        requestId: req.requestId,
+      });
+    }
+
+    if (mode === "all_past_mistakes" && (practiceSessionId || fullLengthSessionId)) {
+      return res.status(400).json({
+        error: "session-specific filters require by_practice_session or by_full_length_session mode",
+        code: "REVIEW_MODE_CONFLICT",
+        requestId: req.requestId,
+      });
+    }
+
+    const queue = await buildReviewQueueForStudent(user.id, {
+      mode,
+      practiceSessionId: practiceSessionId || null,
+      fullLengthSessionId: fullLengthSessionId || null,
+    });
 
     if (queue.latestSnapshots.length === 0) {
       return res.json({
@@ -313,8 +365,10 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
         skippedAttempts: [],
         reviewQueue: [],
         summary: {
-          sessionId: null,
+          sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
           sessionStartedAt: null,
+          sessionMode: mode,
+          sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
           correctCount: 0,
           incorrectCount: 0,
           skippedCount: 0,
@@ -362,10 +416,10 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       skippedAttempts,
       reviewQueue,
       summary: {
-        sessionId: null,
+        sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
         sessionStartedAt: queue.latestAttemptAt,
-        sessionMode: "mixed",
-        sessionSection: "mixed",
+        sessionMode: mode,
+        sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
         correctCount: queue.correctCount,
         incorrectCount: queue.incorrectCount,
         skippedCount: queue.skippedCount,
@@ -394,7 +448,6 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .eq("unit_tag", unitTag)
       .order("created_at", { ascending: false })
@@ -404,7 +457,7 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalPublishedMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
@@ -428,7 +481,6 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("status", "published")
       .eq("question_type", "multiple_choice")
       .eq("difficulty", difficultyLevel)
       .order("created_at", { ascending: false })
@@ -438,7 +490,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalPublishedMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
@@ -477,7 +529,6 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
       .from("questions")
       .select("id")
       .eq("id", questionId)
-      .eq("status", "published")
       .single();
 
     if (questionError || !question) {

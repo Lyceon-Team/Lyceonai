@@ -2,7 +2,21 @@ import { DateTime } from "luxon";
 
 export type PlannerMode = "auto" | "custom";
 export type FullTestCadence = "weekly" | "biweekly" | "none";
-export type TaskType = "math_practice" | "rw_practice" | "review_errors" | "full_length_exam";
+export type TaskType =
+  | "practice"
+  | "focused_drill"
+  | "review_practice"
+  | "review_full_length"
+  | "full_length"
+  | "tutor_support";
+
+export type BlockedWindow = {
+  date?: string;
+  start?: string;
+  end?: string;
+  all_day?: boolean;
+  reason?: string;
+};
 export type DayStatus = "planned" | "partially_completed" | "completed" | "missed";
 
 export type StudyProfileSettings = {
@@ -11,7 +25,10 @@ export type StudyProfileSettings = {
   dailyMinutes: number;
   examDate: string | null;
   fullTestCadence: FullTestCadence;
-  preferredStudyDays: number[];
+  studyDaysOfWeek: number[];
+  blockedWeekdays: number[];
+  blockedDates: string[];
+  blockedWindows: BlockedWindow[];
 };
 
 export type SkillSignal = {
@@ -82,6 +99,74 @@ export const SCORING_WEIGHTS = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDayNumbers(values: number[] | null | undefined, fallback: number[]): number[] {
+  if (!Array.isArray(values)) return fallback;
+  const normalized = Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "number" ? Math.trunc(value) : Number.NaN))
+        .filter((value) => Number.isInteger(value) && value >= 1 && value <= 7),
+    ),
+  );
+  return normalized.length > 0 ? normalized.sort((a, b) => a - b) : fallback;
+}
+
+function normalizeDateList(values: string[] | null | undefined): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
+    ),
+  ).sort();
+}
+
+function normalizeBlockedWindows(values: BlockedWindow[] | null | undefined): BlockedWindow[] {
+  if (!Array.isArray(values)) return [];
+  const windows: BlockedWindow[] = [];
+  for (const value of values) {
+    if (!value || typeof value !== "object") continue;
+    const candidate = value as Partial<BlockedWindow>;
+    const normalized: BlockedWindow = {};
+    if (typeof candidate.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidate.date)) {
+      normalized.date = candidate.date;
+    }
+    if (typeof candidate.start === "string") {
+      normalized.start = candidate.start;
+    }
+    if (typeof candidate.end === "string") {
+      normalized.end = candidate.end;
+    }
+    if (typeof candidate.all_day === "boolean") {
+      normalized.all_day = candidate.all_day;
+    }
+    if (typeof candidate.reason === "string") {
+      normalized.reason = candidate.reason;
+    }
+    if (Object.keys(normalized).length > 0) {
+      windows.push(normalized);
+    }
+  }
+  return windows;
+}
+
+function isBlockedDay(dayDate: string, profile: StudyProfileSettings): boolean {
+  const weekday = DateTime.fromISO(dayDate).weekday;
+  if (profile.blockedDates.includes(dayDate)) return true;
+  if (profile.blockedWeekdays.includes(weekday)) return true;
+  return profile.blockedWindows.some((window) => {
+    if (!window.date) return false;
+    if (window.date !== dayDate) return false;
+    return window.all_day !== false;
+  });
+}
+
+function isStudyDay(dayDate: string, profile: StudyProfileSettings): boolean {
+  const weekday = DateTime.fromISO(dayDate).weekday;
+  return profile.studyDaysOfWeek.includes(weekday) && !isBlockedDay(dayDate, profile);
 }
 
 function stableHash(value: string): number {
@@ -245,7 +330,7 @@ function buildReviewTask(dayDate: string, attempts: AttemptSignal[], examDate: s
   const examPriority = examDate ? clamp(1 - Math.max(0, DateTime.fromISO(examDate).diff(dayStart, "days").days) / 30, 0, 1) : 0;
 
   return {
-    taskType: "review_errors",
+    taskType: "review_practice",
     section: null,
     durationMinutes: 10,
     sourceSkillCode: top?.[0] ?? null,
@@ -316,6 +401,21 @@ export function generateDeterministicPlan(params: {
       continue;
     }
 
+    if (!isStudyDay(dayDate, params.profile)) {
+      plannedDays.push({
+        dayDate,
+        plannedMinutes: 0,
+        studyMinutesTarget: 0,
+        focus: [],
+        isExamDay: false,
+        isTaperDay: false,
+        isFullTestDay: false,
+        tasks: [],
+      });
+      previousGeneratedWasFullTest = false;
+      continue;
+    }
+
     const isExamDay = Boolean(params.profile.examDate && dayDate === params.profile.examDate);
     const isTaperDay = Boolean(params.profile.examDate && dayDate === DateTime.fromISO(params.profile.examDate).minus({ days: 1 }).toISODate());
     const isFullTestDay = shouldScheduleFullTest({
@@ -323,7 +423,7 @@ export function generateDeterministicPlan(params: {
       todayDate: params.todayDate,
       examDate: params.profile.examDate,
       cadence: params.profile.fullTestCadence,
-      preferredStudyDays: params.profile.preferredStudyDays,
+      preferredStudyDays: params.profile.studyDaysOfWeek,
       lastScheduledDay: lastScheduledFullTestDate,
       recentCompletedTestDays: params.recentCompletedTestDays,
     }) && !isExamDay && !isTaperDay;
@@ -353,7 +453,7 @@ export function generateDeterministicPlan(params: {
     if (isFullTestDay) {
       const minutes = Math.max(90, params.profile.dailyMinutes);
       dayTasks.push({
-        taskType: "full_length_exam",
+        taskType: "full_length",
         section: null,
         durationMinutes: minutes,
         sourceSkillCode: null,
@@ -400,7 +500,7 @@ export function generateDeterministicPlan(params: {
         const minorMinutes = Math.max(0, sectionBudget - majorMinutes);
 
         dayTasks.push({
-          taskType: majorSection === "MATH" ? "math_practice" : "rw_practice",
+          taskType: "focused_drill",
           section: majorSection,
           durationMinutes: majorMinutes,
           sourceSkillCode: majorPick.skillCode,
@@ -412,7 +512,7 @@ export function generateDeterministicPlan(params: {
         });
         if (minorMinutes >= 4) {
           dayTasks.push({
-            taskType: minorSection === "MATH" ? "math_practice" : "rw_practice",
+            taskType: "focused_drill",
             section: minorSection,
             durationMinutes: minorMinutes,
             sourceSkillCode: minorPick.skillCode,
@@ -427,7 +527,7 @@ export function generateDeterministicPlan(params: {
         const mathMinutes = Math.max(8, Math.round(sectionBudget * 0.5));
         const rwMinutes = Math.max(8, sectionBudget - mathMinutes);
         dayTasks.push({
-          taskType: "math_practice",
+          taskType: "practice",
           section: "MATH",
           durationMinutes: mathMinutes,
           sourceSkillCode: mathPick.skillCode,
@@ -438,7 +538,7 @@ export function generateDeterministicPlan(params: {
           required: true,
         });
         dayTasks.push({
-          taskType: "rw_practice",
+          taskType: "practice",
           section: "RW",
           durationMinutes: rwMinutes,
           sourceSkillCode: rwPick.skillCode,
@@ -450,13 +550,15 @@ export function generateDeterministicPlan(params: {
         });
       }
 
+      const reviewTaskType: TaskType = previousGeneratedWasFullTest ? "review_full_length" : "review_practice";
       const reviewTask = buildReviewTask(dayDate, params.attempts, params.profile.examDate);
       if (reviewTask) {
+        reviewTask.taskType = reviewTaskType;
         reviewTask.durationMinutes = reviewMinutes;
         dayTasks.push(reviewTask);
       } else if (effectiveMinutes >= 25) {
         dayTasks.push({
-          taskType: "review_errors",
+          taskType: reviewTaskType,
           section: null,
           durationMinutes: reviewMinutes,
           sourceSkillCode: null,

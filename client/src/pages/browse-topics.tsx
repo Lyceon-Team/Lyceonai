@@ -11,15 +11,13 @@ import { ArrowLeft, BookOpen, AlertCircle, Search } from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { apiRequest } from "@/lib/queryClient";
+import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
 
 interface PracticeTopics {
   sections?: Array<{
     section: string;
     label: string;
-    domains?: Array<{
-      domain: string;
-      skills: string[];
-    }>;
+    domains?: RawPracticeTopicDomain[];
   }>;
 }
 
@@ -42,6 +40,10 @@ interface QuestionsResponse {
     limit: number;
   };
 }
+
+const ALL_SECTIONS = "__all_sections__";
+const ALL_DOMAINS = "__all_domains__";
+const ALL_SKILLS = "__all_skills__";
 
 function BrowseTopics() {
   const [selectedSection, setSelectedSection] = useState<string>("");
@@ -72,7 +74,7 @@ function BrowseTopics() {
     error: questionsError,
     refetch: searchQuestions 
   } = useQuery<QuestionsResponse>({
-    queryKey: ['/api/practice/questions', { 
+    queryKey: ['/api/practice/reference/questions', { 
       section: selectedSection, 
       domain: selectedDomain, 
       skill: selectedSkill, 
@@ -80,7 +82,9 @@ function BrowseTopics() {
     }],
     queryFn: async () => {
       const query = buildQueryParams();
-      const endpoint = query ? `/api/practice/questions?${query}` : '/api/practice/questions';
+      const endpoint = query
+        ? `/api/practice/reference/questions?${query}`
+        : '/api/practice/reference/questions';
       const response = await apiRequest(endpoint);
       return response.json();
     },
@@ -89,12 +93,12 @@ function BrowseTopics() {
 
   // Get available domains for selected section
   const availableDomains = selectedSection
-    ? topicsData?.sections?.find(s => s.section === selectedSection)?.domains || []
+    ? normalizePracticeTopicDomains(topicsData?.sections?.find(s => s.section === selectedSection)?.domains)
     : [];
 
   // Get available skills for selected domain
   const availableSkills = selectedDomain
-    ? availableDomains.find(d => d.domain === selectedDomain)?.skills || []
+    ? availableDomains.find((d) => d.domain === selectedDomain)?.skills || []
     : [];
 
   const handleSearch = () => {
@@ -147,8 +151,8 @@ function BrowseTopics() {
               {/* Section Selection */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Section</label>
-                <Select value={selectedSection} onValueChange={(value) => {
-                  setSelectedSection(value);
+                <Select value={selectedSection || ALL_SECTIONS} onValueChange={(value) => {
+                  setSelectedSection(value === ALL_SECTIONS ? "" : value);
                   setSelectedDomain(""); // Reset domain when section changes
                   setSelectedSkill(""); // Reset skill when section changes
                 }}>
@@ -156,7 +160,7 @@ function BrowseTopics() {
                     <SelectValue placeholder="Select a section..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Sections</SelectItem>
+                    <SelectItem value={ALL_SECTIONS}>All Sections</SelectItem>
                     {topicsData?.sections?.map((section) => (
                       <SelectItem key={section.section} value={section.section}>
                         {section.label}
@@ -170,9 +174,9 @@ function BrowseTopics() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Domain</label>
                 <Select 
-                  value={selectedDomain} 
+                  value={selectedDomain || ALL_DOMAINS}
                   onValueChange={(value) => {
-                    setSelectedDomain(value);
+                    setSelectedDomain(value === ALL_DOMAINS ? "" : value);
                     setSelectedSkill(""); // Reset skill when domain changes
                   }}
                   disabled={!selectedSection}
@@ -181,7 +185,7 @@ function BrowseTopics() {
                     <SelectValue placeholder={selectedSection ? "Select a domain..." : "Select a section first"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Domains</SelectItem>
+                    <SelectItem value={ALL_DOMAINS}>All Domains</SelectItem>
                     {availableDomains.map((domain) => (
                       <SelectItem key={domain.domain} value={domain.domain}>
                         {domain.domain}
@@ -195,15 +199,15 @@ function BrowseTopics() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Skill (Optional)</label>
                 <Select 
-                  value={selectedSkill} 
-                  onValueChange={setSelectedSkill}
+                  value={selectedSkill || ALL_SKILLS}
+                  onValueChange={(value) => setSelectedSkill(value === ALL_SKILLS ? "" : value)}
                   disabled={!selectedDomain}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={selectedDomain ? "Select a skill..." : "Select a domain first"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Skills</SelectItem>
+                    <SelectItem value={ALL_SKILLS}>All Skills</SelectItem>
                     {availableSkills.map((skill) => (
                       <SelectItem key={skill} value={skill}>
                         {skill}

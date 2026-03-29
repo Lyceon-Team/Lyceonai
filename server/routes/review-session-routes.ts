@@ -4,18 +4,20 @@ import crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { type AuthenticatedRequest, requireRequestUser } from "../middleware/supabase-auth";
 import { buildReviewQueueForStudent } from "../services/review-queue";
+import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 import {
   hasCanonicalOptionSet,
   hasSingleCanonicalCorrectAnswer,
-  isCanonicalPublishedMcQuestion,
+  isCanonicalRuntimeMcQuestion,
   normalizeAnswerKey,
 } from "../../shared/question-bank-contract";
-import { applyMasteryUpdate, getQuestionMetadataForAttempt } from "../../apps/api/src/services/studentMastery";
+import { applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 
 type SessionStatus = "created" | "active" | "completed" | "abandoned";
 type ItemStatus = "queued" | "served" | "answered" | "skipped";
 type TutorOutcome = "tutor_helped" | "tutor_fail";
+type ReviewSessionMode = "all_past_mistakes" | "by_practice_session" | "by_full_length_session";
 
 type SessionRow = {
   id: string;
@@ -43,6 +45,17 @@ type ItemRow = {
   source_attempted_at: string | null;
   option_order: string[] | null;
   option_token_map: Record<string, string> | null;
+  question_section: string | null;
+  question_stem: string | null;
+  question_options: McOption[];
+  question_difficulty: string | number | null;
+  question_domain: string | null;
+  question_skill: string | null;
+  question_subskill: string | null;
+  question_exam: string | null;
+  question_structure_cluster_id: string | null;
+  question_correct_answer: string | null;
+  question_explanation: string | null;
 };
 
 type McOption = { key: string; text: string };
@@ -57,7 +70,12 @@ type CanonicalQuestion = {
   explanation: string | null;
 };
 
+const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
+
 const startSchema = z.object({
+  mode: z.enum(["all_past_mistakes", "by_practice_session", "by_full_length_session"]),
+  practice_session_id: z.string().uuid().optional().nullable(),
+  full_length_session_id: z.string().uuid().optional().nullable(),
   filter: z.enum(["all", "incorrect", "skipped"]).optional().default("all"),
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
@@ -116,6 +134,17 @@ function mapItem(row: any): ItemRow {
     source_attempted_at: row.source_attempted_at ?? null,
     option_order: Array.isArray(row.option_order) ? row.option_order : null,
     option_token_map: row.option_token_map && typeof row.option_token_map === "object" ? row.option_token_map : null,
+    question_section: optionalString(row.question_section),
+    question_stem: optionalString(row.question_stem),
+    question_options: parseOptions(row.question_options),
+    question_difficulty: row.question_difficulty ?? null,
+    question_domain: optionalString(row.question_domain),
+    question_skill: optionalString(row.question_skill),
+    question_subskill: optionalString(row.question_subskill),
+    question_exam: optionalString(row.question_exam),
+    question_structure_cluster_id: optionalString(row.question_structure_cluster_id),
+    question_correct_answer: optionalString(row.question_correct_answer),
+    question_explanation: optionalString(row.question_explanation),
   };
 }
 
@@ -211,7 +240,7 @@ async function getSession(sessionId: string, studentId: string): Promise<Session
 async function getItems(sessionId: string, studentId: string): Promise<ItemRow[]> {
   const { data, error } = await supabaseServer
     .from("review_session_items")
-    .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+    .select(REVIEW_ITEM_SELECT)
     .eq("review_session_id", sessionId)
     .eq("student_id", studentId)
     .order("ordinal", { ascending: true });
@@ -219,31 +248,21 @@ async function getItems(sessionId: string, studentId: string): Promise<ItemRow[]
   return (data ?? []).map(mapItem);
 }
 
-async function loadQuestion(canonicalId: string): Promise<CanonicalQuestion | null> {
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("canonical_id, status, section, section_code, question_type, stem, options, difficulty, correct_answer, explanation")
-    .eq("canonical_id", canonicalId)
-    .eq("status", "published")
-    .eq("question_type", "multiple_choice")
-    .single();
-
-  if (error || !data) return null;
-  if (!isCanonicalPublishedMcQuestion(data as any)) return null;
-
-  const options = parseOptions((data as any).options);
-  const correct = normalizeAnswerKey((data as any).correct_answer);
-  if (!correct || !hasCanonicalOptionSet(options) || !hasSingleCanonicalCorrectAnswer(correct, options)) return null;
-
-  return {
-    canonical_id: String((data as any).canonical_id),
-    section: String((data as any).section ?? (data as any).section_code ?? ""),
-    stem: String((data as any).stem ?? ""),
-    options,
-    difficulty: (data as any).difficulty ?? null,
-    correct_answer: correct,
-    explanation: typeof (data as any).explanation === "string" && (data as any).explanation.trim().length > 0 ? (data as any).explanation : null,
-  };
+async function loadQuestionFromItem(item: ItemRow): Promise<CanonicalQuestion | null> {
+  const embeddedOptions = item.question_options;
+  const embeddedCorrect = normalizeAnswerKey(item.question_correct_answer);
+  if (embeddedCorrect && hasCanonicalOptionSet(embeddedOptions) && hasSingleCanonicalCorrectAnswer(embeddedCorrect, embeddedOptions)) {
+    return {
+      canonical_id: String(item.question_canonical_id),
+      section: String(item.question_section ?? ""),
+      stem: String(item.question_stem ?? ""),
+      options: embeddedOptions,
+      difficulty: item.question_difficulty ?? null,
+      correct_answer: embeddedCorrect,
+      explanation: item.question_explanation ?? null,
+    };
+  }
+  return null;
 }
 
 async function ensureServedItem(session: SessionRow, studentId: string, clientInstanceId: string | null): Promise<ItemRow | null> {
@@ -260,7 +279,7 @@ async function ensureServedItem(session: SessionRow, studentId: string, clientIn
     .eq("id", queued.id)
     .eq("review_session_id", session.id)
     .eq("student_id", studentId)
-    .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+    .select(REVIEW_ITEM_SELECT)
     .single();
 
   if (error || !data) throw new Error(`review_promote_served_failed:${error?.message ?? "unknown"}`);
@@ -296,7 +315,7 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
     };
   }
 
-  const question = await loadQuestion(served.question_canonical_id);
+  const question = await loadQuestionFromItem(served);
   if (!question) throw new Error("review_question_unavailable");
 
   let optionMap = parseOptionMap(served.option_token_map);
@@ -360,16 +379,54 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
 export async function startReviewErrorSession(req: AuthenticatedRequest, res: Response) {
   const requestId = req.requestId;
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, requestId, availability.missingTable);
+    }
+
     const user = requireRequestUser(req, res);
     if (!user) return;
 
     const parsed = startSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request body", code: "INVALID_REVIEW_SESSION_START_PAYLOAD", details: parsed.error.issues, requestId });
+      const missingMode = parsed.error.issues.some((issue) => issue.path[0] === "mode");
+      return res.status(400).json({
+        error: missingMode ? "mode is required" : "Invalid request body",
+        code: missingMode ? "REVIEW_MODE_REQUIRED" : "INVALID_REVIEW_SESSION_START_PAYLOAD",
+        details: parsed.error.issues,
+        requestId,
+      });
     }
 
     const clientInstanceId = optionalString(parsed.data.client_instance_id);
     const idempotencyKey = optionalString(parsed.data.idempotency_key);
+    const mode: ReviewSessionMode = parsed.data.mode;
+    const practiceSessionId = optionalString(parsed.data.practice_session_id);
+    const fullLengthSessionId = optionalString(parsed.data.full_length_session_id);
+
+    if (mode === "by_practice_session" && !practiceSessionId) {
+      return res.status(400).json({
+        error: "practice_session_id is required for by_practice_session review mode",
+        code: "REVIEW_MODE_MISSING_PRACTICE_SESSION_ID",
+        requestId,
+      });
+    }
+
+    if (mode === "by_full_length_session" && !fullLengthSessionId) {
+      return res.status(400).json({
+        error: "full_length_session_id is required for by_full_length_session review mode",
+        code: "REVIEW_MODE_MISSING_FULL_LENGTH_SESSION_ID",
+        requestId,
+      });
+    }
+
+    if (mode === "all_past_mistakes" && (practiceSessionId || fullLengthSessionId)) {
+      return res.status(400).json({
+        error: "session-specific filters require by_practice_session or by_full_length_session mode",
+        code: "REVIEW_MODE_CONFLICT",
+        requestId,
+      });
+    }
 
     if (idempotencyKey) {
       const { data: replayRows, error: replayError } = await supabaseServer
@@ -407,7 +464,11 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
       }
     }
 
-    const queue = await buildReviewQueueForStudent(user.id);
+    const queue = await buildReviewQueueForStudent(user.id, {
+      mode,
+      practiceSessionId,
+      fullLengthSessionId,
+    });
     const unresolved = queue.unresolvedQueue.filter((snapshot) => parsed.data.filter === "all" || snapshot.outcome === parsed.data.filter);
 
     if (unresolved.length === 0) {
@@ -505,19 +566,60 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
     const session = mapSession(createdSessionRow);
 
-    const materializedRows = unresolved.map((snapshot, index) => ({
-      review_session_id: session.id,
-      student_id: user.id,
-      ordinal: index + 1,
-      question_canonical_id: String(snapshot.questionCanonicalId),
-      source_question_id: snapshot.questionId,
-      source_question_canonical_id: snapshot.questionCanonicalId,
-      source_origin: snapshot.source,
-      retry_mode: "same_question",
-      status: index === 0 ? "served" : "queued",
-      source_attempted_at: snapshot.attemptedAt,
-      client_instance_id: clientInstanceId,
-    }));
+    const materializedRows = unresolved.map((snapshot, index) => {
+      const canonicalId = String(snapshot.questionCanonicalId);
+      const runtimeSnapshotCandidate = {
+        canonical_id: canonicalId,
+        section: snapshot.section,
+        section_code: snapshot.section,
+        question_type: "multiple_choice",
+        stem: snapshot.questionText,
+        options: snapshot.questionOptions,
+        difficulty: snapshot.difficulty,
+        answer_choice: snapshot.questionCorrectAnswer,
+        answer: snapshot.questionCorrectAnswer,
+        explanation: snapshot.questionExplanation,
+      };
+      if (!isCanonicalRuntimeMcQuestion(runtimeSnapshotCandidate as any)) {
+        throw new Error(`review_question_snapshot_invalid:${canonicalId}`);
+      }
+
+      const options = parseOptions(snapshot.questionOptions);
+      const correctAnswer = normalizeAnswerKey(snapshot.questionCorrectAnswer);
+      if (!correctAnswer || !hasCanonicalOptionSet(options) || !hasSingleCanonicalCorrectAnswer(correctAnswer, options)) {
+        throw new Error(`review_question_snapshot_invalid:${canonicalId}`);
+      }
+
+      const served = buildServedOptions(options);
+      return {
+        review_session_id: session.id,
+        student_id: user.id,
+        ordinal: index + 1,
+        question_canonical_id: canonicalId,
+        source_question_id: snapshot.questionId,
+        source_question_canonical_id: snapshot.questionCanonicalId,
+        source_origin: snapshot.source,
+        retry_mode: "same_question",
+        status: index === 0 ? "served" : "queued",
+        source_attempted_at: snapshot.attemptedAt,
+        client_instance_id: clientInstanceId,
+        option_order: served.optionOrder,
+        option_token_map: served.optionTokenMap,
+        question_section: String(snapshot.section ?? ""),
+        question_stem: String(snapshot.questionText ?? ""),
+        question_options: options,
+        question_difficulty: snapshot.difficulty ?? null,
+        question_domain: snapshot.domain ?? null,
+        question_skill: snapshot.skill ?? null,
+        question_subskill: snapshot.subskill ?? null,
+        question_exam: snapshot.questionExam ?? null,
+        question_structure_cluster_id: snapshot.questionStructureClusterId ?? null,
+        question_correct_answer: correctAnswer,
+        question_explanation: typeof snapshot.questionExplanation === "string" && snapshot.questionExplanation.trim().length > 0
+          ? snapshot.questionExplanation
+          : null,
+      };
+    });
 
     const { data: insertedItems, error: insertItemsError } = await supabaseServer
       .from("review_session_items")
@@ -547,6 +649,11 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 export async function getReviewErrorSessionState(req: AuthenticatedRequest, res: Response) {
   const requestId = req.requestId;
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, requestId, availability.missingTable);
+    }
+
     const user = requireRequestUser(req, res);
     if (!user) return;
 
@@ -580,6 +687,11 @@ export async function getReviewErrorSessionState(req: AuthenticatedRequest, res:
 export async function submitReviewSessionAnswer(req: Request, res: Response) {
   const requestId = req.requestId;
   try {
+    const availability = await getReviewRuntimeAvailability();
+    if (!availability.available) {
+      return sendReviewRuntimeUnavailable(res, requestId, availability.missingTable);
+    }
+
     const userId = (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED", requestId });
 
@@ -613,7 +725,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     const { data: itemRow, error: itemError } = await supabaseServer
       .from("review_session_items")
-      .select("id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map")
+      .select(REVIEW_ITEM_SELECT)
       .eq("id", parsed.data.review_session_item_id)
       .eq("review_session_id", parsed.data.session_id)
       .eq("student_id", userId)
@@ -670,7 +782,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       return res.status(200).json({ ok: true, skipped: true, sessionId: session.id, reviewSessionItemId: item.id });
     }
 
-    const question = await loadQuestion(item.question_canonical_id);
+    const question = await loadQuestionFromItem(item);
     if (!question) return res.status(422).json({ error: "Question could not be loaded for review submission", code: "INVALID_QUESTION_DATA", requestId });
 
     const optionMap = parseOptionMap(item.option_token_map);
@@ -706,23 +818,33 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     await supabaseServer.from("review_session_items").update({ status: "answered", attempt_id: String((insertedAttempt as any).id), answered_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id).eq("review_session_id", session.id).eq("student_id", userId).eq("status", "served");
 
-    const metadata = await getQuestionMetadataForAttempt(item.question_canonical_id);
     const masteryEvents: MasteryEventType[] = [];
     const masteryErrors: string[] = [];
     const emit = async (eventType: MasteryEventType) => {
-      if (!metadata.canonicalId) {
+      if (!item.question_canonical_id) {
         masteryErrors.push("Missing canonical ID for mastery emission");
         return;
       }
       const result = await applyMasteryUpdate({
         userId,
-        questionCanonicalId: metadata.canonicalId,
+        questionCanonicalId: item.question_canonical_id,
         sessionId: session.id,
         isCorrect: verifiedIsCorrect,
         selectedChoice: selectedAnswerKey,
         timeSpentMs: typeof parsed.data.seconds_spent === "number" ? parsed.data.seconds_spent * 1000 : null,
         eventType,
-        metadata: { exam: metadata.exam, section: metadata.section, domain: metadata.domain, skill: metadata.skill, subskill: metadata.subskill, skill_code: metadata.skill_code, difficulty: metadata.difficulty, structure_cluster_id: metadata.structure_cluster_id ?? null },
+        metadata: {
+          exam: item.question_exam ?? null,
+          section: item.question_section ?? null,
+          domain: item.question_domain ?? null,
+          skill: item.question_skill ?? null,
+          subskill: item.question_subskill ?? null,
+          skill_code: null,
+          difficulty: item.question_difficulty === 1 || item.question_difficulty === 2 || item.question_difficulty === 3
+            ? item.question_difficulty
+            : null,
+          structure_cluster_id: item.question_structure_cluster_id ?? null,
+        },
       });
       masteryEvents.push(eventType);
       if (result.error) masteryErrors.push(result.error);
@@ -776,6 +898,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     return res.status(500).json({ error: "Internal server error", detail: error?.message ?? "unknown", requestId: req.requestId });
   }
 }
+
 
 
 

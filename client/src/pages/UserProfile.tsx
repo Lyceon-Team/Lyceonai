@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageCard } from '@/components/common/page-card';
 import { EmptyState } from '@/components/common/empty-state';
@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 import {
   User, Settings, CreditCard, Bell, Shield, LogOut,
   Calendar,
@@ -23,7 +24,9 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
+import { apiRequest } from '@/lib/queryClient';
 import { SUPPORT_EMAIL } from '@/lib/support-contact';
+import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
 
 interface UserProfile {
   id: string;
@@ -62,6 +65,102 @@ function buildRoleSwitchTemplate(args: {
     args.displayName || args.accountEmail,
   ].join('\n');
 }
+
+interface NotificationPreferencesFormState {
+  emailEnabled: boolean;
+  studyRemindersEnabled: boolean;
+  streakEnabled: boolean;
+  planUpdatesEnabled: boolean;
+  guardianUpdatesEnabled: boolean;
+  marketingEnabled: boolean;
+  digestFrequency: NotificationDigestFrequency;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+}
+
+const DEFAULT_NOTIFICATION_PREFERENCES_FORM: NotificationPreferencesFormState = {
+  emailEnabled: false,
+  studyRemindersEnabled: true,
+  streakEnabled: true,
+  planUpdatesEnabled: true,
+  guardianUpdatesEnabled: true,
+  marketingEnabled: false,
+  digestFrequency: 'daily',
+  quietHoursStart: '',
+  quietHoursEnd: '',
+};
+
+function readQuietHoursPreference(value: UserNotificationPreferences['quietHours']): {
+  start: string;
+  end: string;
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { start: '', end: '' };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    start: typeof record.start === 'string' ? record.start : '',
+    end: typeof record.end === 'string' ? record.end : '',
+  };
+}
+
+function notificationPreferencesToForm(
+  preferences: UserNotificationPreferences | null | undefined,
+): NotificationPreferencesFormState {
+  if (!preferences) {
+    return { ...DEFAULT_NOTIFICATION_PREFERENCES_FORM };
+  }
+
+  const quietHours = readQuietHoursPreference(preferences.quietHours);
+
+  return {
+    emailEnabled: preferences.emailEnabled,
+    studyRemindersEnabled: preferences.studyRemindersEnabled,
+    streakEnabled: preferences.streakEnabled,
+    planUpdatesEnabled: preferences.planUpdatesEnabled,
+    guardianUpdatesEnabled: preferences.guardianUpdatesEnabled,
+    marketingEnabled: preferences.marketingEnabled,
+    digestFrequency: preferences.digestFrequency,
+    quietHoursStart: quietHours.start,
+    quietHoursEnd: quietHours.end,
+  };
+}
+
+function formStateToPreferencesPayload(formState: NotificationPreferencesFormState) {
+  const quietHoursStart = formState.quietHoursStart.trim();
+  const quietHoursEnd = formState.quietHoursEnd.trim();
+
+  return {
+    emailEnabled: formState.emailEnabled,
+    studyRemindersEnabled: formState.studyRemindersEnabled,
+    streakEnabled: formState.streakEnabled,
+    planUpdatesEnabled: formState.planUpdatesEnabled,
+    guardianUpdatesEnabled: formState.guardianUpdatesEnabled,
+    marketingEnabled: formState.marketingEnabled,
+    digestFrequency: formState.digestFrequency,
+    quietHours:
+      quietHoursStart && quietHoursEnd
+        ? { start: quietHoursStart, end: quietHoursEnd }
+        : null,
+  };
+}
+
+function areNotificationPreferencesEqual(
+  a: NotificationPreferencesFormState,
+  b: NotificationPreferencesFormState,
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function formatMemberSince(createdAt?: string): string {
+  if (!createdAt) return "Unavailable";
+  const parsed = new Date(createdAt);
+  if (Number.isNaN(parsed.getTime())) return "Unavailable";
+  return parsed.toLocaleDateString();
+}
+
 // Note: UserStats are not currently tracked by backend
 // Progress tracking uses /api/progress/kpis and /api/progress/projection
 // These features are temporarily disabled and shown as placeholders
@@ -73,6 +172,9 @@ export default function UserProfile() {
   const { user, signOut } = useSupabaseAuth();
   const [roleSwitchTarget, setRoleSwitchTarget] = useState<RoleSwitchTarget>('student');
   const [roleSwitchMessage, setRoleSwitchMessage] = useState('');
+  const [notificationPreferencesForm, setNotificationPreferencesForm] = useState<NotificationPreferencesFormState>(
+    DEFAULT_NOTIFICATION_PREFERENCES_FORM,
+  );
 
   // Get user profile from canonical endpoint
   const {
@@ -83,6 +185,17 @@ export default function UserProfile() {
     refetch: refetchProfile,
   } = useQuery<{ user: UserProfile; authenticated: boolean }>({
     queryKey: ['/api/profile'],
+    enabled: !!user,
+  });
+
+  const {
+    data: notificationPreferencesResponse,
+    isLoading: notificationPreferencesLoading,
+    isError: notificationPreferencesError,
+    error: notificationPreferencesErrorObj,
+    refetch: refetchNotificationPreferences,
+  } = useQuery<{ preferences: UserNotificationPreferences }>({
+    queryKey: ['/api/notifications/preferences'],
     enabled: !!user,
   });
 
@@ -106,10 +219,23 @@ export default function UserProfile() {
   };
 
   const profileUser = userProfile?.user;
+  const notificationPreferences = notificationPreferencesResponse?.preferences ?? null;
 
   const currentRole = user?.role || 'student';
   const accountEmail = user?.email || profileUser?.email || '';
   const accountName = profileUser?.name || user?.display_name || '';
+  const memberSinceLabel = formatMemberSince(profileUser?.createdAt);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab === 'profile' || tab === 'progress' || tab === 'settings' || tab === 'billing') {
+      setActiveTab(tab);
+    }
+  }, [location]);
 
   useEffect(() => {
     if (!accountEmail) {
@@ -125,6 +251,42 @@ export default function UserProfile() {
       }),
     );
   }, [accountEmail, accountName, currentRole, roleSwitchTarget]);
+
+  useEffect(() => {
+    setNotificationPreferencesForm(notificationPreferencesToForm(notificationPreferences));
+  }, [notificationPreferences]);
+
+  const notificationPreferencesBaseline = notificationPreferencesToForm(notificationPreferences);
+  const notificationPreferencesDirty = !areNotificationPreferencesEqual(
+    notificationPreferencesForm,
+    notificationPreferencesBaseline,
+  );
+
+  const updateNotificationPreferencesMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(formStateToPreferencesPayload(notificationPreferencesForm)),
+      });
+
+      return response.json() as Promise<{ preferences: UserNotificationPreferences }>;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['/api/notifications/preferences'], data);
+      setNotificationPreferencesForm(notificationPreferencesToForm(data.preferences));
+      toast({
+        title: 'Notification preferences saved',
+        description: 'Your reminder and delivery preferences are now persisted.',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Unable to save notification preferences',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
 
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
@@ -225,7 +387,7 @@ export default function UserProfile() {
                   )}
                   <Badge variant="outline" data-testid="badge-member-since">
                     <Calendar className="h-3 w-3 mr-1" />
-                    Member since {new Date(profileUser.createdAt || '').toLocaleDateString()}
+                    Member since {memberSinceLabel}
                   </Badge>
                 </div>
                 {user?.role === 'student' && profileUser?.studentLinkCode && (
@@ -332,7 +494,7 @@ export default function UserProfile() {
                       data-testid="input-email"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Email cannot be changed as it's linked to your Google account
+                      Email changes are currently support-managed
                     </p>
                   </div>
                 </div>
@@ -344,7 +506,7 @@ export default function UserProfile() {
               <CardHeader>
                 <CardTitle>Account Security</CardTitle>
                 <CardDescription>
-                  Your account is secured with Google OAuth
+                  Account authentication status and protections
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -352,9 +514,9 @@ export default function UserProfile() {
                   <div className="flex items-center space-x-3">
                     <Shield className="h-5 w-5 text-green-500" />
                     <div>
-                      <p className="font-medium">Google OAuth</p>
+                      <p className="font-medium">Authentication Enabled</p>
                       <p className="text-sm text-muted-foreground">
-                        Secured with Google authentication
+                        Session and role protections are active
                       </p>
                     </div>
                   </div>
@@ -363,8 +525,8 @@ export default function UserProfile() {
                 <Alert>
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Your account is protected by Google's security infrastructure.
-                    You can manage your password and 2FA settings in your Google account.
+                    This account is protected by runtime authentication controls.
+                    Use the password reset/update flow for credential changes when using email sign-in.
                   </AlertDescription>
                 </Alert>
               </CardContent>
@@ -533,19 +695,220 @@ export default function UserProfile() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Bell className="h-5 w-5" />
-                  Notifications
+                  Notification Preferences
                 </CardTitle>
                 <CardDescription>
-                  Configure how you receive updates and reminders
+                  Load and save persisted notification preferences for this account.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Notification settings UI is not yet wired to a persistent backend contract.
-                  </AlertDescription>
-                </Alert>
+                {notificationPreferencesLoading ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>Loading saved notification preferences...</AlertDescription>
+                  </Alert>
+                ) : notificationPreferencesError ? (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="flex items-center justify-between gap-3">
+                      <span>
+                        {(notificationPreferencesErrorObj as Error)?.message ?? 'Failed to load notification preferences.'}
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => refetchNotificationPreferences()}>
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Email notifications</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Allow notification delivery by email when the writer emits email-origin updates.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.emailEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, emailEnabled: checked }))
+                          }
+                          data-testid="switch-email-notifications"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Study reminders</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Keep study-plan nudges and reminders on for active planning windows.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.studyRemindersEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, studyRemindersEnabled: checked }))
+                          }
+                          data-testid="switch-study-reminders"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Streak updates</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Receive streak milestones and recovery nudges.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.streakEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, streakEnabled: checked }))
+                          }
+                          data-testid="switch-streak-notifications"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Plan updates</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Send plan-generated and plan-refreshed updates.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.planUpdatesEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, planUpdatesEnabled: checked }))
+                          }
+                          data-testid="switch-plan-updates"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Guardian updates</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Share guardian-specific updates when they are emitted.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.guardianUpdatesEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, guardianUpdatesEnabled: checked }))
+                          }
+                          data-testid="switch-guardian-updates"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border p-4 flex items-start justify-between gap-4">
+                        <div className="space-y-1">
+                          <Label className="text-base">Marketing</Label>
+                          <p className="text-sm text-muted-foreground">
+                            Opt into non-study marketing notifications.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={notificationPreferencesForm.marketingEnabled}
+                          onCheckedChange={(checked) =>
+                            setNotificationPreferencesForm((current) => ({ ...current, marketingEnabled: checked }))
+                          }
+                          data-testid="switch-marketing-notifications"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="digest-frequency">Digest frequency</Label>
+                        <Select
+                          value={notificationPreferencesForm.digestFrequency}
+                          onValueChange={(value) =>
+                            setNotificationPreferencesForm((current) => ({
+                              ...current,
+                              digestFrequency: value as NotificationDigestFrequency,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="digest-frequency" data-testid="select-digest-frequency">
+                            <SelectValue placeholder="Select digest frequency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="never">Never</SelectItem>
+                            <SelectItem value="daily">Daily</SelectItem>
+                            <SelectItem value="weekly">Weekly</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Quiet hours</Label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="quiet-hours-start" className="text-xs uppercase tracking-wide text-muted-foreground">
+                              Start
+                            </Label>
+                            <Input
+                              id="quiet-hours-start"
+                              type="time"
+                              value={notificationPreferencesForm.quietHoursStart}
+                              onChange={(event) =>
+                                setNotificationPreferencesForm((current) => ({
+                                  ...current,
+                                  quietHoursStart: event.target.value,
+                                }))
+                              }
+                              data-testid="input-quiet-hours-start"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="quiet-hours-end" className="text-xs uppercase tracking-wide text-muted-foreground">
+                              End
+                            </Label>
+                            <Input
+                              id="quiet-hours-end"
+                              type="time"
+                              value={notificationPreferencesForm.quietHoursEnd}
+                              onChange={(event) =>
+                                setNotificationPreferencesForm((current) => ({
+                                  ...current,
+                                  quietHoursEnd: event.target.value,
+                                }))
+                              }
+                              data-testid="input-quiet-hours-end"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Leave both blank to disable quiet hours.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        onClick={() => updateNotificationPreferencesMutation.mutate()}
+                        disabled={!notificationPreferencesDirty || updateNotificationPreferencesMutation.isPending}
+                        data-testid="button-save-notification-preferences"
+                      >
+                        {updateNotificationPreferencesMutation.isPending ? 'Saving...' : 'Save preferences'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setNotificationPreferencesForm(notificationPreferencesBaseline)}
+                        disabled={!notificationPreferencesDirty || updateNotificationPreferencesMutation.isPending}
+                        data-testid="button-reset-notification-preferences"
+                      >
+                        Reset
+                      </Button>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      Changes persist to the canonical `user_notification_preferences` table and drive the central writer.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -580,17 +943,12 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">Free Plan</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Access to basic SAT practice features
-                      </p>
-                    </div>
-                    <Badge variant="secondary">Current Plan</Badge>
-                  </div>
-                </div>
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Plan details are not runtime-backed on this page yet. Use the guardian dashboard paywall and billing portal flow for live subscription state.
+                  </AlertDescription>
+                </Alert>
 
                 <Alert>
                   <Star className="h-4 w-4" />

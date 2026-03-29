@@ -11,9 +11,55 @@
  * 3. No endpoint bypasses this check
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+
+const repoRoot = process.cwd();
+
+function readRepoFile(relativePath: string): string {
+  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+}
+
+function collectSourceFiles(rootDirs: string[]): string[] {
+  const files: string[] = [];
+  const stack = rootDirs.map((dir) => path.join(repoRoot, dir));
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const stat = fs.statSync(current);
+
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(current)) {
+        if (entry === "node_modules" || entry === ".git" || entry === "dist" || entry === "build" || entry === "coverage" || entry === "tmp") {
+          continue;
+        }
+
+        stack.push(path.join(current, entry));
+      }
+      continue;
+    }
+
+    if (/\.(ts|tsx|js|jsx)$/i.test(current)) {
+      files.push(path.relative(repoRoot, current).split(path.sep).join("/"));
+    }
+  }
+
+  return files.sort();
+}
+
+function findFilesContaining(needle: string, rootDirs: string[]): string[] {
+  return collectSourceFiles(rootDirs).filter((relativePath) =>
+    readRepoFile(relativePath).includes(needle),
+  );
+}
+
+function findFilesMatching(pattern: RegExp, rootDirs: string[]): string[] {
+  return collectSourceFiles(rootDirs).filter((relativePath) => pattern.test(readRepoFile(relativePath)));
+}
 
 describe('CI Forbidden Routes - Permanent Invariants', () => {
   let app: Express;
@@ -128,6 +174,37 @@ describe('CI Forbidden Routes - Permanent Invariants', () => {
         .send({});
       
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("Notification and diagnostic guards", () => {
+    it("keeps diagnostic hard-disabled at the mount level", () => {
+      const serverIndex = readRepoFile("server/index.ts");
+
+      expect(serverIndex).toContain('runtimeContractDisableMiddleware("diagnostic")');
+      expect(serverIndex).not.toContain("diagnosticRouter");
+    });
+
+    it("keeps raw notification inserts centralized in the notification authority service", () => {
+      const directInsertMatches = findFilesMatching(/from\("notifications"\)\s*\.insert/s, [
+        "server",
+        "apps/api/src",
+      ]);
+      const directUpsertMatches = findFilesMatching(/from\("notifications"\)\s*\.upsert/s, [
+        "server",
+        "apps/api/src",
+      ]);
+
+      expect(directInsertMatches).toEqual(["server/services/notification-authority.ts"]);
+      expect(directUpsertMatches).toEqual([]);
+    });
+
+    it("keeps the notification dropdown on low-noise refetch only", () => {
+      const dropdown = readRepoFile("client/src/components/NotificationDropdown.tsx");
+
+      expect(dropdown).toContain("refetchInterval: false");
+      expect(dropdown).toContain("refetchOnWindowFocus: true");
+      expect(dropdown).not.toContain("setInterval(");
     });
   });
 });

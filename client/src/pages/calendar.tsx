@@ -14,8 +14,12 @@ import {
   refreshCalendarPlan,
   regenerateCalendarPlan,
   updateCalendarDay,
+  regenerateCalendarDay,
+  resetCalendarDayToAuto,
+  updateCalendarTaskStatus,
   type StudyProfile,
   type StudyPlanDay,
+  type CalendarTask,
 } from "@/lib/calendarApi";
 
 type DayStatus = "planned" | "missed" | "in_progress" | "complete";
@@ -31,7 +35,12 @@ interface CalendarDay {
   mathPct: number;
   rwPct: number;
   focus: Array<{ section: string; weight: number; competencies?: string[] }> | null;
-  tasks: Array<{ type: string; section: string; mode: string; minutes: number }> | null;
+  tasks: CalendarTask[] | null;
+  isUserOverride: boolean;
+  replacesOverride: boolean;
+  replacedOverrideDayId: string | null;
+  replacementSource: string | null;
+  replacementAt: string | null;
 }
 
 function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: number): { label: string; className: string } {
@@ -52,11 +61,29 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
   }
 }
 
-function formatDateKey(date: Date): string {
+export function formatDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export function getDateKeyInTimeZone(timeZone: string | null | undefined, date: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+export function isDateBeforeToday(dateKey: string, todayDateKey: string): boolean {
+  return dateKey < todayDateKey;
 }
 
 function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; day: number; isCurrentMonth: boolean }> {
@@ -118,6 +145,7 @@ export default function CalendarPage() {
   const month = currentMonth.getMonth();
 
   const monthGrid = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const todayDateKey = useMemo(() => getDateKeyInTimeZone(profile?.timezone), [profile?.timezone]);
 
   const gridStartDate = monthGrid[0]?.dateKey ?? formatDateKey(new Date(year, month, 1));
   const gridEndDate = monthGrid[monthGrid.length - 1]?.dateKey ?? formatDateKey(new Date(year, month + 1, 0));
@@ -198,6 +226,11 @@ export default function CalendarPage() {
         rwPct,
         focus: plan?.focus ?? null,
         tasks: plan?.tasks ?? null,
+        isUserOverride: Boolean(plan?.is_user_override),
+        replacesOverride: Boolean(plan?.replaces_override),
+        replacedOverrideDayId: plan?.replaced_override_day_id ?? null,
+        replacementSource: plan?.replacement_source ?? null,
+        replacementAt: plan?.replacement_at ?? null,
       };
     });
   }, [monthGrid, monthDataMap]);
@@ -276,21 +309,111 @@ export default function CalendarPage() {
   };
 
   const handleEditDay = async (day: CalendarDay) => {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
+      setMonthError("Past days are immutable.");
+      return;
+    }
     const nextMinutesInput = window.prompt("Planned minutes for this day", String(day.plannedMin || 30));
     if (nextMinutesInput == null) return;
     const nextMinutes = Math.max(0, parseInt(nextMinutesInput, 10) || 0);
-    const tasks =
-      (day.tasks && day.tasks.length > 0
-        ? day.tasks.map((task) => ({
-            type: task.type,
-            section: task.section,
-            mode: task.mode,
-            minutes: task.minutes,
-          }))
-        : [
-            { type: "practice", section: "Math", mode: "mixed", minutes: Math.round(nextMinutes / 2) },
-            { type: "practice", section: "Reading & Writing", mode: "mixed", minutes: Math.max(0, nextMinutes - Math.round(nextMinutes / 2)) },
-          ]) || [];
+    const currentTask = day.tasks?.[0];
+    const currentKind =
+      currentTask?.task_type === "full_length"
+        ? "full_length"
+        : currentTask?.task_type === "review_practice" || currentTask?.task_type === "review_full_length"
+          ? "review"
+          : "practice";
+    const taskKindInput = window.prompt("Override task type (practice/review/full_length)", currentKind);
+    if (taskKindInput == null) return;
+    const taskKindNormalized = taskKindInput.trim().toLowerCase();
+    const taskKind: "practice" | "review" | "full_length" =
+      taskKindNormalized === "full_length" || taskKindNormalized === "full-length"
+        ? "full_length"
+        : taskKindNormalized === "review"
+          ? "review"
+          : "practice";
+
+    let section = currentTask?.section ?? "Math";
+    let taskType: "practice" | "review_practice" | "full_length" = "practice";
+    let mode = "mixed";
+    const target: {
+      section: string | null;
+      domain: string | null;
+      skill_code: string | null;
+      subskill: string | null;
+      target_type: "practice_target" | "review_session" | "scheduled_full_length";
+      review_session_id: string | null;
+      exam_id: string | null;
+    } = {
+      section: null,
+      domain: null,
+      skill_code: null,
+      subskill: null,
+      target_type: "practice_target",
+      review_session_id: null,
+      exam_id: null,
+    };
+
+    if (taskKind === "practice") {
+      const sectionInput = window.prompt("Practice section (Math/RW)", section);
+      if (sectionInput == null) return;
+      section = sectionInput.toLowerCase().includes("rw") ? "Reading & Writing" : "Math";
+      target.section = section === "Math" ? "MATH" : "RW";
+      taskType = "practice";
+      mode = "focused";
+      const domainInput = window.prompt("Practice target domain (required)", currentTask?.target?.domain ?? "");
+      if (domainInput == null) return;
+      const skillInput = window.prompt("Practice target skill code (required)", currentTask?.target?.skill_code ?? "");
+      if (skillInput == null) return;
+      target.domain = domainInput.trim() || null;
+      target.skill_code = skillInput.trim() || null;
+      target.target_type = "practice_target";
+      if (!target.domain && !target.skill_code) {
+        setMonthError("Practice overrides require a domain or skill target.");
+        return;
+      }
+    } else if (taskKind === "review") {
+      taskType = "review_practice";
+      section = "";
+      mode = "review";
+      target.target_type = "review_session";
+      const reviewSessionId = window.prompt("Review session ID (required)", currentTask?.target?.review_session_id ?? "");
+      if (reviewSessionId == null) return;
+      target.review_session_id = reviewSessionId.trim() || null;
+      if (!target.review_session_id) {
+        setMonthError("Review overrides require an exact review session ID.");
+        return;
+      }
+    } else {
+      taskType = "full_length";
+      section = "";
+      mode = "full-length";
+      target.target_type = "scheduled_full_length";
+      const examId = window.prompt("Full-length exam ID (required)", currentTask?.target?.exam_id ?? "");
+      if (examId == null) return;
+      target.exam_id = examId.trim() || null;
+      if (!target.exam_id) {
+        setMonthError("Full-length overrides require a scheduled exam ID.");
+        return;
+      }
+    }
+
+    const tasks = [
+      {
+        type: taskType,
+        task_type: taskType,
+        section,
+        mode,
+        minutes: nextMinutes,
+        status: currentTask?.status ?? "planned",
+        target,
+        override_target_type: target.target_type,
+        override_target_domain: target.domain,
+        override_target_skill: target.skill_code,
+        override_target_session_id: target.review_session_id,
+        override_target_exam_id: target.exam_id,
+      },
+    ];
 
     setActionLoading(true);
     setMonthError(null);
@@ -303,6 +426,61 @@ export default function CalendarPage() {
       await loadMonthData();
     } catch (err: any) {
       setMonthError(err?.message || "Failed to update day");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRegenerateDay = async (day: CalendarDay) => {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
+      setMonthError("Past days are immutable.");
+      return;
+    }
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await regenerateCalendarDay(day.dateKey);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to regenerate day");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResetDayToAuto = async (day: CalendarDay) => {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
+      setMonthError("Past days are immutable.");
+      return;
+    }
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await resetCalendarDayToAuto(day.dateKey);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to reset day");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleTaskStatusChange = async (
+    day: CalendarDay,
+    taskId: string,
+    nextStatus: "planned" | "in_progress" | "completed" | "skipped" | "missed",
+  ) => {
+    if (isDateBeforeToday(day.dateKey, todayDateKey)) {
+      setMonthError("Past days are immutable.");
+      return;
+    }
+    setActionLoading(true);
+    setMonthError(null);
+    try {
+      await updateCalendarTaskStatus(day.dateKey, taskId, nextStatus);
+      await loadMonthData();
+    } catch (err: any) {
+      setMonthError(err?.message || "Failed to update task status");
     } finally {
       setActionLoading(false);
     }
@@ -400,10 +578,19 @@ export default function CalendarPage() {
               days={calendarDays}
               selectedDateKey={selectedDateKey}
               onSelectDay={setSelectedDateKey}
+              todayDateKey={todayDateKey}
             />
           </div>
           <aside className="lg:col-span-5">
-            <DayDetailPanel day={selectedDay} onEditDay={handleEditDay} />
+            <DayDetailPanel
+              day={selectedDay}
+              onEditDay={handleEditDay}
+              onRegenerateDay={handleRegenerateDay}
+              onResetDayToAuto={handleResetDayToAuto}
+              onTaskStatusChange={handleTaskStatusChange}
+              actionLoading={actionLoading}
+              todayDateKey={todayDateKey}
+            />
           </aside>
         </div>
       </div>
@@ -514,13 +701,13 @@ function MonthGrid({
   days,
   selectedDateKey,
   onSelectDay,
+  todayDateKey,
 }: {
   days: CalendarDay[];
   selectedDateKey: string | null;
   onSelectDay: (dateKey: string) => void;
+  todayDateKey: string;
 }) {
-  const today = formatDateKey(new Date());
-
   return (
     <div className="bg-card rounded-xl border border-border/60 p-4">
       <div className="grid grid-cols-7 gap-1 mb-2">
@@ -536,13 +723,14 @@ function MonthGrid({
       <div className="grid grid-cols-7 gap-1">
         {days.map((d) => {
           const isSelected = selectedDateKey === d.dateKey;
-          const isToday = d.dateKey === today;
+          const isToday = d.dateKey === todayDateKey;
 
           return (
             <button
               key={d.dateKey}
               onClick={() => d.isCurrentMonth && onSelectDay(d.dateKey)}
               disabled={!d.isCurrentMonth}
+              aria-label={`Open day ${d.dateKey}`}
               className={`
                 relative aspect-square p-1.5 rounded-md text-left transition-colors
                 ${d.isCurrentMonth ? "hover:bg-secondary/70 cursor-pointer" : "cursor-default opacity-40"}
@@ -584,7 +772,27 @@ function MonthGrid({
   );
 }
 
-function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay: (day: CalendarDay) => void }) {
+function DayDetailPanel({
+  day,
+  onEditDay,
+  onRegenerateDay,
+  onResetDayToAuto,
+  onTaskStatusChange,
+  actionLoading,
+  todayDateKey,
+}: {
+  day: CalendarDay | null;
+  onEditDay: (day: CalendarDay) => void;
+  onRegenerateDay: (day: CalendarDay) => void;
+  onResetDayToAuto: (day: CalendarDay) => void;
+  onTaskStatusChange: (
+    day: CalendarDay,
+    taskId: string,
+    status: "planned" | "in_progress" | "completed" | "skipped" | "missed",
+  ) => void;
+  actionLoading: boolean;
+  todayDateKey: string;
+}) {
   const [, navigate] = useLocation();
 
   const handleStartPractice = () => {
@@ -611,8 +819,13 @@ function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay
     year: "numeric",
   });
 
-  const studiedSections = day.tasks?.filter((t) => t.minutes > 0).map((t) => t.section) ?? [];
+  const studiedSections =
+    day.tasks?.filter((t) => t.minutes > 0 && Boolean(t.section)).map((t) => t.section as string) ?? [];
   const hasPlan = day.plannedMin > 0;
+  const hasTasks = (day.tasks?.length ?? 0) > 0;
+  const isPastDay = isDateBeforeToday(day.dateKey, todayDateKey);
+  const canMutate = !isPastDay && !actionLoading;
+  const canResetToAuto = canMutate && day.isUserOverride;
 
   return (
     <div className="bg-card rounded-xl border border-border/60 p-6 space-y-4">
@@ -633,6 +846,16 @@ function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay
           <p className="text-lg font-semibold text-foreground">{day.completedMin} min</p>
         </div>
       </div>
+
+      {day.replacesOverride && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            This day replaced a prior override-owned plan row
+            {day.replacementSource ? ` via ${day.replacementSource}` : ""}.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {studiedSections.length > 0 && (
         <div>
@@ -667,21 +890,84 @@ function DayDetailPanel({ day, onEditDay }: { day: CalendarDay | null; onEditDay
         </p>
       </div>
 
+      {hasTasks && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">Tasks</p>
+          <div className="space-y-2">
+            {(day.tasks ?? []).map((task, index) => {
+              const isCompleted = task.status === "completed";
+              const statusLabel = task.status ?? "planned";
+              const taskId = task.id;
+              return (
+                <div key={taskId || `${task.type}-${index}`} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {task.section || task.type}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {task.minutes} min - {statusLabel}
+                    </p>
+                    {task.target && (
+                      <p className="text-xs text-muted-foreground">
+                        Target: {task.target.target_type ?? "practice_target"}
+                        {task.target.domain ? ` | ${task.target.domain}` : ""}
+                        {task.target.skill_code ? ` | ${task.target.skill_code}` : ""}
+                        {task.target.review_session_id ? ` | session ${task.target.review_session_id}` : ""}
+                        {task.target.exam_id ? ` | exam ${task.target.exam_id}` : ""}
+                      </p>
+                    )}
+                    {task.replaces_override && (
+                      <p className="text-xs text-orange-600">
+                        Replaced override task
+                        {task.replacement_source ? ` via ${task.replacement_source}` : ""}.
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!taskId || !canMutate}
+                    onClick={() => taskId && onTaskStatusChange(day, taskId, isCompleted ? "planned" : "completed")}
+                  >
+                    {isCompleted ? "Mark Planned" : "Mark Complete"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {hasPlan && (
-        <Button variant="outline" className="w-full" onClick={() => onEditDay(day)}>
-          Edit This Day
-        </Button>
+        <div className="space-y-2">
+          <Button variant="outline" className="w-full" onClick={() => onEditDay(day)} disabled={!canMutate}>
+            Edit This Day
+          </Button>
+          <Button variant="outline" className="w-full" onClick={() => onRegenerateDay(day)} disabled={!canMutate}>
+            Regenerate Day
+          </Button>
+          <Button variant="outline" className="w-full" onClick={() => onResetDayToAuto(day)} disabled={!canResetToAuto}>
+            {day.isUserOverride ? "Reset to Auto" : "Reset to Auto (already auto)"}
+          </Button>
+        </div>
       )}
 
       {hasPlan && day.status !== "complete" && (
         <Button
           className="w-full"
           onClick={handleStartPractice}
-          disabled={!day.focus || day.focus.length === 0}
+          disabled={!day.focus || day.focus.length === 0 || actionLoading}
         >
           <Play className="h-4 w-4 mr-2" />
           Start Practice
         </Button>
+      )}
+
+      {isPastDay && (
+        <p className="text-xs text-muted-foreground">
+          Past days are immutable.
+        </p>
       )}
 
       {!hasPlan && (

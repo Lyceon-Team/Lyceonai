@@ -89,7 +89,7 @@ export function SupabaseAuthForm() {
         if (isUnder13) {
           toast({ 
             title: 'Account created!', 
-            description: 'Guardian consent is required. Please check your guardian\'s email.',
+            description: 'Guardian consent is required before continuing.',
             variant: 'default'
           });
         } else {
@@ -136,7 +136,7 @@ export function SupabaseAuthForm() {
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <CardTitle className="text-2xl">
-          {mode === 'reset' ? 'Reset Password' : 'SAT Learning Copilot'}
+          {mode === 'reset' ? 'Reset Password' : 'Lyceon'}
         </CardTitle>
         <CardDescription>
           {mode === 'reset' 
@@ -354,7 +354,7 @@ export function SupabaseAuthForm() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    A consent request will be sent to your guardian's email
+                    This email is stored on the student profile so guardian consent can be completed before protected access.
                   </p>
                 </div>
               )}
@@ -418,7 +418,10 @@ export function SupabaseAuthForm() {
         )}
       </CardContent>
       <CardFooter className="flex justify-center text-sm text-muted-foreground">
-        By signing in, you agree to our Terms of Service and Privacy Policy
+        Legal acceptance is completed during onboarding. Review our&nbsp;
+        <a href="/legal/student-terms" className="underline hover:no-underline">Student Terms</a>
+        &nbsp;and&nbsp;
+        <a href="/legal/privacy-policy" className="underline hover:no-underline">Privacy Policy</a>.
       </CardFooter>
     </Card>
   );

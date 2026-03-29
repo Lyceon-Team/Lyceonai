@@ -50,7 +50,6 @@ import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-
 import { csrfGuard } from "./middleware/csrf";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
-import { diagnosticRouter } from "./routes/legacy/diagnostic";
 import { calendarRouter } from "./routes/legacy/calendar";
 import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
@@ -67,6 +66,7 @@ import guardianConsentRoutes from "./routes/guardian-consent-routes";
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
+import { runtimeContractDisableMiddleware } from "./lib/runtime-contract-disable";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
@@ -260,6 +260,8 @@ app.use("/api/auth/google", googleOAuthRoutes);
 
 // Google OAuth Callback (PUBLIC_SITE_URL/auth/google/callback)
 app.get("/auth/google/callback", googleCallbackHandler);
+// Vercel callback alias when `/auth/google/callback` is rewritten into `/api/*`.
+app.get("/api/auth/google/callback", googleCallbackHandler);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
@@ -277,8 +279,14 @@ app.use("/api/notifications", notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+app.use(
+  "/api/me/mastery/diagnostic",
+  runtimeContractDisableMiddleware("diagnostic"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+);
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, diagnosticRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
@@ -341,12 +349,34 @@ app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
 // Review errors endpoint - authenticated students can review their failed attempts
-app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
+app.get(
+  "/api/review-errors",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrors
+);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/sessions", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, startReviewErrorSession);
-app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
-app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);
+app.post(
+  "/api/review-errors/sessions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+  startReviewErrorSession
+);
+app.get(
+  "/api/review-errors/sessions/:sessionId/state",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrorSessionState
+);
+app.post(
+  "/api/review-errors/attempt",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  csrfProtection,
+  submitReviewSessionAnswer
+);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
@@ -365,18 +395,29 @@ app.use("/api/account", accountRoutes);
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
 
-// Practice Topics Routes (for browsing and filtering)
+// Practice reference routes (bootstrap/filtering only; not runtime delivery)
 app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
-app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+app.get("/api/practice/reference/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
-app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+app.use(
+  "/api/practice",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  practiceCanonicalRouter
+);
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)
 // All routes require Supabase auth and are student-only
-app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+app.use(
+  "/api/full-length",
+  runtimeContractDisableMiddleware("full-length"),
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  fullLengthExamRouter
+);
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
@@ -636,8 +677,8 @@ if (isMainModule) {
     console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
     console.log(`  GET    /api/practice/sessions/:sessionId/next`);
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
-    console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
+    console.log(`  GET    /api/practice/reference/questions`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);

@@ -15,6 +15,14 @@ interface MockSupabaseClient {
   from: Mock;
 }
 
+function buildQueryResult<T>(data: T, error: unknown = null) {
+  const chain: any = {};
+  chain.returns = vi.fn(() => chain);
+  chain.then = (resolve: (value: { data: T; error: unknown }) => void, reject: (reason: unknown) => void) =>
+    Promise.resolve({ data, error }).then(resolve, reject);
+  return chain;
+}
+
 // Mock the Supabase admin client
 vi.mock('../../lib/supabase-admin', () => ({
   getSupabaseAdmin: vi.fn(),
@@ -30,7 +38,30 @@ function buildPublishedFormFixture(formId: string) {
   };
 
   const formItems: Array<{ section: 'rw' | 'math'; module_index: 1 | 2; ordinal: number; question_id: string }> = [];
-  const questionRows: Array<{ id: string; canonical_id: string; status: string; question_type: string; section_code: string }> = [];
+  const questionRows: Array<{
+    id: string;
+    canonical_id: string;
+    status: string;
+    question_type: string;
+    section_code: string;
+    section: string;
+    stem: string;
+    options: Array<{ key: string; text: string }>;
+    difficulty: number;
+    domain: string;
+    skill: string;
+    subskill: string;
+    source_type: number;
+    diagram_present: boolean;
+    tags: string[];
+    competencies: any[];
+    answer_choice: string;
+    answer: string;
+    answer_text: string;
+    explanation: string;
+    exam: string;
+    structure_cluster_id: null;
+  }> = [];
 
   const addModule = (section: 'rw' | 'math', moduleIndex: 1 | 2, count: number) => {
     for (let ordinal = 1; ordinal <= count; ordinal += 1) {
@@ -42,6 +73,28 @@ function buildPublishedFormFixture(formId: string) {
         status: 'published',
         question_type: 'multiple_choice',
         section_code: section === 'rw' ? 'RW' : 'MATH',
+        section: section === 'rw' ? 'RW' : 'Math',
+        stem: `Q${canonicalId}`,
+        options: [
+          { key: 'A', text: 'A' },
+          { key: 'B', text: 'B' },
+          { key: 'C', text: 'C' },
+          { key: 'D', text: 'D' },
+        ],
+        difficulty: 2,
+        domain: 'Domain',
+        skill: 'Skill',
+        subskill: 'Subskill',
+        source_type: 0,
+        diagram_present: false,
+        tags: [],
+        competencies: [],
+        answer_choice: 'A',
+        answer: 'A',
+        answer_text: 'Answer',
+        explanation: 'Because',
+        exam: 'SAT',
+        structure_cluster_id: null,
       });
     }
   };
@@ -179,6 +232,7 @@ function buildPublishedFormFixture(formId: string) {
 
       const formId = '11111111-1111-4111-8111-111111111111';
       const fixture = buildPublishedFormFixture(formId);
+      const insertedQuestionsByModule: Record<string, Array<any>> = {};
 
       const mockNewSession = {
         id: 'new-session-789',
@@ -245,7 +299,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -268,7 +322,29 @@ function buildPublishedFormFixture(formId: string) {
 
           if (table === 'full_length_exam_questions') {
             return {
-              insert: vi.fn(async () => ({ error: null })),
+              select: vi.fn(() => ({
+                eq: vi.fn((column: string, value: string) => {
+                  const chain: any = {
+                    then: (resolve: any, reject: any) => {
+                      const data = column === 'module_id'
+                        ? (insertedQuestionsByModule[value] ?? [])
+                        : [];
+                      return Promise.resolve({ data, error: null }).then(resolve, reject);
+                    },
+                  };
+                  return chain;
+                }),
+              })),
+              insert: vi.fn(async (rows: Array<any>) => {
+                for (const row of rows) {
+                  const key = String(row.module_id);
+                  if (!insertedQuestionsByModule[key]) {
+                    insertedQuestionsByModule[key] = [];
+                  }
+                  insertedQuestionsByModule[key].push(row);
+                }
+                return { error: null };
+              }),
             };
           }
 
@@ -294,6 +370,7 @@ function buildPublishedFormFixture(formId: string) {
       const fixture = buildPublishedFormFixture(formId);
 
       let capturedStatuses: string[] = [];
+      const insertedQuestionsByModule: Record<string, Array<any>> = {};
 
       const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
@@ -353,7 +430,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -376,7 +453,29 @@ function buildPublishedFormFixture(formId: string) {
 
           if (table === 'full_length_exam_questions') {
             return {
-              insert: vi.fn(async () => ({ error: null })),
+              select: vi.fn(() => ({
+                eq: vi.fn((column: string, value: string) => {
+                  const chain: any = {
+                    then: (resolve: any, reject: any) => {
+                      const data = column === 'module_id'
+                        ? (insertedQuestionsByModule[value] ?? [])
+                        : [];
+                      return Promise.resolve({ data, error: null }).then(resolve, reject);
+                    },
+                  };
+                  return chain;
+                }),
+              })),
+              insert: vi.fn(async (rows: Array<any>) => {
+                for (const row of rows) {
+                  const key = String(row.module_id);
+                  if (!insertedQuestionsByModule[key]) {
+                    insertedQuestionsByModule[key] = [];
+                  }
+                  insertedQuestionsByModule[key].push(row);
+                }
+                return { error: null };
+              }),
             };
           }
 
@@ -471,7 +570,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -823,15 +922,12 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [
-                    { id: 'q-rw-1', classification: { topic: 'Info', subtopic: 'Main Idea' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-rw-2', classification: { topic: 'Craft', subtopic: 'Words' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-math-1', classification: { topic: 'Algebra', subtopic: 'Linear' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-math-2', classification: { topic: 'Advanced Math', subtopic: 'Polynomials' }, unit_tag: null, tags: null, competencies: null },
-                  ],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([
+                  { id: 'q-rw-1', classification: { topic: 'Info', subtopic: 'Main Idea' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-rw-2', classification: { topic: 'Craft', subtopic: 'Words' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-math-1', classification: { topic: 'Algebra', subtopic: 'Linear' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-math-2', classification: { topic: 'Advanced Math', subtopic: 'Polynomials' }, unit_tag: null, tags: null, competencies: null },
+                ])),
               })),
             };
           } else if (table === 'full_length_exam_score_rollups') {
@@ -1119,6 +1215,16 @@ function buildPublishedFormFixture(formId: string) {
         ends_at: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
       };
 
+      const mockModule2 = {
+        id: 'module-rw-2',
+        session_id: 'session-123',
+        section: 'rw',
+        module_index: 2,
+        status: 'not_started',
+        difficulty_bucket: 'hard',
+        materialized_at: null,
+      };
+
       const mockResponses = [
         { is_correct: true },
         { is_correct: true },
@@ -1126,9 +1232,73 @@ function buildPublishedFormFixture(formId: string) {
       ];
 
       let updateCallCount = 0;
+      const module2Rows: Array<Record<string, any>> = [];
+      const buildCandidates = (domain: string, count: number, offset: number) =>
+        Array.from({ length: count }).map((_, index) => {
+          const num = offset + index + 1;
+          return {
+            id: `q-rw-${num}`,
+            canonical_id: `RW2_${String(num).padStart(2, '0')}`,
+            question_type: 'multiple_choice',
+            stem: `Q${num}`,
+            section: 'RW',
+            section_code: 'RW',
+            options: [
+              { key: 'A', text: 'A' },
+              { key: 'B', text: 'B' },
+              { key: 'C', text: 'C' },
+              { key: 'D', text: 'D' },
+            ],
+            difficulty: 'hard',
+            domain,
+            skill: 's1',
+            subskill: 'ss1',
+            source_type: 0,
+            diagram_present: false,
+            tags: [],
+            competencies: [],
+            answer_choice: 'A',
+            answer: 'A',
+            answer_text: 'Answer',
+            explanation: 'Because',
+            exam: 'SAT',
+            structure_cluster_id: null,
+          };
+        });
+
+      const candidateQuestions = [
+        ...buildCandidates('Information and Ideas', 7, 0),
+        ...buildCandidates('Craft and Structure', 8, 7),
+        ...buildCandidates('Expression of Ideas', 5, 15),
+        ...buildCandidates('Standard English Conventions', 7, 20),
+      ];
 
       const mockSupabase: MockSupabaseClient = {
         from: vi.fn((table: string) => {
+          if (table === 'full_length_adaptive_config') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => ({
+                        maybeSingle: vi.fn(async () => ({
+                          data: {
+                            id: 'cfg-rw',
+                            section: 'rw',
+                            hard_cutoff: 21,
+                            bucket_mode: 'two_bucket',
+                            active: true,
+                          },
+                          error: null,
+                        })),
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
           if (table === 'full_length_exam_sessions') {
             return {
               select: vi.fn(() => ({
@@ -1146,34 +1316,44 @@ function buildPublishedFormFixture(formId: string) {
               })),
             };
           } else if (table === 'full_length_exam_modules') {
+            const buildSelect = () => {
+              const filters: Record<string, any> = {};
+              const chain: any = {
+                eq: (column: string, value: any) => {
+                  filters[column] = value;
+                  return chain;
+                },
+                single: async () => {
+                  if (filters.module_index === 2 || filters.id === mockModule2.id) {
+                    return { data: mockModule2, error: null };
+                  }
+                  return { data: mockCurrentModule, error: null };
+                },
+              };
+              return chain;
+            };
+
+            const updateChain: any = {
+              error: null,
+              eq: vi.fn(() => updateChain),
+              is: vi.fn(() => ({ error: null })),
+              select: vi.fn(async () => ({
+                data: [{ id: mockCurrentModule.id, status: 'submitted' }],
+                error: null,
+              })),
+            };
+
             return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  eq: vi.fn(() => ({
-                    eq: vi.fn(() => ({
-                      single: vi.fn(async () => ({
-                        data: mockCurrentModule,
-                        error: null,
-                      })),
-                    })),
-                  })),
-                })),
-              })),
-              update: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  eq: vi.fn(() => ({
-                    eq: vi.fn(() => ({
-                      is: vi.fn(() => ({
-                        select: vi.fn(async () => {
-                          updateCallCount++;
-                          // Simulate that bucket was already set (no rows updated)
-                          return { data: [], error: null };
-                        }),
-                      })),
-                    })),
-                  })),
-                })),
-              })),
+              select: vi.fn(() => buildSelect()),
+              update: vi.fn((updateData: Record<string, unknown>) => {
+                if (
+                  Object.prototype.hasOwnProperty.call(updateData, 'difficulty_bucket')
+                  && !Object.prototype.hasOwnProperty.call(updateData, 'materialized_at')
+                ) {
+                  updateCallCount++;
+                }
+                return updateChain;
+              }),
             };
           } else if (table === 'full_length_exam_responses') {
             return {
@@ -1181,6 +1361,37 @@ function buildPublishedFormFixture(formId: string) {
                 eq: vi.fn(async () => ({
                   data: mockResponses,
                   error: null,
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => {
+                const filters: Record<string, any> = {};
+                const chain: any = {
+                  eq: (column: string, value: any) => {
+                    filters[column] = value;
+                    return chain;
+                  },
+                  then: (resolve: any, reject: any) => {
+                    const data = filters.module_id === mockModule2.id ? module2Rows : [];
+                    return Promise.resolve({ data, error: null }).then(resolve, reject);
+                  },
+                };
+                return chain;
+              }),
+              insert: vi.fn(async (rows: any[]) => {
+                module2Rows.push(...rows.map((row, idx) => ({ id: row.id ?? `m2-${idx}`, ...row })));
+                return { error: null };
+              }),
+            };
+          } else if (table === 'questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  in: vi.fn(() => ({
+                    limit: vi.fn(() => buildQueryResult(candidateQuestions)),
+                  })),
                 })),
               })),
             };
@@ -1209,7 +1420,7 @@ function buildPublishedFormFixture(formId: string) {
         user_id: 'user-456',
         status: 'in_progress',
         current_section: 'rw',
-        current_module: 1,
+        current_module: 2,
         seed: 'test-seed',
       };
 
@@ -1217,7 +1428,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'module-rw-1',
         session_id: 'session-123',
         section: 'rw',
-        module_index: 1,
+        module_index: 2,
         status: 'in_progress',
         ends_at: null, // Module not started - ends_at is null
         started_at: null,
@@ -1277,7 +1488,7 @@ function buildPublishedFormFixture(formId: string) {
         user_id: 'user-456',
         status: 'in_progress',
         current_section: 'rw',
-        current_module: 1,
+        current_module: 2,
         seed: 'test-seed',
       };
 
@@ -1287,7 +1498,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'module-rw-1',
         session_id: 'session-123',
         section: 'rw',
-        module_index: 1,
+        module_index: 2,
         status: 'in_progress',
         ends_at: pastTime,
         started_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
@@ -1340,9 +1551,14 @@ function buildPublishedFormFixture(formId: string) {
                 if (!capturedUpdate && updateData.status === 'submitted') {
                   capturedUpdate = updateData;
                 }
-                return {
-                  eq: createChainableEq(vi.fn(async () => ({ error: null }))),
+                const updateChain: any = {
+                  eq: vi.fn(() => updateChain),
+                  select: vi.fn(async () => ({
+                    data: [{ id: mockCurrentModule.id, status: 'submitted' }],
+                    error: null,
+                  })),
                 };
+                return updateChain;
               }),
             };
           } else if (table === 'full_length_exam_responses') {
@@ -1381,7 +1597,7 @@ function buildPublishedFormFixture(formId: string) {
         user_id: 'user-456',
         status: 'in_progress',
         current_section: 'rw',
-        current_module: 1,
+        current_module: 2,
         seed: 'test-seed',
       };
 
@@ -1391,7 +1607,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'module-rw-1',
         session_id: 'session-123',
         section: 'rw',
-        module_index: 1,
+        module_index: 2,
         status: 'in_progress',
         ends_at: futureTime,
         started_at: new Date().toISOString(),
@@ -1444,9 +1660,14 @@ function buildPublishedFormFixture(formId: string) {
                 if (!capturedUpdate && updateData.status === 'submitted') {
                   capturedUpdate = updateData;
                 }
-                return {
-                  eq: createChainableEq(vi.fn(async () => ({ error: null }))),
+                const updateChain: any = {
+                  eq: vi.fn(() => updateChain),
+                  select: vi.fn(async () => ({
+                    data: [{ id: mockCurrentModule.id, status: 'submitted' }],
+                    error: null,
+                  })),
                 };
+                return updateChain;
               }),
             };
           } else if (table === 'full_length_exam_responses') {
@@ -1493,7 +1714,7 @@ function buildPublishedFormFixture(formId: string) {
         id: 'module-rw-1',
         session_id: 'session-123',
         section: 'rw',
-        module_index: 1,
+        module_index: 2,
         status: 'not_started', // Not in_progress
         ends_at: new Date(Date.now() + 60000).toISOString(),
         started_at: null,
@@ -1594,6 +1815,28 @@ function buildPublishedFormFixture(formId: string) {
       question_id: 'q1',
       module_id: 'module-1',
       order_index: 0,
+      question_canonical_id: 'SATM1ABC123',
+      question_stem: 'What is 2 + 2?',
+      question_section: 'Math',
+      question_section_code: 'MATH',
+      question_type: 'multiple_choice',
+      question_options: [
+        { key: 'A', text: '3' },
+        { key: 'B', text: '4' },
+        { key: 'C', text: '5' },
+        { key: 'D', text: '6' },
+      ],
+      question_domain: 'Domain',
+      question_skill: 'Skill',
+      question_subskill: 'Subskill',
+      question_difficulty: 1,
+      question_source_type: 0,
+      question_diagram_present: false,
+      question_tags: ['addition', 'basic'],
+      question_competencies: [],
+      question_correct_answer: 'B',
+      question_answer_text: null,
+      question_explanation: 'Two plus two equals four.',
     };
 
     const mockResponse = {
@@ -1635,19 +1878,20 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'full_length_exam_questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockModuleQuestion],
-                  error: null,
+                in: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(async () => ({
+                      data: [mockModuleQuestion],
+                      error: null,
+                    })),
+                  })),
                 })),
               })),
             };
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockQuestionWithAnswers],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([mockQuestionWithAnswers])),
               })),
             };
           } else if (table === 'full_length_exam_responses') {
@@ -1729,19 +1973,20 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'full_length_exam_questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockModuleQuestion],
-                  error: null,
+                in: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(async () => ({
+                      data: [mockModuleQuestion],
+                      error: null,
+                    })),
+                  })),
                 })),
               })),
             };
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockQuestionWithAnswers],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([mockQuestionWithAnswers])),
               })),
             };
           } else if (table === 'full_length_exam_responses') {

@@ -1,0 +1,6889 @@
+[
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 972,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "is_correct",
+      "outcome",
+      "attempted_at"
+    ],
+    "columns_exist": {
+      "is_correct": true,
+      "outcome": true,
+      "attempted_at": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1036,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1053,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "outcome"
+    ],
+    "columns_exist": {
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1343,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "session_id",
+      "question_id",
+      "session_item_id",
+      "is_correct",
+      "outcome"
+    ],
+    "columns_exist": {
+      "id": true,
+      "session_id": true,
+      "question_id": true,
+      "session_item_id": true,
+      "is_correct": true,
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1366,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "session_id",
+      "question_id",
+      "session_item_id",
+      "is_correct",
+      "outcome"
+    ],
+    "columns_exist": {
+      "id": true,
+      "session_id": true,
+      "question_id": true,
+      "session_item_id": true,
+      "is_correct": true,
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1381,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "session_id",
+      "question_id",
+      "session_item_id",
+      "is_correct",
+      "outcome"
+    ],
+    "columns_exist": {
+      "id": true,
+      "session_id": true,
+      "question_id": true,
+      "session_item_id": true,
+      "is_correct": true,
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1397,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1403,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2186,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "session_id",
+      "question_id",
+      "session_item_id",
+      "is_correct",
+      "outcome"
+    ],
+    "columns_exist": {
+      "id": true,
+      "session_id": true,
+      "question_id": true,
+      "session_item_id": true,
+      "is_correct": true,
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 87,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "attempted_at",
+      "outcome",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "id": true,
+      "attempted_at": false,
+      "outcome": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/routes/tutor-v2.ts",
+    "line": 150,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "outcome"
+    ],
+    "columns_exist": {
+      "id": true,
+      "outcome": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "answer_attempts",
+    "file": "server/services/review-queue.ts",
+    "line": 81,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "is_correct",
+      "outcome",
+      "attempted_at",
+      "canonical_id",
+      "stem",
+      "section",
+      "difficulty",
+      "domain",
+      "skill"
+    ],
+    "columns_exist": {
+      "id": true,
+      "question_id": true,
+      "is_correct": true,
+      "outcome": true,
+      "attempted_at": false,
+      "canonical_id": false,
+      "stem": false,
+      "section": false,
+      "difficulty": false,
+      "domain": false,
+      "skill": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "diagnostic_responses",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 375,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "session_id",
+      "question_canonical_id",
+      "question_index",
+      "is_correct",
+      "selected_choice",
+      "time_spent_ms"
+    ],
+    "columns_exist": {
+      "session_id": false,
+      "question_canonical_id": false,
+      "question_index": false,
+      "is_correct": false,
+      "selected_choice": false,
+      "time_spent_ms": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_responses' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/routes/diagnostic.ts",
+    "line": 43,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_id"
+    ],
+    "columns_exist": {
+      "student_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/routes/diagnostic.ts",
+    "line": 109,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_id"
+    ],
+    "columns_exist": {
+      "student_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 117,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_ids"
+    ],
+    "columns_exist": {
+      "question_ids": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 200,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_ids",
+      "current_index",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "id": false,
+      "question_ids": false,
+      "current_index": false,
+      "completed_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 230,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "student_id",
+      "blueprint_version",
+      "question_ids",
+      "current_index"
+    ],
+    "columns_exist": {
+      "student_id": false,
+      "blueprint_version": false,
+      "question_ids": false,
+      "current_index": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 272,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_ids",
+      "current_index",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "question_ids": false,
+      "current_index": false,
+      "completed_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 337,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_id",
+      "question_ids",
+      "current_index",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "student_id": false,
+      "question_ids": false,
+      "current_index": false,
+      "completed_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "diagnostic_sessions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 400,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "current_index",
+      "completed_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "current_index": false,
+      "completed_at": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.diagnostic_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "entitlements",
+    "file": "server/lib/account.ts",
+    "line": 253,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "entitlements",
+    "file": "server/lib/account.ts",
+    "line": 267,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "account_id",
+      "plan",
+      "status"
+    ],
+    "columns_exist": {
+      "account_id": true,
+      "plan": true,
+      "status": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "entitlements",
+    "file": "server/lib/account.ts",
+    "line": 284,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "entitlements",
+    "file": "server/lib/account.ts",
+    "line": 304,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "account_id"
+    ],
+    "columns_exist": {
+      "account_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "entitlements",
+    "file": "server/lib/account.ts",
+    "line": 324,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "exam_form_items",
+    "file": "apps/api/src/services/exams/exam-form-write.ts",
+    "line": 48,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "exam_forms",
+    "file": "apps/api/src/services/exams/exam-form-write.ts",
+    "line": 11,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "form_kind",
+      "exam_type",
+      "constraint_version",
+      "selection_seed",
+      "created_by"
+    ],
+    "columns_exist": {
+      "form_kind": true,
+      "exam_type": true,
+      "constraint_version": true,
+      "selection_seed": true,
+      "created_by": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1087,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section",
+      "module_index"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section": true,
+      "module_index": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1180,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1390,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1523,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1539,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1657,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1694,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "started_at",
+      "ends_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "started_at": true,
+      "ends_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1786,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1914,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section",
+      "session_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section": true,
+      "session_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1943,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "calculator_state"
+    ],
+    "columns_exist": {
+      "calculator_state": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1981,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2015,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "difficulty_bucket"
+    ],
+    "columns_exist": {
+      "difficulty_bucket": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2057,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "submitted_at",
+      "submitted_late"
+    ],
+    "columns_exist": {
+      "status": true,
+      "submitted_at": true,
+      "submitted_late": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2073,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2124,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "difficulty_bucket"
+    ],
+    "columns_exist": {
+      "difficulty_bucket": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2137,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "difficulty_bucket"
+    ],
+    "columns_exist": {
+      "difficulty_bucket": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2313,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_modules",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2731,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section",
+      "module_index",
+      "status",
+      "difficulty_bucket",
+      "started_at",
+      "submitted_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section": true,
+      "module_index": true,
+      "status": true,
+      "difficulty_bucket": true,
+      "started_at": true,
+      "submitted_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1010,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "module_id",
+      "question_id",
+      "question_domain",
+      "question_skill",
+      "question_subskill",
+      "question_tags",
+      "question_competencies"
+    ],
+    "columns_exist": {
+      "module_id": true,
+      "question_id": true,
+      "question_domain": true,
+      "question_skill": true,
+      "question_subskill": true,
+      "question_tags": true,
+      "question_competencies": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1062,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1195,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "question_canonical_id",
+      "question_exam",
+      "question_section",
+      "question_domain",
+      "question_skill",
+      "question_subskill",
+      "question_skill_code",
+      "question_difficulty",
+      "question_structure_cluster_id"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "question_canonical_id": true,
+      "question_exam": true,
+      "question_section": true,
+      "question_domain": true,
+      "question_skill": true,
+      "question_subskill": true,
+      "question_skill_code": false,
+      "question_difficulty": true,
+      "question_structure_cluster_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1460,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1551,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "order_index",
+      "question_canonical_id",
+      "question_stem",
+      "question_section",
+      "question_type",
+      "question_options",
+      "question_difficulty"
+    ],
+    "columns_exist": {
+      "id": true,
+      "question_id": true,
+      "order_index": true,
+      "question_canonical_id": true,
+      "question_stem": true,
+      "question_section": true,
+      "question_type": true,
+      "question_options": true,
+      "question_difficulty": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1675,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1812,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_type",
+      "question_correct_answer"
+    ],
+    "columns_exist": {
+      "id": true,
+      "question_type": true,
+      "question_correct_answer": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "full_length_exam_questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2744,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "module_id",
+      "order_index",
+      "question_canonical_id",
+      "question_stem",
+      "question_section",
+      "question_section_code",
+      "question_type",
+      "question_options",
+      "question_domain",
+      "question_skill",
+      "question_subskill",
+      "question_skill_code",
+      "question_difficulty",
+      "question_source_type",
+      "question_diagram_present",
+      "question_tags",
+      "question_competencies",
+      "question_correct_answer",
+      "question_answer_text",
+      "question_explanation",
+      "question_option_metadata"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "module_id": true,
+      "order_index": true,
+      "question_canonical_id": true,
+      "question_stem": true,
+      "question_section": true,
+      "question_section_code": true,
+      "question_type": true,
+      "question_options": true,
+      "question_domain": true,
+      "question_skill": true,
+      "question_subskill": true,
+      "question_skill_code": false,
+      "question_difficulty": true,
+      "question_source_type": true,
+      "question_diagram_present": true,
+      "question_tags": true,
+      "question_competencies": true,
+      "question_correct_answer": false,
+      "question_answer_text": true,
+      "question_explanation": true,
+      "question_option_metadata": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1019,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "module_id",
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "module_id": true,
+      "question_id": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1102,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1562,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "selected_answer"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "selected_answer": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1823,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "selected_answer"
+    ],
+    "columns_exist": {
+      "id": true,
+      "selected_answer": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1859,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "session_id",
+      "module_id",
+      "question_id",
+      "selected_answer",
+      "is_correct",
+      "answered_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "session_id": true,
+      "module_id": true,
+      "question_id": true,
+      "selected_answer": true,
+      "is_correct": true,
+      "answered_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1999,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2091,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2797,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "module_id",
+      "selected_answer",
+      "is_correct",
+      "answered_at"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "module_id": true,
+      "selected_answer": true,
+      "is_correct": true,
+      "answered_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 96,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "answered_at",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "id": true,
+      "answered_at": true,
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_responses",
+    "file": "server/services/review-queue.ts",
+    "line": 87,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "is_correct",
+      "answered_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "question_id": true,
+      "is_correct": true,
+      "answered_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_score_rollups",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 961,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "session_id",
+      "user_id",
+      "rw_module1_correct",
+      "rw_module1_total",
+      "rw_module2_correct",
+      "rw_module2_total",
+      "math_module1_correct",
+      "math_module1_total",
+      "math_module2_correct",
+      "math_module2_total",
+      "overall_score"
+    ],
+    "columns_exist": {
+      "session_id": true,
+      "user_id": true,
+      "rw_module1_correct": true,
+      "rw_module1_total": true,
+      "rw_module2_correct": true,
+      "rw_module2_total": true,
+      "math_module1_correct": true,
+      "math_module1_total": true,
+      "math_module2_correct": true,
+      "math_module2_total": true,
+      "overall_score": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 714,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "client_instance_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1276,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1309,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "status",
+      "test_form_id",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "status": true,
+      "test_form_id": true,
+      "client_instance_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1323,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1481,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1730,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status",
+      "current_section",
+      "current_module",
+      "test_form_id",
+      "started_at",
+      "completed_at",
+      "created_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true,
+      "current_section": true,
+      "current_module": true,
+      "test_form_id": true,
+      "started_at": true,
+      "completed_at": true,
+      "created_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1769,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status",
+      "current_section",
+      "current_module",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true,
+      "current_section": true,
+      "current_module": true,
+      "client_instance_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1897,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true,
+      "client_instance_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1963,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2157,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "current_module",
+      "break_started_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "current_module": true,
+      "break_started_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2169,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "current_section",
+      "current_module",
+      "break_started_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "current_section": true,
+      "current_module": true,
+      "break_started_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2197,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2215,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "current_section",
+      "current_module",
+      "started_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "current_section": true,
+      "current_module": true,
+      "started_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2242,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2259,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "current_section",
+      "current_module",
+      "break_started_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "current_section": true,
+      "current_module": true,
+      "break_started_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2280,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2330,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "completed_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "completed_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2347,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2401,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "status",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "status": true,
+      "completed_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2423,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 2715,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "status",
+      "current_section",
+      "current_module",
+      "seed",
+      "started_at",
+      "completed_at",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "status": true,
+      "current_section": true,
+      "current_module": true,
+      "seed": true,
+      "started_at": true,
+      "completed_at": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "full_length_exam_sessions",
+    "file": "server/routes/tutor-v2.ts",
+    "line": 82,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_consent_requests",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 21,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_consent_requests",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 56,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_consent_requests",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 136,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_consent_requests",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 151,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status"
+    ],
+    "columns_exist": {
+      "status": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_consent_requests",
+    "file": "server/routes/supabase-auth-routes.ts",
+    "line": 148,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "id",
+      "child_id",
+      "guardian_email",
+      "status",
+      "expires_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "child_id": true,
+      "guardian_email": true,
+      "status": true,
+      "expires_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_link_audit",
+    "file": "server/lib/durable-rate-limiter.ts",
+    "line": 19,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "guardian_link_audit",
+    "file": "server/lib/durable-rate-limiter.ts",
+    "line": 47,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "guardian_profile_id",
+      "student_profile_id",
+      "action",
+      "outcome",
+      "student_code_prefix",
+      "request_id",
+      "metadata",
+      "source",
+      "windowStart"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true,
+      "student_profile_id": true,
+      "action": true,
+      "outcome": true,
+      "student_code_prefix": true,
+      "request_id": true,
+      "metadata": true,
+      "source": false,
+      "windowStart": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "guardian_link_audit",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 66,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "guardian_profile_id",
+      "student_profile_id",
+      "student_code_prefix",
+      "request_id",
+      "metadata"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true,
+      "student_profile_id": true,
+      "student_code_prefix": true,
+      "request_id": true,
+      "metadata": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 7,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "account_id",
+      "student_user_id"
+    ],
+    "columns_exist": {
+      "account_id": true,
+      "student_user_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 38,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_user_id"
+    ],
+    "columns_exist": {
+      "student_user_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 56,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "guardian_profile_id"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 74,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "guardian_profile_id",
+      "student_user_id",
+      "account_id",
+      "status",
+      "linked_at",
+      "revoked_at"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true,
+      "student_user_id": true,
+      "account_id": true,
+      "status": true,
+      "linked_at": true,
+      "revoked_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 107,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "revoked_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "revoked_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 446,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_user_id",
+      "account_id",
+      "linked_at"
+    ],
+    "columns_exist": {
+      "student_user_id": true,
+      "account_id": true,
+      "linked_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 480,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "student_user_id",
+      "linked_at"
+    ],
+    "columns_exist": {
+      "student_user_id": true,
+      "linked_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "guardian_links",
+    "file": "server/lib/account.ts",
+    "line": 501,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "guardian_profile_id",
+      "account_id",
+      "linked_at"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true,
+      "account_id": true,
+      "linked_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "legal_acceptances",
+    "file": "server/routes/legal-routes.ts",
+    "line": 28,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "user_id",
+      "doc_key",
+      "doc_version",
+      "actor_type",
+      "user_agent",
+      "accepted_at"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "doc_key": true,
+      "doc_version": true,
+      "actor_type": true,
+      "user_agent": true,
+      "accepted_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "legal_acceptances",
+    "file": "server/routes/legal-routes.ts",
+    "line": 62,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "doc_key",
+      "doc_version",
+      "accepted_at",
+      "actor_type"
+    ],
+    "columns_exist": {
+      "doc_key": true,
+      "doc_version": true,
+      "accepted_at": true,
+      "actor_type": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "lyceon_account_members",
+    "file": "server/lib/account.ts",
+    "line": 164,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "account_id"
+    ],
+    "columns_exist": {
+      "account_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "lyceon_account_members",
+    "file": "server/lib/account.ts",
+    "line": 182,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "account_id",
+      "role"
+    ],
+    "columns_exist": {
+      "account_id": true,
+      "role": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "notification_reads",
+    "file": "server/routes/notification-routes.ts",
+    "line": 55,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "notification_id"
+    ],
+    "columns_exist": {
+      "notification_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.notification_reads' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "notification_reads",
+    "file": "server/routes/notification-routes.ts",
+    "line": 147,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "notification_id"
+    ],
+    "columns_exist": {
+      "notification_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.notification_reads' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "notification_reads",
+    "file": "server/routes/notification-routes.ts",
+    "line": 201,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "user_id",
+      "notification_id"
+    ],
+    "columns_exist": {
+      "user_id": false,
+      "notification_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.notification_reads' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "notification_reads",
+    "file": "server/routes/notification-routes.ts",
+    "line": 256,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "notification_id"
+    ],
+    "columns_exist": {
+      "notification_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.notification_reads' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "notification_reads",
+    "file": "server/routes/notification-routes.ts",
+    "line": 267,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.notification_reads' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 24,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 37,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 119,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 131,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 175,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 191,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "is_read"
+    ],
+    "columns_exist": {
+      "is_read": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 236,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "is_read"
+    ],
+    "columns_exist": {
+      "is_read": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "notifications",
+    "file": "server/routes/notification-routes.ts",
+    "line": 247,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_events",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1628,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "session_id",
+      "question_id",
+      "event_type",
+      "created_at",
+      "payload",
+      "session_item_id",
+      "ordinal"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "session_id": true,
+      "question_id": true,
+      "event_type": true,
+      "created_at": true,
+      "payload": true,
+      "session_item_id": false,
+      "ordinal": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "practice_events",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2382,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "session_id",
+      "question_id",
+      "event_type",
+      "created_at",
+      "payload",
+      "session_item_id"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "session_id": true,
+      "question_id": true,
+      "event_type": true,
+      "created_at": true,
+      "payload": true,
+      "session_item_id": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "practice_events",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2703,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "session_id",
+      "question_id",
+      "event_type",
+      "created_at",
+      "payload",
+      "session_item_id",
+      "outcome",
+      "isCorrect"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "session_id": true,
+      "question_id": true,
+      "event_type": true,
+      "created_at": true,
+      "payload": true,
+      "session_item_id": false,
+      "outcome": false,
+      "isCorrect": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 769,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 854,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1003,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1020,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1310,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1328,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1467,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1590,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "client_instance_id": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2038,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2330,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "attempt_id",
+      "updated_at",
+      "answered_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "attempt_id": true,
+      "updated_at": true,
+      "answered_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_session_items",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 2651,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "attempt_id",
+      "updated_at",
+      "answered_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "attempt_id": true,
+      "updated_at": true,
+      "answered_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1337,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "started_at",
+      "finished_at",
+      "actual_duration_ms"
+    ],
+    "columns_exist": {
+      "started_at": true,
+      "finished_at": true,
+      "actual_duration_ms": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1081,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1113,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "section",
+      "mode",
+      "status",
+      "completed",
+      "metadata"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "section": true,
+      "mode": true,
+      "status": true,
+      "completed": true,
+      "metadata": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1224,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "section",
+      "mode",
+      "status",
+      "completed",
+      "started_at",
+      "metadata",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "section": true,
+      "mode": true,
+      "status": true,
+      "completed": true,
+      "started_at": true,
+      "metadata": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 1295,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "section",
+      "mode",
+      "status",
+      "completed",
+      "metadata"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "section": true,
+      "mode": true,
+      "status": true,
+      "completed": true,
+      "metadata": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "practice_sessions",
+    "file": "server/services/kpi-truth-layer.ts",
+    "line": 218,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "actual_duration_ms",
+      "started_at",
+      "finished_at"
+    ],
+    "columns_exist": {
+      "actual_duration_ms": true,
+      "started_at": true,
+      "finished_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "prices",
+    "file": "server/lib/billingStorage.ts",
+    "line": 37,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.prices' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "prices",
+    "file": "server/lib/billingStorage.ts",
+    "line": 52,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.prices' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "prices",
+    "file": "server/lib/billingStorage.ts",
+    "line": 67,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.prices' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "products",
+    "file": "server/lib/billingStorage.ts",
+    "line": 10,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.products' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "products",
+    "file": "server/lib/billingStorage.ts",
+    "line": 22,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.products' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "profiles",
+    "file": "apps/api/src/lib/profile-service.ts",
+    "line": 26,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "apps/api/src/lib/rag-service.ts",
+    "line": 477,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "overall_level",
+      "primary_style",
+      "secondary_style",
+      "explanation_level",
+      "competency_map",
+      "persona_tags",
+      "learning_prefs"
+    ],
+    "columns_exist": {
+      "overall_level": true,
+      "primary_style": true,
+      "secondary_style": true,
+      "explanation_level": true,
+      "competency_map": true,
+      "persona_tags": true,
+      "learning_prefs": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/lib/profile-bootstrap.ts",
+    "line": 43,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "profiles",
+    "file": "server/lib/profile-bootstrap.ts",
+    "line": 57,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "role",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "role": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "profiles",
+    "file": "server/lib/profile-bootstrap.ts",
+    "line": 93,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "id",
+      "email",
+      "display_name",
+      "role",
+      "is_under_13",
+      "guardian_consent",
+      "guardian_email"
+    ],
+    "columns_exist": {
+      "id": true,
+      "email": true,
+      "display_name": true,
+      "role": true,
+      "is_under_13": true,
+      "guardian_consent": true,
+      "guardian_email": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 157,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "guardian_consent",
+      "consent_given_at"
+    ],
+    "columns_exist": {
+      "guardian_consent": true,
+      "consent_given_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 167,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-consent-routes.ts",
+    "line": 227,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "guardian_profile_id"
+    ],
+    "columns_exist": {
+      "guardian_profile_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 101,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "email",
+      "display_name",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "email": true,
+      "display_name": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 141,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "email",
+      "display_name"
+    ],
+    "columns_exist": {
+      "id": true,
+      "email": true,
+      "display_name": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 230,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "email",
+      "display_name",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "email": true,
+      "display_name": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 264,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "display_name"
+    ],
+    "columns_exist": {
+      "id": true,
+      "display_name": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/profile-routes.ts",
+    "line": 100,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "first_name",
+      "last_name",
+      "phone_number",
+      "date_of_birth",
+      "address",
+      "time_zone",
+      "preferred_language",
+      "marketing_opt_in",
+      "profile_completed_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "first_name": true,
+      "last_name": true,
+      "phone_number": true,
+      "date_of_birth": true,
+      "address": true,
+      "time_zone": true,
+      "preferred_language": true,
+      "marketing_opt_in": true,
+      "profile_completed_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/profile-routes.ts",
+    "line": 122,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/supabase-auth-routes.ts",
+    "line": 127,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/supabase-auth-routes.ts",
+    "line": 316,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "id",
+      "email",
+      "display_name",
+      "role",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "email": true,
+      "display_name": true,
+      "role": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/supabase-auth-routes.ts",
+    "line": 470,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "guardian_consent",
+      "guardian_email",
+      "consent_given_at"
+    ],
+    "columns_exist": {
+      "guardian_consent": true,
+      "guardian_email": true,
+      "consent_given_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "profiles",
+    "file": "server/routes/supabase-auth-routes.ts",
+    "line": 576,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "role"
+    ],
+    "columns_exist": {
+      "role": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "question_embeddings",
+    "file": "apps/api/scripts/seed-dev-question.ts",
+    "line": 132,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "question_id",
+      "stem",
+      "section",
+      "exam",
+      "metadata"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "stem": true,
+      "section": true,
+      "exam": true,
+      "metadata": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "question_embeddings",
+    "file": "apps/api/src/lib/supabase.ts",
+    "line": 50,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "question_embeddings",
+    "file": "apps/api/src/lib/supabase.ts",
+    "line": 104,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "id",
+      "question_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "question_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "question_embeddings",
+    "file": "apps/api/src/lib/vector.ts",
+    "line": 54,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "stem",
+      "section",
+      "exam",
+      "metadata"
+    ],
+    "columns_exist": {
+      "question_id": true,
+      "stem": true,
+      "section": true,
+      "exam": true,
+      "metadata": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "question_feedback",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 479,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [
+      "question_id",
+      "user_id",
+      "sentiment",
+      "comment",
+      "created_at"
+    ],
+    "columns_exist": {
+      "question_id": false,
+      "user_id": false,
+      "sentiment": false,
+      "comment": false,
+      "created_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.question_feedback' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "question_versions",
+    "file": "server/services/question-publish.ts",
+    "line": 136,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "question_canonical_id",
+      "version_number",
+      "lifecycle_status",
+      "created_by",
+      "created_at",
+      "published_at"
+    ],
+    "columns_exist": {
+      "question_canonical_id": true,
+      "version_number": true,
+      "lifecycle_status": true,
+      "created_by": true,
+      "created_at": true,
+      "published_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/backfill-question-classification.ts",
+    "line": 45,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section_code",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "tags"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section_code": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "tags": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/backfill-question-classification.ts",
+    "line": 98,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code"
+    ],
+    "columns_exist": {
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/diag-adaptive-candidates.ts",
+    "line": 14,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section",
+      "section_code",
+      "stem",
+      "difficulty"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section": true,
+      "section_code": true,
+      "stem": true,
+      "difficulty": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/diag-adaptive-candidates.ts",
+    "line": 41,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section",
+      "section_code",
+      "stem",
+      "difficulty"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section": true,
+      "section_code": true,
+      "stem": true,
+      "difficulty": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/diag-next-question.ts",
+    "line": 19,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "stem",
+      "options",
+      "section",
+      "section_code",
+      "difficulty",
+      "question_type",
+      "status"
+    ],
+    "columns_exist": {
+      "id": true,
+      "stem": true,
+      "options": true,
+      "section": true,
+      "section_code": true,
+      "difficulty": true,
+      "question_type": true,
+      "status": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/seed-dev-question.ts",
+    "line": 52,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/seed-dev-question.ts",
+    "line": 68,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/seed-dev-question.ts",
+    "line": 102,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/verify-questions-db.ts",
+    "line": 28,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "section_code",
+      "question_type",
+      "difficulty",
+      "source_type"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "section_code": true,
+      "question_type": true,
+      "difficulty": true,
+      "source_type": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/scripts/verify-questions-db.ts",
+    "line": 37,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "section_code",
+      "question_type",
+      "difficulty",
+      "source_type",
+      "options",
+      "option_metadata",
+      "tags",
+      "competencies",
+      "provenance_chunk_ids"
+    ],
+    "columns_exist": {
+      "id": true,
+      "section_code": true,
+      "question_type": true,
+      "difficulty": true,
+      "source_type": true,
+      "options": true,
+      "option_metadata": false,
+      "tags": true,
+      "competencies": true,
+      "provenance_chunk_ids": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/db/client.ts",
+    "line": 5,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/db/client.ts",
+    "line": 36,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/lib/rag-service.ts",
+    "line": 562,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/lib/rag-service.ts",
+    "line": 871,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/lib/supabase-server.ts",
+    "line": 87,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/routes/diagnostic.ts",
+    "line": 63,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "stem",
+      "options",
+      "section",
+      "section_code",
+      "question_type",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "difficulty"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "stem": true,
+      "options": true,
+      "section": true,
+      "section_code": true,
+      "question_type": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "difficulty": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/routes/diagnostic.ts",
+    "line": 118,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "canonical_id",
+      "question_type",
+      "correct_answer",
+      "answer_text",
+      "explanation",
+      "section",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "difficulty",
+      "structure_cluster_id",
+      "exam"
+    ],
+    "columns_exist": {
+      "canonical_id": true,
+      "question_type": true,
+      "correct_answer": false,
+      "answer_text": true,
+      "explanation": true,
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "difficulty": true,
+      "structure_cluster_id": true,
+      "exam": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/routes/healthz.ts",
+    "line": 13,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/adaptiveSelector.ts",
+    "line": 187,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "stem",
+      "section",
+      "section_code",
+      "question_type",
+      "options",
+      "difficulty",
+      "explanation",
+      "tags",
+      "competencies",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "correct_answer",
+      "answer_text"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "stem": true,
+      "section": true,
+      "section_code": true,
+      "question_type": true,
+      "options": true,
+      "difficulty": true,
+      "explanation": true,
+      "tags": true,
+      "competencies": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "correct_answer": false,
+      "answer_text": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 132,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "canonical_id",
+      "difficulty",
+      "id"
+    ],
+    "columns_exist": {
+      "canonical_id": true,
+      "difficulty": true,
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/exams/exam-form-builder.ts",
+    "line": 236,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 610,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "question_type",
+      "section_code"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "question_type": true,
+      "section_code": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 1433,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "question_type",
+      "stem",
+      "section",
+      "section_code",
+      "options",
+      "difficulty",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "source_type",
+      "diagram_present",
+      "tags",
+      "competencies",
+      "correct_answer",
+      "answer_text",
+      "explanation",
+      "option_metadata",
+      "exam",
+      "structure_cluster_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "question_type": true,
+      "stem": true,
+      "section": true,
+      "section_code": true,
+      "options": true,
+      "difficulty": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "source_type": true,
+      "diagram_present": true,
+      "tags": true,
+      "competencies": true,
+      "correct_answer": false,
+      "answer_text": true,
+      "explanation": true,
+      "option_metadata": false,
+      "exam": true,
+      "structure_cluster_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/studentMastery.ts",
+    "line": 28,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "apps/api/src/services/studentMastery.ts",
+    "line": 38,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/practice-canonical.ts",
+    "line": 710,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "section",
+      "section_code",
+      "stem",
+      "question_type",
+      "options",
+      "difficulty",
+      "correct_answer",
+      "explanation",
+      "domain",
+      "skill"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "section": true,
+      "section_code": true,
+      "stem": true,
+      "question_type": true,
+      "options": true,
+      "difficulty": true,
+      "correct_answer": false,
+      "explanation": true,
+      "domain": true,
+      "skill": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/practice-topics-routes.ts",
+    "line": 47,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "stem",
+      "section",
+      "section_code",
+      "question_type",
+      "options",
+      "difficulty",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "tags",
+      "competencies"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "stem": true,
+      "section": true,
+      "section_code": true,
+      "question_type": true,
+      "options": true,
+      "difficulty": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "tags": true,
+      "competencies": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 59,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 168,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 186,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section_code",
+      "difficulty"
+    ],
+    "columns_exist": {
+      "section_code": true,
+      "difficulty": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 272,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 389,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 422,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/questions-runtime.ts",
+    "line": 469,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 141,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "question_type",
+      "correct_answer",
+      "answer_text",
+      "explanation",
+      "options"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "question_type": true,
+      "correct_answer": false,
+      "answer_text": true,
+      "explanation": true,
+      "options": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 512,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "section",
+      "section_code",
+      "question_type",
+      "stem",
+      "options",
+      "difficulty",
+      "correct_answer",
+      "explanation"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "section": true,
+      "section_code": true,
+      "question_type": true,
+      "stem": true,
+      "options": true,
+      "difficulty": true,
+      "correct_answer": false,
+      "explanation": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/search-runtime.ts",
+    "line": 39,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "section",
+      "section_code",
+      "question_type",
+      "stem",
+      "options",
+      "difficulty",
+      "domain",
+      "skill",
+      "subskill",
+      "skill_code",
+      "tags",
+      "competencies"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "section": true,
+      "section_code": true,
+      "question_type": true,
+      "stem": true,
+      "options": true,
+      "difficulty": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "tags": true,
+      "competencies": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "questions",
+    "file": "server/routes/tutor-v2.ts",
+    "line": 128,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/scripts/cleanup-question-stems.ts",
+    "line": 82,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "stem"
+    ],
+    "columns_exist": {
+      "id": true,
+      "stem": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/scripts/cleanup-question-stems.ts",
+    "line": 122,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "stem"
+    ],
+    "columns_exist": {
+      "stem": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "script",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/services/question-publish.ts",
+    "line": 79,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/services/question-publish.ts",
+    "line": 96,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id"
+    ],
+    "columns_exist": {
+      "id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/services/question-publish.ts",
+    "line": 212,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/services/question-publish.ts",
+    "line": 296,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "questions",
+    "file": "server/services/review-queue.ts",
+    "line": 125,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "canonical_id",
+      "stem",
+      "section",
+      "difficulty",
+      "domain",
+      "skill",
+      "subskill"
+    ],
+    "columns_exist": {
+      "id": true,
+      "canonical_id": true,
+      "stem": true,
+      "section": true,
+      "difficulty": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 185,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 193,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 673,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "id": false,
+      "question_id": false,
+      "is_correct": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 689,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "id": false,
+      "question_id": false,
+      "is_correct": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 730,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "student_id",
+      "question_id",
+      "context",
+      "selected_answer",
+      "is_correct",
+      "seconds_spent",
+      "client_attempt_id"
+    ],
+    "columns_exist": {
+      "student_id": false,
+      "question_id": false,
+      "context": false,
+      "selected_answer": false,
+      "is_correct": false,
+      "seconds_spent": false,
+      "client_attempt_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 742,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "question_id",
+      "is_correct"
+    ],
+    "columns_exist": {
+      "id": false,
+      "question_id": false,
+      "is_correct": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_error_attempts",
+    "file": "server/services/review-queue.ts",
+    "line": 241,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_id",
+      "is_correct",
+      "created_at"
+    ],
+    "columns_exist": {
+      "question_id": false,
+      "is_correct": false,
+      "created_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_error_attempts' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_events",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 205,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "review_session_id",
+      "review_session_item_id",
+      "student_id",
+      "event_type",
+      "event_payload"
+    ],
+    "columns_exist": {
+      "review_session_id": false,
+      "review_session_item_id": false,
+      "student_id": false,
+      "event_type": false,
+      "event_payload": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_events' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 226,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 260,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": false,
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 312,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "option_order",
+      "option_token_map",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "option_order": false,
+      "option_token_map": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 567,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 659,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 713,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "answered_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": false,
+      "answered_at": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 752,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "attempt_id",
+      "answered_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": false,
+      "attempt_id": false,
+      "answered_at": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 792,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "ordinal",
+      "question_canonical_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "ordinal": false,
+      "question_canonical_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_session_items",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 794,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "updated_at",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "status": false,
+      "updated_at": false,
+      "client_instance_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_session_items' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 215,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "student_id",
+      "status",
+      "started_at",
+      "completed_at",
+      "abandoned_at",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "student_id": false,
+      "status": false,
+      "started_at": false,
+      "completed_at": false,
+      "abandoned_at": false,
+      "client_instance_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 378,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "student_id",
+      "status",
+      "started_at",
+      "completed_at",
+      "abandoned_at",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "student_id": false,
+      "status": false,
+      "started_at": false,
+      "completed_at": false,
+      "abandoned_at": false,
+      "client_instance_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 401,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 430,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "student_id",
+      "status",
+      "started_at",
+      "completed_at",
+      "abandoned_at",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "student_id": false,
+      "status": false,
+      "started_at": false,
+      "completed_at": false,
+      "abandoned_at": false,
+      "client_instance_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 453,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 465,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "student_id",
+      "status",
+      "source_context",
+      "started_at",
+      "client_instance_id",
+      "idempotency_key"
+    ],
+    "columns_exist": {
+      "student_id": false,
+      "status": false,
+      "source_context": false,
+      "started_at": false,
+      "client_instance_id": false,
+      "idempotency_key": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 480,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "student_id",
+      "status",
+      "started_at",
+      "completed_at",
+      "abandoned_at",
+      "client_instance_id"
+    ],
+    "columns_exist": {
+      "id": false,
+      "student_id": false,
+      "status": false,
+      "started_at": false,
+      "completed_at": false,
+      "abandoned_at": false,
+      "client_instance_id": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 495,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 610,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 650,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "client_instance_id",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "client_instance_id": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "review_sessions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 797,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "completed_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": false,
+      "completed_at": false,
+      "updated_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.review_sessions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "skill_mastery",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 309,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "mastery_score",
+      "accuracy",
+      "last_attempt_at"
+    ],
+    "columns_exist": {
+      "section": false,
+      "domain": false,
+      "skill": false,
+      "mastery_score": false,
+      "accuracy": false,
+      "last_attempt_at": false
+    },
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.skill_mastery' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "stripe_webhook_events",
+    "file": "server/lib/webhookHandlers.ts",
+    "line": 119,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "id",
+      "type"
+    ],
+    "columns_exist": {
+      "id": true,
+      "type": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "stripe_webhook_events",
+    "file": "server/lib/webhookHandlers.ts",
+    "line": 138,
+    "read_write": "write",
+    "op": "delete",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "student_cluster_mastery",
+    "file": "apps/api/src/services/studentMastery.ts",
+    "line": 135,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "structure_cluster_id",
+      "attempts",
+      "correct",
+      "accuracy",
+      "mastery_score"
+    ],
+    "columns_exist": {
+      "structure_cluster_id": true,
+      "attempts": true,
+      "correct": true,
+      "accuracy": true,
+      "mastery_score": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 297,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "attempted_at",
+      "is_correct",
+      "time_spent_ms",
+      "section",
+      "domain",
+      "skill",
+      "subskill",
+      "question_canonical_id",
+      "event_type"
+    ],
+    "columns_exist": {
+      "attempted_at": false,
+      "is_correct": true,
+      "time_spent_ms": true,
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "subskill": true,
+      "question_canonical_id": true,
+      "event_type": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/services/adaptiveSelector.ts",
+    "line": 114,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "is_correct"
+    ],
+    "columns_exist": {
+      "is_correct": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/services/adaptiveSelector.ts",
+    "line": 142,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_canonical_id"
+    ],
+    "columns_exist": {
+      "question_canonical_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/services/calendar-month-view.ts",
+    "line": 168,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "attempted_at",
+      "is_correct",
+      "time_spent_ms",
+      "event_type"
+    ],
+    "columns_exist": {
+      "attempted_at": false,
+      "is_correct": true,
+      "time_spent_ms": true,
+      "event_type": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/services/diagnostic-service.ts",
+    "line": 106,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "question_canonical_id"
+    ],
+    "columns_exist": {
+      "question_canonical_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "apps/api/src/services/mastery-write.ts",
+    "line": 97,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "id",
+      "user_id",
+      "question_canonical_id",
+      "session_id",
+      "is_correct",
+      "selected_choice",
+      "time_spent_ms",
+      "event_type",
+      "exam",
+      "skill",
+      "subskill",
+      "skill_code",
+      "difficulty",
+      "structure_cluster_id"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "question_canonical_id": true,
+      "session_id": false,
+      "is_correct": true,
+      "selected_choice": true,
+      "time_spent_ms": true,
+      "event_type": false,
+      "exam": true,
+      "skill": true,
+      "subskill": true,
+      "skill_code": false,
+      "difficulty": false,
+      "structure_cluster_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "server/services/kpi-truth-layer.ts",
+    "line": 204,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "is_correct",
+      "time_spent_ms",
+      "event_type"
+    ],
+    "columns_exist": {
+      "is_correct": true,
+      "time_spent_ms": true,
+      "event_type": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_question_attempts",
+    "file": "server/services/kpi-truth-layer.ts",
+    "line": 232,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "is_correct",
+      "time_spent_ms",
+      "event_type"
+    ],
+    "columns_exist": {
+      "is_correct": true,
+      "time_spent_ms": true,
+      "event_type": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "apps/api/src/lib/rag-service.ts",
+    "line": 502,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "attempts",
+      "correct",
+      "mastery_score",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "attempts": true,
+      "correct": true,
+      "mastery_score": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "apps/api/src/routes/mastery.ts",
+    "line": 201,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "attempts",
+      "correct",
+      "accuracy",
+      "mastery_score"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "attempts": true,
+      "correct": true,
+      "accuracy": true,
+      "mastery_score": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "apps/api/src/services/mastery-derived.ts",
+    "line": 85,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "attempts",
+      "correct",
+      "mastery_score",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "attempts": true,
+      "correct": true,
+      "mastery_score": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "apps/api/src/services/studentMastery.ts",
+    "line": 106,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "attempts",
+      "correct",
+      "accuracy",
+      "mastery_score"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "attempts": true,
+      "correct": true,
+      "accuracy": true,
+      "mastery_score": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "apps/api/src/services/studentMastery.ts",
+    "line": 172,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "attempts",
+      "correct",
+      "accuracy"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "attempts": true,
+      "correct": true,
+      "accuracy": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_skill_mastery",
+    "file": "server/routes/legacy/progress.ts",
+    "line": 56,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "domain",
+      "skill",
+      "mastery_score",
+      "attempts",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "section": true,
+      "domain": true,
+      "skill": true,
+      "mastery_score": true,
+      "attempts": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 264,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "day_date",
+      "planned_minutes",
+      "completed_minutes",
+      "focus",
+      "tasks",
+      "plan_version",
+      "generated_at",
+      "is_user_override",
+      "status",
+      "generation_source",
+      "is_exam_day",
+      "is_taper_day",
+      "is_full_test_day",
+      "required_task_count",
+      "completed_task_count",
+      "study_minutes_target",
+      "created_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "day_date": true,
+      "planned_minutes": true,
+      "completed_minutes": true,
+      "focus": true,
+      "tasks": true,
+      "plan_version": true,
+      "generated_at": true,
+      "is_user_override": true,
+      "status": true,
+      "generation_source": true,
+      "is_exam_day": true,
+      "is_taper_day": true,
+      "is_full_test_day": true,
+      "required_task_count": true,
+      "completed_task_count": true,
+      "study_minutes_target": true,
+      "created_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 527,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1154,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1290,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "status",
+      "required_task_count",
+      "completed_task_count",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "status": true,
+      "required_task_count": true,
+      "completed_task_count": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1331,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "day_date",
+      "planned_minutes",
+      "completed_minutes"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "day_date": true,
+      "planned_minutes": true,
+      "completed_minutes": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1362,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "completed_minutes",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "completed_minutes": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/services/calendar-month-view.ts",
+    "line": 135,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "day_date",
+      "planned_minutes",
+      "completed_minutes",
+      "focus",
+      "tasks",
+      "plan_version",
+      "generated_at",
+      "is_user_override",
+      "status",
+      "generation_source",
+      "is_exam_day",
+      "is_taper_day",
+      "is_full_test_day",
+      "required_task_count",
+      "completed_task_count",
+      "study_minutes_target",
+      "created_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "day_date": true,
+      "planned_minutes": true,
+      "completed_minutes": true,
+      "focus": true,
+      "tasks": true,
+      "plan_version": true,
+      "generated_at": true,
+      "is_user_override": true,
+      "status": true,
+      "generation_source": true,
+      "is_exam_day": true,
+      "is_taper_day": true,
+      "is_full_test_day": true,
+      "required_task_count": true,
+      "completed_task_count": true,
+      "study_minutes_target": true,
+      "created_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_days",
+    "file": "apps/api/src/services/calendar-month-view.ts",
+    "line": 183,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "day_date",
+      "status"
+    ],
+    "columns_exist": {
+      "day_date": true,
+      "status": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 279,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "day_id",
+      "user_id",
+      "day_date",
+      "ordinal",
+      "task_type",
+      "section",
+      "duration_minutes",
+      "source_skill_code",
+      "source_domain",
+      "source_subskill",
+      "source_reason",
+      "status",
+      "is_user_override",
+      "planner_owned",
+      "metadata",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "day_id": true,
+      "user_id": true,
+      "day_date": true,
+      "ordinal": true,
+      "task_type": true,
+      "section": true,
+      "duration_minutes": true,
+      "source_skill_code": true,
+      "source_domain": true,
+      "source_subskill": true,
+      "source_reason": true,
+      "status": true,
+      "is_user_override": true,
+      "planner_owned": true,
+      "metadata": true,
+      "completed_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 538,
+    "read_write": "write",
+    "op": "delete",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 548,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 592,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "day_date"
+    ],
+    "columns_exist": {
+      "day_date": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1163,
+    "read_write": "write",
+    "op": "delete",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1206,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1250,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "user_id",
+      "day_id",
+      "day_date",
+      "status"
+    ],
+    "columns_exist": {
+      "id": true,
+      "user_id": true,
+      "day_id": true,
+      "day_date": true,
+      "status": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 1271,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "completed_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "completed_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_plan_tasks",
+    "file": "apps/api/src/services/calendar-month-view.ts",
+    "line": 150,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "day_id",
+      "user_id",
+      "day_date",
+      "ordinal",
+      "task_type",
+      "section",
+      "duration_minutes",
+      "source_skill_code",
+      "source_domain",
+      "source_subskill",
+      "source_reason",
+      "status",
+      "is_user_override",
+      "planner_owned",
+      "metadata",
+      "completed_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "day_id": true,
+      "user_id": true,
+      "day_date": true,
+      "ordinal": true,
+      "task_type": true,
+      "section": true,
+      "duration_minutes": true,
+      "source_skill_code": true,
+      "source_domain": true,
+      "source_subskill": true,
+      "source_reason": true,
+      "status": true,
+      "is_user_override": true,
+      "planner_owned": true,
+      "metadata": true,
+      "completed_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_profile",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 254,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "user_id",
+      "baseline_score",
+      "target_score",
+      "exam_date",
+      "daily_minutes",
+      "timezone",
+      "planner_mode",
+      "full_test_cadence",
+      "preferred_study_days",
+      "created_at",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "baseline_score": true,
+      "target_score": true,
+      "exam_date": true,
+      "daily_minutes": true,
+      "timezone": true,
+      "planner_mode": true,
+      "full_test_cadence": true,
+      "preferred_study_days": true,
+      "created_at": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_profile",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 694,
+    "read_write": "write",
+    "op": "upsert",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_profile",
+    "file": "apps/api/src/routes/mastery.ts",
+    "line": 340,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "planner_mode"
+    ],
+    "columns_exist": {
+      "planner_mode": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_profile",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 499,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "timezone"
+    ],
+    "columns_exist": {
+      "timezone": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "student_study_profile",
+    "file": "server/services/kpi-truth-layer.ts",
+    "line": 246,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "timezone"
+    ],
+    "columns_exist": {
+      "timezone": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "subscriptions",
+    "file": "server/lib/billingStorage.ts",
+    "line": 82,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.subscriptions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "subscriptions",
+    "file": "server/lib/billingStorage.ts",
+    "line": 97,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": false,
+    "table_error": "Could not find the table 'public.subscriptions' in the schema cache",
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_table_missing"
+  },
+  {
+    "table": "system_event_logs",
+    "file": "apps/api/src/routes/calendar.ts",
+    "line": 209,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "event_type",
+      "level",
+      "source",
+      "message",
+      "user_id",
+      "details"
+    ],
+    "columns_exist": {
+      "event_type": true,
+      "level": true,
+      "source": true,
+      "message": true,
+      "user_id": true,
+      "details": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "system_event_logs",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 739,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "event_type",
+      "level",
+      "source",
+      "message",
+      "user_id",
+      "session_id",
+      "details"
+    ],
+    "columns_exist": {
+      "event_type": true,
+      "level": true,
+      "source": true,
+      "message": true,
+      "user_id": true,
+      "session_id": true,
+      "details": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "system_event_logs",
+    "file": "server/routes/guardian-routes.ts",
+    "line": 38,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "event_type",
+      "level",
+      "source",
+      "message",
+      "user_id",
+      "session_id",
+      "details",
+      "request_id",
+      "student_id"
+    ],
+    "columns_exist": {
+      "event_type": true,
+      "level": true,
+      "source": true,
+      "message": true,
+      "user_id": true,
+      "session_id": true,
+      "details": true,
+      "request_id": false,
+      "student_id": false
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "test_form_items",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 549,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "section",
+      "module_index",
+      "ordinal",
+      "question_id"
+    ],
+    "columns_exist": {
+      "section": true,
+      "module_index": false,
+      "ordinal": true,
+      "question_id": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "unsafe_column_drift"
+  },
+  {
+    "table": "test_forms",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 507,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status",
+      "published_at",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true,
+      "published_at": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "test_forms",
+    "file": "apps/api/src/services/fullLengthExam.ts",
+    "line": 525,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "status",
+      "published_at",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "status": true,
+      "published_at": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "disabled",
+    "execution_context": "unknown",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "tutor_interactions",
+    "file": "apps/api/src/lib/tutor-log.ts",
+    "line": 13,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "user_id",
+      "mode",
+      "canonical_ids_used",
+      "primary_style",
+      "secondary_style",
+      "explanation_level",
+      "message",
+      "answer"
+    ],
+    "columns_exist": {
+      "user_id": true,
+      "mode": true,
+      "canonical_ids_used": true,
+      "primary_style": true,
+      "secondary_style": true,
+      "explanation_level": true,
+      "message": true,
+      "answer": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "tutor_interactions",
+    "file": "server/routes/review-errors-routes.ts",
+    "line": 276,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "tutor_interactions",
+    "file": "server/routes/review-session-routes.ts",
+    "line": 780,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "id",
+      "created_at"
+    ],
+    "columns_exist": {
+      "id": true,
+      "created_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "unknown",
+    "execution_context": "service_role",
+    "mount": "route",
+    "safety": "ok_or_needs_review"
+  },
+  {
+    "table": "usage_daily",
+    "file": "server/lib/account.ts",
+    "line": 343,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [
+      "practice_questions_used",
+      "ai_messages_used"
+    ],
+    "columns_exist": {
+      "practice_questions_used": true,
+      "ai_messages_used": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "usage_daily",
+    "file": "server/lib/account.ts",
+    "line": 364,
+    "read_write": "read",
+    "op": "select",
+    "columns_used": [],
+    "columns_exist": {},
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "usage_daily",
+    "file": "server/lib/account.ts",
+    "line": 372,
+    "read_write": "write",
+    "op": "update",
+    "columns_used": [
+      "updated_at"
+    ],
+    "columns_exist": {
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  },
+  {
+    "table": "usage_daily",
+    "file": "server/lib/account.ts",
+    "line": 387,
+    "read_write": "write",
+    "op": "insert",
+    "columns_used": [
+      "account_id",
+      "day",
+      "practice_questions_used",
+      "ai_messages_used",
+      "updated_at"
+    ],
+    "columns_exist": {
+      "account_id": true,
+      "day": true,
+      "practice_questions_used": true,
+      "ai_messages_used": true,
+      "updated_at": true
+    },
+    "table_exists": true,
+    "table_error": null,
+    "live_rls": "enabled",
+    "execution_context": "service_role",
+    "mount": "service",
+    "safety": "service_role_bypass_rls"
+  }
+]

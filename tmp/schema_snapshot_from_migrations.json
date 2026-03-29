@@ -1,0 +1,698 @@
+{
+  "answer_attempts": {
+    "rls": true,
+    "columns": [
+      "attempted_at",
+      "chosen",
+      "client_attempt_id",
+      "created_at",
+      "elapsed_ms",
+      "free_response_answer",
+      "id",
+      "is_correct",
+      "outcome",
+      "question_id",
+      "selected_answer",
+      "session_id",
+      "session_item_id",
+      "time_spent_ms",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20241218_competency_tables.sql",
+      "20260102_practice_tables.sql",
+      "20260109_practice_canonical.sql",
+      "20260110_practice_canonical_plus_events.sql",
+      "20260314_practice_session_items_runtime.sql"
+    ]
+  },
+  "competency_events": {
+    "rls": true,
+    "columns": [
+      "competency_tags",
+      "created_at",
+      "delta",
+      "event_source",
+      "event_type",
+      "id",
+      "metadata",
+      "occurred_at",
+      "question_id",
+      "section",
+      "session_id",
+      "unit_tag",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20241218_competency_tables.sql",
+      "20260113_practice_engine_competencies.sql"
+    ]
+  },
+  "diagnostic_responses": {
+    "rls": true,
+    "columns": [
+      "answered_at",
+      "id",
+      "is_correct",
+      "question_canonical_id",
+      "question_index",
+      "selected_choice",
+      "session_id",
+      "time_spent_ms"
+    ],
+    "touchedBy": [
+      "20260210_mastery_v1.sql"
+    ]
+  },
+  "diagnostic_sessions": {
+    "rls": true,
+    "columns": [
+      "blueprint_version",
+      "completed_at",
+      "created_at",
+      "current_index",
+      "id",
+      "question_ids",
+      "student_id",
+      "updated_at"
+    ],
+    "touchedBy": [
+      "20260210_mastery_v1.sql"
+    ]
+  },
+  "full_length_exam_modules": {
+    "rls": true,
+    "columns": [
+      "calculator_state",
+      "created_at",
+      "difficulty_bucket",
+      "ends_at",
+      "id",
+      "module_index",
+      "section",
+      "session_id",
+      "started_at",
+      "status",
+      "submitted_at",
+      "submitted_late",
+      "target_duration_ms"
+    ],
+    "touchedBy": [
+      "20260213_full_length_exam_hardening.sql",
+      "20260220_full_length_exam_submitted_late.sql",
+      "20260318_full_length_module_calculator_state.sql"
+    ]
+  },
+  "full_length_exam_questions": {
+    "rls": true,
+    "columns": [
+      "created_at",
+      "id",
+      "module_id",
+      "order_index",
+      "presented_at",
+      "question_answer_text",
+      "question_canonical_id",
+      "question_competencies",
+      "question_correct_answer",
+      "question_diagram_present",
+      "question_difficulty",
+      "question_domain",
+      "question_exam",
+      "question_explanation",
+      "question_id",
+      "question_option_metadata",
+      "question_options",
+      "question_section",
+      "question_section_code",
+      "question_skill",
+      "question_skill_code",
+      "question_source_type",
+      "question_stem",
+      "question_structure_cluster_id",
+      "question_subskill",
+      "question_tags",
+      "question_type"
+    ],
+    "touchedBy": [
+      "20260213_full_length_exam_hardening.sql",
+      "20260326_runtime_item_snapshots.sql"
+    ]
+  },
+  "full_length_exam_responses": {
+    "rls": true,
+    "columns": [
+      "answered_at",
+      "created_at",
+      "free_response_answer",
+      "id",
+      "is_correct",
+      "module_id",
+      "question_id",
+      "selected_answer",
+      "session_id",
+      "submitted_at",
+      "updated_at"
+    ],
+    "touchedBy": [
+      "20260213_full_length_exam_hardening.sql"
+    ]
+  },
+  "full_length_exam_score_rollups": {
+    "rls": true,
+    "columns": [
+      "created_at",
+      "id",
+      "math_module1_correct",
+      "math_module1_total",
+      "math_module2_correct",
+      "math_module2_total",
+      "overall_score",
+      "rw_module1_correct",
+      "rw_module1_total",
+      "rw_module2_correct",
+      "rw_module2_total",
+      "session_id",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260218_full_length_exam_score_rollups.sql"
+    ]
+  },
+  "full_length_exam_sessions": {
+    "rls": true,
+    "columns": [
+      "break_started_at",
+      "client_instance_id",
+      "completed_at",
+      "created_at",
+      "current_module",
+      "current_section",
+      "id",
+      "seed",
+      "started_at",
+      "status",
+      "test_form_id",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260213_full_length_exam_hardening.sql",
+      "20260314_full_length_exam_runtime_contract.sql"
+    ]
+  },
+  "guardian_consent_requests": {
+    "rls": true,
+    "columns": [
+      "child_id",
+      "created_at",
+      "expires_at",
+      "guardian_email",
+      "id",
+      "status",
+      "stripe_payment_intent_id",
+      "verification_method"
+    ],
+    "touchedBy": [
+      "20260311_guardian_consent_requests.sql"
+    ]
+  },
+  "guardian_link_audit": {
+    "rls": null,
+    "columns": [
+      "metadata",
+      "outcome",
+      "request_id",
+      "student_code_prefix"
+    ],
+    "touchedBy": [
+      "20260102_guardian_link_code.sql"
+    ]
+  },
+  "guardian_links": {
+    "rls": true,
+    "columns": [],
+    "touchedBy": [
+      "20260309_guardian_links_canonical.sql"
+    ]
+  },
+  "guardian_preferences": {
+    "rls": true,
+    "columns": [
+      "selected_account_id",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260108_sprint21_hardening.sql"
+    ]
+  },
+  "legal_acceptances": {
+    "rls": true,
+    "columns": [
+      "accepted_at",
+      "actor_type",
+      "doc_key",
+      "doc_version",
+      "id",
+      "ip_address",
+      "minor",
+      "user_agent",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251223_legal_acceptances.sql"
+    ]
+  },
+  "mastery_constants": {
+    "rls": true,
+    "columns": [
+      "description",
+      "formula_ref",
+      "key",
+      "units",
+      "updated_at",
+      "value_json",
+      "value_num",
+      "value_text"
+    ],
+    "touchedBy": [
+      "20260211_mastery_constants.sql"
+    ]
+  },
+  "practice_events": {
+    "rls": true,
+    "columns": [
+      "created_at",
+      "event_type",
+      "id",
+      "payload",
+      "question_id",
+      "session_id",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260110_practice_canonical_plus_events.sql"
+    ]
+  },
+  "practice_session_items": {
+    "rls": true,
+    "columns": [
+      "answered_at",
+      "attempt_id",
+      "client_instance_id",
+      "created_at",
+      "id",
+      "option_order",
+      "option_token_map",
+      "ordinal",
+      "question_canonical_id",
+      "question_correct_answer",
+      "question_difficulty",
+      "question_explanation",
+      "question_id",
+      "question_options",
+      "question_section",
+      "question_stem",
+      "session_id",
+      "status",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260314_practice_item_opaque_options.sql",
+      "20260314_practice_session_items_runtime.sql",
+      "20260318_practice_session_schema_parity.sql",
+      "20260326_runtime_item_snapshots.sql"
+    ]
+  },
+  "practice_sessions": {
+    "rls": true,
+    "columns": [
+      "accuracy",
+      "actual_duration_ms",
+      "completed",
+      "completed_at",
+      "correct_count",
+      "created_at",
+      "difficulty",
+      "ended_at",
+      "finished_at",
+      "id",
+      "incorrect_count",
+      "metadata",
+      "mode",
+      "question_ids",
+      "section",
+      "skipped_count",
+      "started_at",
+      "status",
+      "target_duration_ms",
+      "total_questions",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20241218_competency_tables.sql",
+      "20260102_practice_tables.sql",
+      "20260109_practice_canonical.sql",
+      "20260110_practice_canonical_plus_events.sql"
+    ]
+  },
+  "profiles": {
+    "rls": null,
+    "columns": [
+      "address",
+      "date_of_birth",
+      "first_name",
+      "guardian_profile_id",
+      "last_name",
+      "marketing_opt_in",
+      "phone_number",
+      "preferred_language",
+      "profile_completed_at",
+      "student_link_code",
+      "time_zone"
+    ],
+    "touchedBy": [
+      "20260102_guardian_link_code.sql",
+      "20260202_profile_completion_fields.sql"
+    ]
+  },
+  "question_versions": {
+    "rls": null,
+    "columns": [
+      "created_at",
+      "created_by",
+      "id",
+      "lifecycle_status",
+      "published_at",
+      "question_canonical_id",
+      "snapshot",
+      "version_number"
+    ],
+    "touchedBy": [
+      "20260313_create_question_versions.sql"
+    ]
+  },
+  "questions": {
+    "rls": null,
+    "columns": [
+      "canonical_id"
+    ],
+    "touchedBy": [
+      "20251222_add_canonical_id_to_questions.sql",
+      "20251222_drop_internal_id_column.sql"
+    ]
+  },
+  "review_error_attempts": {
+    "rls": true,
+    "columns": [
+      "client_attempt_id",
+      "context",
+      "created_at",
+      "id",
+      "is_correct",
+      "question_id",
+      "seconds_spent",
+      "selected_answer",
+      "student_id"
+    ],
+    "touchedBy": [
+      "20260203_review_error_attempts.sql"
+    ]
+  },
+  "review_session_events": {
+    "rls": true,
+    "columns": [
+      "created_at",
+      "event_payload",
+      "event_type",
+      "id",
+      "review_session_id",
+      "review_session_item_id",
+      "student_id"
+    ],
+    "touchedBy": [
+      "20260314_review_session_lifecycle.sql"
+    ]
+  },
+  "review_session_items": {
+    "rls": true,
+    "columns": [
+      "answered_at",
+      "attempt_id",
+      "client_instance_id",
+      "created_at",
+      "id",
+      "option_order",
+      "option_token_map",
+      "ordinal",
+      "question_canonical_id",
+      "question_correct_answer",
+      "question_difficulty",
+      "question_explanation",
+      "question_options",
+      "question_section",
+      "question_stem",
+      "retry_mode",
+      "review_session_id",
+      "source_attempted_at",
+      "source_origin",
+      "source_question_canonical_id",
+      "source_question_id",
+      "status",
+      "student_id",
+      "tutor_opened_at",
+      "updated_at"
+    ],
+    "touchedBy": [
+      "20260314_review_session_lifecycle.sql",
+      "20260326_runtime_item_snapshots.sql"
+    ]
+  },
+  "review_sessions": {
+    "rls": true,
+    "columns": [
+      "abandoned_at",
+      "client_instance_id",
+      "completed_at",
+      "created_at",
+      "id",
+      "idempotency_key",
+      "source_context",
+      "started_at",
+      "status",
+      "student_id",
+      "updated_at"
+    ],
+    "touchedBy": [
+      "20260314_review_session_lifecycle.sql"
+    ]
+  },
+  "stripe_webhook_events": {
+    "rls": null,
+    "columns": [
+      "created_at",
+      "id",
+      "type"
+    ],
+    "touchedBy": [
+      "20260108_sprint21_hardening.sql"
+    ]
+  },
+  "student_cluster_mastery": {
+    "rls": true,
+    "columns": [
+      "accuracy",
+      "attempts",
+      "correct",
+      "created_at",
+      "id",
+      "last_attempt_at",
+      "mastery_score",
+      "structure_cluster_id",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251222_student_mastery_tables.sql",
+      "20260307233305_add_timestamps_to_student_mastery_tables.sql"
+    ]
+  },
+  "student_question_attempts": {
+    "rls": true,
+    "columns": [
+      "attempted_at",
+      "created_at",
+      "difficulty_bucket",
+      "domain",
+      "event_type",
+      "exam",
+      "id",
+      "is_correct",
+      "question_canonical_id",
+      "section",
+      "selected_choice",
+      "session_id",
+      "skill",
+      "structure_cluster_id",
+      "subskill",
+      "time_spent_ms",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251222_student_mastery_tables.sql",
+      "20260310_review_event_taxonomy.sql"
+    ]
+  },
+  "student_skill_mastery": {
+    "rls": true,
+    "columns": [
+      "accuracy",
+      "attempts",
+      "correct",
+      "created_at",
+      "domain",
+      "id",
+      "last_attempt_at",
+      "mastery_score",
+      "section",
+      "skill",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251222_student_mastery_tables.sql",
+      "20260307233305_add_timestamps_to_student_mastery_tables.sql"
+    ]
+  },
+  "student_study_plan_days": {
+    "rls": true,
+    "columns": [
+      "completed_minutes",
+      "completed_task_count",
+      "created_at",
+      "day_date",
+      "focus",
+      "generated_at",
+      "generation_source",
+      "id",
+      "is_exam_day",
+      "is_full_test_day",
+      "is_taper_day",
+      "is_user_override",
+      "plan_version",
+      "planned_minutes",
+      "required_task_count",
+      "status",
+      "study_minutes_target",
+      "tasks",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251227_study_calendar_tables.sql",
+      "20260102_practice_tables.sql",
+      "20260310_calendar_ownership_mode_overrides.sql",
+      "20260316_calendar_planner_runtime_contract.sql"
+    ]
+  },
+  "student_study_plan_tasks": {
+    "rls": true,
+    "columns": [
+      "completed_at",
+      "created_at",
+      "day_date",
+      "day_id",
+      "duration_minutes",
+      "id",
+      "is_user_override",
+      "metadata",
+      "ordinal",
+      "planner_owned",
+      "section",
+      "source_domain",
+      "source_reason",
+      "source_skill_code",
+      "source_subskill",
+      "status",
+      "task_type",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20260316_calendar_planner_runtime_contract.sql"
+    ]
+  },
+  "student_study_profile": {
+    "rls": true,
+    "columns": [
+      "baseline_score",
+      "created_at",
+      "daily_minutes",
+      "exam_date",
+      "full_test_cadence",
+      "planner_mode",
+      "preferred_study_days",
+      "target_score",
+      "timezone",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20251227_study_calendar_tables.sql",
+      "20260102_practice_tables.sql",
+      "20260310_calendar_ownership_mode_overrides.sql",
+      "20260316_calendar_planner_runtime_contract.sql"
+    ]
+  },
+  "test_form_items": {
+    "rls": null,
+    "columns": [
+      "created_at",
+      "form_id",
+      "id",
+      "module_index",
+      "ordinal",
+      "question_id",
+      "section"
+    ],
+    "touchedBy": [
+      "20260314_full_length_test_forms_lifecycle.sql"
+    ]
+  },
+  "test_forms": {
+    "rls": null,
+    "columns": [
+      "created_at",
+      "id",
+      "name",
+      "published_at",
+      "status",
+      "updated_at"
+    ],
+    "touchedBy": [
+      "20260314_full_length_test_forms_lifecycle.sql"
+    ]
+  },
+  "user_competencies": {
+    "rls": true,
+    "columns": [
+      "attempt_count",
+      "competency_key",
+      "incorrect_count",
+      "last_event_at",
+      "review_incorrect_count",
+      "score",
+      "section",
+      "skipped_count",
+      "updated_at",
+      "user_id"
+    ],
+    "touchedBy": [
+      "20241218_competency_tables.sql",
+      "20260113_practice_engine_competencies.sql"
+    ]
+  }
+}

@@ -23,7 +23,7 @@
   - planner-owned vs user-owned ownership
 
 ## Deterministic Planning Inputs
-- Mastery-derived skill signals (`skill_mastery`).
+- Mastery-derived skill signals (`student_skill_mastery`).
 - Attempt recency/miss patterns (`student_question_attempts`).
 - Existing plan/task history for suppression/rotation and cadence stability.
 - Profile settings from `student_study_profile`.

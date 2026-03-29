@@ -89,8 +89,8 @@ describe('Full-Length Exam Smoke Tests (No DB)', () => {
 
   describe('Adaptive Logic Constants', () => {
     it('should use correct adaptive thresholds', () => {
-      // RW: 18+ correct (out of 27) → hard
-      expect(ADAPTIVE_THRESHOLDS.rw.hardThreshold).toBe(18);
+      // RW: 21+ correct (out of 27) → hard
+      expect(ADAPTIVE_THRESHOLDS.rw.hardThreshold).toBe(21);
       
       // Math: 15+ correct (out of 22) → hard
       expect(ADAPTIVE_THRESHOLDS.math.hardThreshold).toBe(15);

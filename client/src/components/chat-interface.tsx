@@ -65,7 +65,6 @@ export default function ChatInterface() {
       const response = await apiRequest('/api/tutor/v2', {
         method: 'POST',
         body: JSON.stringify({
-          userId: 'anonymous',
           message: messageContent,
           mode: 'concept',
           testCode: 'SAT'
