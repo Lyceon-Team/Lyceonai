@@ -11,6 +11,7 @@ Hard gates:
   - `by_full_length_session`
 - No review runtime reads from raw `questions`.
 - Review remains hard-killed until review tables exist in live DB.
+- Post-unlock gate: run immediately after removing the review hard-kill guard. Any failure requires re-locking Review.
 
 ## Preconditions
 - Review hard-kill guard still enabled until DB is ready.

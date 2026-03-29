@@ -969,14 +969,15 @@ async function materializeModuleFromResolvedForm(args: {
   const primaryQuestionSnapshotResult = await args.supabase
     .from("questions")
     .select(QUESTION_SNAPSHOT_SELECT)
-    .in("id", uniqueQuestionIds);
+    .in("id", uniqueQuestionIds)
+    .returns<FullLengthQuestionSnapshotRow[]>();
 
   if (primaryQuestionSnapshotResult.error) {
     throw new Error(
       `Failed to load question snapshots for deferred materialization: ${primaryQuestionSnapshotResult.error.message}`
     );
   }
-  const questionSnapshotRows = (primaryQuestionSnapshotResult.data ?? []) as FullLengthQuestionSnapshotRow[];
+  const questionSnapshotRows = primaryQuestionSnapshotResult.data ?? [];
 
   const snapshotById = new Map<string, FullLengthQuestionSnapshotRow>();
   for (const row of questionSnapshotRows) {
@@ -1055,13 +1056,14 @@ async function materializeModule2FromBlueprint(args: {
     .select(QUESTION_SNAPSHOT_SELECT)
     .eq("question_type", "multiple_choice")
     .in("section_code", sectionCodeFilter(args.section))
-    .limit(1200);
+    .limit(1200)
+    .returns<FullLengthQuestionSnapshotRow[]>();
 
   if (error) {
     throw new Error(`Failed to load module-2 candidate questions: ${error.message}`);
   }
 
-  const pool = (data ?? []) as FullLengthQuestionSnapshotRow[];
+  const pool = data ?? [];
   const excludeSet = new Set(
     args.excludeCanonicalIds
       .map((id) => (typeof id === "string" ? id.trim() : ""))

@@ -41,18 +41,27 @@ describe("ReviewErrors contract-disable behavior", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders terminal-disabled state on contract 503 with no retry loop UI", async () => {
+  it("renders review queue state when runtime is enabled without contract-disable UI", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = asUrl(input);
       if (url === "/api/review-errors?mode=all_past_mistakes") {
-        return jsonResponse(
-          {
-            code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-            message: "This runtime surface is intentionally disabled by Lyceon Runtime Contract enforcement.",
-            requestId: "req-review-1",
+        return jsonResponse({
+          reviewQueue: [],
+          attempts: [],
+          incorrectAttempts: [],
+          skippedAttempts: [],
+          summary: {
+            sessionId: null,
+            sessionMode: "all_past_mistakes",
+            sessionSection: "mixed",
+            correctCount: 0,
+            incorrectCount: 0,
+            skippedCount: 0,
+            totalCount: 0,
+            sessionStartedAt: null,
           },
-          503,
-        );
+          message: "No review-eligible misses found yet. Keep practicing to build your recovery queue.",
+        });
       }
       return jsonResponse({ error: `Unexpected URL ${url}` }, 500);
     });
@@ -60,15 +69,14 @@ describe("ReviewErrors contract-disable behavior", () => {
     render(<ReviewErrors />, { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(screen.getByText("Review Temporarily Disabled")).toBeTruthy();
-      expect(screen.getByText("Code: REVIEW_RUNTIME_DISABLED_BY_CONTRACT")).toBeTruthy();
+      expect(screen.getByText("No review-eligible misses found yet. Keep practicing to build your recovery queue.")).toBeTruthy();
     });
 
     const reviewCalls = fetchMock.mock.calls
       .map(([input]) => asUrl(input))
       .filter((url) => url === "/api/review-errors?mode=all_past_mistakes");
     expect(reviewCalls).toHaveLength(1);
-    expect(screen.queryByText("Loading your review queue...")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByText("Review Temporarily Disabled")).toBeNull();
+    expect(screen.queryByText("Code: REVIEW_RUNTIME_DISABLED_BY_CONTRACT")).toBeNull();
   });
 });

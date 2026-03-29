@@ -684,7 +684,7 @@ function ReviewErrors() {
               <CardContent>
                 <BookOpen className="h-16 w-16 mx-auto mb-4 text-green-600" />
                 <h3 className="text-xl font-semibold mb-2">No Questions to Review</h3>
-                <p className="text-muted-foreground mb-6">You currently have no unresolved misses in your review queue.</p>
+                <p className="text-muted-foreground mb-6">No review-eligible misses found yet. Keep practicing to build your recovery queue.</p>
                 <Button asChild><Link href="/practice">Start Practice</Link></Button>
               </CardContent>
             </Card>

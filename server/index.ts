@@ -351,7 +351,6 @@ app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQue
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get(
   "/api/review-errors",
-  runtimeContractDisableMiddleware("review"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getReviewErrors
@@ -360,7 +359,6 @@ app.get(
 // Review errors attempt endpoint - records student attempts during error review
 app.post(
   "/api/review-errors/sessions",
-  runtimeContractDisableMiddleware("review"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   csrfProtection,
@@ -368,14 +366,12 @@ app.post(
 );
 app.get(
   "/api/review-errors/sessions/:sessionId/state",
-  runtimeContractDisableMiddleware("review"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getReviewErrorSessionState
 );
 app.post(
   "/api/review-errors/attempt",
-  runtimeContractDisableMiddleware("review"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   csrfProtection,

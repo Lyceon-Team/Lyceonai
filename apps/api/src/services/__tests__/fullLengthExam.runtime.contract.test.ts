@@ -12,6 +12,14 @@ import {
   startExam,
 } from '../fullLengthExam';
 
+function buildQueryResult<T>(data: T, error: unknown = null) {
+  const chain: any = {};
+  chain.returns = vi.fn(() => chain);
+  chain.then = (resolve: (value: { data: T; error: unknown }) => void, reject: (reason: unknown) => void) =>
+    Promise.resolve({ data, error }).then(resolve, reject);
+  return chain;
+}
+
 function buildPublishedFormFixture(formId: string) {
   const formItems: Array<{
     section: 'rw' | 'math';
@@ -177,7 +185,7 @@ describe('Full-Length Runtime Contract Additions', () => {
         if (table === 'questions') {
           return {
             select: vi.fn(() => ({
-              in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+              in: vi.fn(() => buildQueryResult(fixture.questionRows)),
             })),
           };
         }

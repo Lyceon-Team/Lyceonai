@@ -41,28 +41,6 @@ describe("Runtime law lockdown API enforcement", () => {
       body: {},
     },
     {
-      method: "get",
-      path: "/api/review-errors",
-      code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-    },
-    {
-      method: "post",
-      path: "/api/review-errors/sessions",
-      code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-      body: {},
-    },
-    {
-      method: "get",
-      path: "/api/review-errors/sessions/11111111-1111-4111-8111-111111111111/state",
-      code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-    },
-    {
-      method: "post",
-      path: "/api/review-errors/attempt",
-      code: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-      body: {},
-    },
-    {
       method: "post",
       path: "/api/me/mastery/diagnostic/start",
       code: "DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT",
@@ -112,14 +90,6 @@ describe("Runtime law lockdown route coverage proof", () => {
     );
   });
 
-  it("guards every mounted review runtime endpoint before auth/DB logic", () => {
-    expect(indexSource).toMatch(/app\.get\(\s*"\/api\/review-errors",\s*runtimeContractDisableMiddleware\("review"\),/s);
-    expect(indexSource).toMatch(/app\.post\(\s*"\/api\/review-errors\/sessions",\s*runtimeContractDisableMiddleware\("review"\),/s);
-    expect(indexSource).toMatch(
-      /app\.get\(\s*"\/api\/review-errors\/sessions\/:sessionId\/state",\s*runtimeContractDisableMiddleware\("review"\),/s
-    );
-    expect(indexSource).toMatch(/app\.post\(\s*"\/api\/review-errors\/attempt",\s*runtimeContractDisableMiddleware\("review"\),/s);
-  });
 
   it("keeps direct /api/practice routes limited to non-runtime bootstrap surfaces", () => {
     const directPracticePaths = Array.from(indexSource.matchAll(/app\.(?:get|post|put|patch|delete)\(\s*"([^"]*\/api\/practice[^"]*)"/g))
@@ -147,20 +117,6 @@ describe("Runtime law lockdown route coverage proof", () => {
     expect(directFullLengthPaths).toEqual([]);
   });
 
-  it("keeps review runtime endpoints inside the explicit guarded set", () => {
-    const directReviewPaths = Array.from(
-      indexSource.matchAll(/app\.(?:get|post|put|patch|delete)\(\s*"([^"]*\/api\/review-errors[^"]*)"/g)
-    ).map((match) => match[1]);
-
-    expect(new Set(directReviewPaths)).toEqual(
-      new Set([
-        "/api/review-errors",
-        "/api/review-errors/sessions",
-        "/api/review-errors/sessions/:sessionId/state",
-        "/api/review-errors/attempt",
-      ])
-    );
-  });
 
   it("ships all required contract docs", () => {
     const requiredDocs = [

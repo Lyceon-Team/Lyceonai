@@ -15,6 +15,14 @@ interface MockSupabaseClient {
   from: Mock;
 }
 
+function buildQueryResult<T>(data: T, error: unknown = null) {
+  const chain: any = {};
+  chain.returns = vi.fn(() => chain);
+  chain.then = (resolve: (value: { data: T; error: unknown }) => void, reject: (reason: unknown) => void) =>
+    Promise.resolve({ data, error }).then(resolve, reject);
+  return chain;
+}
+
 // Mock the Supabase admin client
 vi.mock('../../lib/supabase-admin', () => ({
   getSupabaseAdmin: vi.fn(),
@@ -291,7 +299,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -422,7 +430,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -562,7 +570,7 @@ function buildPublishedFormFixture(formId: string) {
           if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({ data: fixture.questionRows, error: null })),
+                in: vi.fn(() => buildQueryResult(fixture.questionRows)),
               })),
             };
           }
@@ -914,15 +922,12 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [
-                    { id: 'q-rw-1', classification: { topic: 'Info', subtopic: 'Main Idea' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-rw-2', classification: { topic: 'Craft', subtopic: 'Words' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-math-1', classification: { topic: 'Algebra', subtopic: 'Linear' }, unit_tag: null, tags: null, competencies: null },
-                    { id: 'q-math-2', classification: { topic: 'Advanced Math', subtopic: 'Polynomials' }, unit_tag: null, tags: null, competencies: null },
-                  ],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([
+                  { id: 'q-rw-1', classification: { topic: 'Info', subtopic: 'Main Idea' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-rw-2', classification: { topic: 'Craft', subtopic: 'Words' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-math-1', classification: { topic: 'Algebra', subtopic: 'Linear' }, unit_tag: null, tags: null, competencies: null },
+                  { id: 'q-math-2', classification: { topic: 'Advanced Math', subtopic: 'Polynomials' }, unit_tag: null, tags: null, competencies: null },
+                ])),
               })),
             };
           } else if (table === 'full_length_exam_score_rollups') {
@@ -1385,7 +1390,7 @@ function buildPublishedFormFixture(formId: string) {
               select: vi.fn(() => ({
                 eq: vi.fn(() => ({
                   in: vi.fn(() => ({
-                    limit: vi.fn(async () => ({ data: candidateQuestions, error: null })),
+                    limit: vi.fn(() => buildQueryResult(candidateQuestions)),
                   })),
                 })),
               })),
@@ -1886,10 +1891,7 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockQuestionWithAnswers],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([mockQuestionWithAnswers])),
               })),
             };
           } else if (table === 'full_length_exam_responses') {
@@ -1984,10 +1986,7 @@ function buildPublishedFormFixture(formId: string) {
           } else if (table === 'questions') {
             return {
               select: vi.fn(() => ({
-                in: vi.fn(async () => ({
-                  data: [mockQuestionWithAnswers],
-                  error: null,
-                })),
+                in: vi.fn(() => buildQueryResult([mockQuestionWithAnswers])),
               })),
             };
           } else if (table === 'full_length_exam_responses') {
