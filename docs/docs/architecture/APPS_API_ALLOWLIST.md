@@ -35,7 +35,7 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 ### Content/Review Runtime Truth Notes
 - `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).
 - `/api/admin/questions/*` endpoints are currently unmounted from `server/index.ts` and treated as service-only/legacy workflow paths.
-- `server/routes/review-errors-routes.ts#recordReviewErrorAttempt` is legacy/quarantined and unmounted; canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
+- Canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
 
 ### `../apps/api/src/routes/search`
 - **Import**: [server/index.ts](server/index.ts#L35)
@@ -54,11 +54,6 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 - **Symbols**: `masteryRouter`
 - **Mount**: `app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter)`
 - **Transitive deps in apps/api**: `../middleware/auth`, `../services/studentMastery`, `../lib/supabase-admin`, `../services/mastery-projection`
-
-### `../apps/api/src/routes/diagnostic`
-- **Status**: hard-killed runtime surface (contract-disabled at mount).
-- **Mount**: `app.use("/api/me/mastery/diagnostic", runtimeContractDisableMiddleware("diagnostic"), ...)`
-- **Notes**: kept in repo as compatibility-only code path; not part of mounted student runtime.
 
 ### `../apps/api/src/routes/calendar`
 - **Import**: [server/index.ts](server/index.ts#L68)

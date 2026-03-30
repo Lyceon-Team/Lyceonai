@@ -37,8 +37,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions')
         .send({});
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject GET /api/full-length/sessions/current without auth', async () => {
@@ -46,16 +46,16 @@ describe('Full-Length Exam API Tests', () => {
         .get('/api/full-length/sessions/current')
         .query({ sessionId: 'test-session-id' });
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject GET /api/full-length/sessions without auth', async () => {
       const res = await request(app)
         .get('/api/full-length/sessions');
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/answer without auth', async () => {
@@ -66,8 +66,8 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/module/submit without auth', async () => {
@@ -75,8 +75,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions/test-session-id/module/submit')
         .send({});
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/complete without auth', async () => {
@@ -84,8 +84,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions/test-session-id/complete')
         .send({});
 
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
   });
 
@@ -97,8 +97,7 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Runtime is contract-disabled while full-length is locked.
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(401);
     });
   });
 
@@ -112,8 +111,7 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Runtime is contract-disabled while full-length is locked.
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(401);
     });
 
     it('should reject getCurrentSession without sessionId query param', async () => {
@@ -121,8 +119,7 @@ describe('Full-Length Exam API Tests', () => {
         .get('/api/full-length/sessions/current')
         .set('Cookie', ['sb-access-token=fake-token']);
 
-      // Runtime is contract-disabled while full-length is locked.
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(401);
     });
 
     it('should accept valid UUID for questionId', async () => {
@@ -134,8 +131,7 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Runtime is contract-disabled while full-length is locked.
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(401);
     });
   });
 
@@ -161,9 +157,8 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Runtime is contract-disabled while full-length is locked.
-      expect(res.status).toBe(503);
-      expect(res.body).toHaveProperty('code');
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
 
     it('should return only stable error codes for service errors', async () => {

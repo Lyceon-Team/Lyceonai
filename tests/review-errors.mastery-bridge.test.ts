@@ -1,28 +1,30 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   fromMock,
   applyMasteryUpdateMock,
-  getQuestionMetadataForAttemptMock,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   applyMasteryUpdateMock: vi.fn(),
-  getQuestionMetadataForAttemptMock: vi.fn(),
 }));
 
-vi.mock('../apps/api/src/lib/supabase-server', () => ({
+vi.mock("../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: fromMock,
   },
 }));
 
-vi.mock('../apps/api/src/services/studentMastery', () => ({
+vi.mock("../apps/api/src/services/studentMastery", () => ({
   applyMasteryUpdate: applyMasteryUpdateMock,
-  getQuestionMetadataForAttempt: getQuestionMetadataForAttemptMock,
 }));
 
-import { recordReviewErrorAttempt } from '../server/routes/review-errors-routes';
-import { MasteryEventType } from '../apps/api/src/services/mastery-constants';
+vi.mock("../server/lib/review-runtime-gate", () => ({
+  getReviewRuntimeAvailability: vi.fn(async () => ({ available: true })),
+  sendReviewRuntimeUnavailable: vi.fn(),
+}));
+
+import { submitReviewSessionAnswer } from "../server/routes/review-session-routes";
+import { MasteryEventType } from "../apps/api/src/services/mastery-constants";
 
 function makeRes() {
   let statusCode = 200;
@@ -41,123 +43,118 @@ function makeRes() {
   return { res, getStatus: () => statusCode, getBody: () => body };
 }
 
-function setupSupabase(options: {
-  hasTutorContext: boolean;
-  eligibleReviewSource: boolean;
-  eligibleFromFullTest?: boolean;
-  insertError?: { code?: string; message?: string } | null;
-  existingAttemptQuestionId?: string;
-}) {
-  const attemptTimestamp = '2026-03-10T10:00:00.000Z';
+function buildChain(result: { data: any; error: any }) {
+  const chain: any = {
+    error: result.error,
+    select: () => chain,
+    eq: () => chain,
+    contains: () => chain,
+    gte: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    gt: () => chain,
+    in: () => chain,
+    update: () => chain,
+    single: async () => result,
+    maybeSingle: async () => result,
+  };
+  return chain;
+}
 
+function setupSupabase(options: { hasTutorContext: boolean }) {
   fromMock.mockImplementation((table: string) => {
-    if (table === 'answer_attempts') {
-      const chain: any = {
-        eq: () => chain,
-        or: () => chain,
-        order: () => chain,
-        limit: () => chain,
-        maybeSingle: async () => ({
-          data: options.eligibleReviewSource
-            ? { id: 'source-1', attempted_at: attemptTimestamp, outcome: 'incorrect', is_correct: false }
-            : null,
-          error: null,
-        }),
+    if (table === "review_sessions") {
+      const sessionRow = {
+        id: "sess-1",
+        student_id: "student-1",
+        status: "active",
+        started_at: "2026-03-10T10:00:00.000Z",
+        completed_at: null,
+        abandoned_at: null,
+        client_instance_id: null,
       };
-
+      const sessionResult = { data: sessionRow, error: null };
       return {
-        select: () => chain,
+        select: () => buildChain(sessionResult),
+        update: () => buildChain({ data: null, error: null }),
       };
     }
 
-    if (table === 'full_length_exam_responses') {
-      const chain: any = {
-        eq: () => chain,
-        order: () => chain,
-        limit: () => chain,
-        maybeSingle: async () => ({
-          data: options.eligibleFromFullTest
-            ? { id: 'flr-1', answered_at: '2026-03-10T10:10:00.000Z', is_correct: false }
-            : null,
-          error: null,
-        }),
+    if (table === "review_session_items") {
+      const itemRow = {
+        id: "item-1",
+        review_session_id: "sess-1",
+        student_id: "student-1",
+        ordinal: 1,
+        question_canonical_id: "SATM1ABC123",
+        source_question_id: "q-1",
+        source_question_canonical_id: "SATM1ABC123",
+        source_origin: "practice",
+        retry_mode: "same_question",
+        status: "served",
+        attempt_id: null,
+        tutor_opened_at: null,
+        source_attempted_at: "2026-03-10T09:58:00.000Z",
+        option_order: ["A", "B", "C", "D"],
+        option_token_map: { opt_A: "A", opt_B: "B", opt_C: "C", opt_D: "D" },
+        question_section: "Math",
+        question_stem: "What is 1+1?",
+        question_options: [
+          { key: "A", text: "2" },
+          { key: "B", text: "3" },
+          { key: "C", text: "4" },
+          { key: "D", text: "5" },
+        ],
+        question_difficulty: 2,
+        question_domain: "Algebra",
+        question_skill: "Linear equations",
+        question_subskill: null,
+        question_exam: "SAT",
+        question_structure_cluster_id: null,
+        question_correct_answer: "A",
+        question_explanation: "Because 1+1=2.",
       };
+      const itemResult = { data: itemRow, error: null };
+      const emptyResult = { data: null, error: null };
 
       return {
-        select: () => chain,
+        select: (columns?: string) => {
+          if (typeof columns === "string" && columns.includes("question_canonical_id")) {
+            return buildChain(itemResult);
+          }
+          return buildChain(emptyResult);
+        },
+        update: () => buildChain({ data: null, error: null }),
       };
     }
 
-    if (table === 'questions') {
-      const chain: any = {
-        eq: () => chain,
-        single: async () => ({
-          data: {
-            id: 'q-1',
-            canonical_id: 'SATM1ABC123',
-            status: 'published',
-            question_type: 'multiple_choice',
-            correct_answer: 'A',
-            answer_text: null,
-            explanation: 'Because A is correct.',
-            options: [
-              { key: 'A', text: 'A' },
-              { key: 'B', text: 'B' },
-              { key: 'C', text: 'C' },
-              { key: 'D', text: 'D' },
-            ],
-          },
-          error: null,
-        }),
-      };
-
-      return {
-        select: () => chain,
-      };
-    }
-
-    if (table === 'review_error_attempts') {
+    if (table === "review_error_attempts") {
       return {
         insert: () => ({
           select: () => ({
             single: async () => ({
-              data: options.insertError ? null : { id: 'retry-1', question_id: 'q-1', is_correct: true },
-              error: options.insertError ?? null,
+              data: { id: "attempt-1", question_id: "q-1", is_correct: true },
+              error: null,
             }),
           }),
         }),
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              single: async () => ({
-                data: {
-                  id: 'retry-1',
-                  question_id: options.existingAttemptQuestionId ?? 'q-1',
-                  is_correct: true,
-                },
-                error: null,
-              }),
-            }),
-          }),
-        }),
+        select: () => buildChain({ data: null, error: null }),
       };
     }
 
-    if (table === 'tutor_interactions') {
-      const chain: any = {
-        eq: () => chain,
-        contains: () => chain,
-        gte: () => chain,
-        order: () => chain,
-        limit: () => chain,
-        maybeSingle: async () => ({
-          data: options.hasTutorContext ? { id: 'ti-1', created_at: '2026-03-10T10:05:00.000Z' } : null,
-          error: null,
-        }),
-      };
-
+    if (table === "review_session_events") {
       return {
-        select: () => chain,
+        insert: async () => ({ error: null }),
+      };
+    }
+
+    if (table === "tutor_interactions") {
+      const tutorResult = {
+        data: options.hasTutorContext ? { id: "ti-1", created_at: "2026-03-10T10:05:00.000Z" } : null,
+        error: null,
+      };
+      return {
+        select: () => buildChain(tutorResult),
       };
     }
 
@@ -165,223 +162,66 @@ function setupSupabase(options: {
   });
 }
 
-describe('Review Error -> Canonical Mastery Bridge', () => {
+describe("Review Error -> Canonical Mastery Bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     applyMasteryUpdateMock.mockResolvedValue({
-      attemptId: 'm-1',
+      attemptId: "m-1",
       rollupUpdated: true,
       error: undefined,
     });
-    getQuestionMetadataForAttemptMock.mockResolvedValue({
-      canonicalId: 'SATM1ABC123',
-      exam: 'SAT',
-      section: 'Math',
-      domain: 'algebra',
-      skill: 'linear_equations',
-      subskill: null,
-      skill_code: 'ALG-1',
-      difficulty: 2,
-      structure_cluster_id: null,
-    });
   });
 
-  it('emits REVIEW_PASS when retry is correct without tutor context', async () => {
-    setupSupabase({ hasTutorContext: false, eligibleReviewSource: true });
+  it("emits REVIEW_PASS when retry is correct without tutor context", async () => {
+    setupSupabase({ hasTutorContext: false });
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
-      user: { id: 'student-1' },
+      user: { id: "student-1" },
+      requestId: "req-review-1",
       body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
+        session_id: "sess-1",
+        review_session_item_id: "item-1",
+        selected_option_id: "opt_A",
+        seconds_spent: 12,
+        source_context: "review_errors",
       },
     };
 
-    await recordReviewErrorAttempt(req, res);
+    await submitReviewSessionAnswer(req, res);
 
     expect(getStatus()).toBe(200);
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(1);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
-
-    const response = getBody();
-    expect(response.reviewOutcome).toBe('review_pass');
-    expect(response.tutorVerifiedRetry).toBe(false);
-    expect(response.tutorOutcome).toBeNull();
-    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_PASS]);
+    expect(getBody().reviewOutcome).toBe("review_pass");
+    expect(applyMasteryUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: MasteryEventType.REVIEW_PASS,
+        questionCanonicalId: "SATM1ABC123",
+      })
+    );
   });
 
-  it('emits REVIEW_FAIL when retry is incorrect without tutor context', async () => {
-    setupSupabase({ hasTutorContext: false, eligibleReviewSource: true });
+  it("emits REVIEW_PASS + TUTOR_HELPED when tutor context is present", async () => {
+    setupSupabase({ hasTutorContext: true });
     const { res, getStatus, getBody } = makeRes();
 
     const req: any = {
-      user: { id: 'student-1' },
+      user: { id: "student-1" },
+      requestId: "req-review-2",
       body: {
-        question_id: 'q-1',
-        selected_answer: 'B',
-        source_context: 'review_errors',
+        session_id: "sess-1",
+        review_session_item_id: "item-1",
+        selected_option_id: "opt_A",
+        seconds_spent: 12,
+        source_context: "review_errors",
       },
     };
 
-    await recordReviewErrorAttempt(req, res);
+    await submitReviewSessionAnswer(req, res);
 
     expect(getStatus()).toBe(200);
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(1);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_FAIL);
-
-    const response = getBody();
-    expect(response.reviewOutcome).toBe('review_fail');
-    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_FAIL]);
-  });
-
-  it('emits paired REVIEW_PASS + TUTOR_HELPED events on verified tutor retry success', async () => {
-    setupSupabase({ hasTutorContext: true, eligibleReviewSource: true });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(200);
+    expect(getBody().reviewOutcome).toBe("review_pass");
     expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
     expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
     expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_HELPED);
-
-    const response = getBody();
-    expect(response.reviewOutcome).toBe('review_pass');
-    expect(response.tutorVerifiedRetry).toBe(true);
-    expect(response.tutorOutcome).toBe('tutor_helped');
-    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_PASS, MasteryEventType.TUTOR_HELPED]);
-  });
-
-  it('emits paired REVIEW_FAIL + TUTOR_FAIL events on verified tutor retry failure', async () => {
-    setupSupabase({ hasTutorContext: true, eligibleReviewSource: true });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'D',
-        source_context: 'review_errors',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(200);
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_FAIL);
-    expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_FAIL);
-
-    const response = getBody();
-    expect(response.reviewOutcome).toBe('review_fail');
-    expect(response.tutorVerifiedRetry).toBe(true);
-    expect(response.tutorOutcome).toBe('tutor_fail');
-    expect(response.masteryEvents).toEqual([MasteryEventType.REVIEW_FAIL, MasteryEventType.TUTOR_FAIL]);
-  });
-
-  it('accepts completed full-test misses as review eligibility source', async () => {
-    setupSupabase({ hasTutorContext: false, eligibleReviewSource: false, eligibleFromFullTest: true });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(200);
-    expect(getBody().reviewOutcome).toBe('review_pass');
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(1);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
-  });
-
-  it('rejects mastery emission when question is not review-eligible (anti-inflation guard)', async () => {
-    setupSupabase({ hasTutorContext: true, eligibleReviewSource: false, eligibleFromFullTest: false });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(403);
-    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
-
-    const response = getBody();
-    expect(response.error).toContain('not eligible');
-  });
-
-  it('returns prior authoritative result on idempotent duplicate submit', async () => {
-    setupSupabase({
-      hasTutorContext: false,
-      eligibleReviewSource: true,
-      insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
-      existingAttemptQuestionId: 'q-1',
-    });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
-        client_attempt_id: 'dup-key-1',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(200);
-    expect(getBody().idempotent).toBe(true);
-    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when idempotency key is replayed for a different question', async () => {
-    setupSupabase({
-      hasTutorContext: false,
-      eligibleReviewSource: true,
-      insertError: { code: '23505', message: 'duplicate key value violates unique constraint' },
-      existingAttemptQuestionId: 'q-other',
-    });
-    const { res, getStatus, getBody } = makeRes();
-
-    const req: any = {
-      user: { id: 'student-1' },
-      body: {
-        question_id: 'q-1',
-        selected_answer: 'A',
-        source_context: 'review_errors',
-        client_attempt_id: 'dup-key-1',
-      },
-    };
-
-    await recordReviewErrorAttempt(req, res);
-
-    expect(getStatus()).toBe(409);
-    expect(getBody().code).toBe('IDEMPOTENCY_KEY_REUSED');
-    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
   });
 });

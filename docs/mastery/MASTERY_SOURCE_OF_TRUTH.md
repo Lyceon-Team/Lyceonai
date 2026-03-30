@@ -7,7 +7,6 @@
 - All mastery-affecting runtime flows call this function:
   - `server/routes/practice-canonical.ts`
   - `server/routes/review-session-routes.ts`
-  - `apps/api/src/routes/diagnostic.ts`
   - `apps/api/src/services/fullLengthExam.ts`
 
 ## Canonical Runtime Tables
