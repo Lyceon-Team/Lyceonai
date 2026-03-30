@@ -37,8 +37,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions')
         .send({});
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should reject GET /api/full-length/sessions/current without auth', async () => {
@@ -46,16 +46,16 @@ describe('Full-Length Exam API Tests', () => {
         .get('/api/full-length/sessions/current')
         .query({ sessionId: 'test-session-id' });
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should reject GET /api/full-length/sessions without auth', async () => {
       const res = await request(app)
         .get('/api/full-length/sessions');
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/answer without auth', async () => {
@@ -66,8 +66,8 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/module/submit without auth', async () => {
@@ -75,8 +75,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions/test-session-id/module/submit')
         .send({});
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should reject POST /api/full-length/sessions/:sessionId/complete without auth', async () => {
@@ -84,8 +84,8 @@ describe('Full-Length Exam API Tests', () => {
         .post('/api/full-length/sessions/test-session-id/complete')
         .send({});
 
-      expect(res.status).toBe(401);
-      expect(res.body).toHaveProperty('error');
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
   });
 
@@ -97,9 +97,8 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Should be 401 (auth failure) or 403 (CSRF blocked)
-      // In test mode, likely 401 due to fake token
-      expect([401, 403]).toContain(res.status);
+      // Runtime is contract-disabled while full-length is locked.
+      expect(res.status).toBe(503);
     });
   });
 
@@ -113,8 +112,8 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Could be 400 (validation) or 401 (auth)
-      expect([400, 401]).toContain(res.status);
+      // Runtime is contract-disabled while full-length is locked.
+      expect(res.status).toBe(503);
     });
 
     it('should reject getCurrentSession without sessionId query param', async () => {
@@ -122,8 +121,8 @@ describe('Full-Length Exam API Tests', () => {
         .get('/api/full-length/sessions/current')
         .set('Cookie', ['sb-access-token=fake-token']);
 
-      // Should be 400 (missing param) or 401 (auth)
-      expect([400, 401]).toContain(res.status);
+      // Runtime is contract-disabled while full-length is locked.
+      expect(res.status).toBe(503);
     });
 
     it('should accept valid UUID for questionId', async () => {
@@ -135,8 +134,8 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Should be 401 (auth) or other error, but not 400 (validation)
-      expect(res.status).not.toBe(400);
+      // Runtime is contract-disabled while full-length is locked.
+      expect(res.status).toBe(503);
     });
   });
 
@@ -162,31 +161,9 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Should get some error response
-      expect([401, 404, 500]).toContain(res.status);
-      
-      // Response should have error field
-      expect(res.body).toHaveProperty('error');
-      
-      // If message field exists, it should be from auth middleware only,
-      // not from internal service errors
-      if (res.body.message && res.status === 500) {
-        // 500 errors should NOT have a message field
-        expect(res.body).not.toHaveProperty('message');
-      }
-      
-      // Error field should be one of the stable public errors
-      const validErrors = [
-        'Authentication required',
-        'Session not found',
-        'Invalid exam state',
-        'Internal error'
-      ];
-      
-      if (res.body.error && res.status >= 400 && res.status < 500) {
-        // Client errors from auth/validation are OK
-        expect(res.body.error).toBeDefined();
-      }
+      // Runtime is contract-disabled while full-length is locked.
+      expect(res.status).toBe(503);
+      expect(res.body).toHaveProperty('code');
     });
 
     it('should return only stable error codes for service errors', async () => {
