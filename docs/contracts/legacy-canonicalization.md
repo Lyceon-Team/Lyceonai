@@ -22,16 +22,6 @@ This file captures canonicalization decisions that are enforced by current runti
 ## Compatibility-only (no new runtime ownership)
 
 - Legacy `database/migrations/*` schema artifacts that are not mounted through `server/index.ts`.
-- `apps/api/src/routes/diagnostic.ts` and `apps/api/src/services/diagnostic-service.ts` (kept as compatibility code, not mounted).
-- `server/routes/legacy/diagnostic.ts` (legacy export shim only).
-
-## Hard-killed
-
-- Diagnostic mounted runtime surface:
-  - `/api/me/mastery/diagnostic/*` is terminal-disabled by `runtimeContractDisableMiddleware("diagnostic")`.
-- DB cleanup:
-  - `public.diagnostic_sessions`
-  - `public.diagnostic_responses`
 
 ## Remaining legacy family classification
 

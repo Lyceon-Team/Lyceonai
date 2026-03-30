@@ -178,11 +178,18 @@ describe('CI Forbidden Routes - Permanent Invariants', () => {
   });
 
   describe("Notification and diagnostic guards", () => {
-    it("keeps diagnostic hard-disabled at the mount level", () => {
+    it("keeps diagnostic runtime unmounted", async () => {
       const serverIndex = readRepoFile("server/index.ts");
 
-      expect(serverIndex).toContain('runtimeContractDisableMiddleware("diagnostic")');
+      expect(serverIndex).not.toContain('runtimeContractDisableMiddleware("diagnostic")');
       expect(serverIndex).not.toContain("diagnosticRouter");
+      expect(serverIndex).toContain('/api/me/mastery/diagnostic');
+      expect(serverIndex).toContain('status(404)');
+
+      const res = await request(app)
+        .post("/api/me/mastery/diagnostic/start")
+        .send({});
+      expect(res.status).toBe(404);
     });
 
     it("keeps raw notification inserts centralized in the notification authority service", () => {

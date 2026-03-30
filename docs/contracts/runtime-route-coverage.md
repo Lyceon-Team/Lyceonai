@@ -5,12 +5,12 @@ This matrix proves contract-disable enforcement coverage for mounted runtime dom
 | route | domain guard | disable code |
 |---|---|---|
 | `app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter)` | `practice` | `unlocked` |
-| `app.use("/api/full-length", runtimeContractDisableMiddleware("full-length"), ...)` | `full-length` | `FULL_LENGTH_RUNTIME_DISABLED_BY_CONTRACT` |
-| `app.use("/api/me/mastery/diagnostic", runtimeContractDisableMiddleware("diagnostic"), ...)` | `diagnostic` | `DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT` |
-| `GET /api/review-errors` | `runtimeContractDisableMiddleware("review")` | `REVIEW_RUNTIME_DISABLED_BY_CONTRACT` |
-| `POST /api/review-errors/sessions` | `runtimeContractDisableMiddleware("review")` | `REVIEW_RUNTIME_DISABLED_BY_CONTRACT` |
-| `GET /api/review-errors/sessions/:sessionId/state` | `runtimeContractDisableMiddleware("review")` | `REVIEW_RUNTIME_DISABLED_BY_CONTRACT` |
-| `POST /api/review-errors/attempt` | `runtimeContractDisableMiddleware("review")` | `REVIEW_RUNTIME_DISABLED_BY_CONTRACT` |
+| `app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter)` | `full-length` | `unlocked` |
+| `GET /api/review-errors` | `review` | `unlocked` |
+| `POST /api/review-errors/sessions` | `review` | `unlocked` |
+| `GET /api/review-errors/sessions/:sessionId/state` | `review` | `unlocked` |
+| `POST /api/review-errors/attempt` | `review` | `unlocked` |
+| `app.use("/api/me/mastery/diagnostic", (_req, res) => res.status(404)...` | `diagnostic` | `terminal 404` |
 
 Direct `/api/practice*` routes mounted outside `/api/practice`:
 
@@ -19,4 +19,4 @@ Direct `/api/practice*` routes mounted outside `/api/practice`:
 | `GET /api/practice/topics` | bootstrap/reference setup surface | intentionally left enabled |
 | `GET /api/practice/reference/questions` | bootstrap/reference setup surface | intentionally left enabled |
 
-Mounted runtime endpoints in scope are fully covered by contract-disable guards in `server/index.ts`.
+Mounted runtime endpoints in scope are unlocked and enforced by auth/middleware guards in `server/index.ts`, with diagnostic routes unmounted.

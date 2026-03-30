@@ -151,7 +151,7 @@ If post-unlock validation shows any of the following, the domain must be re-lock
 - live-schema/RLS mismatch causes blocking errors
 - resume/progression serves non-persisted state
 - hidden fallback or mixed-mode runtime is detected
-- Diagnostic runtime is hard-killed and must return terminal contract-disabled responses on `/api/me/mastery/diagnostic/*`.
+- Diagnostic runtime is removed and must return 404 for `/api/me/mastery/diagnostic/*`.
 
 ## Final system statement
 

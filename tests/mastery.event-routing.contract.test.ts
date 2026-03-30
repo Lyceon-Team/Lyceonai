@@ -25,20 +25,11 @@ describe('Mastery Event Routing Contract', () => {
     expect(content).toContain('MasteryEventType.TEST_FAIL');
   });
 
-  it('maps diagnostic outcomes to practice_pass/practice_fail through applyMasteryUpdate', () => {
-    const content = read('apps/api/src/routes/diagnostic.ts');
-
-    expect(content).toContain('applyMasteryUpdate({');
-    expect(content).toContain('MasteryEventType.PRACTICE_PASS');
-    expect(content).toContain('MasteryEventType.PRACTICE_FAIL');
-  });
-
   it('keeps deprecated runtime mastery event names out of active service/routes code', () => {
     const runtimeFiles = [
       'apps/api/src/services/mastery-constants.ts',
       'apps/api/src/services/mastery-write.ts',
       'apps/api/src/services/fullLengthExam.ts',
-      'apps/api/src/routes/diagnostic.ts',
       'server/routes/practice-canonical.ts',
       'server/routes/review-session-routes.ts',
     ];
