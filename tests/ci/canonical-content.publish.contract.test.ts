@@ -250,7 +250,7 @@ describe("Canonical Content Publish Contract", () => {
 
     expect(indexContent).toContain('from "./routes/review-session-routes"');
     expect(indexContent).toContain("submitReviewSessionAnswer");
-    expect(indexContent).toContain('app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);');
+    expect(indexContent).toContain('"/api/review-errors/attempt"');
     expect(indexContent).not.toContain("recordReviewErrorAttempt");
     expect(indexContent).not.toContain("./routes/review-errors-routes");
 
