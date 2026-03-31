@@ -37,6 +37,7 @@ import {
 import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
+  resolveTokenFromRequest,
   supabaseAuthMiddleware,
   requireSupabaseAuth,
   requireSupabaseAdmin,
@@ -87,6 +88,15 @@ const isCsrfExempt = (req: Request): boolean => {
 
   return false;
 };
+const isCsrfProtectedPath = (path: string): boolean => {
+  if (path.startsWith("/api/practice")) return true;
+  if (path.startsWith("/api/full-length")) return true;
+  if (path.startsWith("/api/review-errors")) return true;
+  if (path.startsWith("/api/calendar")) return true;
+  if (path === "/api/questions/feedback") return true;
+  if (path === "/api/rag/v2") return true;
+  return false;
+};
 
 const app = express();
 app.disable("x-powered-by");
@@ -102,9 +112,13 @@ app.use(securityHeadersMiddleware());
 // Core middleware
 app.use(corsAllowlist());
 app.use(cookieParser());
-// Global CSRF guard: default-protect all state-changing requests unless explicitly exempted.
+// Global CSRF guard: enforce only on known state-changing route families.
+// This preserves 404 for unmounted routes and 401 for unauthenticated requests.
 app.use((req, res, next) => {
   if (isCsrfExempt(req)) return next();
+  if (!isCsrfProtectedPath(req.path)) return next();
+  const token = resolveTokenFromRequest(req).token;
+  if (!token) return next();
   return csrfProtection(req, res, next);
 });
 
