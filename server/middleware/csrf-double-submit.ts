@@ -10,7 +10,7 @@ if (!csrfSecret && isProduction) {
 }
 
 const resolvedSecret = csrfSecret || "dev-csrf-secret";
-const csrfCookieName = process.env.CSRF_COOKIE_NAME || "__Host-csrf";
+const csrfCookieName = process.env.CSRF_COOKIE_NAME || (isProduction ? "__Host-csrf" : "dev-csrf");
 
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
   getSecret: () => resolvedSecret,
@@ -24,7 +24,7 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
   },
   cookieName: csrfCookieName,
   cookieOptions: {
-    secure: isProduction,
+    secure: isProduction || csrfCookieName.startsWith("__Host-"),
     sameSite: "lax",
     path: "/",
     httpOnly: false,
