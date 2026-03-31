@@ -335,7 +335,7 @@ export default function CalendarPage() {
 
     let section = currentTask?.section ?? "Math";
     let taskType: "practice" | "review_practice" | "full_length";
-    let mode = "mixed";
+    let mode: string;
     const target: {
       section: string | null;
       domain: string | null;
