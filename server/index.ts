@@ -241,6 +241,14 @@ const publicQuestionSearchLimiter = rateLimit({
   message: { error: "Too many search requests" },
 });
 
+const googleOAuthCallbackLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many OAuth callback requests" },
+});
+
 // RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
 app.use(
   "/api/rag/v2",
@@ -258,9 +266,9 @@ app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin,
 app.use("/api/auth/google", googleOAuthRoutes);
 
 // Google OAuth Callback (PUBLIC_SITE_URL/auth/google/callback)
-app.get("/auth/google/callback", googleCallbackHandler);
+app.get("/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
 // Vercel callback alias when `/auth/google/callback` is rewritten into `/api/*`.
-app.get("/api/auth/google/callback", googleCallbackHandler);
+app.get("/api/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
