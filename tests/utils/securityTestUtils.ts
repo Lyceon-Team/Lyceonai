@@ -79,6 +79,14 @@ export function setupSecurityMocks() {
     getSupabaseAdmin: () => ({
       rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
     }),
+    resolveTokenFromRequest: () => ({
+      token: "test-token-123456789012345",
+      tokenSource: "cookie:sb-access-token",
+      cookieKeys: ["sb-access-token"],
+      authHeaderPresent: false,
+      tokenLength: 27,
+      bearerParsed: false,
+    }),
   }));
 
   vi.doMock('../../server/middleware/usage-limits', () => ({

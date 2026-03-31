@@ -159,6 +159,16 @@ app.post(
 );
 
 app.use(express.json({ limit: "1mb" }));
+// Body parser error handling: keep parser failures explicit and non-500.
+app.use((err: any, _req: Request, res: Response, next: any) => {
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Payload too large" });
+  }
+  if (err?.type === "entity.parse.failed" || (err instanceof SyntaxError && (err as any).status === 400)) {
+    return res.status(400).json({ error: "Invalid JSON payload" });
+  }
+  return next(err);
+});
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);

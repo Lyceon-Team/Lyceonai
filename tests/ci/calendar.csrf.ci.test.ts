@@ -61,7 +61,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     }),
   }),
   resolveTokenFromRequest: () => ({
-    token: null,
+    token: "test-token-123456789012345",
     tokenSource: null,
     cookieKeys: [],
     authHeaderPresent: false,
