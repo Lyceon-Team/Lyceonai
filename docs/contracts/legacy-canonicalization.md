@@ -25,35 +25,16 @@ This file captures canonicalization decisions that are enforced by current runti
 
 ## Remaining legacy family classification
 
-- `accounts` vs `lyceon_accounts`
-  - canonical owner: `lyceon_accounts`
-  - compatibility owner: none evidenced in the active repo scan
-  - new writes already prevented: yes, active account helpers only target `lyceon_*`
+| legacy_family | canonical_owner | compatibility_owner | no_new_writes | runtime_status |
+|---|---|---|---|---|
+| `accounts` vs `lyceon_accounts` | `lyceon_accounts` | none evidenced in active repo scan | yes | canonical |
+| `account_members` vs `lyceon_account_members` | `lyceon_account_members` | none evidenced in active repo scan | yes | canonical |
+| older `exam_*` vs `full_length_exam_*` | `full_length_exam_*` | `exam_attempts` / `exam_sections` in legacy schema + RLS only | yes | compat-only |
+| `chat_messages` vs `tutor_interactions` | `tutor_interactions` | `chat_messages` in legacy schema + RLS only | yes | compat-only |
+| legacy `attempts` vs canonical attempts | `answer_attempts` + `student_question_attempts` | `attempts` is legacy-only and not mounted | yes | canonical |
+| `progress` vs mastery/KPI truth paths | `server/routes/legacy/progress.ts` (route) + KPI truth tables | historical `progress` table assumptions only | yes | canonical |
 
-- `account_members` vs `lyceon_account_members`
-  - canonical owner: `lyceon_account_members`
-  - compatibility owner: none evidenced in the active repo scan
-  - new writes already prevented: yes, active account helpers only target `lyceon_account_members`
+### Attempts family note
 
-- older `exam_*` vs `full_length_exam_*`
-  - canonical owner: `full_length_exam_*`
-  - compatibility owner: `exam_attempts` / `exam_sections` in legacy schema and RLS files only
-  - new writes already prevented: yes in active app code; legacy definitions remain in historical SQL only
-
-- `chat_messages` vs `tutor_interactions`
-  - canonical owner: `tutor_interactions`
-  - compatibility owner: `chat_messages` in legacy schema and RLS files only
-  - new writes already prevented: yes, active tutor logging writes `tutor_interactions`
-
-- `attempts` vs `answer_attempts` vs `student_question_attempts`
-  - canonical owner: split by workflow
-  - canonical owner detail: `answer_attempts` is runtime session progression truth for practice session-owned flows
-  - canonical owner detail: `student_question_attempts` is longitudinal mastery/KPI truth ledger
-  - compatibility owner: `attempts` is legacy-only and not mounted in active runtime routes
-  - new writes already prevented: yes, mounted runtime paths write `answer_attempts` / `student_question_attempts`, not `attempts`
-
-- `progress` vs mastery/KPI truth paths
-  - canonical owner: `server/routes/legacy/progress.ts` as active runtime mount owner for `/api/progress/*`
-  - canonical data owner: persisted KPI truth tables (`student_kpi_counters_current`, `student_kpi_snapshots`, `kpi_constants`)
-  - compatibility owner: historical `progress` table assumptions in old docs/scripts only
-  - new writes already prevented: yes, mounted runtime path does not write/read a `progress` table for KPI truth
+- Forbidden legacy table: `attempts` (legacy-only, no runtime ownership).
+- Allowed canonical tables: `answer_attempts`, `student_question_attempts`.
