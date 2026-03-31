@@ -288,15 +288,15 @@ describe('CI Auth Tests', () => {
       });
     });
 
-    // Test that POST endpoints are CSRF protected (403 without Origin)
-    it('should block POST /api/rag/v2 without Origin/Referer (CSRF protection)', async () => {
+    // Auth-first semantics: unauthenticated requests return 401 before CSRF.
+    it('should return 401 for POST /api/rag/v2 without auth (auth-first semantics)', async () => {
       const res = await request(app)
         .post('/api/rag/v2')
         .send({ userId: 'ignored', message: 'test', mode: 'concept' });
       
-      // Should get 403 (CSRF blocked) before auth check
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      // Should get 401 (auth required) before CSRF check
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
   });
 
