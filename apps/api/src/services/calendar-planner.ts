@@ -112,35 +112,6 @@ function normalizeDateList(values: string[] | null | undefined): string[] {
   ).sort();
 }
 
-function normalizeBlockedWindows(values: BlockedWindow[] | null | undefined): BlockedWindow[] {
-  if (!Array.isArray(values)) return [];
-  const windows: BlockedWindow[] = [];
-  for (const value of values) {
-    if (!value || typeof value !== "object") continue;
-    const candidate = value as Partial<BlockedWindow>;
-    const normalized: BlockedWindow = {};
-    if (typeof candidate.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidate.date)) {
-      normalized.date = candidate.date;
-    }
-    if (typeof candidate.start === "string") {
-      normalized.start = candidate.start;
-    }
-    if (typeof candidate.end === "string") {
-      normalized.end = candidate.end;
-    }
-    if (typeof candidate.all_day === "boolean") {
-      normalized.all_day = candidate.all_day;
-    }
-    if (typeof candidate.reason === "string") {
-      normalized.reason = candidate.reason;
-    }
-    if (Object.keys(normalized).length > 0) {
-      windows.push(normalized);
-    }
-  }
-  return windows;
-}
-
 function isBlockedDay(dayDate: string, profile: StudyProfileSettings): boolean {
   const weekday = DateTime.fromISO(dayDate).weekday;
   if (profile.blockedDates.includes(dayDate)) return true;
