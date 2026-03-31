@@ -21,6 +21,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express, Request, Response, NextFunction } from 'express';
 
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
+
 describe('Practice Answer Rate Limiter', () => {
   let app: Express;
 

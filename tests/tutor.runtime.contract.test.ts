@@ -239,9 +239,17 @@ vi.mock("../server/middleware/supabase-auth", () => ({
 }));
 
 const { default: app } = await import("../server/index");
+let agent: request.SuperAgentTest;
+let csrfToken: string;
+
+async function getCsrfToken(agent: request.SuperAgentTest): Promise<string> {
+  const res = await agent.get("/api/csrf-token");
+  expect(res.status).toBe(200);
+  return res.body.csrfToken as string;
+}
 
 describe("Tutor Runtime Contract - Wave 1.5", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     state.currentUser = {
       id: "student-auth-user",
@@ -256,6 +264,8 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.questionLookupMissing = false;
     state.tableCalls = [];
     state.rpcCalls = [];
+    agent = request.agent(app);
+    csrfToken = await getCsrfToken(agent);
   });
 
   it("enforces CSRF on tutor POST when auth is present", async () => {
@@ -268,9 +278,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("uses authenticated user id and ignores body userId", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ userId: "attacker-id", message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -280,9 +290,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("does not leak answers pre-submit", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -297,9 +307,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.hasActiveFullTest = true;
     state.hasVerifiedRetry = true;
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -314,9 +324,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("tutor open without verified retry does not write mastery tables", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -334,9 +344,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = retryIsCorrect;
     state.retryOutcome = retryIsCorrect ? "correct" : "incorrect";
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -350,9 +360,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = false;
     state.retryOutcome = "skipped";
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -366,9 +376,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.hasVerifiedRetry = true;
     state.questionLookupMissing = true;
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -387,9 +397,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
       isGuardian: true,
     };
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(403);

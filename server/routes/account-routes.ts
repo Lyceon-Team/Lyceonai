@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
 import { requireSupabaseAuth } from '../middleware/supabase-auth';
+import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import {
   getAllAccountsForUser,
   getOrCreateEntitlement,
@@ -78,7 +79,7 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
   }
 });
 
-router.post('/select', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post('/select', requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   const requestId = req.requestId;
 
   logger.warn('ACCOUNT', 'select_blocked', 'Account switching is disabled by runtime guardian model', {

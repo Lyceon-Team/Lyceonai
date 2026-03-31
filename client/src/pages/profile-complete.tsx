@@ -18,6 +18,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fetchUserAcceptances, hasAccepted, recordAcceptance } from "@/lib/legal";
+import { csrfFetch } from "@/lib/csrf";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 
 // Comprehensive profile validation schema
@@ -176,7 +177,7 @@ export default function ProfileComplete() {
     queryKey: ['/api/profile'],
     retry: false,
     queryFn: async () => {
-      const response = await fetch('/api/profile', { credentials: 'include' });
+      const response = await csrfFetch('/api/profile', { credentials: 'include' });
 
       if (response.status === 401 || response.status === 403) {
         return { authenticated: false, user: null };

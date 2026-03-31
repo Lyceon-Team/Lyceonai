@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { csrfFetch } from '@/lib/csrf';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,7 +112,7 @@ export default function GuardianDashboard() {
   const { data: studentsData, isLoading: studentsLoading, error: studentsError, refetch: refetchStudents } = useQuery({
     queryKey: ['guardian-students'],
     queryFn: async () => {
-      const res = await fetch('/api/guardian/students', { credentials: 'include' });
+      const res = await csrfFetch('/api/guardian/students', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch students');
       return res.json() as Promise<{ students: LinkedStudent[] }>;
     },
@@ -121,7 +122,7 @@ export default function GuardianDashboard() {
   const { data: summaryData, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = useQuery({
     queryKey: ['guardian-student-summary', selectedStudentId],
     queryFn: async () => {
-      const res = await fetch(`/api/guardian/students/${selectedStudentId}/summary`, { credentials: 'include' });
+      const res = await csrfFetch(`/api/guardian/students/${selectedStudentId}/summary`, { credentials: 'include' });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to fetch summary');
@@ -139,7 +140,7 @@ export default function GuardianDashboard() {
   } = useQuery({
     queryKey: ['guardian-weaknesses', selectedStudentId],
     queryFn: async () => {
-      const res = await fetch(`/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`, { credentials: 'include' });
+      const res = await csrfFetch(`/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`, { credentials: 'include' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to load weaknesses');
@@ -160,7 +161,7 @@ export default function GuardianDashboard() {
         throw new Error('Select student first');
       }
 
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/guardian/students/${selectedStudentId}/exams/full-length/sessions?limit=12&include_incomplete=true`,
         { credentials: 'include' },
       );
@@ -185,7 +186,7 @@ export default function GuardianDashboard() {
         throw new Error('Select student and session ID first');
       }
 
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/guardian/students/${selectedStudentId}/exams/full-length/${encodeURIComponent(requestedReportSessionId)}/report`,
         { credentials: 'include' },
       );
@@ -207,7 +208,7 @@ export default function GuardianDashboard() {
   const { data: billingStatus } = useQuery({
     queryKey: ['guardian-billing-status'],
     queryFn: async () => {
-      const res = await fetch('/api/billing/status', { credentials: 'include' });
+      const res = await csrfFetch('/api/billing/status', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch billing status');
       return res.json() as Promise<GuardianBillingStatus>;
     },
@@ -216,7 +217,7 @@ export default function GuardianDashboard() {
   });
   const linkMutation = useMutation({
     mutationFn: async (code: string) => {
-      const res = await fetch('/api/guardian/link', {
+      const res = await csrfFetch('/api/guardian/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -247,7 +248,7 @@ export default function GuardianDashboard() {
 
   const unlinkMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const res = await fetch(`/api/guardian/link/${studentId}`, {
+      const res = await csrfFetch(`/api/guardian/link/${studentId}`, {
         method: 'DELETE',
         credentials: 'include',
       });

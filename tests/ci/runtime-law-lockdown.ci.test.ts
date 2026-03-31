@@ -78,7 +78,7 @@ describe("Runtime cutover route coverage proof", () => {
 
   it("keeps practice/full-length unlocked and keeps diagnostic terminal-404", () => {
     expect(indexSource).toMatch(
-      /app\.use\(\s*"\/api\/practice",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*practiceCanonicalRouter/s
+      /app\.use\(\s*"\/api\/practice",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*doubleCsrfProtection,\s*practiceCanonicalRouter/s
     );
     expect(indexSource).not.toMatch(/runtimeContractDisableMiddleware\("practice"\)/s);
 

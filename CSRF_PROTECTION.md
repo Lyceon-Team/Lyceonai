@@ -6,29 +6,27 @@ This document describes the CSRF (Cross-Site Request Forgery) protection impleme
 
 ## CSRF Protection Strategy
 
-All mutating HTTP endpoints (POST, PUT, PATCH, DELETE) that use cookie-based authentication are protected by CSRF middleware. This prevents cross-site request forgery attacks where an attacker tricks a user's browser into making unauthorized requests.
+All mutating HTTP endpoints (POST, PUT, PATCH, DELETE) that use cookie-based authentication are protected by CSRF middleware. Lyceon uses a **signed double-submit cookie** pattern (`csrf-csrf`) so the CSRF token is issued via a dedicated endpoint and validated on each state-changing request.
 
 ### Three Ways to Apply CSRF Protection
 
 CSRF protection can be applied in three ways:
 
-**A) Inline Protection** - Apply `csrfProtection` directly to the route handler:
+**A) Inline Protection** - Apply `doubleCsrfProtection` directly to the route handler:
 ```typescript
-import { csrfGuard } from '../middleware/csrf';
-const csrfProtection = csrfGuard();
+import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 
-router.post('/endpoint', csrfProtection, async (req, res) => {
+router.post('/endpoint', doubleCsrfProtection, async (req, res) => {
   // Handler code
 });
 ```
 
-**B) Router-Level Protection** - Apply `csrfProtection` to all routes in a router:
+**B) Router-Level Protection** - Apply `doubleCsrfProtection` to all routes in a router:
 ```typescript
-import { csrfGuard } from '../middleware/csrf';
-const csrfProtection = csrfGuard();
+import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 
 // Apply to all routes below this line
-router.use(csrfProtection);
+router.use(doubleCsrfProtection);
 
 router.post('/endpoint1', async (req, res) => { /* ... */ });
 router.post('/endpoint2', async (req, res) => { /* ... */ });
@@ -37,19 +35,19 @@ router.post('/endpoint2', async (req, res) => { /* ... */ });
 **C) Server Mount Protection** - Apply when mounting the router in `server/index.ts`:
 ```typescript
 import someRouter from './routes/some-routes';
-import { csrfGuard } from './middleware/csrf';
+import { doubleCsrfProtection } from './middleware/csrf-double-submit';
 
-const csrfProtection = csrfGuard();
-
-app.use('/api/some', csrfProtection, someRouter);
+app.use('/api/some', doubleCsrfProtection, someRouter);
 ```
 
 ### CSRF Exempt Routes
 
-Some endpoints are intentionally exempt from CSRF protection because they use alternative security mechanisms:
+Some endpoints are intentionally exempt from CSRF protection because they use alternative security mechanisms or are read-only:
 
-1. **POST /api/auth/exchange-session** - Programmatic token exchange for mobile/API clients
-2. **POST /api/billing/webhook** - Stripe webhook endpoint (uses signature verification)
+1. **POST /api/billing/webhook** - Stripe webhook endpoint (uses signature verification)
+2. **GET /healthz**, **GET /api/health** - Health checks
+3. **GET /auth/google/callback**, **GET /api/auth/google/callback** - OAuth provider redirects
+4. **GET/HEAD/OPTIONS** - read-only/public/SSR surfaces
 
 When an endpoint must be exempt, it MUST include a `CSRF_EXEMPT_REASON` comment:
 
@@ -148,16 +146,15 @@ The script provides detailed output:
 
 ## CSRF Middleware Implementation
 
-The CSRF protection is implemented in `server/middleware/csrf.ts` using origin/referer validation:
+The CSRF protection is implemented in `server/middleware/csrf-double-submit.ts` using `csrf-csrf` (signed double-submit cookie):
 
-1. In development mode, CSRF checks are bypassed for easier testing
-2. GET, HEAD, and OPTIONS requests are always allowed
-3. For mutating requests, validates the `Origin` or `Referer` header matches allowed origins
-4. Returns 403 Forbidden if validation fails
+1. The client fetches `GET /api/csrf-token` to receive a signed token and CSRF cookie
+2. The client includes the token in `x-csrf-token` for mutating requests
+3. The server validates the token and cookie match for every POST/PUT/PATCH/DELETE
 
-Allowed origins are configured via environment variables:
-- `CORS_ORIGINS` - Comma-separated list of allowed origins
-- `CSRF_ALLOWED_ORIGINS` - Additional CSRF-specific origins (optional)
+Configuration:
+- `CSRF_SECRET` (required in production)
+- `CSRF_COOKIE_NAME` (optional override)
 
 ## Adding New Endpoints
 
@@ -179,4 +176,4 @@ When adding a new mutating endpoint:
 ## References
 
 - OWASP CSRF Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
-- Express CSRF Protection: https://expressjs.com/en/resources/middleware/csurf.html
+- csrf-csrf: https://www.npmjs.com/package/csrf-csrf

@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { csrfFetch } from "./csrf";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -39,11 +40,10 @@ async function fetchWithSessionRefresh(
 ): Promise<Response> {
   const requestUrl = normalizeApiRequestUrl(url);
 
-  const doFetch = () =>
-    fetch(requestUrl, {
-      ...init,
-      credentials: "include",
-    });
+  const doFetch = () => csrfFetch(requestUrl, {
+    ...init,
+    credentials: "include",
+  });
 
   let res = await doFetch();
 
@@ -51,7 +51,7 @@ async function fetchWithSessionRefresh(
   const shouldAttemptRefresh = !isAuthEndpoint && (res.status === 401 || res.status === 403);
 
   if (shouldAttemptRefresh) {
-    const refreshRes = await fetch("/api/auth/refresh", {
+    const refreshRes = await csrfFetch("/api/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

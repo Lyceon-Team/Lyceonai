@@ -5,7 +5,6 @@ import { requireGuardianRole } from '../middleware/guardian-role';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
-import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks, ensureAccountForUser } from '../lib/account';
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
@@ -14,7 +13,6 @@ import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildStudentFul
 import { buildCalendarMonthView } from '../../apps/api/src/services/calendar-month-view';
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
 const requireGuardianAccess = requireGuardianRole({
@@ -122,7 +120,7 @@ router.get('/students', requireSupabaseAuth, requireGuardianAccess, async (req: 
   }
 });
 
-router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection, durableRateLimiter, async (req: Request, res: Response) => {
+router.post('/link', requireSupabaseAuth, requireGuardianAccess, durableRateLimiter, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;
@@ -193,7 +191,7 @@ router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection,
   }
 });
 
-router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, csrfProtection, async (req: Request, res: Response) => {
+router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;

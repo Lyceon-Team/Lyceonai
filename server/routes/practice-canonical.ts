@@ -3,7 +3,6 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { csrfGuard } from "../middleware/csrf";
 import { getSupabaseAdmin, requireSupabaseAuth } from "../middleware/supabase-auth.js";
 import {
   applyMasteryUpdate,
@@ -133,7 +132,6 @@ type PracticeAccess = {
 };
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
@@ -1718,7 +1716,7 @@ async function serveNextForSession(args: {
   });
 }
 
-router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1781,7 +1779,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) =
   });
 });
 
-router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1831,7 +1829,7 @@ router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtectio
   });
 });
 
-router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -2732,8 +2730,8 @@ async function submitPracticeSkip(req: Request, res: Response) {
     state: shouldComplete ? "completed" : "active",
   });
 }
-router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeAnswer);
-router.post("/sessions/:sessionId/skip", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeSkip);
+router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeAnswer);
+router.post("/sessions/:sessionId/skip", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeSkip);
 
 export default router;
 

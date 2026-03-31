@@ -1,15 +1,13 @@
 import { Router, Request, Response } from "express";
 import { getSupabaseAdmin } from "../../apps/api/src/lib/supabase-admin.js";
-import { csrfGuard } from "../middleware/csrf";
 
 export const legalRouter = Router();
-const csrfProtection = csrfGuard();
 
 /**
  * POST /api/legal/accept
  * Records acceptance for the authenticated user (server-only auth).
  */
-legalRouter.post("/accept", csrfProtection, async (req: Request, res: Response) => {
+legalRouter.post("/accept", async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });

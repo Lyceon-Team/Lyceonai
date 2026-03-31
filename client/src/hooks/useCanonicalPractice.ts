@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { csrfFetch } from "@/lib/csrf";
 import {
   type RuntimeContractDisabledState,
   parseRuntimeContractDisabledFromPayload,
@@ -186,7 +187,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (typeof sessionSpec?.targetMinutes === "number") startPayload.target_minutes = sessionSpec.targetMinutes;
     if (typeof sessionSpec?.targetQuestionCount === "number") startPayload.target_question_count = sessionSpec.targetQuestionCount;
 
-    const startRes = await fetch("/api/practice/sessions", {
+    const startRes = await csrfFetch("/api/practice/sessions", {
       method: "POST",
       credentials: "include",
       headers: {
@@ -226,7 +227,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
 
     try {
       const effectiveSessionId = await ensureSession();
-      const nextRes = await fetch(
+      const nextRes = await csrfFetch(
         `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/next?client_instance_id=${encodeURIComponent(clientInstanceId)}`,
         {
           method: "GET",
@@ -313,7 +314,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
               clientAttemptId,
             };
 
-        const res = await fetch(endpoint, {
+        const res = await csrfFetch(endpoint, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -405,7 +406,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (!sessionId) return null;
     if (sessionState === "completed" || sessionState === "abandoned") return { state: sessionState };
 
-    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
+    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
       method: "POST",
       credentials: "include",
       keepalive: true,
@@ -442,7 +443,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (!sessionId) return null;
     if (sessionState === "completed" || sessionState === "abandoned") return null;
 
-    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
+    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
       method: "POST",
       credentials: "include",
       headers: {

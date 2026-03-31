@@ -9,12 +9,12 @@ import { billingStorage } from '../lib/billingStorage';
 import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
-import { csrfGuard } from '../middleware/csrf';
+import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { requireGuardianRole } from '../middleware/guardian-role';
 import { normalizeRuntimeRole } from '../lib/auth-role';
 
 const router = Router();
-const csrfProtection = csrfGuard();
+const csrfProtection = doubleCsrfProtection;
 const requireGuardianBillingAccess = requireGuardianRole({
   message: 'You do not have permission to access guardian billing resources',
 });

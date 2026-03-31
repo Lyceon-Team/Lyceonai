@@ -12,12 +12,17 @@
  * 4. User identity from req.user.id (not request body)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 
 // These tests run in CI without secrets
 // The server will use mock Supabase clients in test mode
+
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
 describe('CI Auth Tests', () => {
   let app: Express;
