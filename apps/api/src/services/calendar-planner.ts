@@ -101,18 +101,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function normalizeDayNumbers(values: number[] | null | undefined, fallback: number[]): number[] {
-  if (!Array.isArray(values)) return fallback;
-  const normalized = Array.from(
-    new Set(
-      values
-        .map((value) => (typeof value === "number" ? Math.trunc(value) : Number.NaN))
-        .filter((value) => Number.isInteger(value) && value >= 1 && value <= 7),
-    ),
-  );
-  return normalized.length > 0 ? normalized.sort((a, b) => a - b) : fallback;
-}
-
 function normalizeDateList(values: string[] | null | undefined): string[] {
   if (!Array.isArray(values)) return [];
   return Array.from(
