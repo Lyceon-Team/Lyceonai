@@ -80,6 +80,10 @@ class MockBuilder {
     return this;
   }
 
+  returns<_T>() {
+    return this;
+  }
+
   insert(payload: TableRow | TableRow[]) {
     this.operation = "insert";
     const rows = Array.isArray(payload) ? payload : [payload];

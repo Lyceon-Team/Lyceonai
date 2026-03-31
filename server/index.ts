@@ -66,7 +66,6 @@ import guardianConsentRoutes from "./routes/guardian-consent-routes";
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
-import { runtimeContractDisableMiddleware } from "./lib/runtime-contract-disable";
 
 // CSRF protection middleware - uses shared origin-utils for single source of truth
 const csrfProtection = csrfGuard();
@@ -279,13 +278,8 @@ app.use("/api/notifications", notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
 app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
-app.use(
-  "/api/me/mastery/diagnostic",
-  runtimeContractDisableMiddleware("diagnostic"),
-  requireSupabaseAuth,
-  requireStudentOrAdmin,
-  csrfProtection,
-);
+// Diagnostic runtime removed: keep the path terminally unavailable (404) before mastery auth mount.
+app.use("/api/me/mastery/diagnostic", (_req, res) => res.status(404).json({ error: "Not found" }));
 app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
 
@@ -413,7 +407,6 @@ app.use(
 // All routes require Supabase auth and are student-only
 app.use(
   "/api/full-length",
-  runtimeContractDisableMiddleware("full-length"),
   requireSupabaseAuth,
   requireStudentOrAdmin,
   fullLengthExamRouter

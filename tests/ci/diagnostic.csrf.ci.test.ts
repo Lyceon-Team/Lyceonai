@@ -40,26 +40,17 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
 
 const { default: app } = await import("../../server/index");
 
-describe("Diagnostic Runtime Hard Kill CI", () => {
-  it("diagnostic mutation returns terminal runtime disable without origin", async () => {
+describe("Diagnostic Runtime Removal", () => {
+  it("diagnostic mutation returns 404 without origin", async () => {
     const res = await request(app).post("/api/me/mastery/diagnostic/start").send({});
-    expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({
-      code: "DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT",
-      message: "This runtime surface is intentionally disabled by Lyceon Runtime Contract enforcement.",
-    });
+    expect(res.status).toBe(404);
   });
 
-  it("diagnostic mutation returns terminal runtime disable with valid origin", async () => {
+  it("diagnostic mutation returns 404 with valid origin", async () => {
     const res = await request(app)
       .post("/api/me/mastery/diagnostic/start")
       .set("Origin", "http://localhost:5000")
       .send({});
-    expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({
-      code: "DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT",
-      message: "This runtime surface is intentionally disabled by Lyceon Runtime Contract enforcement.",
-    });
+    expect(res.status).toBe(404);
   });
 });
-

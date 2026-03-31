@@ -97,9 +97,7 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Should be 401 (auth failure) or 403 (CSRF blocked)
-      // In test mode, likely 401 due to fake token
-      expect([401, 403]).toContain(res.status);
+      expect(res.status).toBe(401);
     });
   });
 
@@ -113,8 +111,7 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Could be 400 (validation) or 401 (auth)
-      expect([400, 401]).toContain(res.status);
+      expect(res.status).toBe(401);
     });
 
     it('should reject getCurrentSession without sessionId query param', async () => {
@@ -122,8 +119,7 @@ describe('Full-Length Exam API Tests', () => {
         .get('/api/full-length/sessions/current')
         .set('Cookie', ['sb-access-token=fake-token']);
 
-      // Should be 400 (missing param) or 401 (auth)
-      expect([400, 401]).toContain(res.status);
+      expect(res.status).toBe(401);
     });
 
     it('should accept valid UUID for questionId', async () => {
@@ -135,8 +131,7 @@ describe('Full-Length Exam API Tests', () => {
           selectedAnswer: 'A',
         });
 
-      // Should be 401 (auth) or other error, but not 400 (validation)
-      expect(res.status).not.toBe(400);
+      expect(res.status).toBe(401);
     });
   });
 
@@ -162,31 +157,8 @@ describe('Full-Length Exam API Tests', () => {
         .set('Cookie', ['sb-access-token=fake-token'])
         .send({});
 
-      // Should get some error response
-      expect([401, 404, 500]).toContain(res.status);
-      
-      // Response should have error field
+      expect(res.status).toBe(401);
       expect(res.body).toHaveProperty('error');
-      
-      // If message field exists, it should be from auth middleware only,
-      // not from internal service errors
-      if (res.body.message && res.status === 500) {
-        // 500 errors should NOT have a message field
-        expect(res.body).not.toHaveProperty('message');
-      }
-      
-      // Error field should be one of the stable public errors
-      const validErrors = [
-        'Authentication required',
-        'Session not found',
-        'Invalid exam state',
-        'Internal error'
-      ];
-      
-      if (res.body.error && res.status >= 400 && res.status < 500) {
-        // Client errors from auth/validation are OK
-        expect(res.body.error).toBeDefined();
-      }
     });
 
     it('should return only stable error codes for service errors', async () => {
