@@ -51,12 +51,6 @@ function collectSourceFiles(rootDirs: string[]): string[] {
   return files.sort();
 }
 
-function findFilesContaining(needle: string, rootDirs: string[]): string[] {
-  return collectSourceFiles(rootDirs).filter((relativePath) =>
-    readRepoFile(relativePath).includes(needle),
-  );
-}
-
 function findFilesMatching(pattern: RegExp, rootDirs: string[]): string[] {
   return collectSourceFiles(rootDirs).filter((relativePath) => pattern.test(readRepoFile(relativePath)));
 }
