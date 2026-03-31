@@ -675,30 +675,6 @@ function normalizeStoredSessionSpec(raw: unknown): Partial<CanonicalSessionSpec>
   };
 }
 
-function resolveSessionSpecForPrebuild(session: SessionRow, metadata: SessionMetadata): CanonicalSessionSpec {
-  const stored = normalizeStoredSessionSpec(metadata.session_spec);
-  const inferredSection = normalizeSectionParam(session.section);
-  const inferredSections = inferredSection === "Math" || inferredSection === "RW" ? [inferredSection] : [];
-  const mergedSections = (stored?.sections?.length ? stored.sections : inferredSections) as Array<"Math" | "RW">;
-
-  const targetQuestionCount = coerceTargetQuestionCount(
-    stored?.target_question_count ?? metadata.target_question_count,
-  );
-
-  const targetMinutes = typeof stored?.target_minutes === "number" && Number.isFinite(stored.target_minutes)
-    ? Math.floor(stored.target_minutes)
-    : null;
-
-  return {
-    sections: mergedSections,
-    domains: stored?.domains ?? [],
-    difficulties: stored?.difficulties ?? [],
-    target_minutes: targetMinutes,
-    target_question_count: targetQuestionCount,
-    mode: stored?.mode ?? String(session.mode || "balanced"),
-  };
-}
-
 function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   const codes = new Set<string>();
   for (const section of sections) {
