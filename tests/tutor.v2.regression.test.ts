@@ -1,6 +1,11 @@
 import request from 'supertest';
 import app from '../server/index';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
 // Security regression test: Verify that /api/tutor/v2 does not leak
 // answers or explanations to students who haven't attempted the question.

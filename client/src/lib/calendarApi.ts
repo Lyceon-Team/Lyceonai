@@ -1,3 +1,5 @@
+import { csrfFetch } from "./csrf";
+
 export type CalendarTaskType =
   | "practice"
   | "focused_drill"
@@ -93,7 +95,7 @@ export interface CalendarTask {
 }
 
 export async function getCalendarProfile(): Promise<StudyProfile | null> {
-  const response = await fetch('/api/calendar/profile', {
+  const response = await csrfFetch('/api/calendar/profile', {
     credentials: 'include',
   });
   if (!response.ok) {
@@ -115,7 +117,7 @@ export async function saveCalendarProfile(profile: {
   blocked_dates?: string[] | null;
   blocked_windows?: BlockedWindow[] | null;
 }): Promise<StudyProfile> {
-  const response = await fetch('/api/calendar/profile', {
+  const response = await csrfFetch('/api/calendar/profile', {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -135,7 +137,7 @@ export interface CalendarMonthResponse {
 }
 
 export async function getCalendarMonth(start: string, end: string): Promise<CalendarMonthResponse> {
-  const response = await fetch(`/api/calendar/month?start=${start}&end=${end}`, {
+  const response = await csrfFetch(`/api/calendar/month?start=${start}&end=${end}`, {
     credentials: 'include',
   });
   if (!response.ok) {
@@ -149,7 +151,7 @@ export async function getCalendarMonth(start: string, end: string): Promise<Cale
 }
 
 export async function generateCalendarPlan(startDate: string, days = 28): Promise<any> {
-  const response = await fetch('/api/calendar/generate', {
+  const response = await csrfFetch('/api/calendar/generate', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -163,7 +165,7 @@ export async function generateCalendarPlan(startDate: string, days = 28): Promis
 }
 
 export async function refreshCalendarPlan(startDate: string, days = 28): Promise<any> {
-  const response = await fetch('/api/calendar/refresh/auto', {
+  const response = await csrfFetch('/api/calendar/refresh/auto', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -177,7 +179,7 @@ export async function refreshCalendarPlan(startDate: string, days = 28): Promise
 }
 
 export async function regenerateCalendarPlan(startDate: string, days = 28): Promise<any> {
-  const response = await fetch('/api/calendar/regenerate', {
+  const response = await csrfFetch('/api/calendar/regenerate', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -220,7 +222,7 @@ export async function updateCalendarDay(
     }>;
   },
 ): Promise<any> {
-  const response = await fetch(`/api/calendar/day/${dayDate}`, {
+  const response = await csrfFetch(`/api/calendar/day/${dayDate}`, {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -234,7 +236,7 @@ export async function updateCalendarDay(
 }
 
 export async function regenerateCalendarDay(dayDate: string): Promise<any> {
-  const response = await fetch(`/api/calendar/day/${dayDate}/regenerate`, {
+  const response = await csrfFetch(`/api/calendar/day/${dayDate}/regenerate`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -248,7 +250,7 @@ export async function regenerateCalendarDay(dayDate: string): Promise<any> {
 }
 
 export async function resetCalendarDayToAuto(dayDate: string): Promise<any> {
-  const response = await fetch(`/api/calendar/day/${dayDate}/reset-to-auto`, {
+  const response = await csrfFetch(`/api/calendar/day/${dayDate}/reset-to-auto`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -266,7 +268,7 @@ export async function updateCalendarTaskStatus(
   taskId: string,
   status: "planned" | "in_progress" | "completed" | "skipped" | "missed",
 ): Promise<any> {
-  const response = await fetch(`/api/calendar/day/${dayDate}/tasks/${taskId}`, {
+  const response = await csrfFetch(`/api/calendar/day/${dayDate}/tasks/${taskId}`, {
     method: "PATCH",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

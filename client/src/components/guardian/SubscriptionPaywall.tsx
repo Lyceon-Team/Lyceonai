@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, CheckCircle, Loader2, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { csrfFetch } from '@/lib/csrf';
 
 interface BillingStatus {
   accountId: string | null;
@@ -67,7 +68,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const { data: billingStatus, isLoading: billingLoading, error: billingError, refetch } = useQuery({
     queryKey: ['billing-status'],
     queryFn: async () => {
-      const res = await fetch('/api/billing/status', { credentials: 'include' });
+      const res = await csrfFetch('/api/billing/status', { credentials: 'include' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to get billing status');
@@ -140,7 +141,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const { data: pricesData, isLoading: pricesLoading, error: pricesError } = useQuery<PriceOption[]>({
     queryKey: ['billing-prices'],
     queryFn: async () => {
-      const res = await fetch('/api/billing/prices', { credentials: 'include' });
+      const res = await csrfFetch('/api/billing/prices', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch prices');
       const data = await res.json();
       
@@ -160,7 +161,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const checkoutMutation = useMutation({
     mutationFn: async (plan: 'monthly' | 'quarterly' | 'yearly') => {
       console.log('[Billing] Starting checkout with plan:', plan);
-      const res = await fetch('/api/billing/checkout', {
+      const res = await csrfFetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -195,7 +196,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
 
   const portalMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/billing/portal', {
+      const res = await csrfFetch('/api/billing/portal', {
         method: 'POST',
         credentials: 'include',
       });
@@ -454,7 +455,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
 export function ManageSubscriptionButton() {
   const portalMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/billing/portal', {
+      const res = await csrfFetch('/api/billing/portal', {
         method: 'POST',
         credentials: 'include',
       });

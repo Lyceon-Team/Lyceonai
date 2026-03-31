@@ -1,3 +1,4 @@
+import { csrfFetch } from "./csrf";
 
 export interface LegalDocSection {
   id: string;
@@ -979,7 +980,7 @@ export async function recordAcceptance(
   acceptance: LegalAcceptance
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const resp = await fetch("/api/legal/accept", {
+    const resp = await csrfFetch("/api/legal/accept", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -1004,7 +1005,7 @@ export async function fetchUserAcceptances(): Promise<{
   error?: string;
 }> {
   try {
-    const resp = await fetch("/api/legal/acceptances", {
+    const resp = await csrfFetch("/api/legal/acceptances", {
       method: "GET",
       credentials: "include",
     });

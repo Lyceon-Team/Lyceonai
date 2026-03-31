@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import app from '../server/index';
 
+vi.mock('../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
+
 // ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
   // Security test: Verify that /api/tutor/v2 uses req.user.id, not body.userId

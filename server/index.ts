@@ -37,7 +37,6 @@ import {
 import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
-  resolveTokenFromRequest,
   supabaseAuthMiddleware,
   requireSupabaseAuth,
   requireSupabaseAdmin,
@@ -48,7 +47,7 @@ import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
 import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-routes";
-import { csrfGuard } from "./middleware/csrf";
+import { doubleCsrfProtection, generateToken } from "./middleware/csrf-double-submit";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
@@ -68,35 +67,6 @@ import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
 
-// CSRF protection middleware - uses shared origin-utils for single source of truth
-const csrfProtection = csrfGuard();
-const isCsrfExempt = (req: Request): boolean => {
-  const method = (req.method || "").toUpperCase();
-  const path = req.path;
-
-  // CSRF_EXEMPT_REASON: Public GET/HEAD/OPTIONS surfaces (SSR, static, public reads).
-  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return true;
-
-  // CSRF_EXEMPT_REASON: Stripe webhook uses signature verification + raw body.
-  if (method === "POST" && path === "/api/billing/webhook") return true;
-
-  // CSRF_EXEMPT_REASON: Health checks (non-authenticated, infra polling).
-  if (path === "/healthz" || path === "/api/health") return true;
-
-  // CSRF_EXEMPT_REASON: OAuth provider callbacks (external redirects, GET only).
-  if (path === "/auth/google/callback" || path === "/api/auth/google/callback") return true;
-
-  return false;
-};
-const isCsrfProtectedPath = (path: string): boolean => {
-  if (path.startsWith("/api/practice")) return true;
-  if (path.startsWith("/api/full-length")) return true;
-  if (path.startsWith("/api/review-errors")) return true;
-  if (path.startsWith("/api/calendar")) return true;
-  if (path === "/api/questions/feedback") return true;
-  if (path === "/api/rag/v2") return true;
-  return false;
-};
 
 const app = express();
 app.disable("x-powered-by");
@@ -112,15 +82,6 @@ app.use(securityHeadersMiddleware());
 // Core middleware
 app.use(corsAllowlist());
 app.use(cookieParser());
-// Global CSRF guard: enforce only on known state-changing route families.
-// This preserves 404 for unmounted routes and 401 for unauthenticated requests.
-app.use((req, res, next) => {
-  if (isCsrfExempt(req)) return next();
-  if (!isCsrfProtectedPath(req.path)) return next();
-  const token = resolveTokenFromRequest(req).token;
-  if (!token) return next();
-  return csrfProtection(req, res, next);
-});
 
 // Stripe webhook route MUST be registered BEFORE express.json()
 // Webhook needs raw Buffer, not parsed JSON
@@ -170,11 +131,18 @@ app.use((err: any, _req: Request, res: Response, next: any) => {
   return next(err);
 });
 
+// CSRF token bootstrap endpoint (stateless double-submit cookie).
+// CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+app.get("/api/csrf-token", (req: Request, res: Response) => {
+  const csrfToken = generateToken(req, res);
+  return res.json({ csrfToken });
+});
+
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
 
 // Legal API (requires Supabase auth)
-app.use("/api/legal", requireSupabaseAuth, legalRouter);
+app.use("/api/legal", requireSupabaseAuth, doubleCsrfProtection, legalRouter);
 
 // ============================================================================
 // SEO: Server-side meta injection for legal pages
@@ -302,11 +270,20 @@ app.use(
   ragLimiter,
   requireSupabaseAuth,
   requireStudentOrAdmin,
+  doubleCsrfProtection,
   ragV2Router
 );
 
 // Tutor v2 endpoint - Lisa tutoring with canonical RAG context
-app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
+app.use(
+  "/api/tutor/v2",
+  ragLimiter,
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  checkAiChatLimit({ incrementStrategy: "on_success" }),
+  tutorV2Router
+);
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
@@ -320,22 +297,22 @@ app.get("/api/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackH
 app.use("/api/auth", supabaseAuthRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
-app.use("/api/consent", guardianConsentRoutes);
+app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route
-app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+app.use("/api/profile", requireSupabaseAuth, doubleCsrfProtection, profileRoutes);
 
 // Notifications Routes
-app.use("/api/notifications", notificationRoutes);
+app.use("/api/notifications", requireSupabaseAuth, doubleCsrfProtection, notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
-app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
+app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, weaknessRouter);
 // Diagnostic runtime removed: keep the path terminally unavailable (404) before mastery auth mount.
 app.use("/api/me/mastery/diagnostic", (_req, res) => res.status(404).json({ error: "Not found" }));
-app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, calendarRouter);
+app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, masteryRouter);
+app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
 app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
@@ -409,6 +386,7 @@ app.post(
   "/api/review-errors/sessions",
   requireSupabaseAuth,
   requireStudentOrAdmin,
+  doubleCsrfProtection,
   startReviewErrorSession
 );
 app.get(
@@ -421,16 +399,17 @@ app.post(
   "/api/review-errors/attempt",
   requireSupabaseAuth,
   requireStudentOrAdmin,
+  doubleCsrfProtection,
   submitReviewSessionAnswer
 );
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
-app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, submitQuestionFeedback);
+app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, submitQuestionFeedback);
 
 // Guardian Routes (requires Supabase auth + guardian role)
-app.use("/api/guardian", guardianRoutes);
+app.use("/api/guardian", requireSupabaseAuth, doubleCsrfProtection, guardianRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
@@ -446,12 +425,13 @@ app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getP
 app.get("/api/practice/reference/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
-// CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
+// CSRF protection is applied at the mount (GET/HEAD/OPTIONS are ignored by middleware).
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
 app.use(
   "/api/practice",
   requireSupabaseAuth,
   requireStudentOrAdmin,
+  doubleCsrfProtection,
   practiceCanonicalRouter
 );
 
@@ -577,6 +557,19 @@ app.get("*", (req, res) => {
 app.use((err: any, req: Request, res: Response, next: any) => {
   const requestId = (req as any).requestId || logger.generateRequestId();
 
+  const csrfError =
+    err?.code === "EBADCSRFTOKEN" ||
+    err?.name === "CSRFError" ||
+    (typeof err?.message === "string" && err.message.toLowerCase().includes("csrf"));
+
+  if (csrfError) {
+    return res.status(403).json({
+      error: "csrf_blocked",
+      message: "Cross-site request blocked by CSRF protection",
+      requestId,
+    });
+  }
+
   logger.error(
     'HTTP',
     'unhandled_error',
@@ -614,6 +607,7 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
     "GEMINI_API_KEY",
+    "CSRF_SECRET",
   ];
 
   const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);

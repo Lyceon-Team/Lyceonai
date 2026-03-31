@@ -14,9 +14,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
 const repoRoot = process.cwd();
 

@@ -10,6 +10,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { csrfFetch } from "@/lib/csrf";
 import ExamRunner from "@/components/full-length-exam/ExamRunner";
 import FullLengthResultsView, { type FullLengthResultsData } from "@/components/full-length-exam/FullLengthResultsView";
 import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
@@ -108,7 +109,7 @@ export default function FullTest() {
         throw new Error("Session ID is required");
       }
 
-      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
         method: "GET",
         credentials: "include",
       });
@@ -145,7 +146,7 @@ export default function FullTest() {
         throw new Error("Session ID is required");
       }
 
-      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
         method: "GET",
         credentials: "include",
       });
@@ -177,7 +178,7 @@ export default function FullTest() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     queryFn: async () => {
-      const res = await fetch("/api/full-length/sessions?limit=15", {
+      const res = await csrfFetch("/api/full-length/sessions?limit=15", {
         method: "GET",
         credentials: "include",
       });
@@ -217,7 +218,7 @@ export default function FullTest() {
 
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/full-length/sessions", {
+      const res = await csrfFetch("/api/full-length/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -259,7 +260,7 @@ export default function FullTest() {
 
   const startExamMutation = useMutation({
     mutationFn: async (sid: string) => {
-      const res = await fetch(`/api/full-length/sessions/${sid}/start`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${sid}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

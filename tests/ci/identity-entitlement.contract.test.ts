@@ -30,6 +30,11 @@ vi.mock('../../server/middleware/csrf', () => ({
   csrfGuard: () => (_req: any, _res: any, next: any) => next(),
 }));
 
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
+
 vi.mock('../../server/middleware/supabase-auth', () => ({
   requireSupabaseAuth: (req: any, res: any, next: any) => {
     if (!authState.currentUser) {

@@ -5,6 +5,7 @@ import { Play, Shuffle, TrendingUp, Check, Upload, MessageSquare, Settings } fro
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import type { ProgressStats } from "@shared/schema";
+import { csrfFetch } from "@/lib/csrf";
 
 export default function ProgressSidebar() {
   // Progress stats API - DISABLED (endpoint not implemented)
@@ -17,7 +18,7 @@ export default function ProgressSidebar() {
   const { data: authData } = useQuery({
     queryKey: ['/api/profile'],
     queryFn: async () => {
-      const response = await fetch('/api/profile', { credentials: 'include' });
+      const response = await csrfFetch('/api/profile', { credentials: 'include' });
       return response.json();
     }
   });

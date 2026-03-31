@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '../logger.js';
 import { requireSupabaseAuth, getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
-import { csrfGuard } from '../middleware/csrf.js';
+import { doubleCsrfProtection } from '../middleware/csrf-double-submit.js';
 import { BUILD } from '../lib/build.js';
 import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
 import { z } from 'zod';
@@ -23,8 +23,6 @@ const authRateLimiter = rateLimit({
   },
 });
 
-// CSRF protection - uses shared origin-utils for single source of truth
-const csrfProtection = csrfGuard();
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
@@ -47,7 +45,7 @@ function runningAgainstPlaceholder(): boolean {
  * POST /api/auth/signup
  * Sign up with email and password
  */
-router.post('/signup', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const { email, password, displayName, isUnder13, guardianEmail, role: requestedRole } = req.body;
 
@@ -233,7 +231,7 @@ const adminProvisionSchema = z.object({
  *
  * Fails closed unless ADMN_PASSCODE is configured and explicitly provided.
  */
-router.post('/admin-provision', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+router.post('/admin-provision', authRateLimiter, doubleCsrfProtection, async (req: Request, res: Response) => {
   const validation = adminProvisionSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({
@@ -364,7 +362,7 @@ router.post('/admin-provision', authRateLimiter, csrfProtection, async (req: Req
  * POST /api/auth/signin
  * Sign in with email and password
  */
-router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+router.post('/signin', authRateLimiter, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -430,7 +428,7 @@ router.post('/signin', authRateLimiter, csrfProtection, async (req: Request, res
  * POST /api/auth/signout
  * Sign out current user (no auth required - just clears cookies)
  */
-router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
+router.post('/signout', doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
 
     // Clear cookies with path: '/' (CRITICAL - must match how they were set)
@@ -455,7 +453,7 @@ router.post('/signout', csrfProtection, async (req: Request, res: Response) => {
  * POST /api/auth/consent
  * Submit guardian consent for under-13 users
  */
-router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.post('/consent', requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const { guardianConsent, guardianEmail } = req.body;
 
@@ -503,7 +501,7 @@ router.post('/consent', csrfProtection, requireSupabaseAuth, async (req: Request
  * POST /api/auth/refresh
  * Refresh access token using refresh token
  */
-router.post('/refresh', csrfProtection, async (req: Request, res: Response) => {
+router.post('/refresh', doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     // Cookie-only trust: refresh token must come from httpOnly cookie
     const refreshToken = req.cookies?.['sb-refresh-token'];
@@ -654,7 +652,7 @@ router.get('/debug', async (req: Request, res: Response) => {
  * POST /api/auth/reset-password
  * Send password reset email
  */
-router.post('/reset-password', authRateLimiter, csrfProtection, async (req: Request, res: Response) => {
+router.post('/reset-password', authRateLimiter, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
@@ -703,7 +701,7 @@ router.post('/reset-password', authRateLimiter, csrfProtection, async (req: Requ
  * POST /api/auth/update-password
  * Update password (requires authentication)
  */
-router.post('/update-password', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post('/update-password', requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: 'Password is required' });

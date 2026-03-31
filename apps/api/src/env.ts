@@ -42,6 +42,9 @@ export const env = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
   SUPABASE_DB_URL: process.env.SUPABASE_DB_URL,
+
+  // CSRF (double-submit cookie)
+  CSRF_SECRET: process.env.CSRF_SECRET,
   
   // Gemini configuration (required for embeddings and LLM)
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
@@ -89,6 +92,7 @@ export function validateEnvironment() {
     'SUPABASE_SERVICE_ROLE_KEY': env.SUPABASE_SERVICE_ROLE_KEY,
     'SUPABASE_ANON_KEY': env.SUPABASE_ANON_KEY,
     'GEMINI_API_KEY': env.GEMINI_API_KEY,
+    'CSRF_SECRET': env.CSRF_SECRET,
   };
   
   let missingCritical = false;
