@@ -118,13 +118,13 @@ router.post('/verify-session', async (req: Request, res: Response) => {
     });
 
     const pi = session.payment_intent as any;
-    const isAuthorized = session.payment_status === 'paid' || 
-                       session.payment_status === 'no_payment_required' ||
-                       (pi && pi.status === 'requires_capture');
+    const isAuthorized = session.payment_status === 'paid' ||
+      session.payment_status === 'no_payment_required' ||
+      (pi && pi.status === 'requires_capture');
 
     if (!isAuthorized) {
-      logger.warn('CONSENT', 'payment_not_completed', 'Stripe session payment not completed', { 
-        sessionId, 
+      logger.warn('CONSENT', 'payment_not_completed', 'Stripe session payment not completed', {
+        sessionId,
         paymentStatus: session.payment_status,
         piStatus: pi?.status
       });
@@ -170,7 +170,7 @@ router.post('/verify-session', async (req: Request, res: Response) => {
 
     if (existingGuardian) {
       guardianId = existingGuardian.id;
-      
+
       // Link notification for existing guardian
       await sendEmail({
         to: request.guardian_email,
@@ -199,7 +199,7 @@ router.post('/verify-session', async (req: Request, res: Response) => {
       }
 
       guardianId = (inviteData as any).user.id;
-      
+
       // Send invitation email via Resend
       await sendEmail({
         to: request.guardian_email,
@@ -218,15 +218,10 @@ router.post('/verify-session', async (req: Request, res: Response) => {
     // Ensure both have accounts
     const studentAccountId = await ensureAccountForUser(admin, request.child_id, 'student');
     await ensureAccountForUser(admin, guardianId, 'guardian');
-    
+
     await createGuardianLink(guardianId, request.child_id, studentAccountId);
 
-    // 5. Update child's profile with guardian_profile_id
-    await admin
-      .from('profiles')
-      .update({ guardian_profile_id: guardianId })
-      .eq('id', request.child_id);
-
+    // 5. Removed legacy write to child profile.guardian_profile_id (guardian_links is now canonical truth)
     // 6. Void the Stripe charge if it was an auth
     if (session.payment_intent) {
       const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;

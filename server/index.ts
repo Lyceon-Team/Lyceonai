@@ -5,7 +5,7 @@
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
  *   - POST /api/rag/v2 (structured retrieval)
- *   - POST /api/tutor/v2 (Lisa tutoring)
+ *   - POST /api/tutor/v2 (AI tutoring)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -55,6 +55,7 @@ import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
+import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -274,7 +275,7 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - Lisa tutoring with canonical RAG context
+// Tutor v2 endpoint - AI tutoring with canonical RAG context
 app.use(
   "/api/tutor/v2",
   ragLimiter,
@@ -414,8 +415,9 @@ app.use("/api/guardian", requireSupabaseAuth, doubleCsrfProtection, guardianRout
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
 
-// Account Routes (bootstrap, status)
+// Account Routes (bootstrap, status, deletion)
 app.use("/api/account", accountRoutes);
+app.use("/api/account", accountDeletionRoutes);
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
@@ -701,7 +703,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
+    console.log(`  POST   /api/tutor/v2 (AI tutoring with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
