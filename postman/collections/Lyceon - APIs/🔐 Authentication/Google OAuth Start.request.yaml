@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/auth/google/start"
+method: GET
+order: 8000

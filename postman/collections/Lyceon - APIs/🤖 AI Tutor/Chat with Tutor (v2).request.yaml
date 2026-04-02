@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/tutor/v2"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "message": "Can you help me understand quadratic equations?",
+      "questionId": "{{questionId}}"
+    }
+order: 1000

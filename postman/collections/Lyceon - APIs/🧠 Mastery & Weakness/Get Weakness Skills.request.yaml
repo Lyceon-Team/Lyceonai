@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/me/weakness/skills"
+method: GET
+order: 2000

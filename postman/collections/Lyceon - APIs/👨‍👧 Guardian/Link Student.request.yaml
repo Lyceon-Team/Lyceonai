@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{baseUrl}}/api/guardian/link"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "linkCode": "{{studentLinkCode}}"
+    }
+order: 2000

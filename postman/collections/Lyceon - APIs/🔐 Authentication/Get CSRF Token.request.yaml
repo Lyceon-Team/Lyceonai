@@ -1,0 +1,29 @@
+$kind: http-request
+url: "{{baseUrl}}/api/csrf-token"
+method: GET
+scripts:
+  - type: afterResponse
+    code: "pm.test(\"Status code is 200\", function () {\r
+
+      \    pm.response.to.have.status(200);\r
+
+      });\r
+
+      \r
+
+      // Check if the response body contains the csrfToken\r
+
+      pm.test(\"Response body contains csrfToken\", function () {\r
+
+      \    pm.expect(pm.response.json().csrfToken).to.not.be.undefined;\r
+
+      });\r
+
+      \r
+
+      // Store the csrfToken in an environment variable\r
+
+      pm.environment.set(\"csrfToken\", pm.response.json().csrfToken);"
+    language: text/javascript
+examples: .resources/Get CSRF Token.resources/examples
+order: 1000

@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/answer"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "questionId": "{{questionId}}",
+      "answer": "A"
+    }
+order: 4000
