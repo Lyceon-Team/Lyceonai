@@ -139,7 +139,7 @@ export const organizationJsonLd = {
   name: 'Lyceon',
   url: BASE_URL,
   logo: `${BASE_URL}/logo.png`,
-  description: 'Digital SAT prep platform with adaptive practice, tutor guidance, and mastery tracking.',
+  description: 'Digital SAT prep platform with adaptive practice, tutor guidance, and progress tracking.',
   sameAs: [],
 };
 

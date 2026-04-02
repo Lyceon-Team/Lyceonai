@@ -11,9 +11,7 @@
  * 4. GET /__test/questions/random never returns correct answer fields
  * 5. GET /__test/questions never returns explanation (must be null)
  * 6. GET /__test/questions never returns correct answer fields
- * 7. GET /api/questions/search never returns explanation (must be null)
- * 8. GET /api/questions/search never returns correct answer fields
- * 9. Tests are tolerant to empty data environments
+ * 7. Tests are tolerant to empty data environments
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -41,25 +39,8 @@ type MockQuestionRow = {
   explanation: string;
 };
 
-const {
-  mockQuestionRows,
-  mockGenerateEmbedding,
-  mockSearchSimilarQuestions,
-  mockGetSupabaseClient,
-} = vi.hoisted(() => ({
+const { mockQuestionRows } = vi.hoisted(() => ({
   mockQuestionRows: [] as MockQuestionRow[],
-  mockGenerateEmbedding: vi.fn(),
-  mockSearchSimilarQuestions: vi.fn(),
-  mockGetSupabaseClient: vi.fn(),
-}));
-
-vi.mock('../../apps/api/src/lib/embeddings', () => ({
-  generateEmbedding: mockGenerateEmbedding,
-}));
-
-vi.mock('../../apps/api/src/lib/supabase', () => ({
-  searchSimilarQuestions: mockSearchSimilarQuestions,
-  getSupabaseClient: mockGetSupabaseClient,
 }));
 
 vi.mock('../../server/middleware/supabase-auth', async () => {
@@ -193,14 +174,6 @@ function extractQuestions(body: unknown): unknown[] {
   return [];
 }
 
-function extractSearchResults(body: unknown): unknown[] {
-  if (body && typeof body === 'object') {
-    const obj = body as Record<string, unknown>;
-    if (Array.isArray(obj.results)) return obj.results;
-  }
-  return [];
-}
-
 function assertNoAnswerLeak(question: any) {
   expect(question).not.toHaveProperty('correct_answer');
   expect(question).not.toHaveProperty('answer_text');
@@ -248,10 +221,6 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     process.env.VITEST = 'true';
     process.env.NODE_ENV = 'test';
 
-    mockGetSupabaseClient.mockReturnValue({});
-    mockGenerateEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
-    mockSearchSimilarQuestions.mockResolvedValue([]);
-
     // Import app
     const serverModule = await import('../../server/index');
     app = serverModule.default;
@@ -290,7 +259,6 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
   beforeEach(() => {
     mockQuestionRows.splice(0, mockQuestionRows.length);
-    mockSearchSimilarQuestions.mockResolvedValue([]);
   });
 
   describe('GET /api/questions/recent - Anti-Leak Protection', () => {
@@ -435,48 +403,5 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     });
   });
 
-  describe('GET /api/questions/search - Anti-Leak Protection', () => {
-    it('returns non-empty mounted /api/questions/search rows with null answer and explanation pre-submit', async () => {
-      mockQuestionRows.splice(0, mockQuestionRows.length, fixtureQuestion);
-      mockSearchSimilarQuestions.mockResolvedValue([
-        { question_id: fixtureQuestion.id, similarity: 0.93 },
-      ]);
-
-      const res = await request(app).get('/api/questions/search?q=test&limit=5');
-      expect(res.status).toBe(200);
-
-      const results = extractSearchResults(res.body);
-      expect(results.length).toBeGreaterThan(0);
-
-      results.forEach((q: any) => {
-        expect(q.correct_answer).toBeNull();
-        expect(q.explanation).toBeNull();
-      });
-    });
-
-    it('should never leak explanation field to students (must be null)', async () => {
-      const res = await request(app).get('/api/questions/search?q=test&limit=5');
-      expect(res.status).toBe(200);
-
-      const results = extractSearchResults(res.body);
-      expect(Array.isArray(results)).toBe(true);
-
-      results.forEach((q: any) => {
-        assertExplanationNull(q);
-      });
-    });
-
-    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
-      const res = await request(app).get('/api/questions/search?q=test&limit=5');
-      expect(res.status).toBe(200);
-
-      const results = extractSearchResults(res.body);
-      expect(Array.isArray(results)).toBe(true);
-
-      results.forEach((q: any) => {
-        assertNoAnswerLeak(q);
-      });
-    });
-  });
 });
 

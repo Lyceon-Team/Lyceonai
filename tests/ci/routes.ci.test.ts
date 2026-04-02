@@ -40,7 +40,6 @@ describe('CI Routes Tests', () => {
     const publicRoutes = [
       { path: '/api/health', method: 'get', name: 'Health check' },
       { path: '/api/questions/recent?limit=5', method: 'get', name: 'Recent questions' },
-      { path: '/api/questions/search?q=test', method: 'get', name: 'Search questions' },
     ];
 
     publicRoutes.forEach(({ path, method, name }) => {
@@ -131,8 +130,7 @@ describe('CI Routes Tests', () => {
 
   describe('Admin Routes - Admin Auth Required', () => {
     const adminRoutes = [
-      { path: '/api/admin/questions/needs-review', method: 'get', name: 'Questions needing review' },
-      { path: '/api/admin/health', method: 'get', name: 'Admin health endpoint' },
+      { path: '/api/admin/db-health', method: 'get', name: 'Admin db health endpoint' },
     ];
 
     adminRoutes.forEach(({ path, method, name }) => {
@@ -265,7 +263,7 @@ describe('CI Routes Tests', () => {
   describe('Admin Health Endpoint Security', () => {
     it('should not leak SUPABASE_SERVICE_ROLE_KEY in response', async () => {
       // Even if endpoint fails auth, it should never leak secrets
-      const res = await request(app).get('/api/admin/health');
+      const res = await request(app).get('/api/admin/db-health');
       const responseText = JSON.stringify(res.body);
       
       // Check that no secret keys are in the response
@@ -284,8 +282,8 @@ describe('CI Routes Tests', () => {
 
     it('should require admin role for health endpoint', async () => {
       // Anonymous user should get 401
-      const res = await request(app).get('/api/admin/health');
-      expect([401, 404]).toContain(res.status);
+      const res = await request(app).get('/api/admin/db-health');
+      expect([401, 403]).toContain(res.status);
       if (res.status === 401) {
         expect(res.body).toHaveProperty('error');
       }

@@ -166,7 +166,7 @@ test.describe('Database Schema & Wiring Checks', () => {
   test('should verify API route protection is working', async ({ page }) => {
     try {
       // Test protected route without authentication
-      const unauthenticatedResponse = await page.request.get('/api/admin/test');
+      const unauthenticatedResponse = await page.request.get('/api/profile');
       
       if (unauthenticatedResponse.status() === 401 || unauthenticatedResponse.status() === 403) {
         reporter.addTest(

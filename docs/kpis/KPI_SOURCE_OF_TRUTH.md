@@ -13,7 +13,6 @@
   - `GET /api/guardian/students/:studentId/summary` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.
   - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report` -> `server/routes/guardian-routes.ts`.
-  - `GET /api/admin/kpis/student/:studentId` -> `server/routes/admin-stats-routes.ts`.
 
 ## Segmentation Rules
 - Student view:
@@ -23,9 +22,9 @@
   - Receives linked-student summary metrics only.
   - Receives guardian-safe full-test report (estimated scaled scores + explained KPI list).
   - Never receives question-level dumps, tutor interactions, mastery scores, or raw delta payloads.
-- Internal/admin view:
-  - Receives canonical student KPI snapshot through `/api/admin/kpis/student/:studentId`.
-  - Admin bypasses paid gating and can inspect full canonical KPI payload.
+- Admin access:
+  - No admin-only KPI endpoint is mounted in this runtime.
+  - Admins can access the same authenticated student/guardian KPI surfaces gated by role middleware.
 
 ## Gating Rules
 - Premium KPI surfaces (explicit):
@@ -79,7 +78,6 @@ No LLM-generated KPI explanations are used in runtime responses.
 - `server/routes/legacy/progress.ts`
 - `server/routes/guardian-routes.ts`
 - `server/routes/full-length-exam-routes.ts`
-- `server/routes/admin-stats-routes.ts`
 - `apps/api/src/routes/mastery.ts`
 
 

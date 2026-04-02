@@ -111,15 +111,6 @@ function Router() {
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
 
-        {/* Admin product surface shelved: keep routes non-functional */}
-        <Route path="/admin">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-dashboard">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-system-config">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-questions">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-review">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-portal">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-review-v2">{() => <Redirect to="/dashboard" replace />}</Route>
-
         {/* 404 */}
         <Route component={NotFound} />
       </Switch>

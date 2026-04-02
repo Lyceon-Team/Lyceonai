@@ -34,7 +34,6 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
@@ -251,12 +250,6 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
-const publicQuestionSearchLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 20,
-  message: { error: "Too many search requests" },
-});
-
 const googleOAuthCallbackLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
@@ -367,9 +360,6 @@ app.get("/api/questions/random", requireSupabaseAuth, requireStudentOrAdmin, asy
 app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQuestionCount);
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
-
-// Search endpoint - allow anonymous access for public search
-app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
 
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
