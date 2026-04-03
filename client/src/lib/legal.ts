@@ -56,6 +56,9 @@ Lyceon does not sell personal information to third parties.
 **No Targeted Advertising**
 Student data is never used to build advertising profiles or marketing audiences.
 
+**Deletion & De-identification**
+Families can request deletion of student data. De-identified or aggregated analytics may be retained to improve learning outcomes.
+
 **Secure Infrastructure**
 We use industry-standard security practices, including encryption, access controls, and monitoring, to protect accounts and learning progress.
 
@@ -84,6 +87,9 @@ AI is a tool for learning, not an authority.`
 
 **Parental Agreement**
 Students under 18 may only use Lyceon with parent or guardian consent.
+
+**Student-First Control**
+Students control learning actions and plans. Guardians have read-only visibility into progress.
 
 **Transparency & Control**
 Parents have the right to review, correct, or request deletion of their child's data, subject to applicable law.

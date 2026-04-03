@@ -127,6 +127,19 @@ export default function TrustEvidencePage() {
                   </Button>
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Tutor Transparency</CardTitle>
+                  <CardDescription>Safety, privacy, and pedagogy details for the tutor experience.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/tutor">
+                      <a className="inline-flex items-center gap-1">Open /tutor <ChevronRight className="h-4 w-4" /></a>
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           </section>
         </div>

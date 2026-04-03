@@ -705,10 +705,24 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   </header>
 
   <section style="margin-bottom: 2rem;">
+    <h2 style="font-size: 1.4rem; color: #0F2E48; margin-bottom: 0.75rem;">Commitments</h2>
+    <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+      <li>Students control learning actions and plans; guardian access is read-only.</li>
+      <li>Data is not sold and is not used for targeted advertising.</li>
+      <li>Families can request deletion; de-identified aggregates may be retained for learning improvements.</li>
+      <li>Lyceon is SAT-aligned and does not claim official SAT status.</li>
+    </ul>
+  </section>
+
+  <section style="margin-bottom: 2rem;">
     <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
       <a href="/trust/evidence" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
         <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Trust Evidence</h2>
         <p style="color:#555; margin:0;">Public evidence for auth, RLS, logging redaction, and security headers.</p>
+      </a>
+      <a href="/tutor" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
+        <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Tutor Transparency</h2>
+        <p style="color:#555; margin:0;">Boundaries, privacy, and pedagogy for the Lyceon tutor experience.</p>
       </a>
       <a href="/legal" style="display:block; padding: 1.25rem; background:#f8f9fa; border-radius: 8px; text-decoration:none; color:inherit;">
         <h2 style="font-size: 1.1rem; color: #0F2E48; margin: 0 0 0.5rem;">Legal & Policy Hub</h2>
@@ -782,6 +796,57 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
       <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Certification Claims</h2>
       <p style="color: #555; line-height: 1.6; margin: 0;">
         No third-party certification claim is made here unless explicitly and verifiably published.
+      </p>
+    </section>
+  </article>
+  ${footerHtml}
+</main>`
+  },
+  "/tutor": {
+    title: "Tutor Safety & Privacy | Lyceon",
+    description: "Lyceon's tutor boundaries, privacy posture, and learning pedagogy for SAT-aligned study.",
+    canonical: "https://lyceon.ai/tutor",
+    bodyHtml: `
+<main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
+  <article>
+    <header style="margin-bottom: 1.5rem; text-align: center;">
+      <h1 style="font-size: 2rem; margin-bottom: 0.5rem; color: #0F2E48;">Tutor Safety, Privacy, and Pedagogy</h1>
+      <p style="color: #555; line-height: 1.6;">
+        Lyceon’s tutor is SAT-aligned (not SAT-official) and designed to guide learning with clear boundaries and transparent data use.
+      </p>
+    </header>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Boundaries & Safety</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>No answer leakage before submission; explanations are for learning, not shortcuts.</li>
+        <li>Not intended for live or proctored exams.</li>
+        <li>Aligned to SAT-style practice without claiming official SAT status.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Privacy & Data Use</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>Student data is not sold and not used for targeted advertising.</li>
+        <li>Families can request deletion; de-identified aggregates may be retained for learning improvements.</li>
+        <li>Students control learning actions; guardian access is read-only.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.3rem; color: #0F2E48; margin-bottom: 0.75rem;">Pedagogy & Adaptation</h2>
+      <ul style="padding-left: 1.25rem; color: #333; line-height: 1.8;">
+        <li>Skill-level diagnostics guide what students practice next.</li>
+        <li>Step-by-step explanations emphasize reasoning and method.</li>
+        <li>Review loops target weak areas with fresh practice.</li>
+      </ul>
+    </section>
+
+    <section style="margin-bottom: 2rem;">
+      <p style="color: #555;">
+        Explore more: <a href="/trust" style="color: #0F2E48;">Trust Center</a> ·
+        <a href="/legal/privacy-policy" style="color: #0F2E48;">Privacy Policy</a>
       </p>
     </section>
   </article>
