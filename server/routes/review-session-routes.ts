@@ -14,6 +14,7 @@ import {
   isCanonicalRuntimeMcQuestion,
   normalizeClientInstanceId,
   normalizeAnswerKey,
+  parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
   resolveClientInstanceBinding,
 } from "../../shared/question-bank-contract";
@@ -800,7 +801,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     const question = await loadQuestionFromItem(item);
     if (!question) return res.status(422).json({ error: "Question could not be loaded for review submission", code: "INVALID_QUESTION_DATA", requestId });
 
-    const optionMap = parseOptionMap(item.option_token_map);
+    const optionMap = parseStudentSafeOptionTokenMap(item.option_token_map);
     const selectedAnswerKey = parsed.data.selected_option_id && optionMap
       ? normalizeAnswerKey(optionMap[parsed.data.selected_option_id])
       : null;

@@ -1,5 +1,5 @@
 import { Response, Router } from 'express';
-import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import { type AuthenticatedRequest, getSupabaseAdmin, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import {
   buildMasterySkillTreeFromRows,
   buildMasterySummaryFromRows,

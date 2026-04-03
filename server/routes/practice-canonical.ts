@@ -439,6 +439,11 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
   };
 }
 
+function normalizeSafeDifficulty(value: unknown): string | number | null {
+  if (typeof value === "string" || typeof value === "number") return value;
+  return null;
+}
+
 function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
@@ -469,7 +474,7 @@ function toStudentSafeQuestionDTO(args: {
     stem: safe.stem,
     questionType: "multiple_choice",
     options: args.safeOptions,
-    difficulty: safe.difficulty ?? null,
+    difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
   };
