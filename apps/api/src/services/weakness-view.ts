@@ -1,4 +1,4 @@
-import { fetchWeakestSkills } from "./mastery-read";
+import { getWeakestSkills } from "./studentMastery";
 
 export interface BuildWeaknessSkillsViewInput {
   userId: string;
@@ -8,7 +8,7 @@ export interface BuildWeaknessSkillsViewInput {
 }
 
 export async function buildWeaknessSkillsView(input: BuildWeaknessSkillsViewInput) {
-  const skills = await fetchWeakestSkills({
+  const skills = await getWeakestSkills({
     userId: input.userId,
     section: input.section,
     limit: input.limit,

@@ -1,6 +1,6 @@
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { fetchWeakestClusters } from '../services/mastery-read';
+import { getWeakestClusters } from '../services/studentMastery';
 import { buildWeaknessSkillsView } from '../services/weakness-view';
 
 const router = Router();
@@ -40,7 +40,7 @@ router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 10;
     const minAttempts = parseInt(req.query.minAttempts as string) || 3;
 
-    const clusters = await fetchWeakestClusters({
+    const clusters = await getWeakestClusters({
       userId: user.id,
       limit,
       minAttempts,
