@@ -449,7 +449,6 @@ describe('RagService', () => {
         mode: 'concept',
         testCode: 'SAT',
         sectionCode: 'M',
-        topK: 3,
       };
 
       const profile = createWeaknessProfile();
@@ -490,6 +489,44 @@ describe('RagService', () => {
       const sum = weights.semanticSim + weights.competencyMatch +
                   weights.difficultyMatch + weights.recencyScore + weights.weaknessBoost;
       expect(sum).toBeCloseTo(1.0, 10);
+    });
+  });
+
+  describe('Profile Loading', () => {
+    it('uses injected profileLoader for handleRagQuery', async () => {
+      const injectedProfile: StudentProfile = {
+        userId: 'profile-user',
+        overallLevel: 4,
+        primaryStyle: 'conceptual',
+        secondaryStyle: 'step-by-step',
+        explanationLevel: 3,
+        competencyMap: {},
+        recentQuestions: [],
+        personaTags: [],
+      };
+
+      const profileLoader = {
+        loadProfile: vi.fn().mockResolvedValue(injectedProfile),
+      };
+
+      const localService = new RagService({
+        vectorClient: mockVectorClient,
+        embeddingClient: mockEmbeddingClient,
+        questionRepo: mockQuestionRepo,
+        profileLoader,
+      });
+
+      const request: RagQueryRequest = {
+        userId: 'profile-user',
+        message: 'Give me a strategy overview',
+        mode: 'strategy',
+      };
+
+      const result = await localService.handleRagQuery(request);
+
+      expect(profileLoader.loadProfile).toHaveBeenCalledTimes(1);
+      expect(profileLoader.loadProfile).toHaveBeenCalledWith('profile-user');
+      expect(result.context.studentProfile).toEqual(injectedProfile);
     });
   });
 

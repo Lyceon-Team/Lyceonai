@@ -41,6 +41,17 @@ export type SkillSignal = {
   lastAttemptDate: string | null;
 };
 
+export type PrioritySkill = {
+  section: "MATH" | "RW";
+  domain: string | null;
+  skillCode: string;
+  skillLabel: string;
+  accuracy: number;
+  performanceBand: "strength" | "developing" | "needs_focus";
+  examSessionId?: string;
+  completedAt?: string;
+};
+
 export type AttemptSignal = {
   attemptedAt: string;
   section: "MATH" | "RW" | null;
@@ -240,6 +251,96 @@ function chooseCompressedMajorSection(dayDate: string, userId: string, existingT
   return stableHash(`${userId}|${dayDate}|compressed`) % 2 === 0 ? "MATH" : "RW";
 }
 
+function pickWeakestPrioritySkill(prioritySkills?: PrioritySkill[]): PrioritySkill | null {
+  if (!prioritySkills || prioritySkills.length === 0) return null;
+  const needsFocus = prioritySkills.filter((skill) => skill.performanceBand === "needs_focus");
+  if (needsFocus.length === 0) return null;
+  const sorted = [...needsFocus].sort((a, b) => {
+    if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+    const domainCompare = (a.domain ?? "").localeCompare(b.domain ?? "");
+    if (domainCompare !== 0) return domainCompare;
+    return a.skillLabel.localeCompare(b.skillLabel);
+  });
+  return sorted[0];
+}
+
+function buildReprioritizedReason(prioritySkill: PrioritySkill): Record<string, unknown> {
+  return {
+    mode: "normal",
+    source: "full_length_exam",
+    reprioritized: true,
+    exam_session_id: prioritySkill.examSessionId ?? null,
+    completed_at: prioritySkill.completedAt ?? null,
+    skill: {
+      skill_code: prioritySkill.skillCode,
+      skill_label: prioritySkill.skillLabel,
+      domain: prioritySkill.domain,
+      accuracy: prioritySkill.accuracy,
+      performanceBand: prioritySkill.performanceBand,
+    },
+  };
+}
+
+function buildReprioritizedMetadata(prioritySkill: PrioritySkill): Record<string, unknown> {
+  return {
+    reprioritized: true,
+    source: "full_length_exam",
+    exam_session_id: prioritySkill.examSessionId ?? null,
+    completed_at: prioritySkill.completedAt ?? null,
+  };
+}
+
+function applyPrioritySkillToDay(params: {
+  dayTasks: PlannedTask[];
+  dayFocus: PlannedDay["focus"];
+  prioritySkill: PrioritySkill;
+}): boolean {
+  const { dayTasks, dayFocus, prioritySkill } = params;
+  const candidateIndex = dayTasks.findIndex(
+    (task) => task.taskType === "focused_drill" && (task.section === prioritySkill.section || task.section == null),
+  );
+  const fallbackIndex =
+    candidateIndex >= 0
+      ? candidateIndex
+      : dayTasks.findIndex(
+          (task) => (task.taskType === "practice" || task.taskType === "focused_drill") && task.section === prioritySkill.section,
+        );
+  const targetIndex =
+    fallbackIndex >= 0
+      ? fallbackIndex
+      : dayTasks.findIndex((task) => task.taskType === "practice" || task.taskType === "focused_drill");
+
+  if (targetIndex < 0) return false;
+
+  const targetTask = dayTasks[targetIndex];
+  dayTasks[targetIndex] = {
+    ...targetTask,
+    taskType: "focused_drill",
+    section: prioritySkill.section,
+    sourceSkillCode: prioritySkill.skillCode,
+    sourceDomain: prioritySkill.domain,
+    sourceSubskill: null,
+    sourceReason: buildReprioritizedReason(prioritySkill),
+    metadata: {
+      ...(targetTask.metadata ?? {}),
+      ...buildReprioritizedMetadata(prioritySkill),
+    },
+  };
+
+  const focusEntry = dayFocus.find((entry) => entry.section === prioritySkill.section);
+  if (focusEntry) {
+    focusEntry.skill_codes = [prioritySkill.skillCode];
+  } else {
+    dayFocus.push({
+      section: prioritySkill.section,
+      weight: 1,
+      skill_codes: [prioritySkill.skillCode],
+    });
+  }
+
+  return true;
+}
+
 function shouldScheduleFullTest(params: {
   dayDate: string;
   todayDate: string;
@@ -335,11 +436,14 @@ export function generateDeterministicPlan(params: {
   existingTasks: ExistingTaskSignal[];
   recentCompletedTestDays: string[];
   skipOverrideDays: boolean;
+  prioritySkills?: PrioritySkill[];
 }): { plannedDays: PlannedDay[]; skippedOverrideDays: string[] } {
   const existingDayByDate = new Map(params.existingDays.map((day) => [day.dayDate, day]));
   const existingTaskList = [...params.existingTasks];
   const skippedOverrideDays: string[] = [];
   const plannedDays: PlannedDay[] = [];
+  const prioritySkill = pickWeakestPrioritySkill(params.prioritySkills);
+  let priorityInjected = false;
 
   let lastScheduledFullTestDate: string | null = null;
   let previousGeneratedWasFullTest = false;
@@ -546,6 +650,11 @@ export function generateDeterministicPlan(params: {
       isFullTestDay,
       tasks: dayTasks,
     };
+    if (!priorityInjected && prioritySkill && !isExamDay && !isFullTestDay && dayTasks.length > 0) {
+      if (applyPrioritySkillToDay({ dayTasks, dayFocus, prioritySkill })) {
+        priorityInjected = true;
+      }
+    }
     plannedDays.push(plannedDay);
 
     existingTaskList.push(

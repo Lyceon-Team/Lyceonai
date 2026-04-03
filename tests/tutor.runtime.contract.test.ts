@@ -303,6 +303,54 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.metadata.fullTestStrategyEnforced).toBe(false);
   });
 
+  it("does not leak taxonomy codes or Lisa branding in tutor prompt/response", async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: {
+          canonicalId: "q1",
+          stem: "What is 2 + 2?",
+          options: [{ key: "A", text: "4" }],
+          answer: "A",
+          explanation: "2 + 2 = 4",
+          competencies: [],
+        },
+        supportingQuestions: [],
+        competencyContext: {
+          studentWeakAreas: ["M.LIN.1"],
+          studentStrongAreas: ["M.GEO.2"],
+          competencyLabels: ["M.LIN.1", "M.GEO.2"],
+        },
+        studentProfile: {
+          overallLevel: 3,
+          primaryStyle: "step-by-step",
+          secondaryStyle: null,
+          explanationLevel: 2,
+        },
+      },
+      metadata: { canonicalIdsUsed: ["q1"] },
+    });
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ragContext.competencyContext.studentWeakAreas).toEqual([]);
+    expect(res.body.ragContext.competencyContext.studentStrongAreas).toEqual([]);
+    expect(res.body.ragContext.competencyContext.competencyLabels).toEqual([]);
+
+    const [userContents, systemInstruction] = callLlmMock.mock.calls[0] ?? [];
+    const parts = Array.isArray(userContents)
+      ? userContents.flatMap((item: any) => item?.parts ?? []).map((p: any) => p?.text ?? "")
+      : [];
+    const promptText = parts.join("\n");
+
+    expect(systemInstruction).not.toContain("Lisa");
+    expect(promptText).not.toContain("M.LIN.1");
+    expect(promptText).not.toContain("M.GEO.2");
+  });
+
   it("forces strategy mode and blocks leakage during active full-length exam", async () => {
     state.hasActiveFullTest = true;
     state.hasVerifiedRetry = true;

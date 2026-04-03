@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { applyMasteryUpdate } from "./mastery-write";
 import { MasteryEventType } from "./mastery-constants";
+import { applyFullLengthExamPlannerReprioritization, type ExamSkillDiagnostic } from "./calendar-planner-reprioritization";
 import {
   normalizeClientInstanceId,
   normalizeSectionCode as normalizeCanonicalSectionCode,
@@ -356,6 +357,43 @@ export interface CompleteExamResult {
     scaledTotal: number;
   };
   completedAt: Date;
+}
+
+export function buildExamPrioritySkillDiagnostics(result: CompleteExamResult): ExamSkillDiagnostic[] {
+  const diagnostics: ExamSkillDiagnostic[] = [];
+  const rwSkills = result.skillDiagnostics?.rw ?? [];
+  const mathSkills = result.skillDiagnostics?.math ?? [];
+
+  for (const item of rwSkills) {
+    if (!item?.skill || !item?.domain) continue;
+    diagnostics.push({
+      section: "RW",
+      domain: item.domain,
+      skill: item.skill,
+      accuracy: Number.isFinite(item.accuracy) ? item.accuracy : 1,
+      performanceBand: item.performanceBand,
+    });
+  }
+
+  for (const item of mathSkills) {
+    if (!item?.skill || !item?.domain) continue;
+    diagnostics.push({
+      section: "MATH",
+      domain: item.domain,
+      skill: item.skill,
+      accuracy: Number.isFinite(item.accuracy) ? item.accuracy : 1,
+      performanceBand: item.performanceBand,
+    });
+  }
+
+  const needsFocus = diagnostics.filter((item) => item.performanceBand === "needs_focus");
+  needsFocus.sort((a, b) => {
+    if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+    const domainCompare = a.domain.localeCompare(b.domain);
+    if (domainCompare !== 0) return domainCompare;
+    return a.skill.localeCompare(b.skill);
+  });
+  return needsFocus;
 }
 
 export interface FullLengthSessionHistoryItem {
@@ -1832,6 +1870,26 @@ async function applyFullLengthMasterySignals(
     console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${err?.message || 'unknown error'}`);
   }
 }
+
+async function applyFullLengthPlannerBridgeBestEffort(params: {
+  userId: string;
+  sessionId: string;
+  result: CompleteExamResult;
+}): Promise<void> {
+  try {
+    const skillDiagnostics = buildExamPrioritySkillDiagnostics(params.result);
+    if (skillDiagnostics.length === 0) return;
+    await applyFullLengthExamPlannerReprioritization({
+      userId: params.userId,
+      examSessionId: params.sessionId,
+      completedAt: params.result.completedAt,
+      skillDiagnostics,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.warn(`[FULL-LENGTH] Planner reprioritization skipped: ${message}`);
+  }
+}
 // PUBLIC API
 // ============================================================================
 
@@ -2857,11 +2915,17 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
   });
 
   if (session.status === "completed") {
-    return computeCanonicalExamReport(
+    const result = await computeCanonicalExamReport(
       supabase,
       params.sessionId,
       new Date(session.completed_at || new Date().toISOString())
     );
+    await applyFullLengthPlannerBridgeBestEffort({
+      userId: params.userId,
+      sessionId: params.sessionId,
+      result,
+    });
+    return result;
   }
 
   if (session.status !== "in_progress") {
@@ -2922,11 +2986,17 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      return computeCanonicalExamReport(
+      const result = await computeCanonicalExamReport(
         supabase,
         params.sessionId,
         new Date(completedSession.completed_at || completedAt.toISOString())
       );
+      await applyFullLengthPlannerBridgeBestEffort({
+        userId: params.userId,
+        sessionId: params.sessionId,
+        result,
+      });
+      return result;
     }
 
     throw new Error("Invalid exam state");
@@ -2955,6 +3025,12 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
       scaledRw: result.scaledScore.rw,
       scaledMath: result.scaledScore.math,
     },
+  });
+
+  await applyFullLengthPlannerBridgeBestEffort({
+    userId: params.userId,
+    sessionId: params.sessionId,
+    result,
   });
 
   return result;
