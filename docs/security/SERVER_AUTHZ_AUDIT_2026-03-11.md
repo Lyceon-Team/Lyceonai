@@ -21,7 +21,7 @@ Scope: `server/index.ts`, `server/middleware/supabase-auth.ts`, and protected ro
 | Tutor endpoint protected | `server/index.ts:272` | PASS: `/api/tutor/v2` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
 | Practice canonical protected | `server/index.ts:488` | PASS: `/api/practice` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
 | Full-length exam API protected | `server/index.ts:492` | PASS: `/api/full-length` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
-| Admin mutating routes protected + CSRF | `server/index.ts:435-436` | PASS: admin approve/reject require admin gate + CSRF |
+| Admin health endpoint protected | `server/index.ts:317` | PASS: `/api/admin/db-health` requires `requireSupabaseAuth` + `requireSupabaseAdmin` |
 | Guardian scoped routes protected | `server/routes/guardian-routes.ts:65-505` | PASS: guardian routes require auth + guardian role; sensitive student data routes add entitlement check |
 
 ## Identity Source-of-Truth Check

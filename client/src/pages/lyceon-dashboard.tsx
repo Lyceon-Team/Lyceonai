@@ -24,9 +24,9 @@ import {
   type StudyProfile,
 } from "@/lib/calendarApi";
 import {
-  fetchScoreProjection,
+  fetchScoreEstimate,
   getConfidenceLabel,
-  type ProjectionResponse,
+  type EstimateResponse,
 } from "@/lib/projectionApi";
 
 interface KpiExplanation {
@@ -139,19 +139,19 @@ export default function LyceonDashboard() {
   });
 
   const {
-    data: projectionData,
-    isLoading: projectionLoading,
-    error: projectionError,
-  } = useQuery<ProjectionResponse>({
+    data: estimateData,
+    isLoading: estimateLoading,
+    error: estimateError,
+  } = useQuery<EstimateResponse>({
     queryKey: ["/api/progress/projection"],
-    queryFn: fetchScoreProjection,
+    queryFn: fetchScoreEstimate,
     enabled: !!user,
     staleTime: 60000,
   });
 
-  const projectionErrorMessage = projectionError instanceof Error ? projectionError.message : "";
-  const projectionPremiumLocked =
-    projectionErrorMessage.includes("402") || projectionErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+  const estimateErrorMessage = estimateError instanceof Error ? estimateError.message : "";
+  const estimatePremiumLocked =
+    estimateErrorMessage.includes("402") || estimateErrorMessage.includes("PREMIUM_KPI_REQUIRED");
 
   const todayPlan: StudyPlanDay | undefined = useMemo(
     () => calendarData?.days?.find((day) => day.day_date === todayISO),
@@ -276,43 +276,43 @@ export default function LyceonDashboard() {
             <CardContent className="p-6 sm:p-8 h-full flex flex-col justify-between gap-6">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] font-semibold text-primary-foreground/80">
-                  Predicted SAT Score
+                  Score Estimate
                 </p>
                 <p className="text-sm text-primary-foreground/70 mt-2">
                   Based on weighted mastery evidence from live runtime data.
                 </p>
               </div>
 
-              {projectionLoading ? (
+              {estimateLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-12 w-48 bg-primary-foreground/20" />
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
-              ) : projectionPremiumLocked ? (
+              ) : estimatePremiumLocked ? (
                 <div className="space-y-4">
                   <p className="text-sm text-primary-foreground/80">
-                    Score projection is a premium KPI surface.
+                    Score estimate is a premium KPI surface.
                   </p>
                   <Button asChild variant="secondary" className="w-fit">
                     <Link href="/">Upgrade to Premium</Link>
                   </Button>
                 </div>
-              ) : projectionData ? (
+              ) : estimateData ? (
                 <div className="space-y-4">
                   <p className="text-5xl font-semibold leading-none tracking-tight">
-                    {projectionData.projection.range.low}-{projectionData.projection.range.high}
+                    {estimateData.estimate.range.low}-{estimateData.estimate.range.high}
                   </p>
                   <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold bg-primary-foreground/15 text-primary-foreground">
-                    {getConfidenceLabel(projectionData.projection.confidence)} confidence
+                    {getConfidenceLabel(estimateData.estimate.confidence)} estimate confidence
                   </div>
                   <p className="text-xs text-primary-foreground/80">
-                    Based on {projectionData.totalQuestionsAttempted} attempted questions.
+                    Based on {estimateData.totalQuestionsAttempted} attempted questions.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm text-primary-foreground/80">
-                    Start practicing to unlock score projection.
+                    Start practicing to unlock a score estimate.
                   </p>
                   <Button asChild variant="secondary" className="w-fit">
                     <Link href="/practice">Start Practice</Link>
@@ -380,7 +380,7 @@ export default function LyceonDashboard() {
                 <div>
                   <h2 className="text-3xl font-semibold tracking-tight">Score Trend Analysis</h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Section breakdown from live projection truth.
+                    Section breakdown from live estimate data.
                   </p>
                 </div>
                 <Button asChild variant="ghost" className="w-fit px-0">
@@ -395,13 +395,13 @@ export default function LyceonDashboard() {
                 Historical score trend points are not currently exposed by this runtime contract. This card shows live snapshot values only.
               </div>
 
-              {projectionLoading ? (
+              {estimateLoading ? (
                 <div className="space-y-4">
                   <Skeleton className="h-5 w-full" />
                   <Skeleton className="h-5 w-full" />
                   <Skeleton className="h-5 w-full" />
                 </div>
-              ) : projectionPremiumLocked ? (
+              ) : estimatePremiumLocked ? (
                 <div className="rounded-lg bg-muted/45 p-5 space-y-4">
                   <p className="text-sm text-muted-foreground">
                     Detailed score breakdown is locked behind paid KPI access.
@@ -414,17 +414,17 @@ export default function LyceonDashboard() {
                 <div className="space-y-4">
                   <ScoreSnapshotRow
                     label="Composite"
-                    value={projectionData?.projection.composite ?? null}
+                    value={estimateData?.estimate.composite ?? null}
                     max={1600}
                   />
                   <ScoreSnapshotRow
                     label="Reading & Writing"
-                    value={projectionData?.projection.rw ?? null}
+                    value={estimateData?.estimate.rw ?? null}
                     max={800}
                   />
                   <ScoreSnapshotRow
                     label="Math"
-                    value={projectionData?.projection.math ?? null}
+                    value={estimateData?.estimate.math ?? null}
                     max={800}
                   />
                 </div>

@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/guardian/weaknesses/{{studentId}}"
+method: GET
+order: 6000

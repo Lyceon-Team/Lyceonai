@@ -162,7 +162,7 @@ export function formatMemberSince(createdAt?: string): string {
 }
 
 // Note: UserStats are not currently tracked by backend
-// Progress tracking uses /api/progress/kpis and /api/progress/projection
+// Progress tracking uses /api/progress/kpis and /api/progress/projection (score estimate)
 // These features are temporarily disabled and shown as placeholders
 
 export default function UserProfile() {

@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/billing/status"
+method: GET
+order: 3000

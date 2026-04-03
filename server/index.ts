@@ -5,7 +5,7 @@
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
  *   - POST /api/rag/v2 (structured retrieval)
- *   - POST /api/tutor/v2 (Lisa tutoring)
+ *   - POST /api/tutor/v2 (AI tutoring)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -34,7 +34,6 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
@@ -51,10 +50,11 @@ import { doubleCsrfProtection, generateToken } from "./middleware/csrf-double-su
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
-import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
+import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
+import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -250,12 +250,6 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
-const publicQuestionSearchLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 20,
-  message: { error: "Too many search requests" },
-});
-
 const googleOAuthCallbackLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
@@ -274,7 +268,7 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - Lisa tutoring with canonical RAG context
+// Tutor v2 endpoint - AI tutoring with canonical RAG context
 app.use(
   "/api/tutor/v2",
   ragLimiter,
@@ -315,7 +309,7 @@ app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, doubleCsr
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
-app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
+app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreEstimate);
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
@@ -367,9 +361,6 @@ app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQ
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
 
-// Search endpoint - allow anonymous access for public search
-app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
-
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
@@ -414,8 +405,9 @@ app.use("/api/guardian", requireSupabaseAuth, doubleCsrfProtection, guardianRout
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
 
-// Account Routes (bootstrap, status)
+// Account Routes (bootstrap, status, deletion)
 app.use("/api/account", accountRoutes);
+app.use("/api/account", accountDeletionRoutes);
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
@@ -701,7 +693,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
+    console.log(`  POST   /api/tutor/v2 (AI tutoring with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);

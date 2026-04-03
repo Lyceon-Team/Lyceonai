@@ -224,10 +224,12 @@ ABOUT THIS STUDENT:
       studentContext += ` They also respond well to ${studentProfile.secondaryStyle} approaches.`;
     }
     if (competencyContext.studentWeakAreas.length > 0) {
-      studentContext += `\n- Areas to strengthen: ${competencyContext.studentWeakAreas.join(", ")}`;
+      const weakCount = competencyContext.studentWeakAreas.length;
+      studentContext += `\n- Areas to strengthen: ${weakCount} area${weakCount === 1 ? "" : "s"} identified.`;
     }
     if (competencyContext.studentStrongAreas.length > 0) {
-      studentContext += `\n- Strong areas: ${competencyContext.studentStrongAreas.join(", ")}`;
+      const strongCount = competencyContext.studentStrongAreas.length;
+      studentContext += `\n- Strong areas: ${strongCount} area${strongCount === 1 ? "" : "s"} identified.`;
     }
     studentContext += "\n";
   }
@@ -239,7 +241,7 @@ ${explanationLevelText}`;
     styleSection += `\n${primaryStyleInstruction}`;
   }
 
-  const systemInstruction = `You are Lisa, a friendly and clear SAT tutor for high school students.
+  const systemInstruction = `You are a friendly and clear SAT tutor for high school students.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 - Always explain step by step in plain language.
@@ -334,7 +336,11 @@ router.post("/", async (req: Request, res: Response) => {
       ...context,
       primaryQuestion,
       supportingQuestions,
-      competencyContext,
+      competencyContext: {
+        studentWeakAreas: [],
+        studentStrongAreas: [],
+        competencyLabels: [],
+      },
       studentProfile,
     };
     // ========== END REVEAL POLICY ========== //

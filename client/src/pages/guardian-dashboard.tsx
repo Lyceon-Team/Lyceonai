@@ -62,8 +62,8 @@ interface GuardianWeaknessResponse {
     skill: string;
     attempts: number;
     correct: number;
-    accuracy: number;
-    mastery_score: number;
+    accuracyPercent: number;
+    status: 'not_started' | 'weak' | 'improving' | 'proficient';
   }>;
 }
 
@@ -108,6 +108,10 @@ export default function GuardianDashboard() {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [reportSessionInput, setReportSessionInput] = useState('');
   const [requestedReportSessionId, setRequestedReportSessionId] = useState<string | null>(null);
+
+  const formatStatus = (status: GuardianWeaknessResponse['skills'][number]['status']) => {
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   const { data: studentsData, isLoading: studentsLoading, error: studentsError, refetch: refetchStudents } = useQuery({
     queryKey: ['guardian-students'],
@@ -651,11 +655,11 @@ export default function GuardianDashboard() {
                       <div key={`${skill.section}-${skill.skill}`} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
                         <div className="flex items-center justify-between gap-3 mb-1">
                           <p className="text-sm font-medium text-[#0F2E48]">{skill.skill}</p>
-                          <p className="text-sm font-semibold text-[#0F2E48]">{skill.mastery_score}%</p>
+                          <p className="text-sm font-semibold text-[#0F2E48]">{formatStatus(skill.status)}</p>
                         </div>
                         <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
                           <span>{skill.section} · {skill.domain || 'Unspecified domain'}</span>
-                          <span>{skill.correct}/{skill.attempts} correct</span>
+                          <span>{skill.correct}/{skill.attempts} correct • {skill.accuracyPercent}% accuracy</span>
                         </div>
                       </div>
                     ))}
@@ -668,7 +672,7 @@ export default function GuardianDashboard() {
               <CardHeader>
                 <CardTitle className="text-[#0F2E48]">Full-Length Exam Report</CardTitle>
                 <CardDescription>
-                  Load guardian read-only report projection using a real exam session ID.
+                  Load guardian read-only report view using a real exam session ID.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -744,7 +748,7 @@ export default function GuardianDashboard() {
                 {guardianReportLocked && (
                   <Alert className="border-amber-200 bg-amber-50">
                     <AlertDescription className="text-amber-800">
-                      This exam session is not completed yet, so guardian report projection is still locked.
+                      This exam session is not completed yet, so the guardian report view is still locked.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -766,8 +770,8 @@ export default function GuardianDashboard() {
                 {guardianExamReportData?.report && (
                   <FullLengthResultsView
                     data={guardianExamReportData.report}
-                    title="Guardian Report Projection"
-                    description="Read-only student-truth projection from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
+                    title="Guardian Report View"
+                    description="Read-only student-truth view from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
                   />
                 )}
               </CardContent>

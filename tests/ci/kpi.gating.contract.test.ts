@@ -5,6 +5,7 @@ import request from 'supertest';
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildCanonicalPracticeKpiSnapshot = vi.fn();
 const buildStudentKpiView = vi.fn();
+const buildPersistedScoreProjection = vi.fn();
 const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
 
@@ -15,6 +16,7 @@ vi.mock('../../server/services/kpi-access', () => ({
 vi.mock('../../server/services/kpi-truth-layer', () => ({
   KPI_TRUTH_LAYER_VERSION: 'kpi_truth_v1',
   buildCanonicalPracticeKpiSnapshot,
+  buildPersistedScoreProjection,
   buildStudentKpiView,
   buildFullTestKpis: vi.fn(() => []),
   fullTestMeasurementModel: vi.fn(() => ({ official: ['official_sat_score'], weighted: [], diagnostic: [] })),
@@ -174,10 +176,24 @@ describe('KPI Gating Contract', () => {
         diagnostic: ['week_sessions', 'week_questions', 'week_accuracy'],
       },
     });
+
+    buildPersistedScoreProjection.mockResolvedValue({
+      totalQuestions: 40,
+      lastUpdated: '2026-03-10T00:00:00.000Z',
+      projection: {
+        composite: 1080,
+        math: 540,
+        rw: 540,
+        range: { low: 1040, high: 1120 },
+        confidence: 0.7,
+        breakdown: { math: [], rw: [] },
+      },
+      masteryData: [],
+    });
   });
 
-  it('denies free-tier mastery projection (mastery hexagon surface)', async () => {
-    const { getScoreProjection } = await import('../../server/routes/legacy/progress');
+  it('denies free-tier mastery estimate (mastery hexagon surface)', async () => {
+    const { getScoreEstimate } = await import('../../server/routes/legacy/progress');
 
     const req: any = {
       user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
@@ -185,13 +201,40 @@ describe('KPI Gating Contract', () => {
     };
     const { res, getStatus, getBody } = createRes();
 
-    await getScoreProjection(req, res as any);
+    await getScoreEstimate(req, res as any);
 
     expect(getStatus()).toBe(402);
     const payload = getBody();
     expect(payload.code).toBe('PREMIUM_KPI_REQUIRED');
     expect(payload.feature).toBe('mastery_hexagon');
     expect(payload.requestId).toBe('req-1');
+  });
+
+  it('returns estimate payload shape when paid access is active', async () => {
+    resolvePaidKpiAccessForUser.mockResolvedValueOnce({
+      hasPaidAccess: true,
+      accountId: 'acc-paid',
+      plan: 'paid',
+      status: 'active',
+      currentPeriodEnd: null,
+      reason: 'Active paid entitlement.',
+    });
+
+    const { getScoreEstimate } = await import('../../server/routes/legacy/progress');
+
+    const req: any = {
+      user: { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false },
+      requestId: 'req-estimate',
+    };
+    const { res, getBody, getStatus } = createRes();
+
+    await getScoreEstimate(req, res as any);
+
+    expect(getStatus()).toBe(200);
+    const payload = getBody();
+    expect(payload.estimate).toBeDefined();
+    expect(payload.projection).toBeUndefined();
+    expect(payload.estimate.range).toEqual({ low: 1040, high: 1120 });
   });
 
   it('hides historical trends for free-tier KPI view', async () => {
@@ -211,6 +254,8 @@ describe('KPI Gating Contract', () => {
     expect(payload.week.explanations.week_sessions.whatThisMeans).toEqual(expect.stringMatching(/\S/));
     expect(payload.week.explanations.week_sessions.whyThisChanged).toEqual(expect.stringMatching(/\S/));
     expect(payload.week.explanations.week_sessions.whatToDoNext).toEqual(expect.stringMatching(/\S/));
+    expect(buildCanonicalPracticeKpiSnapshot).toHaveBeenCalledWith('student-1');
+    expect(buildStudentKpiView).toHaveBeenCalled();
   });
 
   it('denies free-tier full-test analytics report route', async () => {

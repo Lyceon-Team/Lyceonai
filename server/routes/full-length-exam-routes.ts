@@ -65,8 +65,26 @@ function sendRouteError(
   });
 }
 
+function sendClientInstanceConflict(req: Request, res: Response, clientInstanceId: string | null) {
+  return res.status(409).json({
+    error: "client_instance_conflict",
+    code: "CLIENT_INSTANCE_CONFLICT",
+    message: "Session client instance conflict",
+    client_instance_id: clientInstanceId ?? null,
+    requestId: req.requestId,
+  });
+}
+
 function isClientInstanceConflict(message: string): boolean {
   return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
+}
+
+function getClientInstanceIdFromError(error: unknown): string | null {
+  const candidate = (error as any)?.clientInstanceId;
+  if (typeof candidate === "string" && candidate.trim().length > 0) {
+    return candidate;
+  }
+  return null;
 }
 
 function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction) {
@@ -143,7 +161,7 @@ router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: 
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
 
     return sendRouteError(req, res, 500, "Internal error");
@@ -225,7 +243,7 @@ router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, asy
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -274,7 +292,7 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtect
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -344,7 +362,7 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, doubleCsrfProtec
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -406,7 +424,7 @@ router.post(
       }
 
       if (isClientInstanceConflict(message)) {
-        return sendRouteError(req, res, 409, "Session client instance conflict");
+        return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
       }
 
       return sendRouteError(req, res, 500, "Internal error");
@@ -465,7 +483,7 @@ router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, doubleCsr
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -514,7 +532,7 @@ router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, doubleCs
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -568,7 +586,7 @@ router.post("/sessions/:sessionId/complete", requireSupabaseAuth, doubleCsrfProt
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");

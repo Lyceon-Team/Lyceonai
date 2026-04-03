@@ -9,6 +9,7 @@ import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getA
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { buildWeaknessSkillsView } from '../../apps/api/src/services/weakness-view';
+import { getMasteryStatus } from '../../apps/api/src/services/mastery-projection';
 import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildStudentFullLengthReportView, projectGuardianFullLengthReportView } from '../services/kpi-truth-layer';
 import { buildCalendarMonthView } from '../../apps/api/src/services/calendar-month-view';
 
@@ -572,6 +573,15 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
       limit: Number.isFinite(limit) ? limit : undefined,
       minAttempts: Number.isFinite(minAttempts) ? minAttempts : undefined,
     });
+    const safeSkills = view.skills.map((skill) => ({
+      section: skill.section,
+      domain: skill.domain,
+      skill: skill.skill,
+      attempts: skill.attempts,
+      correct: skill.correct,
+      accuracyPercent: Math.round((skill.accuracy ?? 0) * 100),
+      status: getMasteryStatus(skill.mastery_score, skill.attempts),
+    }));
     logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: view.count, requestId });
     await emitGuardianAccessEvent({
       eventType: 'guardian_report_viewed',
@@ -582,7 +592,9 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
     });
 
     return res.json({
-      ...view,
+      ok: view.ok,
+      count: safeSkills.length,
+      skills: safeSkills,
       requestId,
     });
   } catch (err) {

@@ -53,12 +53,12 @@ function createWrapper() {
   };
 }
 
-describe('GuardianDashboard full-length history projection UX', () => {
+describe('GuardianDashboard full-length history view UX', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('shows report action only when runtime projection marks reportAvailable', async () => {
+  it('shows report action only when runtime view marks reportAvailable', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = asUrl(input);
 

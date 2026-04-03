@@ -91,11 +91,6 @@ describe('CI Auth Tests', () => {
       expect([200, 304]).toContain(res.status);
     });
 
-    it('should allow access to /api/questions/search without auth', async () => {
-      const res = await request(app).get('/api/questions/search?q=test');
-      expect([200, 304]).toContain(res.status);
-    });
-
     it('should return 401 for /api/profile without auth', async () => {
       const res = await request(app).get('/api/profile');
       expect(res.status).toBe(401);
@@ -307,8 +302,8 @@ describe('CI Auth Tests', () => {
 
   describe('Admin Endpoints - Admin Auth Required', () => {
     it('should return 401 for admin routes without auth', async () => {
-      const res = await request(app).get('/api/admin/questions/needs-review');
-      expect([401, 404]).toContain(res.status);
+      const res = await request(app).get('/api/admin/db-health');
+      expect([401, 403]).toContain(res.status);
       if (res.status === 401) {
         expect(res.body).toHaveProperty('error');
       }
@@ -410,20 +405,6 @@ describe('Error Handling', () => {
     });
   });
 
-  describe('Rate Limiting', () => {
-    it('should have rate limiting on search endpoint', async () => {
-      // Make multiple rapid requests
-      const requests = Array(10).fill(null).map(() => 
-        request(app).get('/api/questions/search?q=test')
-      );
-      
-      const responses = await Promise.all(requests);
-      const statuses = responses.map(r => r.status);
-      
-      // Should include valid responses or rate limit responses
-      expect(statuses.every(s => [200, 304, 429].includes(s))).toBe(true);
-    });
-  });
 });
 
 

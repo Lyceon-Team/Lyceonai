@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/me/weakness/clusters"
+method: GET
+order: 3000

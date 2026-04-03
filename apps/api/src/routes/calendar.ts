@@ -642,15 +642,6 @@ function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
   return null;
 }
 
-function taskModeForDay(task: Pick<PlanTaskRow, "task_type" | "metadata">): string {
-  if (task.task_type === "full_length") return "full-length";
-  if (task.task_type === "review_full_length") return "review-full-length";
-  if (task.task_type === "review_practice") return "review";
-  if (task.task_type === "focused_drill") return task.metadata?.compressed ? "compressed" : "focused";
-  if (task.task_type === "tutor_support") return "support";
-  return task.metadata?.compressed ? "compressed" : "mixed";
-}
-
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
   return serializeTaskSummary({
     id: task.id,

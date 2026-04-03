@@ -991,7 +991,12 @@ describe("Practice Runtime Contract", () => {
     const conflict = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-2`);
 
     expect(conflict.status).toBe(409);
-    expect(conflict.body.error).toBe("conflict");
+    expect(conflict.body).toMatchObject({
+      error: "client_instance_conflict",
+      code: "CLIENT_INSTANCE_CONFLICT",
+      message: "Session client instance conflict",
+      client_instance_id: "tab-1",
+    });
   });
 
   it("is idempotent per served item and does not double-write mastery", async () => {

@@ -36,6 +36,12 @@ function sanitizeRagResponseForStudent(response: RagQueryResponse): RagQueryResp
     return response;
   }
 
+  const sanitizedCompetencyContext = {
+    studentWeakAreas: [],
+    studentStrongAreas: [],
+    competencyLabels: [],
+  };
+
   const primaryQuestion = context.primaryQuestion
     ? sanitizeQuestionForStudent(context.primaryQuestion)
     : null;
@@ -49,6 +55,7 @@ function sanitizeRagResponseForStudent(response: RagQueryResponse): RagQueryResp
       ...context,
       primaryQuestion,
       supportingQuestions,
+      competencyContext: sanitizedCompetencyContext,
     },
   };
 }
@@ -77,26 +84,6 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       canonicalQuestionId: validation.data.canonicalQuestionId,
       testCode: validation.data.testCode,
       sectionCode: validation.data.sectionCode,
-      studentProfile: validation.data.studentProfile
-        ? {
-            userId: user.id,
-            overallLevel: validation.data.studentProfile.overallLevel,
-            competencyMap: validation.data.studentProfile.competencyMap as Record<
-              string,
-              { correct?: number; incorrect?: number; total?: number; masteryLevel?: number }
-            >,
-            recentQuestions: validation.data.studentProfile.recentQuestions?.map((q) => ({
-              canonicalId: q.canonicalId,
-              correct: q.correct,
-              timestamp: q.timestamp,
-            })),
-            primaryStyle: validation.data.studentProfile.primaryStyle,
-            secondaryStyle: validation.data.studentProfile.secondaryStyle,
-            explanationLevel: validation.data.studentProfile.explanationLevel,
-            personaTags: validation.data.studentProfile.personaTags,
-          }
-        : undefined,
-      topK: validation.data.topK,
     });
 
     const sanitizedResponse = sanitizeRagResponseForStudent(response);

@@ -14,7 +14,13 @@ import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { applyMasteryUpdate } from "./mastery-write";
 import { MasteryEventType } from "./mastery-constants";
-import { normalizeSectionCode as normalizeCanonicalSectionCode } from "../../../../shared/question-bank-contract";
+import { applyFullLengthExamPlannerReprioritization, type ExamSkillDiagnostic } from "./calendar-planner-reprioritization";
+import {
+  normalizeClientInstanceId,
+  normalizeSectionCode as normalizeCanonicalSectionCode,
+  projectStudentSafeQuestion,
+  resolveClientInstanceBinding,
+} from "../../../../shared/question-bank-contract";
 import type {
   FullLengthExamSession,
   FullLengthExamModule,
@@ -353,6 +359,43 @@ export interface CompleteExamResult {
   completedAt: Date;
 }
 
+export function buildExamPrioritySkillDiagnostics(result: CompleteExamResult): ExamSkillDiagnostic[] {
+  const diagnostics: ExamSkillDiagnostic[] = [];
+  const rwSkills = result.skillDiagnostics?.rw ?? [];
+  const mathSkills = result.skillDiagnostics?.math ?? [];
+
+  for (const item of rwSkills) {
+    if (!item?.skill || !item?.domain) continue;
+    diagnostics.push({
+      section: "RW",
+      domain: item.domain,
+      skill: item.skill,
+      accuracy: Number.isFinite(item.accuracy) ? item.accuracy : 1,
+      performanceBand: item.performanceBand,
+    });
+  }
+
+  for (const item of mathSkills) {
+    if (!item?.skill || !item?.domain) continue;
+    diagnostics.push({
+      section: "MATH",
+      domain: item.domain,
+      skill: item.skill,
+      accuracy: Number.isFinite(item.accuracy) ? item.accuracy : 1,
+      performanceBand: item.performanceBand,
+    });
+  }
+
+  const needsFocus = diagnostics.filter((item) => item.performanceBand === "needs_focus");
+  needsFocus.sort((a, b) => {
+    if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+    const domainCompare = a.domain.localeCompare(b.domain);
+    if (domainCompare !== 0) return domainCompare;
+    return a.skill.localeCompare(b.skill);
+  });
+  return needsFocus;
+}
+
 export interface FullLengthSessionHistoryItem {
   sessionId: string;
   status: string;
@@ -548,12 +591,6 @@ function calculateSectionScaledScore(
   totalQuestions: number
 ): number {
   return getModeledScaledScore(section, rawCorrect, totalQuestions);
-}
-
-function normalizeClientInstanceId(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
 }
 
 function toSectionType(value: unknown): SectionType | null {
@@ -1259,35 +1296,35 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
   return { difficultyBucket: finalDifficulty };
 }
 
-function assertClientInstanceAccess(
-  session: { client_instance_id?: string | null },
-  clientInstanceId?: string
-): void {
-  const boundClient = normalizeClientInstanceId(session.client_instance_id);
-  if (!boundClient) {
-    return;
-  }
-  const requestedClient = normalizeClientInstanceId(clientInstanceId);
-  if (!requestedClient || requestedClient !== boundClient) {
-    throw new Error(CLIENT_INSTANCE_CONFLICT_MESSAGE);
-  }
+function buildClientInstanceConflictError(boundClientInstanceId: string | null): Error {
+  const error = new Error(CLIENT_INSTANCE_CONFLICT_MESSAGE);
+  (error as any).clientInstanceId = boundClientInstanceId ?? null;
+  return error;
 }
 
-async function bindSessionClientInstanceIfNeeded(
+async function enforceClientInstanceBinding(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  args: { sessionId: string; userId: string; clientInstanceId?: string }
-): Promise<void> {
-  const normalized = normalizeClientInstanceId(args.clientInstanceId);
-  if (!normalized) {
-    return;
+  args: { sessionId: string; userId: string; boundClientInstanceId: unknown; requestedClientInstanceId: unknown }
+) {
+  const resolution = resolveClientInstanceBinding({
+    boundClientInstanceId: args.boundClientInstanceId,
+    requestedClientInstanceId: args.requestedClientInstanceId,
+  });
+
+  if (resolution.action === "conflict") {
+    throw buildClientInstanceConflictError(resolution.boundClientInstanceId);
   }
 
-  await supabase
-    .from("full_length_exam_sessions")
-    .update({ client_instance_id: normalized })
-    .eq("id", args.sessionId)
-    .eq("user_id", args.userId)
-    .is("client_instance_id", null);
+  if (resolution.action === "bind") {
+    await supabase
+      .from("full_length_exam_sessions")
+      .update({ client_instance_id: resolution.requestedClientInstanceId })
+      .eq("id", args.sessionId)
+      .eq("user_id", args.userId)
+      .is("client_instance_id", null);
+  }
+
+  return resolution;
 }
 
 type FullLengthEventType =
@@ -1833,6 +1870,26 @@ async function applyFullLengthMasterySignals(
     console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${err?.message || 'unknown error'}`);
   }
 }
+
+async function applyFullLengthPlannerBridgeBestEffort(params: {
+  userId: string;
+  sessionId: string;
+  result: CompleteExamResult;
+}): Promise<void> {
+  try {
+    const skillDiagnostics = buildExamPrioritySkillDiagnostics(params.result);
+    if (skillDiagnostics.length === 0) return;
+    await applyFullLengthExamPlannerReprioritization({
+      userId: params.userId,
+      examSessionId: params.sessionId,
+      completedAt: params.result.completedAt,
+      skillDiagnostics,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.warn(`[FULL-LENGTH] Planner reprioritization skipped: ${message}`);
+  }
+}
 // PUBLIC API
 // ============================================================================
 
@@ -1858,15 +1915,14 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
       throw new Error("Active session exists for a different test form");
     }
 
-    assertClientInstanceAccess(existingSession, requestedClientInstanceId || undefined);
-    await bindSessionClientInstanceIfNeeded(supabase, {
+    const binding = await enforceClientInstanceBinding(supabase, {
       sessionId: existingSession.id,
       userId: params.userId,
-      clientInstanceId: requestedClientInstanceId || undefined,
+      boundClientInstanceId: existingSession.client_instance_id,
+      requestedClientInstanceId,
     });
-
-    if (!existingSession.client_instance_id && requestedClientInstanceId) {
-      existingSession.client_instance_id = requestedClientInstanceId;
+    if (binding.action === "bind") {
+      existingSession.client_instance_id = binding.requestedClientInstanceId;
     }
 
     return existingSession;
@@ -1905,15 +1961,14 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
           throw new Error("Active session exists for a different test form");
         }
 
-        assertClientInstanceAccess(racedSession, requestedClientInstanceId || undefined);
-        await bindSessionClientInstanceIfNeeded(supabase, {
+        const binding = await enforceClientInstanceBinding(supabase, {
           sessionId: racedSession.id,
           userId: params.userId,
-          clientInstanceId: requestedClientInstanceId || undefined,
+          boundClientInstanceId: racedSession.client_instance_id,
+          requestedClientInstanceId,
         });
-
-        if (!racedSession.client_instance_id && requestedClientInstanceId) {
-          racedSession.client_instance_id = requestedClientInstanceId;
+        if (binding.action === "bind") {
+          racedSession.client_instance_id = binding.requestedClientInstanceId;
         }
 
         return racedSession;
@@ -2020,7 +2075,15 @@ export async function getCurrentSession(
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, clientInstanceId);
+  const currentBinding = await enforceClientInstanceBinding(supabase, {
+    sessionId,
+    userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: clientInstanceId,
+  });
+  if (currentBinding.action === "bind") {
+    session.client_instance_id = currentBinding.requestedClientInstanceId;
+  }
 
   // If session hasn't started, return minimal state
   if (session.status === "not_started") {
@@ -2127,9 +2190,25 @@ export async function getCurrentSession(
     const target = unanswered || typedQuestions[0];
 
     if (target) {
-      const questionType = normalizeQuestionType(target.question_type);
-      const options = normalizeQuestionOptions(target.question_options);
-      if (questionType !== "multiple_choice" || options.length === 0 || !target.question_stem) {
+      const safeBase = projectStudentSafeQuestion({
+        id: target.question_id,
+        canonical_id: target.question_canonical_id ?? null,
+        section: target.question_section ?? null,
+        section_code: target.question_section ?? null,
+        question_type: target.question_type ?? null,
+        stem: target.question_stem ?? null,
+        options: target.question_options,
+        difficulty: target.question_difficulty,
+        domain: null,
+        skill: null,
+        subskill: null,
+        skill_code: null,
+        tags: null,
+        competencies: null,
+        correct_answer: null,
+        explanation: null,
+      });
+      if (!safeBase.stem || safeBase.options.length === 0) {
         throw new Error("Materialized full-length question snapshot is invalid");
       }
 
@@ -2138,11 +2217,11 @@ export async function getCurrentSession(
 
       currentQuestion = {
         id: target.question_id,
-        canonicalId: target.question_canonical_id ?? null,
-        stem: target.question_stem,
-        section: target.question_section ?? "",
+        canonicalId: safeBase.canonical_id,
+        stem: safeBase.stem,
+        section: safeBase.section ?? target.question_section ?? "",
         question_type: "multiple_choice" as const,
-        options,
+        options: safeBase.options,
         difficulty,
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
@@ -2308,7 +2387,15 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, params.clientInstanceId);
+  const answerBinding = await enforceClientInstanceBinding(supabase, {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: params.clientInstanceId,
+  });
+  if (answerBinding.action === "bind") {
+    session.client_instance_id = answerBinding.requestedClientInstanceId;
+  }
 
   if (session.status !== "in_progress") {
     throw new Error("Session is not in progress");
@@ -2438,7 +2525,15 @@ export async function persistModuleCalculatorState(params: PersistModuleCalculat
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, params.clientInstanceId);
+  const calculatorBinding = await enforceClientInstanceBinding(supabase, {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: params.clientInstanceId,
+  });
+  if (calculatorBinding.action === "bind") {
+    session.client_instance_id = calculatorBinding.requestedClientInstanceId;
+  }
 
   if (!["in_progress", "break", "not_started"].includes(String(session.status ?? ""))) {
     throw new Error("Session is not active");
@@ -2504,7 +2599,15 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, params.clientInstanceId);
+  const moduleBinding = await enforceClientInstanceBinding(supabase, {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: params.clientInstanceId,
+  });
+  if (moduleBinding.action === "bind") {
+    session.client_instance_id = moduleBinding.requestedClientInstanceId;
+  }
 
   if (session.status !== "in_progress") {
     throw new Error("Session is not in progress");
@@ -2712,8 +2815,12 @@ export async function startExam(sessionId: string, userId: string, clientInstanc
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, clientInstanceId);
-  await bindSessionClientInstanceIfNeeded(supabase, { sessionId, userId, clientInstanceId });
+  await enforceClientInstanceBinding(supabase, {
+    sessionId,
+    userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: clientInstanceId,
+  });
 
   if (session.status !== "not_started") {
     throw new Error("Exam already started");
@@ -2757,7 +2864,12 @@ export async function continueFromBreak(sessionId: string, userId: string, clien
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, clientInstanceId);
+  await enforceClientInstanceBinding(supabase, {
+    sessionId,
+    userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: clientInstanceId,
+  });
 
   if (session.current_section !== "break") {
     throw new Error("Not on break");
@@ -2795,14 +2907,25 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     throw new Error("Session not found or access denied");
   }
 
-  assertClientInstanceAccess(session, params.clientInstanceId);
+  await enforceClientInstanceBinding(supabase, {
+    sessionId: params.sessionId,
+    userId: params.userId,
+    boundClientInstanceId: session.client_instance_id,
+    requestedClientInstanceId: params.clientInstanceId,
+  });
 
   if (session.status === "completed") {
-    return computeCanonicalExamReport(
+    const result = await computeCanonicalExamReport(
       supabase,
       params.sessionId,
       new Date(session.completed_at || new Date().toISOString())
     );
+    await applyFullLengthPlannerBridgeBestEffort({
+      userId: params.userId,
+      sessionId: params.sessionId,
+      result,
+    });
+    return result;
   }
 
   if (session.status !== "in_progress") {
@@ -2863,11 +2986,17 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     }
 
     if (completedSession.status === "completed") {
-      return computeCanonicalExamReport(
+      const result = await computeCanonicalExamReport(
         supabase,
         params.sessionId,
         new Date(completedSession.completed_at || completedAt.toISOString())
       );
+      await applyFullLengthPlannerBridgeBestEffort({
+        userId: params.userId,
+        sessionId: params.sessionId,
+        result,
+      });
+      return result;
     }
 
     throw new Error("Invalid exam state");
@@ -2896,6 +3025,12 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
       scaledRw: result.scaledScore.rw,
       scaledMath: result.scaledScore.math,
     },
+  });
+
+  await applyFullLengthPlannerBridgeBestEffort({
+    userId: params.userId,
+    sessionId: params.sessionId,
+    result,
   });
 
   return result;
@@ -3135,10 +3270,6 @@ function normalizeSourceType(value: unknown): CanonicalSourceType | null {
     : null;
 }
 
-function normalizeOptions(value: unknown): QuestionOption[] {
-  return Array.isArray(value) ? (value as QuestionOption[]) : [];
-}
-
 function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -3159,23 +3290,46 @@ function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
 function projectSafeQuestionFields(
   question: Record<string, unknown>
 ): SafeQuestionPreCompletion {
-  return {
+  const safeBase = projectStudentSafeQuestion({
     id: String(question.id),
     canonical_id: (question.canonical_id as string | null) ?? null,
-    stem: String(question.stem ?? ""),
-    section: String(question.section ?? ""),
-    section_code: normalizeReviewSectionCode(question.section_code),
-    question_type: "multiple_choice",
-    options: normalizeOptions(question.options),
+    section: (question.section as string | null) ?? null,
+    section_code: (question.section_code as string | null) ?? null,
+    question_type: (question.question_type as string | null) ?? null,
+    stem: (question.stem as string | null) ?? null,
+    options: question.options,
+    difficulty: question.difficulty ?? null,
     domain: (question.domain as string | null) ?? null,
     skill: (question.skill as string | null) ?? null,
     subskill: (question.subskill as string | null) ?? null,
     skill_code: (question.skill_code as string | null) ?? null,
-    difficulty: normalizeDifficulty(question.difficulty),
-    source_type: normalizeSourceType(question.source_type),
-    diagram_present: (question.diagram_present as boolean | null) ?? null,
     tags: question.tags ?? null,
     competencies: question.competencies ?? null,
+    correct_answer: null,
+    explanation: null,
+  });
+  const sectionCode = safeBase.section_code === "M"
+    ? "MATH"
+    : safeBase.section_code === "RW"
+      ? "RW"
+      : normalizeReviewSectionCode(question.section_code);
+  return {
+    id: safeBase.id,
+    canonical_id: safeBase.canonical_id,
+    stem: safeBase.stem,
+    section: safeBase.section ?? String(question.section ?? ""),
+    section_code: sectionCode,
+    question_type: "multiple_choice",
+    options: safeBase.options,
+    domain: safeBase.domain,
+    skill: safeBase.skill,
+    subskill: safeBase.subskill,
+    skill_code: safeBase.skill_code,
+    difficulty: normalizeDifficulty(safeBase.difficulty ?? question.difficulty),
+    source_type: normalizeSourceType(question.source_type),
+    diagram_present: (question.diagram_present as boolean | null) ?? null,
+    tags: safeBase.tags ?? null,
+    competencies: safeBase.competencies ?? null,
   };
 }
 

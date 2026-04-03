@@ -34,14 +34,7 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 
 ### Content/Review Runtime Truth Notes
 - `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).
-- `/api/admin/questions/*` endpoints are currently unmounted from `server/index.ts` and treated as service-only/legacy workflow paths.
 - Canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
-
-### `../apps/api/src/routes/search`
-- **Import**: [server/index.ts](server/index.ts#L35)
-- **Symbols**: `searchQuestions`
-- **Mount**: `app.get("/api/questions/search", searchQuestions)`
-- **Transitive deps in apps/api**: `../lib/supabase-server`, `../lib/embeddings`, `../lib/supabase`
 
 ### `../apps/api/src/routes/weakness`
 - **Import**: [server/index.ts](server/index.ts#L65)

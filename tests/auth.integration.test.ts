@@ -67,8 +67,8 @@ describe('Auth Integration Tests', () => {
 
   describe('Admin Endpoints', () => {
     it('should return 401 for admin routes without auth', async () => {
-      const res = await request(app).get('/api/admin/questions/needs-review');
-      expect([401, 404]).toContain(res.status);
+      const res = await request(app).get('/api/admin/db-health');
+      expect([401, 403]).toContain(res.status);
     });
   });
 
@@ -139,22 +139,6 @@ describe('Auth Integration Tests', () => {
         .send({ mode: 'flow', section: 'math' });
       
       expect([401, 404]).toContain(res.status); // Not authenticated
-    });
-  });
-
-  describe('Rate Limiting', () => {
-    it('should have rate limiting on search endpoint', async () => {
-      // Make multiple rapid requests
-      const requests = Array(10).fill(null).map(() => 
-        request(app).get('/api/questions/search?q=test')
-      );
-      
-      const responses = await Promise.all(requests);
-      const statuses = responses.map(r => r.status);
-      
-      // Should include some rate limit responses (429) if limit is low
-      // Or all succeed if rate limit is high
-      expect(statuses.every(s => [200, 304, 429].includes(s))).toBe(true);
     });
   });
 

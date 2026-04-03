@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/review-errors/attempt"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "questionId": "{{questionId}}",
+      "answer": "B",
+      "sessionId": "{{reviewSessionId}}"
+    }
+order: 4000

@@ -13,13 +13,13 @@ import {
 } from "../../services/kpi-truth-layer";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 
-function projectionExplanation(label: string, detail: string): {
+function estimateExplanation(label: string, detail: string): {
   whatThisMeans: string;
   whyThisChanged: string;
   whatToDoNext: string;
 } {
   return {
-    whatThisMeans: `${label} is a weighted estimate from your stored mastery evidence, not an official score.`,
+    whatThisMeans: `${label} is a weighted estimate from stored mastery evidence, not an official score.`,
     whyThisChanged: detail,
     whatToDoNext: "Use the lower section estimate to prioritize your next focused practice block.",
   };
@@ -38,9 +38,9 @@ function premiumKpiRequired(res: Response, requestId: string | undefined, featur
 
 /**
  * GET /api/progress/projection
- * Premium-only mastery projection surface (mastery hexagon / weighted score estimate).
+ * Premium-only mastery estimate surface (mastery hexagon / weighted score estimate).
  */
-export const getScoreProjection = async (req: Request, res: Response) => {
+export const getScoreEstimate = async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -63,7 +63,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
           weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
           diagnostic: ["mastery_evidence_count"],
         },
-        projection: {
+        estimate: {
           composite: 400,
           math: 200,
           rw: 200,
@@ -72,13 +72,13 @@ export const getScoreProjection = async (req: Request, res: Response) => {
           breakdown: { math: [], rw: [] },
         },
         explanations: {
-          estimated_scaled_total: projectionExplanation(
+          estimated_scaled_total: estimateExplanation(
             "Estimated scaled total",
             "No mastery evidence is available yet, so the estimate remains at the minimum baseline."
           ),
           official_sat_score: {
             whatThisMeans: "Official SAT scores only come from College Board score releases.",
-            whyThisChanged: "Lyceon practice projections never replace official reporting.",
+            whyThisChanged: "Practice estimates never replace official reporting.",
             whatToDoNext: "Use this baseline to set your first target and collect practice evidence.",
           },
         },
@@ -96,17 +96,17 @@ export const getScoreProjection = async (req: Request, res: Response) => {
         weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
         diagnostic: ["mastery_evidence_count"],
       },
-      projection: scoreProjection.projection,
+      estimate: scoreProjection.projection,
       explanations: {
-        estimated_scaled_total: projectionExplanation(
+        estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
           "Estimate updates when mastery rollups change from new attempts or decayed evidence weight."
         ),
-        estimated_scaled_math: projectionExplanation(
+        estimated_scaled_math: estimateExplanation(
           "Estimated scaled Math",
           "Math estimate moves based on weighted mastery evidence across Math domains."
         ),
-        estimated_scaled_rw: projectionExplanation(
+        estimated_scaled_rw: estimateExplanation(
           "Estimated scaled Reading & Writing",
           "RW estimate moves based on weighted mastery evidence across RW domains."
         ),
@@ -122,7 +122,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to calculate score projection", requestId: req.requestId });
+    return res.status(500).json({ error: "Failed to calculate score estimate", requestId: req.requestId });
   }
 };
 

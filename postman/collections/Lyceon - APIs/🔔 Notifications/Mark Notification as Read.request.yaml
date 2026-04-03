@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/notifications/{{notificationId}}/read"
+method: PATCH
+headers:
+  Content-Type: application/json
+order: 3000

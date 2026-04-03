@@ -1,0 +1,7 @@
+$kind: http-request
+name: Get Next Question (Reading/Writing)
+url: "{{baseUrl}}/api/practice/next?section=reading-writing"
+method: GET
+queryParams:
+  section: reading-writing
+order: 4000

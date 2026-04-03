@@ -1,40 +1,15 @@
 # Stripe System Source of Truth
 
-This document defines canonical billing and entitlement truth in Lyceon.
+**Canonical Writer:** Webhooks (`checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`).
+**Canonical Data Store:** `entitlements` table.
 
-## 1. Canonical Runtime Truth
+## Lifecycle Rules
 
-- Billing truth is account-scoped in `entitlements` (`account_id` unique).
-- Relationship truth is `guardian_links` (`status='active'` for linked pairs).
-- Guardian premium visibility is evaluated from the linked student's entitlement state.
+1. Entitlement is ALWAYS applied to the student layer.
+2. Guardian checkouts properly link the entitlement to the student specified during the metadata step. Webhooks allocate entitlement correctly.
+3. Webhook replay MUST be safe and idempotent.
 
-In runtime access checks:
-- Entitlement state comes from `entitlements`.
-- Link state comes from `guardian_links`.
+## Explicit Anti-Patterns
 
-## 2. Webhook Authority
-
-`server/lib/webhookHandlers.ts` is authoritative for Stripe subscription state transitions.
-
-- Idempotency gate table: `stripe_webhook_events`.
-- Duplicate events (`23505`) are skipped.
-- Non-duplicate gate write failures are fail-closed (event processing is rejected).
-- Subscription events reconcile against latest Stripe subscription state (`stripe.subscriptions.retrieve`) before writing entitlement.
-
-## 3. Checkout Ownership Model
-
-Checkout metadata always carries billing owner context:
-- `account_id`
-- `payer_user_id`
-- `payer_role`
-- `client_reference_id = account_id`
-
-Guardian checkout writes entitlement to the linked student account.
-Student checkout writes entitlement to the student account.
-
-## 4. Pair Premium Projection
-
-Premium feature access is resolved from the student-owned entitlement:
-- Student receives premium only through the student's active entitlement.
-- Guardian requires an active link and the linked student's active entitlement.
-- Unlinked guardian may retain billing metadata but does not receive student-derived premium product surfaces until linked and the linked student is entitled.
+- Profile-level compatibility or billing strings must NOT be used as live billing truth.
+- Do NOT perform `self-healing` synchronous patches between Stripe and the local database during `/status` endpoint resolution. Webhook streams MUST execute out-of-band updates as the canonical resolution path to prevent conflicting state updates.

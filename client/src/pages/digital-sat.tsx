@@ -18,8 +18,8 @@ const faqs = [
     answer: 'Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.',
   },
   {
-    question: 'How does mastery tracking work in Lyceon?',
-    answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and proficiency progression over time.',
+    question: 'How does progress tracking work in Lyceon?',
+    answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and progress over time.',
   },
   {
     question: 'How does Lisa work?',
@@ -36,7 +36,7 @@ export default function DigitalSATPage() {
     <PublicLayout>
       <SEO
         title="Digital SAT Prep - Study Smarter, Score Higher"
-        description="Prepare for the Digital SAT with adaptive practice, full-length exams, mastery tracking, and Lisa."
+        description="Prepare for the Digital SAT with adaptive practice, full-length exams, progress tracking, and Lisa."
         canonical="https://lyceon.ai/digital-sat"
       />
       <JsonLd data={organizationJsonLd} />
@@ -55,7 +55,7 @@ export default function DigitalSATPage() {
 
         <Hero
           title="Digital SAT Prep: Study Smarter, Score Higher"
-          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear mastery tracking."
+          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear progress tracking."
         />
 
         <Section title="Choose Your Focus Area">
@@ -129,11 +129,11 @@ export default function DigitalSATPage() {
           </div>
         </Section>
 
-        <Section title="Scoring, Mastery, and Planning Clarity">
+        <Section title="Scoring, Progress, and Planning Clarity">
           <div className="grid sm:grid-cols-2 gap-4">
             {[
               'Digital SAT scoring explanation and adaptive module behavior',
-              'Skill and domain mastery status tracking',
+              'Skill and domain performance status tracking',
               'Guardian-linked visibility for student summaries',
               'Calendar and planning views for ongoing prep',
               'Daily limits on free plan with paid unlimited usage',
