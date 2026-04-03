@@ -9,7 +9,7 @@
 - Runtime mounts:
   - `GET /api/progress/kpis` -> `server/routes/legacy/progress.ts`.
   - `server/routes/legacy/progress.ts` is intentionally active runtime code despite its file path name.
-  - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts`.
+  - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts` (returns `estimate` payload key).
   - `GET /api/guardian/students/:studentId/summary` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.
   - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report` -> `server/routes/guardian-routes.ts`.
@@ -79,6 +79,18 @@ No LLM-generated KPI explanations are used in runtime responses.
 - `server/routes/guardian-routes.ts`
 - `server/routes/full-length-exam-routes.ts`
 - `apps/api/src/routes/mastery.ts`
+
+## Mounted Route Ownership Audit
+This audit is based on mounted routes in `server/index.ts` and is required before declaring canonical status.
+
+- Canonical (student KPI surfaces):
+`/api/progress/kpis`, `/api/progress/projection`, `/api/full-length/sessions/:sessionId/report`
+- Canonical (guardian KPI surfaces):
+`/api/guardian/students/:studentId/summary`, `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`
+- Compatibility-only:
+None for KPI product truth.
+- Dead/disabled:
+None for KPI product truth.
 
 
 

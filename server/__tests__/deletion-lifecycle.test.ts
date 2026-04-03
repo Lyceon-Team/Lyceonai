@@ -4,6 +4,7 @@ import * as authMiddleware from '../middleware/supabase-auth';
 describe('Deletion Lifecycle', () => {
     afterEach(() => {
         jest.restoreAllMocks();
+        authMiddleware.setDeletionStatusResolverForTests(null);
     });
     it('deletion request enters pending state', () => {
         const email = buildDeletedEmail('user_123');
@@ -26,19 +27,10 @@ describe('Deletion Lifecycle', () => {
     });
 
     it('deleted/de-identified user no longer has active runtime visibility/access where prohibited', async () => {
-        const mockMaybeSingle = jest.fn().mockResolvedValue({
-            data: { status: 'completed', executed_at: new Date().toISOString() },
-            error: null,
-        });
-        const mockQuery = {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            maybeSingle: mockMaybeSingle,
-        };
-
-        jest.spyOn(authMiddleware, 'getSupabaseAdmin').mockReturnValue({
-            from: jest.fn().mockReturnValue(mockQuery),
-        } as any);
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({
+            status: 'deleted',
+            executedAt: new Date().toISOString(),
+        }));
 
         const req: any = { user: { id: 'user_123' }, requestId: 'req_1' };
         const res: any = {

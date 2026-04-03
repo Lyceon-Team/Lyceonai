@@ -442,7 +442,7 @@ export default function HomePage() {
 
                 <Card className="bg-secondary">
                   <div className="font-medium mb-1">Full-length exam outcomes</div>
-                  <div className="text-sm text-muted-foreground">Module-level results and score projection data after completion.</div>
+                  <div className="text-sm text-muted-foreground">Module-level results and score estimate data after completion.</div>
                 </Card>
               </div>
             </div>

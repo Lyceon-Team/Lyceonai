@@ -50,7 +50,7 @@ import { doubleCsrfProtection, generateToken } from "./middleware/csrf-double-su
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
-import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
+import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
@@ -309,7 +309,7 @@ app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, doubleCsr
 app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
-app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
+app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreEstimate);
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);

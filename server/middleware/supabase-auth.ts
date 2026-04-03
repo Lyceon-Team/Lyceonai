@@ -114,6 +114,18 @@ export interface AuthenticatedRequest extends Request {
   user?: SupabaseUser;
 }
 
+export type DeletionStatusState = 'active' | 'deleted' | 'unavailable';
+
+export type DeletionStatusResult = {
+  status: DeletionStatusState;
+  executedAt: string | null;
+};
+
+export type DeletionStatusResolver = (args: {
+  userId: string;
+  requestId?: string;
+}) => Promise<DeletionStatusResult>;
+
 type DenialResponseOptions = {
   error: string;
   message: string;
@@ -200,6 +212,68 @@ export function requireRequestAuthContext(
 
 function isTestEnvironment(): boolean {
   return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+}
+
+let deletionStatusResolverOverride: DeletionStatusResolver | null = null;
+
+export function setDeletionStatusResolverForTests(resolver: DeletionStatusResolver | null) {
+  deletionStatusResolverOverride = resolver;
+}
+
+async function testDefaultDeletionResolver(): Promise<DeletionStatusResult> {
+  return { status: 'active', executedAt: null };
+}
+
+async function defaultSupabaseDeletionResolver(args: {
+  userId: string;
+  requestId?: string;
+}): Promise<DeletionStatusResult> {
+  try {
+    const admin = getSupabaseAdmin();
+    const { data, error } = await admin
+      .from('account_deletion_requests')
+      .select('status, executed_at')
+      .eq('user_id', args.userId)
+      .eq('status', 'completed')
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      logger.error('DELETION', 'auth_check_failed', 'Failed to verify deletion status', {
+        userId: args.userId,
+        error: error.message,
+        requestId: args.requestId,
+      });
+      return { status: 'unavailable', executedAt: null };
+    }
+
+    if (data?.status === 'completed') {
+      return { status: 'deleted', executedAt: data.executed_at ?? null };
+    }
+
+    return { status: 'active', executedAt: null };
+  } catch (err) {
+    logger.error('DELETION', 'auth_check_error', 'Unhandled error while verifying deletion status', {
+      userId: args.userId,
+      error: err instanceof Error ? err.message : String(err),
+      requestId: args.requestId,
+    });
+    return { status: 'unavailable', executedAt: null };
+  }
+}
+
+async function resolveDeletionStatus(args: {
+  userId: string;
+  requestId?: string;
+}): Promise<DeletionStatusResult> {
+  if (deletionStatusResolverOverride) {
+    return deletionStatusResolverOverride(args);
+  }
+
+  if (isTestEnvironment()) {
+    return testDefaultDeletionResolver();
+  }
+
+  return defaultSupabaseDeletionResolver(args);
 }
 
 // Supabase client with service role (bypasses RLS for admin operations)
@@ -392,45 +466,24 @@ export async function requireSupabaseAuth(
     return sendUnauthenticated(res, req.requestId);
   }
 
-  try {
-    const admin = getSupabaseAdmin();
-    const { data, error } = await admin
-      .from('account_deletion_requests')
-      .select('status, executed_at')
-      .eq('user_id', req.user.id)
-      .eq('status', 'completed')
-      .maybeSingle();
+  const deletionStatus = await resolveDeletionStatus({
+    userId: req.user.id,
+    requestId: req.requestId,
+  });
 
-    if (error && error.code !== 'PGRST116') {
-      logger.error('DELETION', 'auth_check_failed', 'Failed to verify deletion status', {
-        userId: req.user.id,
-        error: error.message,
-        requestId: req.requestId,
-      });
-      return res.status(503).json({
-        error: 'Deletion status unavailable',
-        code: 'DELETION_STATUS_UNAVAILABLE',
-        requestId: req.requestId,
-      });
-    }
-
-    if (data?.status === 'completed') {
-      return res.status(403).json({
-        error: 'Account deleted',
-        code: 'ACCOUNT_DELETED',
-        message: 'This account has been deleted and can no longer access the service.',
-        requestId: req.requestId,
-      });
-    }
-  } catch (err: any) {
-    logger.error('DELETION', 'auth_check_error', 'Unhandled error while verifying deletion status', {
-      userId: req.user.id,
-      error: err?.message || String(err),
-      requestId: req.requestId,
-    });
+  if (deletionStatus.status === 'unavailable') {
     return res.status(503).json({
       error: 'Deletion status unavailable',
       code: 'DELETION_STATUS_UNAVAILABLE',
+      requestId: req.requestId,
+    });
+  }
+
+  if (deletionStatus.status === 'deleted') {
+    return res.status(403).json({
+      error: 'Account deleted',
+      code: 'ACCOUNT_DELETED',
+      message: 'This account has been deleted and can no longer access the service.',
       requestId: req.requestId,
     });
   }

@@ -632,7 +632,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
+          accuracy: 0.25,
           mastery_score: 25,
         },
       ],
@@ -655,8 +655,8 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
-          mastery_score: 25,
+          accuracyPercent: 25,
+          status: 'weak',
         }),
       ],
     }));
@@ -672,7 +672,7 @@ describe('Guardian reporting runtime contract', () => {
     expect(weaknessViewed).toBeDefined();
   });
 
-  it('matches student weakness view output for the same student input', async () => {
+  it('projects guardian weakness output without raw mastery internals', async () => {
     weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
       ok: true,
       count: 2,
@@ -683,7 +683,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
+          accuracy: 0.25,
           mastery_score: 25,
         },
         {
@@ -692,7 +692,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Main Idea',
           attempts: 6,
           correct: 3,
-          accuracy: 50,
+          accuracy: 0.5,
           mastery_score: 50,
         },
       ],
@@ -716,11 +716,11 @@ describe('Guardian reporting runtime contract', () => {
 
     expect(studentResponse.status).toBe(200);
     expect(guardianResponse.status).toBe(200);
-    expect(guardianResponse.body).toEqual(expect.objectContaining({
-      ok: studentResponse.body.ok,
-      count: studentResponse.body.count,
-      skills: studentResponse.body.skills,
-    }));
+    expect(guardianResponse.body.skills[0].mastery_score).toBeUndefined();
+    expect(guardianResponse.body.skills[0].accuracyPercent).toBe(25);
+    expect(guardianResponse.body.skills[0].status).toBe('weak');
+    expect(guardianResponse.body.skills[1].accuracyPercent).toBe(50);
+    expect(guardianResponse.body.skills[1].status).toBe('improving');
   });
 
   it('denies unlinked guardian summary requests and emits denied event', async () => {
