@@ -1,10 +1,24 @@
 import { Request, Response, Router } from 'express';
-import { getSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
+import { getSupabaseAdmin, requireSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { logger } from '../logger';
 
 const router = Router();
 const DELETION_GRACE_HOURS = 24;
+const DELETION_BAN_DURATION = '876000h'; // 100 years
+
+export function buildDeletedEmail(userId: string): string {
+    return `deleted_${userId}@deleted.lyceon.ai`;
+}
+
+export function isGraceWindowExpired(requestedAt: string, now: Date = new Date()): boolean {
+    const requestedAtMs = new Date(requestedAt).getTime();
+    if (Number.isNaN(requestedAtMs)) {
+        return true;
+    }
+    const graceMs = DELETION_GRACE_HOURS * 60 * 60 * 1000;
+    return now.getTime() > requestedAtMs + graceMs;
+}
 
 /**
  * POST /api/account/delete
@@ -76,21 +90,41 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
     try {
         const admin = getSupabaseAdmin();
 
-        // Mark pending requests as cancelled
-        const { data, error } = await admin
+        const { data: pending, error: pendingError } = await admin
             .from('account_deletion_requests')
-            .update({ status: 'cancelled' })
+            .select('id, requested_at')
             .eq('user_id', userId)
             .eq('status', 'pending')
+            .maybeSingle();
+
+        if (pendingError) {
+            logger.error('DELETION', 'cancel_fetch_error', 'Failed to load deletion request for cancellation', { userId, error: pendingError.message, requestId });
+            return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
+        }
+
+        if (!pending?.id) {
+            return res.status(404).json({ error: 'No pending deletion request found', requestId });
+        }
+
+        if (isGraceWindowExpired(pending.requested_at)) {
+            return res.status(409).json({
+                error: 'Deletion grace window has expired',
+                code: 'GRACE_WINDOW_EXPIRED',
+                requestedAt: pending.requested_at,
+                graceWindowHours: DELETION_GRACE_HOURS,
+                requestId
+            });
+        }
+
+        const { error } = await admin
+            .from('account_deletion_requests')
+            .update({ status: 'cancelled' })
+            .eq('id', pending.id)
             .select('id');
 
         if (error) {
             logger.error('DELETION', 'cancel_error', 'Failed to cancel deletion request', { userId, error: error.message, requestId });
             return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
-        }
-
-        if (!data || data.length === 0) {
-            return res.status(404).json({ error: 'No pending deletion request found', requestId });
         }
 
         logger.info('DELETION', 'cancelled', 'User cancelled deletion request', { userId, requestId });
@@ -106,10 +140,8 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
  * POST /api/account/execute-deletions
  * Admin-only / system endpoint to execute pending deletions that have passed the 24h window
  */
-router.post('/execute-deletions', async (req: Request, res: Response) => {
+router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, async (req: Request, res: Response) => {
     const requestId = req.requestId;
-    // Note: normally this would be protected by API keys or admin auth for a cron runner.
-    // Assuming a generic validation here or a private network access rule.
 
     try {
         const admin = getSupabaseAdmin();
@@ -132,13 +164,36 @@ router.post('/execute-deletions', async (req: Request, res: Response) => {
         }
 
         let successCount = 0;
+        let failureCount = 0;
 
         // Execute de-identification logic via stored procedure per user
-        for (const req of pendingRequests) {
-            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: req.user_id });
+        for (const pending of pendingRequests) {
+            const deletionEmail = buildDeletedEmail(pending.user_id);
+
+            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.user_id, deleted_email: deletionEmail });
 
             if (rpcError) {
-                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: req.user_id, error: rpcError.message, requestId });
+                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.user_id, error: rpcError.message, requestId });
+                failureCount++;
+                continue;
+            }
+
+            const { error: authError } = await admin.auth.admin.updateUserById(pending.user_id, {
+                email: deletionEmail,
+                ban_duration: DELETION_BAN_DURATION,
+                user_metadata: {
+                    deletion_status: 'completed',
+                    deleted_at: new Date().toISOString(),
+                },
+            });
+
+            if (authError) {
+                logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
+                    userId: pending.user_id,
+                    error: authError.message,
+                    requestId,
+                });
+                failureCount++;
                 continue;
             }
 
@@ -146,7 +201,7 @@ router.post('/execute-deletions', async (req: Request, res: Response) => {
             await admin
                 .from('account_deletion_requests')
                 .update({ status: 'completed', executed_at: new Date().toISOString() })
-                .eq('id', req.id);
+                .eq('id', pending.id);
 
             successCount++;
         }
@@ -154,10 +209,11 @@ router.post('/execute-deletions', async (req: Request, res: Response) => {
         logger.info('DELETION', 'execution_complete', 'Executed pending account deletions', {
             attemptedCount: pendingRequests.length,
             successCount,
+            failedCount: failureCount,
             requestId
         });
 
-        res.json({ ok: true, executedCount: successCount, failedCount: pendingRequests.length - successCount, requestId });
+        res.json({ ok: true, executedCount: successCount, failedCount: failureCount, requestId });
     } catch (err: any) {
         logger.error('DELETION', 'execution_fatal', 'Fatal error during account deletion process', { error: err.message, requestId });
         res.status(500).json({ error: 'Internal server error', requestId });

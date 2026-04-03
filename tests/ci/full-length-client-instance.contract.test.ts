@@ -52,7 +52,9 @@ describe('Full-Length Client Instance Conflict Contract', () => {
   });
 
   it('returns 409 when submitAnswer is attempted by a different client instance', async () => {
-    serviceMocks.submitAnswer.mockRejectedValue(new Error('Session client instance conflict'));
+    const conflictError = new Error('Session client instance conflict');
+    (conflictError as any).clientInstanceId = '550e8400-e29b-41d4-a716-446655440002';
+    serviceMocks.submitAnswer.mockRejectedValue(conflictError);
 
     const router = (await import('../../server/routes/full-length-exam-routes')).default;
     const app = express();
@@ -69,7 +71,10 @@ describe('Full-Length Client Instance Conflict Contract', () => {
 
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
-      error: 'Session client instance conflict',
+      error: 'client_instance_conflict',
+      code: 'CLIENT_INSTANCE_CONFLICT',
+      message: 'Session client instance conflict',
+      client_instance_id: '550e8400-e29b-41d4-a716-446655440002',
       requestId: 'req-full-length-client-conflict',
     });
   });
@@ -99,7 +104,9 @@ describe('Full-Length Client Instance Conflict Contract', () => {
   });
 
   it('returns 409 when calculator-state write comes from a conflicting client instance', async () => {
-    serviceMocks.persistModuleCalculatorState.mockRejectedValue(new Error('Session client instance conflict'));
+    const conflictError = new Error('Session client instance conflict');
+    (conflictError as any).clientInstanceId = '550e8400-e29b-41d4-a716-446655440002';
+    serviceMocks.persistModuleCalculatorState.mockRejectedValue(conflictError);
 
     const router = (await import('../../server/routes/full-length-exam-routes')).default;
     const app = express();
@@ -115,7 +122,10 @@ describe('Full-Length Client Instance Conflict Contract', () => {
 
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({
-      error: 'Session client instance conflict',
+      error: 'client_instance_conflict',
+      code: 'CLIENT_INSTANCE_CONFLICT',
+      message: 'Session client instance conflict',
+      client_instance_id: '550e8400-e29b-41d4-a716-446655440002',
       requestId: 'req-full-length-client-conflict',
     });
   });

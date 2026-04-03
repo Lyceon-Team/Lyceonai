@@ -383,7 +383,7 @@ export async function supabaseAuthMiddleware(
  * Middleware to require authentication
  * Returns 401 if user is not authenticated
  */
-export function requireSupabaseAuth(
+export async function requireSupabaseAuth(
   req: Request,
   res: Response,
   next: NextFunction
@@ -391,6 +391,50 @@ export function requireSupabaseAuth(
   if (!req.user) {
     return sendUnauthenticated(res, req.requestId);
   }
+
+  try {
+    const admin = getSupabaseAdmin();
+    const { data, error } = await admin
+      .from('account_deletion_requests')
+      .select('status, executed_at')
+      .eq('user_id', req.user.id)
+      .eq('status', 'completed')
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      logger.error('DELETION', 'auth_check_failed', 'Failed to verify deletion status', {
+        userId: req.user.id,
+        error: error.message,
+        requestId: req.requestId,
+      });
+      return res.status(503).json({
+        error: 'Deletion status unavailable',
+        code: 'DELETION_STATUS_UNAVAILABLE',
+        requestId: req.requestId,
+      });
+    }
+
+    if (data?.status === 'completed') {
+      return res.status(403).json({
+        error: 'Account deleted',
+        code: 'ACCOUNT_DELETED',
+        message: 'This account has been deleted and can no longer access the service.',
+        requestId: req.requestId,
+      });
+    }
+  } catch (err: any) {
+    logger.error('DELETION', 'auth_check_error', 'Unhandled error while verifying deletion status', {
+      userId: req.user.id,
+      error: err?.message || String(err),
+      requestId: req.requestId,
+    });
+    return res.status(503).json({
+      error: 'Deletion status unavailable',
+      code: 'DELETION_STATUS_UNAVAILABLE',
+      requestId: req.requestId,
+    });
+  }
+
   return next();
 }
 

@@ -6,7 +6,7 @@ import {
 } from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
 import { billingStorage } from '../lib/billingStorage';
-import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
+import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, setEntitlementStripeCustomerId, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
@@ -178,8 +178,8 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
 
       customerId = customer.id;
 
-      // Persist at ENTITLEMENT level (source of truth)
-      await upsertEntitlement(accountId, { stripe_customer_id: customerId });
+      // Persist stripe_customer_id only (non-premium metadata)
+      await setEntitlementStripeCustomerId(accountId, customerId);
 
       logger.info('BILLING', 'checkout', 'Created Stripe customer', {
         userId,

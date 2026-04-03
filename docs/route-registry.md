@@ -133,7 +133,7 @@ Removed auth endpoints (must return 404):
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
-| `/api/tutor/v2` | POST | Yes | student/admin | entitled† | AI tutor chat |
+| `/api/tutor/v2` | POST | Yes | student/admin | entitled† | tutor chat |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
 | `/api/questions/validate` | POST | No (unmounted) | N/A | N/A | UNMOUNTED in runtime (404 contract) |
@@ -209,7 +209,7 @@ Removed auth endpoints (must return 404):
 - **requireSupabaseAdmin** - Enforces admin-only access
 - **requireGuardianEntitlement** - Enforces paid entitlement for guardian features
 - **checkPracticeLimit** - Enforces practice usage limits (free tier: 10/day)
-- **checkAiChatLimit** - Enforces AI chat usage limits (free tier: 5/day)
+- **checkAiChatLimit** - Enforces tutor chat usage limits (free tier: 5/day)
 
 ---
 

@@ -675,6 +675,116 @@ function buildPublishedFormFixture(formId: string) {
       const shouldNotExist = mockQuestion.classification;
       expect(shouldNotExist).toBeUndefined();
     });
+
+    it('should not expose correct_answer or explanation in current question payload', async () => {
+      const { getSupabaseAdmin } = await import('../../lib/supabase-admin');
+
+      const now = new Date();
+      const endsAt = new Date(now.getTime() + 60000);
+
+      const mockSession = {
+        id: 'session-anti-leak-1',
+        user_id: 'user-456',
+        status: 'in_progress',
+        current_section: 'math',
+        current_module: 1,
+        client_instance_id: 'client-1',
+        updated_at: now.toISOString(),
+      };
+
+      const mockModule = {
+        id: 'module-anti-leak-1',
+        session_id: 'session-anti-leak-1',
+        section: 'math',
+        module_index: 1,
+        status: 'in_progress',
+        started_at: now.toISOString(),
+        ends_at: endsAt.toISOString(),
+        startedAt: now.toISOString(),
+        endsAt: endsAt.toISOString(),
+      };
+
+      const mockModuleQuestions = [
+        {
+          id: 'mq-1',
+          question_id: 'q-1',
+          order_index: 0,
+          question_canonical_id: 'SATM1ABC123',
+          question_stem: 'Q1',
+          question_section: 'Math',
+          question_type: 'multiple_choice',
+          question_options: [
+            { key: 'A', text: '1' },
+            { key: 'B', text: '2' },
+            { key: 'C', text: '3' },
+            { key: 'D', text: '4' },
+          ],
+          question_difficulty: 1,
+        },
+      ];
+
+      const mockSupabase: MockSupabaseClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'full_length_exam_sessions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    single: vi.fn(async () => ({ data: mockSession, error: null })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_modules') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      single: vi.fn(async () => ({ data: mockModule, error: null })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    order: vi.fn(async () => ({ data: mockModuleQuestions, error: null })),
+                  })),
+                })),
+              })),
+            };
+          }
+
+          if (table === 'full_length_exam_responses') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({ data: [], error: null })),
+              })),
+            };
+          }
+
+          return { select: vi.fn() };
+        }),
+      };
+
+      (getSupabaseAdmin as Mock).mockReturnValue(mockSupabase);
+
+      const result = await fullLengthExamService.getCurrentSession('session-anti-leak-1', 'user-456', 'client-1');
+      const question = result.currentQuestion as Record<string, unknown>;
+
+      expect(result.currentQuestion?.id).toBe('q-1');
+      expect(question.correct_answer).toBeUndefined();
+      expect(question.explanation).toBeUndefined();
+      expect(question.answer_text).toBeUndefined();
+    });
   });
 
   describe('completeExam - Terminal State Guard', () => {

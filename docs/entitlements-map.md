@@ -262,9 +262,9 @@ Some features are available to free tier but with **usage limits**:
 
 **checkAiChatLimit()**
 - **File:** `server/middleware/usage-limits.ts`
-- **Purpose:** Enforces AI chat usage limits
+- **Purpose:** Enforces tutor chat usage limits
 - **Behavior:**
-  - Free tier: 5 AI chat messages per day
+  - Free tier: 5 tutor chat messages per day
   - Entitled tier: Unlimited
   - Admin: Unlimited
   - Returns 429 if limit exceeded

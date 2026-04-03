@@ -1,13 +1,14 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Request, Response } from 'express';
-import { requireGuardianEntitlement } from '../../middleware/guardian-entitlement';
-import * as accountLib from '../../lib/account';
+import { requireGuardianEntitlement } from '../middleware/guardian-entitlement';
+import * as accountLib from '../lib/account';
 
-jest.mock('../../lib/account');
+vi.mock('../lib/account');
 
 describe('Guardian Access Denial', () => {
     let mockReq: Partial<Request>;
     let mockRes: Partial<Response>;
-    let nextFunction: jest.Mock;
+    let nextFunction: any;
 
     beforeEach(() => {
         mockReq = {
@@ -15,15 +16,15 @@ describe('Guardian Access Denial', () => {
             params: { studentId: 'student_123' },
         };
         mockRes = {
-            status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
+            status: vi.fn().mockReturnThis(),
+            json: vi.fn(),
         };
-        nextFunction = jest.fn();
-        jest.clearAllMocks();
+        nextFunction = vi.fn();
+        vi.clearAllMocks();
     });
 
     it('unlinked guardian cannot access student data', async () => {
-        (accountLib.resolveLinkedPairPremiumAccessForGuardian as jest.Mock).mockResolvedValue({
+        (accountLib.resolveLinkedPairPremiumAccessForGuardian as any).mockResolvedValue({
             hasActiveLink: false,
             hasPremiumAccess: false,
         });
@@ -36,7 +37,7 @@ describe('Guardian Access Denial', () => {
     });
 
     it('revoked link immediately loses access', async () => {
-        (accountLib.resolveLinkedPairPremiumAccessForGuardian as jest.Mock).mockResolvedValue({
+        (accountLib.resolveLinkedPairPremiumAccessForGuardian as any).mockResolvedValue({
             hasActiveLink: false, // Revoked link
             hasPremiumAccess: true,
         });
@@ -48,7 +49,7 @@ describe('Guardian Access Denial', () => {
     });
 
     it('linked but unpaid student remains locked', async () => {
-        (accountLib.resolveLinkedPairPremiumAccessForGuardian as jest.Mock).mockResolvedValue({
+        (accountLib.resolveLinkedPairPremiumAccessForGuardian as any).mockResolvedValue({
             hasActiveLink: true,
             hasPremiumAccess: false,
             studentEntitlementStatus: 'inactive',
@@ -61,7 +62,7 @@ describe('Guardian Access Denial', () => {
     });
 
     it('student entitlement expiry removes guardian visibility', async () => {
-        (accountLib.resolveLinkedPairPremiumAccessForGuardian as jest.Mock).mockResolvedValue({
+        (accountLib.resolveLinkedPairPremiumAccessForGuardian as any).mockResolvedValue({
             hasActiveLink: true,
             hasPremiumAccess: false,
             studentEntitlementExpired: true,
@@ -76,7 +77,7 @@ describe('Guardian Access Denial', () => {
     it('guardian unlink does not break student entitlement or student data', async () => {
         const studentAccess = await accountLib.resolveLinkedPairPremiumAccessForStudent('student_123');
         // If we mock the student access as having premium natively..
-        (accountLib.resolveLinkedPairPremiumAccessForStudent as jest.Mock).mockResolvedValue({
+        (accountLib.resolveLinkedPairPremiumAccessForStudent as any).mockResolvedValue({
             hasPremiumAccess: true,
             premiumSource: 'student',
         });
