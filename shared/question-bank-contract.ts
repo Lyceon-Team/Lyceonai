@@ -175,7 +175,7 @@ export interface StudentSafeQuestionProjection {
   question_type: "multiple_choice";
   stem: string;
   options: CanonicalMcOption[];
-  difficulty: unknown;
+  difficulty: string | number | null;
   domain: string | null;
   skill: string | null;
   subskill: string | null;
@@ -192,6 +192,10 @@ export interface StudentSafeOption {
 }
 
 export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): StudentSafeQuestionProjection {
+  const difficulty =
+    typeof row.difficulty === "string" || typeof row.difficulty === "number"
+      ? row.difficulty
+      : null;
   return {
     id: String(row.id),
     canonical_id: typeof row.canonical_id === "string" ? row.canonical_id : null,
@@ -200,7 +204,7 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     question_type: "multiple_choice",
     stem: normalizeText(row.stem),
     options: parseCanonicalMcOptions(row.options ?? null),
-    difficulty: row.difficulty ?? null,
+    difficulty,
     domain: typeof row.domain === "string" ? row.domain : null,
     skill: typeof row.skill === "string" ? row.skill : null,
     subskill: typeof row.subskill === "string" ? row.subskill : null,

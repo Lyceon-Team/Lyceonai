@@ -803,7 +803,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     const optionMap = parseStudentSafeOptionTokenMap(item.option_token_map);
     const selectedAnswerKey = parsed.data.selected_option_id && optionMap
-      ? normalizeAnswerKey(optionMap[parsed.data.selected_option_id])
+      ? optionMap[parsed.data.selected_option_id] ?? null
       : null;
     if (!selectedAnswerKey) return res.status(400).json({ error: "selected_option_id is required", code: "REVIEW_SELECTED_OPTION_REQUIRED", requestId });
 
