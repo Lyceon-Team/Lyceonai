@@ -82,7 +82,7 @@ export default function HomePage() {
     <PublicLayout>
       <SEO
         title="Lyceon | Study Smarter, Score Higher"
-        description="Digital SAT prep with adaptive practice, full-length exams, mastery tracking, Lisa chat, and guardian visibility. Free plan available with daily limits."
+        description="Digital SAT prep with adaptive practice, full-length exams, progress tracking, Lisa chat, and guardian visibility. Free plan available with daily limits."
         canonical="https://lyceon.ai"
       />
       <JsonLd data={organizationJsonLd} />
@@ -109,7 +109,7 @@ export default function HomePage() {
                     Digital SAT prep built for <span className="text-foreground">real progress</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Practice SAT-style questions, review step-by-step explanations, and track mastery over time.
+                    Practice SAT-style questions, review step-by-step explanations, and track progress over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
                     Use quick daily sessions, full-length exams, and Lisa in one place.
@@ -186,7 +186,7 @@ export default function HomePage() {
                   <div className="text-sm text-muted-foreground">Timed 98-question SAT simulation</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">Mastery tracking</div>
+                  <div className="text-2xl font-bold">Progress tracking</div>
                   <div className="text-sm text-muted-foreground">Topic and skill-level progress visibility</div>
                 </div>
               </div>
@@ -336,7 +336,7 @@ export default function HomePage() {
               <TrendingUp className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Track and improve</h3>
               <p className="text-muted-foreground">
-                Monitor mastery and validate readiness with full-length SAT exam sessions.
+                Monitor progress and validate readiness with full-length SAT exam sessions.
               </p>
             </Card>
           </div>
@@ -436,13 +436,13 @@ export default function HomePage() {
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="font-medium mb-1">Mastery progression</div>
+                  <div className="font-medium mb-1">Progress snapshot</div>
                   <div className="text-sm text-muted-foreground">Skill and domain status across Math and Reading & Writing.</div>
                 </Card>
 
                 <Card className="bg-secondary">
                   <div className="font-medium mb-1">Full-length exam outcomes</div>
-                  <div className="text-sm text-muted-foreground">Module-level results and score projection data after completion.</div>
+                  <div className="text-sm text-muted-foreground">Module-level results and score estimate data after completion.</div>
                 </Card>
               </div>
             </div>
@@ -501,7 +501,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Mastery and dashboard tracking
+                  Progress and dashboard tracking
                 </li>
               </ul>
 

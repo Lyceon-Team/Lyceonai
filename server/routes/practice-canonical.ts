@@ -3,7 +3,6 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { csrfGuard } from "../middleware/csrf";
 import { getSupabaseAdmin, requireSupabaseAuth } from "../middleware/supabase-auth.js";
 import {
   applyMasteryUpdate,
@@ -11,10 +10,18 @@ import {
 import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 import {
   hasCanonicalOptionSet,
+  buildStudentSafeOptionTokens,
+  buildStudentSafeOptionsFromStoredMap,
+  type CanonicalMcOption,
   isCanonicalRuntimeMcQuestion,
   isValidCanonicalId,
+  normalizeClientInstanceId,
   normalizeAnswerKey,
+  parseStudentSafeOptionTokenMap,
+  projectStudentSafeQuestion,
+  resolveClientInstanceBinding,
   resolveSectionFilterValues,
+  type StudentSafeOption,
 } from "../../shared/question-bank-contract";
 import {
   checkUsageLimit,
@@ -24,17 +31,17 @@ import {
   resolveLinkedPairPremiumAccessForStudent,
 } from "../lib/account";
 
+/**
+ * Runtime idempotency contract (practice/review/full-length):
+ * - Session start replays return the same canonical session state.
+ * - Duplicate answer submissions return the same canonical result.
+ * - Review retry/attempt replays return the same canonical result.
+ * Storage differs (idempotency keys vs uniqueness checks), but behavior is consistent.
+ */
+
 type PracticeLifecycleState = "created" | "active" | "completed" | "abandoned";
 
-type McOption = {
-  key: string;
-  text: string;
-};
-
-type StudentSafeOption = {
-  id: string;
-  text: string;
-};
+type McOption = CanonicalMcOption;
 
 type StudentSafeQuestionDTO = {
   sessionItemId: string;
@@ -133,7 +140,6 @@ type PracticeAccess = {
 };
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
@@ -362,61 +368,6 @@ function safeParseOptions(raw: unknown): McOption[] {
   return options;
 }
 
-function parseStoredOptionOrder(raw: unknown): string[] | null {
-  if (Array.isArray(raw)) {
-    const values = raw
-      .map((v) => (typeof v === "string" ? normalizeAnswerKey(v) : null))
-      .filter((v) => !!v) as string[];
-    return values.length > 0 ? values : null;
-  }
-
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      const inner = trimmed.slice(1, -1).trim();
-      if (!inner) return null;
-      const values = inner.split(",").map((k) => normalizeAnswerKey(k.trim())).filter((k) => !!k) as string[];
-      return values.length > 0 ? values : null;
-    }
-
-    try {
-      const parsed = JSON.parse(trimmed);
-      return parseStoredOptionOrder(parsed);
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
-function parseStoredOptionTokenMap(raw: unknown): Record<string, string> | null {
-  let value: unknown = raw;
-  if (typeof value === "string") {
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const out: Record<string, string> = {};
-  for (const [token, keyRaw] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof token !== "string" || token.trim().length === 0) return null;
-    const normalizedKey = normalizeAnswerKey(keyRaw);
-    if (!normalizedKey) return null;
-    out[token] = normalizedKey;
-  }
-
-  return Object.keys(out).length > 0 ? out : null;
-}
-
 function fisherYates<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -433,72 +384,9 @@ function buildServedOptions(options: McOption[]): {
 } {
   const shuffled = fisherYates(options);
   const optionOrder = shuffled.map((o) => o.key);
+  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(shuffled, optionOrder);
 
-  const optionTokenMap: Record<string, string> = {};
-  const safeOptions: StudentSafeOption[] = shuffled.map((o) => {
-    let token = "opt_" + crypto.randomBytes(8).toString("hex");
-    while (optionTokenMap[token]) {
-      token = "opt_" + crypto.randomBytes(8).toString("hex");
-    }
-    optionTokenMap[token] = o.key;
-    return { id: token, text: o.text };
-  });
-
-  return {
-    optionOrder,
-    optionTokenMap,
-    safeOptions,
-  };
-}
-
-function buildSafeOptionsFromStoredMap(options: McOption[], optionOrderRaw: unknown, optionTokenMapRaw: unknown): StudentSafeOption[] | null {
-  const optionOrder = parseStoredOptionOrder(optionOrderRaw);
-  const optionTokenMap = parseStoredOptionTokenMap(optionTokenMapRaw);
-  if (!optionOrder || !optionTokenMap) return null;
-
-  if (optionOrder.length !== options.length) return null;
-
-  const optionByKey = new Map<string, string>();
-  for (const opt of options) {
-    const normalized = normalizeAnswerKey(opt.key);
-    if (!normalized) return null;
-    optionByKey.set(normalized, opt.text);
-  }
-
-  const canonicalKeys = new Set(optionByKey.keys());
-  if (canonicalKeys.size !== options.length) return null;
-
-  const orderKeySet = new Set(optionOrder);
-  if (orderKeySet.size !== optionOrder.length) return null;
-  if (!Array.from(orderKeySet).every((key) => canonicalKeys.has(key))) return null;
-
-  const entries = Object.entries(optionTokenMap);
-  if (entries.length !== options.length) return null;
-
-  const tokenSet = new Set<string>();
-  const mappedKeySet = new Set<string>();
-  const tokenByKey = new Map<string, string>();
-
-  for (const [token, key] of entries) {
-    if (!token || !key) return null;
-    if (tokenSet.has(token)) return null;
-    tokenSet.add(token);
-
-    if (!canonicalKeys.has(key)) return null;
-    if (mappedKeySet.has(key)) return null;
-    mappedKeySet.add(key);
-    tokenByKey.set(key, token);
-  }
-
-  const safeOptions: StudentSafeOption[] = [];
-  for (const key of optionOrder) {
-    const token = tokenByKey.get(key);
-    const textValue = optionByKey.get(key);
-    if (!token || !textValue) return null;
-    safeOptions.push({ id: token, text: textValue });
-  }
-
-  return safeOptions;
+  return { optionOrder, optionTokenMap, safeOptions };
 }
 
 function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
@@ -551,18 +439,42 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
   };
 }
 
+function normalizeSafeDifficulty(value: unknown): string | number | null {
+  if (typeof value === "string" || typeof value === "number") return value;
+  return null;
+}
+
 function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
   safeOptions: StudentSafeOption[];
 }): StudentSafeQuestionDTO {
+  const safe = projectStudentSafeQuestion({
+    id: args.question.id,
+    canonical_id: args.question.canonical_id,
+    section: args.question.section,
+    section_code: args.question.section,
+    question_type: "multiple_choice",
+    stem: args.question.stem,
+    options: args.question.options,
+    difficulty: args.question.difficulty ?? null,
+    domain: args.question.domain ?? null,
+    skill: args.question.skill ?? null,
+    subskill: args.question.subskill ?? null,
+    skill_code: null,
+    tags: null,
+    competencies: null,
+    correct_answer: args.question.correct_answer ?? null,
+    explanation: args.question.explanation ?? null,
+  });
+
   return {
     sessionItemId: args.sessionItemId,
-    section: args.question.section,
-    stem: args.question.stem,
+    section: safe.section ?? args.question.section,
+    stem: safe.stem,
     questionType: "multiple_choice",
     options: args.safeOptions,
-    difficulty: args.question.difficulty ?? null,
+    difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
   };
@@ -672,30 +584,6 @@ function normalizeStoredSessionSpec(raw: unknown): Partial<CanonicalSessionSpec>
     target_minutes: targetMinutes,
     target_question_count: targetQuestionCount,
     mode,
-  };
-}
-
-function resolveSessionSpecForPrebuild(session: SessionRow, metadata: SessionMetadata): CanonicalSessionSpec {
-  const stored = normalizeStoredSessionSpec(metadata.session_spec);
-  const inferredSection = normalizeSectionParam(session.section);
-  const inferredSections = inferredSection === "Math" || inferredSection === "RW" ? [inferredSection] : [];
-  const mergedSections = (stored?.sections?.length ? stored.sections : inferredSections) as Array<"Math" | "RW">;
-
-  const targetQuestionCount = coerceTargetQuestionCount(
-    stored?.target_question_count ?? metadata.target_question_count,
-  );
-
-  const targetMinutes = typeof stored?.target_minutes === "number" && Number.isFinite(stored.target_minutes)
-    ? Math.floor(stored.target_minutes)
-    : null;
-
-  return {
-    sections: mergedSections,
-    domains: stored?.domains ?? [],
-    difficulties: stored?.difficulties ?? [],
-    target_minutes: targetMinutes,
-    target_question_count: targetQuestionCount,
-    mode: stored?.mode ?? String(session.mode || "balanced"),
   };
 }
 
@@ -943,12 +831,6 @@ async function prebuildSessionItems(args: {
   };
 }
 
-function getClientInstanceId(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function isDuplicateConflict(message: string | undefined): boolean {
   return /duplicate|unique/i.test(String(message || ""));
 }
@@ -966,11 +848,12 @@ function sendPracticeLimitDenied(res: Response, access: PracticeAccess, requestI
   });
 }
 
-function sendClientConflict(res: Response, requestId: string | undefined, clientInstanceId: string, message?: string) {
+function sendClientConflict(res: Response, requestId: string | undefined, clientInstanceId: string | null) {
   return res.status(409).json({
-    error: "conflict",
-    message: message ?? "Session is owned by another active client instance.",
-    client_instance_id: clientInstanceId,
+    error: "client_instance_conflict",
+    code: "CLIENT_INSTANCE_CONFLICT",
+    message: "Session client instance conflict",
+    client_instance_id: clientInstanceId ?? null,
     requestId,
   });
 }
@@ -1216,21 +1099,27 @@ async function startOrReplaySession(args: {
 
   if (replay) {
     const replayMeta = asSessionMetadata(replay.metadata);
-    const boundClient = getClientInstanceId(replayMeta.client_instance_id);
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: replayMeta.client_instance_id,
+      requestedClientInstanceId: args.clientInstanceId,
+    });
 
-    if (boundClient && boundClient !== args.clientInstanceId) {
+    if (binding.action === "conflict") {
       return {
         ok: false,
         status: 409,
         body: {
-          error: "conflict",
-          message: "Session is already bound to another client instance.",
-          client_instance_id: args.clientInstanceId,
+          error: "client_instance_conflict",
+          code: "CLIENT_INSTANCE_CONFLICT",
+          message: "Session client instance conflict",
+          client_instance_id: binding.boundClientInstanceId ?? null,
         },
       };
     }
 
-    replayMeta.client_instance_id = args.clientInstanceId;
+    if (binding.action === "bind") {
+      replayMeta.client_instance_id = binding.requestedClientInstanceId;
+    }
     replayMeta.target_question_count = coerceTargetQuestionCount(replayMeta.target_question_count ?? args.targetQuestionCount);
     replayMeta.session_spec = replayMeta.session_spec ?? args.sessionSpec;
 
@@ -1497,12 +1386,16 @@ async function serveNextForSession(args: {
     });
   }
 
-  const boundClient = getClientInstanceId(metadata.client_instance_id);
-  if (boundClient && boundClient !== args.clientInstanceId) {
-    return sendClientConflict(args.res, requestId, args.clientInstanceId);
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: metadata.client_instance_id,
+    requestedClientInstanceId: args.clientInstanceId,
+  });
+  if (binding.action === "conflict") {
+    return sendClientConflict(args.res, requestId, binding.boundClientInstanceId);
   }
-
-  metadata.client_instance_id = args.clientInstanceId;
+  if (binding.action === "bind") {
+    metadata.client_instance_id = binding.requestedClientInstanceId;
+  }
 
   const unresolved = await getCurrentUnansweredItem(args.sessionId);
   if (unresolved) {
@@ -1515,7 +1408,7 @@ async function serveNextForSession(args: {
       });
     }
 
-    const safeOptions = buildSafeOptionsFromStoredMap(canonicalQuestion.options, unresolved.option_order, unresolved.option_token_map);
+    const safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, unresolved.option_order, unresolved.option_token_map);
     if (!safeOptions) {
       const rebuilt = buildServedOptions(canonicalQuestion.options);
       const rebuildPatch = {
@@ -1538,7 +1431,7 @@ async function serveNextForSession(args: {
         });
       }
 
-      const healedOptions = buildSafeOptionsFromStoredMap(
+      const healedOptions = buildStudentSafeOptionsFromStoredMap(
         canonicalQuestion.options,
         rebuilt.optionOrder,
         rebuilt.optionTokenMap
@@ -1681,7 +1574,7 @@ async function serveNextForSession(args: {
     });
   }
 
-  const safeOptions = buildSafeOptionsFromStoredMap(canonicalQuestion.options, promoted.option_order, promoted.option_token_map);
+  const safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, promoted.option_order, promoted.option_token_map);
   if (!safeOptions) {
     return args.res.status(409).json({
       error: "session_item_mapping_missing",
@@ -1742,7 +1635,7 @@ async function serveNextForSession(args: {
   });
 }
 
-router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1805,7 +1698,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req, res) =
   });
 });
 
-router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1855,7 +1748,7 @@ router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, csrfProtectio
   });
 });
 
-router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, csrfProtection, async (req, res) => {
+router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
   const userId = user?.id;
@@ -1906,14 +1799,16 @@ router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, csrfPr
     });
   }
 
-  const queryClientInstanceId = getClientInstanceId(parsed.data.client_instance_id);
-  const boundClient = getClientInstanceId(metadata.client_instance_id);
-  if (queryClientInstanceId && boundClient && queryClientInstanceId !== boundClient) {
-    return sendClientConflict(res, requestId, queryClientInstanceId);
+  const queryClientInstanceId = normalizeClientInstanceId(parsed.data.client_instance_id);
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: metadata.client_instance_id,
+    requestedClientInstanceId: queryClientInstanceId,
+  });
+  if (binding.action === "conflict") {
+    return sendClientConflict(res, requestId, binding.boundClientInstanceId);
   }
-
-  if (queryClientInstanceId) {
-    metadata.client_instance_id = queryClientInstanceId;
+  if (binding.action === "bind") {
+    metadata.client_instance_id = binding.requestedClientInstanceId;
   }
 
   metadata.calculator_state = parsed.data.calculator_state ?? null;
@@ -1940,7 +1835,7 @@ router.get("/sessions/:sessionId/next", requireSupabaseAuth, async (req, res) =>
   }
 
   const sessionId = String(req.params.sessionId || "").trim();
-  const clientInstanceId = getClientInstanceId(req.query.client_instance_id);
+  const clientInstanceId = normalizeClientInstanceId(req.query.client_instance_id);
 
   if (!sessionId) {
     return res.status(400).json({
@@ -2001,11 +1896,15 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
   const session = owned.session;
 
   const metadata = asSessionMetadata(session.metadata);
-  const queryClientInstanceId = getClientInstanceId(req.query.client_instance_id);
-  const boundClient = getClientInstanceId(metadata.client_instance_id);
+  const queryClientInstanceId = normalizeClientInstanceId(req.query.client_instance_id);
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: metadata.client_instance_id,
+    requestedClientInstanceId: queryClientInstanceId,
+  });
+  const boundClient = binding.boundClientInstanceId;
 
-  if (queryClientInstanceId && boundClient && queryClientInstanceId !== boundClient) {
-    return sendClientConflict(res, requestId, queryClientInstanceId);
+  if (binding.action === "conflict") {
+    return sendClientConflict(res, requestId, binding.boundClientInstanceId);
   }
 
   const latestItem = await getLatestSessionItem(sessionId);
@@ -2164,7 +2063,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const optionTokenMap = parseStoredOptionTokenMap(sessionItem.option_token_map);
+  const optionTokenMap = parseStudentSafeOptionTokenMap(sessionItem.option_token_map);
   if (!optionTokenMap) {
     return res.status(409).json({
       error: "session_item_mapping_missing",
@@ -2531,10 +2430,13 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  const requestClient = getClientInstanceId(payload.clientInstanceId);
-  const boundClient = getClientInstanceId(sessionMeta.client_instance_id);
-  if (requestClient && boundClient && requestClient !== boundClient) {
-    return sendClientConflict(res, requestId, requestClient);
+  const requestClient = normalizeClientInstanceId(payload.clientInstanceId);
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: sessionMeta.client_instance_id,
+    requestedClientInstanceId: requestClient,
+  });
+  if (requestClient && binding.action === "conflict") {
+    return sendClientConflict(res, requestId, binding.boundClientInstanceId);
   }
 
   const sessionItem = await findSessionItemForSubmission(sessionId, {
@@ -2756,8 +2658,8 @@ async function submitPracticeSkip(req: Request, res: Response) {
     state: shouldComplete ? "completed" : "active",
   });
 }
-router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeAnswer);
-router.post("/sessions/:sessionId/skip", requireSupabaseAuth, practiceAnswerRateLimiter, csrfProtection, submitPracticeSkip);
+router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeAnswer);
+router.post("/sessions/:sessionId/skip", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeSkip);
 
 export default router;
 

@@ -2,10 +2,8 @@ import { Router, Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger.js";
 import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
-import { csrfGuard } from "../middleware/csrf.js";
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   email_enabled: false,
@@ -145,7 +143,7 @@ router.get("/unread-count", requireSupabaseAuth, async (req: Request, res: Respo
  * PATCH /api/notifications/:id/read
  * Marks a single per-user notification as read.
  */
-router.patch("/:id/read", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.patch("/:id/read", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const notificationId = req.params.id;
@@ -195,7 +193,7 @@ router.patch("/:id/read", csrfProtection, requireSupabaseAuth, async (req: Reque
  * PATCH /api/notifications/mark-all-read
  * Marks all unread per-user notifications as read.
  */
-router.patch("/mark-all-read", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.patch("/mark-all-read", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const nowIso = new Date().toISOString();
@@ -268,7 +266,7 @@ router.get("/preferences", requireSupabaseAuth, async (req: Request, res: Respon
  * PATCH /api/notifications/preferences
  * Updates persisted notification preferences for the current user.
  */
-router.patch("/preferences", csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.patch("/preferences", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const nowIso = new Date().toISOString();

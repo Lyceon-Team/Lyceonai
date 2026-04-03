@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/full-length/sessions"
+method: POST
+headers:
+  Content-Type: application/json
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var json = pm.response.json();
+          if (json.id) pm.collectionVariables.set('fullLengthSessionId', json.id);
+      }
+    language: text/javascript
+order: 1000

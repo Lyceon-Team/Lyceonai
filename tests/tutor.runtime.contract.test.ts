@@ -236,12 +236,28 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   getSupabaseAdmin: () => ({
     rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
   }),
+  resolveTokenFromRequest: () => ({
+    token: "test-token-123456789012345",
+    tokenSource: "cookie:sb-access-token",
+    cookieKeys: ["sb-access-token"],
+    authHeaderPresent: false,
+    tokenLength: 27,
+    bearerParsed: false,
+  }),
 }));
 
 const { default: app } = await import("../server/index");
+let agent: request.SuperAgentTest;
+let csrfToken: string;
+
+async function getCsrfToken(agent: request.SuperAgentTest): Promise<string> {
+  const res = await agent.get("/api/csrf-token");
+  expect(res.status).toBe(200);
+  return res.body.csrfToken as string;
+}
 
 describe("Tutor Runtime Contract - Wave 1.5", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     state.currentUser = {
       id: "student-auth-user",
@@ -256,6 +272,8 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.questionLookupMissing = false;
     state.tableCalls = [];
     state.rpcCalls = [];
+    agent = request.agent(app);
+    csrfToken = await getCsrfToken(agent);
   });
 
   it("enforces CSRF on tutor POST when auth is present", async () => {
@@ -268,9 +286,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("uses authenticated user id and ignores body userId", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ userId: "attacker-id", message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -280,9 +298,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("does not leak answers pre-submit", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -293,13 +311,61 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.metadata.fullTestStrategyEnforced).toBe(false);
   });
 
+  it("does not leak taxonomy codes or Lisa branding in tutor prompt/response", async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: {
+          canonicalId: "q1",
+          stem: "What is 2 + 2?",
+          options: [{ key: "A", text: "4" }],
+          answer: "A",
+          explanation: "2 + 2 = 4",
+          competencies: [],
+        },
+        supportingQuestions: [],
+        competencyContext: {
+          studentWeakAreas: ["M.LIN.1"],
+          studentStrongAreas: ["M.GEO.2"],
+          competencyLabels: ["M.LIN.1", "M.GEO.2"],
+        },
+        studentProfile: {
+          overallLevel: 3,
+          primaryStyle: "step-by-step",
+          secondaryStyle: null,
+          explanationLevel: 2,
+        },
+      },
+      metadata: { canonicalIdsUsed: ["q1"] },
+    });
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ragContext.competencyContext.studentWeakAreas).toEqual([]);
+    expect(res.body.ragContext.competencyContext.studentStrongAreas).toEqual([]);
+    expect(res.body.ragContext.competencyContext.competencyLabels).toEqual([]);
+
+    const [userContents, systemInstruction] = callLlmMock.mock.calls[0] ?? [];
+    const parts = Array.isArray(userContents)
+      ? userContents.flatMap((item: any) => item?.parts ?? []).map((p: any) => p?.text ?? "")
+      : [];
+    const promptText = parts.join("\n");
+
+    expect(systemInstruction).not.toContain("Lisa");
+    expect(promptText).not.toContain("M.LIN.1");
+    expect(promptText).not.toContain("M.GEO.2");
+  });
+
   it("forces strategy mode and blocks leakage during active full-length exam", async () => {
     state.hasActiveFullTest = true;
     state.hasVerifiedRetry = true;
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -314,9 +380,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
   });
 
   it("tutor open without verified retry does not write mastery tables", async () => {
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -334,9 +400,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = retryIsCorrect;
     state.retryOutcome = retryIsCorrect ? "correct" : "incorrect";
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -350,9 +416,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = false;
     state.retryOutcome = "skipped";
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -366,9 +432,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.hasVerifiedRetry = true;
     state.questionLookupMissing = true;
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(200);
@@ -387,9 +453,9 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
       isGuardian: true,
     };
 
-    const res = await request(app)
+    const res = await agent
       .post("/api/tutor/v2")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", csrfToken)
       .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
 
     expect(res.status).toBe(403);

@@ -142,39 +142,6 @@ test.describe('Email/Password Authentication', () => {
     }
   });
 
-  test('should validate admin user credentials', async ({ page }) => {
-    try {
-      // Test admin login
-      await page.goto('/login');
-      await page.fill('[data-testid="input-email"], input[type="email"], #email', 'tester+e2e@example.com');
-      await page.fill('[data-testid="input-password"], input[type="password"], #password', 'Test1234!');
-      await page.click('[data-testid="button-submit"], button[type="submit"], button:has-text("Login"), button:has-text("Sign in")');
-      
-      // Wait for successful login
-      await page.waitForURL(/\/(dashboard|admin|$)/, { timeout: 10000 });
-      
-      // Try to access admin route
-      await page.goto('/admin');
-      const currentUrl = page.url();
-      
-      if (currentUrl.includes('/admin') && !currentUrl.includes('/login')) {
-        reporter.addTest('Admin Access Validation', 'PASS');
-      } else {
-        reporter.addTest(
-          'Admin Access Validation',
-          'FAIL',
-          'Admin user unable to access admin routes'
-        );
-      }
-    } catch (error) {
-      reporter.addTest(
-        'Admin Access Validation',
-        'FAIL',
-        `Admin access test failed: ${error}`
-      );
-    }
-  });
-
   test.afterAll(async () => {
     console.log('Email/Password Auth tests completed');
   });

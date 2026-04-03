@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/notifications"
+method: GET
+order: 1000

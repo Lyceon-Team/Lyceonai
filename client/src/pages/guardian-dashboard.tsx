@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { csrfFetch } from '@/lib/csrf';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,8 +62,8 @@ interface GuardianWeaknessResponse {
     skill: string;
     attempts: number;
     correct: number;
-    accuracy: number;
-    mastery_score: number;
+    accuracyPercent: number;
+    status: 'not_started' | 'weak' | 'improving' | 'proficient';
   }>;
 }
 
@@ -108,10 +109,14 @@ export default function GuardianDashboard() {
   const [reportSessionInput, setReportSessionInput] = useState('');
   const [requestedReportSessionId, setRequestedReportSessionId] = useState<string | null>(null);
 
+  const formatStatus = (status: GuardianWeaknessResponse['skills'][number]['status']) => {
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
   const { data: studentsData, isLoading: studentsLoading, error: studentsError, refetch: refetchStudents } = useQuery({
     queryKey: ['guardian-students'],
     queryFn: async () => {
-      const res = await fetch('/api/guardian/students', { credentials: 'include' });
+      const res = await csrfFetch('/api/guardian/students', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch students');
       return res.json() as Promise<{ students: LinkedStudent[] }>;
     },
@@ -121,7 +126,7 @@ export default function GuardianDashboard() {
   const { data: summaryData, isLoading: summaryLoading, error: summaryError, refetch: refetchSummary } = useQuery({
     queryKey: ['guardian-student-summary', selectedStudentId],
     queryFn: async () => {
-      const res = await fetch(`/api/guardian/students/${selectedStudentId}/summary`, { credentials: 'include' });
+      const res = await csrfFetch(`/api/guardian/students/${selectedStudentId}/summary`, { credentials: 'include' });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to fetch summary');
@@ -139,7 +144,7 @@ export default function GuardianDashboard() {
   } = useQuery({
     queryKey: ['guardian-weaknesses', selectedStudentId],
     queryFn: async () => {
-      const res = await fetch(`/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`, { credentials: 'include' });
+      const res = await csrfFetch(`/api/guardian/weaknesses/${selectedStudentId}?limit=8&minAttempts=1`, { credentials: 'include' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to load weaknesses');
@@ -160,7 +165,7 @@ export default function GuardianDashboard() {
         throw new Error('Select student first');
       }
 
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/guardian/students/${selectedStudentId}/exams/full-length/sessions?limit=12&include_incomplete=true`,
         { credentials: 'include' },
       );
@@ -185,7 +190,7 @@ export default function GuardianDashboard() {
         throw new Error('Select student and session ID first');
       }
 
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/guardian/students/${selectedStudentId}/exams/full-length/${encodeURIComponent(requestedReportSessionId)}/report`,
         { credentials: 'include' },
       );
@@ -207,7 +212,7 @@ export default function GuardianDashboard() {
   const { data: billingStatus } = useQuery({
     queryKey: ['guardian-billing-status'],
     queryFn: async () => {
-      const res = await fetch('/api/billing/status', { credentials: 'include' });
+      const res = await csrfFetch('/api/billing/status', { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch billing status');
       return res.json() as Promise<GuardianBillingStatus>;
     },
@@ -216,7 +221,7 @@ export default function GuardianDashboard() {
   });
   const linkMutation = useMutation({
     mutationFn: async (code: string) => {
-      const res = await fetch('/api/guardian/link', {
+      const res = await csrfFetch('/api/guardian/link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -247,7 +252,7 @@ export default function GuardianDashboard() {
 
   const unlinkMutation = useMutation({
     mutationFn: async (studentId: string) => {
-      const res = await fetch(`/api/guardian/link/${studentId}`, {
+      const res = await csrfFetch(`/api/guardian/link/${studentId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -650,11 +655,11 @@ export default function GuardianDashboard() {
                       <div key={`${skill.section}-${skill.skill}`} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
                         <div className="flex items-center justify-between gap-3 mb-1">
                           <p className="text-sm font-medium text-[#0F2E48]">{skill.skill}</p>
-                          <p className="text-sm font-semibold text-[#0F2E48]">{skill.mastery_score}%</p>
+                          <p className="text-sm font-semibold text-[#0F2E48]">{formatStatus(skill.status)}</p>
                         </div>
                         <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
                           <span>{skill.section} · {skill.domain || 'Unspecified domain'}</span>
-                          <span>{skill.correct}/{skill.attempts} correct</span>
+                          <span>{skill.correct}/{skill.attempts} correct • {skill.accuracyPercent}% accuracy</span>
                         </div>
                       </div>
                     ))}
@@ -667,7 +672,7 @@ export default function GuardianDashboard() {
               <CardHeader>
                 <CardTitle className="text-[#0F2E48]">Full-Length Exam Report</CardTitle>
                 <CardDescription>
-                  Load guardian read-only report projection using a real exam session ID.
+                  Load guardian read-only report view using a real exam session ID.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -743,7 +748,7 @@ export default function GuardianDashboard() {
                 {guardianReportLocked && (
                   <Alert className="border-amber-200 bg-amber-50">
                     <AlertDescription className="text-amber-800">
-                      This exam session is not completed yet, so guardian report projection is still locked.
+                      This exam session is not completed yet, so the guardian report view is still locked.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -765,8 +770,8 @@ export default function GuardianDashboard() {
                 {guardianExamReportData?.report && (
                   <FullLengthResultsView
                     data={guardianExamReportData.report}
-                    title="Guardian Report Projection"
-                    description="Read-only student-truth projection from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
+                    title="Guardian Report View"
+                    description="Read-only student-truth view from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
                   />
                 )}
               </CardContent>

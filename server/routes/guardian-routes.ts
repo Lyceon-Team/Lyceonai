@@ -5,16 +5,15 @@ import { requireGuardianRole } from '../middleware/guardian-role';
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { logger } from '../logger';
 import { createDurableRateLimiter } from '../lib/durable-rate-limiter';
-import { csrfGuard } from '../middleware/csrf';
 import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getAllGuardianStudentLinks, ensureAccountForUser } from '../lib/account';
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { buildWeaknessSkillsView } from '../../apps/api/src/services/weakness-view';
+import { getMasteryStatus } from '../../apps/api/src/services/mastery-projection';
 import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildStudentFullLengthReportView, projectGuardianFullLengthReportView } from '../services/kpi-truth-layer';
 import { buildCalendarMonthView } from '../../apps/api/src/services/calendar-month-view';
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 const durableRateLimiter = createDurableRateLimiter(10, 15 * 60 * 1000);
 const requireGuardianAccess = requireGuardianRole({
@@ -122,7 +121,7 @@ router.get('/students', requireSupabaseAuth, requireGuardianAccess, async (req: 
   }
 });
 
-router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection, durableRateLimiter, async (req: Request, res: Response) => {
+router.post('/link', requireSupabaseAuth, requireGuardianAccess, durableRateLimiter, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;
@@ -193,7 +192,7 @@ router.post('/link', requireSupabaseAuth, requireGuardianAccess, csrfProtection,
   }
 });
 
-router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, csrfProtection, async (req: Request, res: Response) => {
+router.delete('/link/:studentId', requireSupabaseAuth, requireGuardianAccess, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {
     const guardianId = req.user!.id;
@@ -574,6 +573,15 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
       limit: Number.isFinite(limit) ? limit : undefined,
       minAttempts: Number.isFinite(minAttempts) ? minAttempts : undefined,
     });
+    const safeSkills = view.skills.map((skill) => ({
+      section: skill.section,
+      domain: skill.domain,
+      skill: skill.skill,
+      attempts: skill.attempts,
+      correct: skill.correct,
+      accuracyPercent: Math.round((skill.accuracy ?? 0) * 100),
+      status: getMasteryStatus(skill.mastery_score, skill.attempts),
+    }));
     logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: view.count, requestId });
     await emitGuardianAccessEvent({
       eventType: 'guardian_report_viewed',
@@ -584,7 +592,9 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
     });
 
     return res.json({
-      ...view,
+      ok: view.ok,
+      count: safeSkills.length,
+      skills: safeSkills,
       requestId,
     });
   } catch (err) {

@@ -40,7 +40,7 @@ Review is locked until session completion.
 ## Guardian Visibility Rule
 Guardian exam report visibility requires BOTH:
 1. Active guardian link to the student (`guardian_links.status = 'active'`)
-2. Active premium on the linked pair (student entitlement or guardian entitlement is active/trialing and unexpired)
+2. Active student entitlement (paid + active/trialing + not period-expired)
 
 Enforcement path:
 - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report`

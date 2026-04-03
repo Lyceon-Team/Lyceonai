@@ -4,7 +4,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Link, useLocation } from "wouter";
-import { Crown, UserCircle, Menu, GraduationCap, LayoutDashboard, BookOpen, MessageSquare, CreditCard, Settings, LogOut, Zap, Upload, Star, Calendar } from "lucide-react";
+import { UserCircle, Menu, GraduationCap, LayoutDashboard, BookOpen, MessageSquare, CreditCard, Settings, LogOut, Zap, Calendar } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import {
@@ -44,7 +44,6 @@ export function AppShell({
 function AppHeader() {
   const [location, navigate] = useLocation();
   const { user, isLoading: authLoading, signOut } = useSupabaseAuth();
-  const isAdmin = user?.role === "admin";
   const { toast } = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -128,44 +127,8 @@ function AppHeader() {
 
           {/* User Menu */}
           <div className="flex items-center gap-2">
-            {/* Admin Star Icon - Visible to all users, active for admins only */}
-            {user && (
-              isAdmin ? (
-                <Link href="/admin">
-                  <a 
-                    className="p-2 rounded-lg text-foreground hover:bg-secondary transition-colors"
-                    data-testid="button-admin-star"
-                    title="Admin Portal"
-                  >
-                    <Star className="h-5 w-5 fill-foreground" />
-                  </a>
-                </Link>
-              ) : (
-                <span 
-                  className="p-2 rounded-lg text-muted-foreground cursor-not-allowed opacity-50"
-                  data-testid="button-admin-star-disabled"
-                  title="Admin access required"
-                >
-                  <Star className="h-5 w-5" />
-                </span>
-              )
-            )}
-            
             {/* Notifications Bell */}
             {user && <NotificationDropdown />}
-            
-            {/* Admin Upload Button */}
-            {isAdmin && (
-              <Link href="/admin?tab=pdf">
-                <a 
-                  className="p-2 rounded-lg text-foreground hover:bg-secondary transition-colors"
-                  data-testid="button-admin-upload"
-                  title="Upload SAT PDFs"
-                >
-                  <Upload className="h-5 w-5" />
-                </a>
-              </Link>
-            )}
             
             {/* Mobile Menu Button */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>

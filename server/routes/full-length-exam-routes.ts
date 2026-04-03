@@ -11,7 +11,7 @@
 
 import { Router, Request, Response, type NextFunction } from "express";
 import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
-import { csrfGuard } from "../middleware/csrf";
+import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { buildAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
@@ -20,7 +20,6 @@ import { buildStudentFullLengthReportView } from "../services/kpi-truth-layer";
 import { z } from "zod";
 
 const router = Router();
-const csrfProtection = csrfGuard();
 const fullLengthMutatingGetAllowedOrigins = buildAllowedOrigins({
   nodeEnv: process.env.NODE_ENV,
   corsOriginsCsv: process.env.CORS_ORIGINS,
@@ -66,8 +65,26 @@ function sendRouteError(
   });
 }
 
+function sendClientInstanceConflict(req: Request, res: Response, clientInstanceId: string | null) {
+  return res.status(409).json({
+    error: "client_instance_conflict",
+    code: "CLIENT_INSTANCE_CONFLICT",
+    message: "Session client instance conflict",
+    client_instance_id: clientInstanceId ?? null,
+    requestId: req.requestId,
+  });
+}
+
 function isClientInstanceConflict(message: string): boolean {
   return message.includes("client instance conflict") || message.includes("client_instance") || message.includes("Session client instance conflict");
+}
+
+function getClientInstanceIdFromError(error: unknown): string | null {
+  const candidate = (error as any)?.clientInstanceId;
+  if (typeof candidate === "string" && candidate.trim().length > 0) {
+    return candidate;
+  }
+  return null;
 }
 
 function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction) {
@@ -108,7 +125,7 @@ function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction)
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -144,7 +161,7 @@ router.post("/sessions", requireSupabaseAuth, csrfProtection, async (req: Reques
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
 
     return sendRouteError(req, res, 500, "Internal error");
@@ -226,7 +243,7 @@ router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, asy
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -242,7 +259,7 @@ router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, asy
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/start", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -275,7 +292,7 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, csrfProtection, a
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -293,7 +310,7 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, csrfProtection, a
  * - Idempotent
  * - Validates question belongs to current module
  */
-router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/answer", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -345,7 +362,7 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, 
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -359,7 +376,7 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, csrfProtection, 
 router.post(
   "/sessions/:sessionId/modules/:moduleId/calculator-state",
   requireSupabaseAuth,
-  csrfProtection,
+  doubleCsrfProtection,
   async (req: Request, res: Response) => {
     try {
       const user = requireRequestUser(req, res);
@@ -407,7 +424,7 @@ router.post(
       }
 
       if (isClientInstanceConflict(message)) {
-        return sendRouteError(req, res, 409, "Session client instance conflict");
+        return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
       }
 
       return sendRouteError(req, res, 500, "Internal error");
@@ -425,7 +442,7 @@ router.post(
  * - User ID from auth only
  * - Computes Module 2 difficulty deterministically
  */
-router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -466,7 +483,7 @@ router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, csrfProte
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -482,7 +499,7 @@ router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, csrfProte
  * - CSRF protected
  * - User ID from auth only
  */
-router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -515,7 +532,7 @@ router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, csrfProt
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");
@@ -532,7 +549,7 @@ router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, csrfProt
  * - User ID from auth only
  * - Returns answers/explanations only after completion
  */
-router.post("/sessions/:sessionId/complete", requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
+router.post("/sessions/:sessionId/complete", requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -569,7 +586,7 @@ router.post("/sessions/:sessionId/complete", requireSupabaseAuth, csrfProtection
     }
 
     if (isClientInstanceConflict(message)) {
-      return sendRouteError(req, res, 409, "Session client instance conflict");
+      return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
     }
     
     return sendRouteError(req, res, 500, "Internal error");

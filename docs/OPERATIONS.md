@@ -21,13 +21,6 @@ curl -X POST http://localhost:5000/api/rag \
   }'
 ```
 
-### Admin Review Queue
-
-```bash
-curl -X GET http://localhost:5000/api/admin/questions/needs-review \
-  -H "Cookie: sb-access-token=<admin-cookie-token>"
-```
-
 ## Rate Limits
 
 | Endpoint | Limit | Window |

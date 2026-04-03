@@ -10,6 +10,7 @@ import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
+import { csrfFetch } from '@/lib/csrf';
 
 export function SupabaseAuthForm() {
   const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } = useSupabaseAuth();
@@ -26,7 +27,7 @@ export function SupabaseAuthForm() {
   const [error, setError] = useState('');
   const resolvePostAuthPath = async (): Promise<string> => {
     try {
-      const response = await fetch('/api/profile', { credentials: 'include' });
+      const response = await csrfFetch('/api/profile', { credentials: 'include' });
       if (!response.ok) return '/dashboard';
 
       const data = await response.json();

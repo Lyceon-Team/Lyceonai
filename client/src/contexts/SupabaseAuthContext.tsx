@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
+import { csrfFetch } from '@/lib/csrf';
 
 interface SupabaseAuthContextType {
   user: SupabaseProfile | null;
@@ -32,7 +33,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const fetchUserFromBackend = async (): Promise<SupabaseProfile | null> => {
     try {
       const tryFetchUserProfile = async (): Promise<Response> => {
-        return fetch('/api/profile', { credentials: 'include' });
+        return csrfFetch('/api/profile', { credentials: 'include' });
       };
 
       let response = await tryFetchUserProfile();
@@ -40,7 +41,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // If access token expired, attempt one server-side refresh using httpOnly cookie
       if (response.status === 401 || response.status === 403) {
         console.log('[AUTH] Access token expired, attempting server-side refresh');
-        const refreshResp = await fetch('/api/auth/refresh', {
+        const refreshResp = await csrfFetch('/api/auth/refresh', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -128,7 +129,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   ) => {
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await csrfFetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -166,7 +167,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/signin', {
+      const response = await csrfFetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -209,7 +210,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/signout', {
+      const response = await csrfFetch('/api/auth/signout', {
         method: 'POST',
         credentials: 'include',
       });
@@ -231,7 +232,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const resetPassword = async (email: string) => {
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await csrfFetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -262,7 +263,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = async (password: string) => {
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/update-password', {
+      const response = await csrfFetch('/api/auth/update-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -296,7 +297,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
     setAuthLoading(true);
     try {
-      const response = await fetch('/api/auth/consent', {
+      const response = await csrfFetch('/api/auth/consent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

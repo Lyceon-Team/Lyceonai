@@ -1,6 +1,11 @@
 import request from 'supertest';
 import app from '../server/index';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
 describe('Legacy Questions Validate Path Quarantine', () => {
   it('returns 404 for unauthenticated requests', async () => {

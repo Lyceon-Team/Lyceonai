@@ -4,6 +4,11 @@ import request from "supertest";
 import type { Express, NextFunction, Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => "test-csrf-token",
+}));
+
 type TableRow = Record<string, any>;
 
 type DbState = {
@@ -986,7 +991,12 @@ describe("Practice Runtime Contract", () => {
     const conflict = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-2`);
 
     expect(conflict.status).toBe(409);
-    expect(conflict.body.error).toBe("conflict");
+    expect(conflict.body).toMatchObject({
+      error: "client_instance_conflict",
+      code: "CLIENT_INSTANCE_CONFLICT",
+      message: "Session client instance conflict",
+      client_instance_id: "tab-1",
+    });
   });
 
   it("is idempotent per served item and does not double-write mastery", async () => {

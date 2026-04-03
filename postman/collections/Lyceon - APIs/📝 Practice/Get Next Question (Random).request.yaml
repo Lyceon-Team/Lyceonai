@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/practice/next"
+method: GET
+order: 5000

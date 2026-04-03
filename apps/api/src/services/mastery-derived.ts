@@ -1,5 +1,8 @@
 import { supabaseServer } from "../lib/supabase-server";
 
+// COMPATIBILITY-ONLY: This helper is not used by mounted product-read routes.
+// Keep quarantined for legacy tooling until explicitly removed.
+
 export interface MasterySkillRow {
   section: string | null;
   domain: string | null;

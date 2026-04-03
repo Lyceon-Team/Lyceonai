@@ -18,6 +18,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
+const masteryMocks2 = vi.hoisted(() => ({
+    getWeakestSkills: vi.fn(),
+    getWeakestClusters: vi.fn(),
+}));
+
+vi.mock('../../apps/api/src/services/studentMastery', () => ({
+    getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+    getWeakestClusters: (...args: any[]) => masteryMocks2.getWeakestClusters(...args),
+}));
+
 // ---------------------------------------------------------------------------
 // Surface 2: Full-length report — buildStudentFullLengthReportView is the only
 //            assembler called by the /report route.
@@ -60,9 +70,14 @@ describe('Full-length report: single canonical builder', () => {
             kpiMocks.resolvePaidKpiAccessForUser(...args),
     }));
 
-    vi.mock('../../server/middleware/csrf', () => ({
+vi.mock('../../server/middleware/csrf', () => ({
         csrfGuard: () => (_req: any, _res: any, next: any) => next(),
-    }));
+}));
+
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
     function buildReportApp() {
         const app = express();
@@ -187,11 +202,6 @@ describe('Full-length report: single canonical builder', () => {
 //            getWeakestClusters owns the clusters shape. No inline fork.
 // ---------------------------------------------------------------------------
 describe('Weakness view: single canonical builder per sub-surface', () => {
-    const masteryMocks2 = {
-        getWeakestSkills: vi.fn(),
-        getWeakestClusters: vi.fn(),
-    };
-
     // NOTE: weakness.runtime.contract.test.ts already mocks studentMastery.
     // This test imports the router directly and verifies it flows through
     // buildWeaknessSkillsView (which calls getWeakestSkills with failOnError=true).
@@ -199,11 +209,6 @@ describe('Weakness view: single canonical builder per sub-surface', () => {
     it('skills route calls buildWeaknessSkillsView with failOnError=true', async () => {
         masteryMocks2.getWeakestSkills.mockResolvedValue([]);
         masteryMocks2.getWeakestClusters.mockResolvedValue([]);
-
-        vi.doMock('../../apps/api/src/services/studentMastery', () => ({
-            getWeakestSkills: masteryMocks2.getWeakestSkills,
-            getWeakestClusters: masteryMocks2.getWeakestClusters,
-        }));
 
         const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
 

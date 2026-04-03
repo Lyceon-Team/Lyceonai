@@ -53,16 +53,20 @@ describe('RAG Security Surface', () => {
         userId: 'victim-id',
         message: 'Help me with this SAT concept',
         mode: 'concept',
+        topK: 99,
+        studentProfile: {
+          overallLevel: 5,
+          competencyMap: { "M.LIN.1": { correct: 1, incorrect: 2, total: 3 } },
+        },
       });
 
     expect(res.status).toBe(200);
     expect(handleRagQueryMock).toHaveBeenCalledTimes(1);
-    expect(handleRagQueryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'test-user' })
-    );
-    expect(handleRagQueryMock).not.toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'victim-id' })
-    );
+    const requestArg = handleRagQueryMock.mock.calls[0]?.[0] as Record<string, any>;
+    expect(requestArg.userId).toBe('test-user');
+    expect(requestArg.userId).not.toBe('victim-id');
+    expect(requestArg.studentProfile).toBeUndefined();
+    expect(requestArg.topK).toBeUndefined();
   });
 
   it('sanitizes primary question reveal fields for student /api/rag/v2 calls', async () => {
@@ -176,9 +180,9 @@ describe('RAG Security Surface', () => {
           },
         ],
         competencyContext: {
-          studentWeakAreas: [],
-          studentStrongAreas: [],
-          competencyLabels: [],
+          studentWeakAreas: ['M.LIN.1'],
+          studentStrongAreas: ['M.GEO.2'],
+          competencyLabels: ['M.LIN.1', 'M.GEO.2'],
         },
         studentProfile: null,
       },
@@ -202,5 +206,8 @@ describe('RAG Security Surface', () => {
     expect(res.body.context.primaryQuestion.explanation).toBeNull();
     expect(res.body.context.supportingQuestions[0].answer).toBeNull();
     expect(res.body.context.supportingQuestions[0].explanation).toBeNull();
+    expect(res.body.context.competencyContext.studentWeakAreas).toEqual([]);
+    expect(res.body.context.competencyContext.studentStrongAreas).toEqual([]);
+    expect(res.body.context.competencyContext.competencyLabels).toEqual([]);
   });
 });

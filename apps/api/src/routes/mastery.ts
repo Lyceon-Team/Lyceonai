@@ -1,7 +1,11 @@
 import { Response, Router } from 'express';
-import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
-import { getSupabaseAdmin } from '../lib/supabase-admin';
+import { type AuthenticatedRequest, getSupabaseAdmin, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import {
+  buildMasterySkillTreeFromRows,
+  buildMasterySummaryFromRows,
+  fetchSkillMasteryRows,
+  fetchWeakestSkills,
+} from '../services/mastery-read';
 import { getMasteryStatus } from '../services/mastery-projection';
 import { DateTime } from 'luxon';
 import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
@@ -98,41 +102,6 @@ const SAT_TAXONOMY = {
   },
 };
 
-interface SkillMasteryRow {
-  section: string;
-  domain: string | null;
-  skill: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-}
-
-interface SkillNode {
-  id: string;
-  label: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
-}
-
-interface DomainNode {
-  id: string;
-  label: string;
-  skills: SkillNode[];
-  avgMastery: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
-}
-
-interface SectionNode {
-  id: string;
-  label: string;
-  domains: DomainNode[];
-  avgMastery: number;
-}
-
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
@@ -154,7 +123,8 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
 
     const section = req.query.section as string | undefined;
 
-    const summary = await getMasterySummary(user.id, section);
+    const rows = await fetchSkillMasteryRows({ userId: user.id, section });
+    const summary = buildMasterySummaryFromRows(rows);
 
     res.json({
       ok: true,
@@ -194,85 +164,8 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
         requestId: (req as any).requestId,
       });
     }
-    const userId = user.id;
-    const supabase = getSupabaseAdmin();
-
-    // READ ONLY: Fetch stored mastery scores
-    const { data: masteryData, error } = await supabase
-      .from("student_skill_mastery")
-      .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
-      .eq("user_id", userId);
-
-    if (error) {
-      console.error("[Mastery] Failed to fetch skills:", error.message);
-      return res.status(500).json({ error: "Failed to fetch mastery data" });
-    }
-
-    const masteryMap = new Map<string, SkillMasteryRow>();
-    for (const row of masteryData || []) {
-      const key = `${row.section}:${row.domain || "unknown"}:${row.skill}`;
-      masteryMap.set(key, row);
-    }
-
-    const result: SectionNode[] = [];
-
-    for (const [sectionId, sectionDef] of Object.entries(SAT_TAXONOMY)) {
-      const domains: DomainNode[] = [];
-      let sectionTotalMastery = 0;
-      let sectionDomainCount = 0;
-
-      for (const [domainId, domainDef] of Object.entries(sectionDef.domains)) {
-        const skills: SkillNode[] = [];
-        let domainTotalMastery = 0;
-
-        for (const skillId of domainDef.skills) {
-          const key = `${sectionId}:${domainId}:${skillId}`;
-          const row = masteryMap.get(key);
-
-          const attempts = row?.attempts ?? 0;
-          const correct = row?.correct ?? 0;
-          const accuracy = row?.accuracy ?? 0;
-          const mastery_score = row?.mastery_score ?? 0;
-
-          skills.push({
-            id: skillId,
-            label: skillId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-            attempts,
-            correct,
-            accuracy: Math.round(accuracy * 100), // accuracy still in 0-1 range
-            mastery_score: Math.round(mastery_score), // mastery_score now in 0-100 range
-            status: getMasteryStatus(mastery_score, attempts),
-          });
-
-          domainTotalMastery += mastery_score;
-        }
-
-        const avgDomainMastery = domainDef.skills.length > 0 
-          ? domainTotalMastery / domainDef.skills.length 
-          : 0;
-
-        domains.push({
-          id: domainId,
-          label: domainDef.label,
-          skills,
-          avgMastery: Math.round(avgDomainMastery),
-          status: getMasteryStatus(avgDomainMastery, skills.reduce((a, s) => a + s.attempts, 0)),
-        });
-
-        sectionTotalMastery += avgDomainMastery;
-        sectionDomainCount++;
-      }
-
-      result.push({
-        id: sectionId,
-        label: sectionDef.label,
-        domains,
-        avgMastery: sectionDomainCount > 0 
-          ? Math.round(sectionTotalMastery / sectionDomainCount) 
-          : 0,
-      });
-    }
-
+    const rows = await fetchSkillMasteryRows({ userId: user.id });
+    const result = buildMasterySkillTreeFromRows(rows, SAT_TAXONOMY);
     return res.json({ sections: result });
   } catch (err: any) {
     console.error("[Mastery] Error:", err.message);
@@ -296,7 +189,7 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
     const userId = user.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
-    const weakest = await getWeakestSkills({
+    const weakest = await fetchWeakestSkills({
       userId,
       limit,
       minAttempts: 2,
