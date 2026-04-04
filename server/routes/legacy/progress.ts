@@ -5,22 +5,21 @@
 
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
-import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
-import { calculateScore, DomainMastery, ScoreProjection } from "../../services/score-projection";
 import {
   KPI_TRUTH_LAYER_VERSION,
   buildCanonicalPracticeKpiSnapshot,
+  buildPersistedScoreProjection,
   buildStudentKpiView,
 } from "../../services/kpi-truth-layer";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 
-function projectionExplanation(label: string, detail: string): {
+function estimateExplanation(label: string, detail: string): {
   whatThisMeans: string;
   whyThisChanged: string;
   whatToDoNext: string;
 } {
   return {
-    whatThisMeans: `${label} is a weighted estimate from your stored mastery evidence, not an official score.`,
+    whatThisMeans: `${label} is a weighted estimate from stored mastery evidence, not an official score.`,
     whyThisChanged: detail,
     whatToDoNext: "Use the lower section estimate to prioritize your next focused practice block.",
   };
@@ -39,9 +38,9 @@ function premiumKpiRequired(res: Response, requestId: string | undefined, featur
 
 /**
  * GET /api/progress/projection
- * Premium-only mastery projection surface (mastery hexagon / weighted score estimate).
+ * Premium-only mastery estimate surface (mastery hexagon / weighted score estimate).
  */
-export const getScoreProjection = async (req: Request, res: Response) => {
+export const getScoreEstimate = async (req: Request, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -53,49 +52,8 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
     }
 
-    const { data: masteryRows, error: masteryError } = await supabaseServer
-      .from("student_skill_mastery")
-      .select("section, domain, skill, mastery_score, attempts, updated_at")
-      .eq("user_id", user.id);
-
-    if (masteryError) {
-      return res.status(500).json({ error: "Failed to fetch mastery data", requestId: req.requestId });
-    }
-
-    const domainMastery: Record<string, DomainMastery> = {};
-    let totalQuestions = 0;
-
-    for (const row of masteryRows || []) {
-      const section = row.section?.toLowerCase() === "math" ? "math" : "rw";
-      const domain = row.domain || "unknown";
-      const key = `${section}:${domain}`;
-
-      if (!domainMastery[key]) {
-        domainMastery[key] = {
-          domain,
-          section: section as "math" | "rw",
-          mastery_score: 0,
-          attempts: 0,
-          last_activity: null,
-        };
-      }
-
-      domainMastery[key].mastery_score = Math.max(domainMastery[key].mastery_score, row.mastery_score || 0);
-      domainMastery[key].attempts += row.attempts || 0;
-      totalQuestions += row.attempts || 0;
-
-      if (row.updated_at) {
-        const rowDate = new Date(row.updated_at);
-        const existingDate = domainMastery[key].last_activity
-          ? new Date(domainMastery[key].last_activity as string)
-          : null;
-        if (!existingDate || rowDate > existingDate) {
-          domainMastery[key].last_activity = row.updated_at;
-        }
-      }
-    }
-
-    const masteryArray = Object.values(domainMastery);
+    const scoreProjection = await buildPersistedScoreProjection(user.id);
+    const totalQuestions = scoreProjection.totalQuestions;
 
     if (totalQuestions === 0) {
       return res.json({
@@ -105,7 +63,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
           weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
           diagnostic: ["mastery_evidence_count"],
         },
-        projection: {
+        estimate: {
           composite: 400,
           math: 200,
           rw: 200,
@@ -114,13 +72,13 @@ export const getScoreProjection = async (req: Request, res: Response) => {
           breakdown: { math: [], rw: [] },
         },
         explanations: {
-          estimated_scaled_total: projectionExplanation(
+          estimated_scaled_total: estimateExplanation(
             "Estimated scaled total",
             "No mastery evidence is available yet, so the estimate remains at the minimum baseline."
           ),
           official_sat_score: {
             whatThisMeans: "Official SAT scores only come from College Board score releases.",
-            whyThisChanged: "Lyceon practice projections never replace official reporting.",
+            whyThisChanged: "Practice estimates never replace official reporting.",
             whatToDoNext: "Use this baseline to set your first target and collect practice evidence.",
           },
         },
@@ -131,8 +89,6 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       });
     }
 
-    const projection: ScoreProjection = calculateScore(masteryArray, totalQuestions);
-
     return res.json({
       modelVersion: KPI_TRUTH_LAYER_VERSION,
       measurementModel: {
@@ -140,17 +96,17 @@ export const getScoreProjection = async (req: Request, res: Response) => {
         weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
         diagnostic: ["mastery_evidence_count"],
       },
-      projection,
+      estimate: scoreProjection.projection,
       explanations: {
-        estimated_scaled_total: projectionExplanation(
+        estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
           "Estimate updates when mastery rollups change from new attempts or decayed evidence weight."
         ),
-        estimated_scaled_math: projectionExplanation(
+        estimated_scaled_math: estimateExplanation(
           "Estimated scaled Math",
           "Math estimate moves based on weighted mastery evidence across Math domains."
         ),
-        estimated_scaled_rw: projectionExplanation(
+        estimated_scaled_rw: estimateExplanation(
           "Estimated scaled Reading & Writing",
           "RW estimate moves based on weighted mastery evidence across RW domains."
         ),
@@ -166,7 +122,7 @@ export const getScoreProjection = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to calculate score projection", requestId: req.requestId });
+    return res.status(500).json({ error: "Failed to calculate score estimate", requestId: req.requestId });
   }
 };
 

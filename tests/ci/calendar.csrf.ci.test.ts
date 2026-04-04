@@ -61,7 +61,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     }),
   }),
   resolveTokenFromRequest: () => ({
-    token: null,
+    token: "test-token-123456789012345",
     tokenSource: null,
     cookieKeys: [],
     authHeaderPresent: false,
@@ -85,8 +85,14 @@ function isCsrfBlocked(res: request.Response): boolean {
   return res.status === 403 && res.body?.error === "csrf_blocked";
 }
 
+async function getCsrfToken(agent: request.SuperAgentTest): Promise<string> {
+  const res = await agent.get("/api/csrf-token");
+  expect(res.status).toBe(200);
+  return res.body.csrfToken as string;
+}
+
 describe("Calendar CSRF CI", () => {
-  it("calendar_mutation_blocks_without_origin", async () => {
+  it("calendar_mutation_blocks_without_csrf", async () => {
     const res = await request(app)
       .post("/api/calendar/generate")
       .send({ start_date: "2026-03-01", days: 1 });
@@ -95,10 +101,12 @@ describe("Calendar CSRF CI", () => {
     expect(res.body).toHaveProperty("error", "csrf_blocked");
   });
 
-  it("calendar_mutation_allows_with_valid_origin", async () => {
-    const res = await request(app)
+  it("calendar_mutation_allows_with_valid_csrf", async () => {
+    const agent = request.agent(app);
+    const token = await getCsrfToken(agent);
+    const res = await agent
       .post("/api/calendar/generate")
-      .set("Origin", "http://localhost:5000")
+      .set("x-csrf-token", token)
       .send({ start_date: "2026-03-01", days: 1 });
 
     expect(isCsrfBlocked(res)).toBe(false);

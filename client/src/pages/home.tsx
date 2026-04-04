@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { SEO, JsonLd, organizationJsonLd, websiteJsonLd } from "@/components/SEO";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
 
@@ -80,14 +79,6 @@ export default function HomePage() {
 
   return (
     <PublicLayout>
-      <SEO
-        title="Lyceon | Study Smarter, Score Higher"
-        description="Digital SAT prep with adaptive practice, full-length exams, mastery tracking, Lisa chat, and guardian visibility. Free plan available with daily limits."
-        canonical="https://lyceon.ai"
-      />
-      <JsonLd data={organizationJsonLd} />
-      <JsonLd data={websiteJsonLd} />
-
       <Container size="full">
         <section className="py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
@@ -109,10 +100,10 @@ export default function HomePage() {
                     Digital SAT prep built for <span className="text-foreground">real progress</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Practice SAT-style questions, review step-by-step explanations, and track mastery over time.
+                    Practice SAT-style questions, review step-by-step explanations, and track progress over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Use quick daily sessions, full-length exams, and Lisa in one place.
+                    Use quick daily sessions, full-length exams, and tutor guidance in one place.
                   </p>
                 </>
               ) : (
@@ -186,7 +177,7 @@ export default function HomePage() {
                   <div className="text-sm text-muted-foreground">Timed 98-question SAT simulation</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">Mastery tracking</div>
+                  <div className="text-2xl font-bold">Progress tracking</div>
                   <div className="text-sm text-muted-foreground">Topic and skill-level progress visibility</div>
                 </div>
               </div>
@@ -216,7 +207,7 @@ export default function HomePage() {
                   <div className="flex-1">
                     {demoState === "idle" && (
                       <div className="text-sm text-muted-foreground italic">
-                        Sign in to start practicing with Lisa
+                        Sign in to start practicing with the tutor
                       </div>
                     )}
 
@@ -268,7 +259,7 @@ export default function HomePage() {
                 <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    Lisa support
+                    Tutor support
                   </span>
                   <span>Grounded in SAT-style questions</span>
                 </div>
@@ -325,7 +316,7 @@ export default function HomePage() {
               <MessageSquare className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Practice and review</h3>
               <p className="text-muted-foreground">
-                Use adaptive question flow and Lisa to understand mistakes and next steps.
+                Use adaptive question flow and tutor guidance to understand mistakes and next steps.
               </p>
             </Card>
 
@@ -336,7 +327,7 @@ export default function HomePage() {
               <TrendingUp className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Track and improve</h3>
               <p className="text-muted-foreground">
-                Monitor mastery and validate readiness with full-length SAT exam sessions.
+                Monitor progress and validate readiness with full-length SAT exam sessions.
               </p>
             </Card>
           </div>
@@ -357,7 +348,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-8">
             <Card>
               <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Lisa, grounded in context</h3>
+              <h3 className="text-xl font-semibold mb-3">Tutor guidance, grounded in context</h3>
               <p className="text-muted-foreground mb-4">
                 Explanations stay focused on SAT-style question patterns and reasoning.
               </p>
@@ -436,13 +427,13 @@ export default function HomePage() {
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="font-medium mb-1">Mastery progression</div>
+                  <div className="font-medium mb-1">Progress snapshot</div>
                   <div className="text-sm text-muted-foreground">Skill and domain status across Math and Reading & Writing.</div>
                 </Card>
 
                 <Card className="bg-secondary">
                   <div className="font-medium mb-1">Full-length exam outcomes</div>
-                  <div className="text-sm text-muted-foreground">Module-level results and score projection data after completion.</div>
+                  <div className="text-sm text-muted-foreground">Module-level results and score estimate data after completion.</div>
                 </Card>
               </div>
             </div>
@@ -501,7 +492,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  Mastery and dashboard tracking
+                  Progress and dashboard tracking
                 </li>
               </ul>
 

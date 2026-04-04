@@ -8,10 +8,12 @@ import {
   requireRequestUser,
 } from "../../../../server/middleware/supabase-auth";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
+import { publishCalendarEventNotificationBestEffort } from "../../../../server/services/notification-authority";
 import {
   DEFAULT_HORIZON_DAYS,
   type DayStatus,
   type FullTestCadence,
+  type BlockedWindow,
   generateDeterministicPlan,
   resolvePlannerWindow,
   type SkillSignal,
@@ -30,6 +32,34 @@ type PlannerMode = "auto" | "custom";
 type TaskStatus = "planned" | "in_progress" | "completed" | "skipped" | "missed";
 type CalendarEventType = "plan_generated" | "day_edited" | "plan_refreshed" | "block_completed" | "override_applied";
 type GenerationSource = "auto" | "user" | "refresh" | "regenerate" | "generate";
+type TaskTarget = {
+  section: "MATH" | "RW" | null;
+  skill_code: string | null;
+  domain: string | null;
+  subskill: string | null;
+  target_type: "practice_target" | "review_session" | "scheduled_full_length" | null;
+  review_session_id: string | null;
+  exam_id: string | null;
+};
+
+type ManualCalendarTaskInput = {
+  section?: unknown;
+  task_type?: unknown;
+  type?: unknown;
+  mode?: unknown;
+  target?: Record<string, unknown> | null;
+  override_target_session_id?: unknown;
+  review_session_id?: unknown;
+  override_target_exam_id?: unknown;
+  exam_id?: unknown;
+  source_skill_code?: unknown;
+  source_domain?: unknown;
+  source_subskill?: unknown;
+  minutes?: unknown;
+  duration_minutes?: unknown;
+  status?: unknown;
+  notes?: unknown;
+};
 
 type StudyProfileRow = {
   user_id: string;
@@ -40,7 +70,11 @@ type StudyProfileRow = {
   timezone: string | null;
   planner_mode: PlannerMode | null;
   full_test_cadence: FullTestCadence | null;
+  study_days_of_week: number[] | null;
   preferred_study_days: number[] | null;
+  blocked_weekdays: number[] | null;
+  blocked_dates: string[] | null;
+  blocked_windows: BlockedWindow[] | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -64,6 +98,10 @@ type PlanDayRow = {
   required_task_count: number;
   completed_task_count: number;
   study_minutes_target: number;
+  replaces_override: boolean;
+  replaced_override_day_id: string | null;
+  replacement_source: GenerationSource | null;
+  replacement_at: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -86,6 +124,15 @@ type PlanTaskRow = {
   planner_owned: boolean;
   metadata: Record<string, unknown>;
   completed_at: string | null;
+  replaces_override: boolean;
+  replaced_override_task_id: string | null;
+  replacement_source: GenerationSource | null;
+  replacement_at: string | null;
+  override_target_type: "practice_target" | "review_session" | "scheduled_full_length" | null;
+  override_target_domain: string | null;
+  override_target_skill: string | null;
+  override_target_session_id: string | null;
+  override_target_exam_id: string | null;
 };
 
 type AttemptRow = {
@@ -117,7 +164,11 @@ type CalendarProfileInput = {
   timezone?: unknown;
   planner_mode?: unknown;
   full_test_cadence?: unknown;
+  study_days_of_week?: unknown;
   preferred_study_days?: unknown;
+  blocked_weekdays?: unknown;
+  blocked_dates?: unknown;
+  blocked_windows?: unknown;
 };
 
 type ProfileSummary = {
@@ -126,6 +177,10 @@ type ProfileSummary = {
   dailyMinutes: number;
   plannerMode: PlannerMode;
   fullTestCadence: FullTestCadence;
+  studyDaysOfWeek: number[];
+  blockedWeekdays: number[];
+  blockedDates: string[];
+  blockedWindows: BlockedWindow[];
   preferredStudyDays: number[];
 };
 
@@ -154,12 +209,194 @@ function normalizePreferredStudyDays(value: unknown): number[] {
   return days.length > 0 ? days.sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7];
 }
 
-function normalizeSection(value: string | null | undefined): "MATH" | "RW" | null {
-  const normalized = (value || "").toLowerCase().trim();
+function normalizeBlockedWeekdays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const days = Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === "number" ? Math.trunc(item) : Number.NaN))
+        .filter((item) => Number.isInteger(item) && item >= 1 && item <= 7),
+    ),
+  );
+  return days.sort((a, b) => a - b);
+}
+
+function normalizeBlockedDates(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item)),
+    ),
+  ).sort();
+}
+
+function normalizeBlockedWindows(value: unknown): BlockedWindow[] {
+  if (!Array.isArray(value)) return [];
+  const windows: BlockedWindow[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Partial<BlockedWindow>;
+    const normalized: BlockedWindow = {};
+    if (typeof candidate.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidate.date)) {
+      normalized.date = candidate.date;
+    }
+    if (typeof candidate.start === "string") {
+      normalized.start = candidate.start;
+    }
+    if (typeof candidate.end === "string") {
+      normalized.end = candidate.end;
+    }
+    if (typeof candidate.all_day === "boolean") {
+      normalized.all_day = candidate.all_day;
+    }
+    if (typeof candidate.reason === "string") {
+      normalized.reason = candidate.reason;
+    }
+    if (Object.keys(normalized).length > 0) {
+      windows.push(normalized);
+    }
+  }
+  return windows;
+}
+
+function normalizeSection(value: unknown): "MATH" | "RW" | null {
+  const normalized = typeof value === "string" ? value.toLowerCase().trim() : "";
   if (!normalized) return null;
   if (normalized === "math" || normalized === "m" || normalized.includes("math")) return "MATH";
   if (normalized === "rw" || normalized.includes("reading") || normalized.includes("writing")) return "RW";
   return null;
+}
+
+function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+  const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
+  const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
+
+  if (raw === "full_length" || raw === "full_length_exam" || raw === "full_test" || raw === "full-length") return "full_length";
+  if (raw === "review_full_length" || rawMode === "review_full_length" || rawMode === "full-length-review") return "review_full_length";
+  if (raw === "review_practice" || raw === "review_errors" || raw === "review") return "review_practice";
+  if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
+  if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
+  if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
+  if (section === "MATH" || section === "RW") return "practice";
+  return "practice";
+}
+
+function normalizeTaskTarget(task: any, section: "MATH" | "RW" | null, taskType: TaskType): TaskTarget {
+  const target = task?.target && typeof task.target === "object" ? (task.target as Record<string, unknown>) : null;
+  const reviewSessionId =
+    typeof task?.override_target_session_id === "string"
+      ? task.override_target_session_id
+      : typeof task?.review_session_id === "string"
+        ? task.review_session_id
+        : typeof target?.review_session_id === "string"
+          ? target.review_session_id
+          : null;
+  const examId =
+    typeof task?.override_target_exam_id === "string"
+      ? task.override_target_exam_id
+      : typeof task?.exam_id === "string"
+        ? task.exam_id
+        : typeof target?.exam_id === "string"
+          ? target.exam_id
+          : null;
+  const explicitTargetType = typeof target?.target_type === "string" ? target.target_type : null;
+  const normalizedTargetType =
+    taskType === "full_length"
+      ? "scheduled_full_length"
+      : taskType === "review_practice" || taskType === "review_full_length"
+        ? "review_session"
+        : explicitTargetType === "practice_target" || explicitTargetType === "review_session" || explicitTargetType === "scheduled_full_length"
+          ? explicitTargetType
+          : "practice_target";
+
+  return {
+    section: section ?? (typeof target?.section === "string" && target.section.includes("Writing") ? "RW" : typeof target?.section === "string" && target.section.includes("Math") ? "MATH" : null),
+    skill_code:
+      typeof task?.source_skill_code === "string"
+        ? task.source_skill_code
+        : typeof target?.skill_code === "string"
+          ? target.skill_code
+          : null,
+    domain:
+      typeof task?.source_domain === "string"
+        ? task.source_domain
+        : typeof target?.domain === "string"
+          ? target.domain
+          : null,
+    subskill:
+      typeof task?.source_subskill === "string"
+        ? task.source_subskill
+        : typeof target?.subskill === "string"
+          ? target.subskill
+          : null,
+    target_type: normalizedTargetType,
+    review_session_id: reviewSessionId,
+    exam_id: examId,
+  };
+}
+
+function serializeTaskSummary(args: {
+  taskType: TaskType;
+  section: "MATH" | "RW" | null;
+  durationMinutes: number;
+  status?: TaskStatus;
+  ordinal?: number;
+  target: TaskTarget;
+  isUserOverride?: boolean;
+  plannerOwned?: boolean;
+  sourceReason?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  replacesOverride?: boolean;
+  replacedOverrideTaskId?: string | null;
+  replacementSource?: GenerationSource | null;
+  replacementAt?: string | null;
+  overrideTargetType?: "practice_target" | "review_session" | "scheduled_full_length" | null;
+  overrideTargetDomain?: string | null;
+  overrideTargetSkill?: string | null;
+  overrideTargetSessionId?: string | null;
+  overrideTargetExamId?: string | null;
+  id?: string;
+}): Record<string, unknown> {
+  return {
+    id: args.id,
+    type: args.taskType,
+    task_type: args.taskType,
+    section: taskSectionToLegacy(args.section),
+    target: args.target,
+    override_target_type: args.overrideTargetType ?? args.target.target_type,
+    override_target_domain: args.overrideTargetDomain ?? args.target.domain,
+    override_target_skill: args.overrideTargetSkill ?? args.target.skill_code,
+    override_target_session_id: args.overrideTargetSessionId ?? args.target.review_session_id,
+    override_target_exam_id: args.overrideTargetExamId ?? args.target.exam_id,
+    source_skill_code: args.target.skill_code,
+    source_domain: args.target.domain,
+    source_subskill: args.target.subskill,
+    source_reason: args.sourceReason ?? {},
+    metadata: args.metadata ?? {},
+    mode:
+      args.taskType === "full_length"
+        ? "full-length"
+        : args.taskType === "review_full_length"
+          ? "review-full-length"
+          : args.taskType === "review_practice"
+            ? "review"
+            : args.taskType === "focused_drill"
+              ? "focused"
+              : args.taskType === "tutor_support"
+                ? "support"
+                : "mixed",
+    minutes: args.durationMinutes,
+    status: args.status,
+    ordinal: args.ordinal,
+    is_user_override: args.isUserOverride,
+    planner_owned: args.plannerOwned,
+    replaces_override: args.replacesOverride,
+    replaced_override_task_id: args.replacedOverrideTaskId ?? null,
+    replacement_source: args.replacementSource ?? null,
+    replacement_at: args.replacementAt ?? null,
+  };
 }
 
 function parseTaskStatus(value: unknown): TaskStatus {
@@ -170,6 +407,19 @@ function parseTaskStatus(value: unknown): TaskStatus {
 function parseTaskStatusInput(value: unknown): TaskStatus | null {
   if (value === "planned" || value === "completed" || value === "in_progress" || value === "skipped" || value === "missed") {
     return value;
+  }
+  return null;
+}
+
+function validateStructuredManualTarget(taskType: TaskType, target: TaskTarget): string | null {
+  if (taskType === "full_length" && !target.exam_id) {
+    return "full_length_override_requires_exam_id";
+  }
+  if ((taskType === "review_practice" || taskType === "review_full_length") && !target.review_session_id) {
+    return "review_override_requires_session_id";
+  }
+  if ((taskType === "practice" || taskType === "focused_drill") && !target.domain && !target.skill_code) {
+    return "practice_override_requires_domain_or_skill";
   }
   return null;
 }
@@ -217,6 +467,12 @@ async function emitCalendarEvent(args: { eventType: CalendarEventType; userId: s
   } catch {
     // best effort only
   }
+
+  await publishCalendarEventNotificationBestEffort({
+    userId: args.userId,
+    eventType: args.eventType,
+    details: args.details,
+  });
 }
 
 async function ensurePremiumAccess(
@@ -253,7 +509,9 @@ async function ensurePremiumAccess(
 async function loadProfile(userId: string): Promise<StudyProfileRow | null> {
   const { data, error } = await supabaseServer
     .from("student_study_profile")
-    .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, preferred_study_days, created_at, updated_at")
+    .select(
+      "user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, study_days_of_week, preferred_study_days, blocked_weekdays, blocked_dates, blocked_windows, created_at, updated_at",
+    )
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw new Error(`Failed to load study profile: ${error.message}`);
@@ -263,7 +521,9 @@ async function loadProfile(userId: string): Promise<StudyProfileRow | null> {
 async function loadDaysByRange(userId: string, start: string, end: string): Promise<PlanDayRow[]> {
   const { data, error } = await supabaseServer
     .from("student_study_plan_days")
-    .select("id, user_id, day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, is_user_override, status, generation_source, is_exam_day, is_taper_day, is_full_test_day, required_task_count, completed_task_count, study_minutes_target, created_at, updated_at")
+    .select(
+      "id, user_id, day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, is_user_override, status, generation_source, is_exam_day, is_taper_day, is_full_test_day, required_task_count, completed_task_count, study_minutes_target, replaces_override, replaced_override_day_id, replacement_source, replacement_at, created_at, updated_at",
+    )
     .eq("user_id", userId)
     .gte("day_date", start)
     .lte("day_date", end)
@@ -271,6 +531,10 @@ async function loadDaysByRange(userId: string, start: string, end: string): Prom
   if (error) throw new Error(`Failed to load plan days: ${error.message}`);
   return ((data as PlanDayRow[] | null) ?? []).map((row) => ({
     ...row,
+    replaces_override: Boolean(row.replaces_override),
+    replaced_override_day_id: row.replaced_override_day_id ?? null,
+    replacement_source: (row.replacement_source as GenerationSource | null) ?? null,
+    replacement_at: row.replacement_at ?? null,
     status: canonicalDayStatus(row.status),
   }));
 }
@@ -278,7 +542,9 @@ async function loadDaysByRange(userId: string, start: string, end: string): Prom
 async function loadTasksByRange(userId: string, start: string, end: string): Promise<PlanTaskRow[]> {
   const { data, error } = await supabaseServer
     .from("student_study_plan_tasks")
-    .select("id, day_id, user_id, day_date, ordinal, task_type, section, duration_minutes, source_skill_code, source_domain, source_subskill, source_reason, status, is_user_override, planner_owned, metadata, completed_at")
+    .select(
+      "id, day_id, user_id, day_date, ordinal, task_type, section, duration_minutes, source_skill_code, source_domain, source_subskill, source_reason, status, is_user_override, planner_owned, metadata, completed_at, replaces_override, replaced_override_task_id, replacement_source, replacement_at, override_target_type, override_target_domain, override_target_skill, override_target_session_id, override_target_exam_id",
+    )
     .eq("user_id", userId)
     .gte("day_date", start)
     .lte("day_date", end)
@@ -290,6 +556,15 @@ async function loadTasksByRange(userId: string, start: string, end: string): Pro
     status: parseTaskStatus(row.status),
     source_reason: typeof row.source_reason === "object" && row.source_reason ? row.source_reason : {},
     metadata: typeof row.metadata === "object" && row.metadata ? row.metadata : {},
+    replaces_override: Boolean(row.replaces_override),
+    replaced_override_task_id: row.replaced_override_task_id ?? null,
+    replacement_source: (row.replacement_source as GenerationSource | null) ?? null,
+    replacement_at: row.replacement_at ?? null,
+    override_target_type: (row.override_target_type as "practice_target" | "review_session" | "scheduled_full_length" | null) ?? null,
+    override_target_domain: row.override_target_domain ?? null,
+    override_target_skill: row.override_target_skill ?? null,
+    override_target_session_id: row.override_target_session_id ?? null,
+    override_target_exam_id: row.override_target_exam_id ?? null,
   }));
 }
 
@@ -307,11 +582,9 @@ async function loadAttemptsByRange(userId: string, startUtc: string, endUtc: str
 
 async function loadSkillSignals(userId: string): Promise<SkillSignal[]> {
   const { data, error } = await supabaseServer
-    .from("skill_mastery")
+    .from("student_skill_mastery")
     .select("section, domain, skill, mastery_score, accuracy, last_attempt_at")
-    .eq("student_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(400);
+    .eq("user_id", userId);
 
   if (error || !data) return [];
 
@@ -334,6 +607,7 @@ async function loadSkillSignals(userId: string): Promise<SkillSignal[]> {
 }
 
 function profileSummaryFromRow(userId: string, row: StudyProfileRow | null): ProfileSummary & { userId: string } {
+  const studyDaysOfWeek = normalizePreferredStudyDays(row?.study_days_of_week ?? row?.preferred_study_days);
   return {
     userId,
     timezone: row?.timezone || DEFAULT_TIMEZONE,
@@ -341,7 +615,11 @@ function profileSummaryFromRow(userId: string, row: StudyProfileRow | null): Pro
     dailyMinutes: Math.max(10, Math.min(240, row?.daily_minutes ?? DEFAULT_DAILY_MINUTES)),
     plannerMode: asPlannerMode(row?.planner_mode),
     fullTestCadence: asFullTestCadence(row?.full_test_cadence),
-    preferredStudyDays: normalizePreferredStudyDays(row?.preferred_study_days),
+    studyDaysOfWeek,
+    blockedWeekdays: normalizeBlockedWeekdays(row?.blocked_weekdays),
+    blockedDates: normalizeBlockedDates(row?.blocked_dates),
+    blockedWindows: normalizeBlockedWindows(row?.blocked_windows),
+    preferredStudyDays: studyDaysOfWeek,
   };
 }
 
@@ -358,39 +636,43 @@ function ensureIsoDateInput(value: unknown): string | null {
 // Do NOT merge these into the service — the write path operates on planner types,
 // not on the serialized view shape.
 
-function taskTypeToLegacy(taskType: TaskType): string {
-  if (taskType === "math_practice") return "practice";
-  if (taskType === "rw_practice") return "practice";
-  if (taskType === "review_errors") return "review";
-  return "full_test";
-}
-
 function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
   if (section === "MATH") return "Math";
   if (section === "RW") return "Reading & Writing";
   return null;
 }
 
-// NOTE: taskModeForDay / planTaskToLegacy are used only inside persistGeneratedDays below.
-function taskModeForDay(task: PlanTaskRow): string {
-  if (task.task_type === "full_length_exam") return "full-length";
-  if (task.task_type === "review_errors") return "review";
-  return task.metadata?.compressed ? "compressed" : "mixed";
-}
-
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
-  return {
+  return serializeTaskSummary({
     id: task.id,
-    type: taskTypeToLegacy(task.task_type),
-    section: taskSectionToLegacy(task.section),
-    mode: taskModeForDay(task),
-    minutes: task.duration_minutes,
-    task_type: task.task_type,
+    taskType: task.task_type,
+    section: task.section,
+    durationMinutes: task.duration_minutes,
     status: task.status,
     ordinal: task.ordinal,
-    is_user_override: task.is_user_override,
-    planner_owned: task.planner_owned,
-  };
+    target: {
+      section: task.section,
+      skill_code: task.override_target_skill ?? task.source_skill_code,
+      domain: task.override_target_domain ?? task.source_domain,
+      subskill: task.source_subskill,
+      target_type: task.override_target_type,
+      review_session_id: task.override_target_session_id,
+      exam_id: task.override_target_exam_id,
+    },
+    isUserOverride: task.is_user_override,
+    plannerOwned: task.planner_owned,
+    sourceReason: task.source_reason,
+    metadata: task.metadata,
+    replacesOverride: task.replaces_override,
+    replacedOverrideTaskId: task.replaced_override_task_id,
+    replacementSource: task.replacement_source,
+    replacementAt: task.replacement_at,
+    overrideTargetType: task.override_target_type,
+    overrideTargetDomain: task.override_target_domain,
+    overrideTargetSkill: task.override_target_skill,
+    overrideTargetSessionId: task.override_target_session_id,
+    overrideTargetExamId: task.override_target_exam_id,
+  });
 }
 
 // calculateStreak REMOVED: was a dead-code duplicate of the private calculateStreak
@@ -406,7 +688,11 @@ function parseProfilePayload(payload: CalendarProfileInput): {
   timezone?: string;
   planner_mode?: PlannerMode;
   full_test_cadence?: FullTestCadence;
+  study_days_of_week?: number[];
   preferred_study_days?: number[];
+  blocked_weekdays?: number[];
+  blocked_dates?: string[];
+  blocked_windows?: BlockedWindow[];
 } {
   const normalized: Record<string, unknown> = {};
 
@@ -432,8 +718,26 @@ function parseProfilePayload(payload: CalendarProfileInput): {
   if (payload.full_test_cadence !== undefined) {
     normalized.full_test_cadence = asFullTestCadence(payload.full_test_cadence);
   }
+  if (payload.study_days_of_week !== undefined) {
+    const value = normalizePreferredStudyDays(payload.study_days_of_week);
+    normalized.study_days_of_week = value;
+    normalized.preferred_study_days = value;
+  }
   if (payload.preferred_study_days !== undefined) {
-    normalized.preferred_study_days = normalizePreferredStudyDays(payload.preferred_study_days);
+    const value = normalizePreferredStudyDays(payload.preferred_study_days);
+    normalized.preferred_study_days = value;
+    if (normalized.study_days_of_week === undefined) {
+      normalized.study_days_of_week = value;
+    }
+  }
+  if (payload.blocked_weekdays !== undefined) {
+    normalized.blocked_weekdays = normalizeBlockedWeekdays(payload.blocked_weekdays);
+  }
+  if (payload.blocked_dates !== undefined) {
+    normalized.blocked_dates = normalizeBlockedDates(payload.blocked_dates);
+  }
+  if (payload.blocked_windows !== undefined) {
+    normalized.blocked_windows = normalizeBlockedWindows(payload.blocked_windows);
   }
 
   return normalized as {
@@ -444,7 +748,11 @@ function parseProfilePayload(payload: CalendarProfileInput): {
     timezone?: string;
     planner_mode?: PlannerMode;
     full_test_cadence?: FullTestCadence;
+    study_days_of_week?: number[];
     preferred_study_days?: number[];
+    blocked_weekdays?: number[];
+    blocked_dates?: string[];
+    blocked_windows?: BlockedWindow[];
   };
 }
 
@@ -453,11 +761,20 @@ async function persistGeneratedDays(params: {
   timezone: string;
   todayDate: string;
   existingDays: PlanDayRow[];
+  existingTasks: PlanTaskRow[];
   generatedDays: ReturnType<typeof generateDeterministicPlan>["plannedDays"];
   source: GenerationSource;
   skipOverrides: boolean;
 }): Promise<{ upsertedDays: number; upsertedTasks: number; skippedOverrideDays: string[] }> {
-  const existingByDate = new Map(params.existingDays.map((day) => [day.day_date, day]));
+  const existingDays = Array.isArray(params.existingDays) ? params.existingDays : [];
+  const existingTasks = Array.isArray(params.existingTasks) ? params.existingTasks : [];
+  const existingByDate = new Map(existingDays.map((day) => [day.day_date, day]));
+  const existingTasksByDate = new Map<string, PlanTaskRow[]>();
+  for (const task of existingTasks) {
+    const group = existingTasksByDate.get(task.day_date) ?? [];
+    group.push(task);
+    existingTasksByDate.set(task.day_date, group);
+  }
   const skippedOverrideDays: string[] = [];
   let upsertedDays = 0;
   let upsertedTasks = 0;
@@ -465,16 +782,31 @@ async function persistGeneratedDays(params: {
   for (const day of params.generatedDays) {
     if (day.dayDate < params.todayDate) continue;
     const existing = existingByDate.get(day.dayDate);
+    if (existing && params.source !== "user" && (existing.status === "completed" || existing.status === "partially_completed")) {
+      continue;
+    }
     if (params.skipOverrides && existing?.is_user_override) {
       skippedOverrideDays.push(day.dayDate);
       continue;
     }
 
+    const replacementAt = existing && existing.is_user_override && params.source === "regenerate" ? DateTime.now().toUTC().toISO() : null;
+    const replacesOverride = Boolean(existing?.is_user_override && params.source === "regenerate");
+    const existingOverrideTasks = (existingTasksByDate.get(day.dayDate) ?? []).filter((task) => task.is_user_override);
+    const fallbackOverrideTasks = Array.isArray(existing?.tasks)
+      ? (existing.tasks as Array<any>).filter((task) => Boolean(task?.id) && (task?.is_user_override === true || existing?.is_user_override))
+      : [];
     const generatedTaskRows = day.tasks.map((task, index) => {
       const metadata: Record<string, unknown> = {
         ...(task.metadata ?? {}),
         required: task.required,
       };
+      const replacedOverrideTask =
+        existingOverrideTasks[index] ??
+        fallbackOverrideTasks[index] ??
+        existingOverrideTasks[0] ??
+        fallbackOverrideTasks[0] ??
+        null;
       return {
         day_id: existing?.id ?? "",
         user_id: params.userId,
@@ -492,6 +824,15 @@ async function persistGeneratedDays(params: {
         planner_owned: true,
         metadata,
         completed_at: null,
+        replaces_override: replacesOverride,
+        replaced_override_task_id: replacedOverrideTask?.id ?? existing?.id ?? null,
+        replacement_source: replacesOverride ? params.source : null,
+        replacement_at: replacementAt,
+        override_target_type: null,
+        override_target_domain: null,
+        override_target_skill: null,
+        override_target_session_id: null,
+        override_target_exam_id: null,
       };
     });
 
@@ -506,10 +847,45 @@ async function persistGeneratedDays(params: {
         competencies: focus.skill_codes,
       })),
       tasks: generatedTaskRows.map((task) => ({
-        type: taskTypeToLegacy(task.task_type),
+        type: task.task_type,
+        task_type: task.task_type,
         section: taskSectionToLegacy(task.section),
-        mode: Boolean((task.metadata as Record<string, unknown>).compressed) ? "compressed" : task.task_type === "review_errors" ? "review" : "mixed",
+        target: {
+          section: task.section,
+          skill_code: task.source_skill_code,
+          domain: task.source_domain,
+          subskill: task.source_subskill,
+          target_type: task.override_target_type,
+          review_session_id: task.override_target_session_id,
+          exam_id: task.override_target_exam_id,
+        },
+        override_target_type: task.override_target_type,
+        override_target_domain: task.override_target_domain,
+        override_target_skill: task.override_target_skill,
+        override_target_session_id: task.override_target_session_id,
+        override_target_exam_id: task.override_target_exam_id,
+        source_skill_code: task.source_skill_code,
+        source_domain: task.source_domain,
+        source_subskill: task.source_subskill,
+        source_reason: task.source_reason,
+        metadata: task.metadata,
+        mode:
+          task.task_type === "full_length"
+            ? "full-length"
+            : task.task_type === "review_full_length"
+              ? "review-full-length"
+              : task.task_type === "review_practice"
+                ? "review"
+                : task.task_type === "focused_drill"
+                  ? "focused"
+                  : task.task_type === "tutor_support"
+                    ? "support"
+                    : "mixed",
         minutes: task.duration_minutes,
+        replaces_override: task.replaces_override,
+        replaced_override_task_id: task.replaced_override_task_id,
+        replacement_source: task.replacement_source,
+        replacement_at: task.replacement_at,
       })),
       plan_version: (existing?.plan_version ?? 0) + 1,
       generated_at: DateTime.now().toUTC().toISO(),
@@ -522,6 +898,10 @@ async function persistGeneratedDays(params: {
       required_task_count: generatedTaskRows.filter((task) => task.metadata.required !== false).length,
       completed_task_count: 0,
       study_minutes_target: day.studyMinutesTarget,
+      replaces_override: replacesOverride,
+      replaced_override_day_id: replacesOverride ? existing?.id ?? null : null,
+      replacement_source: replacesOverride ? params.source : null,
+      replacement_at: replacementAt,
     };
 
     const { data: upsertedDay, error: upsertDayError } = await supabaseServer
@@ -569,7 +949,10 @@ function plannerSettingsFromProfile(userId: string, profile: StudyProfileRow | n
     dailyMinutes: settings.dailyMinutes,
     examDate: settings.examDate,
     fullTestCadence: settings.fullTestCadence,
-    preferredStudyDays: settings.preferredStudyDays,
+    studyDaysOfWeek: settings.studyDaysOfWeek,
+    blockedWeekdays: settings.blockedWeekdays,
+    blockedDates: settings.blockedDates,
+    blockedWindows: settings.blockedWindows,
   };
 }
 
@@ -593,7 +976,7 @@ async function generatePlanForWindow(params: {
       .from("student_study_plan_tasks")
       .select("day_date")
       .eq("user_id", params.userId)
-      .eq("task_type", "full_length_exam")
+      .in("task_type", ["full_length", "full_length_exam"])
       .eq("status", "completed")
       .gte("day_date", DateTime.fromISO(params.startDate).minus({ days: 30 }).toISODate()!)
       .order("day_date", { ascending: false })
@@ -634,7 +1017,7 @@ async function generatePlanForWindow(params: {
     skipOverrideDays: params.skipOverrideDays,
   });
 
-  return { settings, plan, existingDays };
+  return { settings, plan, existingDays, existingTasks };
 }
 
 function parseDateWindow(req: AuthenticatedRequest, timezone: string): { startDate: string; requestedDays: number } | null {
@@ -694,7 +1077,9 @@ calendarRouter.put("/profile", async (req: AuthenticatedRequest, res: Response) 
     const { data, error } = await supabaseServer
       .from("student_study_profile")
       .upsert(upsertPayload, { onConflict: "user_id" })
-      .select("user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, preferred_study_days, created_at, updated_at")
+      .select(
+        "user_id, baseline_score, target_score, exam_date, daily_minutes, timezone, planner_mode, full_test_cadence, study_days_of_week, preferred_study_days, blocked_weekdays, blocked_dates, blocked_windows, created_at, updated_at",
+      )
       .single();
 
     if (error) {
@@ -740,6 +1125,11 @@ calendarRouter.get("/month", async (req: AuthenticatedRequest, res: Response) =>
         timezone: settings.timezone,
         planner_mode: settings.plannerMode,
         full_test_cadence: settings.fullTestCadence,
+        study_days_of_week: settings.studyDaysOfWeek,
+        preferred_study_days: settings.preferredStudyDays,
+        blocked_weekdays: settings.blockedWeekdays,
+        blocked_dates: settings.blockedDates,
+        blocked_windows: settings.blockedWindows,
       },
       requestId: req.requestId,
     });
@@ -786,6 +1176,7 @@ calendarRouter.post("/generate", async (req: AuthenticatedRequest, res: Response
       timezone: settings.timezone,
       todayDate,
       existingDays: generated.existingDays,
+      existingTasks: generated.existingTasks,
       generatedDays: generated.plan.plannedDays,
       source: "generate",
       skipOverrides: true,
@@ -883,6 +1274,7 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
       timezone: settings.timezone,
       todayDate,
       existingDays: generated.existingDays,
+      existingTasks: generated.existingTasks,
       generatedDays: generated.plan.plannedDays,
       source: "refresh",
       skipOverrides: true,
@@ -957,6 +1349,7 @@ calendarRouter.post("/regenerate", async (req: AuthenticatedRequest, res: Respon
       timezone: settings.timezone,
       todayDate,
       existingDays: generated.existingDays,
+      existingTasks: generated.existingTasks,
       generatedDays: generated.plan.plannedDays,
       source: "regenerate",
       skipOverrides: false,
@@ -1022,6 +1415,7 @@ calendarRouter.post("/day/:dayDate/regenerate", async (req: AuthenticatedRequest
       timezone: settings.timezone,
       todayDate,
       existingDays: generated.existingDays,
+      existingTasks: generated.existingTasks,
       generatedDays: generated.plan.plannedDays,
       source: "regenerate",
       skipOverrides: false,
@@ -1084,8 +1478,9 @@ calendarRouter.post("/day/:dayDate/reset-to-auto", async (req: AuthenticatedRequ
       timezone: settings.timezone,
       todayDate,
       existingDays: generated.existingDays,
+      existingTasks: generated.existingTasks,
       generatedDays: generated.plan.plannedDays,
-      source: "refresh",
+      source: "regenerate",
       skipOverrides: false,
     });
 
@@ -1124,12 +1519,40 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     }
 
     const existing = (await loadDaysByRange(user.id, dayDate, dayDate))[0] ?? null;
-    const incomingTasks = Array.isArray(req.body?.tasks) ? req.body.tasks : [];
+    const incomingTasks: ManualCalendarTaskInput[] = Array.isArray(req.body?.tasks)
+      ? req.body.tasks.filter(
+        (task: unknown): task is ManualCalendarTaskInput => typeof task === "object" && task !== null,
+      )
+      : [];
     const incomingFocus = Array.isArray(req.body?.focus) ? req.body.focus : [];
     const plannedMinutesInput = Number(req.body?.planned_minutes);
     const plannedMinutes = Number.isFinite(plannedMinutesInput)
       ? Math.max(0, Math.round(plannedMinutesInput))
-      : incomingTasks.reduce((sum: number, task: any) => sum + Math.max(0, Number(task?.minutes ?? 0)), 0);
+      : incomingTasks.reduce((sum, task) => sum + Math.max(0, Number(task.minutes ?? 0)), 0);
+
+    const normalizedManualTasks = incomingTasks.map((task, index) => {
+      const section = normalizeSection(task?.section);
+      const taskType = normalizeTaskType(task?.task_type ?? task?.type, section, task?.mode);
+      const target = normalizeTaskTarget(task, section, taskType);
+      return {
+        index,
+        section,
+        taskType,
+        target,
+        minutes: Math.max(0, Math.round(Number(task?.minutes ?? task?.duration_minutes ?? 0))),
+        status: parseTaskStatus(task?.status),
+        notes: typeof task?.notes === "string" ? task.notes : null,
+      };
+    });
+
+    const invalidTarget = normalizedManualTasks.find((task) => validateStructuredManualTarget(task.taskType, task.target));
+    if (invalidTarget) {
+      return res.status(400).json({
+        error: "Manual override tasks must include structured targets for their task type.",
+        code: validateStructuredManualTarget(invalidTarget.taskType, invalidTarget.target),
+        requestId: req.requestId,
+      });
+    }
 
     const dayPayload = {
       user_id: user.id,
@@ -1137,7 +1560,55 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       planned_minutes: plannedMinutes,
       completed_minutes: existing?.completed_minutes ?? 0,
       focus: incomingFocus,
-      tasks: incomingTasks,
+      tasks: normalizedManualTasks.map((task) => {
+        return {
+          type: task.taskType,
+          task_type: task.taskType,
+          section: task.section === "MATH" ? "Math" : task.section === "RW" ? "Reading & Writing" : null,
+          target: {
+            section: task.target.section,
+            skill_code: task.target.skill_code,
+            domain: task.target.domain,
+            subskill: task.target.subskill,
+            target_type: task.target.target_type,
+            review_session_id: task.target.review_session_id,
+            exam_id: task.target.exam_id,
+          },
+          override_target_type: task.target.target_type,
+          override_target_domain: task.target.domain,
+          override_target_skill: task.target.skill_code,
+          override_target_session_id: task.target.review_session_id,
+          override_target_exam_id: task.target.exam_id,
+          source_skill_code: task.target.skill_code,
+          source_domain: task.target.domain,
+          source_subskill: task.target.subskill,
+          source_reason: {
+            mode: "manual_edit",
+            target: task.target,
+          },
+          metadata: {
+            required: true,
+            notes: task.notes,
+          },
+          mode:
+            task.taskType === "full_length"
+                ? "full-length"
+                : task.taskType === "review_full_length"
+                  ? "review-full-length"
+                  : task.taskType === "review_practice"
+                    ? "review"
+                    : task.taskType === "focused_drill"
+                      ? "focused"
+                      : "mixed",
+          minutes: task.minutes,
+          status: task.status,
+          ordinal: task.index + 1,
+          replaces_override: false,
+          replaced_override_task_id: null,
+          replacement_source: null,
+          replacement_at: null,
+        };
+      }),
       plan_version: (existing?.plan_version ?? 0) + 1,
       generated_at: DateTime.now().toUTC().toISO(),
       is_user_override: true,
@@ -1146,9 +1617,13 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       is_exam_day: Boolean(existing?.is_exam_day),
       is_taper_day: Boolean(existing?.is_taper_day),
       is_full_test_day: Boolean(existing?.is_full_test_day),
-      required_task_count: incomingTasks.length,
-      completed_task_count: incomingTasks.filter((task: any) => task?.status === "completed").length,
+      required_task_count: normalizedManualTasks.length,
+      completed_task_count: normalizedManualTasks.filter((task) => task.status === "completed").length,
       study_minutes_target: plannedMinutes,
+      replaces_override: false,
+      replaced_override_day_id: null,
+      replacement_source: null,
+      replacement_at: null,
     };
 
     const { data: dayRow, error: dayError } = await supabaseServer
@@ -1169,38 +1644,37 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
       return res.status(500).json({ error: `Failed to replace day tasks: ${deleteError.message}`, requestId: req.requestId });
     }
 
-    if (incomingTasks.length > 0) {
-      const rows = incomingTasks.map((task: any, index: number) => {
-        const section = normalizeSection(task?.section);
-        const minutes = Math.max(0, Math.round(Number(task?.minutes ?? task?.duration_minutes ?? 0)));
-        const normalizedTaskType: TaskType =
-          task?.task_type === "full_length_exam" || task?.type === "full_test"
-            ? "full_length_exam"
-            : task?.task_type === "review_errors" || task?.type === "review"
-              ? "review_errors"
-              : section === "RW"
-                ? "rw_practice"
-                : "math_practice";
+    if (normalizedManualTasks.length > 0) {
+      const rows = normalizedManualTasks.map((task) => {
         return {
           day_id: dayRow.id,
           user_id: user.id,
           day_date: dayDate,
-          ordinal: index + 1,
-          task_type: normalizedTaskType,
-          section,
-          duration_minutes: minutes,
-          source_skill_code: null,
-          source_domain: null,
-          source_subskill: null,
-          source_reason: { mode: "manual_edit" },
-          status: parseTaskStatus(task?.status),
+          ordinal: task.index + 1,
+          task_type: task.taskType,
+          section: task.section,
+          duration_minutes: task.minutes,
+          source_skill_code: task.target.skill_code,
+          source_domain: task.target.domain,
+          source_subskill: task.target.subskill,
+          override_target_type: task.target.target_type,
+          override_target_domain: task.target.domain,
+          override_target_skill: task.target.skill_code,
+          override_target_session_id: task.target.review_session_id,
+          override_target_exam_id: task.target.exam_id,
+          source_reason: { mode: "manual_edit", target: task.target },
+          status: task.status,
           is_user_override: true,
           planner_owned: false,
           metadata: {
             required: true,
-            notes: typeof task?.notes === "string" ? task.notes : null,
+            notes: task.notes,
           },
-          completed_at: task?.status === "completed" ? DateTime.now().toUTC().toISO() : null,
+          completed_at: task.status === "completed" ? DateTime.now().toUTC().toISO() : null,
+          replaces_override: false,
+          replaced_override_task_id: null,
+          replacement_source: null,
+          replacement_at: null,
         };
       });
       const { error: insertError } = await supabaseServer.from("student_study_plan_tasks").insert(rows);
@@ -1212,7 +1686,7 @@ calendarRouter.put("/day/:dayDate", async (req: AuthenticatedRequest, res: Respo
     await emitCalendarEvent({
       eventType: "day_edited",
       userId: user.id,
-      details: { day_date: dayDate, task_count: incomingTasks.length },
+      details: { day_date: dayDate, task_count: normalizedManualTasks.length },
     });
     await emitCalendarEvent({
       eventType: "override_applied",

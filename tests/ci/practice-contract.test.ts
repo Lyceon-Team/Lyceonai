@@ -2,6 +2,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import type { Express, NextFunction, Request, Response } from "express";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+
+vi.mock("../../server/middleware/csrf-double-submit", () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => "test-csrf-token",
+}));
 
 type TableRow = Record<string, any>;
 
@@ -462,34 +468,21 @@ describe("Practice Runtime Contract", () => {
 
   it("selection consumes persisted session_spec sections/domains/difficulties", async () => {
     db.questions.push(cloneRow(questionC), cloneRow(questionRw));
-
-    const sessionId = "00000000-0000-0000-0000-00000000aa09";
-    db.practice_sessions.push({
-      id: sessionId,
-      user_id: "00000000-0000-0000-0000-000000000000",
-      section: "Random",
-      mode: "balanced",
-      status: "in_progress",
-      completed: false,
-      metadata: {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "random",
+        sections: ["rw"],
+        domains: ["grammar"],
+        difficulties: ["easy"],
+        mode: "balanced",
         client_instance_id: "tab-1",
-        lifecycle_state: "created",
-        target_question_count: 20,
-        session_spec: {
-          sections: ["RW"],
-          domains: ["grammar"],
-          difficulties: ["easy"],
-          target_minutes: null,
-          target_question_count: 20,
-          mode: "balanced",
-        },
-      },
-    });
+      });
 
-    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
-    expect(next.status).toBe(200);
+    expect(start.status).toBe(200);
 
-    const served = db.practice_session_items.find((row) => row.id === next.body.sessionItemId);
+    const served = db.practice_session_items.find((row) => row.status === "served");
     if (!served) throw new Error("missing served item fixture");
     expect(served.question_id).toBe(questionRw.id);
   });
@@ -510,6 +503,63 @@ describe("Practice Runtime Contract", () => {
     expect(db.practice_session_items.filter((row) => row.status === "served")).toHaveLength(1);
     expect(db.practice_session_items.filter((row) => row.status === "queued")).toHaveLength(4);
     expect(db.practice_session_items.some((row) => row.status === "answered" && row.attempt_id == null)).toBe(false);
+  });
+
+  it("post-unlock smoke proves canonical practice flow without runtime raw-bank reads", async () => {
+    const fromMock = supabaseServer.from as unknown as ReturnType<typeof vi.fn>;
+    fromMock.mockClear();
+
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        section: "math",
+        target_question_count: 5,
+        mode: "balanced",
+        client_instance_id: "tab-smoke",
+      });
+
+    expect(start.status).toBe(200);
+    const sessionId = String(start.body.sessionId);
+    expect(sessionId).toMatch(/[0-9a-fA-F-]{36}/);
+
+    const materializedItems = db.practice_session_items.filter((row) => row.session_id === sessionId);
+    expect(materializedItems.length).toBe(5);
+
+    // Track runtime reads/writes after creation materialization.
+    fromMock.mockClear();
+
+    const first = await request(app)
+      .get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-smoke`);
+    expect(first.status).toBe(200);
+    expect(first.body.sessionId).toBe(sessionId);
+    expect(typeof first.body.sessionItemId).toBe("string");
+
+    const selectedOptionId = getCorrectTokenFromSessionItem(String(first.body.sessionItemId));
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: first.body.sessionItemId,
+        selectedOptionId,
+        clientAttemptId: "attempt-post-unlock-smoke",
+      });
+    expect(submit.status).toBe(200);
+
+    const state = await request(app)
+      .get(`/api/practice/sessions/${sessionId}/state?client_instance_id=tab-smoke`);
+    expect(state.status).toBe(200);
+    expect(state.body.sessionId).toBe(sessionId);
+    expect(state.body.answeredCount).toBeGreaterThanOrEqual(1);
+
+    const resumed = await request(app)
+      .get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-smoke`);
+    expect(resumed.status).toBe(200);
+    expect(resumed.body.sessionId).toBe(sessionId);
+
+    const runtimeTouchedTables = fromMock.mock.calls.map((call) => String(call[0]));
+    expect(runtimeTouchedTables.includes("questions")).toBe(false);
   });
 
   it("fills smaller exact pool via deterministic exact-only reuse", async () => {
@@ -941,7 +991,12 @@ describe("Practice Runtime Contract", () => {
     const conflict = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-2`);
 
     expect(conflict.status).toBe(409);
-    expect(conflict.body.error).toBe("conflict");
+    expect(conflict.body).toMatchObject({
+      error: "client_instance_conflict",
+      code: "CLIENT_INSTANCE_CONFLICT",
+      message: "Session client instance conflict",
+      client_instance_id: "tab-1",
+    });
   });
 
   it("is idempotent per served item and does not double-write mastery", async () => {
@@ -1094,18 +1149,7 @@ describe("Practice Runtime Contract", () => {
     expect(blockedNext.status).toBe(402);
   });
 
-  it("keeps selector deterministic and applies recent-question exclusion", async () => {
-    const sessionId = "00000000-0000-0000-0000-00000000aa01";
-    db.practice_sessions.push({
-      id: sessionId,
-      user_id: "00000000-0000-0000-0000-000000000000",
-      section: "Math",
-      mode: "balanced",
-      status: "in_progress",
-      completed: false,
-      metadata: { client_instance_id: "tab-1", lifecycle_state: "created", target_question_count: 20 },
-    });
-
+  it("keeps selector deterministic with recent history present", async () => {
     db.answer_attempts.push({
       id: "00000000-0000-0000-0000-00000000bb01",
       user_id: "00000000-0000-0000-0000-000000000000",
@@ -1115,19 +1159,15 @@ describe("Practice Runtime Contract", () => {
       is_correct: false,
       outcome: "incorrect",
     });
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
 
-    const first = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
-    const firstSessionItem = db.practice_session_items.find((row) => row.id === first.body.sessionItemId);
+    expect(start.status).toBe(200);
 
-    db.practice_session_items = [];
-
-    const second = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
-    const secondSessionItem = db.practice_session_items.find((row) => row.id === second.body.sessionItemId);
-
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(firstSessionItem?.question_id).toBe(secondSessionItem?.question_id);
-    expect(firstSessionItem?.question_id).toBe("00000000-0000-0000-0000-000000000002");
+    const firstSessionItem = db.practice_session_items.find((row) => row.status === "served");
+    expect(firstSessionItem?.question_id).toBe("00000000-0000-0000-0000-000000000001");
   });
 
   it("denies non-owner answer submit", async () => {

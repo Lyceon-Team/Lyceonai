@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/legal/accept"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "documentSlug": "student-terms",
+      "version": "1.0"
+    }
+order: 1000

@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/guardian/students/{{studentId}}/summary"
+method: GET
+order: 4000

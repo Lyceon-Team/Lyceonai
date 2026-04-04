@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/api/guardian/students/{{studentId}}/calendar/month?year=2026&\
+  month=3"
+method: GET
+queryParams:
+  year: "2026"
+  month: "3"
+order: 5000

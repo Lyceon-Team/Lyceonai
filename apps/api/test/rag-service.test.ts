@@ -37,7 +37,7 @@ const MOCK_QUESTIONS: Record<string, QuestionContext> = {
     answer: 'A',
     explanation: 'Subtract 5 from both sides, then divide by 2',
     competencies: [{ code: 'M.LIN.1', raw: 'Linear Equations' }],
-    difficulty: 'medium',
+    difficulty: 2,
     tags: ['algebra', 'linear-equations'],
   },
   'q-geo-1': {
@@ -55,7 +55,7 @@ const MOCK_QUESTIONS: Record<string, QuestionContext> = {
     answer: 'A',
     explanation: 'Area = πr² = π(5)² = 25π',
     competencies: [{ code: 'M.GEO.2', raw: 'Geometry - Area' }],
-    difficulty: 'easy',
+    difficulty: 1,
     tags: ['geometry', 'area'],
   },
   'q-other-1': {
@@ -73,7 +73,7 @@ const MOCK_QUESTIONS: Record<string, QuestionContext> = {
     answer: 'A',
     explanation: '2^10 = 1024',
     competencies: [{ code: 'M.EXP.3', raw: 'Exponents' }],
-    difficulty: 'hard',
+    difficulty: 3,
     tags: ['algebra', 'exponents'],
   },
 };
@@ -84,31 +84,31 @@ const MOCK_MATCHES: MatchResult[] = [
     similarity: 0.85,
     stem: MOCK_QUESTIONS['q-lin-1'].stem,
     section: 'Math',
-    metadata: {
-      competencyCodes: ['M.LIN.1'],
-      difficulty: 'medium',
+      metadata: {
+        competencyCodes: ['M.LIN.1'],
+        difficulty: 2,
+      },
     },
-  },
   {
     question_id: 'q-geo-1',
     similarity: 0.80,
     stem: MOCK_QUESTIONS['q-geo-1'].stem,
     section: 'Math',
-    metadata: {
-      competencyCodes: ['M.GEO.2'],
-      difficulty: 'easy',
+      metadata: {
+        competencyCodes: ['M.GEO.2'],
+        difficulty: 1,
+      },
     },
-  },
   {
     question_id: 'q-other-1',
     similarity: 0.75,
     stem: MOCK_QUESTIONS['q-other-1'].stem,
     section: 'Math',
-    metadata: {
-      competencyCodes: ['M.EXP.3'],
-      difficulty: 'hard',
+      metadata: {
+        competencyCodes: ['M.EXP.3'],
+        difficulty: 3,
+      },
     },
-  },
 ];
 
 // ========== MOCK FACTORIES ==========
@@ -288,14 +288,14 @@ describe('RagService', () => {
 
   describe('Test B: Difficulty Match Scoring', () => {
     it('should score 1.0 for exact difficulty match', () => {
-      const score = service.testComputeDifficultyMatch('medium', 'medium');
+      const score = service.testComputeDifficultyMatch(2, 2);
       expect(score).toBe(1);
     });
 
     it('should score 0.5 for adjacent difficulties (easy-medium)', () => {
-      const scoreEasyMedium = service.testComputeDifficultyMatch('easy', 'medium');
-      const scoreMediumEasy = service.testComputeDifficultyMatch('medium', 'easy');
-      const scoreMediumHard = service.testComputeDifficultyMatch('medium', 'hard');
+      const scoreEasyMedium = service.testComputeDifficultyMatch(1, 2);
+      const scoreMediumEasy = service.testComputeDifficultyMatch(2, 1);
+      const scoreMediumHard = service.testComputeDifficultyMatch(2, 3);
 
       expect(scoreEasyMedium).toBe(0.5);
       expect(scoreMediumEasy).toBe(0.5);
@@ -303,20 +303,20 @@ describe('RagService', () => {
     });
 
     it('should score 0 for non-adjacent difficulties (easy-hard)', () => {
-      const score = service.testComputeDifficultyMatch('easy', 'hard');
+      const score = service.testComputeDifficultyMatch(1, 3);
       expect(score).toBe(0);
     });
 
     it('should score 0 when either difficulty is null', () => {
-      expect(service.testComputeDifficultyMatch(null, 'medium')).toBe(0);
-      expect(service.testComputeDifficultyMatch('medium', null)).toBe(0);
+      expect(service.testComputeDifficultyMatch(null, 2)).toBe(0);
+      expect(service.testComputeDifficultyMatch(2, null)).toBe(0);
       expect(service.testComputeDifficultyMatch(null, null)).toBe(0);
     });
 
     it('should rank medium difficulty higher than hard when target is medium', () => {
       const scoringContext: ScoringContext = {
         targetCompetencies: [],
-        targetDifficulty: 'medium',
+        targetDifficulty: 2,
         studentWeakAreas: [],
       };
 
@@ -329,7 +329,7 @@ describe('RagService', () => {
           section: 'Math',
           metadata: {
             competencyCodes: [],
-            difficulty: 'hard',
+            difficulty: 3,
           },
         },
         {
@@ -339,7 +339,7 @@ describe('RagService', () => {
           section: 'Math',
           metadata: {
             competencyCodes: [],
-            difficulty: 'medium',
+            difficulty: 2,
           },
         },
       ];
@@ -449,7 +449,6 @@ describe('RagService', () => {
         mode: 'concept',
         testCode: 'SAT',
         sectionCode: 'M',
-        topK: 3,
       };
 
       const profile = createWeaknessProfile();
@@ -493,11 +492,49 @@ describe('RagService', () => {
     });
   });
 
+  describe('Profile Loading', () => {
+    it('uses injected profileLoader for handleRagQuery', async () => {
+      const injectedProfile: StudentProfile = {
+        userId: 'profile-user',
+        overallLevel: 4,
+        primaryStyle: 'conceptual',
+        secondaryStyle: 'step-by-step',
+        explanationLevel: 3,
+        competencyMap: {},
+        recentQuestions: [],
+        personaTags: [],
+      };
+
+      const profileLoader = {
+        loadProfile: vi.fn().mockResolvedValue(injectedProfile),
+      };
+
+      const localService = new RagService({
+        vectorClient: mockVectorClient,
+        embeddingClient: mockEmbeddingClient,
+        questionRepo: mockQuestionRepo,
+        profileLoader,
+      });
+
+      const request: RagQueryRequest = {
+        userId: 'profile-user',
+        message: 'Give me a strategy overview',
+        mode: 'strategy',
+      };
+
+      const result = await localService.handleRagQuery(request);
+
+      expect(profileLoader.loadProfile).toHaveBeenCalledTimes(1);
+      expect(profileLoader.loadProfile).toHaveBeenCalledWith('profile-user');
+      expect(result.context.studentProfile).toEqual(injectedProfile);
+    });
+  });
+
   describe('Combined Scoring', () => {
     it('should correctly combine all scoring factors', () => {
       const scoringContext: ScoringContext = {
         targetCompetencies: ['M.LIN.1'],
-        targetDifficulty: 'medium',
+        targetDifficulty: 2,
         studentWeakAreas: ['M.LIN.1'],
       };
 
@@ -509,7 +546,7 @@ describe('RagService', () => {
           section: 'Math',
           metadata: {
             competencyCodes: ['M.LIN.1'],
-            difficulty: 'medium',
+            difficulty: 2,
           },
         },
       ];

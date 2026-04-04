@@ -190,7 +190,7 @@ export default function Chat() {
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">AI Context</p>
               <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
@@ -202,7 +202,7 @@ export default function Chat() {
             </div>
              
             {/* AI Provider Badge */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border/60">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border/60 self-start">
               <Sparkles className="h-4 w-4 text-foreground" />
               <span className="text-sm font-medium text-foreground">RAG Context · /api/rag/v2</span>
             </div>

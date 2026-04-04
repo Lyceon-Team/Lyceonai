@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,9 +15,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { fetchUserAcceptances, hasAccepted, recordAcceptance } from "@/lib/legal";
+import { csrfFetch } from "@/lib/csrf";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 
 // Comprehensive profile validation schema
@@ -105,6 +106,12 @@ interface AuthUserResponse {
   authenticated?: boolean;
 }
 
+function resolvePostCompletionPath(profile?: AuthUserResponse["user"] | null): string {
+  const role = profile?.role;
+  if (role === "guardian") return "/guardian";
+  return "/dashboard";
+}
+
 function isAuthUserResponse(data: unknown): data is AuthUserResponse {
   return typeof data === 'object' && data !== null;
 }
@@ -170,7 +177,7 @@ export default function ProfileComplete() {
     queryKey: ['/api/profile'],
     retry: false,
     queryFn: async () => {
-      const response = await fetch('/api/profile', { credentials: 'include' });
+      const response = await csrfFetch('/api/profile', { credentials: 'include' });
 
       if (response.status === 401 || response.status === 403) {
         return { authenticated: false, user: null };
@@ -226,9 +233,11 @@ export default function ProfileComplete() {
     onSuccess: () => {
       toast({ 
         title: "Profile completed!", 
-        description: "Welcome to SAT Learning Copilot! Let's start improving your SAT scores." 
+        description: "Welcome to Lyceon! Let's start improving your SAT scores." 
       });
-      navigate('/');
+      void queryClient.invalidateQueries({ queryKey: ["/api/profile"] }).then(() => {
+        navigate(resolvePostCompletionPath(userProfile?.user));
+      });
     },
     onError: (error: any) => {
       const errorMessage = error.message || 'Failed to complete profile. Please try again.';
@@ -252,8 +261,7 @@ export default function ProfileComplete() {
 
   // Redirect if not authenticated
   if (!authLoading && !authError && !userProfile?.authenticated) {
-    navigate('/login');
-    return null;
+    return <Redirect to="/login" />;
   }
 
   // Show error state if auth check failed
@@ -301,8 +309,7 @@ export default function ProfileComplete() {
 
   // Redirect if profile already completed
   if (userProfile?.user?.profileCompletedAt) {
-    navigate('/');
-    return null;
+    return <Redirect to={resolvePostCompletionPath(userProfile?.user)} />;
   }
 
   if (authLoading) {
@@ -1105,19 +1112,17 @@ export default function ProfileComplete() {
         {/* Skip Option */}
         <div className="text-center">
           <Button
+            type="button"
             variant="link"
             size="sm"
-            onClick={() => navigate('/')}
+            onClick={() => navigate(resolvePostCompletionPath(userProfile?.user))}
             data-testid="button-skip"
             className="text-muted-foreground hover:text-primary"
           >
-            Skip for now (you can complete this later in settings)
+            Skip for now
           </Button>
         </div>
       </div>
     </div>
   );
 }
-
-
-

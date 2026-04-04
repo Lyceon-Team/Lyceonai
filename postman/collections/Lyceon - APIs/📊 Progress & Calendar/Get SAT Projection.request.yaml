@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/progress/projection"
+method: GET
+order: 2000

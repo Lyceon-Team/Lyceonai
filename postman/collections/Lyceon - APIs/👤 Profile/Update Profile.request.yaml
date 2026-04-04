@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{baseUrl}}/api/profile"
+method: PATCH
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "display_name": "Test User"
+    }
+order: 2000

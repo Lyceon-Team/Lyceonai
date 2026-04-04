@@ -25,7 +25,7 @@ type TableName =
   | "student_study_plan_tasks"
   | "student_question_attempts"
   | "practice_sessions"
-  | "skill_mastery"
+  | "student_skill_mastery"
   | "system_event_logs";
 
 type TableRow = Record<string, any>;
@@ -271,7 +271,7 @@ class FakeSupabaseClient {
         student_study_plan_tasks: seed?.student_study_plan_tasks ? [...seed.student_study_plan_tasks] : [],
         student_question_attempts: seed?.student_question_attempts ? [...seed.student_question_attempts] : [],
         practice_sessions: seed?.practice_sessions ? [...seed.practice_sessions] : [],
-        skill_mastery: seed?.skill_mastery ? [...seed.skill_mastery] : [],
+        student_skill_mastery: seed?.student_skill_mastery ? [...seed.student_skill_mastery] : [],
         system_event_logs: seed?.system_event_logs ? [...seed.system_event_logs] : [],
       },
       writes: {
@@ -338,13 +338,17 @@ function defaultSeed(overrides?: Partial<FakeStore["tables"]>): Partial<FakeStor
         timezone: "America/Chicago",
         planner_mode: "auto",
         full_test_cadence: "biweekly",
+        study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
         preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+        blocked_weekdays: [],
+        blocked_dates: [],
+        blocked_windows: [],
       },
     ],
     student_study_plan_days: [],
     student_study_plan_tasks: [],
     student_question_attempts: [],
-    skill_mastery: [],
+    student_skill_mastery: [],
     system_event_logs: [],
     ...overrides,
   };
@@ -376,7 +380,16 @@ describe("Calendar Ownership Contract", () => {
     const edit = await request(app).put(`/api/calendar/day/${overrideDay}`).send({
       planned_minutes: 55,
       focus: [{ section: "Math", weight: 1, competencies: ["math.algebra"] }],
-      tasks: [{ type: "practice", section: "Math", mode: "skill-focused", minutes: 55 }],
+      tasks: [
+        {
+          type: "practice",
+          task_type: "practice",
+          section: "Math",
+          mode: "skill-focused",
+          minutes: 55,
+          target: { section: "MATH", skill_code: "math.algebra", domain: null, subskill: null },
+        },
+      ],
     });
     expect(edit.status).toBe(200);
     expect(edit.body.day.is_user_override).toBe(true);
@@ -392,6 +405,9 @@ describe("Calendar Ownership Contract", () => {
     expect(edited).toBeDefined();
     expect(edited.is_user_override).toBe(true);
     expect(edited.planned_minutes).toBe(55);
+    expect(edited.replaces_override).toBe(false);
+    expect(edited.replacement_source).toBeNull();
+    expect(edited.tasks.every((task: any) => task.replaces_override === false)).toBe(true);
   });
 
   it("regenerate-one-day replaces override for that day only", async () => {
@@ -407,7 +423,7 @@ describe("Calendar Ownership Contract", () => {
             planned_minutes: 50,
             completed_minutes: 0,
             focus: [{ section: "Math", weight: 1 }],
-            tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 50 }],
+            tasks: [{ id: "task-b-1", type: "practice", task_type: "practice", section: "Math", mode: "manual", minutes: 50, is_user_override: true }],
             plan_version: 7,
             generated_at: new Date().toISOString(),
             is_user_override: true,
@@ -441,6 +457,31 @@ describe("Calendar Ownership Contract", () => {
             study_minutes_target: 50,
           },
         ],
+        student_study_plan_tasks: [
+          {
+            id: "task-b-1",
+            day_id: "day-b",
+            user_id: "student-1",
+            day_date: dayB,
+            ordinal: 1,
+            task_type: "practice",
+            section: "MATH",
+            duration_minutes: 50,
+            source_skill_code: "math.algebra",
+            source_domain: "math_foundations",
+            source_subskill: null,
+            source_reason: { source: "manual_override" },
+            status: "planned",
+            is_user_override: true,
+            planner_owned: false,
+            metadata: { required: true },
+            completed_at: null,
+            replaces_override: false,
+            replaced_override_task_id: null,
+            replacement_source: null,
+            replacement_at: null,
+          },
+        ],
       }),
     );
     const app = buildCalendarApp("student");
@@ -458,6 +499,11 @@ describe("Calendar Ownership Contract", () => {
     expect(persistedDayA.planned_minutes).toBe(50);
     expect(persistedDayB.is_user_override).toBe(false);
     expect(persistedDayB.planned_minutes).toBeGreaterThan(0);
+    expect(persistedDayB.replaces_override).toBe(true);
+    expect(persistedDayB.replacement_source).toBe("regenerate");
+    expect(persistedDayB.replaced_override_day_id).toBe("day-b");
+    expect(persistedDayB.tasks.some((task: any) => task.replaces_override === true)).toBe(true);
+    expect(persistedDayB.tasks.some((task: any) => task.replaced_override_task_id != null)).toBe(true);
   });
 
   it("guardian is read-blocked from student calendar mutation routes", async () => {
@@ -506,7 +552,11 @@ describe("Calendar Ownership Contract", () => {
             timezone: "America/Chicago",
             planner_mode: "custom",
             full_test_cadence: "biweekly",
+            study_days_of_week: [1, 2, 3, 4, 5, 6, 7],
             preferred_study_days: [1, 2, 3, 4, 5, 6, 7],
+            blocked_weekdays: [],
+            blocked_dates: [],
+            blocked_windows: [],
           },
         ],
       }),
@@ -535,7 +585,24 @@ describe("Calendar Ownership Contract", () => {
     const edited = await request(app).put(`/api/calendar/day/${start}`).send({
       planned_minutes: 40,
       focus: [{ section: "Math", weight: 1 }],
-      tasks: [{ type: "practice", section: "Math", mode: "manual", minutes: 40 }],
+      tasks: [
+        {
+          type: "practice",
+          task_type: "practice",
+          section: "Math",
+          mode: "manual",
+          minutes: 40,
+          target: {
+            section: "MATH",
+            domain: "algebra",
+            skill_code: "math.algebra",
+            subskill: null,
+            target_type: "practice_target",
+            review_session_id: null,
+            exam_id: null,
+          },
+        },
+      ],
     });
     expect(edited.status).toBe(200);
 
@@ -786,7 +853,7 @@ describe("Calendar Ownership Contract", () => {
             user_id: "student-1",
             day_date: day,
             ordinal: 1,
-            task_type: "math_practice",
+            task_type: "practice",
             section: "MATH",
             duration_minutes: 30,
             source_skill_code: null,
@@ -845,7 +912,7 @@ describe("Calendar Ownership Contract", () => {
             user_id: "student-1",
             day_date: day,
             ordinal: 1,
-            task_type: "math_practice",
+            task_type: "practice",
             section: "MATH",
             duration_minutes: 30,
             source_skill_code: null,

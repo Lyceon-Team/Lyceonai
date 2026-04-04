@@ -7,7 +7,6 @@
 - All mastery-affecting runtime flows call this function:
   - `server/routes/practice-canonical.ts`
   - `server/routes/review-session-routes.ts`
-  - `apps/api/src/routes/diagnostic.ts`
   - `apps/api/src/services/fullLengthExam.ts`
 
 ## Canonical Runtime Tables
@@ -46,5 +45,18 @@ Fail-closed behavior:
 
 ## Reader Alignment
 - KPI/calendar event counting derives from `student_question_attempts` and canonical event filters in `apps/api/src/services/mastery-constants.ts`.
-- Mastery summaries/weakness readers derive from `student_skill_mastery`.
+- Mastery product-read surfaces derive from the canonical read layer in `apps/api/src/services/mastery-read.ts`.
+- Mastery summaries/weakness readers derive from `student_skill_mastery` via the read layer.
 - Guardian mastery-adjacent surfaces remain summary-only and do not expose raw mastery score deltas or attempt-level internals.
+
+## Mounted Route Ownership Audit
+This audit is based on mounted routes in `server/index.ts` and is required before declaring canonical status.
+
+- Canonical (student mastery surfaces):
+`/api/me/mastery/summary`, `/api/me/mastery/skills`, `/api/me/mastery/weakest`, `/api/me/weakness/skills`, `/api/me/weakness/clusters`
+- Canonical (guardian mastery-derived surfaces):
+`/api/guardian/weaknesses/:studentId` (guardian-safe projection of student truth)
+- Compatibility-only:
+None for mastery product truth.
+- Dead/disabled:
+`/api/me/mastery/diagnostic` (intentionally returns 404).

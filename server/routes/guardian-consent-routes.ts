@@ -3,11 +3,9 @@ import { getSupabaseAdmin } from '../middleware/supabase-auth';
 import { getUncachableStripeClient } from '../lib/stripeClient';
 import { logger } from '../logger';
 import { createGuardianLink, ensureAccountForUser } from '../lib/account';
-import { csrfGuard } from '../middleware/csrf';
 import { sendEmail } from '../lib/email';
 
 const router = Router();
-const csrfProtection = csrfGuard();
 
 /**
  * GET /api/consent/request/:id
@@ -48,7 +46,7 @@ router.get('/request/:id', async (req: Request, res: Response) => {
  * POST /api/consent/create-checkout-session
  * Create a Stripe Checkout Session for $0.50 identity verification
  */
-router.post('/create-checkout-session', csrfProtection, async (req: Request, res: Response) => {
+router.post('/create-checkout-session', async (req: Request, res: Response) => {
   const { requestId } = req.body;
   const admin = getSupabaseAdmin();
 
@@ -109,7 +107,7 @@ router.post('/create-checkout-session', csrfProtection, async (req: Request, res
  * POST /api/consent/verify-session
  * Verify that the checkout session was successful and approve consent
  */
-router.post('/verify-session', csrfProtection, async (req: Request, res: Response) => {
+router.post('/verify-session', async (req: Request, res: Response) => {
   const { requestId, sessionId } = req.body;
   const admin = getSupabaseAdmin();
 
@@ -120,13 +118,13 @@ router.post('/verify-session', csrfProtection, async (req: Request, res: Respons
     });
 
     const pi = session.payment_intent as any;
-    const isAuthorized = session.payment_status === 'paid' || 
-                       session.payment_status === 'no_payment_required' ||
-                       (pi && pi.status === 'requires_capture');
+    const isAuthorized = session.payment_status === 'paid' ||
+      session.payment_status === 'no_payment_required' ||
+      (pi && pi.status === 'requires_capture');
 
     if (!isAuthorized) {
-      logger.warn('CONSENT', 'payment_not_completed', 'Stripe session payment not completed', { 
-        sessionId, 
+      logger.warn('CONSENT', 'payment_not_completed', 'Stripe session payment not completed', {
+        sessionId,
         paymentStatus: session.payment_status,
         piStatus: pi?.status
       });
@@ -172,7 +170,7 @@ router.post('/verify-session', csrfProtection, async (req: Request, res: Respons
 
     if (existingGuardian) {
       guardianId = existingGuardian.id;
-      
+
       // Link notification for existing guardian
       await sendEmail({
         to: request.guardian_email,
@@ -201,7 +199,7 @@ router.post('/verify-session', csrfProtection, async (req: Request, res: Respons
       }
 
       guardianId = (inviteData as any).user.id;
-      
+
       // Send invitation email via Resend
       await sendEmail({
         to: request.guardian_email,
@@ -220,15 +218,10 @@ router.post('/verify-session', csrfProtection, async (req: Request, res: Respons
     // Ensure both have accounts
     const studentAccountId = await ensureAccountForUser(admin, request.child_id, 'student');
     await ensureAccountForUser(admin, guardianId, 'guardian');
-    
+
     await createGuardianLink(guardianId, request.child_id, studentAccountId);
 
-    // 5. Update child's profile with guardian_profile_id
-    await admin
-      .from('profiles')
-      .update({ guardian_profile_id: guardianId })
-      .eq('id', request.child_id);
-
+    // 5. Removed legacy write to child profile.guardian_profile_id (guardian_links is now canonical truth)
     // 6. Void the Stripe charge if it was an auth
     if (session.payment_intent) {
       const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;

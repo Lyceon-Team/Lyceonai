@@ -51,12 +51,10 @@ Lyceon has no ingestion runtime in this repository. Any ingestion route, worker,
   - `tests/legacy/test-database-consistency.js`
 - Updated tests to remove deprecated ingestion endpoint/log expectations:
   - `tests/specs/rls-auth-enforcement.spec.ts`
-  - `tests/specs/15_admin_logs_api.spec.ts`
 - Updated smoke script to remove ingestion endpoint check:
   - `scripts/smoke.sh`
 
 ## What Remains In Scope
-- Manual/admin-managed content review and curation (`/api/admin/questions/*`).
 - Student practice, tutor, mastery, guardian, billing, and full-length exam runtime flows.
 - Legacy schema compatibility fields for historical records only (no ingestion runtime mounts).
 

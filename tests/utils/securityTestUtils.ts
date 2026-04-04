@@ -11,6 +11,7 @@ export const SECURITY_TEST_ENV = {
   INGEST_ADMIN_TOKEN: 'test-token',
   API_USER_TOKEN: 'test-token',
   PUBLIC_SITE_URL: 'http://localhost:5000',
+  CSRF_SECRET: 'test-csrf-secret',
 };
 
 /**
@@ -29,6 +30,11 @@ Object.entries(SECURITY_TEST_ENV).forEach(([key, value]) => {
 export function setupSecurityMocks() {
   vi.doMock('../../server/middleware/csrf', () => ({
     csrfGuard: () => (req: any, res: any, next: any) => next(),
+  }));
+
+  vi.doMock('../../server/middleware/csrf-double-submit', () => ({
+    doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+    generateToken: () => 'test-csrf-token',
   }));
 
   vi.doMock('../../server/middleware/supabase-auth', () => ({
@@ -78,6 +84,14 @@ export function setupSecurityMocks() {
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
     getSupabaseAdmin: () => ({
       rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
+    }),
+    resolveTokenFromRequest: () => ({
+      token: "test-token-123456789012345",
+      tokenSource: "cookie:sb-access-token",
+      cookieKeys: ["sb-access-token"],
+      authHeaderPresent: false,
+      tokenLength: 27,
+      bearerParsed: false,
     }),
   }));
 

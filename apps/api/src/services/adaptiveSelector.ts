@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { getWeakestSkills } from "./studentMastery";
+import { fetchWeakestSkills } from "./mastery-read";
 import { isValidCanonicalId } from "../../../../shared/question-bank-contract";
 
 export type SectionFilter = "math" | "rw";
@@ -203,11 +203,9 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
       subskill,
       skill_code,
       correct_answer,
-      answer_text,
-      status
+      answer_text
     `)
     .eq("question_type", "multiple_choice")
-    .eq("status", "published")
     .limit(limit * 2);
 
   if (params.section === "math") {
@@ -289,7 +287,7 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
     const sectionMap = section === "math" ? "math" : "reading";
     let weakSkills: Array<{ domain: string | null; skill: string; accuracy: number }> = [];
     try {
-      weakSkills = await getWeakestSkills({
+      weakSkills = await fetchWeakestSkills({
         userId,
         section: sectionMap,
         minAttempts: 1,

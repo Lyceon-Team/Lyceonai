@@ -5,7 +5,7 @@
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
  *   - POST /api/rag/v2 (structured retrieval)
- *   - POST /api/tutor/v2 (Lisa tutoring)
+ *   - POST /api/tutor/v2 (tutor runtime)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -15,6 +15,7 @@ import path from "path";
 import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
+import { LEGAL_META, PUBLIC_META } from "../shared/seo/public-meta";
 import rateLimit from "express-rate-limit";
 // SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
 // Canonical RAG route owner is apps/api/src/routes/rag-v2.ts.
@@ -34,7 +35,6 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import { searchQuestions } from "./routes/search-runtime";
 import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
@@ -47,15 +47,15 @@ import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
 import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-routes";
-import { csrfGuard } from "./middleware/csrf";
+import { doubleCsrfProtection, generateToken } from "./middleware/csrf-double-submit";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
-import { diagnosticRouter } from "./routes/legacy/diagnostic";
 import { calendarRouter } from "./routes/legacy/calendar";
-import { getScoreProjection, getRecencyKpis } from "./routes/legacy/progress";
+import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
+import accountDeletionRoutes from "./routes/account-deletion-routes";
 import healthRoutes from "./routes/health-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -68,8 +68,6 @@ import { WebhookHandlers } from "./lib/webhookHandlers";
 import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
 
-// CSRF protection middleware - uses shared origin-utils for single source of truth
-const csrfProtection = csrfGuard();
 
 const app = express();
 app.disable("x-powered-by");
@@ -123,44 +121,46 @@ app.post(
 );
 
 app.use(express.json({ limit: "1mb" }));
+// Body parser error handling: keep parser failures explicit and non-500.
+app.use((err: any, _req: Request, res: Response, next: any) => {
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({ error: "Payload too large" });
+  }
+  if (err?.type === "entity.parse.failed" || (err instanceof SyntaxError && (err as any).status === 400)) {
+    return res.status(400).json({ error: "Invalid JSON payload" });
+  }
+  return next(err);
+});
+
+// Global rate limiter to protect downstream authorization and business logic.
+// This limits the rate at which requests can reach supabaseAuthMiddleware and other routes.
+const globalRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+app.use(globalRateLimiter);
+
+// CSRF token bootstrap endpoint (stateless double-submit cookie).
+// CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
+app.get("/api/csrf-token", (req: Request, res: Response) => {
+  const csrfToken = generateToken(req, res);
+  return res.json({ csrfToken });
+});
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
 
 // Legal API (requires Supabase auth)
-app.use("/api/legal", requireSupabaseAuth, legalRouter);
+app.use("/api/legal", requireSupabaseAuth, doubleCsrfProtection, legalRouter);
 
 // ============================================================================
 // SEO: Server-side meta injection for legal pages
 // ============================================================================
 
 // Legal doc metadata registry (mirrors client/src/lib/legal.ts slugs)
-const legalSeoMeta: Record<string, { title: string; description: string }> = {
-  "privacy-policy": {
-    title: "Privacy Policy",
-    description: "How Lyceon collects, uses, stores, shares, and protects your information.",
-  },
-  "student-terms": {
-    title: "Student Terms of Use",
-    description: "The terms that govern your access to and use of the Lyceon platform.",
-  },
-  "honor-code": {
-    title: "Honor Code",
-    description: "Our commitment to honest learning and academic integrity at Lyceon.",
-  },
-  "community-guidelines": {
-    title: "Community Guidelines",
-    description: "How users are expected to behave when using Lyceon.",
-  },
-  "parent-guardian-terms": {
-    title: "Parent / Guardian Terms",
-    description: "Terms for parents and guardians whose children use Lyceon.",
-  },
-  "trust-and-safety": {
-    title: "Trust & Safety",
-    description: "How Lyceon approaches trust, safety, and responsible technology in learning.",
-  },
-};
+// Canonical source-of-truth is shared/seo/public-meta.ts (LEGAL_META).
 
 // Inject SEO meta tags into HTML template
 function injectMeta(
@@ -169,6 +169,7 @@ function injectMeta(
     title: string;
     description: string;
     canonical: string;
+    ogImage?: string;
   }
 ): string {
   let result = html;
@@ -197,21 +198,59 @@ function injectMeta(
   }
 
   // Insert/replace OpenGraph tags
+  const ogImage = meta.ogImage || "https://lyceon.ai/og-image.jpg";
   const ogTags = `
     <meta property="og:title" content="${meta.title}">
     <meta property="og:description" content="${meta.description}">
     <meta property="og:url" content="${meta.canonical}">
     <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:site_name" content="Lyceon">
+    <meta property="og:image" content="${ogImage}">
+    <meta property="og:image:alt" content="${meta.title}">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${meta.title}">
     <meta name="twitter:description" content="${meta.description}">
+    <meta name="twitter:image" content="${ogImage}">
   `;
 
   // Remove existing OG/Twitter tags and add new ones
-  result = result.replace(/<meta\s+property="og:(title|description|url|type)"\s+content="[^"]*"\s*\/?>/gi, "");
-  result = result.replace(/<meta\s+name="twitter:(card|title|description)"\s+content="[^"]*"\s*\/?>/gi, "");
+  result = result.replace(
+    /<meta\s+property="og:(title|description|url|type|image|image:alt|image:width|image:height|site_name)"\s+content="[^"]*"\s*\/?>/gi,
+    ""
+  );
+  result = result.replace(/<meta\s+name="twitter:(card|title|description|image)"\s+content="[^"]*"\s*\/?>/gi, "");
   result = result.replace("</head>", `${ogTags}</head>`);
 
+  return result;
+}
+
+function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefined): string {
+  if (!jsonLd || jsonLd.length === 0) {
+    let previousHtml: string;
+    do {
+      previousHtml = html;
+      html = html.replace(
+        /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+        ""
+      );
+    } while (html !== previousHtml);
+    return html;
+  }
+
+  let previousHtml: string;
+  do {
+    previousHtml = html;
+    html = html.replace(
+      /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+      ""
+    );
+  } while (html !== previousHtml);
+
+  let result = html;
+  const jsonLdScripts = jsonLd
+    .map((data) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`)
+    .join("\n");
+  result = result.replace("</head>", `${jsonLdScripts}\n</head>`);
   return result;
 }
 
@@ -236,53 +275,66 @@ const ragLimiter = rateLimit({
   message: { error: "Too many RAG requests" },
 });
 
-const publicQuestionSearchLimiter = rateLimit({
+const googleOAuthCallbackLimiter = rateLimit({
   windowMs: 60_000,
-  max: 20,
-  message: { error: "Too many search requests" },
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many OAuth callback requests" },
 });
 
 // RAG v2 endpoint - student-aware retrieval with structured context, cookie-only auth
 app.use(
   "/api/rag/v2",
   ragLimiter,
-  csrfProtection,
   requireSupabaseAuth,
   requireStudentOrAdmin,
+  doubleCsrfProtection,
   ragV2Router
 );
 
-// Tutor v2 endpoint - Lisa tutoring with canonical RAG context
-app.use("/api/tutor/v2", ragLimiter, requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit({ incrementStrategy: "on_success" }), tutorV2Router);
+// Tutor v2 endpoint - tutor runtime with canonical RAG context
+app.use(
+  "/api/tutor/v2",
+  ragLimiter,
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  checkAiChatLimit({ incrementStrategy: "on_success" }),
+  tutorV2Router
+);
 
 // Google OAuth Routes (direct OAuth flow)
 app.use("/api/auth/google", googleOAuthRoutes);
 
 // Google OAuth Callback (PUBLIC_SITE_URL/auth/google/callback)
-app.get("/auth/google/callback", googleCallbackHandler);
+app.get("/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
+// Vercel callback alias when `/auth/google/callback` is rewritten into `/api/*`.
+app.get("/api/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
-app.use("/api/consent", guardianConsentRoutes);
+app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);
 
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route
-app.use("/api/profile", requireSupabaseAuth, profileRoutes);
+app.use("/api/profile", requireSupabaseAuth, doubleCsrfProtection, profileRoutes);
 
 // Notifications Routes
-app.use("/api/notifications", notificationRoutes);
+app.use("/api/notifications", requireSupabaseAuth, doubleCsrfProtection, notificationRoutes);
 
 // Weakness & Mastery Routes (student weakness tracking)
-app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, weaknessRouter);
-app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter);
-app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, diagnosticRouter);
-app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, calendarRouter);
+app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, weaknessRouter);
+// Diagnostic runtime removed: keep the path terminally unavailable (404) before mastery auth mount.
+app.use("/api/me/mastery/diagnostic", (_req, res) => res.status(404).json({ error: "Not found" }));
+app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, masteryRouter);
+app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, calendarRouter);
 
 // Score Projection endpoint (College Board weighted algorithm)
-app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreProjection);
+app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreEstimate);
 
 // Recency KPIs endpoint (last 200 attempts stats)
 app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
@@ -334,49 +386,80 @@ app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQ
 app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
 app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
 
-// Search endpoint - allow anonymous access for public search
-app.get("/api/questions/search", publicQuestionSearchLimiter, searchQuestions);
-
 // SECURE: Single question endpoint - never leaks answers
 app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
 
 // Review errors endpoint - authenticated students can review their failed attempts
-app.get("/api/review-errors", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrors);
+app.get(
+  "/api/review-errors",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrors
+);
 
 // Review errors attempt endpoint - records student attempts during error review
-app.post("/api/review-errors/sessions", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, startReviewErrorSession);
-app.get("/api/review-errors/sessions/:sessionId/state", requireSupabaseAuth, requireStudentOrAdmin, getReviewErrorSessionState);
-app.post("/api/review-errors/attempt", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitReviewSessionAnswer);
+app.post(
+  "/api/review-errors/sessions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  startReviewErrorSession
+);
+app.get(
+  "/api/review-errors/sessions/:sessionId/state",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getReviewErrorSessionState
+);
+app.post(
+  "/api/review-errors/attempt",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  submitReviewSessionAnswer
+);
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
-app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, csrfProtection, submitQuestionFeedback);
+app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, submitQuestionFeedback);
 
 // Guardian Routes (requires Supabase auth + guardian role)
-app.use("/api/guardian", guardianRoutes);
+app.use("/api/guardian", requireSupabaseAuth, doubleCsrfProtection, guardianRoutes);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
 
-// Account Routes (bootstrap, status)
+// Account Routes (bootstrap, status, deletion)
 app.use("/api/account", accountRoutes);
+app.use("/api/account", accountDeletionRoutes);
 
 // Health Routes (schema and credential verification)
 app.use("/api/health", healthRoutes);
 
-// Practice Topics Routes (for browsing and filtering)
+// Practice reference routes (bootstrap/filtering only; not runtime delivery)
 app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
-app.get("/api/practice/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+app.get("/api/practice/reference/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
 
 // Practice Canonical Routes (unified practice API)
-// CSRF protection is applied inside the router for POST routes only (GET /next doesn't need CSRF)
+// CSRF protection is applied at the mount (GET/HEAD/OPTIONS are ignored by middleware).
 // Usage limit is applied inside the router: increment only on GET /next, not on answer submission
-app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter);
+app.use(
+  "/api/practice",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  practiceCanonicalRouter
+);
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)
 // All routes require Supabase auth and are student-only
-app.use("/api/full-length", requireSupabaseAuth, requireStudentOrAdmin, fullLengthExamRouter);
+app.use(
+  "/api/full-length",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  fullLengthExamRouter
+);
 
 // Debug route to identify server version and routes in prod
 app.get("/api/_whoami", (_req, res) => {
@@ -422,13 +505,16 @@ function getIndexHtml(): string {
 function servePublicSsr(routePath: string, res: Response): boolean {
   const seo = getPublicPageSeo(routePath);
   if (!seo) return false;
+  const publicMeta = PUBLIC_META[routePath];
 
   let html = getIndexHtml();
   html = injectMeta(html, {
     title: seo.title,
     description: seo.description,
     canonical: seo.canonical,
+    ogImage: publicMeta?.ogImage,
   });
+  html = injectJsonLd(html, publicMeta?.jsonLd);
   html = injectBodyContent(html, seo.bodyHtml);
   res.type("html").send(html);
   return true;
@@ -446,10 +532,10 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
 // Keeps sitemap legal slugs indexable with canonical title/description metadata.
 app.get("/legal/:slug", (req, res, next) => {
   const slug = String(req.params.slug || "");
-  const meta = legalSeoMeta[slug];
+  const meta = LEGAL_META[slug];
   if (!meta) return next();
 
-  const canonical = `https://lyceon.ai/legal/${slug}`;
+  const canonical = meta.canonical;
   const bodyHtml = `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -471,7 +557,9 @@ app.get("/legal/:slug", (req, res, next) => {
     title: `${meta.title} | Lyceon`,
     description: meta.description,
     canonical,
+    ogImage: meta.ogImage,
   });
+  html = injectJsonLd(html, undefined);
   html = injectBodyContent(html, bodyHtml);
   res.type("html").send(html);
 });
@@ -490,6 +578,19 @@ app.get("*", (req, res) => {
 // Final error boundary for uncaught route errors
 app.use((err: any, req: Request, res: Response, next: any) => {
   const requestId = (req as any).requestId || logger.generateRequestId();
+
+  const csrfError =
+    err?.code === "EBADCSRFTOKEN" ||
+    err?.name === "CSRFError" ||
+    (typeof err?.message === "string" && err.message.toLowerCase().includes("csrf"));
+
+  if (csrfError) {
+    return res.status(403).json({
+      error: "csrf_blocked",
+      message: "Cross-site request blocked by CSRF protection",
+      requestId,
+    });
+  }
 
   logger.error(
     'HTTP',
@@ -528,6 +629,7 @@ if (process.env.NODE_ENV === "production") {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
     "GEMINI_API_KEY",
+    "CSRF_SECRET",
   ];
 
   const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);
@@ -621,7 +723,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (Lisa tutoring with canonical RAG)`);
+    console.log(`  POST   /api/tutor/v2 (tutor runtime with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
@@ -636,8 +738,8 @@ if (isMainModule) {
     console.log(`  POST   /api/practice/sessions/:sessionId/terminate`);
     console.log(`  GET    /api/practice/sessions/:sessionId/next`);
     console.log(`  GET    /api/practice/sessions/:sessionId/state`);
-    console.log(`  GET    /api/practice/next (legacy compatibility)`);
     console.log(`  POST   /api/practice/answer`);
+    console.log(`  GET    /api/practice/reference/questions`);
     console.log(`\n🔔 Notifications (requires Supabase auth):`);
     console.log(`  GET    /api/notifications`);
     console.log(`  GET    /api/notifications/unread-count`);

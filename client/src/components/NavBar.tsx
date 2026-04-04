@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function NavBar() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated, isAdmin, signOut, signInWithGoogle } = useSupabaseAuth();
+  const { user, isAuthenticated, signOut, signInWithGoogle } = useSupabaseAuth();
   const { toast } = useToast();
 
   const handleSignOut = async () => {
@@ -78,14 +78,6 @@ export default function NavBar() {
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>
-              {isAdmin && (
-                <>
-                  <DropdownMenuSeparator className="bg-muted" />
-                  <DropdownMenuItem onClick={() => navigate('/admin')} data-testid="menu-admin" className="hover:bg-secondary focus:bg-secondary">
-                    Admin Dashboard
-                  </DropdownMenuItem>
-                </>
-              )}
               <DropdownMenuSeparator className="bg-muted" />
               <DropdownMenuItem onClick={handleSignOut} data-testid="menu-logout" className="hover:bg-secondary focus:bg-secondary">
                 <LogOut className="mr-2 h-4 w-4" />

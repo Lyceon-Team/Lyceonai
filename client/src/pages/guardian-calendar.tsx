@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Loader2, Flame, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { csrfFetch } from "@/lib/csrf";
 
 interface GuardianCalendarDay {
   day_date: string;
@@ -101,7 +102,7 @@ function buildMonthGrid(year: number, month: number): Array<{ dateKey: string; d
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 async function getGuardianStudentCalendar(studentId: string, start: string, end: string): Promise<GuardianCalendarResponse> {
-  const response = await fetch(`/api/guardian/students/${studentId}/calendar/month?start=${start}&end=${end}`, {
+  const response = await csrfFetch(`/api/guardian/students/${studentId}/calendar/month?start=${start}&end=${end}`, {
     credentials: 'include',
   });
   if (!response.ok) {
@@ -132,7 +133,7 @@ export default function GuardianCalendarPage() {
   const { data: studentData } = useQuery({
     queryKey: ['guardian-student-summary', studentId],
     queryFn: async () => {
-      const res = await fetch(`/api/guardian/students/${studentId}/summary`, { credentials: 'include' });
+      const res = await csrfFetch(`/api/guardian/students/${studentId}/summary`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch student info');
       return res.json();
     },

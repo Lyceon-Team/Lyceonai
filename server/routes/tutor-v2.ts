@@ -6,10 +6,8 @@ import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
 import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { csrfGuard } from "../middleware/csrf";
 
 const router = Router();
-const csrfProtection = csrfGuard();
 const ACTIVE_FULL_TEST_STATUSES = ["in_progress", "break"] as const;
 
 // userId must NOT be accepted from body; always derive from req.user.id
@@ -226,10 +224,12 @@ ABOUT THIS STUDENT:
       studentContext += ` They also respond well to ${studentProfile.secondaryStyle} approaches.`;
     }
     if (competencyContext.studentWeakAreas.length > 0) {
-      studentContext += `\n- Areas to strengthen: ${competencyContext.studentWeakAreas.join(", ")}`;
+      const weakCount = competencyContext.studentWeakAreas.length;
+      studentContext += `\n- Areas to strengthen: ${weakCount} area${weakCount === 1 ? "" : "s"} identified.`;
     }
     if (competencyContext.studentStrongAreas.length > 0) {
-      studentContext += `\n- Strong areas: ${competencyContext.studentStrongAreas.join(", ")}`;
+      const strongCount = competencyContext.studentStrongAreas.length;
+      studentContext += `\n- Strong areas: ${strongCount} area${strongCount === 1 ? "" : "s"} identified.`;
     }
     studentContext += "\n";
   }
@@ -241,7 +241,7 @@ ${explanationLevelText}`;
     styleSection += `\n${primaryStyleInstruction}`;
   }
 
-  const systemInstruction = `You are Lisa, a friendly and clear SAT tutor for high school students.
+  const systemInstruction = `You are a friendly and clear SAT tutor for high school students.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 - Always explain step by step in plain language.
@@ -276,7 +276,7 @@ ${styleSection}
   return { systemInstruction, userContents };
 }
 
-router.post("/", csrfProtection, async (req: Request, res: Response) => {
+router.post("/", async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
     // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)
@@ -336,7 +336,11 @@ router.post("/", csrfProtection, async (req: Request, res: Response) => {
       ...context,
       primaryQuestion,
       supportingQuestions,
-      competencyContext,
+      competencyContext: {
+        studentWeakAreas: [],
+        studentStrongAreas: [],
+        competencyLabels: [],
+      },
       studentProfile,
     };
     // ========== END REVEAL POLICY ========== //

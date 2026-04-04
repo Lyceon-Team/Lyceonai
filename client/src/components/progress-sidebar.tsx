@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Play, Shuffle, TrendingUp, Check, Upload, MessageSquare, Settings } from "lucide-react";
+import { Play, Shuffle, TrendingUp, Check, Upload, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import type { ProgressStats } from "@shared/schema";
@@ -13,15 +13,6 @@ export default function ProgressSidebar() {
     enabled: false, // Disabled - endpoint not implemented
   });
   
-  // Check if user is authenticated for admin access
-  const { data: authData } = useQuery({
-    queryKey: ['/api/profile'],
-    queryFn: async () => {
-      const response = await fetch('/api/profile', { credentials: 'include' });
-      return response.json();
-    }
-  });
-
   const recentActivities = [
     {
       id: '1',
@@ -153,19 +144,6 @@ export default function ProgressSidebar() {
               <span>View Analytics</span>
             </Button>
             
-            {/* Admin Panel - only show for authenticated users */}
-            {authData?.authenticated && (
-              <Button 
-                variant="ghost"
-                className="w-full justify-center space-x-2 text-muted-foreground hover:text-foreground"
-                asChild
-              >
-                <Link href="/admin" data-testid="button-admin-questions">
-                  <Settings className="h-4 w-4" />
-                  <span>Admin Panel</span>
-                </Link>
-              </Button>
-            )}
           </div>
         </CardContent>
       </Card>

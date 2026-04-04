@@ -12,12 +12,17 @@
  * 4. User identity from req.user.id (not request body)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 
 // These tests run in CI without secrets
 // The server will use mock Supabase clients in test mode
+
+vi.mock('../../server/middleware/csrf-double-submit', () => ({
+  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+  generateToken: () => 'test-csrf-token',
+}));
 
 describe('CI Auth Tests', () => {
   let app: Express;
@@ -83,11 +88,6 @@ describe('CI Auth Tests', () => {
     it('should allow access to /api/questions/recent without auth', async () => {
       const res = await request(app).get('/api/questions/recent?limit=5');
       // Accept 200 (success) or 304 (cached)
-      expect([200, 304]).toContain(res.status);
-    });
-
-    it('should allow access to /api/questions/search without auth', async () => {
-      const res = await request(app).get('/api/questions/search?q=test');
       expect([200, 304]).toContain(res.status);
     });
 
@@ -288,22 +288,22 @@ describe('CI Auth Tests', () => {
       });
     });
 
-    // Test that POST endpoints are CSRF protected (403 without Origin)
-    it('should block POST /api/rag/v2 without Origin/Referer (CSRF protection)', async () => {
+    // Auth-first semantics: unauthenticated requests return 401 before CSRF.
+    it('should return 401 for POST /api/rag/v2 without auth (auth-first semantics)', async () => {
       const res = await request(app)
         .post('/api/rag/v2')
         .send({ userId: 'ignored', message: 'test', mode: 'concept' });
       
-      // Should get 403 (CSRF blocked) before auth check
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
+      // Should get 401 (auth required) before CSRF check
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
     });
   });
 
   describe('Admin Endpoints - Admin Auth Required', () => {
     it('should return 401 for admin routes without auth', async () => {
-      const res = await request(app).get('/api/admin/questions/needs-review');
-      expect([401, 404]).toContain(res.status);
+      const res = await request(app).get('/api/admin/db-health');
+      expect([401, 403]).toContain(res.status);
       if (res.status === 401) {
         expect(res.body).toHaveProperty('error');
       }
@@ -405,20 +405,6 @@ describe('Error Handling', () => {
     });
   });
 
-  describe('Rate Limiting', () => {
-    it('should have rate limiting on search endpoint', async () => {
-      // Make multiple rapid requests
-      const requests = Array(10).fill(null).map(() => 
-        request(app).get('/api/questions/search?q=test')
-      );
-      
-      const responses = await Promise.all(requests);
-      const statuses = responses.map(r => r.status);
-      
-      // Should include valid responses or rate limit responses
-      expect(statuses.every(s => [200, 304, 429].includes(s))).toBe(true);
-    });
-  });
 });
 
 

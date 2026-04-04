@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{baseUrl}}/api/practice/questions?section=math&topic=algebra"
+method: GET
+queryParams:
+  - key: section
+    value: math
+  - key: topic
+    value: algebra
+    description: Optional topic filter
+order: 2000

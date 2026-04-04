@@ -18,7 +18,7 @@ Applies to:
 |---|---|---|
 | **Auth** | Supabase Auth (JWT + RBAC) | ✅ Enforced |
 | **Session Storage** | HttpOnly cookies only | ✅ |
-| **CSRF Protection** | Exact-origin match via middleware | ✅ |
+| **CSRF Protection** | Signed double-submit token (`csrf-csrf`) | ✅ |
 | **RLS (Row Level Security)** | Enabled on all user tables | ✅ |
 | **Input Validation** | Zod schemas at all API routes | ✅ |
 | **Secrets** | GCP Secret Manager & GitHub Secrets | ✅ |
@@ -68,7 +68,7 @@ npm run test:integration && ./scripts/smoke.sh https://staging.lyceon.app
 
 Ensure:
 - `ALLOWED_ORIGINS` set (no wildcards/commas)
-- CSRF middleware active (`server/middleware/csrf.ts`)
+- CSRF middleware active (`server/middleware/csrf-double-submit.ts`)
 - Role guards on protected routes
 - GitHub Actions uses least-privilege SA
 
@@ -91,7 +91,7 @@ Ensure:
 | Standard | Action |
 |---|---|
 | FERPA | Student data encrypted at rest |
-| OWASP A5 (CSRF) | Exact origin + referer enforcement |
+| OWASP A5 (CSRF) | Signed double-submit token + SameSite cookies |
 | OWASP A2 (Broken Auth) | Server-side session validation |
 | OWASP A7 (XSS) | Escaped outputs + CSP headers |
 | SOC2 / ISO27001 | Change logs + least privilege IAM |

@@ -34,14 +34,7 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 
 ### Content/Review Runtime Truth Notes
 - `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).
-- `/api/admin/questions/*` endpoints are currently unmounted from `server/index.ts` and treated as service-only/legacy workflow paths.
-- `server/routes/review-errors-routes.ts#recordReviewErrorAttempt` is legacy/quarantined and unmounted; canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
-
-### `../apps/api/src/routes/search`
-- **Import**: [server/index.ts](server/index.ts#L35)
-- **Symbols**: `searchQuestions`
-- **Mount**: `app.get("/api/questions/search", searchQuestions)`
-- **Transitive deps in apps/api**: `../lib/supabase-server`, `../lib/embeddings`, `../lib/supabase`
+- Canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`.
 
 ### `../apps/api/src/routes/weakness`
 - **Import**: [server/index.ts](server/index.ts#L65)
@@ -54,12 +47,6 @@ This document defines the frozen allowlist of `apps/api/**` modules that may rem
 - **Symbols**: `masteryRouter`
 - **Mount**: `app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, masteryRouter)`
 - **Transitive deps in apps/api**: `../middleware/auth`, `../services/studentMastery`, `../lib/supabase-admin`, `../services/mastery-projection`
-
-### `../apps/api/src/routes/diagnostic`
-- **Import**: [server/index.ts](server/index.ts#L67)
-- **Symbols**: `diagnosticRouter`
-- **Mount**: `app.use("/api/me/mastery/diagnostic", requireSupabaseAuth, requireStudentOrAdmin, diagnosticRouter)`
-- **Transitive deps in apps/api**: `../middleware/auth`, `../services/diagnostic-service`, `../services/mastery-write`, `../services/mastery-constants`, `../lib/supabase-admin`
 
 ### `../apps/api/src/routes/calendar`
 - **Import**: [server/index.ts](server/index.ts#L68)

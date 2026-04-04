@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { SEO } from "@/components/SEO";
 import { useToast } from "@/hooks/use-toast";
+import { csrfFetch } from "@/lib/csrf";
 
 interface ConsentRequest {
   id: string;
@@ -40,7 +41,7 @@ export default function GuardianConsentVerify() {
     queryKey: ["/api/consent/request", requestId],
     queryFn: async () => {
       if (!requestId) throw new Error("Missing request ID");
-      const res = await fetch(`/api/consent/request/${requestId}`);
+      const res = await csrfFetch(`/api/consent/request/${requestId}`);
       if (!res.ok) throw new Error("Failed to fetch consent request");
       return res.json();
     },
@@ -50,7 +51,7 @@ export default function GuardianConsentVerify() {
   // Verify Stripe Session
   const verifyMutation = useMutation({
     mutationFn: async (sid: string) => {
-      const res = await fetch("/api/consent/verify-session", {
+      const res = await csrfFetch("/api/consent/verify-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId, sessionId: sid })
@@ -66,7 +67,7 @@ export default function GuardianConsentVerify() {
   // Create Checkout Session
   const checkoutMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/consent/create-checkout-session", {
+      const res = await csrfFetch("/api/consent/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId })

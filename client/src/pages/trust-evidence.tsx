@@ -1,5 +1,4 @@
 import { Link } from "wouter";
-import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,22 +8,6 @@ import Footer from "@/components/layout/Footer";
 export default function TrustEvidencePage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Helmet>
-        <title>Trust Evidence | Lyceon</title>
-        <meta
-          name="description"
-          content="Public technical evidence for Lyceon security and privacy controls, including auth enforcement, RLS usage, and logging safeguards."
-        />
-        <link rel="canonical" href="https://lyceon.ai/trust/evidence" />
-        <meta property="og:title" content="Trust Evidence | Lyceon" />
-        <meta
-          property="og:description"
-          content="Public technical evidence for Lyceon security and privacy controls, including auth enforcement, RLS usage, and logging safeguards."
-        />
-        <meta property="og:url" content="https://lyceon.ai/trust/evidence" />
-        <meta property="og:type" content="website" />
-      </Helmet>
-
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center mb-10">
@@ -123,6 +106,19 @@ export default function TrustEvidencePage() {
                   <Button asChild variant="outline" size="sm">
                     <Link href="/legal">
                       <a className="inline-flex items-center gap-1">Open /legal <ChevronRight className="h-4 w-4" /></a>
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Tutor Transparency</CardTitle>
+                  <CardDescription>Safety, privacy, and pedagogy details for the tutor experience.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/tutor">
+                      <a className="inline-flex items-center gap-1">Open /tutor <ChevronRight className="h-4 w-4" /></a>
                     </Link>
                   </Button>
                 </CardContent>

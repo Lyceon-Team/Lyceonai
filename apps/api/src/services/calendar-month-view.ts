@@ -24,6 +24,10 @@ type PlanDayRow = {
   required_task_count: number;
   completed_task_count: number;
   study_minutes_target: number;
+  replaces_override: boolean;
+  replaced_override_day_id: string | null;
+  replacement_source: string | null;
+  replacement_at: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -46,6 +50,15 @@ type PlanTaskRow = {
   planner_owned: boolean;
   metadata: Record<string, unknown>;
   completed_at: string | null;
+  replaces_override: boolean;
+  replaced_override_task_id: string | null;
+  replacement_source: string | null;
+  replacement_at: string | null;
+  override_target_type: string | null;
+  override_target_domain: string | null;
+  override_target_skill: string | null;
+  override_target_session_id: string | null;
+  override_target_exam_id: string | null;
 };
 
 type AttemptRow = {
@@ -75,11 +88,17 @@ function parseTaskStatus(value: unknown): TaskStatus {
   return "planned";
 }
 
-function taskTypeToLegacy(taskType: TaskType): string {
-  if (taskType === "math_practice") return "practice";
-  if (taskType === "rw_practice") return "practice";
-  if (taskType === "review_errors") return "review";
-  return "full_test";
+function normalizeTaskType(value: unknown, section: "MATH" | "RW" | null, mode: unknown): TaskType {
+  const raw = typeof value === "string" ? value.toLowerCase().trim() : "";
+  const rawMode = typeof mode === "string" ? mode.toLowerCase().trim() : "";
+  if (raw === "full_length" || raw === "full_length_exam" || raw === "full_test" || raw === "full-length") return "full_length";
+  if (raw === "review_full_length" || rawMode === "review_full_length" || rawMode === "full-length-review") return "review_full_length";
+  if (raw === "review_practice" || raw === "review_errors" || raw === "review") return "review_practice";
+  if (raw === "focused_drill" || rawMode === "compressed" || rawMode === "focused" || rawMode === "skill-focused") return "focused_drill";
+  if (raw === "tutor_support" || rawMode === "support" || rawMode === "tutor") return "tutor_support";
+  if (raw === "practice" || raw === "math_practice" || raw === "rw_practice") return "practice";
+  if (section === "MATH" || section === "RW") return "practice";
+  return "practice";
 }
 
 function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
@@ -88,24 +107,46 @@ function taskSectionToLegacy(section: "MATH" | "RW" | null): string | null {
   return null;
 }
 
-function taskModeForDay(task: PlanTaskRow): string {
-  if (task.task_type === "full_length_exam") return "full-length";
-  if (task.task_type === "review_errors") return "review";
+function taskModeForDay(task: Pick<PlanTaskRow, "task_type" | "metadata">): string {
+  if (task.task_type === "full_length") return "full-length";
+  if (task.task_type === "review_full_length") return "review-full-length";
+  if (task.task_type === "review_practice") return "review";
+  if (task.task_type === "focused_drill") return task.metadata?.compressed ? "compressed" : "focused";
+  if (task.task_type === "tutor_support") return "support";
   return task.metadata?.compressed ? "compressed" : "mixed";
 }
 
 function planTaskToLegacy(task: PlanTaskRow): Record<string, unknown> {
+  const target = {
+    section: task.section,
+    skill_code: task.override_target_skill ?? task.source_skill_code,
+    domain: task.override_target_domain ?? task.source_domain,
+    subskill: task.source_subskill,
+    target_type: task.override_target_type,
+    review_session_id: task.override_target_session_id,
+    exam_id: task.override_target_exam_id,
+  };
   return {
     id: task.id,
-    type: taskTypeToLegacy(task.task_type),
+    type: task.task_type,
     section: taskSectionToLegacy(task.section),
     mode: taskModeForDay(task),
     minutes: task.duration_minutes,
     task_type: task.task_type,
+    target,
+    source_skill_code: task.source_skill_code,
+    source_domain: task.source_domain,
+    source_subskill: task.source_subskill,
+    source_reason: task.source_reason,
+    metadata: task.metadata,
     status: task.status,
     ordinal: task.ordinal,
     is_user_override: task.is_user_override,
     planner_owned: task.planner_owned,
+    replaces_override: task.replaces_override,
+    replaced_override_task_id: task.replaced_override_task_id,
+    replacement_source: task.replacement_source,
+    replacement_at: task.replacement_at,
   };
 }
 
@@ -134,7 +175,7 @@ export function isCalendarCountedEventType(eventType: string | null | undefined)
 async function loadDaysByRange(userId: string, start: string, end: string): Promise<PlanDayRow[]> {
   const { data, error } = await supabaseServer
     .from("student_study_plan_days")
-    .select("id, user_id, day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, is_user_override, status, generation_source, is_exam_day, is_taper_day, is_full_test_day, required_task_count, completed_task_count, study_minutes_target, created_at, updated_at")
+    .select("id, user_id, day_date, planned_minutes, completed_minutes, focus, tasks, plan_version, generated_at, is_user_override, status, generation_source, is_exam_day, is_taper_day, is_full_test_day, required_task_count, completed_task_count, study_minutes_target, replaces_override, replaced_override_day_id, replacement_source, replacement_at, created_at, updated_at")
     .eq("user_id", userId)
     .gte("day_date", start)
     .lte("day_date", end)
@@ -142,6 +183,10 @@ async function loadDaysByRange(userId: string, start: string, end: string): Prom
   if (error) throw new Error(`Failed to load plan days: ${error.message}`);
   return ((data as PlanDayRow[] | null) ?? []).map((row) => ({
     ...row,
+    replaces_override: Boolean(row.replaces_override),
+    replaced_override_day_id: row.replaced_override_day_id ?? null,
+    replacement_source: row.replacement_source ?? null,
+    replacement_at: row.replacement_at ?? null,
     status: canonicalDayStatus(row.status),
   }));
 }
@@ -149,7 +194,7 @@ async function loadDaysByRange(userId: string, start: string, end: string): Prom
 async function loadTasksByRange(userId: string, start: string, end: string): Promise<PlanTaskRow[]> {
   const { data, error } = await supabaseServer
     .from("student_study_plan_tasks")
-    .select("id, day_id, user_id, day_date, ordinal, task_type, section, duration_minutes, source_skill_code, source_domain, source_subskill, source_reason, status, is_user_override, planner_owned, metadata, completed_at")
+    .select("id, day_id, user_id, day_date, ordinal, task_type, section, duration_minutes, source_skill_code, source_domain, source_subskill, source_reason, status, is_user_override, planner_owned, metadata, completed_at, replaces_override, replaced_override_task_id, replacement_source, replacement_at, override_target_type, override_target_domain, override_target_skill, override_target_session_id, override_target_exam_id")
     .eq("user_id", userId)
     .gte("day_date", start)
     .lte("day_date", end)
@@ -161,6 +206,15 @@ async function loadTasksByRange(userId: string, start: string, end: string): Pro
     status: parseTaskStatus(row.status),
     source_reason: typeof row.source_reason === "object" && row.source_reason ? row.source_reason : {},
     metadata: typeof row.metadata === "object" && row.metadata ? row.metadata : {},
+    replaces_override: Boolean(row.replaces_override),
+    replaced_override_task_id: row.replaced_override_task_id ?? null,
+    replacement_source: row.replacement_source ?? null,
+    replacement_at: row.replacement_at ?? null,
+    override_target_type: row.override_target_type ?? null,
+    override_target_domain: row.override_target_domain ?? null,
+    override_target_skill: row.override_target_skill ?? null,
+    override_target_session_id: row.override_target_session_id ?? null,
+    override_target_exam_id: row.override_target_exam_id ?? null,
   }));
 }
 
@@ -255,6 +309,48 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
     const dayTasks = (taskByDay.get(day.day_date) ?? []).sort((a, b) => a.ordinal - b.ordinal);
     const stats = attemptByDay.get(day.day_date);
     const derived = computeDayStatusFromTasks(day.day_date, DateTime.now().setZone(timezone).toISODate()!, dayTasks);
+    const fallbackTasks = Array.isArray(day.tasks)
+      ? day.tasks.map((task: any) => {
+          const section = typeof task?.section === "string" ? (task.section.includes("Math") ? "MATH" : task.section.includes("Writing") ? "RW" : null) : null;
+          const canonicalType = normalizeTaskType(task?.task_type ?? task?.type, section, task?.mode);
+          const target = task?.target && typeof task.target === "object" ? task.target : {
+            section,
+            skill_code: typeof task?.source_skill_code === "string" ? task.source_skill_code : null,
+            domain: typeof task?.source_domain === "string" ? task.source_domain : null,
+            subskill: typeof task?.source_subskill === "string" ? task.source_subskill : null,
+            target_type: typeof task?.override_target_type === "string" ? task.override_target_type : null,
+            review_session_id: typeof task?.override_target_session_id === "string" ? task.override_target_session_id : null,
+            exam_id: typeof task?.override_target_exam_id === "string" ? task.override_target_exam_id : null,
+          };
+          return {
+            ...task,
+            type: canonicalType,
+            task_type: canonicalType,
+            target,
+            source_skill_code: typeof task?.source_skill_code === "string" ? task.source_skill_code : null,
+            source_domain: typeof task?.source_domain === "string" ? task.source_domain : null,
+            source_subskill: typeof task?.source_subskill === "string" ? task.source_subskill : null,
+            source_reason: typeof task?.source_reason === "object" && task.source_reason ? task.source_reason : {},
+            metadata: typeof task?.metadata === "object" && task.metadata ? task.metadata : {},
+            replaces_override: Boolean(task?.replaces_override),
+            replaced_override_task_id: typeof task?.replaced_override_task_id === "string" ? task.replaced_override_task_id : null,
+            replacement_source: typeof task?.replacement_source === "string" ? task.replacement_source : null,
+            replacement_at: typeof task?.replacement_at === "string" ? task.replacement_at : null,
+            mode:
+              typeof task?.mode === "string"
+                ? task.mode
+                : canonicalType === "full_length"
+                  ? "full-length"
+                  : canonicalType === "review_full_length"
+                    ? "review-full-length"
+                    : canonicalType === "review_practice"
+                      ? "review"
+                      : canonicalType === "focused_drill"
+                        ? "focused"
+                        : "mixed",
+          };
+        })
+      : [];
 
     return {
       ...day,
@@ -263,7 +359,7 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
       required_task_count: day.required_task_count || derived.requiredTaskCount,
       completed_task_count: day.completed_task_count || derived.completedTaskCount,
       focus: day.focus ?? [],
-      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : Array.isArray(day.tasks) ? day.tasks : [],
+      tasks: dayTasks.length > 0 ? dayTasks.map(planTaskToLegacy) : fallbackTasks,
       task_items: dayTasks,
       is_exam_day: day.is_exam_day,
       is_taper_day: day.is_taper_day,

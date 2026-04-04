@@ -2,9 +2,8 @@
 
 ## Runtime Source Of Truth
 - Mounted runtime authority is `server/**`.
-- Question/review/search handlers mounted by the production server:
+- Question/review handlers mounted by the production server:
   - `server/index.ts` mounts `/api/questions*` handlers directly from `server/routes/questions-runtime.ts`.
-  - `server/index.ts` mounts `/api/questions/search` from `server/routes/search-runtime.ts`.
   - `server/index.ts` mounts `/api/practice/*` from `server/routes/practice-canonical.ts`.
   - `server/index.ts` mounts `/api/review-errors/attempt` from `server/routes/review-session-routes.ts` (session-item anchored submit).
   - `server/index.ts` mounts `/api/full-length/*` from `server/routes/full-length-exam-routes.ts`.
@@ -49,7 +48,6 @@
 ## Anti-Leak Contract
 - Pre-submit student-safe retrieval:
   - `server/routes/questions-runtime.ts`
-  - `server/routes/search-runtime.ts`
   - `server/routes/practice-topics-routes.ts`
   - `server/routes/practice-canonical.ts` (`/next`, `/sessions/:id/next`)
   - Contract: `correct_answer: null`, `explanation: null` in student-safe payloads.

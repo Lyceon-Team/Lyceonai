@@ -2,7 +2,8 @@
  * CANONICAL MASTERY WRITE CHOKE POINT
  *
  * All runtime mastery-affecting flows must call applyMasteryUpdate().
- * Canonical rollup tables mutated by this choke point: student_skill_mastery, student_cluster_mastery.
+ * Canonical rollup tables mutated by this choke point: student_skill_mastery, student_cluster_mastery,
+ * student_kpi_counters_current, student_kpi_snapshots.
  * No other runtime path may directly mutate canonical mastery tables.
  */
 import { getSupabaseAdmin } from "../lib/supabase-admin";
@@ -11,6 +12,11 @@ import {
   EVENT_WEIGHTS,
   DEFAULT_QUESTION_WEIGHT,
 } from "./mastery-constants";
+import {
+  KPI_TRUTH_LAYER_VERSION,
+  persistCanonicalPracticeKpiSnapshot,
+  upsertStudentKpiCountersCurrent,
+} from "../../../../server/services/kpi-truth-layer";
 
 export interface QuestionMetadataSnapshot {
   exam: string | null;
@@ -90,6 +96,8 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
     };
   }
 
+  const resolvedSkill = (skill || skillCode)!;
+
   const attemptId = crypto.randomUUID();
   let rollupUpdated = true;
   let rollupError: string | undefined;
@@ -108,7 +116,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       exam: normalizeText(input.metadata.exam),
       section,
       domain,
-      skill: skill || skillCode,
+      skill: resolvedSkill,
       subskill: normalizeText(input.metadata.subskill),
       skill_code: skillCode,
       difficulty: input.metadata.difficulty,
@@ -128,7 +136,7 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       p_user_id: input.userId,
       p_section: section,
       p_domain: domain,
-      p_skill: skill || skillCode,
+      p_skill: resolvedSkill,
       p_is_correct: input.isCorrect,
       p_event_weight: eventWeight * questionWeight,
       p_event_type: input.eventType,
@@ -166,6 +174,38 @@ export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptRe
       rollupUpdated = false;
       rollupError = err.message;
     }
+  }
+
+  try {
+    const kpiRow = await upsertStudentKpiCountersCurrent({
+      userId: input.userId,
+      eventType: input.eventType,
+      isCorrect: input.isCorrect,
+      section,
+      domain,
+      skill: resolvedSkill,
+      timeSpentMs: input.timeSpentMs ?? null,
+      eventId: attemptId,
+      sourceVersion: KPI_TRUTH_LAYER_VERSION,
+    });
+
+    try {
+      await persistCanonicalPracticeKpiSnapshot({
+        userId: input.userId,
+        triggerEventType: input.eventType,
+        triggerEventId: attemptId,
+        sourceVersion: KPI_TRUTH_LAYER_VERSION,
+        currentRow: kpiRow,
+      });
+    } catch (snapshotError: any) {
+      console.warn("[Mastery] KPI snapshot append failed:", snapshotError.message);
+      rollupUpdated = false;
+      rollupError = snapshotError.message;
+    }
+  } catch (err: any) {
+    console.warn("[Mastery] KPI counter update failed:", err.message);
+    rollupUpdated = false;
+    rollupError = err.message;
   }
 
   return {

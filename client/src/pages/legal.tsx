@@ -1,5 +1,4 @@
 import { Link } from "wouter";
-import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,19 +30,6 @@ export default function LegalHub() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Helmet>
-        <title>Legal & Trust | Lyceon</title>
-        <meta name="description" content="Lyceon's legal policies, terms of use, privacy policy, and trust & safety information." />
-        <link rel="canonical" href="https://lyceon.ai/legal" />
-        <meta property="og:title" content="Legal & Trust | Lyceon" />
-        <meta property="og:description" content="Lyceon's legal policies, terms of use, privacy policy, and trust & safety information." />
-        <meta property="og:url" content="https://lyceon.ai/legal" />
-        <meta property="og:type" content="website" />
-        <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content="Legal & Trust | Lyceon" />
-        <meta name="twitter:description" content="Lyceon's legal policies, terms of use, privacy policy, and trust & safety information." />
-      </Helmet>
-
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center mb-12">

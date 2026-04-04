@@ -59,6 +59,8 @@ Guardian exam-report access requires both:
 1. Active guardian<->student link (`guardian_links.status = 'active'`)
 2. Active student entitlement (paid + active/trialing + not period-expired)
 
+Guardian payment does not create guardian-owned access; visibility is always derived from the linked student's entitlement.
+
 Enforcement stack:
 - `requireGuardianEntitlement` gates linked student + entitlement
 - Guardian route re-checks explicit link authorization

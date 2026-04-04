@@ -1,0 +1,97 @@
+$kind: http-request
+name: Sign In (Student)
+url: "{{baseUrl}}/api/auth/signin"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{testEmail}}",
+      "password": "{{testPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Sign in successful', function () {
+          pm.response.to.have.status(200);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: "const tokenUrl = pm.collectionVariables.get('baseUrl') +
+      '/api/csrf-token';\r
+
+      \r
+
+      pm.sendRequest({\r
+
+      \    url: tokenUrl,\r
+
+      \    method: 'GET',\r
+
+      \    header: {\r
+
+      \        'Origin': pm.collectionVariables.get('siteUrl')\r
+
+      \    }\r
+
+      }, function (err, res) {\r
+
+      \    if (err) {\r
+
+      \        console.error('Failed to fetch CSRF token:', err);\r
+
+      \        return;\r
+
+      \    }\r
+
+      \    if (res.code === 200) {\r
+
+      \        // Try reading from JSON body first\r
+
+      \        let csrfToken;\r
+
+      \        try {\r
+
+      \            const json = res.json();\r
+
+      \            csrfToken = json.csrfToken || json.token ||
+      json.csrf_token;\r
+
+      \        } catch (e) {}\r
+
+      \r
+
+      \        // Fall back to cookie\r
+
+      \        if (!csrfToken) {\r
+
+      \            csrfToken = res.cookies.get('csrfToken') ||
+      res.cookies.get('XSRF-TOKEN') || res.cookies.get('csrf_token');\r
+
+      \        }\r
+
+      \r
+
+      \        if (csrfToken) {\r
+
+      \            pm.environment.set('csrfToken', csrfToken);\r
+
+      \            pm.request.headers.upsert({ key: 'x-csrf-token', value:
+      csrfToken });\r
+
+      \            console.log('CSRF token set:', csrfToken);\r
+
+      \        } else {\r
+
+      \            console.warn('CSRF token not found in response body or
+      cookies');\r
+
+      \        }\r
+
+      \    }\r
+
+      });"
+    language: text/javascript
+order: 3000

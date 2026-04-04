@@ -69,8 +69,6 @@ export interface RagQueryRequest {
   canonicalQuestionId?: string;
   testCode?: string;
   sectionCode?: string;
-  studentProfile?: StudentProfile;
-  topK?: number;
 }
 
 export interface RagQueryResponse {
@@ -90,35 +88,6 @@ export const RagQueryRequestSchema = z.object({
   canonicalQuestionId: z.string().optional(),
   testCode: z.string().optional(),
   sectionCode: z.string().optional(),
-  studentProfile: z
-    .object({
-      overallLevel: z.number().min(1).max(5).optional(),
-      competencyMap: z
-        .record(
-          z.object({
-            correct: z.number(),
-            incorrect: z.number(),
-            total: z.number(),
-            masteryLevel: z.number().optional(),
-          }),
-        )
-        .optional(),
-      recentQuestions: z
-        .array(
-          z.object({
-            canonicalId: z.string(),
-            correct: z.boolean(),
-            timestamp: z.date().optional(),
-          }),
-        )
-        .optional(),
-      primaryStyle: z.enum(["step-by-step", "conceptual", "example-driven", "socratic"]).optional(),
-      secondaryStyle: z.enum(["step-by-step", "conceptual", "example-driven", "socratic"]).optional(),
-      explanationLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-      personaTags: z.array(z.string()).optional(),
-    })
-    .optional(),
-  topK: z.number().int().min(1).max(20).optional(),
 });
 
 export type ValidatedRagQueryRequest = z.infer<typeof RagQueryRequestSchema>;

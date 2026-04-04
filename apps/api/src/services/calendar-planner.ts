@@ -2,7 +2,21 @@ import { DateTime } from "luxon";
 
 export type PlannerMode = "auto" | "custom";
 export type FullTestCadence = "weekly" | "biweekly" | "none";
-export type TaskType = "math_practice" | "rw_practice" | "review_errors" | "full_length_exam";
+export type TaskType =
+  | "practice"
+  | "focused_drill"
+  | "review_practice"
+  | "review_full_length"
+  | "full_length"
+  | "tutor_support";
+
+export type BlockedWindow = {
+  date?: string;
+  start?: string;
+  end?: string;
+  all_day?: boolean;
+  reason?: string;
+};
 export type DayStatus = "planned" | "partially_completed" | "completed" | "missed";
 
 export type StudyProfileSettings = {
@@ -11,7 +25,10 @@ export type StudyProfileSettings = {
   dailyMinutes: number;
   examDate: string | null;
   fullTestCadence: FullTestCadence;
-  preferredStudyDays: number[];
+  studyDaysOfWeek: number[];
+  blockedWeekdays: number[];
+  blockedDates: string[];
+  blockedWindows: BlockedWindow[];
 };
 
 export type SkillSignal = {
@@ -22,6 +39,17 @@ export type SkillSignal = {
   masteryScore: number;
   accuracy: number;
   lastAttemptDate: string | null;
+};
+
+export type PrioritySkill = {
+  section: "MATH" | "RW";
+  domain: string | null;
+  skillCode: string;
+  skillLabel: string;
+  accuracy: number;
+  performanceBand: "strength" | "developing" | "needs_focus";
+  examSessionId?: string;
+  completedAt?: string;
 };
 
 export type AttemptSignal = {
@@ -82,6 +110,33 @@ export const SCORING_WEIGHTS = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDateList(values: string[] | null | undefined): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
+    ),
+  ).sort();
+}
+
+function isBlockedDay(dayDate: string, profile: StudyProfileSettings): boolean {
+  const weekday = DateTime.fromISO(dayDate).weekday;
+  if (profile.blockedDates.includes(dayDate)) return true;
+  if (profile.blockedWeekdays.includes(weekday)) return true;
+  return profile.blockedWindows.some((window) => {
+    if (!window.date) return false;
+    if (window.date !== dayDate) return false;
+    return window.all_day !== false;
+  });
+}
+
+function isStudyDay(dayDate: string, profile: StudyProfileSettings): boolean {
+  const weekday = DateTime.fromISO(dayDate).weekday;
+  return profile.studyDaysOfWeek.includes(weekday) && !isBlockedDay(dayDate, profile);
 }
 
 function stableHash(value: string): number {
@@ -196,6 +251,96 @@ function chooseCompressedMajorSection(dayDate: string, userId: string, existingT
   return stableHash(`${userId}|${dayDate}|compressed`) % 2 === 0 ? "MATH" : "RW";
 }
 
+function pickWeakestPrioritySkill(prioritySkills?: PrioritySkill[]): PrioritySkill | null {
+  if (!prioritySkills || prioritySkills.length === 0) return null;
+  const needsFocus = prioritySkills.filter((skill) => skill.performanceBand === "needs_focus");
+  if (needsFocus.length === 0) return null;
+  const sorted = [...needsFocus].sort((a, b) => {
+    if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
+    const domainCompare = (a.domain ?? "").localeCompare(b.domain ?? "");
+    if (domainCompare !== 0) return domainCompare;
+    return a.skillLabel.localeCompare(b.skillLabel);
+  });
+  return sorted[0];
+}
+
+function buildReprioritizedReason(prioritySkill: PrioritySkill): Record<string, unknown> {
+  return {
+    mode: "normal",
+    source: "full_length_exam",
+    reprioritized: true,
+    exam_session_id: prioritySkill.examSessionId ?? null,
+    completed_at: prioritySkill.completedAt ?? null,
+    skill: {
+      skill_code: prioritySkill.skillCode,
+      skill_label: prioritySkill.skillLabel,
+      domain: prioritySkill.domain,
+      accuracy: prioritySkill.accuracy,
+      performanceBand: prioritySkill.performanceBand,
+    },
+  };
+}
+
+function buildReprioritizedMetadata(prioritySkill: PrioritySkill): Record<string, unknown> {
+  return {
+    reprioritized: true,
+    source: "full_length_exam",
+    exam_session_id: prioritySkill.examSessionId ?? null,
+    completed_at: prioritySkill.completedAt ?? null,
+  };
+}
+
+function applyPrioritySkillToDay(params: {
+  dayTasks: PlannedTask[];
+  dayFocus: PlannedDay["focus"];
+  prioritySkill: PrioritySkill;
+}): boolean {
+  const { dayTasks, dayFocus, prioritySkill } = params;
+  const candidateIndex = dayTasks.findIndex(
+    (task) => task.taskType === "focused_drill" && (task.section === prioritySkill.section || task.section == null),
+  );
+  const fallbackIndex =
+    candidateIndex >= 0
+      ? candidateIndex
+      : dayTasks.findIndex(
+          (task) => (task.taskType === "practice" || task.taskType === "focused_drill") && task.section === prioritySkill.section,
+        );
+  const targetIndex =
+    fallbackIndex >= 0
+      ? fallbackIndex
+      : dayTasks.findIndex((task) => task.taskType === "practice" || task.taskType === "focused_drill");
+
+  if (targetIndex < 0) return false;
+
+  const targetTask = dayTasks[targetIndex];
+  dayTasks[targetIndex] = {
+    ...targetTask,
+    taskType: "focused_drill",
+    section: prioritySkill.section,
+    sourceSkillCode: prioritySkill.skillCode,
+    sourceDomain: prioritySkill.domain,
+    sourceSubskill: null,
+    sourceReason: buildReprioritizedReason(prioritySkill),
+    metadata: {
+      ...(targetTask.metadata ?? {}),
+      ...buildReprioritizedMetadata(prioritySkill),
+    },
+  };
+
+  const focusEntry = dayFocus.find((entry) => entry.section === prioritySkill.section);
+  if (focusEntry) {
+    focusEntry.skill_codes = [prioritySkill.skillCode];
+  } else {
+    dayFocus.push({
+      section: prioritySkill.section,
+      weight: 1,
+      skill_codes: [prioritySkill.skillCode],
+    });
+  }
+
+  return true;
+}
+
 function shouldScheduleFullTest(params: {
   dayDate: string;
   todayDate: string;
@@ -245,7 +390,7 @@ function buildReviewTask(dayDate: string, attempts: AttemptSignal[], examDate: s
   const examPriority = examDate ? clamp(1 - Math.max(0, DateTime.fromISO(examDate).diff(dayStart, "days").days) / 30, 0, 1) : 0;
 
   return {
-    taskType: "review_errors",
+    taskType: "review_practice",
     section: null,
     durationMinutes: 10,
     sourceSkillCode: top?.[0] ?? null,
@@ -291,11 +436,14 @@ export function generateDeterministicPlan(params: {
   existingTasks: ExistingTaskSignal[];
   recentCompletedTestDays: string[];
   skipOverrideDays: boolean;
+  prioritySkills?: PrioritySkill[];
 }): { plannedDays: PlannedDay[]; skippedOverrideDays: string[] } {
   const existingDayByDate = new Map(params.existingDays.map((day) => [day.dayDate, day]));
   const existingTaskList = [...params.existingTasks];
   const skippedOverrideDays: string[] = [];
   const plannedDays: PlannedDay[] = [];
+  const prioritySkill = pickWeakestPrioritySkill(params.prioritySkills);
+  let priorityInjected = false;
 
   let lastScheduledFullTestDate: string | null = null;
   let previousGeneratedWasFullTest = false;
@@ -316,6 +464,21 @@ export function generateDeterministicPlan(params: {
       continue;
     }
 
+    if (!isStudyDay(dayDate, params.profile)) {
+      plannedDays.push({
+        dayDate,
+        plannedMinutes: 0,
+        studyMinutesTarget: 0,
+        focus: [],
+        isExamDay: false,
+        isTaperDay: false,
+        isFullTestDay: false,
+        tasks: [],
+      });
+      previousGeneratedWasFullTest = false;
+      continue;
+    }
+
     const isExamDay = Boolean(params.profile.examDate && dayDate === params.profile.examDate);
     const isTaperDay = Boolean(params.profile.examDate && dayDate === DateTime.fromISO(params.profile.examDate).minus({ days: 1 }).toISODate());
     const isFullTestDay = shouldScheduleFullTest({
@@ -323,7 +486,7 @@ export function generateDeterministicPlan(params: {
       todayDate: params.todayDate,
       examDate: params.profile.examDate,
       cadence: params.profile.fullTestCadence,
-      preferredStudyDays: params.profile.preferredStudyDays,
+      preferredStudyDays: params.profile.studyDaysOfWeek,
       lastScheduledDay: lastScheduledFullTestDate,
       recentCompletedTestDays: params.recentCompletedTestDays,
     }) && !isExamDay && !isTaperDay;
@@ -353,7 +516,7 @@ export function generateDeterministicPlan(params: {
     if (isFullTestDay) {
       const minutes = Math.max(90, params.profile.dailyMinutes);
       dayTasks.push({
-        taskType: "full_length_exam",
+        taskType: "full_length",
         section: null,
         durationMinutes: minutes,
         sourceSkillCode: null,
@@ -400,7 +563,7 @@ export function generateDeterministicPlan(params: {
         const minorMinutes = Math.max(0, sectionBudget - majorMinutes);
 
         dayTasks.push({
-          taskType: majorSection === "MATH" ? "math_practice" : "rw_practice",
+          taskType: "focused_drill",
           section: majorSection,
           durationMinutes: majorMinutes,
           sourceSkillCode: majorPick.skillCode,
@@ -412,7 +575,7 @@ export function generateDeterministicPlan(params: {
         });
         if (minorMinutes >= 4) {
           dayTasks.push({
-            taskType: minorSection === "MATH" ? "math_practice" : "rw_practice",
+            taskType: "focused_drill",
             section: minorSection,
             durationMinutes: minorMinutes,
             sourceSkillCode: minorPick.skillCode,
@@ -427,7 +590,7 @@ export function generateDeterministicPlan(params: {
         const mathMinutes = Math.max(8, Math.round(sectionBudget * 0.5));
         const rwMinutes = Math.max(8, sectionBudget - mathMinutes);
         dayTasks.push({
-          taskType: "math_practice",
+          taskType: "practice",
           section: "MATH",
           durationMinutes: mathMinutes,
           sourceSkillCode: mathPick.skillCode,
@@ -438,7 +601,7 @@ export function generateDeterministicPlan(params: {
           required: true,
         });
         dayTasks.push({
-          taskType: "rw_practice",
+          taskType: "practice",
           section: "RW",
           durationMinutes: rwMinutes,
           sourceSkillCode: rwPick.skillCode,
@@ -450,13 +613,15 @@ export function generateDeterministicPlan(params: {
         });
       }
 
+      const reviewTaskType: TaskType = previousGeneratedWasFullTest ? "review_full_length" : "review_practice";
       const reviewTask = buildReviewTask(dayDate, params.attempts, params.profile.examDate);
       if (reviewTask) {
+        reviewTask.taskType = reviewTaskType;
         reviewTask.durationMinutes = reviewMinutes;
         dayTasks.push(reviewTask);
       } else if (effectiveMinutes >= 25) {
         dayTasks.push({
-          taskType: "review_errors",
+          taskType: reviewTaskType,
           section: null,
           durationMinutes: reviewMinutes,
           sourceSkillCode: null,
@@ -485,6 +650,11 @@ export function generateDeterministicPlan(params: {
       isFullTestDay,
       tasks: dayTasks,
     };
+    if (!priorityInjected && prioritySkill && !isExamDay && !isFullTestDay && dayTasks.length > 0) {
+      if (applyPrioritySkillToDay({ dayTasks, dayFocus, prioritySkill })) {
+        priorityInjected = true;
+      }
+    }
     plannedDays.push(plannedDay);
 
     existingTaskList.push(

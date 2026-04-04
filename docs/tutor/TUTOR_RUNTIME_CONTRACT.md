@@ -5,11 +5,22 @@
 - Mount source: `server/index.ts`
 - Route handler source: `server/routes/tutor-v2.ts`
 
+## Canonical Retrieval Contract
+- Canonical retrieval route: `POST /api/rag/v2`
+- Mount source: `server/index.ts`
+- Route handler source: `apps/api/src/routes/rag-v2.ts`
+- Retrieval scope is server-owned:
+  - Auth identity derived from `req.user.id`
+  - Student profile loaded server-side (no client-supplied `studentProfile`)
+  - Retrieval uses server default `topK` (no client-supplied `topK`)
+
 ## Route Unification
 - Production runtime source of truth is `server/**`.
 - Exactly one tutor route is mounted in production: `POST /api/tutor/v2`.
 - Deprecated duplicate removed:
   - `apps/api/src/routes/tutor-v2.ts` (unmounted legacy duplicate)
+- Legacy image tutor is unmounted/non-production:
+  - `server/routes/student-routes.ts` (Gemini image tutor)
 
 ## Security Controls Present
 - Auth identity is server-derived (`req.user.id` from Supabase auth middleware).

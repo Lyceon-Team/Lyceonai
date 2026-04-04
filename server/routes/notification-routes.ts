@@ -1,294 +1,332 @@
-import { Router, Request, Response } from 'express';
-import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
-import { logger } from '../logger.js';
-import { requireSupabaseAuth } from '../middleware/supabase-auth.js';
-import { csrfGuard } from '../middleware/csrf.js';
+import { Router, Request, Response } from "express";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { logger } from "../logger.js";
+import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
 
 const router = Router();
 
-const csrfProtection = csrfGuard();
+const DEFAULT_NOTIFICATION_PREFERENCES = {
+  email_enabled: false,
+  study_reminders_enabled: true,
+  streak_enabled: true,
+  plan_updates_enabled: true,
+  guardian_updates_enabled: true,
+  marketing_enabled: false,
+  digest_frequency: "daily",
+  quiet_hours: null,
+};
+
+function isExpired(expiresAt: string | null | undefined): boolean {
+  if (!expiresAt) return false;
+  const ts = Date.parse(expiresAt);
+  if (!Number.isFinite(ts)) return false;
+  return ts < Date.now();
+}
+
+function normalizeNotification(row: Record<string, any>) {
+  const body = typeof row.body === "string" && row.body.trim() ? row.body : typeof row.message === "string" ? row.message : "";
+  const ctaUrl = typeof row.cta_url === "string" ? row.cta_url : typeof row.action_url === "string" ? row.action_url : null;
+  const ctaText = typeof row.cta_text === "string" ? row.cta_text : typeof row.action_text === "string" ? row.action_text : null;
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    type: row.type,
+    category: row.category,
+    priority: row.priority,
+    title: row.title,
+    body,
+    ctaUrl,
+    ctaText,
+    channelOrigin: typeof row.channel_origin === "string" ? row.channel_origin : null,
+    metadata: row.metadata ?? null,
+    isRead: Boolean(row.is_read),
+    createdAt: row.created_at,
+    readAt: row.read_at ?? null,
+    archivedAt: row.archived_at ?? null,
+    expiresAt: row.expires_at ?? null,
+    updatedAt: row.updated_at ?? null,
+    message: row.message ?? body,
+    actionUrl: ctaUrl,
+    actionText: ctaText,
+  };
+}
+
+function normalizeQuietHours(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeDigestFrequency(value: unknown): "never" | "daily" | "weekly" {
+  if (value === "never" || value === "daily" || value === "weekly") return value;
+  return "daily";
+}
+
+function normalizePreferences(row: Record<string, any>) {
+  return {
+    userId: row.user_id,
+    emailEnabled: Boolean(row.email_enabled),
+    studyRemindersEnabled: Boolean(row.study_reminders_enabled),
+    streakEnabled: Boolean(row.streak_enabled),
+    planUpdatesEnabled: Boolean(row.plan_updates_enabled),
+    guardianUpdatesEnabled: Boolean(row.guardian_updates_enabled),
+    marketingEnabled: Boolean(row.marketing_enabled),
+    digestFrequency: normalizeDigestFrequency(row.digest_frequency),
+    quietHours: normalizeQuietHours(row.quiet_hours),
+    updatedAt: row.updated_at ?? null,
+  };
+}
 
 /**
  * GET /api/notifications
- * Get notifications for the current user (includes system-wide notifications)
- * For user-specific notifications, uses is_read column directly.
- * For system-wide notifications, uses notification_reads table for per-user read status.
+ * Canonical per-user notification list.
  */
-router.get('/', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.get("/", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    const offset = parseInt(req.query.offset as string) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string, 10) || 50, 100);
+    const offset = Math.max(parseInt(req.query.offset as string, 10) || 0, 0);
+    const nowIso = new Date().toISOString();
 
-    // Get user-specific notifications
-    const { data: userNotifs, error: userError } = await supabaseServer
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+    const { data, error } = await supabaseServer
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .or(`expires_at.is.null,expires_at.gte.${nowIso}`)
+      .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (userError) {
-      logger.error('NOTIFICATIONS', 'get_user_notifications_error', 'Failed to fetch user notifications', userError);
-      return res.status(500).json({ error: 'Failed to fetch notifications' });
+    if (error) {
+      logger.error("NOTIFICATIONS", "get_notifications_error", "Failed to fetch notifications", error);
+      return res.status(500).json({ error: "Failed to fetch notifications" });
     }
 
-    // Get system-wide notifications (user_id is null)
-    const { data: systemNotifs, error: systemError } = await supabaseServer
-      .from('notifications')
-      .select('*')
-      .is('user_id', null)
-      .or('expires_at.is.null,expires_at.gte.' + new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (systemError) {
-      logger.error('NOTIFICATIONS', 'get_system_notifications_error', 'Failed to fetch system notifications', systemError);
-      return res.status(500).json({ error: 'Failed to fetch notifications' });
-    }
-
-    // Get read status for system notifications
-    const systemNotifIds = (systemNotifs || []).map(n => n.id);
-    let readNotifIds: string[] = [];
-    
-    if (systemNotifIds.length > 0) {
-      const { data: reads } = await supabaseServer
-        .from('notification_reads')
-        .select('notification_id')
-        .eq('user_id', userId)
-        .in('notification_id', systemNotifIds);
-      
-      readNotifIds = (reads || []).map(r => r.notification_id);
-    }
-
-    // Combine and format notifications
-    const userNotifications = (userNotifs || []).map(n => ({
-      id: n.id,
-      userId: n.user_id,
-      type: n.type,
-      category: n.category,
-      title: n.title,
-      message: n.message,
-      priority: n.priority,
-      isRead: n.is_read,
-      actionUrl: n.action_url,
-      actionText: n.action_text,
-      metadata: n.metadata,
-      expiresAt: n.expires_at,
-      createdAt: n.created_at,
-    }));
-
-    const systemNotifications = (systemNotifs || []).map(n => ({
-      id: n.id,
-      userId: n.user_id,
-      type: n.type,
-      category: n.category,
-      title: n.title,
-      message: n.message,
-      priority: n.priority,
-      isRead: readNotifIds.includes(n.id),
-      actionUrl: n.action_url,
-      actionText: n.action_text,
-      metadata: n.metadata,
-      expiresAt: n.expires_at,
-      createdAt: n.created_at,
-    }));
-
-    // Merge and sort by createdAt
-    const allNotifications = [...userNotifications, ...systemNotifications]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limit);
-
-    res.json(allNotifications);
+    const notifications = (data || []).map(normalizeNotification).filter((n) => !isExpired(n.expiresAt));
+    res.json(notifications);
   } catch (error) {
-    logger.error('NOTIFICATIONS', 'get_notifications_error', 'Failed to fetch notifications', error);
-    res.status(500).json({ error: 'Failed to fetch notifications' });
+    logger.error("NOTIFICATIONS", "get_notifications_error", "Failed to fetch notifications", error);
+    res.status(500).json({ error: "Failed to fetch notifications" });
   }
 });
 
 /**
  * GET /api/notifications/unread-count
- * Get count of unread notifications for the current user
- * User-specific: uses is_read column. System-wide: checks notification_reads table.
+ * Counts unread per-user notifications only.
  */
-router.get('/unread-count', requireSupabaseAuth, async (req: Request, res: Response) => {
+router.get("/unread-count", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
+    const nowIso = new Date().toISOString();
 
-    // Count unread user-specific notifications
-    const { count: userUnread, error: userError } = await supabaseServer
-      .from('notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+    const { count, error } = await supabaseServer
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("is_read", false)
+      .is("archived_at", null)
+      .or(`expires_at.is.null,expires_at.gte.${nowIso}`);
 
-    if (userError) {
-      logger.error('NOTIFICATIONS', 'get_unread_count_error', 'Failed to fetch user unread count', userError);
-      return res.status(500).json({ error: 'Failed to fetch unread count' });
+    if (error) {
+      logger.error("NOTIFICATIONS", "get_unread_count_error", "Failed to fetch unread count", error);
+      return res.status(500).json({ error: "Failed to fetch unread count" });
     }
 
-    // Get system-wide notifications
-    const { data: systemNotifs, error: systemError } = await supabaseServer
-      .from('notifications')
-      .select('id')
-      .is('user_id', null)
-      .or('expires_at.is.null,expires_at.gte.' + new Date().toISOString());
-
-    if (systemError) {
-      logger.error('NOTIFICATIONS', 'get_system_notifications_error', 'Failed to fetch system notifications', systemError);
-      return res.status(500).json({ error: 'Failed to fetch unread count' });
-    }
-
-    // Get which system notifications user has read
-    const systemNotifIds = (systemNotifs || []).map(n => n.id);
-    let unreadSystemCount = 0;
-    
-    if (systemNotifIds.length > 0) {
-      const { data: reads } = await supabaseServer
-        .from('notification_reads')
-        .select('notification_id')
-        .eq('user_id', userId)
-        .in('notification_id', systemNotifIds);
-      
-      const readIds = new Set((reads || []).map(r => r.notification_id));
-      unreadSystemCount = systemNotifIds.filter(id => !readIds.has(id)).length;
-    }
-
-    res.json({ count: (userUnread || 0) + unreadSystemCount });
+    res.json({ count: count || 0 });
   } catch (error) {
-    logger.error('NOTIFICATIONS', 'get_unread_count_error', 'Failed to fetch unread count', error);
-    res.status(500).json({ error: 'Failed to fetch unread count' });
+    logger.error("NOTIFICATIONS", "get_unread_count_error", "Failed to fetch unread count", error);
+    res.status(500).json({ error: "Failed to fetch unread count" });
   }
 });
 
 /**
  * PATCH /api/notifications/:id/read
- * Mark a specific notification as read
- * User-specific: updates is_read column. System-wide: inserts into notification_reads.
+ * Marks a single per-user notification as read.
  */
-router.patch('/:id/read', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.patch("/:id/read", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const notificationId = req.params.id;
 
-    // Get notification to check if user-specific or system-wide
     const { data: notification, error: fetchError } = await supabaseServer
-      .from('notifications')
-      .select('*')
-      .eq('id', notificationId)
-      .single();
+      .from("notifications")
+      .select("*")
+      .eq("id", notificationId)
+      .eq("user_id", userId)
+      .is("archived_at", null)
+      .maybeSingle();
 
-    if (fetchError || !notification) {
-      return res.status(404).json({ error: 'Notification not found' });
-    }
-    
-    if (notification.user_id && notification.user_id !== userId) {
-      return res.status(403).json({ error: 'Not authorized to modify this notification' });
-    }
-
-    if (notification.user_id) {
-      // User-specific notification - update is_read
-      const { error: updateError } = await supabaseServer
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId);
-      
-      if (updateError) {
-        throw updateError;
-      }
-    } else {
-      // System-wide notification - insert read record
-      const { error: insertError } = await supabaseServer
-        .from('notification_reads')
-        .upsert({
-          user_id: userId,
-          notification_id: notificationId,
-        }, { onConflict: 'user_id,notification_id' });
-      
-      if (insertError) {
-        throw insertError;
-      }
+    if (fetchError) {
+      logger.error("NOTIFICATIONS", "get_notification_error", "Failed to load notification", fetchError);
+      return res.status(500).json({ error: "Failed to load notification" });
     }
 
-    logger.info('NOTIFICATIONS', 'notification_read', 'Notification marked as read', {
+    if (!notification) {
+      return res.status(404).json({ error: "Notification not found" });
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabaseServer
+      .from("notifications")
+      .update({ is_read: true, read_at: nowIso, updated_at: nowIso })
+      .eq("id", notificationId)
+      .eq("user_id", userId)
+      .is("archived_at", null);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    logger.info("NOTIFICATIONS", "notification_read", "Notification marked as read", {
       userId,
       notificationId,
-      isSystemWide: !notification.user_id
     });
 
-    res.json({ success: true, message: 'Notification marked as read' });
+    res.json({ success: true, message: "Notification marked as read" });
   } catch (error) {
-    logger.error('NOTIFICATIONS', 'mark_read_error', 'Failed to mark notification as read', error);
-    res.status(500).json({ error: 'Failed to mark notification as read' });
+    logger.error("NOTIFICATIONS", "mark_read_error", "Failed to mark notification as read", error);
+    res.status(500).json({ error: "Failed to mark notification as read" });
   }
 });
 
 /**
  * PATCH /api/notifications/mark-all-read
- * Mark all notifications as read for the current user
- * User-specific: updates is_read column. System-wide: inserts into notification_reads.
+ * Marks all unread per-user notifications as read.
  */
-router.patch('/mark-all-read', csrfProtection, requireSupabaseAuth, async (req: Request, res: Response) => {
+router.patch("/mark-all-read", requireSupabaseAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
+    const nowIso = new Date().toISOString();
 
-    // Mark all user-specific notifications as read
-    const { error: userError } = await supabaseServer
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+    const { error } = await supabaseServer
+      .from("notifications")
+      .update({ is_read: true, read_at: nowIso, updated_at: nowIso })
+      .eq("user_id", userId)
+      .eq("is_read", false)
+      .is("archived_at", null);
 
-    if (userError) {
-      throw userError;
+    if (error) {
+      throw error;
     }
 
-    // Get unread system-wide notifications for this user
-    const { data: systemNotifs } = await supabaseServer
-      .from('notifications')
-      .select('id')
-      .is('user_id', null)
-      .or('expires_at.is.null,expires_at.gte.' + new Date().toISOString());
+    logger.info("NOTIFICATIONS", "all_notifications_read", "All user notifications marked as read", {
+      userId,
+    });
 
-    if (systemNotifs && systemNotifs.length > 0) {
-      // Get which ones user has already read
-      const systemNotifIds = systemNotifs.map(n => n.id);
-      const { data: existingReads } = await supabaseServer
-        .from('notification_reads')
-        .select('notification_id')
-        .eq('user_id', userId)
-        .in('notification_id', systemNotifIds);
-      
-      const readIds = new Set((existingReads || []).map(r => r.notification_id));
-      const unreadIds = systemNotifIds.filter(id => !readIds.has(id));
-      
-      // Insert read records for unread system notifications
-      if (unreadIds.length > 0) {
-        const { error: insertError } = await supabaseServer
-          .from('notification_reads')
-          .upsert(
-            unreadIds.map(notificationId => ({
-              user_id: userId,
-              notification_id: notificationId,
-            })),
-            { onConflict: 'user_id,notification_id' }
-          );
-        
-        if (insertError) {
-          throw insertError;
-        }
-      }
+    res.json({ success: true, message: "All notifications marked as read" });
+  } catch (error) {
+    logger.error("NOTIFICATIONS", "mark_all_read_error", "Failed to mark all notifications as read", error);
+    res.status(500).json({ error: "Failed to mark all notifications as read" });
+  }
+});
 
-      logger.info('NOTIFICATIONS', 'all_notifications_read', 'All notifications marked as read', {
-        userId,
-        systemNotificationsMarked: unreadIds.length
+/**
+ * GET /api/notifications/preferences
+ * Returns persisted notification preferences for the current user.
+ */
+router.get("/preferences", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await supabaseServer
+      .from("user_notification_preferences")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      logger.error("NOTIFICATIONS", "get_preferences_error", "Failed to fetch notification preferences", error);
+      return res.status(500).json({ error: "Failed to fetch notification preferences" });
+    }
+
+    if (!data) {
+      return res.json({
+        preferences: {
+          userId,
+          emailEnabled: DEFAULT_NOTIFICATION_PREFERENCES.email_enabled,
+          studyRemindersEnabled: DEFAULT_NOTIFICATION_PREFERENCES.study_reminders_enabled,
+          streakEnabled: DEFAULT_NOTIFICATION_PREFERENCES.streak_enabled,
+          planUpdatesEnabled: DEFAULT_NOTIFICATION_PREFERENCES.plan_updates_enabled,
+          guardianUpdatesEnabled: DEFAULT_NOTIFICATION_PREFERENCES.guardian_updates_enabled,
+          marketingEnabled: DEFAULT_NOTIFICATION_PREFERENCES.marketing_enabled,
+          digestFrequency: DEFAULT_NOTIFICATION_PREFERENCES.digest_frequency,
+          quietHours: DEFAULT_NOTIFICATION_PREFERENCES.quiet_hours,
+          updatedAt: null,
+        },
       });
     }
 
-    res.json({ success: true, message: 'All notifications marked as read' });
+    return res.json({ preferences: normalizePreferences(data as Record<string, any>) });
   } catch (error) {
-    logger.error('NOTIFICATIONS', 'mark_all_read_error', 'Failed to mark all notifications as read', error);
-    res.status(500).json({ error: 'Failed to mark all notifications as read' });
+    logger.error("NOTIFICATIONS", "get_preferences_error", "Failed to fetch notification preferences", error);
+    res.status(500).json({ error: "Failed to fetch notification preferences" });
+  }
+});
+
+/**
+ * PATCH /api/notifications/preferences
+ * Updates persisted notification preferences for the current user.
+ */
+router.patch("/preferences", requireSupabaseAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const nowIso = new Date().toISOString();
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const updates: Record<string, unknown> = {
+      user_id: userId,
+      updated_at: nowIso,
+    };
+
+    const boolFields: Array<[string, string]> = [
+      ["emailEnabled", "email_enabled"],
+      ["studyRemindersEnabled", "study_reminders_enabled"],
+      ["streakEnabled", "streak_enabled"],
+      ["planUpdatesEnabled", "plan_updates_enabled"],
+      ["guardianUpdatesEnabled", "guardian_updates_enabled"],
+      ["marketingEnabled", "marketing_enabled"],
+    ];
+
+    for (const [inputKey, column] of boolFields) {
+      if (typeof body[inputKey] === "boolean") {
+        updates[column] = body[inputKey];
+      }
+    }
+
+    if (typeof body.digestFrequency === "string") {
+      updates.digest_frequency = normalizeDigestFrequency(body.digestFrequency);
+    }
+
+    if (body.quietHours !== undefined) {
+      updates.quiet_hours = normalizeQuietHours(body.quietHours);
+    }
+
+    if (Object.keys(updates).length <= 2) {
+      return res.status(400).json({ error: "No notification preference fields provided" });
+    }
+
+    const { error } = await supabaseServer
+      .from("user_notification_preferences")
+      .upsert(updates, { onConflict: "user_id" });
+
+    if (error) {
+      logger.error("NOTIFICATIONS", "update_preferences_error", "Failed to update notification preferences", error);
+      return res.status(500).json({ error: "Failed to update notification preferences" });
+    }
+
+    const { data: persisted, error: readError } = await supabaseServer
+      .from("user_notification_preferences")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (readError || !persisted) {
+      logger.error("NOTIFICATIONS", "update_preferences_error", "Failed to read notification preferences after update", readError);
+      return res.status(500).json({ error: "Failed to update notification preferences" });
+    }
+
+    return res.json({ preferences: normalizePreferences(persisted as Record<string, any>) });
+  } catch (error) {
+    logger.error("NOTIFICATIONS", "update_preferences_error", "Failed to update notification preferences", error);
+    res.status(500).json({ error: "Failed to update notification preferences" });
   }
 });
 

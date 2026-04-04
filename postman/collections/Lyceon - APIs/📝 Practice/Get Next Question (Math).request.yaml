@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/practice/next?section=math"
+method: GET
+queryParams:
+  section: math
+order: 3000

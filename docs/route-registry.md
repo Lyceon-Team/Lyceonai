@@ -29,6 +29,7 @@ This document is the single authoritative registry of:
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
 | `/trust/evidence` | public | free | TrustEvidence | N/A (static SEO) | ACTIVE |
+| `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
 | `/privacy` | public | free | Redirect→`/legal/privacy-policy` | N/A | ACTIVE |
@@ -38,7 +39,7 @@ This document is the single authoritative registry of:
 | `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
-| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/questions` | ACTIVE |
+| `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
 | `/practice/math` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/reading-writing` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
@@ -53,13 +54,6 @@ This document is the single authoritative registry of:
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
 | `/guardian/students/:studentId/calendar` | guardian, admin | entitled | GuardianCalendar | `/api/guardian/students/:studentId/calendar/month`, `/api/guardian/students/:studentId/summary` | ACTIVE |
 | `/guardian/verify-consent` | guardian, admin | entitled | GuardianVerifyConsent | `/api/guardian/verify-consent` | ACTIVE |
-| `/admin` | admin | admin-only | AdminPortal | `/api/admin/db-health` (mounted); content publish/review admin endpoints are service-only/unmounted from runtime | ACTIVE |
-| `/admin-dashboard` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
-| `/admin-system-config` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
-| `/admin-questions` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
-| `/admin-review` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
-| `/admin-portal` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
-| `/admin-review-v2` | N/A | N/A | Redirect→`/admin` | N/A | ACTIVE |
 
 **†** entitled = free tier has daily usage limits; paid/entitled tier has unlimited access  
 **admin-only** = admin role bypasses all entitlement checks (full access)
@@ -85,7 +79,7 @@ This document is the single authoritative registry of:
 - `/signup`
 - `/privacy` (301 to `/legal/privacy-policy`)
 - `/terms` (301 to `/legal/student-terms`)
-- authenticated app surfaces (dashboard, practice, full-test, mastery, guardian, admin)
+- authenticated app surfaces (dashboard, practice, full-test, mastery, guardian)
 
 ### Dead/Stale Public Routes
 - none (legacy ingestion/admin-deprecated routes remain removed)
@@ -139,8 +133,8 @@ Removed auth endpoints (must return 404):
 | `/api/practice/next` | GET | Yes | student/admin | entitled† | Get next practice question |
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
-| `/api/practice/questions` | GET | Yes | student/admin | free | Get filtered questions for practice |
-| `/api/tutor/v2` | POST | Yes | student/admin | entitled† | AI tutor chat |
+| `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
+| `/api/tutor/v2` | POST | Yes | student/admin | entitled† | tutor chat |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
 | `/api/questions/validate` | POST | No (unmounted) | N/A | N/A | UNMOUNTED in runtime (404 contract) |
@@ -177,12 +171,6 @@ Removed auth endpoints (must return 404):
 ### Admin Endpoints
 | Endpoint | Method | Auth Required | Role | Purpose |
 |----------|--------|--------------|------|---------|
-| `/api/admin/stats` | GET | Yes | admin | System statistics |
-| `/api/admin/kpis` | GET | Yes | admin | Admin KPIs |
-| `/api/admin/questions/needs-review` | GET | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
-| `/api/admin/questions/statistics` | GET | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
-| `/api/admin/questions/:id/approve` | POST | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
-| `/api/admin/questions/:id/reject` | POST | No (unmounted) | N/A | Service-only legacy/admin workflow endpoint (not mounted in runtime) |
 | `/api/admin/db-health` | GET | Yes | admin | Database health check |
 
 ### Billing Endpoints
@@ -211,11 +199,6 @@ Removed auth endpoints (must return 404):
   - Redirects unauthorized users to appropriate landing pages
   - Used for: student, guardian, and multi-role routes
 
-- **AdminGuard** (`client/src/components/auth/AdminGuard.tsx`)
-  - Enforces admin-only access within AdminPortal
-  - Shows access denied UI for non-admins
-  - Used internally by: `/admin` route
-
 - **SubscriptionPaywall** (`client/src/components/guardian/SubscriptionPaywall.tsx`)
   - Shows upgrade prompt for non-entitled guardian features
   - Used for: guardian dashboard features
@@ -227,7 +210,7 @@ Removed auth endpoints (must return 404):
 - **requireSupabaseAdmin** - Enforces admin-only access
 - **requireGuardianEntitlement** - Enforces paid entitlement for guardian features
 - **checkPracticeLimit** - Enforces practice usage limits (free tier: 10/day)
-- **checkAiChatLimit** - Enforces AI chat usage limits (free tier: 5/day)
+- **checkAiChatLimit** - Enforces tutor chat usage limits (free tier: 5/day)
 
 ---
 

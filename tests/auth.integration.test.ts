@@ -67,76 +67,32 @@ describe('Auth Integration Tests', () => {
 
   describe('Admin Endpoints', () => {
     it('should return 401 for admin routes without auth', async () => {
-      const res = await request(app).get('/api/admin/questions/needs-review');
-      expect([401, 404]).toContain(res.status);
+      const res = await request(app).get('/api/admin/db-health');
+      expect([401, 403]).toContain(res.status);
     });
   });
 
   describe('CSRF Protection', () => {
-    it('should block POST requests without Origin/Referer (403)', async () => {
-      const res = await request(app)
-        .post('/api/auth/signout');
-      
-      // Should block with 403 Forbidden
+    const getCsrfToken = async () => {
+      const agent = request.agent(app);
+      const tokenRes = await agent.get('/api/csrf-token');
+      expect(tokenRes.status).toBe(200);
+      return { agent, token: tokenRes.body.csrfToken as string };
+    };
+
+    it('should block POST requests without CSRF token (403)', async () => {
+      const res = await request(app).post('/api/auth/signout');
       expect(res.status).toBe(403);
       expect(res.body).toHaveProperty('error', 'csrf_blocked');
     });
 
-    it('should allow POST with valid Origin header', async () => {
-      const res = await request(app)
-        .post('/api/auth/signout')
-        .set('Origin', 'http://localhost:5000');
-      
-      // Should process normally (401 if not authenticated, 200 if authenticated)
+    it('should allow POST with a valid CSRF token', async () => {
+      const { agent, token } = await getCsrfToken();
+      const res = await agent.post('/api/auth/signout').set('x-csrf-token', token);
       expect([200, 401]).toContain(res.status);
     });
 
-    it('should block POST with forged Origin header (403)', async () => {
-      const res = await request(app)
-        .post('/api/auth/signout')
-        .set('Origin', 'https://evil.com');
-      
-      // Should block with 403 Forbidden
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
-    });
-
-    it('should not bypass CSRF with empty origin entries (e.g., trailing comma)', async () => {
-      // This test verifies that allowedOrigins like "http://localhost:5000," (trailing comma)
-      // doesn't create empty entries that bypass CSRF protection
-      const res = await request(app)
-        .post('/api/auth/signout')
-        .set('Origin', 'https://evil.com');
-      
-      // Should still block with 403 even if ALLOWED_ORIGINS has trailing/double commas
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
-    });
-
-    it('should block hostname-prefix impersonation attacks', async () => {
-      // This test verifies that domains like "http://localhost:5000.evil.com" 
-      // cannot bypass CSRF by sharing a hostname prefix
-      const res = await request(app)
-        .post('/api/auth/signout')
-        .set('Origin', 'http://localhost:5000.evil.com');
-      
-      // Should block with 403 - exact origin match required
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
-    });
-
-    it('should block subdomain impersonation via Referer', async () => {
-      // Verify that Referer parsing extracts exact origin and blocks subdomains
-      const res = await request(app)
-        .post('/api/auth/signout')
-        .set('Referer', 'http://localhost:5000.attacker.com/some/path');
-      
-      // Should block with 403 - Referer origin doesn't match exactly
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty('error', 'csrf_blocked');
-    });
-
-    it('should allow GET requests without Origin/Referer', async () => {
+    it('should allow GET requests without CSRF token', async () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
     });
@@ -183,22 +139,6 @@ describe('Auth Integration Tests', () => {
         .send({ mode: 'flow', section: 'math' });
       
       expect([401, 404]).toContain(res.status); // Not authenticated
-    });
-  });
-
-  describe('Rate Limiting', () => {
-    it('should have rate limiting on search endpoint', async () => {
-      // Make multiple rapid requests
-      const requests = Array(10).fill(null).map(() => 
-        request(app).get('/api/questions/search?q=test')
-      );
-      
-      const responses = await Promise.all(requests);
-      const statuses = responses.map(r => r.status);
-      
-      // Should include some rate limit responses (429) if limit is low
-      // Or all succeed if rate limit is high
-      expect(statuses.every(s => [200, 304, 429].includes(s))).toBe(true);
     });
   });
 

@@ -10,9 +10,16 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { csrfFetch } from "@/lib/csrf";
 import ExamRunner from "@/components/full-length-exam/ExamRunner";
 import FullLengthResultsView, { type FullLengthResultsData } from "@/components/full-length-exam/FullLengthResultsView";
 import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
+import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import {
+  parseRuntimeContractDisabledFromError,
+  parseRuntimeContractDisabledFromPayload,
+  type RuntimeContractDisabledState,
+} from "@/lib/runtime-contract-disable";
 
 interface FullLengthHistorySession {
   sessionId: string;
@@ -44,6 +51,7 @@ export default function FullTest() {
   const [reportLookupSessionId, setReportLookupSessionId] = useState("");
   const [reportSessionId, setReportSessionId] = useState<string | null>(null);
   const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
+  const [contractDisabled, setContractDisabled] = useState<RuntimeContractDisabledState | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -92,19 +100,27 @@ export default function FullTest() {
     error: reportError,
   } = useQuery<FullLengthResultsData>({
     queryKey: ["full-length-report", reportSessionId],
-    enabled: !!reportSessionId && !!user && !isStarted,
+    enabled: !!reportSessionId && !!user && !isStarted && !contractDisabled,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
       if (!reportSessionId) {
         throw new Error("Session ID is required");
       }
 
-      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${encodeURIComponent(reportSessionId)}/report`, {
         method: "GET",
         credentials: "include",
       });
 
       const payload = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("full-length", res.status, payload);
+      if (disabled) {
+        setContractDisabled(disabled);
+        throw new Error(`${res.status}: ${disabled.code}: ${disabled.message}`);
+      }
+
       if (!res.ok) {
         const code = payload?.code ? ` ${payload.code}` : "";
         const message = payload?.message || payload?.error || "Failed to load exam report";
@@ -121,22 +137,31 @@ export default function FullTest() {
     error: reviewError,
   } = useQuery<FullLengthReviewData>({
     queryKey: ["full-length-review", reviewSessionId],
-    enabled: !!reviewSessionId && !!user && !isStarted,
+    enabled: !!reviewSessionId && !!user && !isStarted && !contractDisabled,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
       if (!reviewSessionId) {
         throw new Error("Session ID is required");
       }
 
-      const res = await fetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${encodeURIComponent(reviewSessionId)}/review`, {
         method: "GET",
         credentials: "include",
       });
 
       const payload = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("full-length", res.status, payload);
+      if (disabled) {
+        setContractDisabled(disabled);
+        throw new Error(`${res.status}: ${disabled.code}: ${disabled.message}`);
+      }
+
       if (!res.ok) {
+        const code = payload?.code ? ` ${payload.code}` : "";
         const message = payload?.message || payload?.error || "Failed to load exam review";
-        throw new Error(`${res.status}: ${message}`);
+        throw new Error(`${res.status}:${code} ${message}`);
       }
 
       return payload as FullLengthReviewData;
@@ -148,17 +173,26 @@ export default function FullTest() {
     error: historyError,
   } = useQuery<FullLengthHistoryData>({
     queryKey: ["full-length-history"],
-    enabled: !!user && !isStarted,
+    enabled: !!user && !isStarted && !contractDisabled,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async () => {
-      const res = await fetch("/api/full-length/sessions?limit=15", {
+      const res = await csrfFetch("/api/full-length/sessions?limit=15", {
         method: "GET",
         credentials: "include",
       });
       const payload = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("full-length", res.status, payload);
+      if (disabled) {
+        setContractDisabled(disabled);
+        throw new Error(`${res.status}: ${disabled.code}: ${disabled.message}`);
+      }
+
       if (!res.ok) {
+        const code = payload?.code ? ` ${payload.code}` : "";
         const message = payload?.message || payload?.error || "Failed to load full-length history";
-        throw new Error(`${res.status}: ${message}`);
+        throw new Error(`${res.status}:${code} ${message}`);
       }
       return payload as FullLengthHistoryData;
     },
@@ -174,20 +208,34 @@ export default function FullTest() {
   const reviewNotFound = reviewErrorMessage.includes("404");
   const historyErrorMessage = historyError instanceof Error ? historyError.message : "";
 
+  useEffect(() => {
+    if (contractDisabled) return;
+    const fromReport = parseRuntimeContractDisabledFromError("full-length", reportError);
+    const fromReview = parseRuntimeContractDisabledFromError("full-length", reviewError);
+    const fromHistory = parseRuntimeContractDisabledFromError("full-length", historyError);
+    setContractDisabled(fromReport ?? fromReview ?? fromHistory ?? null);
+  }, [contractDisabled, historyError, reportError, reviewError]);
+
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/full-length/sessions", {
+      const res = await csrfFetch("/api/full-length/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
 
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to create exam session");
+      const payload = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("full-length", res.status, payload);
+      if (disabled) {
+        setContractDisabled(disabled);
+        throw new Error(`${disabled.code}: ${disabled.message}`);
       }
 
-      return res.json();
+      if (!res.ok) {
+        throw new Error(payload?.message || "Failed to create exam session");
+      }
+
+      return payload;
     },
     onSuccess: (data) => {
       setSessionId(data.session.id);
@@ -197,6 +245,11 @@ export default function FullTest() {
       });
     },
     onError: (error: Error) => {
+      const disabled = parseRuntimeContractDisabledFromError("full-length", error);
+      if (disabled) {
+        setContractDisabled(disabled);
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Error",
@@ -207,18 +260,24 @@ export default function FullTest() {
 
   const startExamMutation = useMutation({
     mutationFn: async (sid: string) => {
-      const res = await fetch(`/api/full-length/sessions/${sid}/start`, {
+      const res = await csrfFetch(`/api/full-length/sessions/${sid}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
       });
 
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to start exam");
+      const payload = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("full-length", res.status, payload);
+      if (disabled) {
+        setContractDisabled(disabled);
+        throw new Error(`${disabled.code}: ${disabled.message}`);
       }
 
-      return res.json();
+      if (!res.ok) {
+        throw new Error(payload?.message || "Failed to start exam");
+      }
+
+      return payload;
     },
     onSuccess: (_, sid) => {
       setIsStarted(true);
@@ -230,6 +289,11 @@ export default function FullTest() {
       });
     },
     onError: (error: Error) => {
+      const disabled = parseRuntimeContractDisabledFromError("full-length", error);
+      if (disabled) {
+        setContractDisabled(disabled);
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Error",
@@ -326,6 +390,16 @@ export default function FullTest() {
               <Link href="/login">Log In</Link>
             </Button>
           </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (contractDisabled) {
+    return (
+      <AppShell>
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
+          <RuntimeContractDisabledCard domain="full-length" code={contractDisabled.code} />
         </div>
       </AppShell>
     );

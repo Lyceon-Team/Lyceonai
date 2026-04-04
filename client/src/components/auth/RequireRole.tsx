@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { Redirect, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
+import { csrfFetch } from '@/lib/csrf';
 
 type UserRole = 'student' | 'guardian' | 'admin';
 
@@ -28,7 +29,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
     retry: false,
     enabled: !!user, // only fetch when user is authenticated
     queryFn: async () => {
-      const response = await fetch('/api/profile', { credentials: 'include' });
+      const response = await csrfFetch('/api/profile', { credentials: 'include' });
 
       if (response.status === 401 || response.status === 403) {
         return { authenticated: false, user: null };
@@ -68,7 +69,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
       return <Redirect to="/guardian" replace />;
     }
     if (isAdmin) {
-      return <Redirect to="/admin" replace />;
+      return <Redirect to="/dashboard" replace />;
     }
     return <Redirect to="/dashboard" replace />;
   }

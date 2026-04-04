@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { csrfFetch } from "@/lib/csrf";
+import {
+  type RuntimeContractDisabledState,
+  parseRuntimeContractDisabledFromPayload,
+} from "@/lib/runtime-contract-disable";
 
 export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
@@ -135,6 +140,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   const [explanation, setExplanation] = useState<string | null>(null);
   const [sessionState, setSessionState] = useState<"created" | "active" | "completed" | "abandoned">("created");
   const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
+  const [runtimeDisabled, setRuntimeDisabled] = useState<RuntimeContractDisabledState | null>(null);
 
   const [score, setScore] = useState({
     correct: 0,
@@ -164,6 +170,9 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   }, []);
 
   const ensureSession = useCallback(async () => {
+    if (runtimeDisabled) {
+      throw new Error(`${runtimeDisabled.code}: ${runtimeDisabled.message}`);
+    }
     if (sessionId) return sessionId;
 
     const startPayload: Record<string, unknown> = {
@@ -178,7 +187,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (typeof sessionSpec?.targetMinutes === "number") startPayload.target_minutes = sessionSpec.targetMinutes;
     if (typeof sessionSpec?.targetQuestionCount === "number") startPayload.target_question_count = sessionSpec.targetQuestionCount;
 
-    const startRes = await fetch("/api/practice/sessions", {
+    const startRes = await csrfFetch("/api/practice/sessions", {
       method: "POST",
       credentials: "include",
       headers: {
@@ -188,11 +197,18 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       body: JSON.stringify(startPayload),
     });
 
+    const startPayloadBody = await startRes.json().catch(() => null);
+    const disabled = parseRuntimeContractDisabledFromPayload("practice", startRes.status, startPayloadBody);
+    if (disabled) {
+      setRuntimeDisabled(disabled);
+      throw new Error(`${disabled.code}: ${disabled.message}`);
+    }
+
     if (!startRes.ok) {
       throw new Error(`Failed to start practice session (${startRes.status})`);
     }
 
-    const started = (await startRes.json()) as { sessionId?: string; calculatorState?: unknown | null };
+    const started = (startPayloadBody ?? {}) as { sessionId?: string; calculatorState?: unknown | null };
     if (!started.sessionId) {
       throw new Error("Server did not return a sessionId");
     }
@@ -202,15 +218,16 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       setCalculatorState(started.calculatorState ?? null);
     }
     return started.sessionId;
-  }, [clientInstanceId, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
+  }, [clientInstanceId, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
 
   const fetchNextQuestion = useCallback(async () => {
+    if (runtimeDisabled) return null;
     setIsLoading(true);
     setError(null);
 
     try {
       const effectiveSessionId = await ensureSession();
-      const nextRes = await fetch(
+      const nextRes = await csrfFetch(
         `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/next?client_instance_id=${encodeURIComponent(clientInstanceId)}`,
         {
           method: "GET",
@@ -219,11 +236,21 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         }
       );
 
+      const nextPayloadBody = await nextRes.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload("practice", nextRes.status, nextPayloadBody);
+      if (disabled) {
+        setRuntimeDisabled(disabled);
+        setError(`${disabled.code}: ${disabled.message}`);
+        setQuestion(null);
+        setSessionItemId(null);
+        return null;
+      }
+
       if (!nextRes.ok) {
         throw new Error(`Failed to load next question (${nextRes.status})`);
       }
 
-      const data = (await nextRes.json()) as PracticeNextResponse;
+      const data = (nextPayloadBody ?? {}) as PracticeNextResponse;
 
       if (data.sessionId) setSessionId(data.sessionId);
       setSessionItemId(data.sessionItemId ?? null);
@@ -252,10 +279,11 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     } finally {
       setIsLoading(false);
     }
-  }, [clientInstanceId, ensureSession, resetPerQuestionState]);
+  }, [clientInstanceId, ensureSession, resetPerQuestionState, runtimeDisabled]);
 
   const submitAnswer = useCallback(
     async (opts: { skipped: boolean }) => {
+      if (runtimeDisabled) return null;
       if (!question) return;
 
       setIsSubmitting(true);
@@ -286,18 +314,26 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
               clientAttemptId,
             };
 
-        const res = await fetch(endpoint, {
+        const res = await csrfFetch(endpoint, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
 
+        const payloadBody = await res.json().catch(() => null);
+        const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
+        if (disabled) {
+          setRuntimeDisabled(disabled);
+          setError(`${disabled.code}: ${disabled.message}`);
+          return null;
+        }
+
         if (!res.ok) {
           throw new Error(`Failed to submit answer (${res.status})`);
         }
 
-        const data = (await res.json()) as PracticeAnswerResponse | PracticeSkipResponse;
+        const data = (payloadBody ?? {}) as PracticeAnswerResponse | PracticeSkipResponse;
         if (data.state) setSessionState(data.state);
 
         if (data.stats) {
@@ -351,6 +387,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       question,
       selectedAnswer,
       sessionItemId,
+      runtimeDisabled,
     ]
   );
 
@@ -365,10 +402,11 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   }, [question, submitAnswer]);
 
   const terminateSession = useCallback(async () => {
+    if (runtimeDisabled) return null;
     if (!sessionId) return null;
     if (sessionState === "completed" || sessionState === "abandoned") return { state: sessionState };
 
-    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
+    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
       method: "POST",
       credentials: "include",
       keepalive: true,
@@ -379,11 +417,18 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       body: JSON.stringify({ client_instance_id: clientInstanceId }),
     });
 
+    const payloadBody = await res.json().catch(() => null);
+    const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
+    if (disabled) {
+      setRuntimeDisabled(disabled);
+      throw new Error(`${disabled.code}: ${disabled.message}`);
+    }
+
     if (!res.ok) {
       throw new Error(`Failed to terminate session (${res.status})`);
     }
 
-    const data = await res.json() as { state?: "abandoned" };
+    const data = (payloadBody ?? {}) as { state?: "abandoned" };
     if (data.state === "abandoned") {
       setSessionState("abandoned");
       setSessionItemId(null);
@@ -391,13 +436,14 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       setCalculatorState(null);
     }
     return data;
-  }, [clientInstanceId, sessionId, sessionState]);
+  }, [clientInstanceId, runtimeDisabled, sessionId, sessionState]);
 
   const persistCalculatorState = useCallback(async (nextCalculatorState: unknown | null) => {
+    if (runtimeDisabled) return null;
     if (!sessionId) return null;
     if (sessionState === "completed" || sessionState === "abandoned") return null;
 
-    const res = await fetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
+    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -410,18 +456,25 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       }),
     });
 
+    const payloadBody = await res.json().catch(() => null);
+    const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
+    if (disabled) {
+      setRuntimeDisabled(disabled);
+      throw new Error(`${disabled.code}: ${disabled.message}`);
+    }
+
     if (!res.ok) {
       throw new Error(`Failed to persist calculator state (${res.status})`);
     }
 
-    const data = await res.json() as { calculatorState?: unknown | null };
+    const data = (payloadBody ?? {}) as { calculatorState?: unknown | null };
     const value = Object.prototype.hasOwnProperty.call(data, "calculatorState")
       ? data.calculatorState ?? null
       : nextCalculatorState;
 
     setCalculatorState(value ?? null);
     return value ?? null;
-  }, [clientInstanceId, sessionId, sessionState]);
+  }, [clientInstanceId, runtimeDisabled, sessionId, sessionState]);
 
   useEffect(() => {
     fetchNextQuestion();
@@ -458,5 +511,6 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     terminateSession,
     calculatorState,
     persistCalculatorState,
+    runtimeDisabled,
   };
 }

@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{baseUrl}}/api/questions"
+method: GET
+order: 1000
