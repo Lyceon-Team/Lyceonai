@@ -21,7 +21,7 @@ export const legalDocs: LegalDoc[] = [
     slug: 'trust-and-safety',
     docKey: 'trust_and_safety',
     title: 'Trust & Safety at Lyceon',
-    shortDescription: 'How we approach trust, safety, and responsibility in AI-powered learning.',
+    shortDescription: 'How we approach trust, safety, and responsibility in tutor-supported learning.',
     pdfPath: '/legal/Trust-and-Safety-at-Lyceon.pdf',
     lastUpdated: '2024-12-22',
     sections: [

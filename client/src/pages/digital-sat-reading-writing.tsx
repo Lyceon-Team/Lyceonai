@@ -1,5 +1,4 @@
 import { Link } from 'wouter';
-import { SEO, JsonLd, createBreadcrumbJsonLd, createFaqJsonLd } from '@/components/SEO';
 import { BookOpen, ArrowRight, CheckCircle2, Calculator } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
 import { Container, Breadcrumb, Card, Section } from '@/components/layout/primitives';
@@ -41,18 +40,6 @@ const questionTypes = [
 export default function DigitalSATReadingWritingPage() {
   return (
     <PublicLayout>
-      <SEO
-        title="Digital SAT Reading & Writing Prep - Vocabulary, Grammar & Comprehension"
-        description="Master SAT Reading and Writing with adaptive practice, grammar review, and evidence-based reasoning strategies."
-        canonical="https://lyceon.ai/digital-sat/reading-writing"
-      />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Digital SAT', url: 'https://lyceon.ai/digital-sat' },
-        { name: 'Reading & Writing', url: 'https://lyceon.ai/digital-sat/reading-writing' },
-      ])} />
-      <JsonLd data={createFaqJsonLd(faqs)} />
-
       <Container>
         <Breadcrumb items={[
           { label: 'Home', href: '/' },

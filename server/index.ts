@@ -5,7 +5,7 @@
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
  *   - POST /api/rag/v2 (structured retrieval)
- *   - POST /api/tutor/v2 (AI tutoring)
+ *   - POST /api/tutor/v2 (tutor runtime)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -15,6 +15,7 @@ import path from "path";
 import fs from "fs";
 import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
+import { LEGAL_META, PUBLIC_META } from "../shared/seo/public-meta";
 import rateLimit from "express-rate-limit";
 // SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
 // Canonical RAG route owner is apps/api/src/routes/rag-v2.ts.
@@ -149,32 +150,7 @@ app.use("/api/legal", requireSupabaseAuth, doubleCsrfProtection, legalRouter);
 // ============================================================================
 
 // Legal doc metadata registry (mirrors client/src/lib/legal.ts slugs)
-const legalSeoMeta: Record<string, { title: string; description: string }> = {
-  "privacy-policy": {
-    title: "Privacy Policy",
-    description: "How Lyceon collects, uses, stores, shares, and protects your information.",
-  },
-  "student-terms": {
-    title: "Student Terms of Use",
-    description: "The terms that govern your access to and use of the Lyceon platform.",
-  },
-  "honor-code": {
-    title: "Honor Code",
-    description: "Our commitment to honest learning and academic integrity at Lyceon.",
-  },
-  "community-guidelines": {
-    title: "Community Guidelines",
-    description: "How users are expected to behave when using Lyceon.",
-  },
-  "parent-guardian-terms": {
-    title: "Parent / Guardian Terms",
-    description: "Terms for parents and guardians whose children use Lyceon.",
-  },
-  "trust-and-safety": {
-    title: "Trust & Safety",
-    description: "How Lyceon approaches trust, safety, and responsible technology in learning.",
-  },
-};
+// Canonical source-of-truth is shared/seo/public-meta.ts (LEGAL_META).
 
 // Inject SEO meta tags into HTML template
 function injectMeta(
@@ -183,6 +159,7 @@ function injectMeta(
     title: string;
     description: string;
     canonical: string;
+    ogImage?: string;
   }
 ): string {
   let result = html;
@@ -211,21 +188,42 @@ function injectMeta(
   }
 
   // Insert/replace OpenGraph tags
+  const ogImage = meta.ogImage || "https://lyceon.ai/og-image.jpg";
   const ogTags = `
     <meta property="og:title" content="${meta.title}">
     <meta property="og:description" content="${meta.description}">
     <meta property="og:url" content="${meta.canonical}">
     <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:site_name" content="Lyceon">
+    <meta property="og:image" content="${ogImage}">
+    <meta property="og:image:alt" content="${meta.title}">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${meta.title}">
     <meta name="twitter:description" content="${meta.description}">
+    <meta name="twitter:image" content="${ogImage}">
   `;
 
   // Remove existing OG/Twitter tags and add new ones
-  result = result.replace(/<meta\s+property="og:(title|description|url|type)"\s+content="[^"]*"\s*\/?>/gi, "");
-  result = result.replace(/<meta\s+name="twitter:(card|title|description)"\s+content="[^"]*"\s*\/?>/gi, "");
+  result = result.replace(
+    /<meta\s+property="og:(title|description|url|type|image|image:alt|image:width|image:height|site_name)"\s+content="[^"]*"\s*\/?>/gi,
+    ""
+  );
+  result = result.replace(/<meta\s+name="twitter:(card|title|description|image)"\s+content="[^"]*"\s*\/?>/gi, "");
   result = result.replace("</head>", `${ogTags}</head>`);
 
+  return result;
+}
+
+function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefined): string {
+  if (!jsonLd || jsonLd.length === 0) {
+    return html.replace(/<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi, "");
+  }
+
+  let result = html.replace(/<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi, "");
+  const jsonLdScripts = jsonLd
+    .map((data) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`)
+    .join("\n");
+  result = result.replace("</head>", `${jsonLdScripts}\n</head>`);
   return result;
 }
 
@@ -268,7 +266,7 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - AI tutoring with canonical RAG context
+// Tutor v2 endpoint - tutor runtime with canonical RAG context
 app.use(
   "/api/tutor/v2",
   ragLimiter,
@@ -480,13 +478,16 @@ function getIndexHtml(): string {
 function servePublicSsr(routePath: string, res: Response): boolean {
   const seo = getPublicPageSeo(routePath);
   if (!seo) return false;
+  const publicMeta = PUBLIC_META[routePath];
 
   let html = getIndexHtml();
   html = injectMeta(html, {
     title: seo.title,
     description: seo.description,
     canonical: seo.canonical,
+    ogImage: publicMeta?.ogImage,
   });
+  html = injectJsonLd(html, publicMeta?.jsonLd);
   html = injectBodyContent(html, seo.bodyHtml);
   res.type("html").send(html);
   return true;
@@ -504,10 +505,10 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
 // Keeps sitemap legal slugs indexable with canonical title/description metadata.
 app.get("/legal/:slug", (req, res, next) => {
   const slug = String(req.params.slug || "");
-  const meta = legalSeoMeta[slug];
+  const meta = LEGAL_META[slug];
   if (!meta) return next();
 
-  const canonical = `https://lyceon.ai/legal/${slug}`;
+  const canonical = meta.canonical;
   const bodyHtml = `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -529,7 +530,9 @@ app.get("/legal/:slug", (req, res, next) => {
     title: `${meta.title} | Lyceon`,
     description: meta.description,
     canonical,
+    ogImage: meta.ogImage,
   });
+  html = injectJsonLd(html, undefined);
   html = injectBodyContent(html, bodyHtml);
   res.type("html").send(html);
 });
@@ -693,7 +696,7 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (AI tutoring with canonical RAG)`);
+    console.log(`  POST   /api/tutor/v2 (tutor runtime with canonical RAG)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);

@@ -1,5 +1,4 @@
 import { Link } from "wouter";
-import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,28 +25,6 @@ import Footer from "@/components/layout/Footer";
 export default function TrustHub() {
     return (
         <div className="min-h-screen bg-background flex flex-col">
-            <Helmet>
-                <title>Trust &amp; Safety Hub | Lyceon</title>
-                <meta
-                    name="description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-                <link rel="canonical" href="https://lyceon.ai/trust" />
-                <meta property="og:title" content="Trust &amp; Safety Hub | Lyceon" />
-                <meta
-                    property="og:description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-                <meta property="og:url" content="https://lyceon.ai/trust" />
-                <meta property="og:type" content="website" />
-                <meta name="twitter:card" content="summary" />
-                <meta name="twitter:title" content="Trust &amp; Safety Hub | Lyceon" />
-                <meta
-                    name="twitter:description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-            </Helmet>
-
             <main className="flex-1">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
                     {/* Header */}

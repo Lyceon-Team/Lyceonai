@@ -75,7 +75,7 @@ const digitalSatFaqs = [
   {
     question: "What is free vs paid?",
     answer:
-      "Free includes daily limits (10 practice questions and 5 Lisa messages). Paid plans remove those limits and expand guardian visibility features.",
+      "Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.",
   },
 ];
 
@@ -262,6 +262,12 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     description:
       "Public technical evidence for Lyceon security and privacy controls, including auth enforcement, RLS usage, and logging safeguards.",
     canonical: `${BASE_URL}/trust/evidence`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "/tutor": {
+    title: "Tutor Safety & Privacy | Lyceon",
+    description: "Lyceon's tutor boundaries, privacy posture, and learning pedagogy for SAT-aligned study.",
+    canonical: `${BASE_URL}/tutor`,
     ogImage: DEFAULT_OG_IMAGE,
   },
   "/legal": {

@@ -1,8 +1,22 @@
+import { PUBLIC_META } from "../shared/seo/public-meta";
+
 export interface PublicPageSeo {
   title: string;
   description: string;
   canonical: string;
   bodyHtml: string;
+}
+
+function requirePublicMeta(path: string): Pick<PublicPageSeo, "title" | "description" | "canonical"> {
+  const meta = PUBLIC_META[path];
+  if (!meta) {
+    throw new Error(`Missing PUBLIC_META entry for ${path}`);
+  }
+  return {
+    title: meta.title,
+    description: meta.description,
+    canonical: meta.canonical,
+  };
 }
 
 const footerHtml = `
@@ -19,9 +33,7 @@ const footerHtml = `
 
 export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   "/": {
-    title: "Lyceon | Study Smarter, Score Higher",
-    description: "Digital SAT prep with adaptive practice, full-length exams, progress tracking, tutor chat, and guardian visibility.",
-    canonical: "https://lyceon.ai",
+    ...requirePublicMeta("/"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
@@ -80,9 +92,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat": {
-    title: "Digital SAT Practice – Study Smarter, Score Higher | Lyceon",
-    description: "Master the Digital SAT with adaptive SAT-style practice, full-length exam readiness, and focused explanations.",
-    canonical: "https://lyceon.ai/digital-sat",
+    ...requirePublicMeta("/digital-sat"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
@@ -157,9 +167,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/math": {
-    title: "Digital SAT Math Practice | Lyceon",
-    description: "Practice Digital SAT Math with adaptive question flow, algebra and geometry review, and step-by-step explanations.",
-    canonical: "https://lyceon.ai/digital-sat/math",
+    ...requirePublicMeta("/digital-sat/math"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
@@ -237,9 +245,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/digital-sat/reading-writing": {
-    title: "Digital SAT Reading & Writing Practice | Lyceon",
-    description: "Practice Digital SAT Reading & Writing with adaptive drills and step-by-step explanations for comprehension and grammar.",
-    canonical: "https://lyceon.ai/digital-sat/reading-writing",
+    ...requirePublicMeta("/digital-sat/reading-writing"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
@@ -317,9 +323,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog": {
-    title: "SAT Prep Blog – Tips, Strategies & Insights | Lyceon",
-    description: "Expert SAT prep advice, study strategies, and insights from Lyceon. Learn how to improve your SAT score with practical tips for the Digital SAT.",
-    canonical: "https://lyceon.ai/blog",
+    ...requirePublicMeta("/blog"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 2rem;">
   <header style="text-align: center; margin-bottom: 3rem;">
@@ -377,9 +381,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog/is-digital-sat-harder": {
-    title: "Is the Digital SAT Harder Than the Paper SAT? | Lyceon",
-    description: "Comparing the Digital SAT to the old paper format. What changed, is it harder or easier, and how should you adjust your preparation strategy?",
-    canonical: "https://lyceon.ai/blog/is-digital-sat-harder",
+    ...requirePublicMeta("/blog/is-digital-sat-harder"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -443,9 +445,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog/digital-sat-scoring-explained": {
-    title: "Digital SAT Scoring Explained – How Adaptive Testing Works | Lyceon",
-    description: "Understanding how the Digital SAT calculates your score. Learn about adaptive testing, score ranges, and what your SAT score means for college admissions.",
-    canonical: "https://lyceon.ai/blog/digital-sat-scoring-explained",
+    ...requirePublicMeta("/blog/digital-sat-scoring-explained"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -503,9 +503,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog/quick-sat-study-routine": {
-    title: "A Quick SAT Study Routine That Actually Works | Lyceon",
-    description: "A practical 30-minute daily SAT study routine. Learn how to make consistent progress even with limited time, focusing on high-impact practice strategies.",
-    canonical: "https://lyceon.ai/blog/quick-sat-study-routine",
+    ...requirePublicMeta("/blog/quick-sat-study-routine"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -563,9 +561,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog/sat-question-bank-practice": {
-    title: "How to Use a Question Bank for SAT Practice | Lyceon",
-    description: "Why practicing with real SAT-style questions is essential. Learn strategies for making the most of question bank practice to improve your score efficiently.",
-    canonical: "https://lyceon.ai/blog/sat-question-bank-practice",
+    ...requirePublicMeta("/blog/sat-question-bank-practice"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -619,9 +615,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/blog/common-sat-math-algebra-mistakes": {
-    title: "Common SAT Math Algebra Mistakes to Avoid | Lyceon",
-    description: "The most common algebra errors students make on the SAT Math section. Learn how to recognize and avoid these mistakes to stop losing easy points.",
-    canonical: "https://lyceon.ai/blog/common-sat-math-algebra-mistakes",
+    ...requirePublicMeta("/blog/common-sat-math-algebra-mistakes"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -692,9 +686,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/trust": {
-    title: "Trust Center | Lyceon",
-    description: "Lyceon's trust center for security, privacy, and authorization controls, with links to policy pages and technical evidence.",
-    canonical: "https://lyceon.ai/trust",
+    ...requirePublicMeta("/trust"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
   <header style="margin-bottom: 2rem; text-align: center;">
@@ -753,9 +745,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/trust/evidence": {
-    title: "Trust Evidence | Lyceon",
-    description: "Public, implementation-grounded security evidence for Lyceon authorization, Supabase RLS, privacy-safe logging, and monitoring safeguards.",
-    canonical: "https://lyceon.ai/trust/evidence",
+    ...requirePublicMeta("/trust/evidence"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -803,9 +793,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 </main>`
   },
   "/tutor": {
-    title: "Tutor Safety & Privacy | Lyceon",
-    description: "Lyceon's tutor boundaries, privacy posture, and learning pedagogy for SAT-aligned study.",
-    canonical: "https://lyceon.ai/tutor",
+    ...requirePublicMeta("/tutor"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -854,9 +842,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
 </main>`
   },
   "/legal": {
-    title: "Legal & Trust | Lyceon",
-    description: "Lyceon's legal policies, terms of use, privacy policy, and trust & safety information. We're committed to protecting your data and providing a safe learning environment.",
-    canonical: "https://lyceon.ai/legal",
+    ...requirePublicMeta("/legal"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <header style="margin-bottom: 2rem;">
@@ -910,9 +896,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/legal/privacy-policy": {
-    title: "Privacy Policy | Lyceon",
-    description: "Lyceon's privacy policy explains how we collect, use, and protect personal information, including parental-consent and student-privacy handling for users under 13.",
-    canonical: "https://lyceon.ai/legal/privacy-policy",
+    ...requirePublicMeta("/legal/privacy-policy"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>
@@ -974,9 +958,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
   },
 
   "/legal/student-terms": {
-    title: "Terms of Use | Lyceon",
-    description: "Lyceon's terms of use govern your use of our SAT preparation platform. Review the rules, guidelines, and your rights as a user.",
-    canonical: "https://lyceon.ai/legal/student-terms",
+    ...requirePublicMeta("/legal/student-terms"),
     bodyHtml: `
 <main style="font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem;">
   <article>

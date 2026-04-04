@@ -1,5 +1,4 @@
 import { Link } from 'wouter';
-import { SEO, JsonLd, createBreadcrumbJsonLd, createFaqJsonLd, organizationJsonLd, websiteJsonLd } from '@/components/SEO';
 import { BookOpen, Calculator, ArrowRight, Brain, Target, Clock, CheckCircle2 } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
 import { Container, Hero, Card, Breadcrumb, Section } from '@/components/layout/primitives';
@@ -27,26 +26,13 @@ const faqs = [
   },
   {
     question: 'What is free vs paid?',
-    answer: 'Free includes daily limits (10 practice questions and 5 Lisa messages). Paid plans remove those limits and expand guardian visibility features.',
+    answer: 'Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.',
   },
 ];
 
 export default function DigitalSATPage() {
   return (
     <PublicLayout>
-      <SEO
-        title="Digital SAT Prep - Study Smarter, Score Higher"
-        description="Prepare for the Digital SAT with adaptive practice, full-length exams, progress tracking, and Lisa."
-        canonical="https://lyceon.ai/digital-sat"
-      />
-      <JsonLd data={organizationJsonLd} />
-      <JsonLd data={websiteJsonLd} />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Digital SAT', url: 'https://lyceon.ai/digital-sat' },
-      ])} />
-      <JsonLd data={createFaqJsonLd(faqs)} />
-
       <Container>
         <Breadcrumb items={[
           { label: 'Home', href: '/' },
@@ -120,9 +106,9 @@ export default function DigitalSATPage() {
                 <Brain className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Lisa Guidance</h3>
+                <h3 className="font-semibold mb-1">Tutor Guidance</h3>
                 <p className="text-muted-foreground">
-                  Lisa gives step-by-step explanations tied to SAT-style question context.
+                  Step-by-step explanations stay tied to SAT-style question context.
                 </p>
               </div>
             </div>

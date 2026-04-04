@@ -1,5 +1,4 @@
 import { Link } from 'wouter';
-import { SEO, JsonLd, organizationJsonLd, websiteJsonLd, createBreadcrumbJsonLd } from '@/components/SEO';
 import { getAllPosts, getAllCategories, formatDate } from '@/lib/blog';
 import { Calendar, Tag, ArrowRight } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
@@ -11,18 +10,6 @@ export default function BlogPage() {
 
   return (
     <PublicLayout>
-      <SEO
-        title="SAT Prep Blog - Tips, Strategies & Study Guides"
-        description="Expert SAT prep tips, study strategies, and guides for the Digital SAT. Learn how to improve your score with actionable advice."
-        canonical="https://lyceon.ai/blog"
-      />
-      <JsonLd data={organizationJsonLd} />
-      <JsonLd data={websiteJsonLd} />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Blog', url: 'https://lyceon.ai/blog' },
-      ])} />
-
       <Container>
         <Breadcrumb items={[
           { label: 'Home', href: '/' },

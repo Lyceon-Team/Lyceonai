@@ -1,4 +1,3 @@
-import { Helmet } from "react-helmet-async";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,22 +7,6 @@ import Footer from "@/components/layout/Footer";
 export default function TutorPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Helmet>
-        <title>Lyceon Tutor | Safety, Privacy, and Pedagogy</title>
-        <meta
-          name="description"
-          content="How Lyceon's SAT-aligned tutor handles safety, privacy, and learning guidance. Clear boundaries, transparent data use, and adaptive pedagogy."
-        />
-        <link rel="canonical" href="https://lyceon.ai/tutor" />
-        <meta property="og:title" content="Lyceon Tutor | Safety, Privacy, and Pedagogy" />
-        <meta
-          property="og:description"
-          content="How Lyceon's SAT-aligned tutor handles safety, privacy, and learning guidance. Clear boundaries, transparent data use, and adaptive pedagogy."
-        />
-        <meta property="og:url" content="https://lyceon.ai/tutor" />
-        <meta property="og:type" content="website" />
-      </Helmet>
-
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center mb-10">
