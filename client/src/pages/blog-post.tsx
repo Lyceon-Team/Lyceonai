@@ -1,5 +1,4 @@
 import { Link, useRoute } from 'wouter';
-import { SEO, JsonLd, createBreadcrumbJsonLd, createArticleJsonLd } from '@/components/SEO';
 import { getPostBySlug, getAllPosts, formatDate } from '@/lib/blog';
 import { Calendar, User, ArrowLeft, Tag, ArrowRight } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
@@ -52,31 +51,6 @@ export default function BlogPostPage() {
 
   return (
     <PublicLayout>
-      <SEO
-        title={post.title}
-        description={post.description}
-        canonical={`https://lyceon.ai/blog/${post.slug}`}
-        ogType="article"
-        article={{
-          publishedTime: post.date,
-          author: post.author,
-          tags: post.tags,
-        }}
-      />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Blog', url: 'https://lyceon.ai/blog' },
-        { name: post.title, url: `https://lyceon.ai/blog/${post.slug}` },
-      ])} />
-      <JsonLd data={createArticleJsonLd({
-        title: post.title,
-        description: post.description,
-        url: `https://lyceon.ai/blog/${post.slug}`,
-        image: 'https://lyceon.ai/og-image.jpg',
-        datePublished: post.date,
-        author: post.author,
-      })} />
-
       <Container size="narrow">
         <Breadcrumb 
           items={[

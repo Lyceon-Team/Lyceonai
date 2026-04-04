@@ -1,5 +1,5 @@
 import { Response, Router } from 'express';
-import { type AuthenticatedRequest, getSupabaseAdmin, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import {
   buildMasterySkillTreeFromRows,
   buildMasterySummaryFromRows,
@@ -9,6 +9,7 @@ import {
 import { getMasteryStatus } from '../services/mastery-projection';
 import { DateTime } from 'luxon';
 import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
+import { getSupabaseAdmin } from '../lib/supabase-admin';
 
 const SAT_TAXONOMY = {
   math: {

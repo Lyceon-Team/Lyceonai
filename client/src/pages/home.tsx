@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { SEO, JsonLd, organizationJsonLd, websiteJsonLd } from "@/components/SEO";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
 
@@ -80,14 +79,6 @@ export default function HomePage() {
 
   return (
     <PublicLayout>
-      <SEO
-        title="Lyceon | Study Smarter, Score Higher"
-        description="Digital SAT prep with adaptive practice, full-length exams, progress tracking, Lisa chat, and guardian visibility. Free plan available with daily limits."
-        canonical="https://lyceon.ai"
-      />
-      <JsonLd data={organizationJsonLd} />
-      <JsonLd data={websiteJsonLd} />
-
       <Container size="full">
         <section className="py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
@@ -112,7 +103,7 @@ export default function HomePage() {
                     Practice SAT-style questions, review step-by-step explanations, and track progress over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Use quick daily sessions, full-length exams, and Lisa in one place.
+                    Use quick daily sessions, full-length exams, and tutor guidance in one place.
                   </p>
                 </>
               ) : (
@@ -216,7 +207,7 @@ export default function HomePage() {
                   <div className="flex-1">
                     {demoState === "idle" && (
                       <div className="text-sm text-muted-foreground italic">
-                        Sign in to start practicing with Lisa
+                        Sign in to start practicing with the tutor
                       </div>
                     )}
 
@@ -268,7 +259,7 @@ export default function HomePage() {
                 <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    Lisa support
+                    Tutor support
                   </span>
                   <span>Grounded in SAT-style questions</span>
                 </div>
@@ -325,7 +316,7 @@ export default function HomePage() {
               <MessageSquare className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Practice and review</h3>
               <p className="text-muted-foreground">
-                Use adaptive question flow and Lisa to understand mistakes and next steps.
+                Use adaptive question flow and tutor guidance to understand mistakes and next steps.
               </p>
             </Card>
 
@@ -357,7 +348,7 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-8">
             <Card>
               <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Lisa, grounded in context</h3>
+              <h3 className="text-xl font-semibold mb-3">Tutor guidance, grounded in context</h3>
               <p className="text-muted-foreground mb-4">
                 Explanations stay focused on SAT-style question patterns and reasoning.
               </p>
