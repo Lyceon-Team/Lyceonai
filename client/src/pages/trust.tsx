@@ -1,5 +1,4 @@
 import { Link } from "wouter";
-import { Helmet } from "react-helmet-async";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +11,8 @@ import {
     Mail,
     Scale,
     FileCheck2,
+    BookOpen,
+    UserCheck,
 } from "lucide-react";
 import Footer from "@/components/layout/Footer";
 
@@ -24,28 +25,6 @@ import Footer from "@/components/layout/Footer";
 export default function TrustHub() {
     return (
         <div className="min-h-screen bg-background flex flex-col">
-            <Helmet>
-                <title>Trust &amp; Safety Hub | Lyceon</title>
-                <meta
-                    name="description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-                <link rel="canonical" href="https://lyceon.ai/trust" />
-                <meta property="og:title" content="Trust &amp; Safety Hub | Lyceon" />
-                <meta
-                    property="og:description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-                <meta property="og:url" content="https://lyceon.ai/trust" />
-                <meta property="og:type" content="website" />
-                <meta name="twitter:card" content="summary" />
-                <meta name="twitter:title" content="Trust &amp; Safety Hub | Lyceon" />
-                <meta
-                    name="twitter:description"
-                    content="Lyceon's Trust &amp; Safety Hub: privacy protections, data security practices, and academic integrity policies."
-                />
-            </Helmet>
-
             <main className="flex-1">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
                     {/* Header */}
@@ -61,6 +40,48 @@ export default function TrustHub() {
                             of Lyceon. Explore our policies and commitments below.
                         </p>
                     </div>
+
+                    {/* Commitments */}
+                    <section className="mb-12">
+                        <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+                            <UserCheck className="h-5 w-5 text-primary" />
+                            What We Commit To
+                        </h2>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <Card className="flex flex-col">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base">Student-first model</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Students control learning actions and plans. Guardians have read-only visibility.
+                                    </CardDescription>
+                                </CardHeader>
+                            </Card>
+                            <Card className="flex flex-col">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base">Deletion &amp; de-identification</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Families can request deletion; de-identified aggregates may be retained for learning improvements.
+                                    </CardDescription>
+                                </CardHeader>
+                            </Card>
+                            <Card className="flex flex-col">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base">No data selling or ads</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Student data is not sold and not used for targeted advertising.
+                                    </CardDescription>
+                                </CardHeader>
+                            </Card>
+                            <Card className="flex flex-col">
+                                <CardHeader className="pb-3">
+                                    <CardTitle className="text-base">SAT-aligned, not official</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Lyceon aligns to SAT-style practice without claiming official SAT status.
+                                    </CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </div>
+                    </section>
 
                     {/* Policies & Terms */}
                     <section className="mb-12">
@@ -89,6 +110,30 @@ export default function TrustHub() {
                                         <Link href="/trust/evidence">
                                             <a className="inline-flex items-center gap-1">
                                                 View Evidence
+                                                <ChevronRight className="h-4 w-4" />
+                                            </a>
+                                        </Link>
+                                    </Button>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="flex flex-col hover:shadow-md transition-shadow">
+                                <CardHeader className="pb-3">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="p-2 rounded-lg bg-muted">
+                                            <BookOpen className="h-5 w-5" />
+                                        </div>
+                                    </div>
+                                    <CardTitle className="text-base">Tutor Transparency</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        Boundaries, privacy, and pedagogy for the Lyceon tutor experience.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="pt-0 mt-auto">
+                                    <Button asChild variant="outline" size="sm">
+                                        <Link href="/tutor">
+                                            <a className="inline-flex items-center gap-1">
+                                                Open Tutor Page
                                                 <ChevronRight className="h-4 w-4" />
                                             </a>
                                         </Link>
@@ -256,6 +301,34 @@ export default function TrustHub() {
                         </div>
                     </section>
 
+                    <section className="mb-12">
+                        <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+                            <Lock className="h-5 w-5 text-primary" />
+                            Responsible Disclosure
+                        </h2>
+                        <Card className="bg-muted/30">
+                            <CardContent className="py-6">
+                                <div className="flex flex-col sm:flex-row items-center gap-4">
+                                    <div className="p-3 rounded-full bg-primary/10">
+                                        <Mail className="h-6 w-6 text-primary" />
+                                    </div>
+                                    <div className="text-center sm:text-left flex-1">
+                                        <h3 className="font-semibold text-foreground mb-1">Security contact</h3>
+                                        <p className="text-sm text-muted-foreground">
+                                            If you believe you've found a security issue, contact support@lyceon.ai with details.
+                                        </p>
+                                    </div>
+                                    <Button asChild>
+                                        <a href="mailto:support@lyceon.ai" className="inline-flex items-center gap-2">
+                                            <Mail className="h-4 w-4" />
+                                            support@lyceon.ai
+                                        </a>
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </section>
+
                     {/* Contact */}
                     <Card className="bg-muted/30">
                         <CardContent className="py-6">
@@ -266,7 +339,7 @@ export default function TrustHub() {
                                 <div className="text-center sm:text-left flex-1">
                                     <h3 className="font-semibold text-foreground mb-1">Contact Trust &amp; Safety</h3>
                                     <p className="text-sm text-muted-foreground">
-                                        Questions about trust or safety? We're here to help.
+                                        Questions about trust, safety, or security? We're here to help.
                                     </p>
                                 </div>
                                 <Button asChild>

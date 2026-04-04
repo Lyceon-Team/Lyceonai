@@ -16,16 +16,19 @@ The following routes have server-side rendered content:
 
 | Route | Title |
 |-------|-------|
-| `/` | Lyceon – AI SAT Tutor with Real Practice Questions |
-| `/digital-sat` | Digital SAT Practice – Free AI-Powered Prep |
-| `/digital-sat/math` | Digital SAT Math Practice – AI Tutor |
-| `/digital-sat/reading-writing` | Digital SAT Reading & Writing Practice – AI Tutor |
-| `/blog` | SAT Prep Blog – Tips, Strategies & Insights |
+| `/` | Lyceon \| Study Smarter, Score Higher |
+| `/digital-sat` | Digital SAT Practice – Study Smarter, Score Higher \| Lyceon |
+| `/digital-sat/math` | Digital SAT Math Prep - Algebra, Geometry & Data Analysis \| Lyceon |
+| `/digital-sat/reading-writing` | Digital SAT Reading & Writing Prep - Vocabulary, Grammar & Comprehension \| Lyceon |
+| `/blog` | SAT Prep Blog - Tips, Strategies & Study Guides |
 | `/blog/is-digital-sat-harder` | Is the Digital SAT Harder Than the Paper SAT? |
-| `/blog/digital-sat-scoring-explained` | Digital SAT Scoring Explained |
-| `/blog/quick-sat-study-routine` | A Quick SAT Study Routine That Works |
-| `/blog/sat-question-bank-practice` | How to Use a Question Bank for SAT Practice |
-| `/blog/common-sat-math-algebra-mistakes` | Common SAT Math Algebra Mistakes to Avoid |
+| `/blog/digital-sat-scoring-explained` | How the Digital SAT Scoring Works (Adaptive Sections Explained) |
+| `/blog/quick-sat-study-routine` | A Quick SAT Study Routine (15-20 Minutes a Day) |
+| `/blog/sat-question-bank-practice` | SAT Question Bank: How to Practice Effectively Without Burning Out |
+| `/blog/common-sat-math-algebra-mistakes` | Most Common Digital SAT Math Algebra Mistakes (And How to Fix Them) |
+| `/trust` | Trust & Safety Hub \| Lyceon |
+| `/trust/evidence` | Trust Evidence \| Lyceon |
+| `/tutor` | Tutor Safety & Privacy \| Lyceon |
 | `/legal` | Legal & Trust |
 | `/legal/privacy-policy` | Privacy Policy |
 | `/legal/student-terms` | Terms of Use |
@@ -46,6 +49,11 @@ curl -s https://lyceon.ai/digital-sat/reading-writing | grep -E "<h1|<title>"
 # Blog
 curl -s https://lyceon.ai/blog | grep -E "<h1|<title>"
 curl -s https://lyceon.ai/blog/is-digital-sat-harder | grep -E "<h1|<title>"
+
+# Trust & Tutor
+curl -s https://lyceon.ai/trust | grep -E "<h1|<title>"
+curl -s https://lyceon.ai/trust/evidence | grep -E "<h1|<title>"
+curl -s https://lyceon.ai/tutor | grep -E "<h1|<title>"
 
 # Legal
 curl -s https://lyceon.ai/legal | grep -E "<h1|<title>"
@@ -113,16 +121,19 @@ curl -s https://lyceon.ai/ | grep -E "<title>|name=\"description\"|property=\"og
 ## Architecture
 
 SSR content is defined in `server/seo-content.ts` using the `PUBLIC_SSR_ROUTES` map. Each entry contains:
-- `title`: Page-specific title
-- `description`: Meta description
-- `canonical`: Canonical URL
+- `title`, `description`, `canonical`: resolved from `shared/seo/public-meta.ts`
 - `bodyHtml`: Full HTML content visible to crawlers
 
-The server uses `servePublicSsr()` function in `server/index.ts` to:
+Canonical metadata and JSON-LD are owned by shared sources:
+- `shared/seo/public-meta.ts` (titles, descriptions, canonical URLs, JSON-LD entries)
+- `shared/seo/structured-data.ts` (structured data helpers)
+
+The server uses `servePublicSsr()` in `server/index.ts` to:
 1. Look up the route in `PUBLIC_SSR_ROUTES`
 2. Inject meta tags via `injectMeta()`
-3. Inject body content via `injectBodyContent()`
-4. Return the fully rendered HTML
+3. Inject JSON-LD via `injectJsonLd()` (SSR only)
+4. Inject body content via `injectBodyContent()`
+5. Return the fully rendered HTML
 
 Private routes (dashboard, practice, etc.) fall through to the SPA handler and receive the standard React shell.
 
