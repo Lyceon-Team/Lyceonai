@@ -216,10 +216,27 @@ function injectMeta(
 
 function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefined): string {
   if (!jsonLd || jsonLd.length === 0) {
-    return html.replace(/<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi, "");
+    let previousHtml: string;
+    do {
+      previousHtml = html;
+      html = html.replace(
+        /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+        ""
+      );
+    } while (html !== previousHtml);
+    return html;
   }
 
-  let result = html.replace(/<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi, "");
+  let previousHtml: string;
+  do {
+    previousHtml = html;
+    html = html.replace(
+      /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
+      ""
+    );
+  } while (html !== previousHtml);
+
+  let result = html;
   const jsonLdScripts = jsonLd
     .map((data) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`)
     .join("\n");
