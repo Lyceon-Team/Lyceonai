@@ -132,6 +132,16 @@ app.use((err: any, _req: Request, res: Response, next: any) => {
   return next(err);
 });
 
+// Global rate limiter to protect downstream authorization and business logic.
+// This limits the rate at which requests can reach supabaseAuthMiddleware and other routes.
+const globalRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+app.use(globalRateLimiter);
+
 // CSRF token bootstrap endpoint (stateless double-submit cookie).
 // CSRF_EXEMPT_REASON: GET-only endpoint to issue a CSRF token + cookie.
 app.get("/api/csrf-token", (req: Request, res: Response) => {
