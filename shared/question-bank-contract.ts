@@ -385,10 +385,23 @@ const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 export const CANONICAL_ID_SUFFIX_LENGTH = 6;
 
 export function generateCanonicalIdSuffix(length: number = CANONICAL_ID_SUFFIX_LENGTH): string {
-  const bytes = randomBytes(length);
+  const charsetLength = CHARSET.length;
+  if (charsetLength <= 0) {
+    throw new Error("CHARSET must not be empty");
+  }
+  const maxUnbiased = Math.floor(256 / charsetLength) * charsetLength;
+
   let token = "";
-  for (let i = 0; i < length; i += 1) {
-    token += CHARSET[bytes[i] % CHARSET.length];
+  while (token.length < length) {
+    const bytes = randomBytes(length);
+    for (let i = 0; i < bytes.length && token.length < length; i += 1) {
+      const byte = bytes[i];
+      if (byte >= maxUnbiased) {
+        continue;
+      }
+      const index = byte % charsetLength;
+      token += CHARSET[index];
+    }
   }
   return token;
 }
