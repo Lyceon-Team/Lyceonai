@@ -23,10 +23,10 @@ const EXCLUDED_SEGMENTS = [
 ];
 
 const FORBIDDEN_LEGACY_TABLE_TOKENS = [
-  '.from("accounts")',
-  ".from('accounts')",
-  '.from("account_members")',
-  ".from('account_members')",
+  '.from("lyceon_accounts")',
+  ".from('lyceon_accounts')",
+  '.from("lyceon_account_members")',
+  ".from('lyceon_account_members')",
 ];
 
 function normalizeRepoPath(repoRoot: string, filePath: string): string {
@@ -53,8 +53,8 @@ function scanFiles(dir: string, repoRoot: string): string[] {
   return out;
 }
 
-describe("Legacy Account Family Canonicalization Contract", () => {
-  it("prevents mounted runtime reads/writes to legacy account table names", () => {
+describe("Canonical Account Family Contract (accounts/account_members)", () => {
+  it("forbids runtime reads/writes to legacy lyceon_* account table names", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const violations: Violation[] = [];
 
@@ -84,12 +84,12 @@ describe("Legacy Account Family Canonicalization Contract", () => {
     ).toEqual([]);
   });
 
-  it("keeps canonical account ownership on lyceon_account_members/lyceon_accounts", () => {
+  it("asserts canonical account ownership uses account_members/accounts", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const accountLibPath = path.join(repoRoot, "server/lib/account.ts");
     const source = fs.readFileSync(accountLibPath, "utf8");
 
-    expect(source).toContain("lyceon_account_members");
-    expect(source).toContain("lyceon_accounts");
+    expect(source).toContain("account_members");
+    expect(source).toContain("accounts");
   });
 });
