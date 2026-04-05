@@ -62,10 +62,9 @@ type PlanTaskRow = {
 };
 
 type AttemptRow = {
-  attempted_at: string | null;
+  occurred_at: string | null;
   is_correct: boolean | null;
   time_spent_ms: number | null;
-  event_type: string | null;
 };
 
 const CALENDAR_COUNTED_EVENT_TYPES = new Set<string>(KPI_CALENDAR_COUNTED_EVENTS);
@@ -221,11 +220,11 @@ async function loadTasksByRange(userId: string, start: string, end: string): Pro
 async function loadAttemptsByRange(userId: string, startUtc: string, endUtc: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("attempted_at, is_correct, time_spent_ms, event_type")
+    .select("occurred_at, is_correct, time_spent_ms")
     .eq("user_id", userId)
-    .gte("attempted_at", startUtc)
-    .lte("attempted_at", endUtc)
-    .order("attempted_at", { ascending: false });
+    .gte("occurred_at", startUtc)
+    .lte("occurred_at", endUtc)
+    .order("occurred_at", { ascending: false });
   if (error) throw new Error(`Failed to load attempts: ${error.message}`);
   return (data as AttemptRow[] | null) ?? [];
 }
@@ -294,9 +293,8 @@ export async function buildCalendarMonthView(userId: string, start: string, end:
 
   const attemptByDay = new Map<string, { attempts: number; correct: number; timeSpentMs: number }>();
   for (const attempt of attempts) {
-    if (!isCalendarCountedEventType(attempt.event_type)) continue;
-    if (!attempt.attempted_at) continue;
-    const localDate = DateTime.fromISO(attempt.attempted_at).setZone(timezone).toISODate();
+    if (!attempt.occurred_at) continue;
+    const localDate = DateTime.fromISO(attempt.occurred_at).setZone(timezone).toISODate();
     if (!localDate) continue;
     const current = attemptByDay.get(localDate) ?? { attempts: 0, correct: 0, timeSpentMs: 0 };
     current.attempts += 1;

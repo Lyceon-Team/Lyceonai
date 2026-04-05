@@ -136,7 +136,7 @@ type PlanTaskRow = {
 };
 
 type AttemptRow = {
-  attempted_at: string | null;
+  occurred_at: string | null;
   is_correct: boolean | null;
   time_spent_ms: number | null;
   section: string | null;
@@ -144,7 +144,6 @@ type AttemptRow = {
   skill: string | null;
   subskill: string | null;
   question_canonical_id: string | null;
-  event_type: string | null;
 };
 
 type SkillMasteryRow = {
@@ -571,11 +570,11 @@ async function loadTasksByRange(userId: string, start: string, end: string): Pro
 async function loadAttemptsByRange(userId: string, startUtc: string, endUtc: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("attempted_at, is_correct, time_spent_ms, section, domain, skill, subskill, question_canonical_id, event_type")
+    .select("occurred_at, is_correct, time_spent_ms, section, domain, skill, subskill, question_canonical_id")
     .eq("user_id", userId)
-    .gte("attempted_at", startUtc)
-    .lte("attempted_at", endUtc)
-    .order("attempted_at", { ascending: false });
+    .gte("occurred_at", startUtc)
+    .lte("occurred_at", endUtc)
+    .order("occurred_at", { ascending: false });
   if (error) throw new Error(`Failed to load attempts: ${error.message}`);
   return (data as AttemptRow[] | null) ?? [];
 }
@@ -991,12 +990,12 @@ async function generatePlanForWindow(params: {
     startDate: params.startDate,
     endDate: params.endDate,
     attempts: attempts.map((attempt) => ({
-      attemptedAt: attempt.attempted_at || DateTime.fromISO(params.todayDate).toUTC().toISO()!,
+      attemptedAt: attempt.occurred_at || DateTime.fromISO(params.todayDate).toUTC().toISO()!,
       section: normalizeSection(attempt.section),
       skillCode: attempt.skill || null,
       questionCanonicalId: attempt.question_canonical_id || null,
       isCorrect: Boolean(attempt.is_correct),
-      eventType: attempt.event_type || null,
+      eventType: null,
       timeSpentMs: Math.max(0, attempt.time_spent_ms || 0),
     })),
     skillSignals,
