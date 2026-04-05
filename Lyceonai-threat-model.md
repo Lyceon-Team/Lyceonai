@@ -1,244 +1,189 @@
-# Assumption-validation check-in
-- Production uses `NODE_ENV=production`, so non-prod debug routes remain unavailable to internet users (for example `server/routes/supabase-auth-routes.ts:493`, `server/routes/google-oauth-routes.ts:99`, `server/routes/billing-routes.ts:650`, `server/routes/health-routes.ts:35`).
-- The API is internet-reachable, with app-level controls as the primary gatekeepers (`server/index.ts`), and no guaranteed upstream WAF behavior is assumed.
-- Supabase service-role access is used by runtime data paths, and authorization is enforced in application code (`apps/api/src/lib/supabase-server.ts:7`, `server/middleware/supabase-auth.ts:341`).
-- Student/guardian records (including under-13 consent and linkage state) are sensitive and integrity-critical (`server/routes/supabase-auth-routes.ts`, `server/routes/guardian-consent-routes.ts`, `server/routes/guardian-routes.ts`).
-- This model focuses on mounted runtime paths in `server/index.ts`; non-mounted code is treated as secondary risk unless explicitly noted.
-
-Targeted context questions:
-1. Is `/api/consent/*` intentionally unauthenticated in production for the entire verification lifecycle?
-2. Do you enforce upstream IP/bot throttling beyond app-level `express-rate-limit` and durable account throttles?
-3. Do any non-production environments share production Supabase or Stripe resources?
-
-Assumption if unanswered: this report proceeds with conservative defaults (public internet exposure, no strong upstream anti-abuse guarantees, and production-grade data sensitivity).
+# Lyceonai Threat Model
 
 ## Executive summary
-The most important risks are concentrated in public or semi-public state-changing flows and in service-role data access patterns. The highest-priority abuse path is the guardian consent verification flow, where checkout session verification is not strongly bound to the consent request identity; second is systemic cross-user risk from application-layer authorization on service-role clients. Availability and cost abuse on AI-backed endpoints are partially controlled but remain a realistic operational threat.
+Lyceon is a public, internet-exposed SAT learning platform with cookie-based Supabase auth, a Node/Express API, and third-party integrations for payments (Stripe) and AI tutoring (Gemini). The highest-risk themes are cross-tenant data access because authorization is enforced at the application layer (service-role Supabase access is used in several paths), abuse of authenticated session cookies (XSS/CSRF and session fixation), and integrity risks around billing webhooks and admin-only capabilities if misconfigured. AI/RAG features add prompt injection and answer leakage risks, but there are explicit server-side reveal gates that reduce the impact. Evidence: `server/index.ts`, `server/middleware/supabase-auth.ts`, `apps/api/src/routes/rag-v2.ts`, `server/routes/tutor-v2.ts`, `server/lib/webhookHandlers.ts`, `server/routes/billing-routes.ts`.
 
 ## Scope and assumptions
 In-scope paths:
-- `server/index.ts` and mounted runtime routes (`server/routes/*`).
-- Security/auth middleware in `server/middleware/*` and cookie/session logic in `server/lib/auth-cookies.ts`.
-- Service and data-access code used by mounted routes (`apps/api/src/lib/*`, `apps/api/src/services/*`).
-- Billing, consent, and webhook processing (`server/routes/billing-routes.ts`, `server/routes/guardian-consent-routes.ts`, `server/lib/webhookHandlers.ts`).
+- `server/` (Express API, auth middleware, billing, webhooks, CSRF, security headers)
+- `apps/api/src/` (RAG routes, Supabase server client, AI embedding/LLM calls)
+- `client/` (SPA routes and auth flows, for browser-side exposure)
 
-Out-of-scope (primary ranking):
-- Non-mounted route modules (for example `server/routes/student-routes.ts`) unless later mounted.
-- Test fixtures and CI-only helpers except where they evidence controls (`tests/ci/*`, `.github/workflows/*`).
-- Frontend rendering internals except where they change server trust boundaries.
+Out-of-scope:
+- `tests/`, `test/`, `test-results/` (test-only code)
+- `deprecated/` and explicitly deprecated modules such as `server/sat-pdf-processor.ts`
+- CI-only workflows beyond security posture evidence (CI job itself is not a runtime surface)
 
-Explicit assumptions:
-- Browser clients authenticate via httpOnly Supabase cookies (`server/lib/auth-cookies.ts`, `server/middleware/supabase-auth.ts`).
-- Most sensitive records are in Supabase tables queried via service-role clients (`apps/api/src/lib/supabase-server.ts`).
-- Public endpoints are discoverable by remote attackers.
+Assumptions (confirmed):
+- Deployment is on Vercel, public internet exposure.
+- Data sensitivity includes PII and education records (under-13 consent flows), with internal-only admin features.
+- Tenancy is per-user only (no org or school multi-tenancy).
 
-Open questions that materially change ranking:
-- Whether `/api/consent/request/:id` and `/api/consent/verify-session` are intentionally unauthenticated in production.
-- Whether a global edge control layer already dampens distributed search/AI abuse.
-- Whether RLS-enforced user-scoped clients are planned for high-value user-data tables.
+Open questions that could change risk ranking:
+- Is there a WAF/CDN rule set in front of Vercel (rate limits, bot protection, IP allowlists for admin)?
+- Are any production preview deployments publicly reachable with real data or secrets?
 
 ## System model
 ### Primary components
-- Browser clients (student, guardian, admin) call Express routes in `server/index.ts`.
-- Express API applies request-id/security headers/CORS/cookie parsing, then auth middleware and route-specific controls (`server/index.ts:83`, `server/index.ts:86`, `server/index.ts:87`, `server/index.ts:128`).
-- Supabase Auth resolution uses anon key + JWT validation (`server/middleware/supabase-auth.ts`).
-- Supabase data access primarily uses service-role clients (`apps/api/src/lib/supabase-server.ts`).
-- External providers:
-- Gemini (embeddings + LLM) via `apps/api/src/lib/embeddings.ts`.
-- Stripe API/webhooks via billing routes and webhook handlers.
-- Google OAuth token exchange via `server/routes/google-oauth-routes.ts`.
-- Resend email API via `server/lib/email.ts`.
+- Browser SPA (React) served from Express static output. Evidence: `server/index.ts` (staticPath + express.static).
+- Express API server with auth, practice, and tutoring routes. Evidence: `server/index.ts` (route mounts), `server/routes/tutor-v2.ts`.
+- Supabase Auth + Supabase Postgres accessed via anon and service role keys. Evidence: `server/middleware/supabase-auth.ts`, `apps/api/src/lib/supabase-server.ts`.
+- Stripe billing and webhook processing. Evidence: `server/routes/billing-routes.ts`, `server/lib/webhookHandlers.ts`.
+- Gemini LLM and embeddings for RAG/tutor. Evidence: `apps/api/src/lib/embeddings.ts`, `apps/api/src/routes/rag-v2.ts`.
+- Google OAuth routes for auth flow. Evidence: `server/index.ts` (google OAuth route mounts), `server/routes/supabase-auth-routes.ts`.
 
 ### Data flows and trust boundaries
-- Internet client -> Express API
-  - Data types: credentials, auth cookies, profile updates, practice/exam answers, tutor prompts, guardian link/consent IDs.
-  - Channel: HTTPS (HTTP in local dev).
-  - Security guarantees: CORS allowlist (`apps/api/src/middleware/cors.ts`), CSRF origin/referer checks (`server/middleware/csrf.ts`), auth/role middleware (`server/middleware/supabase-auth.ts`), per-route limits (`server/index.ts:233`, `server/index.ts:239`, `server/routes/supabase-auth-routes.ts:16`, `server/routes/practice-canonical.ts:127`).
-  - Validation: Zod and explicit request validation in auth/practice/full-length/tutor routes.
-
-- Express API -> Supabase Auth (anon client)
-  - Data types: JWT from `sb-access-token`.
-  - Channel: HTTPS API calls.
-  - Security guarantees: bearer header rejection for user-facing auth (`server/middleware/supabase-auth.ts:32`, `server/middleware/supabase-auth.ts:49`).
-  - Validation: `supabase.auth.getUser(token)` and user/profile bootstrap.
-
-- Express API -> Supabase data plane (service role)
-  - Data types: profiles, guardian links, consent requests, attempts, sessions, entitlements, notifications, analytics.
-  - Channel: HTTPS API calls.
-  - Security guarantees: route-level ownership and role checks (for example `server/routes/practice-canonical.ts:1453`, `apps/api/src/services/fullLengthExam.ts:2054`).
-  - Validation: mostly `.eq("user_id", req.user.id)` and route/service invariants.
-  - Trust assumption: code explicitly states application-layer isolation due Neon session limitations (`server/middleware/supabase-auth.ts:338`, `server/middleware/supabase-auth.ts:341`).
-
-- Express API -> Gemini
-  - Data types: user prompts, question context, profile-derived tutoring context.
-  - Channel: HTTPS to Google APIs.
-  - Security guarantees: auth + role + CSRF + limiter around tutor/RAG (`server/index.ts:247`, `server/index.ts:256`), response sanitization for answer/explanation fields (`apps/api/src/routes/rag-v2.ts:16`, `server/routes/tutor-v2.ts:316`).
-  - Validation: message length and schema checks (`apps/api/src/lib/rag-types.ts`, `server/routes/tutor-v2.ts`).
-
-- Express API <-> Stripe (checkout/portal/webhook)
-  - Data types: subscription metadata, customer IDs, payment status, webhook events.
+- Internet (browser) -> Express API (HTTP).
+  - Data: auth cookies, CSRF token header, API payloads.
+  - Channel: HTTPS (assumed on Vercel).
+  - Security: CORS allowlist, Helmet headers, CSRF double-submit, request size limit, rate limits on auth/RAG. Evidence: `apps/api/src/middleware/cors.ts`, `server/middleware/security-headers.ts`, `server/middleware/csrf-double-submit.ts`, `server/index.ts`, `server/routes/supabase-auth-routes.ts`.
+- Express API -> Supabase Auth (token validation).
+  - Data: access JWT from httpOnly cookie.
+  - Channel: HTTPS to Supabase.
+  - Security: bearer tokens are rejected for user-facing routes; cookie-only auth enforced. Evidence: `server/middleware/supabase-auth.ts`.
+- Express API -> Supabase Postgres (service role and anon clients).
+  - Data: user profiles, practice data, entitlements, questions.
+  - Channel: HTTPS to Supabase REST.
+  - Security: anon client for RLS, service role for admin operations; application-layer authorization is required. Evidence: `server/middleware/supabase-auth.ts` (service role + comment), `apps/api/src/lib/supabase-server.ts`.
+- Express API -> Stripe API (checkout/portal/prices) and Stripe -> webhook endpoint.
+  - Data: billing metadata, account_id, subscription status.
   - Channel: HTTPS.
-  - Security guarantees: signed webhook verification + idempotency gate (`server/lib/webhookHandlers.ts:171`, `server/lib/webhookHandlers.ts:188`), CSRF on billing writes (`server/routes/billing-routes.ts:68`).
-  - Validation: strict account_id extraction on webhook objects (`server/lib/webhookHandlers.ts:17`).
-
-- Express API <-> Google OAuth
-  - Data types: auth code, state cookie, id_token, session.
-  - Channel: browser redirect + HTTPS token exchange.
-  - Security guarantees: state cookie creation/validation (`server/routes/google-oauth-routes.ts:151`, `server/routes/google-oauth-routes.ts:210`) and cookie issuance via `setAuthCookies`.
-
-- Express API -> Resend
-  - Data types: guardian consent and password-reset emails.
+  - Security: Stripe signature verification, idempotency gate. Evidence: `server/routes/billing-routes.ts`, `server/lib/webhookHandlers.ts`, `server/index.ts` (raw webhook route).
+- Express API -> Gemini (LLM/embeddings).
+  - Data: student prompts, context, question metadata.
   - Channel: HTTPS.
-  - Security guarantees: API-key based auth header (`server/lib/email.ts:27`).
-  - Gap: missing key path logs full email payload (`server/lib/email.ts:16`, `server/lib/email.ts:18`).
+  - Security: server-side prompt construction and answer reveal gating. Evidence: `apps/api/src/lib/embeddings.ts`, `server/routes/tutor-v2.ts`.
 
 #### Diagram
 ```mermaid
 flowchart LR
-  U["Internet Clients"] --> API["Express API"]
-  SW["Stripe Webhook"] --> API
-  GO["Google OAuth"] --> API
-  API --> SA["Supabase Auth"]
-  API --> SD["Supabase Data"]
-  API --> GM["Gemini API"]
-  API --> ST["Stripe API"]
-  API --> RE["Resend API"]
+  A["Browser"] --> B["Express API"]
+  B --> C["Supabase Auth"]
+  B --> D["Supabase DB"]
+  B --> E["Stripe API"]
+  E --> B
+  B --> F["Gemini LLM"]
 ```
 
 ## Assets and security objectives
 | Asset | Why it matters | Security objective (C/I/A) |
-|---|---|---|
-| Session cookies (`sb-access-token`, `sb-refresh-token`) | Account takeover risk if compromised | C, I |
-| Service-role Supabase access paths | Any authz gap can become cross-user data access/modification | C, I |
-| Guardian consent requests and linkage state | COPPA/FERPA-sensitive integrity and parental authorization | C, I |
-| Student profile and progress telemetry | Education privacy and trust in learning outcomes | C, I |
-| Practice/full-length session state and answer records | Integrity of assessment flow and anti-cheat controls | I |
-| Question answers/explanations | Leakage undermines product and assessment integrity | C, I |
-| Billing entitlements and Stripe identifiers | Revenue and feature-access correctness | I, A |
-| AI quota/budget (Gemini) | Operational availability and spend control | A |
-| Audit/security logs | Detection and incident response quality | I, A |
+| --- | --- | --- |
+| Supabase auth cookies (sb-access-token, sb-refresh-token) | Grants account access; session hijack leads to full account takeover | C/I |
+| Student profiles, under-13 consent metadata | PII + compliance (COPPA/FERPA) | C/I |
+| Practice data, answers, mastery | Educational records and integrity of learning outcomes | C/I |
+| Question bank and correct answers | Integrity for assessment fairness, business IP | C/I |
+| Billing entitlements and Stripe customer IDs | Paid access gating and financial integrity | I/A |
+| Service role keys and API secrets (Supabase, Stripe, Gemini) | Broad backend access; compromise enables full data access | C/I/A |
+| Audit logs and security events | Incident response and detection | I |
 
 ## Attacker model
 ### Capabilities
-- Unauthenticated remote attacker can call public endpoints and automate high-volume traffic.
-- Authenticated low-privilege user can tamper with IDs and payloads inside their own session.
-- Attacker can attempt distributed abuse to bypass simple per-IP/per-account limits.
-- Attacker may obtain leaked links/tokens through phishing, client compromise, or logging exposure.
+- Remote internet attacker can create accounts and send API requests to public endpoints.
+- Attacker can attempt CSRF, credential stuffing, and automation across public APIs.
+- Attacker can provide malicious prompts to AI endpoints.
+- Attacker can replay or forge webhook requests if secrets leak.
 
 ### Non-capabilities
-- Cannot directly access service-role secrets from client-side code under normal operation.
-- Cannot forge Stripe webhook signatures without webhook secret.
-- Cannot read httpOnly cookies from browser JavaScript without an additional client compromise.
-- Cannot access production-hidden debug routes if production gating is correct.
+- No direct access to Vercel infrastructure, database network, or secret stores.
+- No internal admin privileges by default (admin is internal-only).
+- No ability to intercept TLS in transit under normal conditions.
 
 ## Entry points and attack surfaces
 | Surface | How reached | Trust boundary | Notes | Evidence (repo path / symbol) |
-|---|---|---|---|---|
-| `POST /api/auth/signup`, `POST /api/auth/signin` | Public internet | Internet -> API -> Supabase Auth | CSRF + auth rate limiter | `server/routes/supabase-auth-routes.ts:16`, `server/routes/supabase-auth-routes.ts:50`, `server/routes/supabase-auth-routes.ts:367` |
-| Google OAuth start/callback | Browser redirect | Internet -> Google -> API | State cookie + validation before token exchange | `server/routes/google-oauth-routes.ts:151`, `server/routes/google-oauth-routes.ts:210`, `server/routes/google-oauth-routes.ts:254` |
-| `POST /api/rag/v2` | Authenticated user | User session -> API -> Gemini/Supabase | Auth + CSRF + limiter; answer fields sanitized | `server/index.ts:247`, `apps/api/src/routes/rag-v2.ts:16`, `apps/api/src/routes/rag-v2.ts:58` |
-| `POST /api/tutor/v2` | Authenticated user | User session -> API -> Gemini/Supabase | Auth + usage limits + reveal gating | `server/index.ts:256`, `server/middleware/usage-limits.ts:13`, `server/routes/tutor-v2.ts:316` |
-| `GET /api/questions/search` | Public internet | Internet -> API -> Gemini/Supabase | Public semantic search with per-route limiter | `server/index.ts:239`, `server/index.ts:338`, `server/routes/search-runtime.ts:29` |
-| Practice endpoints under `/api/practice` | Authenticated user | User session -> API -> Supabase | Ownership + idempotency; some GETs mutate state | `server/index.ts:375`, `server/routes/practice-canonical.ts:1453`, `server/routes/practice-canonical.ts:2093`, `server/routes/practice-canonical.ts:1606` |
-| Full-length endpoints under `/api/full-length` | Authenticated user | User session -> API -> Supabase | Ownership checks in service layer; report/review lock until completion | `server/index.ts:379`, `apps/api/src/services/fullLengthExam.ts:2054`, `apps/api/src/services/fullLengthExam.ts:2266`, `apps/api/src/services/fullLengthExam.ts:2288` |
-| `POST /api/guardian/link` | Authenticated guardian | Guardian -> API -> Supabase | Durable rate limiter and 8-char link code lookup | `server/routes/guardian-routes.ts:125`, `server/routes/guardian-routes.ts:136`, `server/lib/durable-rate-limiter.ts:85` |
-| Consent endpoints (`/api/consent/request/:id`, `/create-checkout-session`, `/verify-session`) | Public internet | Internet -> API -> Stripe/Supabase | No auth middleware; state-changing verification path | `server/index.ts:268`, `server/routes/guardian-consent-routes.ts:15`, `server/routes/guardian-consent-routes.ts:51`, `server/routes/guardian-consent-routes.ts:112` |
-| Billing webhook `POST /api/billing/webhook` | Stripe -> API | Stripe -> API -> Supabase | Raw body + signature verification + idempotency | `server/index.ts:93`, `server/index.ts:89`, `server/lib/webhookHandlers.ts:171`, `server/lib/webhookHandlers.ts:188` |
+| --- | --- | --- | --- | --- |
+| `/api/auth/*` (signup/signin/refresh/reset/update) | Public HTTP | Internet -> API | Rate limited; cookie-only sessions; CSRF required | `server/routes/supabase-auth-routes.ts`, `server/middleware/csrf-double-submit.ts` |
+| `/api/rag/v2` | Authenticated HTTP | Browser -> API | RAG retrieval; sanitized responses | `server/index.ts`, `apps/api/src/routes/rag-v2.ts` |
+| `/api/tutor/v2` | Authenticated HTTP | Browser -> API | LLM tutor; answer reveal policy | `server/index.ts`, `server/routes/tutor-v2.ts` |
+| `/api/questions/*` | Authenticated HTTP | Browser -> API | Student data and question access | `server/index.ts` (questions routes) |
+| `/api/practice/*` and `/api/full-length/*` | Authenticated HTTP | Browser -> API | Practice/session state changes | `server/index.ts` (practice/full-length mounts) |
+| `/api/profile`, `/api/notifications` | Authenticated HTTP | Browser -> API | PII/profile updates | `server/index.ts`, `server/routes/profile-routes.ts` |
+| `/api/billing/*` | Authenticated HTTP | Browser -> API | Stripe checkout/portal/status | `server/routes/billing-routes.ts` |
+| `/api/billing/webhook` | Stripe -> API | Stripe -> API | Signature verified webhook | `server/index.ts`, `server/lib/webhookHandlers.ts` |
+| `/api/health`, `/healthz` | Public HTTP | Internet -> API | Service health | `server/index.ts` |
+| `/api/csrf-token` | Public HTTP | Browser -> API | CSRF token issuer | `server/index.ts`, `server/middleware/csrf-double-submit.ts` |
 
 ## Top abuse paths
-1. Goal: fraudulently approve guardian consent and create unauthorized guardian-student linkage.
-   - Attacker obtains or guesses a valid `requestId` (from leaked link or operational exposure).
-   - Attacker creates or reuses any successful Stripe checkout session ID.
-   - Attacker calls `POST /api/consent/verify-session` with mismatched `requestId` and `sessionId`.
-   - Server verifies payment status but does not strongly bind session metadata to the consent request before approving and linking.
-   - Impact: unauthorized consent approval and privacy/integrity breach for under-13 flows.
+Abuse Path 1 (Cross-tenant data access)
+1. Attacker creates a normal student account.
+2. Attacker calls a data endpoint with a crafted ID (question, session, or profile) that is not owned by the attacker.
+3. If an application-layer user_id filter is missing, attacker reads or modifies another student’s data.
+4. Impact: PII/education record exposure and integrity loss.
 
-2. Goal: read/modify another user's records through authz drift.
-   - Authenticated user probes ID parameters across practice/full-length/guardian/billing-related surfaces.
-   - A missed ownership predicate on a service-role query allows cross-user record access.
-   - Because service-role clients bypass RLS, a single missed check can expose or alter sensitive rows.
-   - Impact: cross-user data disclosure/tampering.
+Abuse Path 2 (CSRF on state-changing endpoints)
+1. Attacker lures a logged-in user to a malicious site.
+2. Malicious page submits a POST to a state-changing endpoint.
+3. If CSRF protection is missing for that route, the request succeeds with victim cookies.
+4. Impact: unwanted profile changes, billing portal sessions, or practice submissions.
 
-3. Goal: mutate practice state via cross-site request side effects.
-   - Victim is logged in and has active practice session.
-   - Attacker induces browser to issue `GET /api/practice/sessions/:sessionId/next?...`.
-   - Endpoint updates lifecycle/session item state and may increment usage without CSRF origin checks on that GET path.
-   - Impact: forced progression/consumption, session integrity degradation, quota burn.
+Abuse Path 3 (Session abuse via XSS)
+1. Attacker finds a client-side XSS (e.g., unescaped content in SPA).
+2. Attacker uses the victim’s session to invoke authenticated API calls from the browser.
+3. Impact: account takeover actions without cookie exfiltration.
 
-4. Goal: drive AI-cost and latency pressure.
-   - Botnet sends high-cardinality queries to unauthenticated `GET /api/questions/search`.
-   - Each request triggers embedding generation and vector search.
-   - Distributed traffic weakens per-IP controls and increases provider spend and latency.
-   - Impact: availability degradation and operational cost spikes.
+Abuse Path 4 (Billing entitlement manipulation)
+1. Attacker forges a Stripe webhook or replays a past event.
+2. If signature verification or idempotency fails, entitlement state is updated.
+3. Impact: premium access granted without payment or incorrect billing state.
 
-5. Goal: unauthorized guardian linking through code-guessing campaigns.
-   - Compromised or farmed guardian accounts repeatedly submit `/api/guardian/link` attempts.
-   - Attack distributes attempts across identities to bypass per-account durable limits.
-   - Valid 8-character student link code is discovered and linked.
-   - Impact: unauthorized guardian visibility into student metrics and reports.
+Abuse Path 5 (Admin provisioning misconfiguration)
+1. Operator enables `ADMIN_PROVISION_ENABLE` or mis-sets `NODE_ENV`.
+2. Attacker guesses or leaks `ADMN_PASSCODE` and provisions an admin user.
+3. Impact: full administrative access to data and controls.
 
-6. Goal: elevate to admin via bootstrap misconfiguration.
-   - Attacker discovers environment where `ADMIN_PROVISION_ENABLE=true` and passcode is weak/exposed.
-   - Attacker calls `/api/auth/admin-provision` in non-production-like deployment.
-   - Admin profile is created and used for privileged actions.
-   - Impact: full privileged data/control compromise in that environment.
+Abuse Path 6 (LLM prompt injection / answer leakage)
+1. Attacker crafts prompts to elicit hidden answers or internal metadata.
+2. If reveal gates or sanitizers are bypassed, model returns correct answers or other user context.
+3. Impact: integrity loss and potential data leakage.
 
-7. Goal: apply fraudulent entitlement changes through forged webhook stream.
-   - Attacker compromises webhook secret.
-   - Attacker submits validly signed subscription events containing target account metadata.
-   - Entitlement state is upserted to paid/active.
-   - Impact: revenue loss and unauthorized premium access.
+Abuse Path 7 (API DoS and quota exhaustion)
+1. Attacker floods RAG/tutor endpoints with high-volume requests.
+2. If rate limits or usage checks are insufficient, service degrades or costs spike.
+3. Impact: availability loss and operational cost.
+
+Abuse Path 8 (Secret exposure through debug paths)
+1. Attacker accesses debug endpoints in a non-production deployment with real data.
+2. Debug endpoint reveals sensitive environment configuration.
+3. Impact: secret leakage and expanded attack surface.
 
 ## Threat model table
 | Threat ID | Threat source | Prerequisites | Threat action | Impact | Impacted assets | Existing controls (evidence) | Gaps | Recommended mitigations | Detection ideas | Likelihood | Impact severity | Priority |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TM-001 | Internet attacker with leaked/guessed consent identifiers | Attacker has a valid `requestId` and any successful `sessionId` | Calls `/api/consent/verify-session` with mismatched session/request identities to approve consent and link guardian | Unauthorized consent approval and account linkage for minors | Guardian consent requests, guardian/student links, profile consent fields | CSRF middleware and Stripe payment-status check (`server/routes/guardian-consent-routes.ts:112`, `server/routes/guardian-consent-routes.ts:123`) | Verification flow does not assert session metadata matches `requestId/childId/guardianEmail`; no explicit expiry/pending-state enforcement in verify path | Require strict metadata binding (`session.metadata.requestId == requestId` and child/guardian match); reject expired/non-pending requests; add one-time signed nonce; add IP/device throttles for consent endpoints | Alert on metadata/request mismatches, repeated verify failures, and consent approvals without expected session metadata | Medium | High | critical |
-| TM-002 | Authenticated low-privilege user | Valid account plus an authz bug on any data path | Exploits missing ownership check on service-role query to access/modify another user's records | Cross-user confidentiality/integrity breach | Student data, guardian links, entitlements, exam/practice records | Ownership checks in major flows (`server/routes/practice-canonical.ts:1453`, `apps/api/src/services/fullLengthExam.ts:2054`), role guards (`server/middleware/supabase-auth.ts:458`) | Service-role access bypasses RLS (`apps/api/src/lib/supabase-server.ts:7`); isolation is explicitly app-layer (`server/middleware/supabase-auth.ts:341`) | Shift user-data routes to JWT-scoped clients + RLS where feasible; centralize ownership helper APIs; require negative authz tests per route/service | Alert on IDOR-like probing patterns (high 403/404 for authenticated users), unusual cross-user access attempts in audit logs | Medium | High | high |
-| TM-003 | Cross-site attacker targeting authenticated users | Victim has active session and attacker can cause browser GETs | Triggers state-changing `GET /api/practice/sessions/:sessionId/next` to mutate lifecycle and consume usage | Session integrity and usage abuse | Practice sessions/items, free-tier usage counters | Requires auth and client-instance consistency (`server/routes/practice-canonical.ts:2093`, `server/routes/practice-canonical.ts:1601`) | GET path mutates state and usage (`server/routes/practice-canonical.ts:1606`, `server/routes/practice-canonical.ts:1737`) without explicit mutating-GET CSRF middleware (contrast `server/routes/full-length-exam-routes.ts:67`, `server/routes/full-length-exam-routes.ts:204`) | Convert mutating GET to POST + CSRF; or add origin/referer enforcement equivalent to full-length route; ensure idempotent read-only GET semantics | Monitor external referers/user-agents hitting `/api/practice/*/next`; detect unusual serve/usage increments without matching user activity | Medium | Medium | medium |
-| TM-004 | Distributed unauthenticated bots | Public internet access to search route | Floods semantic search endpoint to trigger embeddings/vector queries at scale | Availability degradation and spend increase | Gemini quota/budget, search API latency | Route limiter exists (`server/index.ts:239`, `server/index.ts:338`), request validation in search path (`server/routes/search-runtime.ts`) | Endpoint remains unauthenticated and provider-costly per request | Add edge throttling/bot scoring; cache repeated embeddings/results; consider auth for advanced semantic search; introduce provider budget circuit-breakers | Alert on sudden query cardinality, provider call spikes, and p95/p99 latency drift | Medium | Medium | medium |
-| TM-005 | Malicious or farmed guardian accounts | Authenticated guardian identities and distributed attempts | Brute-forces 8-char link codes against `/api/guardian/link` | Unauthorized guardian-student linkage | Student privacy and guardian access control | Durable limiter and audit logging (`server/routes/guardian-routes.ts:125`, `server/lib/durable-rate-limiter.ts:85`), format checks (`server/routes/guardian-routes.ts:136`) | Entropy bounded by short code; limiter is per-account and can be distributed across identities | Increase code entropy/TTL/rotation; add global and IP/device throttles; add anomaly lockouts and abuse scoring | Alert on failed link attempts by source, distributed prefix probing, and unusual link churn | Low | Medium | medium |
-| TM-006 | External attacker in misconfigured environment | `ADMIN_PROVISION_ENABLE=true` and passcode compromise | Uses `/api/auth/admin-provision` to create admin profile | Privilege escalation in impacted environment | Admin authorization integrity | Production hard-block + passcode requirement (`server/routes/supabase-auth-routes.ts:236`, `server/routes/supabase-auth-routes.ts:245`, `server/routes/supabase-auth-routes.ts:265`) | Bootstrap endpoint still present in runtime and depends on env hygiene | Remove runtime endpoint in deployed builds; perform one-time offline bootstrap; restrict path via network policy | Alert on any invocation of `/api/auth/admin-provision` and any admin role creation event | Low | High | medium |
-| TM-007 | Attacker with webhook-secret access | Stripe webhook secret leakage | Sends signed forged subscription events to mutate entitlements | Fraudulent premium enablement and revenue loss | Entitlements, billing integrity | Signature verification and idempotency gate (`server/lib/webhookHandlers.ts:171`, `server/lib/webhookHandlers.ts:188`) plus strict account_id extraction (`server/lib/webhookHandlers.ts:17`) | Secret lifecycle/rotation and blast-radius controls not visible in repo | Rotate webhook secrets periodically; enforce secret manager controls; add abnormal entitlement-change guardrails | Alert on atypical webhook event rates, entitlement spikes, and signature-failure bursts | Low | High | medium |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TM-001 | Authenticated user | User has valid session; endpoint lacks user_id filter | Access or modify another user’s data via crafted IDs | PII/education record exposure, integrity loss | Profiles, practice data, question attempts | App-layer auth via `requireSupabaseAuth` and role checks. Evidence: `server/middleware/supabase-auth.ts`, `server/index.ts` | Authorization relies on per-route filters; service role bypasses RLS | Centralize data access with explicit user_id scoping, add row ownership assertions in db layer, expand regression tests for IDOR | Log cross-user access attempts; add anomaly alerts on mismatched user_id | Medium | High | High |
+| TM-002 | External attacker | Victim has active session; missing CSRF on a mutating route | CSRF to change profile or billing state | Unauthorized state changes | Profiles, billing state | Double-submit CSRF on many routes. Evidence: `server/middleware/csrf-double-submit.ts`, `server/index.ts` | Coverage depends on correct middleware usage for every mutating route | Enforce CSRF middleware for all POST/PATCH/DELETE globally; add origin checks for sensitive routes | Add CSRF failure metrics and log origin/referrer | Medium | Medium | Medium |
+| TM-003 | External attacker | XSS in SPA or injected content | Issue authenticated API requests from victim browser | Account actions performed without consent | Auth cookies, user data | CSP and security headers. Evidence: `server/middleware/security-headers.ts` | CSP allows unsafe-inline; SPA content sanitization not shown | Tighten CSP (remove unsafe-inline where possible), audit content rendering for sanitization, add client-side escaping guidelines | Content-Security-Policy violation reports; unusual action patterns | Medium | High | High |
+| TM-004 | External attacker | Stripe webhook secret leaked or misconfigured | Forge or replay webhook events | Incorrect premium entitlements | Billing entitlements | Stripe signature verification + idempotency gate. Evidence: `server/lib/webhookHandlers.ts`, `server/index.ts` | Webhook endpoint is public; relies solely on secret | Rotate webhook secret, restrict to Stripe IPs if possible, verify event livemode and account_id mapping | Alert on duplicate or unexpected webhook types, track entitlement changes | Low | High | Medium |
+| TM-005 | External attacker | ADMIN_PROVISION_ENABLE enabled + passcode leaked | Provision admin account | Full admin access | Admin accounts, all data | Admin provision blocked in production. Evidence: `server/routes/supabase-auth-routes.ts` | Risk if NODE_ENV mis-set or previews expose route | Remove admin provision from production builds, IP allowlist for provisioning, alert when ADMIN_PROVISION_ENABLE is true | Audit logs for admin provisioning events | Low | High | Medium |
+| TM-006 | Authenticated user | Access to tutor/RAG endpoints | Prompt injection or attempt answer leakage | Integrity loss, potential data leakage | Question bank, student data | Answer reveal gate and sanitization. Evidence: `server/routes/tutor-v2.ts`, `apps/api/src/routes/rag-v2.ts` | LLM behavior can be unpredictable; relies on logic correctness | Add tests for reveal policy, limit context fields passed to LLM, segregate sensitive data from prompts | Log cases where reveal is suppressed; alert on large prompt sizes | Medium | Medium | Medium |
+| TM-007 | External attacker | Ability to send high-volume traffic | DoS or cost escalation on RAG/tutor/auth | Availability degradation, cost | Service availability, AI usage limits | Rate limits and usage limits. Evidence: `server/index.ts` (ragLimiter), `server/middleware/usage-limits.ts`, `server/routes/supabase-auth-routes.ts` | Rate limits are per-IP; distributed attacks possible | Add WAF/bot protection, per-account and per-token limits, adaptive rate limiting | Monitor request rates, 429 spikes, and model usage anomalies | Medium | Medium | Medium |
+| TM-008 | External attacker | Non-prod deployment exposed with real secrets | Use debug endpoints to gather sensitive config | Secret leakage | API keys, environment config | Debug routes disabled in production. Evidence: `server/routes/supabase-auth-routes.ts`, `server/routes/billing-routes.ts` | Preview deployments may not set NODE_ENV=production | Enforce auth on debug routes, disable in previews with real secrets, separate preview secrets | Log debug endpoint access; alert on usage outside dev | Low | Medium | Low |
 
 ## Criticality calibration
-Critical for this repo:
-- Abuse paths that can directly compromise under-13 consent integrity or create unauthorized guardian linkage.
-- Cross-user data read/write where one authz miss can expose many users due service-role bypass.
-- Example threats: TM-001, catastrophic variant of TM-002.
-
-High for this repo:
-- Abuse paths causing major confidentiality/integrity loss with realistic prerequisites.
-- Privilege escalation into admin-level control in any environment with sensitive data.
-- Example threats: TM-002 (non-catastrophic but confirmed authz drift), TM-006 if environment hygiene is weak.
-
-Medium for this repo:
-- Meaningful integrity/availability abuse requiring additional preconditions or distributed effort.
-- Fraud/abuse with constrained blast radius and existing partial controls.
-- Example threats: TM-003, TM-004, TM-005, TM-007.
-
-Low for this repo:
-- Low-sensitivity leaks or conditions that require unlikely misconfiguration plus additional compromise.
-- Issues with strong existing containment and limited business/user harm.
-- Example class: non-prod debug endpoints when `NODE_ENV=production` is reliably enforced; benign blocked CSRF/CORS probes.
+- Critical: cross-tenant access to PII/education records, or full admin compromise. Examples: TM-001 if confirmed data leakage; TM-005 if admin provisioning misused.
+- High: session abuse or XSS leading to account takeover actions; large-scale AI prompt abuse causing sensitive leakage. Examples: TM-003, TM-006 if reveal gate bypassed.
+- Medium: billing entitlement errors, localized DoS, or CSRF on limited-scope actions. Examples: TM-002, TM-004, TM-007.
+- Low: debug endpoints in non-prod with no real data, or minor info leaks with minimal impact. Example: TM-008.
 
 ## Focus paths for security review
 | Path | Why it matters | Related Threat IDs |
-|---|---|---|
-| `server/routes/guardian-consent-routes.ts` | Public consent verification and guardian-link creation path with highest integrity risk. | TM-001 |
-| `server/index.ts` | Route exposure, middleware order, and public/private boundary definition. | TM-001, TM-003, TM-004, TM-007 |
-| `server/middleware/supabase-auth.ts` | Cookie auth resolution, role gates, and explicit app-layer isolation assumptions. | TM-002 |
-| `apps/api/src/lib/supabase-server.ts` | Service-role data client boundary and RLS bypass concentration. | TM-002 |
-| `server/routes/practice-canonical.ts` | High-volume user writes, ownership/idempotency, and mutating GET behavior. | TM-002, TM-003 |
-| `apps/api/src/services/fullLengthExam.ts` | Ownership enforcement and report/review lock logic for exam data. | TM-002 |
-| `server/routes/full-length-exam-routes.ts` | Route-level exam state transitions and mutating-GET CSRF pattern to replicate elsewhere. | TM-003 |
-| `server/routes/search-runtime.ts` | Public AI-backed semantic search path with spend/DoS implications. | TM-004 |
-| `apps/api/src/lib/embeddings.ts` | External LLM/embedding call boundary and payload handling. | TM-004 |
-| `server/routes/guardian-routes.ts` | Guardian link-code workflow and authorization checks. | TM-005 |
-| `server/lib/durable-rate-limiter.ts` | Durable anti-bruteforce design and failure modes. | TM-005 |
-| `server/routes/supabase-auth-routes.ts` | Auth surface, refresh behavior, and admin bootstrap gate. | TM-006 |
-| `server/routes/billing-routes.ts` | Authenticated billing state transitions and Stripe API trust boundary. | TM-007 |
-| `server/lib/webhookHandlers.ts` | Webhook authenticity/idempotency and entitlement mutation path. | TM-007 |
-| `server/lib/auth-cookies.ts` | Session cookie attributes, domain scope, and token lifecycle behavior. | TM-002, TM-003 |
-| `server/middleware/csrf.ts` | Cross-site write protections and origin/referer policy baseline. | TM-001, TM-003 |
-| `apps/api/src/middleware/cors.ts` | Browser cross-origin trust policy and credentialed request boundary. | TM-003, TM-004 |
-| `server/lib/email.ts` | Operational fallback behavior that can log sensitive email payloads. | TM-001 |
+| --- | --- | --- |
+| `server/index.ts` | Central route mounts, rate limits, webhook entry | TM-001, TM-002, TM-004, TM-007 |
+| `server/middleware/supabase-auth.ts` | Cookie-only auth and app-layer authorization | TM-001, TM-003 |
+| `apps/api/src/lib/supabase-server.ts` | Service role client and data access | TM-001 |
+| `server/middleware/csrf-double-submit.ts` | CSRF token generation/validation | TM-002 |
+| `server/routes/supabase-auth-routes.ts` | Auth flows + admin provisioning | TM-002, TM-005, TM-008 |
+| `server/routes/tutor-v2.ts` | LLM prompt construction and answer reveal gates | TM-006 |
+| `apps/api/src/routes/rag-v2.ts` | RAG endpoint sanitization | TM-006 |
+| `server/lib/webhookHandlers.ts` | Stripe webhook verification and idempotency | TM-004 |
+| `server/routes/billing-routes.ts` | Checkout, portal, billing state | TM-004 |
+| `server/middleware/security-headers.ts` | CSP and browser hardening | TM-003 |
+| `apps/api/src/middleware/cors.ts` | CORS allowlist enforcement | TM-002, TM-003 |
+| `server/lib/auth-cookies.ts` | Cookie flags/domain configuration | TM-003 |
+| `server/middleware/usage-limits.ts` | Usage enforcement for AI/practice | TM-007 |
+
+## Quality check
+- All discovered entry points are listed: auth, RAG/tutor, billing, health, practice/full-length, profile.
+- Each trust boundary appears in at least one threat: browser/API, API/Supabase, API/Stripe, API/LLM.
+- Runtime vs CI/dev separation is explicit in scope.
+- User clarifications on deployment, data sensitivity, and tenancy are reflected.
+- Assumptions and open questions are stated.
+
