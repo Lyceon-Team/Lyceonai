@@ -141,6 +141,7 @@ router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: 
       userId: user.id,
       testFormId: parsed.data.test_form_id,
       clientInstanceId: parsed.data.client_instance_id,
+      role: user.role,
     });
 
     return res.status(201).json({ session });
@@ -162,6 +163,30 @@ router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: 
 
     if (isClientInstanceConflict(message)) {
       return sendClientInstanceConflict(req, res, getClientInstanceIdFromError(error));
+    }
+
+    const rateLimitCode = (error as any)?.code as string | undefined;
+    if (rateLimitCode === "FULL_LENGTH_QUOTA_EXCEEDED") {
+      const gate = (error as any)?.rateLimit as any;
+      return res.status(402).json({
+        error: "Full-length quota reached",
+        code: "FULL_LENGTH_QUOTA_EXCEEDED",
+        limitType: "full_length",
+        current: gate?.current ?? null,
+        limit: gate?.limit ?? 2,
+        resetAt: gate?.resetAt ?? null,
+        message: gate?.message ?? "You have reached the full-length start limit.",
+        requestId: req.requestId,
+      });
+    }
+
+    if (rateLimitCode === "RATE_LIMIT_DB_UNAVAILABLE") {
+      return res.status(503).json({
+        error: "Rate-limit check unavailable",
+        code: "RATE_LIMIT_DB_UNAVAILABLE",
+        message: "Unable to verify full-length quota right now. Please retry shortly.",
+        requestId: req.requestId,
+      });
     }
 
     return sendRouteError(req, res, 500, "Internal error");

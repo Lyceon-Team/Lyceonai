@@ -6,6 +6,13 @@ import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
 import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import {
+  checkAndReserveTutorBudget,
+  estimateTokenCount,
+  estimateTutorCostMicros,
+  finalizeTutorUsage,
+  RateLimitUnavailableError,
+} from "../../apps/api/src/lib/rate-limit-ledger";
 
 const router = Router();
 const ACTIVE_FULL_TEST_STATUSES = ["in_progress", "break"] as const;
@@ -256,6 +263,7 @@ ${styleSection}
 
 router.post("/", async (req: Request, res: Response) => {
   const startTime = Date.now();
+  let tutorReservationId: string | null = null;
   try {
     // ENFORCEMENT: Always derive userId from req.user.id (cookie-only auth)
     const userId = req.user?.id;
@@ -270,6 +278,36 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const { message, mode, canonicalQuestionId, testCode, sectionCode } = parsed.data;
+    const reservedInputTokens = Math.max(1200, estimateTokenCount(message) + 800);
+    const reservedOutputTokens = 1200;
+    const tutorBudget = await checkAndReserveTutorBudget({
+      studentUserId: userId,
+      role: req.user?.role ?? null,
+      sessionKey: canonicalQuestionId ?? `mode:${mode}`,
+      reservedInputTokens,
+      reservedOutputTokens,
+      requestId: req.requestId ?? null,
+    });
+
+    if (!tutorBudget.allowed) {
+      const isThrottle = tutorBudget.code === "TUTOR_COOLDOWN_ACTIVE"
+        || tutorBudget.code === "TUTOR_DENSITY_EXCEEDED"
+        || tutorBudget.code === "TUTOR_SESSION_DENSITY_EXCEEDED";
+      return res.status(isThrottle ? 429 : 402).json({
+        error: "Tutor limit reached",
+        code: tutorBudget.code,
+        message: tutorBudget.message,
+        limitType: "tutor",
+        current: tutorBudget.current,
+        limit: tutorBudget.limit,
+        remaining: tutorBudget.remaining,
+        resetAt: tutorBudget.resetAt,
+        cooldownUntil: tutorBudget.cooldownUntil,
+        requestId: req.requestId,
+      });
+    }
+
+    tutorReservationId = tutorBudget.reservationId;
     const hasActiveFullTest = await hasActiveFullLengthExam(userId);
     const effectiveMode = hasActiveFullTest ? "strategy" : mode;
     const effectiveCanonicalQuestionId = hasActiveFullTest ? undefined : canonicalQuestionId;
@@ -331,6 +369,9 @@ router.post("/", async (req: Request, res: Response) => {
       competencyContext
     );
     const answer = await callLlm(prompt.userContents, prompt.systemInstruction);
+    const promptTokenEstimate = estimateTokenCount(prompt.systemInstruction) + estimateTokenCount(JSON.stringify(prompt.userContents));
+    const outputTokenEstimate = estimateTokenCount(answer);
+    const finalCostMicros = estimateTutorCostMicros(promptTokenEstimate, outputTokenEstimate);
     const currentSecondary = studentProfile?.secondaryStyle || null;
     const currentExplanationLevel = studentProfile?.explanationLevel || 2;
     let newSecondaryStyle: string | undefined;
@@ -396,9 +437,50 @@ router.post("/", async (req: Request, res: Response) => {
       },
     };
 
-    res.json(response);
+    if (tutorReservationId) {
+      try {
+        await finalizeTutorUsage({
+          reservationId: tutorReservationId,
+          success: true,
+          finalInputTokens: promptTokenEstimate,
+          finalOutputTokens: outputTokenEstimate,
+          finalCostMicros,
+        });
+      } catch (finalizeError: any) {
+        console.warn("[tutor-v2] finalize_tutor_usage failed", {
+          reservationId: tutorReservationId,
+          message: finalizeError?.message,
+        });
+      }
+    }
+
+    return res.json(response);
   } catch (error: any) {
-    res.status(500).json({
+    if (tutorReservationId) {
+      try {
+        await finalizeTutorUsage({
+          reservationId: tutorReservationId,
+          success: false,
+          failureCode: "TUTOR_RUNTIME_ERROR",
+        });
+      } catch (finalizeError: any) {
+        console.warn("[tutor-v2] finalize_tutor_usage failure-mark failed", {
+          reservationId: tutorReservationId,
+          message: finalizeError?.message,
+        });
+      }
+    }
+
+    if (error instanceof RateLimitUnavailableError || error?.code === "RATE_LIMIT_DB_UNAVAILABLE") {
+      return res.status(503).json({
+        error: "Tutor limit check unavailable",
+        code: "RATE_LIMIT_DB_UNAVAILABLE",
+        message: "Unable to verify tutor limits at this time. Please retry shortly.",
+        requestId: req.requestId,
+      });
+    }
+
+    return res.status(500).json({
       error: "Tutor request failed",
       details: error.message || String(error),
     });

@@ -3,10 +3,14 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { getSupabaseAdmin, requireSupabaseAuth } from "../middleware/supabase-auth.js";
+import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
 import {
   applyLearningEventToMastery,
 } from "../../apps/api/src/services/studentMastery";
+import {
+  checkAndReservePracticeQuota,
+  RateLimitUnavailableError,
+} from "../../apps/api/src/lib/rate-limit-ledger";
 import {
   hasCanonicalOptionSet,
   buildStudentSafeOptionTokens,
@@ -22,13 +26,6 @@ import {
   resolveSectionFilterValues,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
-import {
-  checkUsageLimit,
-  ensureAccountForUser,
-  getAccountIdForUser,
-  incrementUsage,
-  resolveLinkedPairPremiumAccessForStudent,
-} from "../lib/account";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -132,16 +129,6 @@ type CanonicalSessionSpec = {
   target_minutes: number | null;
   target_question_count: number;
   mode: string;
-};
-
-type PracticeAccess = {
-  allowed: boolean;
-  premiumOverride: boolean;
-  accountId: string | null;
-  current: number;
-  limit: number;
-  resetAt: string;
-  reason?: string;
 };
 
 const router = Router();
@@ -658,6 +645,7 @@ async function listExactFilteredQuestionPool(spec: {
     .from("questions")
     .select(selectColumns)
     .eq("question_type", "multiple_choice")
+    .eq("status", "published")
     .limit(1000);
 
   let query = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, answer_choice, answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
@@ -779,21 +767,28 @@ async function hydrateSessionItemOptionTokens(sessionId: string): Promise<void> 
   }
 }
 
-function isDuplicateConflict(message: string | undefined): boolean {
-  return /duplicate|unique/i.test(String(message || ""));
+async function cleanupFailedSessionMaterialization(sessionId: string): Promise<void> {
+  try {
+    await supabaseServer
+      .from("practice_session_items")
+      .delete()
+      .eq("session_id", sessionId);
+  } catch {
+    // best effort cleanup
+  }
+
+  try {
+    await supabaseServer
+      .from("practice_sessions")
+      .delete()
+      .eq("id", sessionId);
+  } catch {
+    // best effort cleanup
+  }
 }
 
-function sendPracticeLimitDenied(res: Response, access: PracticeAccess, requestId: string | undefined) {
-  return res.status(402).json({
-    error: "Usage limit reached",
-    code: "LIMIT_REACHED",
-    limitType: "practice",
-    current: access.current,
-    limit: access.limit,
-    resetAt: access.resetAt,
-    message: "You've reached your daily practice question limit. Upgrade to unlock unlimited access.",
-    requestId,
-  });
+function isDuplicateConflict(message: string | undefined): boolean {
+  return /duplicate|unique/i.test(String(message || ""));
 }
 
 function sendClientConflict(res: Response, requestId: string | undefined, clientInstanceId: string | null) {
@@ -806,60 +801,62 @@ function sendClientConflict(res: Response, requestId: string | undefined, client
   });
 }
 
-async function resolvePracticeAccess(userId: string, role: string | undefined): Promise<PracticeAccess> {
-  if (role === "admin") {
+async function reservePracticeQuestionQuota(args: {
+  userId: string;
+  role: string | undefined;
+  sessionId: string;
+  sessionItemId: string;
+  requestId?: string;
+}): Promise<{ ok: true } | { ok: false; status: 402 | 503; body: Record<string, unknown> }> {
+  if (args.role === "admin") {
+    return { ok: true };
+  }
+
+  try {
+    const decision = await checkAndReservePracticeQuota({
+      studentUserId: args.userId,
+      role: args.role,
+      sessionId: args.sessionId,
+      sessionItemId: args.sessionItemId,
+      dryRun: false,
+      requestId: args.requestId ?? null,
+    });
+
+    if (decision.allowed) {
+      return { ok: true };
+    }
+
     return {
-      allowed: true,
-      premiumOverride: true,
-      accountId: null,
-      current: 0,
-      limit: Number.POSITIVE_INFINITY,
-      resetAt: "",
+      ok: false,
+      status: 402,
+      body: {
+        error: "Usage limit reached",
+        code: decision.code || "PRACTICE_QUOTA_EXCEEDED",
+        limitType: "practice",
+        current: decision.current,
+        limit: decision.limit,
+        remaining: decision.remaining,
+        resetAt: decision.resetAt,
+        message: decision.message || "You've reached your daily practice question limit. Upgrade to unlock unlimited access.",
+        requestId: args.requestId,
+      },
     };
+  } catch (error: unknown) {
+    const code = (error as any)?.code;
+    if (error instanceof RateLimitUnavailableError || code === "RATE_LIMIT_DB_UNAVAILABLE") {
+      return {
+        ok: false,
+        status: 503,
+        body: {
+          error: "Usage check unavailable",
+          code: "RATE_LIMIT_DB_UNAVAILABLE",
+          message: "Unable to verify practice quota at this time. Please retry shortly.",
+          requestId: args.requestId,
+        },
+      };
+    }
+    throw error;
   }
-
-  if (role !== "student") {
-    return {
-      allowed: false,
-      premiumOverride: false,
-      accountId: null,
-      current: 0,
-      limit: 0,
-      resetAt: "",
-      reason: "role_not_allowed",
-    };
-  }
-
-  const supabaseAdmin = getSupabaseAdmin();
-  let accountId = await getAccountIdForUser(userId);
-  if (!accountId) {
-    accountId = await ensureAccountForUser(supabaseAdmin, userId, "student");
-  }
-
-  if (!accountId) {
-    return {
-      allowed: false,
-      premiumOverride: false,
-      accountId: null,
-      current: 0,
-      limit: 0,
-      resetAt: "",
-      reason: "missing_account",
-    };
-  }
-
-  const premiumAccess = await resolveLinkedPairPremiumAccessForStudent(userId);
-  const premiumOverride = premiumAccess.hasPremiumAccess;
-  const usage = await checkUsageLimit(accountId, "practice", { premiumOverride });
-
-  return {
-    allowed: usage.allowed,
-    premiumOverride,
-    accountId,
-    current: Number.isFinite(usage.current) ? usage.current : 0,
-    limit: Number.isFinite(usage.limit) ? usage.limit : Number.POSITIVE_INFINITY,
-    resetAt: usage.resetAt,
-  };
 }
 
 async function getSessionStats(sessionId: string, userId: string): Promise<{
@@ -1103,23 +1100,6 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const access = await resolvePracticeAccess(args.userId, args.role);
-  if (!access.allowed) {
-    return {
-      ok: false,
-      status: 402,
-      body: {
-        error: "Usage limit reached",
-        code: "LIMIT_REACHED",
-        limitType: "practice",
-        current: access.current,
-        limit: access.limit,
-        resetAt: access.resetAt,
-        message: "You've reached your daily practice question limit. Upgrade to unlock unlimited access.",
-      },
-    };
-  }
-
   const sessionMetadata: SessionMetadata = {
     client_instance_id: args.clientInstanceId,
     lifecycle_state: "created",
@@ -1129,46 +1109,74 @@ async function startOrReplaySession(args: {
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
   };
-
-  const { data: createdRows, error: createErr } = await supabaseServer.rpc("start_practice_session_with_items", {
-    p_user_id: args.userId,
-    p_section: args.section,
-    p_mode: args.mode,
-    p_status: "in_progress",
-    p_started_at: new Date().toISOString(),
-    p_metadata: sessionMetadata,
-    p_client_instance_id: args.clientInstanceId,
-    p_target_count: coerceTargetQuestionCount(args.targetQuestionCount),
-    p_sections: args.sessionSpec.sections,
-    p_domains: args.sessionSpec.domains,
-    p_difficulties: args.sessionSpec.difficulties,
+  const exactPoolResult = await listExactFilteredQuestionPool({
+    sections: args.sessionSpec.sections,
+    domains: args.sessionSpec.domains,
+    difficulties: args.sessionSpec.difficulties,
   });
 
-  if (createErr) {
-    const message = createErr.message || "Unable to create practice session";
-    if (message.includes("PRACTICE_EXACT_POOL_EMPTY")) {
-      return {
-        ok: false,
-        status: 422,
-        body: {
-          error: "empty_exact_pool",
-          code: "PRACTICE_EXACT_POOL_EMPTY",
-          message: "No published multiple-choice questions match the requested session filters.",
-        },
-      };
-    }
+  if ("error" in exactPoolResult) {
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message,
+        message: exactPoolResult.error,
       },
     };
   }
 
-  const created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
-  const sessionId = String((created as any)?.session_id ?? "");
+  const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
+  const selection = buildDeterministicPrebuiltSet(exactPoolResult.pool, requestedCount);
+  if (selection.selected.length === 0) {
+    return {
+      ok: false,
+      status: 422,
+      body: {
+        error: "empty_exact_pool",
+        code: "PRACTICE_EXACT_POOL_EMPTY",
+        message: "No published multiple-choice questions match the requested session filters.",
+      },
+    };
+  }
+
+  const startedAt = new Date().toISOString();
+  const insertMetadata: SessionMetadata = {
+    ...sessionMetadata,
+    prebuilt: true,
+    requested_count: requestedCount,
+    source_pool_count: selection.sourcePoolCount,
+    selection_mode: selection.selectionMode,
+    lifecycle_state: "active",
+    last_served_ordinal: 1,
+  };
+
+  const { data: createdSession, error: sessionInsertError } = await supabaseServer
+    .from("practice_sessions")
+    .insert({
+      user_id: args.userId,
+      section: args.section,
+      mode: args.mode,
+      status: "in_progress",
+      completed: false,
+      started_at: startedAt,
+      metadata: insertMetadata,
+    })
+    .select("id, user_id, section, mode, status, completed, metadata")
+    .single();
+
+  if (sessionInsertError || !createdSession) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message: sessionInsertError?.message ?? "Unable to create practice session",
+      },
+    };
+  }
+
+  const sessionId = String((createdSession as any).id ?? "");
   if (!sessionId) {
     return {
       ok: false,
@@ -1180,34 +1188,86 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const { data: newSession, error: sessionFetchError } = await supabaseServer
-    .from("practice_sessions")
-    .select("id, user_id, section, mode, status, completed, metadata")
-    .eq("id", sessionId)
-    .single();
+  const now = new Date().toISOString();
+  const insertRows = selection.selected.map((question, index) => ({
+    session_id: sessionId,
+    user_id: args.userId,
+    question_id: question.id,
+    question_canonical_id: question.canonical_id,
+    question_section: question.section,
+    question_stem: question.stem,
+    question_options: question.options,
+    question_difficulty: question.difficulty ?? null,
+    question_domain: question.domain ?? null,
+    question_skill: question.skill ?? null,
+    question_subskill: question.subskill ?? null,
+    question_exam: question.exam ?? null,
+    question_structure_cluster_id: question.structure_cluster_id ?? null,
+    question_correct_answer: question.correct_answer ?? null,
+    question_explanation: question.explanation ?? null,
+    ordinal: index + 1,
+    status: index === 0 ? "served" : "queued",
+    attempt_id: null,
+    client_instance_id: index === 0 ? args.clientInstanceId : null,
+    selected_answer: null,
+    is_correct: null,
+    outcome: null,
+    time_spent_ms: null,
+    client_attempt_id: null,
+    answered_at: null,
+    option_order: null,
+    option_token_map: null,
+    created_at: now,
+    updated_at: now,
+  }));
 
-  if (sessionFetchError || !newSession) {
+  const { data: insertedItems, error: itemInsertError } = await supabaseServer
+    .from("practice_session_items")
+    .insert(insertRows)
+    .select("id, ordinal");
+
+  if (itemInsertError) {
+    await cleanupFailedSessionMaterialization(sessionId);
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: sessionFetchError?.message ?? "Unable to load practice session",
+        message: itemInsertError.message,
       },
     };
   }
 
-  await hydrateSessionItemOptionTokens(sessionId);
+  try {
+    await hydrateSessionItemOptionTokens(sessionId);
+  } catch (hydrateError: any) {
+    await cleanupFailedSessionMaterialization(sessionId);
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message: hydrateError?.message ?? "Unable to hydrate session item tokens",
+      },
+    };
+  }
 
-  const newMetadata = asSessionMetadata((newSession as any).metadata);
+  const firstInsertedItem = Array.isArray(insertedItems)
+    ? insertedItems.find((row: any) => Number((row as any).ordinal) === 1)
+    : null;
+  const newMetadata = asSessionMetadata((createdSession as any).metadata);
   newMetadata.prebuilt = true;
-  newMetadata.requested_count = Number((created as any)?.requested_count ?? coerceTargetQuestionCount(args.targetQuestionCount));
-  newMetadata.source_pool_count = Number((created as any)?.source_pool_count ?? 0);
-  newMetadata.selection_mode = (created as any)?.selection_mode === "exact_reuse" ? "exact_reuse" : "exact";
-  newMetadata.target_question_count = coerceTargetQuestionCount(args.targetQuestionCount);
+  newMetadata.requested_count = requestedCount;
+  newMetadata.source_pool_count = selection.sourcePoolCount;
+  newMetadata.selection_mode = selection.selectionMode;
+  newMetadata.target_question_count = requestedCount;
   newMetadata.session_spec = args.sessionSpec;
+  newMetadata.lifecycle_state = "active";
+  newMetadata.client_instance_id = args.clientInstanceId;
+  newMetadata.active_session_item_id = firstInsertedItem ? String((firstInsertedItem as any).id) : null;
+  newMetadata.last_served_ordinal = 1;
 
-  await updateSessionLifecycle(String((newSession as any).id), newMetadata, {
+  await updateSessionLifecycle(sessionId, newMetadata, {
     status: "in_progress",
     completed: false,
   });
@@ -1215,7 +1275,7 @@ async function startOrReplaySession(args: {
   return {
     ok: true,
     session: {
-      ...(newSession as SessionRow),
+      ...(createdSession as SessionRow),
       metadata: newMetadata,
     },
     metadata: newMetadata,
@@ -1386,11 +1446,6 @@ async function serveNextForSession(args: {
         status: "in_progress",
       });
 
-      const access = await resolvePracticeAccess(args.userId, args.role);
-      if (!access.allowed) {
-        return sendPracticeLimitDenied(args.res, access, requestId);
-      }
-
       return args.res.status(200).json({
         sessionId: args.sessionId,
         sessionItemId: unresolved.id,
@@ -1432,11 +1487,6 @@ async function serveNextForSession(args: {
       }),
       stats: await getSessionStats(args.sessionId, args.userId),
     });
-  }
-
-  const access = await resolvePracticeAccess(args.userId, args.role);
-  if (!access.allowed) {
-    return sendPracticeLimitDenied(args.res, access, requestId);
   }
 
   if (!metadata.prebuilt) {
@@ -1508,6 +1558,29 @@ async function serveNextForSession(args: {
     });
   }
 
+  const quotaReservation = await reservePracticeQuestionQuota({
+    userId: args.userId,
+    role: args.role,
+    sessionId: args.sessionId,
+    sessionItemId: promoted.id,
+    requestId,
+  });
+
+  if (!quotaReservation.ok) {
+    await supabaseServer
+      .from("practice_session_items")
+      .update({
+        status: "queued",
+        client_instance_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", promoted.id)
+      .eq("status", "served")
+      .eq("attempt_id", null);
+
+    return args.res.status(quotaReservation.status).json(quotaReservation.body);
+  }
+
   const safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, promoted.option_order, promoted.option_token_map);
   if (!safeOptions) {
     return args.res.status(409).json({
@@ -1540,18 +1613,6 @@ async function serveNextForSession(args: {
       });
   } catch {
     // non-blocking
-  }
-
-  if (access.accountId && !access.premiumOverride) {
-    try {
-      await incrementUsage(access.accountId, "practice");
-    } catch (usageErr: any) {
-      console.warn("[practice] usage increment failed", {
-        requestId,
-        message: usageErr?.message,
-        accountId: access.accountId,
-      });
-    }
   }
 
   return args.res.json({

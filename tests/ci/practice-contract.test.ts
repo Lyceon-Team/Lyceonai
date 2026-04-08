@@ -21,8 +21,7 @@ type DbState = {
 
 let db: DbState;
 let activeUserId = "00000000-0000-0000-0000-000000000000";
-let sessionCounter = 0;
-let sessionItemCounter = 0;
+let practiceQuotaAllowed = true;
 
 const accountMocks = vi.hoisted(() => ({
   checkUsageLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10, resetAt: "2099-01-01T00:00:00.000Z" })),
@@ -216,134 +215,50 @@ class MockBuilder {
   }
 }
 
-function coerceDifficultyLabel(raw: any): string | null {
-  if (raw === 1 || raw === "1" || String(raw).toLowerCase() === "easy") return "easy";
-  if (raw === 2 || raw === "2" || String(raw).toLowerCase() === "medium") return "medium";
-  if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "hard") return "hard";
-  return null;
-}
-
-function toDeterministicUuid(value: number): string {
-  return `00000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
-}
-
-function buildPracticeSessionItems(args: any) {
-  const targetCount = Math.max(1, Math.min(Number(args.p_target_count ?? 10), 200));
-  const sections = Array.isArray(args.p_sections) ? args.p_sections : [];
-  const domains = Array.isArray(args.p_domains) ? args.p_domains : [];
-  const difficulties = Array.isArray(args.p_difficulties) ? args.p_difficulties : [];
-
-  const allowedSectionCodes: string[] = [];
-  if (sections.includes("Math")) {
-    allowedSectionCodes.push("M", "MATH");
-  }
-  if (sections.includes("RW")) {
-    allowedSectionCodes.push("RW");
-  }
-
-  const pool = db.questions
-    .filter((q) => q.question_type === "multiple_choice")
-    .filter((q) => !allowedSectionCodes.length || allowedSectionCodes.includes(String(q.section_code)))
-    .filter((q) => !domains.length || domains.map((d) => String(d).toLowerCase()).includes(String(q.domain ?? "").toLowerCase()))
-    .filter((q) => {
-      if (!difficulties.length) return true;
-      const label = coerceDifficultyLabel(q.difficulty);
-      return label ? difficulties.map((d) => String(d).toLowerCase()).includes(label) : false;
-    })
-    .sort((a, b) => {
-      const canonA = String(a.canonical_id ?? "");
-      const canonB = String(b.canonical_id ?? "");
-      if (canonA !== canonB) return canonA.localeCompare(canonB);
-      return String(a.id).localeCompare(String(b.id));
-    });
-
-  if (pool.length === 0) {
-    return { error: { message: "PRACTICE_EXACT_POOL_EMPTY" } };
-  }
-
-  const selectionMode = pool.length < targetCount ? "exact_reuse" : "exact";
-  const selected = [];
-  for (let i = 0; i < targetCount; i += 1) {
-    selected.push(pool[i % pool.length]);
-  }
-
-  const sessionId = toDeterministicUuid(++sessionCounter);
-  const sessionRow = {
-    id: sessionId,
-    user_id: args.p_user_id,
-    section: args.p_section,
-    mode: args.p_mode,
-    status: args.p_status ?? "in_progress",
-    completed: false,
-    started_at: args.p_started_at ?? new Date().toISOString(),
-    metadata: args.p_metadata ?? {},
-    updated_at: new Date().toISOString(),
-  };
-  db.practice_sessions.push(sessionRow);
-
-  const now = new Date().toISOString();
-  selected.forEach((question, idx) => {
-    db.practice_session_items.push({
-      id: toDeterministicUuid(++sessionItemCounter + (sessionCounter * 1000)),
-      session_id: sessionId,
-      user_id: args.p_user_id,
-      question_id: question.id,
-      question_canonical_id: question.canonical_id,
-      question_section: question.section ?? question.section_code,
-      question_stem: question.stem,
-      question_options: question.options,
-      question_difficulty: question.difficulty,
-      question_domain: question.domain ?? null,
-      question_skill: question.skill ?? null,
-      question_subskill: question.subskill ?? null,
-      question_exam: question.exam ?? null,
-      question_structure_cluster_id: question.structure_cluster_id ?? null,
-      question_correct_answer: question.correct_answer ?? null,
-      question_explanation: question.explanation ?? null,
-      ordinal: idx + 1,
-      status: idx === 0 ? "served" : "queued",
-      attempt_id: null,
-      client_instance_id: idx === 0 ? args.p_client_instance_id : null,
-      option_order: null,
-      option_token_map: null,
-      answered_at: null,
-      created_at: now,
-      updated_at: now,
-      selected_answer: null,
-      is_correct: null,
-      outcome: null,
-      time_spent_ms: null,
-      client_attempt_id: null,
-    });
-  });
-
-  return {
-    data: [{
-      session_id: sessionId,
-      requested_count: targetCount,
-      source_pool_count: pool.length,
-      selection_mode: selectionMode,
-      inserted_count: selected.length,
-    }],
-    error: null,
-  };
-}
-
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: vi.fn((table: keyof DbState) => new MockBuilder(table, db)),
     rpc: vi.fn((fn: string, args: any) => {
-      if (fn === "start_practice_session_with_items") {
-        const result = buildPracticeSessionItems(args);
-        if (result.error) {
-          return { data: null, error: result.error };
+      if (fn === "check_and_reserve_practice_quota") {
+        if (!practiceQuotaAllowed) {
+          return {
+            data: {
+              allowed: false,
+              code: "PRACTICE_QUOTA_EXCEEDED",
+              message: "Practice free-tier limit reached (20 served questions per rolling 24 hours).",
+              current: 20,
+              limit: 20,
+              remaining: 0,
+              reset_at: "2099-01-01T00:00:00.000Z",
+              cooldown_until: null,
+              reservation_id: null,
+              duplicate: false,
+            },
+            error: null,
+          };
         }
-        return { data: result.data, error: null };
+
+        return {
+          data: {
+            allowed: true,
+            code: "PRACTICE_RESERVED",
+            message: "Practice quota reserved.",
+            current: 1,
+            limit: 20,
+            remaining: 19,
+            reset_at: "2099-01-01T00:00:00.000Z",
+            cooldown_until: null,
+            reservation_id: "11111111-1111-4111-8111-111111111111",
+            duplicate: false,
+          },
+          error: null,
+        };
       }
+
       if (fn === "apply_learning_event_to_mastery") {
         return { data: { ok: true }, error: null };
       }
-      return { data: null, error: null };
+      return { data: null, error: { message: `Unexpected RPC call: ${fn}` } };
     }),
   },
 }));
@@ -491,8 +406,7 @@ describe("Practice Runtime Contract", () => {
   beforeEach(() => {
     activeRole = "student";
     activeUserId = "00000000-0000-0000-0000-000000000000";
-    sessionCounter = 0;
-    sessionItemCounter = 0;
+    practiceQuotaAllowed = true;
     db = {
       practice_sessions: [],
       practice_session_items: [],
@@ -1267,12 +1181,7 @@ describe("Practice Runtime Contract", () => {
     const sessionId = start.body.sessionId;
     const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
 
-    accountMocks.checkUsageLimit.mockResolvedValue({
-      allowed: false,
-      current: 10,
-      limit: 10,
-      resetAt: "2099-01-01T00:00:00.000Z",
-    });
+    practiceQuotaAllowed = false;
 
     const answer = await request(app)
       .post("/api/practice/answer")

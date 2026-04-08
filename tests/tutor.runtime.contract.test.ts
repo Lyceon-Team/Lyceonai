@@ -13,6 +13,10 @@ const state = vi.hoisted(() => ({
   retryIsCorrect: false,
   retryOutcome: "incorrect" as "correct" | "incorrect" | "skipped",
   questionLookupMissing: false,
+  tutorBudgetAllowed: true,
+  tutorBudgetCode: "TUTOR_RESERVED",
+  tutorBudgetMessage: "Tutor budget reserved.",
+  tutorCooldownUntil: null as string | null,
   tableCalls: [] as string[],
   rpcCalls: [] as string[],
 }));
@@ -184,6 +188,58 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
       }),
       rpc: vi.fn(async (fnName: string) => {
         state.rpcCalls.push(fnName);
+        if (fnName === "check_and_reserve_tutor_budget") {
+          if (!state.tutorBudgetAllowed) {
+            return {
+              data: {
+                allowed: false,
+                code: state.tutorBudgetCode,
+                message: state.tutorBudgetMessage,
+                current: 10,
+                limit: 10,
+                remaining: 0,
+                reset_at: "2099-01-01T00:00:00.000Z",
+                cooldown_until: state.tutorCooldownUntil,
+                reservation_id: null,
+                duplicate: false,
+              },
+              error: null,
+            };
+          }
+
+          return {
+            data: {
+              allowed: true,
+              code: "TUTOR_RESERVED",
+              message: "Tutor budget reserved.",
+              current: 1,
+              limit: 100,
+              remaining: 99,
+              reset_at: "2099-01-01T00:00:00.000Z",
+              cooldown_until: null,
+              reservation_id: "33333333-3333-4333-8333-333333333333",
+              duplicate: false,
+            },
+            error: null,
+          };
+        }
+
+        if (fnName === "finalize_tutor_usage") {
+          return {
+            data: {
+              ok: true,
+              code: "TUTOR_FINALIZED",
+              message: "Tutor usage finalized.",
+              reservation_id: "33333333-3333-4333-8333-333333333333",
+              state: "finalized",
+              final_input_tokens: 1000,
+              final_output_tokens: 400,
+              final_cost_micros: 200,
+            },
+            error: null,
+          };
+        }
+
         return { data: null, error: null };
       }),
     },
@@ -282,6 +338,10 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = false;
     state.retryOutcome = "incorrect";
     state.questionLookupMissing = false;
+    state.tutorBudgetAllowed = true;
+    state.tutorBudgetCode = "TUTOR_RESERVED";
+    state.tutorBudgetMessage = "Tutor budget reserved.";
+    state.tutorCooldownUntil = null;
     state.tableCalls = [];
     state.rpcCalls = [];
     agent = request.agent(app);
@@ -455,6 +515,34 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.ragContext.primaryQuestion.explanation).toBeNull();
     expect(res.body.ragContext.supportingQuestions[0].answer).toBeNull();
     expect(res.body.ragContext.supportingQuestions[0].explanation).toBeNull();
+  });
+
+  it("denies tutor requests when DB budget gate rejects", async () => {
+    state.tutorBudgetAllowed = false;
+    state.tutorBudgetCode = "TUTOR_BUDGET_EXCEEDED";
+    state.tutorBudgetMessage = "Tutor token/cost budget reached. Please try again after reset.";
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("TUTOR_BUDGET_EXCEEDED");
+    expect(res.body.limitType).toBe("tutor");
+    expect(state.rpcCalls).toContain("check_and_reserve_tutor_budget");
+    expect(state.rpcCalls).not.toContain("finalize_tutor_usage");
+  });
+
+  it("finalizes tutor reservation after successful response", async () => {
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(state.rpcCalls).toContain("check_and_reserve_tutor_budget");
+    expect(state.rpcCalls).toContain("finalize_tutor_usage");
   });
 
   it("enforces role guard server-side (guardian blocked)", async () => {
