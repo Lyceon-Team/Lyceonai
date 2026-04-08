@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   fromMock,
-  applyMasteryUpdateMock,
+  applyLearningEventToMasteryMock,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
-  applyMasteryUpdateMock: vi.fn(),
+  applyLearningEventToMasteryMock: vi.fn(),
 }));
 
 vi.mock("../apps/api/src/lib/supabase-server", () => ({
@@ -15,7 +15,7 @@ vi.mock("../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../apps/api/src/services/studentMastery", () => ({
-  applyMasteryUpdate: applyMasteryUpdateMock,
+  applyLearningEventToMastery: applyLearningEventToMasteryMock,
 }));
 
 vi.mock("../server/lib/review-runtime-gate", () => ({
@@ -24,7 +24,6 @@ vi.mock("../server/lib/review-runtime-gate", () => ({
 }));
 
 import { submitReviewSessionAnswer } from "../server/routes/review-session-routes";
-import { MasteryEventType } from "../apps/api/src/services/mastery-constants";
 
 function makeRes() {
   let statusCode = 200;
@@ -106,6 +105,7 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
           { key: "D", text: "5" },
         ],
         question_difficulty: 2,
+        question_difficulty_bucket: 2,
         question_domain: "Algebra",
         question_skill: "Linear equations",
         question_subskill: null,
@@ -165,9 +165,8 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 describe("Review Error -> Canonical Mastery Bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    applyMasteryUpdateMock.mockResolvedValue({
-      attemptId: "m-1",
-      rollupUpdated: true,
+    applyLearningEventToMasteryMock.mockResolvedValue({
+      ok: true,
       error: undefined,
     });
   });
@@ -192,15 +191,20 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyMasteryUpdateMock).toHaveBeenCalledWith(
+    expect(applyLearningEventToMasteryMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: MasteryEventType.REVIEW_PASS,
-        questionCanonicalId: "SATM1ABC123",
+        studentId: "student-1",
+        sourceFamily: "review",
+        section: "Math",
+        domain: "Algebra",
+        skill: "Linear equations",
+        difficulty: 2,
+        correct: true,
       })
     );
   });
 
-  it("emits REVIEW_PASS + TUTOR_HELPED when tutor context is present", async () => {
+  it("emits REVIEW_PASS only when tutor context is present (no tutor mastery)", async () => {
     setupSupabase({ hasTutorContext: true });
     const { res, getStatus, getBody } = makeRes();
 
@@ -220,8 +224,12 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
-    expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_HELPED);
+    expect(applyLearningEventToMasteryMock).toHaveBeenCalledTimes(1);
+    expect(applyLearningEventToMasteryMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        sourceFamily: "review",
+        correct: true,
+      })
+    );
   });
 });

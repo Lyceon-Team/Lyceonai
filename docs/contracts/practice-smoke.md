@@ -37,7 +37,7 @@ Hard gates:
 
 4. **Submit answer**
    - API: POST `/api/practice/answer` with `session_id` + `session_item_id`.
-   - Evidence: item status updated, `answered_at` set, and `answer_attempts` row created.
+   - Evidence: item status updated, `answered_at` set on `practice_session_items`.
    - DB: `SELECT status, answered_at FROM practice_session_items WHERE id = '<sessionItemId>';`
 
 5. **Resume same session**
@@ -77,7 +77,6 @@ ClientInstanceId:
 - requestId:
 - status:
 - practice_session_items.status:
-- answer_attempts row id:
 
 5) Resume
 - requestId:
