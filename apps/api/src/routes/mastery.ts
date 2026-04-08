@@ -2,7 +2,6 @@ import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import {
   buildMasterySkillTreeFromRows,
-  mapMasteryStatusFromLevel,
   buildMasterySummaryFromRows,
   fetchSkillMasteryRows,
   fetchWeakestSkills,
@@ -107,6 +106,24 @@ function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
 
+function mapWeakestStatus(
+  masteryLevel: unknown,
+  attempts: number,
+  masteryScore: number
+): "not_started" | "weak" | "improving" | "proficient" {
+  if (!Number.isFinite(attempts) || attempts < 0.01) {
+    return "not_started";
+  }
+
+  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
+  if (masteryLevel === 2) return "improving";
+  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
+
+  if (masteryScore < 40) return "weak";
+  if (masteryScore < 70) return "improving";
+  return "proficient";
+}
+
 const router = Router();
 
 /**
@@ -204,7 +221,7 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
       attempts: row.attempts,
       accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
       mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: mapMasteryStatusFromLevel((row as any).mastery_level, row.attempts, row.mastery_score),
+      status: mapWeakestStatus((row as any).mastery_level, row.attempts, row.mastery_score),
     }));
 
     return res.json({ weakest: formatted });
