@@ -1,6 +1,5 @@
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { getWeakestClusters } from '../services/studentMastery';
 import { buildWeaknessSkillsView } from '../services/weakness-view';
 
 const router = Router();
@@ -36,21 +35,10 @@ router.get('/clusters', async (req: AuthenticatedRequest, res: Response) => {
     if (!user) {
       return;
     }
-
-    const limit = parseInt(req.query.limit as string) || 10;
-    const minAttempts = parseInt(req.query.minAttempts as string) || 3;
-
-    const clusters = await getWeakestClusters({
-      userId: user.id,
-      limit,
-      minAttempts,
-      failOnError: true,
-    });
-
-    res.json({
-      ok: true,
-      count: clusters.length,
-      clusters,
+    return res.status(410).json({
+      ok: false,
+      error: 'Cluster weakness surface is compatibility-only and disabled in canonical runtime.',
+      code: 'CLUSTER_WEAKNESS_DISABLED',
     });
   } catch (error) {
     console.error('[Weakness] Error getting weakest clusters:', error);

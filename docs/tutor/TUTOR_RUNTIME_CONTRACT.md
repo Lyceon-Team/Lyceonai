@@ -38,7 +38,7 @@
 - During active full-length exam, question-specific tutoring context is suppressed and answer/explanation leakage is blocked.
 
 ## Verification Semantics
-- Verified retry is represented by a server-side `answer_attempts` record for `(user_id, question_id)`.
+- Verified retry is represented by a server-side `practice_session_items` record for `(user_id, question_id)` with `status in ('answered','skipped')` and outcome not `skipped`.
 - Tutor open alone does not perform mastery table writes.
 - Tutor-related downstream reveal behavior is unlocked only after server-verified retry evidence.
 - Full-length exam guard takes precedence over retry reveal (strategy-only during active exam).

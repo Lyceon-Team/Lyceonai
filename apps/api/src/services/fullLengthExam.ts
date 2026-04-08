@@ -12,8 +12,7 @@
 
 import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { applyMasteryUpdate } from "./mastery-write";
-import { MasteryEventType } from "./mastery-constants";
+import { applyLearningEventToMastery } from "./mastery-write";
 import { applyFullLengthExamPlannerReprioritization, type ExamSkillDiagnostic } from "./calendar-planner-reprioritization";
 import {
   normalizeClientInstanceId,
@@ -1777,7 +1776,7 @@ async function applyFullLengthMasterySignals(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
   sessionId: string,
-  responses: Array<{ question_id: string; is_correct: boolean | null }>
+  responses: Array<{ question_id: string; is_correct: boolean | null; answered_at?: string | null }>
 ): Promise<void> {
   if (!responses.length) return;
 
@@ -1839,27 +1838,45 @@ async function applyFullLengthMasterySignals(
     for (const response of responses) {
       const question = metadataByQuestionId.get(response.question_id);
       if (!question?.question_canonical_id) continue;
+      const section = question.question_section?.trim() ?? "";
+      const domain = question.question_domain?.trim() ?? "";
+      const skill = question.question_skill?.trim() ?? "";
+      const difficultyBucket = normalizeQuestionDifficultyValue(question.question_difficulty);
+      if (!difficultyBucket) {
+        console.warn("[full-length] mastery emission skipped (invalid difficulty bucket)", {
+          sessionId,
+          questionCanonicalId: question.question_canonical_id,
+          sourceFamily: "test",
+          rawDifficulty: question.question_difficulty ?? null,
+        });
+        continue;
+      }
+      if (!section || !domain || !skill) {
+        console.warn("[full-length] mastery emission skipped (missing metadata)", {
+          sessionId,
+          questionCanonicalId: question.question_canonical_id,
+          sourceFamily: "test",
+          section: section || null,
+          domain: domain || null,
+          skill: skill || null,
+        });
+        continue;
+      }
 
       try {
-        const result = await applyMasteryUpdate({
-          userId,
-          questionCanonicalId: question.question_canonical_id,
-          sessionId,
-          isCorrect: !!response.is_correct,
-          eventType: response.is_correct ? MasteryEventType.TEST_PASS : MasteryEventType.TEST_FAIL,
-          metadata: {
-            exam: question.question_exam || null,
-            section: question.question_section || null,
-            domain: question.question_domain || null,
-            skill: question.question_skill || null,
-            subskill: question.question_subskill || null,
-            skill_code: question.question_skill_code || null,
-            difficulty: normalizeQuestionDifficultyValue(question.question_difficulty),
-            structure_cluster_id: question.question_structure_cluster_id || null,
-          },
+        const result = await applyLearningEventToMastery({
+          studentId: userId,
+          section,
+          domain,
+          skill,
+          difficulty: difficultyBucket,
+          sourceFamily: "test",
+          correct: !!response.is_correct,
+          latencyMs: null,
+          occurredAt: response.answered_at ?? new Date().toISOString(),
         });
 
-        if (result.error) {
+        if (!result.ok && result.error) {
           console.warn(`[FULL-LENGTH] Canonical mastery update warning for ${question.question_canonical_id}: ${result.error}`);
         }
       } catch (masteryErr: any) {
@@ -2725,7 +2742,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   // Get module responses to compute score
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id, is_correct")
+    .select("question_id, is_correct, answered_at")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
@@ -2740,7 +2757,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     supabase,
     params.userId,
     params.sessionId,
-    (responses || []).map((r) => ({ question_id: r.question_id, is_correct: r.is_correct }))
+    (responses || []).map((r) => ({ question_id: r.question_id, is_correct: r.is_correct, answered_at: (r as any).answered_at ?? null }))
   );
 
   // Determine next module

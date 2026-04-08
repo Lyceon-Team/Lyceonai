@@ -6,11 +6,9 @@
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
 import {
-  KPI_TRUTH_LAYER_VERSION,
-  buildCanonicalPracticeKpiSnapshot,
-  buildPersistedScoreProjection,
-  buildStudentKpiView,
-} from "../../services/kpi-truth-layer";
+  buildScoreEstimateFromCanonical,
+  buildStudentKpiViewFromCanonical,
+} from "../../services/canonical-runtime-views";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 
 function estimateExplanation(label: string, detail: string): {
@@ -52,12 +50,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
     }
 
-    const scoreProjection = await buildPersistedScoreProjection(user.id);
-    const totalQuestions = scoreProjection.totalQuestions;
+    const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
+    const totalQuestions = scoreProjection.totalQuestionsAttempted;
 
     if (totalQuestions === 0) {
       return res.json({
-        modelVersion: KPI_TRUTH_LAYER_VERSION,
+        modelVersion: "kpi_truth_v1",
         measurementModel: {
           official: ["official_sat_score"],
           weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
@@ -90,13 +88,13 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     }
 
     return res.json({
-      modelVersion: KPI_TRUTH_LAYER_VERSION,
+      modelVersion: "kpi_truth_v1",
       measurementModel: {
         official: ["official_sat_score"],
         weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
         diagnostic: ["mastery_evidence_count"],
       },
-      estimate: scoreProjection.projection,
+      estimate: scoreProjection.estimate,
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
@@ -117,7 +115,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         },
       },
       totalQuestionsAttempted: totalQuestions,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: scoreProjection.lastUpdated,
       officialScore: null,
       requestId: req.requestId,
     });
@@ -140,8 +138,7 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
 
-    const snapshot = await buildCanonicalPracticeKpiSnapshot(user.id);
-    const view = buildStudentKpiView(snapshot, includeHistoricalTrends);
+    const view = await buildStudentKpiViewFromCanonical(user.id, includeHistoricalTrends);
 
     return res.json({
       modelVersion: view.modelVersion,

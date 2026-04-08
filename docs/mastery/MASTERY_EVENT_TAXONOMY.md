@@ -1,13 +1,11 @@
 # Mastery Event Taxonomy
 
 ## Locked Canonical Event Set
-`applyMasteryUpdate(...)` accepts only:
+`apply_learning_event_to_mastery(...)` accepts only:
 - `practice_pass`
 - `practice_fail`
 - `review_pass`
 - `review_fail`
-- `tutor_helped`
-- `tutor_fail`
 - `test_pass`
 - `test_fail`
 
@@ -18,9 +16,6 @@
 - Review submit:
   - correct -> `review_pass`
   - incorrect -> `review_fail`
-- Tutor modifier (only after verified retry in review flow):
-  - correct retry -> `tutor_helped`
-  - incorrect retry -> `tutor_fail`
 - Full-length test scoring bridge:
   - correct -> `test_pass`
   - incorrect -> `test_fail`

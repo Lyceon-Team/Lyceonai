@@ -1,5 +1,4 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import { getMasteryStatus } from "./mastery-projection";
 
 export interface SkillMasteryRow {
   section: string;
@@ -9,6 +8,7 @@ export interface SkillMasteryRow {
   correct: number;
   accuracy: number;
   mastery_score: number;
+  mastery_level?: number | null;
 }
 
 export interface ClusterMasteryRow {
@@ -35,6 +35,7 @@ export interface SkillWeakness {
   correct: number;
   accuracy: number;
   mastery_score: number;
+  mastery_level?: number | null;
 }
 
 export interface ClusterWeakness {
@@ -87,6 +88,25 @@ function toLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function mapMasteryStatusFromLevel(
+  masteryLevel: unknown,
+  attempts: number,
+  masteryScore?: number
+): "not_started" | "weak" | "improving" | "proficient" {
+  if (!Number.isFinite(attempts) || attempts < 0.01) {
+    return "not_started";
+  }
+
+  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
+  if (masteryLevel === 2) return "improving";
+  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
+
+  const fallbackScore = Number.isFinite(masteryScore as number) ? Number(masteryScore) : 0;
+  if (fallbackScore < 40) return "weak";
+  if (fallbackScore < 70) return "improving";
+  return "proficient";
+}
+
 export async function fetchSkillMasteryRows(args: {
   userId: string;
   section?: string;
@@ -94,7 +114,7 @@ export async function fetchSkillMasteryRows(args: {
   const supabase = getSupabaseAdmin();
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
+    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
     .eq("user_id", args.userId);
 
   if (args.section) {
@@ -115,7 +135,7 @@ export async function fetchWeakestSkills(query: WeaknessQuery): Promise<SkillWea
 
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
+    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
     .eq("user_id", query.userId)
     .gte("attempts", minAttempts)
     .order("accuracy", { ascending: true })
@@ -245,7 +265,7 @@ export function buildMasterySkillTreeFromRows(
           correct,
           accuracy: Math.round(accuracy * 100),
           mastery_score: Math.round(mastery_score),
-          status: getMasteryStatus(mastery_score, attempts),
+          status: mapMasteryStatusFromLevel(row?.mastery_level, attempts, mastery_score),
         });
 
         domainTotalMastery += mastery_score;
@@ -260,7 +280,7 @@ export function buildMasterySkillTreeFromRows(
         label: domainDef.label,
         skills,
         avgMastery: Math.round(avgDomainMastery),
-        status: getMasteryStatus(avgDomainMastery, skills.reduce((a, s) => a + s.attempts, 0)),
+        status: mapMasteryStatusFromLevel(null, skills.reduce((a, s) => a + s.attempts, 0), avgDomainMastery),
       });
 
       sectionTotalMastery += avgDomainMastery;

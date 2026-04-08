@@ -6,7 +6,7 @@
  * 
  * Violation patterns detected:
  * - Direct .upsert() / .update() / .insert() / .delete() on mastery tables
- * - Direct .rpc() calls to upsert_skill_mastery or upsert_cluster_mastery
+ * - Direct .rpc() calls to apply_learning_event_to_mastery
  * - Any write operation outside mastery-write.ts
  * 
  * EXCEPTION: mastery-write.ts itself is allowed to write to mastery tables.
@@ -20,12 +20,13 @@ import * as path from 'path';
 
 const MASTERY_TABLES = [
   'student_skill_mastery',
-  'student_cluster_mastery',
+  'student_domain_mastery',
+  'student_section_projections',
+  'student_kpi_rollups_current',
 ];
 
 const MASTERY_RPC_FUNCTIONS = [
-  'upsert_skill_mastery',
-  'upsert_cluster_mastery',
+  'apply_learning_event_to_mastery',
 ];
 
 const CANONICAL_CHOKE_POINT = 'apps/api/src/services/mastery-write.ts';
@@ -167,7 +168,7 @@ The following files contain direct writes to mastery tables:
 
 ${violationReport}
 
-FIX: Update these files to call applyMasteryUpdate() instead of directly
+FIX: Update these files to call applyLearningEventToMastery() instead of directly
 writing to mastery tables or calling RPC functions.
 
 This is a CRITICAL security and consistency invariant.
@@ -180,7 +181,7 @@ This is a CRITICAL security and consistency invariant.
     expect(allViolations.length).toBe(0);
   });
   
-  it('should verify that mastery-write.ts exists and exports applyMasteryUpdate', () => {
+  it('should verify that mastery-write.ts exists and exports applyLearningEventToMastery', () => {
     const projectRoot = path.resolve(__dirname, '../../..');
     const chokePointPath = path.join(projectRoot, CANONICAL_CHOKE_POINT);
     
@@ -190,20 +191,16 @@ This is a CRITICAL security and consistency invariant.
     
     const content = fs.readFileSync(chokePointPath, 'utf-8');
     
-    expect(content.includes('export async function applyMasteryUpdate'),
-      'mastery-write.ts must export applyMasteryUpdate function'
+    expect(content.includes('export async function applyLearningEventToMastery'),
+      'mastery-write.ts must export applyLearningEventToMastery function'
     ).toBe(true);
     
-    expect(content.includes('student_skill_mastery') || content.includes('upsert_skill_mastery'),
-      'mastery-write.ts must handle skill mastery updates'
-    ).toBe(true);
-    
-    expect(content.includes('student_cluster_mastery') || content.includes('upsert_cluster_mastery'),
-      'mastery-write.ts must handle cluster mastery updates'
+    expect(content.includes('apply_learning_event_to_mastery'),
+      'mastery-write.ts must call apply_learning_event_to_mastery'
     ).toBe(true);
   });
   
-  it('should verify that diagnostic routes use applyMasteryUpdate', () => {
+  it('should verify that diagnostic routes use applyLearningEventToMastery', () => {
     const projectRoot = path.resolve(__dirname, '../../..');
     const diagnosticPath = path.join(projectRoot, 'apps/api/src/routes/diagnostic.ts');
     
@@ -214,16 +211,16 @@ This is a CRITICAL security and consistency invariant.
     
     const content = fs.readFileSync(diagnosticPath, 'utf-8');
     
-    expect(content.includes('applyMasteryUpdate'),
-      'diagnostic.ts must use applyMasteryUpdate for mastery updates'
+    expect(content.includes('applyLearningEventToMastery'),
+      'diagnostic.ts must use applyLearningEventToMastery for mastery updates'
     ).toBe(true);
     
     expect(!content.includes('.from("student_skill_mastery")'),
       'diagnostic.ts must NOT directly write to student_skill_mastery'
     ).toBe(true);
     
-    expect(!content.includes('.from("student_cluster_mastery")'),
-      'diagnostic.ts must NOT directly write to student_cluster_mastery'
+    expect(!content.includes('.from("student_domain_mastery")'),
+      'diagnostic.ts must NOT directly write to student_domain_mastery'
     ).toBe(true);
   });
 });

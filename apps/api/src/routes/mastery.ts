@@ -2,11 +2,11 @@ import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
 import {
   buildMasterySkillTreeFromRows,
+  mapMasteryStatusFromLevel,
   buildMasterySummaryFromRows,
   fetchSkillMasteryRows,
   fetchWeakestSkills,
 } from '../services/mastery-read';
-import { getMasteryStatus } from '../services/mastery-projection';
 import { DateTime } from 'luxon';
 import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
 import { getSupabaseAdmin } from '../lib/supabase-admin';
@@ -204,7 +204,7 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
       attempts: row.attempts,
       accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
       mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: getMasteryStatus(row.mastery_score, row.attempts),
+      status: mapMasteryStatusFromLevel((row as any).mastery_level, row.attempts, row.mastery_score),
     }));
 
     return res.json({ weakest: formatted });

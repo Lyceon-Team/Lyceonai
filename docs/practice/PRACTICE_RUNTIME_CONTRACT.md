@@ -7,8 +7,8 @@ This document defines the locked canonical runtime for Lyceon practice.
   - Mounts the canonical runtime at `app.use("/api/practice", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter)`.
 - `server/routes/practice-canonical.ts`
   - Owns session creation, serving, state, answer submission, idempotency, anti-leak enforcement, and multi-tab conflict behavior.
-- `apps/api/src/services/studentMastery.ts`
-  - Canonical mastery write path called after successful non-duplicate practice submissions.
+- `apps/api/src/services/mastery-write.ts`
+  - Calls canonical DB writer `apply_learning_event_to_mastery(...)` after successful non-duplicate practice submissions.
 
 No parallel mounted practice runtime exists under `apps/api/**`.
 
@@ -23,8 +23,8 @@ No parallel mounted practice runtime exists under `apps/api/**`.
     - `option_token_map` (opaque token -> canonical key map server-side only)
   - Exactly one unresolved (`status='served'`) item per session at a time.
 - `answer_attempts`
-  - Authoritative answer-attempt truth.
-  - Linked to served items via `session_item_id` when available.
+  - Legacy compatibility-only table (not canonical).
+  - Must not be used for canonical practice outcome/progress reads.
 
 ## API Contract
 
@@ -33,7 +33,7 @@ No parallel mounted practice runtime exists under `apps/api/**`.
 - Enforces student-primary ownership.
 - Replays existing active session when appropriate (including start idempotency key if provided).
 - Records/returns `client_instance_id`.
-- Initializes lifecycle without serving duplicate items.
+- Initializes lifecycle by calling `public.start_practice_session_with_items(...)` to materialize session + items.
 
 ### `GET /api/practice/sessions/{session_id}/next?client_instance_id=...`
 - Validates session ownership and client-instance binding.
@@ -55,10 +55,10 @@ No parallel mounted practice runtime exists under `apps/api/**`.
 - Resolves `selectedOptionId` using server-owned `practice_session_items.option_token_map`.
 - Validates answer against canonical question truth.
 - Enforces idempotency for duplicate submissions (`client_attempt_id` and served-item linkage).
-- Writes exactly one attempt for the served item.
+- Updates `practice_session_items` directly for the served item.
 - Resolves `practice_session_items.status` from `served` to `answered`/`skipped`.
 - Reveals correctness plus post-submit explanation/correct option token only after submit.
-- Calls canonical mastery update path once for non-duplicate writes.
+- Calls `apply_learning_event_to_mastery(...)` once for non-duplicate writes, only after strict difficulty bucket (1|2|3) validation.
 
 ### `GET /api/practice/next` (legacy compatibility)
 - Thin delegate to the same canonical domain flow.

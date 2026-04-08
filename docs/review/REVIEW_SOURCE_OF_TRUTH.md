@@ -9,7 +9,7 @@
 
 ## Canonical Data Sources
 - Mistake queue eligibility:
-  - `public.answer_attempts` (practice misses/skips)
+  - `public.practice_session_items` (practice misses/skips)
   - `public.full_length_exam_responses` joined to completed sessions (full-test misses)
 - Recovery outcomes:
   - `public.review_error_attempts`
@@ -17,8 +17,8 @@
   - `public.review_sessions`
   - `public.review_session_items`
   - `public.review_session_events`
-- Mastery event ledger:
-  - `public.student_question_attempts`
+- Mastery writer:
+  - `public.apply_learning_event_to_mastery(...)`
 
 ## Deterministic Queue Rules
 - Queue is server-built and student-scoped.
@@ -41,7 +41,7 @@
 ## Locked Review + Tutor Semantics
 - Review outcomes only: `review_pass`, `review_fail`.
 - Tutor-only interaction writes no mastery.
-- Tutor + retry may additionally emit `tutor_helped` or `tutor_fail`.
+- Tutor + retry does not emit mastery in this model.
 
 ## Security + Visibility Boundaries
 - Review writes are student-scoped.
