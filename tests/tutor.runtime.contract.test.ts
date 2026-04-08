@@ -145,13 +145,25 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
           return { data: null, error: null };
         }
 
-        if (table === "answer_attempts") {
+        if (table === "practice_session_items") {
+          if (state.questionLookupMissing) {
+            return { data: null, error: null };
+          }
           if (
             state.hasVerifiedRetry
             && filters.user_id === "student-auth-user"
-            && filters.question_id === "question-row-q1"
+            && filters.question_canonical_id === "q1"
+            && filters.status === "answered"
+            && state.retryOutcome !== "skipped"
           ) {
-            return { data: { id: "attempt-1", is_correct: state.retryIsCorrect, outcome: state.retryOutcome }, error: null };
+            return {
+              data: {
+                id: "item-1",
+                outcome: state.retryOutcome,
+                status: state.retryOutcome === "skipped" ? "skipped" : "answered",
+              },
+              error: null,
+            };
           }
           return { data: null, error: null };
         }

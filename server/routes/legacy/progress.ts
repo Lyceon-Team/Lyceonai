@@ -6,7 +6,6 @@
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
 import {
-  KPI_TRUTH_LAYER_VERSION,
   buildCanonicalPracticeKpiSnapshot,
   buildPersistedScoreProjection,
   buildStudentKpiView,
@@ -57,7 +56,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
 
     if (totalQuestions === 0) {
       return res.json({
-        modelVersion: KPI_TRUTH_LAYER_VERSION,
+        modelVersion: "kpi_truth_v1",
         measurementModel: {
           official: ["official_sat_score"],
           weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
@@ -90,13 +89,20 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     }
 
     return res.json({
-      modelVersion: KPI_TRUTH_LAYER_VERSION,
+      modelVersion: "kpi_truth_v1",
       measurementModel: {
         official: ["official_sat_score"],
         weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
         diagnostic: ["mastery_evidence_count"],
       },
-      estimate: scoreProjection.projection,
+      estimate: {
+        composite: scoreProjection.projection.composite,
+        math: scoreProjection.projection.math,
+        rw: scoreProjection.projection.rw,
+        range: scoreProjection.projection.range,
+        confidence: scoreProjection.projection.confidence,
+        breakdown: scoreProjection.projection.breakdown,
+      },
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
@@ -117,7 +123,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         },
       },
       totalQuestionsAttempted: totalQuestions,
-      lastUpdated: new Date().toISOString(),
+      lastUpdated: scoreProjection.lastUpdated,
       officialScore: null,
       requestId: req.requestId,
     });

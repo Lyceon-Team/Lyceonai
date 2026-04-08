@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fromMock,
-  applyMasteryUpdateMock,
+  applyLearningEventToMasteryMock,
   getQuestionMetadataForAttemptMock,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
-  applyMasteryUpdateMock: vi.fn(),
+  applyLearningEventToMasteryMock: vi.fn(),
   getQuestionMetadataForAttemptMock: vi.fn(),
 }));
 
@@ -17,7 +17,7 @@ vi.mock('../apps/api/src/lib/supabase-server', () => ({
 }));
 
 vi.mock('../apps/api/src/services/studentMastery', () => ({
-  applyMasteryUpdate: applyMasteryUpdateMock,
+  applyLearningEventToMastery: applyLearningEventToMasteryMock,
   getQuestionMetadataForAttempt: getQuestionMetadataForAttemptMock,
 }));
 
@@ -26,7 +26,6 @@ import {
   startReviewErrorSession,
   submitReviewSessionAnswer,
 } from '../server/routes/review-session-routes';
-import { MasteryEventType } from '../apps/api/src/services/mastery-constants';
 
 type Row = Record<string, any>;
 type DbState = Record<string, Row[]>;
@@ -46,6 +45,52 @@ function makeRes() {
   };
 
   return { res, getStatus: () => statusCode, getBody: () => body };
+}
+
+function buildPracticeSessionItemsFromAttempts(attempts: Row[], questions: Row[] = []): Row[] {
+  const byCanonical = new Map<string, Row>();
+  const byId = new Map<string, Row>();
+  for (const question of questions) {
+    if (typeof question.canonical_id === 'string') {
+      byCanonical.set(question.canonical_id, question);
+    }
+    if (typeof question.id === 'string') {
+      byId.set(question.id, question);
+    }
+  }
+
+  return attempts.map((row, index) => {
+    const question = row.questions ?? {};
+    const canonicalId = question.canonical_id ?? row.question_canonical_id ?? null;
+    const fallback = canonicalId ? byCanonical.get(canonicalId) : (row.question_id ? byId.get(row.question_id) : null);
+    const options = question.options ?? fallback?.options ?? null;
+    const correctAnswer = question.correct_answer ?? fallback?.correct_answer ?? null;
+    const explanation = question.explanation ?? fallback?.explanation ?? null;
+    const outcome = row.outcome ?? (row.is_correct ? 'correct' : 'incorrect');
+    const status = outcome === 'skipped' ? 'skipped' : 'answered';
+    return {
+      id: row.session_item_id ?? `legacy-item-${index + 1}`,
+      session_id: row.session_id ?? `legacy-session-${row.user_id ?? 'student'}`,
+      user_id: row.user_id ?? null,
+      question_id: row.question_id ?? question.id ?? `legacy-question-${index + 1}`,
+      question_canonical_id: canonicalId,
+      question_stem: question.stem ?? fallback?.stem ?? null,
+      question_section: question.section ?? fallback?.section ?? null,
+      question_difficulty: question.difficulty ?? fallback?.difficulty ?? null,
+      question_domain: question.domain ?? fallback?.domain ?? null,
+      question_skill: question.skill ?? fallback?.skill ?? null,
+      question_subskill: question.subskill ?? fallback?.subskill ?? null,
+      question_options: options,
+      question_correct_answer: correctAnswer,
+      question_explanation: explanation,
+      question_exam: question.exam ?? fallback?.exam ?? null,
+      question_structure_cluster_id: question.structure_cluster_id ?? fallback?.structure_cluster_id ?? null,
+      is_correct: row.is_correct ?? null,
+      outcome,
+      answered_at: row.attempted_at ?? row.created_at ?? null,
+      status,
+    };
+  });
 }
 
 function setupSupabase(state: DbState) {
@@ -149,47 +194,6 @@ function setupSupabase(state: DbState) {
     private getRows() {
       const baseRows = state[this.table] ?? [];
 
-      if (this.table === 'answer_attempts') {
-        return (baseRows as Row[]).map((row, index) => ({
-          ...row,
-          session_id: row.session_id ?? `legacy-session-${row.user_id ?? 'student'}`,
-          session_item_id: row.session_item_id ?? `legacy-item-${index + 1}`,
-          created_at: row.created_at ?? row.attempted_at ?? null,
-        }));
-      }
-
-      if (this.table === 'practice_session_items' && baseRows.length === 0) {
-        const attempts = (state.answer_attempts ?? []) as Row[];
-        const questionsByCanonicalId = new Map<string, Row>();
-        for (const q of (state.questions ?? []) as Row[]) {
-          if (typeof q.canonical_id === 'string') {
-            questionsByCanonicalId.set(q.canonical_id, q);
-          }
-        }
-
-        return attempts.map((row, index) => {
-          const question = row.questions ?? {};
-          const canonicalId = question.canonical_id ?? null;
-          const fallbackQuestion = canonicalId ? questionsByCanonicalId.get(canonicalId) : null;
-          return {
-            id: row.session_item_id ?? `legacy-item-${index + 1}`,
-            session_id: row.session_id ?? `legacy-session-${row.user_id ?? 'student'}`,
-            question_id: row.question_id ?? question.id ?? `legacy-question-${index + 1}`,
-            question_canonical_id: canonicalId,
-            question_stem: question.stem ?? fallbackQuestion?.stem ?? null,
-            question_section: question.section ?? fallbackQuestion?.section ?? null,
-            question_difficulty: question.difficulty ?? fallbackQuestion?.difficulty ?? null,
-            question_domain: question.domain ?? fallbackQuestion?.domain ?? null,
-            question_skill: question.skill ?? fallbackQuestion?.skill ?? null,
-            question_subskill: question.subskill ?? fallbackQuestion?.subskill ?? null,
-            question_options: question.options ?? fallbackQuestion?.options ?? null,
-            question_correct_answer: question.correct_answer ?? fallbackQuestion?.correct_answer ?? null,
-            question_explanation: question.explanation ?? fallbackQuestion?.explanation ?? null,
-            created_at: row.created_at ?? row.attempted_at ?? null,
-          };
-        });
-      }
-
       if (this.table === 'review_session_items') {
         const questionsByCanonicalId = new Map<string, Row>();
         for (const question of (state.questions ?? []) as Row[]) {
@@ -285,7 +289,7 @@ describe('Review session lifecycle contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    applyMasteryUpdateMock.mockResolvedValue({ attemptId: 'm-1', rollupUpdated: true, error: undefined });
+    applyLearningEventToMasteryMock.mockResolvedValue({ ok: true, error: undefined });
     getQuestionMetadataForAttemptMock.mockResolvedValue({
       canonicalId: 'SATM1ABC123',
       exam: 'SAT',
@@ -300,45 +304,47 @@ describe('Review session lifecycle contract', () => {
   });
 
   it('starts one canonical review session and replays without duplicating items', async () => {
-    const state: DbState = {
-      answer_attempts: [
-        {
-          id: 'a1',
-          question_id: 'q-source-1',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T09:00:00.000Z',
-          user_id: 'student-1',
-          questions: {
-            id: 'q-source-1',
-            canonical_id: 'SATM1ABC123',
-            stem: 'Q1',
-            section: 'Math',
-            difficulty: 'medium',
-            domain: 'alg',
-            skill: '11111111-1111-4111-8111-111111111111',
-            subskill: 'ss1',
-          },
+    const questions = [
+      {
+        canonical_id: 'SATM1ABC123',
+        status: 'published',
+        question_type: 'multiple_choice',
+        section: 'Math',
+        stem: 'Which value solves x+1=2?',
+        options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
+        difficulty: 'easy',
+        correct_answer: 'A',
+        explanation: 'Subtract 1.',
+      },
+    ];
+    const attempts = [
+      {
+        id: 'a1',
+        question_id: 'q-source-1',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T09:00:00.000Z',
+        user_id: 'student-1',
+        questions: {
+          id: 'q-source-1',
+          canonical_id: 'SATM1ABC123',
+          stem: 'Q1',
+          section: 'Math',
+          difficulty: 'medium',
+          domain: 'alg',
+          skill: '11111111-1111-4111-8111-111111111111',
+          subskill: 'ss1',
         },
-      ],
+      },
+    ];
+    const state: DbState = {
+      practice_session_items: buildPracticeSessionItemsFromAttempts(attempts, questions),
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [],
       review_session_items: [],
       review_session_events: [],
-      questions: [
-        {
-          canonical_id: 'SATM1ABC123',
-          status: 'published',
-          question_type: 'multiple_choice',
-          section: 'Math',
-          stem: 'Which value solves x+1=2?',
-          options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
-          difficulty: 'easy',
-          correct_answer: 'A',
-          explanation: 'Subtract 1.',
-        },
-      ],
+      questions,
       tutor_interactions: [],
     };
 
@@ -360,18 +366,22 @@ describe('Review session lifecycle contract', () => {
   });
 
   it('replays session start deterministically by idempotency key', async () => {
+    const questions = [
+      { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp' },
+    ];
+    const attempts = [
+      {
+        id: 'a1',
+        question_id: 'q-source-1',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T09:00:00.000Z',
+        user_id: 'student-1',
+        questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+      },
+    ];
     const state: DbState = {
-      answer_attempts: [
-        {
-          id: 'a1',
-          question_id: 'q-source-1',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T09:00:00.000Z',
-          user_id: 'student-1',
-          questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
-        },
-      ],
+      practice_session_items: buildPracticeSessionItemsFromAttempts(attempts, questions),
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -400,36 +410,38 @@ describe('Review session lifecycle contract', () => {
     expect(state.review_sessions[0].client_instance_id).toBe('client-a');
   });
   it('materializes deterministic ordinals with exactly one served unresolved item', async () => {
+    const questions = [
+      { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q1', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp1' },
+      { canonical_id: 'SATM1DEF456', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q2', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'B', explanation: 'exp2' },
+    ];
+    const attempts = [
+      {
+        id: 'a1',
+        question_id: 'q-source-1',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T09:00:00.000Z',
+        user_id: 'student-1',
+        questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+      },
+      {
+        id: 'a2',
+        question_id: 'q-source-2',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T08:59:00.000Z',
+        user_id: 'student-1',
+        questions: { id: 'q-source-2', canonical_id: 'SATM1DEF456', stem: 'Q2', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+      },
+    ];
     const state: DbState = {
-      answer_attempts: [
-        {
-          id: 'a1',
-          question_id: 'q-source-1',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T09:00:00.000Z',
-          user_id: 'student-1',
-          questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
-        },
-        {
-          id: 'a2',
-          question_id: 'q-source-2',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T08:59:00.000Z',
-          user_id: 'student-1',
-          questions: { id: 'q-source-2', canonical_id: 'SATM1DEF456', stem: 'Q2', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
-        },
-      ],
+      practice_session_items: buildPracticeSessionItemsFromAttempts(attempts, questions),
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [],
       review_session_items: [],
       review_session_events: [],
-      questions: [
-        { canonical_id: 'SATM1ABC123', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q1', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp1' },
-        { canonical_id: 'SATM1DEF456', status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q2', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'B', explanation: 'exp2' },
-      ],
+      questions,
       tutor_interactions: [],
     };
 
@@ -451,7 +463,7 @@ describe('Review session lifecycle contract', () => {
 
   it('requires explicit review mode on session start', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [],
@@ -472,33 +484,37 @@ describe('Review session lifecycle contract', () => {
   });
 
   it('fails closed when unresolved item lacks valid canonical_id even if question_id is canonical-shaped', async () => {
-    const state: DbState = {
-      answer_attempts: [
-        {
-          id: 'a-canonical-shaped-id',
-          question_id: 'SATM1ABC123',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T09:00:00.000Z',
-          user_id: 'student-1',
-          questions: {
-            id: 'SATM1ABC123',
-            canonical_id: null,
-            stem: 'Q1',
-            section: 'Math',
-            difficulty: 'medium',
-            domain: 'alg',
-            skill: 's1',
-            subskill: 'ss1',
-          },
+    const questions = [
+      { id: 'SATM1ABC123', canonical_id: null, status: 'published', question_type: 'multiple_choice', section: 'Math', stem: 'Q1', options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }], difficulty: 'easy', correct_answer: 'A', explanation: 'exp' },
+    ];
+    const attempts = [
+      {
+        id: 'a-canonical-shaped-id',
+        question_id: 'SATM1ABC123',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T09:00:00.000Z',
+        user_id: 'student-1',
+        questions: {
+          id: 'SATM1ABC123',
+          canonical_id: null,
+          stem: 'Q1',
+          section: 'Math',
+          difficulty: 'medium',
+          domain: 'alg',
+          skill: 's1',
+          subskill: 'ss1',
         },
-      ],
+      },
+    ];
+    const state: DbState = {
+      practice_session_items: buildPracticeSessionItemsFromAttempts(attempts, questions),
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [],
       review_session_items: [],
       review_session_events: [],
-      questions: [],
+      questions,
       tutor_interactions: [],
     };
 
@@ -518,7 +534,7 @@ describe('Review session lifecycle contract', () => {
 
   it('state refresh returns same served item and option tokens', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -558,14 +574,34 @@ describe('Review session lifecycle contract', () => {
 
   it('duplicate submit is idempotent per served item and does not double-write mastery', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
         { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
       ],
       review_session_items: [
-        { id: '22222222-2222-4222-8222-222222222222', review_session_id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', ordinal: 1, question_canonical_id: 'SATM1ABC123', source_question_id: 'q-source-1', source_question_canonical_id: 'SATM1ABC123', source_origin: 'practice', retry_mode: 'same_question', status: 'served', attempt_id: null, tutor_opened_at: null, source_attempted_at: '2026-03-14T08:00:00.000Z', option_order: ['A','B','C','D'], option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' } },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          review_session_id: '11111111-1111-4111-8111-111111111111',
+          student_id: 'student-1',
+          ordinal: 1,
+          question_canonical_id: 'SATM1ABC123',
+          source_question_id: 'q-source-1',
+          source_question_canonical_id: 'SATM1ABC123',
+          source_origin: 'practice',
+          retry_mode: 'same_question',
+          status: 'served',
+          attempt_id: null,
+          tutor_opened_at: null,
+          source_attempted_at: '2026-03-14T08:00:00.000Z',
+          option_order: ['A', 'B', 'C', 'D'],
+          option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' },
+          question_section: 'Math',
+          question_domain: 'algebra',
+          question_skill: 'linear_equations',
+          question_difficulty_bucket: 1,
+        },
       ],
       review_session_events: [],
       questions: [
@@ -612,13 +648,86 @@ describe('Review session lifecycle contract', () => {
     expect(second.getStatus()).toBe(200);
     expect(second.getBody().idempotent).toBe(true);
 
-    const emitted = applyMasteryUpdateMock.mock.calls.map((call) => call[0].eventType);
-    expect(emitted).toEqual([MasteryEventType.REVIEW_PASS]);
+    const emitted = applyLearningEventToMasteryMock.mock.calls.map((call) => call[0].sourceFamily);
+    expect(emitted).toEqual(['review']);
+  });
+
+  it('skips mastery emission when review item difficulty bucket is invalid', async () => {
+    const state: DbState = {
+      practice_session_items: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [
+        { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
+      ],
+      review_session_items: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          review_session_id: '11111111-1111-4111-8111-111111111111',
+          student_id: 'student-1',
+          ordinal: 1,
+          question_canonical_id: 'SATM1ABC123',
+          source_question_id: 'q-source-1',
+          source_question_canonical_id: 'SATM1ABC123',
+          source_origin: 'practice',
+          retry_mode: 'same_question',
+          status: 'served',
+          attempt_id: null,
+          tutor_opened_at: null,
+          source_attempted_at: '2026-03-14T08:00:00.000Z',
+          option_order: ['A','B','C','D'],
+          option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' },
+          question_section: 'Math',
+          question_stem: 'Q',
+          question_options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
+          question_difficulty_bucket: 9,
+          question_correct_answer: 'A',
+          question_explanation: 'exp',
+        },
+      ],
+      review_session_events: [],
+      questions: [
+        {
+          canonical_id: 'SATM1ABC123',
+          status: 'published',
+          question_type: 'multiple_choice',
+          section: 'Math',
+          stem: 'Q',
+          options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
+          difficulty: 'easy',
+          correct_answer: 'A',
+          explanation: 'exp',
+        },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        review_session_item_id: '22222222-2222-4222-8222-222222222222',
+        selected_option_id: 'opt_a',
+        source_context: 'review_errors',
+        client_attempt_id: 'attempt-invalid-difficulty',
+        client_instance_id: 'client-a',
+      },
+    };
+
+    const res = makeRes();
+    await submitReviewSessionAnswer(req, res.res);
+
+    expect(res.getStatus()).toBe(200);
+    expect(res.getBody().masteryApplied).toBe(false);
+    expect(res.getBody().masteryErrors).toContain('Invalid difficulty bucket for mastery emission');
+    expect(applyLearningEventToMasteryMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when resolved item points to another student attempt_id', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [
         {
@@ -666,7 +775,7 @@ describe('Review session lifecycle contract', () => {
 
   it('rejects answer submit without opaque selected_option_id', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -700,12 +809,12 @@ describe('Review session lifecycle contract', () => {
 
     expect(res.getStatus()).toBe(400);
     expect(res.getBody().code).toBe('REVIEW_SELECTED_OPTION_REQUIRED');
-    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
+    expect(applyLearningEventToMasteryMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when legacy free-response field is sent to mounted review submit', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -740,12 +849,12 @@ describe('Review session lifecycle contract', () => {
 
     expect(res.getStatus()).toBe(400);
     expect(res.getBody().code).toBe('REVIEW_MC_OPTION_REQUIRED');
-    expect(applyMasteryUpdateMock).not.toHaveBeenCalled();
+    expect(applyLearningEventToMasteryMock).not.toHaveBeenCalled();
   });
 
   it('denies non-owner answer submit to another student review session', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -783,7 +892,7 @@ describe('Review session lifecycle contract', () => {
 
   it('fails closed when resolved item sees client_attempt_id bound to a different question', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [
         {
@@ -833,7 +942,7 @@ describe('Review session lifecycle contract', () => {
 
   it('denies non-owner access to another student session state', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [],
       review_error_attempts: [],
       review_sessions: [
@@ -856,71 +965,73 @@ describe('Review session lifecycle contract', () => {
   });
 
   it('filters review session start by practice session when mode=by_practice_session', async () => {
+    const questions = [
+      {
+        canonical_id: 'SATM1ABC123',
+        status: 'published',
+        question_type: 'multiple_choice',
+        section: 'Math',
+        stem: 'Q1',
+        options: [
+          { key: 'A', text: '1' },
+          { key: 'B', text: '2' },
+          { key: 'C', text: '3' },
+          { key: 'D', text: '4' },
+        ],
+        difficulty: 'easy',
+        correct_answer: 'A',
+        explanation: 'exp1',
+      },
+      {
+        canonical_id: 'SATM1DEF456',
+        status: 'published',
+        question_type: 'multiple_choice',
+        section: 'Math',
+        stem: 'Q2',
+        options: [
+          { key: 'A', text: '1' },
+          { key: 'B', text: '2' },
+          { key: 'C', text: '3' },
+          { key: 'D', text: '4' },
+        ],
+        difficulty: 'easy',
+        correct_answer: 'A',
+        explanation: 'exp2',
+      },
+    ];
+    const attempts = [
+      {
+        id: 'a1',
+        session_id: '11111111-1111-4111-8111-111111111111',
+        session_item_id: 'item-a',
+        question_id: 'q-source-1',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T09:00:00.000Z',
+        user_id: 'student-1',
+        questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+      },
+      {
+        id: 'a2',
+        session_id: '22222222-2222-4222-8222-222222222222',
+        session_item_id: 'item-b',
+        question_id: 'q-source-2',
+        is_correct: false,
+        outcome: 'incorrect',
+        attempted_at: '2026-03-14T08:59:00.000Z',
+        user_id: 'student-1',
+        questions: { id: 'q-source-2', canonical_id: 'SATM1DEF456', stem: 'Q2', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
+      },
+    ];
     const state: DbState = {
-      answer_attempts: [
-        {
-          id: 'a1',
-          session_id: '11111111-1111-4111-8111-111111111111',
-          session_item_id: 'item-a',
-          question_id: 'q-source-1',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T09:00:00.000Z',
-          user_id: 'student-1',
-          questions: { id: 'q-source-1', canonical_id: 'SATM1ABC123', stem: 'Q1', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
-        },
-        {
-          id: 'a2',
-          session_id: '22222222-2222-4222-8222-222222222222',
-          session_item_id: 'item-b',
-          question_id: 'q-source-2',
-          is_correct: false,
-          outcome: 'incorrect',
-          attempted_at: '2026-03-14T08:59:00.000Z',
-          user_id: 'student-1',
-          questions: { id: 'q-source-2', canonical_id: 'SATM1DEF456', stem: 'Q2', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
-        },
-      ],
+      practice_session_items: buildPracticeSessionItemsFromAttempts(attempts, questions),
       full_length_exam_responses: [],
       full_length_exam_questions: [],
       review_error_attempts: [],
       review_sessions: [],
       review_session_items: [],
       review_session_events: [],
-      questions: [
-        {
-          canonical_id: 'SATM1ABC123',
-          status: 'published',
-          question_type: 'multiple_choice',
-          section: 'Math',
-          stem: 'Q1',
-          options: [
-            { key: 'A', text: '1' },
-            { key: 'B', text: '2' },
-            { key: 'C', text: '3' },
-            { key: 'D', text: '4' },
-          ],
-          difficulty: 'easy',
-          correct_answer: 'A',
-          explanation: 'exp1',
-        },
-        {
-          canonical_id: 'SATM1DEF456',
-          status: 'published',
-          question_type: 'multiple_choice',
-          section: 'Math',
-          stem: 'Q2',
-          options: [
-            { key: 'A', text: '1' },
-            { key: 'B', text: '2' },
-            { key: 'C', text: '3' },
-            { key: 'D', text: '4' },
-          ],
-          difficulty: 'easy',
-          correct_answer: 'A',
-          explanation: 'exp2',
-        },
-      ],
+      questions,
       tutor_interactions: [],
     };
 
@@ -937,7 +1048,7 @@ describe('Review session lifecycle contract', () => {
 
   it('filters review session start by full-length session when mode=by_full_length_session', async () => {
     const state: DbState = {
-      answer_attempts: [],
+      practice_session_items: [],
       full_length_exam_responses: [
         {
           id: 'f1',

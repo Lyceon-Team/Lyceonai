@@ -9,25 +9,22 @@ function read(relPath: string): string {
 }
 
 describe('Mastery Event Routing Contract', () => {
-  it('maps practice submit outcomes to practice_pass/practice_fail through applyMasteryUpdate', () => {
+  it('maps practice submit outcomes through applyLearningEventToMastery with sourceFamily=practice', () => {
     const content = read('server/routes/practice-canonical.ts');
 
-    expect(content).toContain('applyMasteryUpdate({');
-    expect(content).toContain('MasteryEventType.PRACTICE_PASS');
-    expect(content).toContain('MasteryEventType.PRACTICE_FAIL');
+    expect(content).toContain('applyLearningEventToMastery({');
+    expect(content).toContain('sourceFamily: "practice"');
   });
 
-  it('maps full-test outcomes to test_pass/test_fail through applyMasteryUpdate', () => {
+  it('maps full-test outcomes through applyLearningEventToMastery with sourceFamily=test', () => {
     const content = read('apps/api/src/services/fullLengthExam.ts');
 
-    expect(content).toContain('applyMasteryUpdate({');
-    expect(content).toContain('MasteryEventType.TEST_PASS');
-    expect(content).toContain('MasteryEventType.TEST_FAIL');
+    expect(content).toContain('applyLearningEventToMastery({');
+    expect(content).toContain('sourceFamily: "test"');
   });
 
   it('keeps deprecated runtime mastery event names out of active service/routes code', () => {
     const runtimeFiles = [
-      'apps/api/src/services/mastery-constants.ts',
       'apps/api/src/services/mastery-write.ts',
       'apps/api/src/services/fullLengthExam.ts',
       'server/routes/practice-canonical.ts',

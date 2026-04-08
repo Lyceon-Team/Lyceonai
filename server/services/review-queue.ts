@@ -107,8 +107,8 @@ export async function buildReviewQueueForStudent(userId: string, options: Review
   const practicePromise = includePractice
     ? (() => {
       let query = supabaseServer
-        .from("answer_attempts")
-        .select("id, session_id, session_item_id, question_id, is_correct, outcome, created_at")
+        .from("practice_session_items")
+        .select("id, session_id, question_id, question_canonical_id, question_stem, question_section, question_difficulty, question_domain, question_skill, question_subskill, question_options, question_correct_answer, question_explanation, question_exam, question_structure_cluster_id, outcome, is_correct, answered_at, status")
         .eq("user_id", userId);
 
       if (mode === "by_practice_session" && practiceSessionId) {
@@ -116,7 +116,8 @@ export async function buildReviewQueueForStudent(userId: string, options: Review
       }
 
       return query
-        .order("created_at", { ascending: false })
+        .in("status", ["answered", "skipped"])
+        .order("answered_at", { ascending: false })
         .limit(2000);
     })()
     : Promise.resolve({ data: [], error: null });
@@ -152,11 +153,23 @@ export async function buildReviewQueueForStudent(userId: string, options: Review
   const practiceRows = (practiceAttemptsResult.data ?? []) as Array<{
     id: string;
     session_id: string | null;
-    session_item_id: string | null;
     question_id: string;
+    question_canonical_id: string | null;
+    question_stem: string | null;
+    question_section: string | null;
+    question_difficulty: string | number | null;
+    question_domain: string | null;
+    question_skill: string | null;
+    question_subskill: string | null;
+    question_options: unknown;
+    question_correct_answer: string | null;
+    question_explanation: string | null;
+    question_exam: string | null;
+    question_structure_cluster_id: string | null;
     is_correct: boolean | null;
     outcome: string | null;
-    created_at: string | null;
+    answered_at: string | null;
+    status: string | null;
   }>;
   const fullLengthRows = (fullLengthResponseResult.data ?? []) as Array<{
     id: string;
@@ -165,88 +178,6 @@ export async function buildReviewQueueForStudent(userId: string, options: Review
     is_correct: boolean | null;
     answered_at: string | null;
   }>;
-
-  const practiceSessionItemIds = Array.from(
-    new Set(practiceRows.map((row) => String(row.session_item_id ?? "")).filter(Boolean))
-  );
-  const practiceSessionIds = Array.from(
-    new Set(practiceRows.map((row) => String(row.session_id ?? "")).filter(Boolean))
-  );
-  const practiceSnapshotByItemId = new Map<string, {
-    id: string;
-    session_id: string;
-    question_id: string;
-    canonical_id: string | null;
-    stem: string | null;
-    section: string | null;
-    difficulty: string | number | null;
-    domain: string | null;
-    skill: string | null;
-    subskill: string | null;
-    options: unknown;
-    correct_answer: string | null;
-    explanation: string | null;
-    exam: string | null;
-    structure_cluster_id: string | null;
-  }>();
-  const practiceSnapshotBySessionQuestion = new Map<string, {
-    id: string;
-    session_id: string;
-    question_id: string;
-    canonical_id: string | null;
-    stem: string | null;
-    section: string | null;
-    difficulty: string | number | null;
-    domain: string | null;
-    skill: string | null;
-    subskill: string | null;
-    options: unknown;
-    correct_answer: string | null;
-    explanation: string | null;
-    exam: string | null;
-    structure_cluster_id: string | null;
-  }>();
-
-  if (practiceSessionItemIds.length > 0 || practiceSessionIds.length > 0) {
-    let practiceSnapshotQuery = supabaseServer
-      .from("practice_session_items")
-      .select("id, session_id, question_id, question_canonical_id, question_stem, question_section, question_difficulty, question_domain, question_skill, question_subskill, question_options, question_correct_answer, question_explanation, question_exam, question_structure_cluster_id")
-      .order("created_at", { ascending: false })
-      .limit(4000);
-
-    if (practiceSessionItemIds.length > 0) {
-      practiceSnapshotQuery = practiceSnapshotQuery.in("id", practiceSessionItemIds);
-    } else {
-      practiceSnapshotQuery = practiceSnapshotQuery.in("session_id", practiceSessionIds);
-    }
-
-    const { data: practiceSnapshots, error: practiceSnapshotError } = await practiceSnapshotQuery;
-    if (practiceSnapshotError) {
-      throw new Error(`review_queue_practice_snapshot_fetch_failed:${practiceSnapshotError.message}`);
-    }
-
-    for (const row of (practiceSnapshots ?? []) as any[]) {
-      const snapshot = {
-        id: String(row.id),
-        session_id: String(row.session_id),
-        question_id: String(row.question_id),
-        canonical_id: resolveCanonicalQuestionId(row.question_canonical_id),
-        stem: typeof row.question_stem === "string" ? row.question_stem : null,
-        section: typeof row.question_section === "string" ? row.question_section : null,
-        difficulty: row.question_difficulty ?? null,
-        domain: typeof row.question_domain === "string" ? row.question_domain : null,
-        skill: typeof row.question_skill === "string" ? row.question_skill : null,
-        subskill: typeof row.question_subskill === "string" ? row.question_subskill : null,
-        options: row.question_options ?? null,
-        correct_answer: typeof row.question_correct_answer === "string" ? row.question_correct_answer : null,
-        explanation: typeof row.question_explanation === "string" ? row.question_explanation : null,
-        exam: typeof row.question_exam === "string" ? row.question_exam : null,
-        structure_cluster_id: typeof row.question_structure_cluster_id === "string" ? row.question_structure_cluster_id : null,
-      };
-      practiceSnapshotByItemId.set(snapshot.id, snapshot);
-      practiceSnapshotBySessionQuestion.set(`${snapshot.session_id}::${snapshot.question_id}`, snapshot);
-    }
-  }
 
   const fullLengthModuleIds = Array.from(new Set(fullLengthRows.map((row) => String(row.module_id ?? "")).filter(Boolean)));
   const fullLengthQuestionMap = new Map<string, {
@@ -302,33 +233,28 @@ export async function buildReviewQueueForStudent(userId: string, options: Review
   const combinedSnapshots: ReviewQueueSnapshot[] = [];
 
   for (const row of practiceRows) {
-    const byItemId = row.session_item_id ? practiceSnapshotByItemId.get(String(row.session_item_id)) : null;
-    const bySessionQuestion = row.session_id
-      ? practiceSnapshotBySessionQuestion.get(`${row.session_id}::${String(row.question_id ?? "")}`)
-      : null;
-    const question = byItemId ?? bySessionQuestion ?? null;
     const outcome = normalizeOutcome(row as any);
     const questionId = String((row as any).question_id ?? "");
 
     combinedSnapshots.push({
       attemptId: String((row as any).id),
       questionId,
-      questionCanonicalId: question?.canonical_id ?? null,
-      attemptedAt: (row as any).created_at ?? (row as any).attempted_at ?? null,
+      questionCanonicalId: resolveCanonicalQuestionId((row as any).question_canonical_id),
+      attemptedAt: (row as any).answered_at ?? null,
       isCorrect: outcome === "correct",
       outcome,
       source: "practice",
-      questionText: (question?.stem ?? "Question text unavailable").slice(0, 200),
-      section: question?.section ?? "Unknown",
-      difficulty: question?.difficulty == null ? null : String(question.difficulty),
-      domain: question?.domain ?? null,
-      skill: question?.skill ?? null,
-      subskill: question?.subskill ?? null,
-      questionOptions: question?.options ?? null,
-      questionCorrectAnswer: question?.correct_answer ?? null,
-      questionExplanation: question?.explanation ?? null,
-      questionExam: question?.exam ?? null,
-      questionStructureClusterId: question?.structure_cluster_id ?? null,
+      questionText: (row.question_stem ?? "Question text unavailable").slice(0, 200),
+      section: row.question_section ?? "Unknown",
+      difficulty: row.question_difficulty == null ? null : String(row.question_difficulty),
+      domain: row.question_domain ?? null,
+      skill: row.question_skill ?? null,
+      subskill: row.question_subskill ?? null,
+      questionOptions: row.question_options ?? null,
+      questionCorrectAnswer: row.question_correct_answer ?? null,
+      questionExplanation: row.question_explanation ?? null,
+      questionExam: row.question_exam ?? null,
+      questionStructureClusterId: row.question_structure_cluster_id ?? null,
     });
   }
 

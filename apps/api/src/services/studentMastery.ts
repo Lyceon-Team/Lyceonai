@@ -1,14 +1,24 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import type { AttemptInput, AttemptResult, QuestionMetadataSnapshot } from "./mastery-write";
+import type { LearningEventInput } from "./mastery-write";
 import type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary } from "./mastery-read";
 import { buildMasterySummaryFromRows, fetchSkillMasteryRows, fetchWeakestClusters, fetchWeakestSkills } from "./mastery-read";
 
-export type { QuestionMetadataSnapshot, AttemptInput, AttemptResult };
+export interface QuestionMetadataSnapshot {
+  exam: string | null;
+  section: string | null;
+  domain: string | null;
+  skill: string | null;
+  subskill: string | null;
+  skill_code: string | null;
+  difficulty: 1 | 2 | 3 | null;
+  structure_cluster_id: string | null;
+}
+
+export type { LearningEventInput };
 export type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary };
 
 export {
-  applyMasteryUpdate,
-  logAttemptAndUpdateMastery,
+  applyLearningEventToMastery,
 } from "./mastery-write";
 
 // Compatibility wrappers: canonical mastery reads live in mastery-read.

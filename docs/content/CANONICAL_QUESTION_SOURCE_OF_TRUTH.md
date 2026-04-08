@@ -14,7 +14,9 @@
 - `public.question_versions`
   - Canonical publish/version ledger for immutable published-question history.
 - `public.answer_attempts`
-  - Practice attempt truth (submit/reveal gating).
+  - Legacy practice attempt table (compatibility only).
+- `public.practice_session_items`
+  - Canonical practice question-state + submit/reveal truth.
 - `public.review_error_attempts`
   - Review workflow attempts.
 - `public.full_length_exam_*`
