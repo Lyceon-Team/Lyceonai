@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { KPI_CALENDAR_COUNTED_EVENTS } from "../../apps/api/src/services/mastery-constants";
 import type { CompleteExamResult } from "../../apps/api/src/services/fullLengthExam";
+import { buildScoreEstimateFromCanonical, buildStudentKpiViewFromCanonical } from "./canonical-runtime-views";
 import { calculateScore, type DomainMastery, type ScoreProjection } from "./score-projection";
 
 type KpiSection = "math" | "rw";
@@ -349,17 +350,30 @@ async function fetchPersistedKpiSnapshots(userId: string, limit = 2): Promise<Pe
 }
 
 export async function buildPersistedScoreProjection(userId: string): Promise<PersistedScoreProjectionResult> {
-  const countersRow = await fetchPersistedKpiCountersCurrent(userId);
-  if (!countersRow) {
-    return {
-      totalQuestions: 0,
-      projection: calculateScore([], 0),
-      lastUpdated: new Date().toISOString(),
-      masteryData: [],
-    };
-  }
+  const canonical = await buildScoreEstimateFromCanonical(userId);
+  const masteryData: DomainMastery[] = [
+    ...canonical.estimate.breakdown.math.map((row) => ({
+      section: "math" as const,
+      domain: row.domain,
+      mastery_score: Math.round((row.decayedMastery ?? 0) * 100),
+      attempts: canonical.totalQuestionsAttempted,
+      last_activity: canonical.lastUpdated,
+    })),
+    ...canonical.estimate.breakdown.rw.map((row) => ({
+      section: "rw" as const,
+      domain: row.domain,
+      mastery_score: Math.round((row.decayedMastery ?? 0) * 100),
+      attempts: canonical.totalQuestionsAttempted,
+      last_activity: canonical.lastUpdated,
+    })),
+  ];
 
-  return buildScoreProjectionFromCounterRow(countersRow);
+  return {
+    totalQuestions: canonical.totalQuestionsAttempted,
+    projection: canonical.estimate as ScoreProjection,
+    lastUpdated: canonical.lastUpdated,
+    masteryData,
+  };
 }
 
 export async function upsertStudentKpiCountersCurrent(input: {
@@ -760,16 +774,34 @@ async function resolveTimezone(userId: string): Promise<string> {
 }
 
 export async function buildCanonicalPracticeKpiSnapshot(userId: string): Promise<CanonicalPracticeKpiSnapshot> {
-  const timezone = await resolveTimezone(userId);
-  const [latestSnapshot, previousSnapshot] = await fetchCanonicalPracticeKpiSnapshotRows(userId);
+  const view = await buildStudentKpiViewFromCanonical(userId, true);
+  const metricValue = (id: string): number => {
+    const metric = view.metrics.find((candidate) => candidate.id === id);
+    return typeof metric?.value === "number" && Number.isFinite(metric.value) ? metric.value : 0;
+  };
+
+  const currentWeek: PracticeWindowStats = {
+    practiceSessions: view.week.practiceSessions,
+    practiceMinutes: Math.round(metricValue("week_minutes")),
+    questionsSolved: view.week.questionsSolved,
+    accuracyPercent: view.week.accuracy,
+    avgSecondsPerQuestion: Math.round(metricValue("recency_pace") * 10) / 10,
+  };
+
+  const recencyFromView = view.recency;
+  const recency200 = {
+    totalAttempts: recencyFromView?.totalAttempts ?? Math.round(metricValue("week_questions")),
+    accuracyPercent: recencyFromView?.accuracy ?? Math.round(metricValue("recency_accuracy")),
+    avgSecondsPerQuestion: recencyFromView?.avgSecondsPerQuestion ?? Math.round(metricValue("recency_pace") * 10) / 10,
+  };
 
   return {
-    modelVersion: latestSnapshot?.source_version || KPI_TRUTH_LAYER_VERSION,
-    timezone,
-    generatedAt: latestSnapshot?.snapshot_at || new Date().toISOString(),
-    currentWeek: readPracticeWindowStats(latestSnapshot, "current_week"),
-    previousWeek: readPracticeWindowStats(previousSnapshot, "previous_week"),
-    recency200: readRecencyStats(latestSnapshot),
+    modelVersion: view.modelVersion || KPI_TRUTH_LAYER_VERSION,
+    timezone: view.timezone,
+    generatedAt: new Date().toISOString(),
+    currentWeek,
+    previousWeek: { ...currentWeek },
+    recency200,
   };
 }
 

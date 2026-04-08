@@ -725,6 +725,79 @@ describe('Review session lifecycle contract', () => {
     expect(applyLearningEventToMasteryMock).not.toHaveBeenCalled();
   });
 
+  it('does not derive mastery difficulty from raw difficulty when bucket is missing', async () => {
+    const state: DbState = {
+      practice_session_items: [],
+      full_length_exam_responses: [],
+      review_error_attempts: [],
+      review_sessions: [
+        { id: '11111111-1111-4111-8111-111111111111', student_id: 'student-1', status: 'active', started_at: '2026-03-14T09:00:00.000Z', completed_at: null, abandoned_at: null, client_instance_id: 'client-a', created_at: '2026-03-14T09:00:00.000Z', updated_at: '2026-03-14T09:00:00.000Z' },
+      ],
+      review_session_items: [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          review_session_id: '11111111-1111-4111-8111-111111111111',
+          student_id: 'student-1',
+          ordinal: 1,
+          question_canonical_id: 'SATM1ABC123',
+          source_question_id: 'q-source-1',
+          source_question_canonical_id: 'SATM1ABC123',
+          source_origin: 'practice',
+          retry_mode: 'same_question',
+          status: 'served',
+          attempt_id: null,
+          tutor_opened_at: null,
+          source_attempted_at: '2026-03-14T08:00:00.000Z',
+          option_order: ['A','B','C','D'],
+          option_token_map: { opt_a: 'A', opt_b: 'B', opt_c: 'C', opt_d: 'D' },
+          question_section: 'Math',
+          question_stem: 'Q',
+          question_options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
+          question_difficulty: 'easy',
+          question_correct_answer: 'A',
+          question_explanation: 'exp',
+        },
+      ],
+      review_session_events: [],
+      questions: [
+        {
+          canonical_id: 'SATM1ABC123',
+          status: 'published',
+          question_type: 'multiple_choice',
+          section: 'Math',
+          stem: 'Q',
+          options: [{ key: 'A', text: '1' }, { key: 'B', text: '2' }, { key: 'C', text: '3' }, { key: 'D', text: '4' }],
+          difficulty: 'easy',
+          correct_answer: 'A',
+          explanation: 'exp',
+        },
+      ],
+      tutor_interactions: [],
+    };
+
+    setupSupabase(state);
+
+    const req: any = {
+      user: { id: 'student-1' },
+      body: {
+        session_id: '11111111-1111-4111-8111-111111111111',
+        review_session_item_id: '22222222-2222-4222-8222-222222222222',
+        selected_option_id: 'opt_a',
+        source_context: 'review_errors',
+        client_attempt_id: 'attempt-missing-bucket',
+        client_instance_id: 'client-a',
+      },
+    };
+
+    const res = makeRes();
+    await submitReviewSessionAnswer(req, res.res);
+
+    expect(res.getStatus()).toBe(200);
+    expect(res.getBody().masteryApplied).toBe(false);
+    expect(res.getBody().masteryErrors).toContain('Invalid difficulty bucket for mastery emission');
+    expect(applyLearningEventToMasteryMock).not.toHaveBeenCalled();
+  });
+
   it('fails closed when resolved item points to another student attempt_id', async () => {
     const state: DbState = {
       practice_session_items: [],

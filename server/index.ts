@@ -65,7 +65,6 @@ import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topic
 import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
-import { checkAiChatLimit } from "./middleware/usage-limits";
 import { logger } from "./logger";
 
 
@@ -273,7 +272,6 @@ app.use(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  checkAiChatLimit({ incrementStrategy: "on_success" }),
   tutorV2Router
 );
 

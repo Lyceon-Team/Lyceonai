@@ -12,6 +12,7 @@
 
 import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { checkAndReserveFullLengthQuota } from "../lib/rate-limit-ledger";
 import { applyLearningEventToMastery } from "./mastery-write";
 import { applyFullLengthExamPlannerReprioritization, type ExamSkillDiagnostic } from "./calendar-planner-reprioritization";
 import {
@@ -230,6 +231,7 @@ export interface CreateSessionParams {
   userId: string;
   testFormId?: string;
   clientInstanceId?: string;
+  role?: string;
 }
 
 export interface GetCurrentSessionResult {
@@ -1662,23 +1664,22 @@ async function computeDiagnosticRows(
 }
 async function getModuleQuestionTotal(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  moduleId: string,
-  fallbackTotal: number
+  moduleId: string
 ): Promise<number> {
-  try {
-    const { data, error } = await supabase
-      .from("full_length_exam_questions")
-      .select("id")
-      .eq("module_id", moduleId);
+  const { data, error } = await supabase
+    .from("full_length_exam_questions")
+    .select("id")
+    .eq("module_id", moduleId);
 
-    if (!error && data) {
-      return data.length;
-    }
-  } catch {
-    // Fall back to answered count when question map is unavailable.
+  if (error) {
+    throw new Error(`Failed to load materialized module questions for scoring: ${error.message}`);
   }
 
-  return fallbackTotal;
+  if (!data || data.length === 0) {
+    throw new Error("Materialized module questions missing for scoring");
+  }
+
+  return data.length;
 }
 
 /**
@@ -1716,8 +1717,7 @@ async function computeExamScores(
     }
 
     const correct = responses?.filter((r) => r.is_correct).length || 0;
-    const fallbackTotal = responses?.length || 0;
-    const total = await getModuleQuestionTotal(supabase, module.id, fallbackTotal);
+    const total = await getModuleQuestionTotal(supabase, module.id);
 
     const key = `${module.section}_${module.module_index}`;
     moduleScores[key] = { correct, total };
@@ -1997,6 +1997,26 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
 
   if (!session) {
     throw new Error("Failed to create exam session: No session returned");
+  }
+
+  const fullLengthGate = await checkAndReserveFullLengthQuota({
+    studentUserId: params.userId,
+    referenceId: `full_length_session:${session.id}`,
+    role: params.role ?? null,
+    supabase: supabase as any,
+  });
+
+  if (!fullLengthGate.allowed) {
+    await supabase
+      .from("full_length_exam_sessions")
+      .delete()
+      .eq("id", session.id)
+      .eq("user_id", params.userId);
+
+    const quotaErr = new Error(fullLengthGate.message || "Full-length start limit reached");
+    (quotaErr as any).code = fullLengthGate.code || "FULL_LENGTH_QUOTA_EXCEEDED";
+    (quotaErr as any).rateLimit = fullLengthGate;
+    throw quotaErr;
   }
 
   const modules = [
@@ -2655,8 +2675,6 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       .eq("module_id", moduleId);
 
     const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-    const answeredCount = responses?.length || 0;
-    const totalCount = await getModuleQuestionTotal(supabase, moduleId, answeredCount);
 
     const currentSection = session.current_section as SectionType;
     const currentModuleIndex = session.current_module as ModuleIndex;
@@ -2682,6 +2700,8 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     } else {
       nextModule = null;
     }
+
+    const totalCount = await getModuleQuestionTotal(supabase, moduleId);
 
     return {
       moduleId,
@@ -2750,8 +2770,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   }
 
   const correctCount = responses?.filter((r) => r.is_correct).length || 0;
-  const answeredCount = responses?.length || 0;
-  const totalCount = await getModuleQuestionTotal(supabase, currentModule.id, answeredCount);
+  const totalCount = await getModuleQuestionTotal(supabase, currentModule.id);
 
   await applyFullLengthMasterySignals(
     supabase,
@@ -3430,6 +3449,12 @@ export async function getExamReview(
     throw new Error(`Failed to fetch module questions: ${mqError.message}`);
   }
 
+  if (moduleIds.length > 0 && (!moduleQuestions || moduleQuestions.length === 0)) {
+    throw new Error(
+      "Materialized full-length review snapshots are missing. Runtime fallback to legacy exam tables is disabled by contract."
+    );
+  }
+
   // Determine if session is completed (needed for query projection below)
   const isCompleted = session.status === "completed";
 
@@ -3485,6 +3510,16 @@ export async function getExamReview(
 
   if (responsesError) {
     throw new Error(`Failed to fetch responses: ${responsesError.message}`);
+  }
+
+  if (isCompleted && responses && responses.length > 0) {
+    const questionIds = new Set(questions.map((question) => String((question as any).id ?? "")));
+    const missingQuestionId = responses.find((response) => !questionIds.has(String(response.question_id ?? "")));
+    if (missingQuestionId) {
+      throw new Error(
+        "Materialized full-length review snapshots are incomplete for completed responses. Runtime fallback to legacy exam tables is disabled by contract."
+      );
+    }
   }
 
   // Project questions based on completion status using allowlist
