@@ -65,7 +65,7 @@ No LLM-generated KPI explanations are used in runtime responses.
 
 ## Deprecated or Conflicting Legacy Paths
 - Deprecated active KPI computation duplication removed:
-  - Guardian summary no longer computes its own ad hoc KPI math from `answer_attempts` + `question_ids`.
+  - Guardian summary no longer computes its own ad hoc KPI math from `practice_session_items` + `question_ids`.
   - Student and guardian summaries now derive from `buildCanonicalPracticeKpiSnapshot`.
 - Guardian calendar no longer computes guardian-local attempt aggregates; runtime projects the canonical student month payload (`buildCalendarMonthView`) with guardian visibility filtering only.
 - Legacy/misaligned field usage retired from active KPI path:

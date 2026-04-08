@@ -4,9 +4,10 @@ This file captures canonicalization decisions that are enforced by current runti
 
 ## Canonical (active runtime read/write)
 
-- `student_question_attempts`
+- `student_kpi_rollups_current`
 - `student_skill_mastery`
-- `student_cluster_mastery`
+- `student_domain_mastery`
+- `student_section_projections`
 - `student_study_profile`
 - `student_study_plan_days`
 - `student_study_plan_tasks`
@@ -31,10 +32,11 @@ This file captures canonicalization decisions that are enforced by current runti
 | `account_members` vs `lyceon_account_members` | `lyceon_account_members` | none evidenced in active repo scan | yes | canonical |
 | older `exam_*` vs `full_length_exam_*` | `full_length_exam_*` | `exam_attempts` / `exam_sections` in legacy schema + RLS only | yes | compat-only |
 | `chat_messages` vs `tutor_interactions` | `tutor_interactions` | `chat_messages` in legacy schema + RLS only | yes | compat-only |
-| legacy `attempts` vs canonical attempts | `answer_attempts` + `student_question_attempts` | `attempts` is legacy-only and not mounted | yes | canonical |
+| legacy `attempts` vs canonical attempts | `practice_session_items` | `answer_attempts` (compat-only) + `attempts` (legacy-only) | yes | canonical |
 | `progress` vs mastery/KPI truth paths | `server/routes/legacy/progress.ts` (route) + KPI truth tables | historical `progress` table assumptions only | yes | canonical |
 
 ### Attempts family note
 
 - Forbidden legacy table: `attempts` (legacy-only, no runtime ownership).
-- Allowed canonical tables: `answer_attempts`, `student_question_attempts`.
+- Canonical practice truth table: `practice_session_items`.
+- Compatibility-only: `answer_attempts`.

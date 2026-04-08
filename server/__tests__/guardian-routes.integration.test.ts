@@ -33,11 +33,10 @@ vi.mock('../../apps/api/src/services/fullLengthExam', () => ({
     getExamReport: (...args: any[]) => mockGetExamReport(...args),
 }));
 
-vi.mock('../services/kpi-truth-layer', () => ({
+vi.mock('../services/canonical-runtime-views', () => ({
     buildStudentFullLengthReportView: vi.fn(),
     projectGuardianFullLengthReportView: vi.fn(),
-    buildCanonicalPracticeKpiSnapshot: vi.fn(),
-    buildStudentKpiView: vi.fn(),
+    buildStudentKpiViewFromCanonical: vi.fn(),
 }));
 
 describe('Guardian routes integration - access enforcement', () => {

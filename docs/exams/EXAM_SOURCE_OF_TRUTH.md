@@ -67,7 +67,8 @@ Enforcement stack:
 - Guardian response sanitizes report to summary-only scoring fields (no question-level dumps)
 
 ## Downstream Mastery and Planning Integration
-- Full-length module submission emits canonical mastery events through `applyMasteryUpdate()` with `MasteryEventType.TEST_PASS or MasteryEventType.TEST_FAIL`.
+- Full-length module submission emits canonical mastery events through `apply_learning_event_to_mastery(...)` with `MasteryEventType.TEST_PASS` or `MasteryEventType.TEST_FAIL`.
+- Emission requires a strict difficulty bucket (1|2|3); invalid/missing buckets fail closed and log.
 - Replay/idempotent module submissions (`status === submitted`) do not emit duplicate mastery writes.
 - Planning/calendar surfaces consume canonical mastery/study tables downstream:
   - `apps/api/src/routes/calendar.ts`

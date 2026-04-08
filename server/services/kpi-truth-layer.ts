@@ -582,7 +582,6 @@ export interface StudentKpiView {
 interface AttemptRow {
   is_correct: boolean | null;
   time_spent_ms: number | null;
-  event_type: string | null;
 }
 
 interface SessionRow {
@@ -711,15 +710,15 @@ function buildExplanation(input: {
 async function fetchAttemptRows(userId: string, startUtc: string, endUtc: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("is_correct, time_spent_ms, event_type")
+    .select("is_correct, time_spent_ms")
     .eq("user_id", userId)
-    .gte("attempted_at", startUtc)
-    .lte("attempted_at", endUtc);
+    .gte("occurred_at", startUtc)
+    .lte("occurred_at", endUtc);
 
   if (error) {
     throw new Error(`Failed to fetch attempts: ${error.message}`);
   }
-  return ((data || []) as AttemptRow[]).filter((row) => isCanonicalKpiAttemptEventType(row.event_type));
+  return (data || []) as AttemptRow[];
 }
 
 async function fetchSessionRows(userId: string, startUtc: string, endUtc: string): Promise<SessionRow[]> {
@@ -739,15 +738,15 @@ async function fetchSessionRows(userId: string, startUtc: string, endUtc: string
 async function fetchRecencyRows(userId: string): Promise<AttemptRow[]> {
   const { data, error } = await supabaseServer
     .from("student_question_attempts")
-    .select("is_correct, time_spent_ms, event_type")
+    .select("is_correct, time_spent_ms")
     .eq("user_id", userId)
-    .order("attempted_at", { ascending: false })
+    .order("occurred_at", { ascending: false })
     .limit(200);
 
   if (error) {
     throw new Error(`Failed to fetch recency attempts: ${error.message}`);
   }
-  return ((data || []) as AttemptRow[]).filter((row) => isCanonicalKpiAttemptEventType(row.event_type));
+  return (data || []) as AttemptRow[];
 }
 
 async function resolveTimezone(userId: string): Promise<string> {

@@ -14,7 +14,6 @@ type TableRow = Record<string, any>;
 type DbState = {
   practice_sessions: TableRow[];
   practice_session_items: TableRow[];
-  answer_attempts: TableRow[];
   questions: TableRow[];
   practice_events: TableRow[];
   student_skill_mastery: TableRow[];
@@ -22,6 +21,8 @@ type DbState = {
 
 let db: DbState;
 let activeUserId = "00000000-0000-0000-0000-000000000000";
+let sessionCounter = 0;
+let sessionItemCounter = 0;
 
 const accountMocks = vi.hoisted(() => ({
   checkUsageLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10, resetAt: "2099-01-01T00:00:00.000Z" })),
@@ -43,7 +44,7 @@ const masteryMocks = vi.hoisted(() => ({
     difficulty: "medium",
     structure_cluster_id: null,
   })),
-  applyMasteryUpdate: vi.fn(async () => undefined),
+  applyLearningEventToMastery: vi.fn(async () => ({ ok: true })),
 }));
 
 function cloneRow<T extends TableRow>(row: T): T {
@@ -135,23 +136,6 @@ class MockBuilder {
         }
       }
 
-      if (this.table === "answer_attempts") {
-        const duplicateClient = rowWithDefaults.client_attempt_id
-          ? this.state.answer_attempts.some((a) => a.user_id === rowWithDefaults.user_id && a.client_attempt_id === rowWithDefaults.client_attempt_id)
-          : false;
-        const duplicateSessionQuestion = this.state.answer_attempts.some(
-          (a) => a.session_id === rowWithDefaults.session_id && a.question_id === rowWithDefaults.question_id,
-        );
-        const duplicateSessionItem = rowWithDefaults.session_item_id
-          ? this.state.answer_attempts.some((a) => a.session_item_id === rowWithDefaults.session_item_id)
-          : false;
-
-        if (duplicateClient || duplicateSessionQuestion || duplicateSessionItem) {
-          this.insertError = { message: "duplicate key value violates unique constraint" };
-          break;
-        }
-      }
-
       this.inserted.push(cloneRow(rowWithDefaults));
     }
 
@@ -201,6 +185,16 @@ class MockBuilder {
     if (this.operation === "update") {
       const tableRows = this.state[this.table] as TableRow[];
       const matched = applyFilters(tableRows, this.filters);
+      if (this.table === "practice_session_items" && this.patch.client_attempt_id) {
+        const duplicate = tableRows.find((row) => {
+          if (!row.client_attempt_id) return false;
+          if (row.client_attempt_id !== this.patch.client_attempt_id) return false;
+          return !matched.includes(row);
+        });
+        if (duplicate) {
+          return { data: null, error: { message: "duplicate key value violates unique constraint" }, count: 0 };
+        }
+      }
       for (const row of matched) {
         Object.assign(row, this.patch);
       }
@@ -222,9 +216,135 @@ class MockBuilder {
   }
 }
 
+function coerceDifficultyLabel(raw: any): string | null {
+  if (raw === 1 || raw === "1" || String(raw).toLowerCase() === "easy") return "easy";
+  if (raw === 2 || raw === "2" || String(raw).toLowerCase() === "medium") return "medium";
+  if (raw === 3 || raw === "3" || String(raw).toLowerCase() === "hard") return "hard";
+  return null;
+}
+
+function toDeterministicUuid(value: number): string {
+  return `00000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
+}
+
+function buildPracticeSessionItems(args: any) {
+  const targetCount = Math.max(1, Math.min(Number(args.p_target_count ?? 10), 200));
+  const sections = Array.isArray(args.p_sections) ? args.p_sections : [];
+  const domains = Array.isArray(args.p_domains) ? args.p_domains : [];
+  const difficulties = Array.isArray(args.p_difficulties) ? args.p_difficulties : [];
+
+  const allowedSectionCodes: string[] = [];
+  if (sections.includes("Math")) {
+    allowedSectionCodes.push("M", "MATH");
+  }
+  if (sections.includes("RW")) {
+    allowedSectionCodes.push("RW");
+  }
+
+  const pool = db.questions
+    .filter((q) => q.question_type === "multiple_choice")
+    .filter((q) => !allowedSectionCodes.length || allowedSectionCodes.includes(String(q.section_code)))
+    .filter((q) => !domains.length || domains.map((d) => String(d).toLowerCase()).includes(String(q.domain ?? "").toLowerCase()))
+    .filter((q) => {
+      if (!difficulties.length) return true;
+      const label = coerceDifficultyLabel(q.difficulty);
+      return label ? difficulties.map((d) => String(d).toLowerCase()).includes(label) : false;
+    })
+    .sort((a, b) => {
+      const canonA = String(a.canonical_id ?? "");
+      const canonB = String(b.canonical_id ?? "");
+      if (canonA !== canonB) return canonA.localeCompare(canonB);
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+  if (pool.length === 0) {
+    return { error: { message: "PRACTICE_EXACT_POOL_EMPTY" } };
+  }
+
+  const selectionMode = pool.length < targetCount ? "exact_reuse" : "exact";
+  const selected = [];
+  for (let i = 0; i < targetCount; i += 1) {
+    selected.push(pool[i % pool.length]);
+  }
+
+  const sessionId = toDeterministicUuid(++sessionCounter);
+  const sessionRow = {
+    id: sessionId,
+    user_id: args.p_user_id,
+    section: args.p_section,
+    mode: args.p_mode,
+    status: args.p_status ?? "in_progress",
+    completed: false,
+    started_at: args.p_started_at ?? new Date().toISOString(),
+    metadata: args.p_metadata ?? {},
+    updated_at: new Date().toISOString(),
+  };
+  db.practice_sessions.push(sessionRow);
+
+  const now = new Date().toISOString();
+  selected.forEach((question, idx) => {
+    db.practice_session_items.push({
+      id: toDeterministicUuid(++sessionItemCounter + (sessionCounter * 1000)),
+      session_id: sessionId,
+      user_id: args.p_user_id,
+      question_id: question.id,
+      question_canonical_id: question.canonical_id,
+      question_section: question.section ?? question.section_code,
+      question_stem: question.stem,
+      question_options: question.options,
+      question_difficulty: question.difficulty,
+      question_domain: question.domain ?? null,
+      question_skill: question.skill ?? null,
+      question_subskill: question.subskill ?? null,
+      question_exam: question.exam ?? null,
+      question_structure_cluster_id: question.structure_cluster_id ?? null,
+      question_correct_answer: question.correct_answer ?? null,
+      question_explanation: question.explanation ?? null,
+      ordinal: idx + 1,
+      status: idx === 0 ? "served" : "queued",
+      attempt_id: null,
+      client_instance_id: idx === 0 ? args.p_client_instance_id : null,
+      option_order: null,
+      option_token_map: null,
+      answered_at: null,
+      created_at: now,
+      updated_at: now,
+      selected_answer: null,
+      is_correct: null,
+      outcome: null,
+      time_spent_ms: null,
+      client_attempt_id: null,
+    });
+  });
+
+  return {
+    data: [{
+      session_id: sessionId,
+      requested_count: targetCount,
+      source_pool_count: pool.length,
+      selection_mode: selectionMode,
+      inserted_count: selected.length,
+    }],
+    error: null,
+  };
+}
+
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: vi.fn((table: keyof DbState) => new MockBuilder(table, db)),
+    rpc: vi.fn((fn: string, args: any) => {
+      if (fn === "start_practice_session_with_items") {
+        const result = buildPracticeSessionItems(args);
+        if (result.error) {
+          return { data: null, error: result.error };
+        }
+        return { data: result.data, error: null };
+      }
+      if (fn === "apply_learning_event_to_mastery") {
+        return { data: { ok: true }, error: null };
+      }
+      return { data: null, error: null };
+    }),
   },
 }));
 
@@ -371,10 +491,11 @@ describe("Practice Runtime Contract", () => {
   beforeEach(() => {
     activeRole = "student";
     activeUserId = "00000000-0000-0000-0000-000000000000";
+    sessionCounter = 0;
+    sessionItemCounter = 0;
     db = {
       practice_sessions: [],
       practice_session_items: [],
-      answer_attempts: [],
       questions: [cloneRow(questionA), cloneRow(questionB)],
       practice_events: [],
       student_skill_mastery: [],
@@ -387,7 +508,7 @@ describe("Practice Runtime Contract", () => {
       resetAt: "2099-01-01T00:00:00.000Z",
     });
 
-    masteryMocks.applyMasteryUpdate.mockClear();
+    masteryMocks.applyLearningEventToMastery.mockClear();
   });
 
   afterAll(() => {
@@ -623,7 +744,7 @@ describe("Practice Runtime Contract", () => {
     expect(db.practice_session_items).toHaveLength(prebuiltCount);
     expect(db.practice_session_items.filter((row) => row.status === "served")).toHaveLength(1);
     expect(db.practice_session_items.filter((row) => row.status === "queued")).toHaveLength(1);
-    expect(db.practice_session_items.filter((row) => row.status === "answered" && row.attempt_id == null)).toHaveLength(0);
+    expect(db.practice_session_items.filter((row) => row.status === "answered" && row.attempt_id == null)).toHaveLength(1);
   });
 
   it("skip persists attempt truth and marks served item as skipped", async () => {
@@ -655,12 +776,10 @@ describe("Practice Runtime Contract", () => {
     const item = db.practice_session_items.find((row) => row.id === sessionItemId);
     if (!item) throw new Error("missing skipped session item fixture");
     expect(item.status).toBe("skipped");
-    expect(item.attempt_id).toBeTruthy();
-
-    const attempt = db.answer_attempts.find((row) => row.session_item_id === sessionItemId);
-    if (!attempt) throw new Error("missing skip attempt fixture");
-    expect(attempt.outcome).toBe("skipped");
-    expect(masteryMocks.applyMasteryUpdate).not.toHaveBeenCalled();
+    expect(item.outcome).toBe("skipped");
+    expect(item.is_correct).toBe(false);
+    expect(item.client_attempt_id).toBe("skip-attempt-1");
+    expect(masteryMocks.applyLearningEventToMastery).not.toHaveBeenCalled();
   });
 
   it("skip advances deterministically to next queued item without regenerating items", async () => {
@@ -713,7 +832,7 @@ describe("Practice Runtime Contract", () => {
     const queuedItem = db.practice_session_items.find((row) => row.session_id === sessionId && row.status === "queued");
     if (!queuedItem) throw new Error("missing queued session item fixture");
 
-    const beforeAttempts = db.answer_attempts.length;
+    const beforeResolved = db.practice_session_items.filter((row) => row.status === "answered" || row.status === "skipped").length;
     const directAnswer = await request(app)
       .post("/api/practice/answer")
       .set("Origin", "http://localhost:5000")
@@ -725,7 +844,7 @@ describe("Practice Runtime Contract", () => {
       });
 
     expect(directAnswer.status).toBe(409);
-    expect(db.answer_attempts).toHaveLength(beforeAttempts);
+    expect(db.practice_session_items.filter((row) => row.status === "answered" || row.status === "skipped")).toHaveLength(beforeResolved);
   });
 
   it("state counts keep skipped separate from answered and track completed progress", async () => {
@@ -809,10 +928,11 @@ describe("Practice Runtime Contract", () => {
         client_instance_id: "tab-1",
       });
     expect(skip.status).toBe(200);
-    expect(db.answer_attempts).toHaveLength(1);
+    const skippedItem = db.practice_session_items.find((row) => row.id === first.body.sessionItemId);
+    expect(skippedItem?.status).toBe("skipped");
 
-    const beforeAttempts = db.answer_attempts.length;
-    const beforeMasteryWrites = masteryMocks.applyMasteryUpdate.mock.calls.length;
+    const beforeResolved = db.practice_session_items.filter((row) => row.status === "answered" || row.status === "skipped").length;
+    const beforeMasteryWrites = masteryMocks.applyLearningEventToMastery.mock.calls.length;
     const answerLater = await request(app)
       .post("/api/practice/answer")
       .set("Origin", "http://localhost:5000")
@@ -825,8 +945,8 @@ describe("Practice Runtime Contract", () => {
 
     expect(answerLater.status).toBe(409);
     expect(answerLater.body.error).toBe("session_item_not_open");
-    expect(db.answer_attempts).toHaveLength(beforeAttempts);
-    expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(beforeMasteryWrites);
+    expect(db.practice_session_items.filter((row) => row.status === "answered" || row.status === "skipped")).toHaveLength(beforeResolved);
+    expect(masteryMocks.applyLearningEventToMastery).toHaveBeenCalledTimes(beforeMasteryWrites);
   });
 
   it("terminated session blocks skip", async () => {
@@ -1021,11 +1141,38 @@ describe("Practice Runtime Contract", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.idempotentRetried).toBe(true);
-    expect(db.answer_attempts).toHaveLength(1);
-    expect(masteryMocks.applyMasteryUpdate).toHaveBeenCalledTimes(1);
+    expect(db.practice_session_items.filter((row) => row.status === "answered")).toHaveLength(1);
+    expect(masteryMocks.applyLearningEventToMastery).toHaveBeenCalledTimes(1);
   });
 
-  it("fails closed when a foreign user's attempt exists for the same session_item_id", async () => {
+  it("skips mastery emission when difficulty bucket cannot be resolved", async () => {
+    const start = await request(app)
+      .post("/api/practice/sessions")
+      .set("Origin", "http://localhost:5000")
+      .send({ section: "math", mode: "balanced", client_instance_id: "tab-1" });
+
+    const sessionId = start.body.sessionId;
+    const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
+
+    const targetItem = db.practice_session_items.find((row) => row.id === next.body.sessionItemId);
+    if (!targetItem) throw new Error("missing session item fixture");
+    targetItem.question_difficulty = "unknown";
+
+    const submit = await request(app)
+      .post("/api/practice/answer")
+      .set("Origin", "http://localhost:5000")
+      .send({
+        sessionId,
+        sessionItemId: next.body.sessionItemId,
+        selectedOptionId: next.body.question.options[0].id,
+        clientAttemptId: "attempt-invalid-difficulty",
+      });
+
+    expect(submit.status).toBe(200);
+    expect(masteryMocks.applyLearningEventToMastery).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a clientAttemptId is already bound to another session item", async () => {
     const start = await request(app)
       .post("/api/practice/sessions")
       .set("Origin", "http://localhost:5000")
@@ -1034,18 +1181,12 @@ describe("Practice Runtime Contract", () => {
     const sessionId = start.body.sessionId;
     const next = await request(app).get(`/api/practice/sessions/${sessionId}/next?client_instance_id=tab-1`);
     const sessionItemId = next.body.sessionItemId;
-
-    db.answer_attempts.push({
-      id: "00000000-0000-0000-0000-00000000fa11",
-      user_id: "00000000-0000-0000-0000-000000000999",
-      session_id: sessionId,
-      question_id: questionA.id,
-      session_item_id: sessionItemId,
-      is_correct: false,
-      outcome: "incorrect",
-      attempted_at: "2026-03-15T00:00:00.000Z",
-      client_attempt_id: "foreign-attempt",
-    });
+    const otherItem = db.practice_session_items.find((row) => row.session_id === sessionId && row.id !== sessionItemId);
+    if (!otherItem) throw new Error("missing secondary session item fixture");
+    otherItem.client_attempt_id = "attempt-local-collision";
+    otherItem.status = "answered";
+    otherItem.outcome = "incorrect";
+    otherItem.is_correct = false;
 
     const submit = await request(app)
       .post("/api/practice/answer")
@@ -1058,9 +1199,9 @@ describe("Practice Runtime Contract", () => {
       });
 
     expect(submit.status).toBe(409);
-    expect(submit.body.error).toBe("duplicate_submission");
+    expect(submit.body.error).toBe("idempotency_key_reuse");
     expect(submit.body.idempotentRetried).toBeUndefined();
-    expect(masteryMocks.applyMasteryUpdate).not.toHaveBeenCalled();
+    expect(masteryMocks.applyLearningEventToMastery).not.toHaveBeenCalled();
   });
 
   it("submit with opaque selectedOptionId resolves correctly", async () => {
@@ -1114,7 +1255,7 @@ describe("Practice Runtime Contract", () => {
 
     expect(submit.status).toBe(400);
     expect(submit.body.code).toBe("MC_OPTION_REQUIRED");
-    expect(db.answer_attempts).toHaveLength(0);
+    expect(db.practice_session_items.filter((row) => row.status === "answered" || row.status === "skipped")).toHaveLength(0);
   });
 
   it("allows current-item completion after entitlement loss but blocks next-item progression", async () => {
@@ -1150,15 +1291,6 @@ describe("Practice Runtime Contract", () => {
   });
 
   it("keeps selector deterministic with recent history present", async () => {
-    db.answer_attempts.push({
-      id: "00000000-0000-0000-0000-00000000bb01",
-      user_id: "00000000-0000-0000-0000-000000000000",
-      session_id: "old-session",
-      question_id: "00000000-0000-0000-0000-000000000001",
-      attempted_at: "2026-03-01T00:00:00.000Z",
-      is_correct: false,
-      outcome: "incorrect",
-    });
     const start = await request(app)
       .post("/api/practice/sessions")
       .set("Origin", "http://localhost:5000")
@@ -1273,7 +1405,9 @@ describe("Practice Runtime Contract", () => {
 
     expect(submit.status).toBe(404);
     expect(submit.body.error).toBe("question_not_served");
-    expect(db.answer_attempts).toHaveLength(0);
+    const mismatched = db.practice_session_items.find((row) => row.id === sessionItemB);
+    expect(mismatched?.status).toBe("served");
+    expect(mismatched?.outcome ?? null).toBeNull();
   });
 
   it("keeps same-user idempotent replay working with clientAttemptId", async () => {
@@ -1309,7 +1443,7 @@ describe("Practice Runtime Contract", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(second.body.idempotentRetried).toBe(true);
-    expect(db.answer_attempts).toHaveLength(1);
+    expect(db.practice_session_items.filter((row) => row.status === "answered")).toHaveLength(1);
   });
 
   it("fails closed when served session item has missing owner", async () => {
@@ -1351,7 +1485,8 @@ describe("Practice Runtime Contract", () => {
 
     expect(submit.status).toBe(403);
     expect(submit.body.error).toBe("forbidden");
-    expect(db.answer_attempts).toHaveLength(0);
+    const item = db.practice_session_items.find((row) => row.id === sessionItemId);
+    expect(item?.outcome ?? null).toBeNull();
   });
 
   it("denies submit after session completion", async () => {

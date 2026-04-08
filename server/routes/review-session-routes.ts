@@ -18,8 +18,7 @@ import {
   projectStudentSafeQuestion,
   resolveClientInstanceBinding,
 } from "../../shared/question-bank-contract";
-import { applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
-import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
+import { applyLearningEventToMastery } from "../../apps/api/src/services/studentMastery";
 
 type SessionStatus = "created" | "active" | "completed" | "abandoned";
 type ItemStatus = "queued" | "served" | "answered" | "skipped";
@@ -56,6 +55,7 @@ type ItemRow = {
   question_stem: string | null;
   question_options: McOption[];
   question_difficulty: string | number | null;
+  question_difficulty_bucket: number | null;
   question_domain: string | null;
   question_skill: string | null;
   question_subskill: string | null;
@@ -77,7 +77,7 @@ type CanonicalQuestion = {
   explanation: string | null;
 };
 
-const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
+const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_difficulty_bucket, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
 
 const startSchema = z.object({
   mode: z.enum(["all_past_mistakes", "by_practice_session", "by_full_length_session"]),
@@ -135,6 +135,10 @@ function mapSession(row: any): SessionRow {
 }
 
 function mapItem(row: any): ItemRow {
+  const bucketFromColumn = typeof row.question_difficulty_bucket === "number" ? row.question_difficulty_bucket : null;
+  const fallbackBucket = row.question_difficulty_bucket === undefined
+    ? resolveDifficultyBucketStrict(row.question_difficulty ?? null)
+    : null;
   return {
     id: String(row.id),
     review_session_id: String(row.review_session_id),
@@ -155,6 +159,7 @@ function mapItem(row: any): ItemRow {
     question_stem: optionalString(row.question_stem),
     question_options: parseOptions(row.question_options),
     question_difficulty: row.question_difficulty ?? null,
+    question_difficulty_bucket: bucketFromColumn ?? fallbackBucket,
     question_domain: optionalString(row.question_domain),
     question_skill: optionalString(row.question_skill),
     question_subskill: optionalString(row.question_subskill),
@@ -184,6 +189,19 @@ function parseOptions(raw: unknown): McOption[] {
     out.push({ key, text });
   }
   return out;
+}
+
+function resolveDifficultyBucketStrict(value: unknown): 1 | 2 | 3 | null {
+  if (value === 1 || value === 2 || value === 3) return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "easy" || normalized === "1") return 1;
+    if (normalized === "medium" || normalized === "2") return 2;
+    if (normalized === "hard" || normalized === "3") return 3;
+    const parsed = Number.parseInt(normalized, 10);
+    if (parsed === 1 || parsed === 2 || parsed === 3) return parsed as 1 | 2 | 3;
+  }
+  return null;
 }
 
 function resolveReviewQuestionId(item: ItemRow): string {
@@ -618,6 +636,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
         question_stem: String(snapshot.questionText ?? ""),
         question_options: options,
         question_difficulty: snapshot.difficulty ?? null,
+        question_difficulty_bucket: resolveDifficultyBucketStrict(snapshot.difficulty ?? null),
         question_domain: snapshot.domain ?? null,
         question_skill: snapshot.skill ?? null,
         question_subskill: snapshot.subskill ?? null,
@@ -834,39 +853,55 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     await supabaseServer.from("review_session_items").update({ status: "answered", attempt_id: String((insertedAttempt as any).id), answered_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id).eq("review_session_id", session.id).eq("student_id", userId).eq("status", "served");
 
-    const masteryEvents: MasteryEventType[] = [];
+    const masteryEvents: string[] = [];
     const masteryErrors: string[] = [];
-    const emit = async (eventType: MasteryEventType) => {
+    const emit = async () => {
       if (!item.question_canonical_id) {
         masteryErrors.push("Missing canonical ID for mastery emission");
         return;
       }
-      const result = await applyMasteryUpdate({
-        userId,
-        questionCanonicalId: item.question_canonical_id,
-        sessionId: session.id,
-        isCorrect: verifiedIsCorrect,
-        selectedChoice: selectedAnswerKey,
-        timeSpentMs: typeof parsed.data.seconds_spent === "number" ? parsed.data.seconds_spent * 1000 : null,
-        eventType,
-        metadata: {
-          exam: item.question_exam ?? null,
-          section: item.question_section ?? null,
-          domain: item.question_domain ?? null,
-          skill: item.question_skill ?? null,
-          subskill: item.question_subskill ?? null,
-          skill_code: null,
-          difficulty: item.question_difficulty === 1 || item.question_difficulty === 2 || item.question_difficulty === 3
-            ? item.question_difficulty
-            : null,
-          structure_cluster_id: item.question_structure_cluster_id ?? null,
-        },
+      const section = item.question_section?.trim() ?? "";
+      const domain = item.question_domain?.trim() ?? "";
+      const skill = item.question_skill?.trim() ?? "";
+      const difficultyBucket = resolveDifficultyBucketStrict(item.question_difficulty_bucket);
+      if (!difficultyBucket) {
+        masteryErrors.push("Invalid difficulty bucket for mastery emission");
+        console.warn("[review] mastery emission skipped (invalid difficulty bucket)", {
+          sessionId: session.id,
+          questionCanonicalId: item.question_canonical_id,
+          sourceFamily: "review",
+          rawDifficulty: item.question_difficulty_bucket ?? null,
+        });
+        return;
+      }
+      if (!section || !domain || !skill) {
+        masteryErrors.push("Missing section/domain/skill metadata for mastery emission");
+        console.warn("[review] mastery emission skipped (missing metadata)", {
+          sessionId: session.id,
+          questionCanonicalId: item.question_canonical_id,
+          sourceFamily: "review",
+          section: section || null,
+          domain: domain || null,
+          skill: skill || null,
+        });
+        return;
+      }
+      const result = await applyLearningEventToMastery({
+        studentId: userId,
+        section,
+        domain,
+        skill,
+        difficulty: difficultyBucket,
+        sourceFamily: "review",
+        correct: verifiedIsCorrect,
+        latencyMs: typeof parsed.data.seconds_spent === "number" ? parsed.data.seconds_spent * 1000 : null,
+        occurredAt: (insertedAttempt as any)?.created_at ?? new Date().toISOString(),
       });
-      masteryEvents.push(eventType);
-      if (result.error) masteryErrors.push(result.error);
+      masteryEvents.push(verifiedIsCorrect ? "review_pass" : "review_fail");
+      if (!result.ok && result.error) masteryErrors.push(result.error);
     };
 
-    await emit(verifiedIsCorrect ? MasteryEventType.REVIEW_PASS : MasteryEventType.REVIEW_FAIL);
+    await emit();
 
     let tutorVerifiedRetry = false;
     let tutorOutcome: TutorOutcome | null = null;
@@ -876,7 +911,6 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       tutorOutcome = verifiedIsCorrect ? "tutor_helped" : "tutor_fail";
       await logEvent(session.id, userId, "tutor_opened", item.id);
       await logEvent(session.id, userId, "tutor_response_served", item.id);
-      await emit(verifiedIsCorrect ? MasteryEventType.TUTOR_HELPED : MasteryEventType.TUTOR_FAIL);
     }
 
     await logEvent(session.id, userId, "review_answer_submitted", item.id, { is_correct: verifiedIsCorrect });

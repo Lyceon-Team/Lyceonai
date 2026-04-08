@@ -123,50 +123,28 @@ function suppressAnswerReveal<T extends object>(question: T | null): T | null {
 
 async function hasVerifiedSubmission(userId: string, canonicalQuestionId: string): Promise<boolean> {
   try {
-    const { data: questionRow, error: questionError } = await supabaseServer
-      .from("questions")
-      .select("id")
-      .eq("canonical_id", canonicalQuestionId)
-      .limit(1)
-      .maybeSingle();
-
-    if (questionError) {
-      console.warn("[tutor-v2] canonical question lookup failed, suppressing reveal", {
-        userId,
-        canonicalQuestionId,
-        message: questionError.message,
-        code: questionError.code,
-      });
-      return false;
-    }
-
-    const questionId = questionRow?.id ? String(questionRow.id) : null;
-    if (!questionId) {
-      return false;
-    }
-
     const { data: attempt, error: attemptError } = await supabaseServer
-      .from("answer_attempts")
-      .select("id, outcome")
+      .from("practice_session_items")
+      .select("id, outcome, status")
       .eq("user_id", userId)
-      .eq("question_id", questionId)
+      .eq("question_canonical_id", canonicalQuestionId)
+      .eq("status", "answered")
       .limit(1)
       .maybeSingle();
 
     if (attemptError) {
-      console.warn("[tutor-v2] verified submission check failed, suppressing reveal", {
+      console.warn("tutor verified submission check failed, suppressing reveal", {
         userId,
-        questionId,
+        canonicalQuestionId,
         message: attemptError.message,
         code: attemptError.code,
       });
       return false;
     }
 
-    if (!attempt) return false;
-    return String((attempt as any).outcome ?? "").toLowerCase() !== "skipped";
+    return Boolean(attempt);
   } catch (error: any) {
-    console.warn("[tutor-v2] verified submission check threw, suppressing reveal", {
+    console.warn("tutor verified submission check threw, suppressing reveal", {
       userId,
       canonicalQuestionId,
       message: error?.message,

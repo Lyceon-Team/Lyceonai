@@ -1,49 +1,28 @@
 /**
  * CANONICAL MASTERY WRITE CHOKE POINT
  *
- * All runtime mastery-affecting flows must call applyMasteryUpdate().
- * Canonical rollup tables mutated by this choke point: student_skill_mastery, student_cluster_mastery,
- * student_kpi_counters_current, student_kpi_snapshots.
- * No other runtime path may directly mutate canonical mastery tables.
+ * All runtime mastery-affecting flows must call applyLearningEventToMastery().
+ * This bridge only invokes the installed canonical DB writer:
+ * public.apply_learning_event_to_mastery(...)
  */
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import {
-  MasteryEventType,
-  EVENT_WEIGHTS,
-  DEFAULT_QUESTION_WEIGHT,
-} from "./mastery-constants";
-import {
-  KPI_TRUTH_LAYER_VERSION,
-  persistCanonicalPracticeKpiSnapshot,
-  upsertStudentKpiCountersCurrent,
-} from "../../../../server/services/kpi-truth-layer";
 
-export interface QuestionMetadataSnapshot {
-  exam: string | null;
-  section: string | null;
-  domain: string | null;
-  skill: string | null;
-  subskill: string | null;
-  skill_code: string | null;
-  difficulty: 1 | 2 | 3 | null;
-  structure_cluster_id: string | null;
+export type LearningSourceFamily = "practice" | "review" | "test";
+
+export interface LearningEventInput {
+  studentId: string;
+  section: string;
+  domain: string;
+  skill: string;
+  difficulty: 1 | 2 | 3;
+  sourceFamily: LearningSourceFamily;
+  correct: boolean;
+  latencyMs?: number | null;
+  occurredAt?: string | Date | null;
 }
 
-export interface AttemptInput {
-  userId: string;
-  questionCanonicalId: string;
-  sessionId?: string | null;
-  isCorrect: boolean;
-  selectedChoice?: string | null;
-  timeSpentMs?: number | null;
-  eventType: MasteryEventType;
-  questionWeight?: number;
-  metadata: QuestionMetadataSnapshot;
-}
-
-export interface AttemptResult {
-  attemptId: string;
-  rollupUpdated: boolean;
+export interface LearningEventResult {
+  ok: boolean;
   error?: string;
 }
 
@@ -53,166 +32,67 @@ function normalizeText(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-export async function applyMasteryUpdate(input: AttemptInput): Promise<AttemptResult> {
-  const supabase = getSupabaseAdmin();
-
-  if (!(input.eventType in EVENT_WEIGHTS)) {
-    return {
-      attemptId: "",
-      rollupUpdated: false,
-      error: `Invalid event type: ${input.eventType}. Must be one of: ${Object.keys(EVENT_WEIGHTS).join(", ")}`,
-    };
-  }
-
-  const canonicalQuestionId = normalizeText(input.questionCanonicalId);
-  const section = normalizeText(input.metadata.section);
-  const domain = normalizeText(input.metadata.domain) || "unknown";
-  const skill = normalizeText(input.metadata.skill);
-  const skillCode = normalizeText(input.metadata.skill_code);
-  const eventWeight = EVENT_WEIGHTS[input.eventType];
-  const questionWeight = input.questionWeight || DEFAULT_QUESTION_WEIGHT;
-
-  if (!canonicalQuestionId) {
-    return {
-      attemptId: "",
-      rollupUpdated: false,
-      error: "Missing canonical question id for mastery update",
-    };
-  }
-
-  if (!section) {
-    return {
-      attemptId: "",
-      rollupUpdated: false,
-      error: "Missing section for mastery update",
-    };
-  }
-
-  if (!skill && !skillCode) {
-    return {
-      attemptId: "",
-      rollupUpdated: false,
-      error: "Missing skill mapping for mastery update",
-    };
-  }
-
-  const resolvedSkill = (skill || skillCode)!;
-
-  const attemptId = crypto.randomUUID();
-  let rollupUpdated = true;
-  let rollupError: string | undefined;
-
-  const { error: insertError } = await supabase
-    .from("student_question_attempts")
-    .insert({
-      id: attemptId,
-      user_id: input.userId,
-      question_canonical_id: canonicalQuestionId,
-      session_id: input.sessionId || null,
-      is_correct: input.isCorrect,
-      selected_choice: input.selectedChoice || null,
-      time_spent_ms: input.timeSpentMs || null,
-      event_type: input.eventType,
-      exam: normalizeText(input.metadata.exam),
-      section,
-      domain,
-      skill: resolvedSkill,
-      subskill: normalizeText(input.metadata.subskill),
-      skill_code: skillCode,
-      difficulty: input.metadata.difficulty,
-      structure_cluster_id: normalizeText(input.metadata.structure_cluster_id),
-    });
-
-  if (insertError) {
-    return {
-      attemptId,
-      rollupUpdated: false,
-      error: `Failed to log attempt: ${insertError.message}`,
-    };
-  }
-
-  try {
-    const { error: skillError } = await supabase.rpc("upsert_skill_mastery", {
-      p_user_id: input.userId,
-      p_section: section,
-      p_domain: domain,
-      p_skill: resolvedSkill,
-      p_is_correct: input.isCorrect,
-      p_event_weight: eventWeight * questionWeight,
-      p_event_type: input.eventType,
-      p_difficulty: input.metadata.difficulty || null,
-    });
-
-    if (skillError) {
-      rollupUpdated = false;
-      rollupError = skillError.message;
-    }
-  } catch (err: any) {
-    console.warn("[Mastery] Skill rollup error:", err.message);
-    rollupUpdated = false;
-    rollupError = err.message;
-  }
-
-  if (input.metadata.structure_cluster_id) {
-    try {
-      const { error: clusterError } = await supabase.rpc("upsert_cluster_mastery", {
-        p_user_id: input.userId,
-        p_structure_cluster_id: input.metadata.structure_cluster_id,
-        p_is_correct: input.isCorrect,
-        p_event_weight: eventWeight * questionWeight,
-        p_event_type: input.eventType,
-        p_difficulty: input.metadata.difficulty || null,
-      });
-
-      if (clusterError) {
-        console.warn("[Mastery] Cluster rollup failed:", clusterError.message);
-        rollupUpdated = false;
-        rollupError = clusterError.message;
-      }
-    } catch (err: any) {
-      console.warn("[Mastery] Cluster rollup error:", err.message);
-      rollupUpdated = false;
-      rollupError = err.message;
-    }
-  }
-
-  try {
-    const kpiRow = await upsertStudentKpiCountersCurrent({
-      userId: input.userId,
-      eventType: input.eventType,
-      isCorrect: input.isCorrect,
-      section,
-      domain,
-      skill: resolvedSkill,
-      timeSpentMs: input.timeSpentMs ?? null,
-      eventId: attemptId,
-      sourceVersion: KPI_TRUTH_LAYER_VERSION,
-    });
-
-    try {
-      await persistCanonicalPracticeKpiSnapshot({
-        userId: input.userId,
-        triggerEventType: input.eventType,
-        triggerEventId: attemptId,
-        sourceVersion: KPI_TRUTH_LAYER_VERSION,
-        currentRow: kpiRow,
-      });
-    } catch (snapshotError: any) {
-      console.warn("[Mastery] KPI snapshot append failed:", snapshotError.message);
-      rollupUpdated = false;
-      rollupError = snapshotError.message;
-    }
-  } catch (err: any) {
-    console.warn("[Mastery] KPI counter update failed:", err.message);
-    rollupUpdated = false;
-    rollupError = err.message;
-  }
-
-  return {
-    attemptId,
-    rollupUpdated,
-    error: rollupError,
-  };
+function normalizeLatencyMs(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const rounded = Math.trunc(value);
+  return rounded >= 0 ? rounded : 0;
 }
 
-export const logAttemptAndUpdateMastery = applyMasteryUpdate;
+function normalizeOccurredAt(value: unknown): string {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    if (Number.isFinite(time)) return value.toISOString();
+    return new Date().toISOString();
+  }
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) return parsed.toISOString();
+  }
+  return new Date().toISOString();
+}
+
+export async function applyLearningEventToMastery(input: LearningEventInput): Promise<LearningEventResult> {
+  const supabase = getSupabaseAdmin();
+
+  const studentId = normalizeText(input.studentId);
+  const section = normalizeText(input.section);
+  const domain = normalizeText(input.domain);
+  const skill = normalizeText(input.skill);
+  const sourceFamily = normalizeText(input.sourceFamily) as LearningSourceFamily | null;
+
+  if (!studentId) return { ok: false, error: "Missing student id for mastery update" };
+  if (!section) return { ok: false, error: "Missing section for mastery update" };
+  if (!domain) return { ok: false, error: "Missing domain for mastery update" };
+  if (!skill) return { ok: false, error: "Missing skill for mastery update" };
+  if (input.difficulty !== 1 && input.difficulty !== 2 && input.difficulty !== 3) {
+    return { ok: false, error: "Invalid difficulty bucket for mastery update" };
+  }
+  if (sourceFamily !== "practice" && sourceFamily !== "review" && sourceFamily !== "test") {
+    return { ok: false, error: "Invalid source family for mastery update" };
+  }
+
+  const { data, error } = await supabase.rpc("apply_learning_event_to_mastery", {
+    p_student_id: studentId,
+    p_section: section,
+    p_domain: domain,
+    p_skill: skill,
+    p_difficulty: input.difficulty,
+    p_source_family: sourceFamily,
+    p_correct: Boolean(input.correct),
+    p_latency_ms: normalizeLatencyMs(input.latencyMs),
+    p_occurred_at: normalizeOccurredAt(input.occurredAt),
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  if (data && typeof data === "object") {
+    const payload = data as Record<string, unknown>;
+    const ok = typeof payload.ok === "boolean" ? payload.ok : true;
+    const rpcError = typeof payload.error === "string" ? payload.error : undefined;
+    return { ok, error: rpcError };
+  }
+
+  return { ok: true };
+}

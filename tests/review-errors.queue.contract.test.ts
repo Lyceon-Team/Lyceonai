@@ -30,43 +30,19 @@ function makeRes() {
 }
 
 function setupSupabase(args: {
-  practiceRows: any[];
+  practiceSessionItemRows: any[];
   fullLengthRows: any[];
   fullLengthQuestionRows?: any[];
-  practiceSessionItemRows?: any[];
   reviewRows?: any[];
 }) {
   const {
-    practiceRows,
+    practiceSessionItemRows,
     fullLengthRows,
     fullLengthQuestionRows = [],
-    practiceSessionItemRows = [],
     reviewRows = [],
   } = args;
 
   fromMock.mockImplementation((table: string) => {
-    if (table === 'answer_attempts') {
-      const filters: Array<[string, any]> = [];
-      const chain: any = {
-        eq: (column: string, value: any) => {
-          filters.push([column, value]);
-          return chain;
-        },
-        order: () => chain,
-        limit: async () => ({
-          data: practiceRows.filter((row) =>
-            filters.every(([column, value]) => {
-              if (column.includes(".")) return true;
-              if (!(column in row)) return true;
-              return row[column] === value;
-            })
-          ),
-          error: null,
-        }),
-      };
-      return { select: () => chain };
-    }
-
     if (table === 'full_length_exam_responses') {
       const filters: Array<[string, any]> = [];
       const chain: any = {
@@ -100,21 +76,51 @@ function setupSupabase(args: {
     }
 
     if (table === 'practice_session_items') {
-      let filterColumn: string | null = null;
-      let filterValues: any[] = [];
+      const filters: Array<{ type: 'eq' | 'in'; column: string; value: any }> = [];
+      let orderBy: { column: string; ascending: boolean } | null = null;
+      let limitValue: number | null = null;
       const chain: any = {
         select: () => chain,
-        order: () => chain,
-        in: (column: string, values: any[]) => {
-          filterColumn = column;
-          filterValues = values;
+        eq: (column: string, value: any) => {
+          filters.push({ type: 'eq', column, value });
           return chain;
         },
-        limit: () => chain,
+        in: (column: string, values: any[]) => {
+          filters.push({ type: 'in', column, value: values });
+          return chain;
+        },
+        order: (column: string, opts?: { ascending?: boolean }) => {
+          orderBy = { column, ascending: opts?.ascending !== false };
+          return chain;
+        },
+        limit: (value: number) => {
+          limitValue = value;
+          return chain;
+        },
         then: (resolve: any, reject: any) => {
-          const filtered = filterColumn
-            ? practiceSessionItemRows.filter((row) => filterValues.includes(row[filterColumn]))
-            : practiceSessionItemRows;
+          let filtered = practiceSessionItemRows;
+          for (const filter of filters) {
+            if (filter.type === 'eq') {
+              filtered = filtered.filter((row) => row[filter.column] === filter.value);
+            } else if (filter.type === 'in') {
+              const values = filter.value as any[];
+              filtered = filtered.filter((row) => values.includes(row[filter.column]));
+            }
+          }
+          if (orderBy) {
+            const { column, ascending } = orderBy;
+            filtered = [...filtered].sort((a, b) => {
+              const av = a[column];
+              const bv = b[column];
+              if (av === bv) return 0;
+              if (av == null) return ascending ? -1 : 1;
+              if (bv == null) return ascending ? 1 : -1;
+              return ascending ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+            });
+          }
+          if (limitValue != null) {
+            filtered = filtered.slice(0, limitValue);
+          }
           return Promise.resolve({ data: filtered, error: null }).then(resolve, reject);
         },
       };
@@ -141,51 +147,87 @@ describe('Review queue runtime contract', () => {
 
   it('builds deterministic unresolved queue from canonical misses and dedupes by question', async () => {
     setupSupabase({
-      practiceRows: [
+      practiceSessionItemRows: [
         {
           id: 'p1-latest',
           question_id: 'q1',
-          is_correct: false,
+          question_canonical_id: 'SATM1ABC123',
+          question_stem: 'Q1 stem',
+          question_section: 'Math',
+          question_difficulty: 'medium',
+          question_domain: 'alg',
+          question_skill: 's1',
+          question_subskill: 'ss1',
+          question_options: [{ key: 'A', text: '1' }],
+          question_correct_answer: 'A',
           outcome: 'incorrect',
-          attempted_at: '2026-03-12T09:00:00.000Z',
+          is_correct: false,
+          answered_at: '2026-03-12T09:00:00.000Z',
+          status: 'answered',
           user_id: 'student-1',
-          questions: { id: 'q1', stem: 'Q1 stem', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
         },
         {
           id: 'p1-older',
           question_id: 'q1',
-          is_correct: false,
+          question_canonical_id: 'SATM1ABC123',
+          question_stem: 'Q1 stem old',
+          question_section: 'Math',
+          question_difficulty: 'medium',
+          question_domain: 'alg',
+          question_skill: 's1',
+          question_subskill: 'ss1',
+          question_options: [{ key: 'A', text: '1' }],
+          question_correct_answer: 'A',
           outcome: 'incorrect',
-          attempted_at: '2026-03-11T09:00:00.000Z',
+          is_correct: false,
+          answered_at: '2026-03-11T09:00:00.000Z',
+          status: 'answered',
           user_id: 'student-1',
-          questions: { id: 'q1', stem: 'Q1 stem old', section: 'Math', difficulty: 'medium', domain: 'alg', skill: 's1', subskill: 'ss1' },
         },
         {
           id: 'p2-skip',
           question_id: 'q2',
-          is_correct: false,
+          question_canonical_id: 'SATRW2ABC123',
+          question_stem: 'Q2 stem',
+          question_section: 'RW',
+          question_difficulty: 'easy',
+          question_domain: 'rw',
+          question_skill: 's2',
+          question_subskill: 'ss2',
+          question_options: [{ key: 'A', text: '1' }],
+          question_correct_answer: 'A',
           outcome: 'skipped',
-          attempted_at: '2026-03-12T10:00:00.000Z',
+          is_correct: false,
+          answered_at: '2026-03-12T10:00:00.000Z',
+          status: 'skipped',
           user_id: 'student-1',
-          questions: { id: 'q2', stem: 'Q2 stem', section: 'RW', difficulty: 'easy', domain: 'rw', skill: 's2', subskill: 'ss2' },
         },
         {
           id: 'p3-correct',
           question_id: 'q3',
-          is_correct: true,
+          question_canonical_id: 'SATM1ABC999',
+          question_stem: 'Q3 stem',
+          question_section: 'Math',
+          question_difficulty: 'hard',
+          question_domain: 'geo',
+          question_skill: 's3',
+          question_subskill: 'ss3',
+          question_options: [{ key: 'A', text: '1' }],
+          question_correct_answer: 'A',
           outcome: 'correct',
-          attempted_at: '2026-03-12T11:00:00.000Z',
+          is_correct: true,
+          answered_at: '2026-03-12T11:00:00.000Z',
+          status: 'answered',
           user_id: 'student-1',
-          questions: { id: 'q3', stem: 'Q3 stem', section: 'Math', difficulty: 'hard', domain: 'geo', skill: 's3', subskill: 'ss3' },
         },
       ],
       fullLengthRows: [
-        { id: 'f4', question_id: 'q4', is_correct: false, answered_at: '2026-03-12T12:00:00.000Z' },
-        { id: 'f5', question_id: 'q5', is_correct: false, answered_at: '2026-03-10T08:00:00.000Z' },
+        { id: 'f4', module_id: 'module-a', question_id: 'q4', is_correct: false, answered_at: '2026-03-12T12:00:00.000Z' },
+        { id: 'f5', module_id: 'module-b', question_id: 'q5', is_correct: false, answered_at: '2026-03-10T08:00:00.000Z' },
       ],
       fullLengthQuestionRows: [
-        { id: 'q4', stem: 'Q4 stem', section: 'Math', difficulty: 'hard', domain: 'adv', skill: 's4', subskill: 'ss4' },
-        { id: 'q5', stem: 'Q5 stem', section: 'RW', difficulty: 'medium', domain: 'info', skill: 's5', subskill: 'ss5' },
+        { module_id: 'module-a', question_id: 'q4', question_canonical_id: 'SATM1GHI789', question_stem: 'Q4 stem', question_section: 'Math', question_difficulty: 'hard', question_domain: 'adv', question_skill: 's4', question_subskill: 'ss4' },
+        { module_id: 'module-b', question_id: 'q5', question_canonical_id: 'SATRW2JKL012', question_stem: 'Q5 stem', question_section: 'RW', question_difficulty: 'medium', question_domain: 'info', question_skill: 's5', question_subskill: 'ss5' },
       ],
       reviewRows: [
         { question_id: 'q2', is_correct: true, created_at: '2026-03-13T10:00:00.000Z' },
@@ -218,9 +260,9 @@ describe('Review queue runtime contract', () => {
 
   it('includes full-test misses when no practice miss exists', async () => {
     setupSupabase({
-      practiceRows: [],
-      fullLengthRows: [{ id: 'f1', question_id: 'q10', is_correct: false, answered_at: '2026-03-12T12:00:00.000Z' }],
-      fullLengthQuestionRows: [{ id: 'q10', stem: 'Q10 stem', section: 'RW', difficulty: 'medium', domain: 'rw', skill: 's10', subskill: 'ss10' }],
+      practiceSessionItemRows: [],
+      fullLengthRows: [{ id: 'f1', module_id: 'module-10', question_id: 'q10', is_correct: false, answered_at: '2026-03-12T12:00:00.000Z' }],
+      fullLengthQuestionRows: [{ module_id: 'module-10', question_id: 'q10', question_canonical_id: 'SATRW2XYZ999', question_stem: 'Q10 stem', question_section: 'RW', question_difficulty: 'medium', question_domain: 'rw', question_skill: 's10', question_subskill: 'ss10' }],
       reviewRows: [],
     });
 
@@ -237,7 +279,7 @@ describe('Review queue runtime contract', () => {
 
   it('denies unauthenticated access', async () => {
     setupSupabase({
-      practiceRows: [],
+      practiceSessionItemRows: [],
       fullLengthRows: [],
       reviewRows: [],
     });
@@ -253,7 +295,7 @@ describe('Review queue runtime contract', () => {
 
   it('requires explicit review mode', async () => {
     setupSupabase({
-      practiceRows: [],
+      practiceSessionItemRows: [],
       fullLengthRows: [],
       reviewRows: [],
     });
@@ -269,24 +311,24 @@ describe('Review queue runtime contract', () => {
 
   it('does not derive canonical identity from canonical-shaped question_id when canonical_id is missing', async () => {
     setupSupabase({
-      practiceRows: [
+      practiceSessionItemRows: [
         {
           id: 'p-canonical-shaped-id',
           question_id: 'SATM1ABC123',
-          is_correct: false,
+          question_canonical_id: null,
+          question_stem: 'Q stem',
+          question_section: 'Math',
+          question_difficulty: 'medium',
+          question_domain: 'alg',
+          question_skill: 's1',
+          question_subskill: 'ss1',
+          question_options: [{ key: 'A', text: '1' }],
+          question_correct_answer: 'A',
           outcome: 'incorrect',
-          attempted_at: '2026-03-12T12:00:00.000Z',
+          is_correct: false,
+          answered_at: '2026-03-12T12:00:00.000Z',
+          status: 'answered',
           user_id: 'student-1',
-          questions: {
-            id: 'SATM1ABC123',
-            canonical_id: null,
-            stem: 'Q stem',
-            section: 'Math',
-            difficulty: 'medium',
-            domain: 'alg',
-            skill: 's1',
-            subskill: 'ss1',
-          },
         },
       ],
       fullLengthRows: [],
@@ -306,29 +348,6 @@ describe('Review queue runtime contract', () => {
 
   it('filters queue to a single practice session when mode=by_practice_session', async () => {
     setupSupabase({
-      practiceRows: [
-        {
-          id: 'p-session-a',
-          session_id: 'session-a',
-          session_item_id: 'item-a',
-          question_id: 'q1',
-          is_correct: false,
-          outcome: 'incorrect',
-          created_at: '2026-03-12T09:00:00.000Z',
-          user_id: 'student-1',
-        },
-        {
-          id: 'p-session-b',
-          session_id: 'session-b',
-          session_item_id: 'item-b',
-          question_id: 'q2',
-          is_correct: false,
-          outcome: 'incorrect',
-          created_at: '2026-03-12T10:00:00.000Z',
-          user_id: 'student-1',
-        },
-      ],
-      fullLengthRows: [],
       practiceSessionItemRows: [
         {
           id: 'item-a',
@@ -343,6 +362,11 @@ describe('Review queue runtime contract', () => {
           question_subskill: 'ss1',
           question_options: [{ key: 'A', text: '1' }],
           question_correct_answer: 'A',
+          outcome: 'incorrect',
+          is_correct: false,
+          answered_at: '2026-03-12T09:00:00.000Z',
+          status: 'answered',
+          user_id: 'student-1',
         },
         {
           id: 'item-b',
@@ -357,8 +381,14 @@ describe('Review queue runtime contract', () => {
           question_subskill: 'ss1',
           question_options: [{ key: 'A', text: '1' }],
           question_correct_answer: 'A',
+          outcome: 'incorrect',
+          is_correct: false,
+          answered_at: '2026-03-12T10:00:00.000Z',
+          status: 'answered',
+          user_id: 'student-1',
         },
       ],
+      fullLengthRows: [],
       reviewRows: [],
     });
 
@@ -373,7 +403,7 @@ describe('Review queue runtime contract', () => {
 
   it('filters queue to a single full-length session when mode=by_full_length_session', async () => {
     setupSupabase({
-      practiceRows: [],
+      practiceSessionItemRows: [],
       fullLengthRows: [
         {
           id: 'f1',

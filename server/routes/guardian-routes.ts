@@ -9,8 +9,8 @@ import { createGuardianLink, revokeGuardianLink, isGuardianLinkedToStudent, getA
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { buildWeaknessSkillsView } from '../../apps/api/src/services/weakness-view';
-import { getMasteryStatus } from '../../apps/api/src/services/mastery-projection';
-import { buildCanonicalPracticeKpiSnapshot, buildStudentKpiView, buildStudentFullLengthReportView, projectGuardianFullLengthReportView } from '../services/kpi-truth-layer';
+import { mapMasteryStatusFromLevel } from '../../apps/api/src/services/mastery-read';
+import { buildStudentKpiViewFromCanonical, buildStudentFullLengthReportView, projectGuardianFullLengthReportView } from '../services/canonical-runtime-views';
 import { buildCalendarMonthView } from '../../apps/api/src/services/calendar-month-view';
 
 const router = Router();
@@ -271,8 +271,7 @@ router.get('/students/:studentId/summary', requireSupabaseAuth, requireGuardianA
       return res.status(404).json({ error: 'Student not found', requestId });
     }
 
-    const snapshot = await buildCanonicalPracticeKpiSnapshot(studentId);
-    const studentView = buildStudentKpiView(snapshot, true);
+    const studentView = await buildStudentKpiViewFromCanonical(studentId, true);
     const guardianMetricIds = new Set(['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy']);
     const guardianMetrics = studentView.metrics.filter((metric) => guardianMetricIds.has(metric.id));
     const metricById = new Map(guardianMetrics.map((metric) => [metric.id, metric]));
@@ -580,7 +579,7 @@ router.get('/weaknesses/:studentId', requireSupabaseAuth, requireGuardianAccess,
       attempts: skill.attempts,
       correct: skill.correct,
       accuracyPercent: Math.round((skill.accuracy ?? 0) * 100),
-      status: getMasteryStatus(skill.mastery_score, skill.attempts),
+      status: mapMasteryStatusFromLevel(skill.mastery_level, skill.attempts, skill.mastery_score),
     }));
     logger.info('GUARDIAN', 'weaknesses_view', 'Guardian viewed student weaknesses', { guardianId, studentId, count: view.count, requestId });
     await emitGuardianAccessEvent({

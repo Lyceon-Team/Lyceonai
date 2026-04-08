@@ -11,8 +11,7 @@ const accountMocks = {
 };
 
 const kpiMocks = {
-  buildCanonicalPracticeKpiSnapshot: vi.fn(),
-  buildStudentKpiView: vi.fn(),
+  buildStudentKpiViewFromCanonical: vi.fn(),
   buildStudentFullLengthReportView: vi.fn(),
   projectGuardianFullLengthReportView: vi.fn(),
 };
@@ -223,7 +222,7 @@ vi.mock('../../apps/api/src/services/weakness-view', () => ({
 vi.mock('../../apps/api/src/services/calendar-month-view', () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
-vi.mock('../../server/services/kpi-truth-layer', () => kpiMocks);
+vi.mock('../../server/services/canonical-runtime-views', () => kpiMocks);
 
 function buildApp(role: 'guardian' | 'student' = 'guardian') {
   const app = express();
@@ -250,31 +249,7 @@ describe('Guardian reporting runtime contract', () => {
       { student_user_id: 'student-1', linked_at: '2026-03-01T00:00:00.000Z' },
     ]);
 
-    kpiMocks.buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
-      modelVersion: 'kpi-v1',
-      timezone: 'America/Chicago',
-      generatedAt: '2026-03-10T00:00:00.000Z',
-      currentWeek: {
-        practiceSessions: 1,
-        practiceMinutes: 22,
-        questionsSolved: 11,
-        accuracyPercent: 55,
-        avgSecondsPerQuestion: 88.2,
-      },
-      previousWeek: {
-        practiceSessions: 1,
-        practiceMinutes: 21,
-        questionsSolved: 10,
-        accuracyPercent: 50,
-        avgSecondsPerQuestion: 90.5,
-      },
-      recency200: {
-        totalAttempts: 11,
-        accuracyPercent: 55,
-        avgSecondsPerQuestion: 88.2,
-      },
-    });
-    kpiMocks.buildStudentKpiView.mockReturnValue({
+    kpiMocks.buildStudentKpiViewFromCanonical.mockResolvedValue({
       modelVersion: 'kpi-v1',
       timezone: 'America/Chicago',
       week: {
@@ -483,8 +458,8 @@ describe('Guardian reporting runtime contract', () => {
     expect(response.body.explanation).toBeUndefined();
     expect(response.body.tutorInteractions).toBeUndefined();
     expect(response.body.mastery_score).toBeUndefined();
-    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledTimes(1);
-    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledWith(expect.any(Object), true);
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledTimes(1);
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-1', true);
     expect(response.body.progress).toEqual({
       practiceMinutesLast7Days: 120,
       sessionsLast7Days: 4,
@@ -563,7 +538,7 @@ describe('Guardian reporting runtime contract', () => {
   });
 
   it('fails closed when canonical student KPI snapshot source fails', async () => {
-    kpiMocks.buildCanonicalPracticeKpiSnapshot.mockRejectedValueOnce(new Error('snapshot_failed'));
+    kpiMocks.buildStudentKpiViewFromCanonical.mockRejectedValueOnce(new Error('snapshot_failed'));
     const router = (await import('../../server/routes/guardian-routes')).default;
     const app = buildApp('guardian');
     app.use('/api/guardian', router);

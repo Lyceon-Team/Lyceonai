@@ -133,9 +133,9 @@ describe('Practice Answer Rate Limiter', () => {
     // Since the rate limiter middleware returns early with 429 status,
     // the handler code is never executed, guaranteeing that NO database
     // writes occur for the rate-limited request. This includes:
-    // - supabaseServer.from("answer_attempts").insert() (line 406)
-    // - supabaseServer.from("practice_events").insert() (line 429)
-    // - applyMasteryUpdate() (line 449)
+    // - supabaseServer.from("practice_session_items").update()
+    // - supabaseServer.from("practice_events").insert()
+    // - apply_learning_event_to_mastery(...)
     // The architectural guarantee is that middleware that returns a response
     // prevents subsequent middleware and handlers from executing.
   });

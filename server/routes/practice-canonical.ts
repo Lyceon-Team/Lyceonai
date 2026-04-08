@@ -5,9 +5,8 @@ import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { getSupabaseAdmin, requireSupabaseAuth } from "../middleware/supabase-auth.js";
 import {
-  applyMasteryUpdate,
+  applyLearningEventToMastery,
 } from "../../apps/api/src/services/studentMastery";
-import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
 import {
   hasCanonicalOptionSet,
   buildStudentSafeOptionTokens,
@@ -103,6 +102,12 @@ type SessionItemRow = {
   status: "queued" | "served" | "answered" | "skipped";
   attempt_id?: string | null;
   client_instance_id?: string | null;
+  selected_answer?: string | null;
+  is_correct?: boolean | null;
+  outcome?: string | null;
+  answered_at?: string | null;
+  time_spent_ms?: number | null;
+  client_attempt_id?: string | null;
 };
 
 type SessionMetadata = {
@@ -145,7 +150,7 @@ const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const DEFAULT_TARGET_QUESTION_COUNT = 20;
 const TARGET_SECONDS_PER_QUESTION = 90;
-const SESSION_ITEM_SELECT = "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id";
+const SESSION_ITEM_SELECT = "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
 
 const practiceAnswerRateLimiter = rateLimit({
   windowMs: 60_000,
@@ -504,6 +509,19 @@ function coerceQuestionDifficulty(raw: unknown): 1 | 2 | 3 {
   return 2;
 }
 
+function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
+  if (raw === 1 || raw === 2 || raw === 3) return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "easy" || normalized === "1") return 1;
+    if (normalized === "medium" || normalized === "2") return 2;
+    if (normalized === "hard" || normalized === "3") return 3;
+    const parsed = Number.parseInt(normalized, 10);
+    if (parsed === 1 || parsed === 2 || parsed === 3) return parsed as 1 | 2 | 3;
+  }
+  return null;
+}
+
 function coerceTargetQuestionCount(raw: unknown): number {
   if (typeof raw === "number" && Number.isFinite(raw)) {
     const rounded = Math.floor(raw);
@@ -730,105 +748,35 @@ async function countSessionItems(sessionId: string): Promise<number> {
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
-async function prebuildSessionItems(args: {
-  sessionId: string;
-  userId: string;
-  clientInstanceId: string;
-  targetCount: number;
-  sessionSpec: CanonicalSessionSpec;
-}): Promise<{ ok: true; requestedCount: number; sourcePoolCount: number; selectionMode: "exact" | "exact_reuse" } | { ok: false; status: number; body: Record<string, unknown> }> {
-  const existingCount = await countSessionItems(args.sessionId);
-  if (existingCount > 0) {
-    return {
-      ok: true,
-      requestedCount: args.targetCount,
-      sourcePoolCount: existingCount,
-      selectionMode: "exact",
-    };
-  }
-
-  const poolResult = await listExactFilteredQuestionPool({
-    sections: args.sessionSpec.sections,
-    domains: args.sessionSpec.domains,
-    difficulties: args.sessionSpec.difficulties,
-  });
-
-  if ("error" in poolResult) {
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "session_prebuild_failed",
-        message: poolResult.error,
-      },
-    };
-  }
-
-  if (poolResult.pool.length === 0) {
-    return {
-      ok: false,
-      status: 422,
-      body: {
-        error: "empty_exact_pool",
-        code: "PRACTICE_EXACT_POOL_EMPTY",
-        message: "No published multiple-choice questions match the requested session filters.",
-      },
-    };
-  }
-
-  const prebuilt = buildDeterministicPrebuiltSet(poolResult.pool, args.targetCount);
-
-  const rows = prebuilt.selected.map((question, idx) => {
-    const served = buildServedOptions(question.options);
-    return {
-      session_id: args.sessionId,
-      user_id: args.userId,
-      question_id: question.id,
-      question_canonical_id: question.canonical_id,
-      question_section: question.section,
-      question_stem: question.stem,
-      question_options: question.options,
-      question_difficulty: question.difficulty ?? null,
-      question_domain: question.domain ?? null,
-      question_skill: question.skill ?? null,
-      question_subskill: question.subskill ?? null,
-      question_exam: question.exam ?? null,
-      question_structure_cluster_id: question.structure_cluster_id ?? null,
-      question_correct_answer: question.correct_answer ?? null,
-      question_explanation: question.explanation ?? null,
-      ordinal: idx + 1,
-      status: idx === 0 ? "served" : "queued",
-      attempt_id: null,
-      client_instance_id: idx === 0 ? args.clientInstanceId : null,
-      option_order: served.optionOrder,
-      option_token_map: served.optionTokenMap,
-      answered_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-  });
-
-  const { error } = await supabaseServer
+async function hydrateSessionItemOptionTokens(sessionId: string): Promise<void> {
+  const { data, error } = await supabaseServer
     .from("practice_session_items")
-    .insert(rows);
+    .select("id, question_options, option_order, option_token_map")
+    .eq("session_id", sessionId)
+    .order("ordinal", { ascending: true });
 
   if (error) {
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "session_prebuild_failed",
-        message: error.message,
-      },
-    };
+    throw new Error(`practice_session_items_option_fetch_failed: ${error.message}`);
   }
 
-  return {
-    ok: true,
-    requestedCount: args.targetCount,
-    sourcePoolCount: prebuilt.sourcePoolCount,
-    selectionMode: prebuilt.selectionMode,
-  };
+  for (const row of (data ?? []) as any[]) {
+    if (row.option_order && row.option_token_map) continue;
+    const options = safeParseOptions(row.question_options);
+    if (!hasCanonicalOptionSet(options)) continue;
+    const served = buildServedOptions(options);
+    const { error: updateError } = await supabaseServer
+      .from("practice_session_items")
+      .update({
+        option_order: served.optionOrder,
+        option_token_map: served.optionTokenMap,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+
+    if (updateError) {
+      throw new Error(`practice_session_items_option_update_failed: ${updateError.message}`);
+    }
+  }
 }
 
 function isDuplicateConflict(message: string | undefined): boolean {
@@ -922,18 +870,19 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{
   streak: number;
 }> {
   const { data, error } = await supabaseServer
-    .from("answer_attempts")
-    .select("is_correct, outcome, created_at")
+    .from("practice_session_items")
+    .select("is_correct, outcome, answered_at, status")
     .eq("session_id", sessionId)
     .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .in("status", ["answered", "skipped"])
+    .order("answered_at", { ascending: false });
 
   if (error) {
     return { correct: 0, incorrect: 0, skipped: 0, total: 0, streak: 0 };
   }
 
   const attempts = data ?? [];
-  const correct = attempts.filter((a: any) => a.is_correct === true).length;
+  const correct = attempts.filter((a: any) => a.is_correct === true && a.outcome !== "skipped").length;
   const skipped = attempts.filter((a: any) => a.outcome === "skipped").length;
   const total = attempts.length;
   const incorrect = Math.max(0, total - correct - skipped);
@@ -986,9 +935,10 @@ async function getLatestSessionItem(sessionId: string): Promise<SessionItemRow |
 
 async function countResolvedSessionItems(sessionId: string): Promise<number> {
   const { count, error } = await supabaseServer
-    .from("answer_attempts")
+    .from("practice_session_items")
     .select("id", { count: "exact", head: true })
-    .eq("session_id", sessionId);
+    .eq("session_id", sessionId)
+    .in("status", ["answered", "skipped"]);
 
   if (error) {
     throw new Error(`practice_session_items_count_failed: ${error.message}`);
@@ -1003,9 +953,10 @@ async function getSessionProgressCounts(sessionId: string): Promise<{
   completedCount: number;
 }> {
   const { data, error } = await supabaseServer
-    .from("answer_attempts")
-    .select("outcome")
-    .eq("session_id", sessionId);
+    .from("practice_session_items")
+    .select("outcome, status")
+    .eq("session_id", sessionId)
+    .in("status", ["answered", "skipped"]);
 
   if (error) {
     throw new Error(`practice_session_progress_count_failed: ${error.message}`);
@@ -1179,53 +1130,80 @@ async function startOrReplaySession(args: {
     session_start_idempotency_key: args.idempotencyKey,
   };
 
-  const { data: newSession, error: createErr } = await supabaseServer
-    .from("practice_sessions")
-    .insert({
-      user_id: args.userId,
-      section: args.section,
-      mode: args.mode,
-      status: "in_progress",
-      completed: false,
-      started_at: new Date().toISOString(),
-      metadata: sessionMetadata,
-      updated_at: new Date().toISOString(),
-    })
-    .select("id, user_id, section, mode, status, completed, metadata")
-    .single();
+  const { data: createdRows, error: createErr } = await supabaseServer.rpc("start_practice_session_with_items", {
+    p_user_id: args.userId,
+    p_section: args.section,
+    p_mode: args.mode,
+    p_status: "in_progress",
+    p_started_at: new Date().toISOString(),
+    p_metadata: sessionMetadata,
+    p_client_instance_id: args.clientInstanceId,
+    p_target_count: coerceTargetQuestionCount(args.targetQuestionCount),
+    p_sections: args.sessionSpec.sections,
+    p_domains: args.sessionSpec.domains,
+    p_difficulties: args.sessionSpec.difficulties,
+  });
 
-  if (createErr || !newSession) {
+  if (createErr) {
+    const message = createErr.message || "Unable to create practice session";
+    if (message.includes("PRACTICE_EXACT_POOL_EMPTY")) {
+      return {
+        ok: false,
+        status: 422,
+        body: {
+          error: "empty_exact_pool",
+          code: "PRACTICE_EXACT_POOL_EMPTY",
+          message: "No published multiple-choice questions match the requested session filters.",
+        },
+      };
+    }
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: createErr?.message ?? "Unable to create practice session",
+        message,
       },
     };
   }
 
-  const prebuilt = await prebuildSessionItems({
-    sessionId: String((newSession as any).id),
-    userId: args.userId,
-    clientInstanceId: args.clientInstanceId,
-    targetCount: coerceTargetQuestionCount(args.targetQuestionCount),
-    sessionSpec: args.sessionSpec,
-  });
-
-  if (!prebuilt.ok) {
+  const created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
+  const sessionId = String((created as any)?.session_id ?? "");
+  if (!sessionId) {
     return {
       ok: false,
-      status: prebuilt.status,
-      body: prebuilt.body,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message: "Unable to create practice session",
+      },
     };
   }
 
+  const { data: newSession, error: sessionFetchError } = await supabaseServer
+    .from("practice_sessions")
+    .select("id, user_id, section, mode, status, completed, metadata")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionFetchError || !newSession) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message: sessionFetchError?.message ?? "Unable to load practice session",
+      },
+    };
+  }
+
+  await hydrateSessionItemOptionTokens(sessionId);
+
   const newMetadata = asSessionMetadata((newSession as any).metadata);
   newMetadata.prebuilt = true;
-  newMetadata.requested_count = prebuilt.requestedCount;
-  newMetadata.source_pool_count = prebuilt.sourcePoolCount;
-  newMetadata.selection_mode = prebuilt.selectionMode;
+  newMetadata.requested_count = Number((created as any)?.requested_count ?? coerceTargetQuestionCount(args.targetQuestionCount));
+  newMetadata.source_pool_count = Number((created as any)?.source_pool_count ?? 0);
+  newMetadata.selection_mode = (created as any)?.selection_mode === "exact_reuse" ? "exact_reuse" : "exact";
   newMetadata.target_question_count = coerceTargetQuestionCount(args.targetQuestionCount);
   newMetadata.session_spec = args.sessionSpec;
 
@@ -1297,63 +1275,19 @@ async function findSessionItemById(sessionId: string, sessionItemId: string): Pr
   return (data as SessionItemRow | null) ?? null;
 }
 
-async function findAttemptBySessionItemId(sessionItemId: string, userId: string): Promise<any | null> {
+async function findSessionItemByClientAttemptId(userId: string, clientAttemptId: string): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
-    .from("answer_attempts")
-    .select("id, session_id, question_id, session_item_id, is_correct, outcome")
-    .eq("session_item_id", sessionItemId)
+    .from("practice_session_items")
+    .select(SESSION_ITEM_SELECT)
     .eq("user_id", userId)
+    .eq("client_attempt_id", clientAttemptId)
     .maybeSingle();
 
   if (error) {
-    if (/session_item_id/i.test(String(error.message || ""))) return null;
-    throw new Error(`attempt_lookup_by_session_item_failed: ${error.message}`);
+    return null;
   }
 
-  return data ?? null;
-}
-
-async function findExistingAttempt(args: {
-  userId: string;
-  sessionId: string;
-  questionId: string;
-  sessionItemId: string | null;
-  idempotencyKey: string | null;
-}): Promise<any | null> {
-  if (args.idempotencyKey) {
-    const { data, error } = await supabaseServer
-      .from("answer_attempts")
-      .select("id, session_id, question_id, session_item_id, is_correct, outcome")
-      .eq("user_id", args.userId)
-      .eq("client_attempt_id", args.idempotencyKey)
-      .maybeSingle();
-
-    if (!error && data) return data;
-  }
-
-  if (args.sessionItemId) {
-    const bySessionItem = await findAttemptBySessionItemId(args.sessionItemId, args.userId);
-    if (bySessionItem) return bySessionItem;
-  }
-
-  const { data, error } = await supabaseServer
-    .from("answer_attempts")
-    .select("id, session_id, question_id, session_item_id, is_correct, outcome")
-    .eq("user_id", args.userId)
-    .eq("session_id", args.sessionId)
-    .eq("question_id", args.questionId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`attempt_lookup_by_session_question_failed: ${error.message}`);
-  }
-
-  return data ?? null;
-}
-
-async function insertAnswerAttempt(insertPayload: Record<string, unknown>): Promise<{ error: any }> {
-  const { error } = await supabaseServer.from("answer_attempts").insert(insertPayload);
-  return { error };
+  return (data as SessionItemRow | null) ?? null;
 }
 
 async function serveNextForSession(args: {
@@ -2087,72 +2021,26 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
 
   if (sessionItem.status !== "served") {
-    if (sessionItem.status === "answered" && payload.clientAttemptId) {
-      const { data: retriedAttempt, error: retriedAttemptError } = await supabaseServer
-        .from("answer_attempts")
-        .select("id, session_id, question_id, session_item_id, is_correct, outcome")
-        .eq("user_id", userId)
-        .eq("client_attempt_id", payload.clientAttemptId)
-        .maybeSingle();
-
-      if (retriedAttemptError) {
-        throw new Error(`attempt_lookup_by_client_attempt_id_failed: ${retriedAttemptError.message}`);
-      }
-
-      if (
-        retriedAttempt
-        && retriedAttempt.session_id === payload.sessionId
-        && retriedAttempt.session_item_id === sessionItem.id
-        && retriedAttempt.question_id === questionId
-      ) {
-        return res.json({
-          sessionId: payload.sessionId,
-          sessionItemId: sessionItem.id,
-          isCorrect: !!retriedAttempt.is_correct,
-          mode: "multiple_choice",
-          correctOptionId,
-          explanation,
-          feedback: retriedAttempt.is_correct ? "Correct" : "Incorrect",
-          stats: await getSessionStats(payload.sessionId, userId),
-          idempotentRetried: true,
-        });
-      }
+    const resolvedAttemptKey = typeof sessionItem.client_attempt_id === "string" ? sessionItem.client_attempt_id.trim() : "";
+    const replayAttemptKey = payload.clientAttemptId?.trim() ?? "";
+    if (sessionItem.outcome && resolvedAttemptKey && replayAttemptKey === resolvedAttemptKey) {
+      return res.json({
+        sessionId: payload.sessionId,
+        sessionItemId: sessionItem.id,
+        isCorrect: !!sessionItem.is_correct,
+        mode: "multiple_choice",
+        correctOptionId,
+        explanation,
+        feedback: sessionItem.is_correct ? "Correct" : sessionItem.outcome === "skipped" ? "Skipped" : "Incorrect",
+        stats: await getSessionStats(payload.sessionId, userId),
+        idempotentRetried: true,
+      });
     }
 
     return res.status(409).json({
       error: "session_item_not_open",
       message: "This practice item is already resolved.",
       requestId,
-    });
-  }
-
-  const existingAttempt = await findExistingAttempt({
-    userId,
-    sessionId: payload.sessionId,
-    questionId,
-    sessionItemId: sessionItem.id,
-    idempotencyKey: payload.clientAttemptId,
-  });
-
-  if (existingAttempt) {
-    if (existingAttempt.session_id !== payload.sessionId || existingAttempt.question_id !== questionId) {
-      return res.status(409).json({
-        error: "idempotency_key_reuse",
-        message: "The provided clientAttemptId is already bound to a different attempt.",
-        requestId,
-      });
-    }
-
-    return res.json({
-      sessionId: payload.sessionId,
-      sessionItemId: sessionItem.id,
-      isCorrect: !!existingAttempt.is_correct,
-      mode: "multiple_choice",
-      correctOptionId,
-      explanation,
-      feedback: existingAttempt.is_correct ? "Correct" : existingAttempt.outcome === "skipped" ? "Skipped" : "Incorrect",
-      stats: await getSessionStats(payload.sessionId, userId),
-      idempotentRetried: true,
     });
   }
 
@@ -2173,40 +2061,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const outcome = isCorrect ? "correct" : "incorrect";
 
   const clampedTimeSpentMs = null;
-
-  const attemptId = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const insertPayload: Record<string, unknown> = {
-    id: attemptId,
-    user_id: userId,
-    session_id: payload.sessionId,
-    session_item_id: sessionItem.id,
-    question_id: questionId,
-    selected_answer: payload.selectedAnswer ?? null,
-    free_response_answer: null,
-    is_correct: isCorrect,
-    outcome,
-    time_spent_ms: clampedTimeSpentMs,
-    created_at: now,
-    client_attempt_id: payload.clientAttemptId ?? null,
-  };
-
-  const insertResult = await insertAnswerAttempt(insertPayload);
-  if (insertResult.error) {
-    if (isDuplicateConflict(insertResult.error.message)) {
-      const duplicate = await findExistingAttempt({
-        userId,
-        sessionId: payload.sessionId,
-        questionId,
-        sessionItemId: sessionItem.id,
-        idempotencyKey: payload.clientAttemptId,
-      });
-
-      if (!duplicate) {
+  if (payload.clientAttemptId) {
+    const existingByKey = await findSessionItemByClientAttemptId(userId, payload.clientAttemptId);
+    if (existingByKey) {
+      if (existingByKey.id !== sessionItem.id) {
         return res.status(409).json({
-          error: "duplicate_submission",
-          message: "Answer already submitted for this session item.",
+          error: "idempotency_key_reuse",
+          message: "The provided clientAttemptId is already bound to a different session item.",
           requestId,
         });
       }
@@ -2214,19 +2077,37 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
-        isCorrect: !!duplicate.is_correct,
+        isCorrect: !!existingByKey.is_correct,
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: duplicate.is_correct ? "Correct" : duplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: existingByKey.is_correct ? "Correct" : existingByKey.outcome === "skipped" ? "Skipped" : "Incorrect",
+        stats: await getSessionStats(payload.sessionId, userId),
+        idempotentRetried: true,
+      });
+    }
+  }
+
+  if (sessionItem.status !== "served") {
+    const resolvedAttemptKey = typeof sessionItem.client_attempt_id === "string" ? sessionItem.client_attempt_id.trim() : "";
+    const replayAttemptKey = payload.clientAttemptId?.trim() ?? "";
+    if (sessionItem.outcome && resolvedAttemptKey && replayAttemptKey === resolvedAttemptKey) {
+      return res.json({
+        sessionId: payload.sessionId,
+        sessionItemId: sessionItem.id,
+        isCorrect: !!sessionItem.is_correct,
+        mode: "multiple_choice",
+        correctOptionId,
+        explanation,
+        feedback: sessionItem.is_correct ? "Correct" : sessionItem.outcome === "skipped" ? "Skipped" : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
     }
 
-    return res.status(500).json({
-      error: "answer_submit_failed",
-      message: insertResult.error.message ?? "Unable to record answer attempt",
+    return res.status(409).json({
+      error: "session_item_not_open",
+      message: "This practice item was already resolved by another request.",
       requestId,
     });
   }
@@ -2235,16 +2116,27 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     .from("practice_session_items")
     .update({
       status: "answered",
-      attempt_id: attemptId,
+      selected_answer: chosen,
+      is_correct: isCorrect,
+      outcome,
+      time_spent_ms: clampedTimeSpentMs,
       updated_at: now,
       answered_at: now,
+      client_attempt_id: payload.clientAttemptId ?? null,
     })
     .eq("id", sessionItem.id)
     .eq("status", "served")
-    .select("id")
+    .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
   if (updateItemErr) {
+    if (isDuplicateConflict(updateItemErr.message)) {
+      return res.status(409).json({
+        error: "idempotency_key_reuse",
+        message: "The provided clientAttemptId is already bound to a different session item.",
+        requestId,
+      });
+    }
     return res.status(500).json({
       error: "session_item_update_failed",
       message: updateItemErr.message,
@@ -2253,23 +2145,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   if (!updatedItem) {
-    const raceDuplicate = await findExistingAttempt({
-      userId,
-      sessionId: payload.sessionId,
-      questionId,
-      sessionItemId: sessionItem.id,
-      idempotencyKey: payload.clientAttemptId,
-    });
-
-    if (raceDuplicate) {
+    const raced = await findSessionItemById(payload.sessionId, sessionItem.id);
+    if (raced?.outcome) {
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
-        isCorrect: !!raceDuplicate.is_correct,
+        isCorrect: !!raced.is_correct,
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: raceDuplicate.is_correct ? "Correct" : raceDuplicate.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: raced.is_correct ? "Correct" : raced.outcome === "skipped" ? "Skipped" : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
@@ -2303,27 +2188,39 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   try {
     const canonicalId = typeof sessionItem.question_canonical_id === "string" ? sessionItem.question_canonical_id : null;
-    if (canonicalId) {
-      await applyMasteryUpdate({
-        userId,
-        questionCanonicalId: canonicalId,
+    const section = typeof sessionItem.question_section === "string" ? sessionItem.question_section.trim() : "";
+    const domain = typeof sessionItem.question_domain === "string" ? sessionItem.question_domain.trim() : "";
+    const skill = typeof sessionItem.question_skill === "string" ? sessionItem.question_skill.trim() : "";
+    const difficultyBucket = resolveDifficultyBucketStrict(sessionItem.question_difficulty ?? null);
+    if (canonicalId && difficultyBucket && section && domain && skill) {
+      await applyLearningEventToMastery({
+        studentId: userId,
+        section,
+        domain,
+        skill,
+        difficulty: difficultyBucket,
+        sourceFamily: "practice",
+        correct: isCorrect,
+        latencyMs: clampedTimeSpentMs,
+        occurredAt: now,
+      });
+    } else if (canonicalId && difficultyBucket && (!section || !domain || !skill)) {
+      console.warn("[practice] mastery emission skipped (missing metadata)", {
+        requestId,
         sessionId: payload.sessionId,
-        isCorrect,
-        selectedChoice: chosen ?? null,
-        timeSpentMs: clampedTimeSpentMs,
-        eventType: isCorrect ? MasteryEventType.PRACTICE_PASS : MasteryEventType.PRACTICE_FAIL,
-        metadata: {
-          exam: typeof sessionItem.question_exam === "string" ? sessionItem.question_exam : null,
-          section: typeof sessionItem.question_section === "string" ? sessionItem.question_section : null,
-          domain: typeof sessionItem.question_domain === "string" ? sessionItem.question_domain : null,
-          skill: typeof sessionItem.question_skill === "string" ? sessionItem.question_skill : null,
-          subskill: typeof sessionItem.question_subskill === "string" ? sessionItem.question_subskill : null,
-          skill_code: null,
-          difficulty: coerceQuestionDifficulty(sessionItem.question_difficulty ?? null),
-          structure_cluster_id: typeof sessionItem.question_structure_cluster_id === "string"
-            ? sessionItem.question_structure_cluster_id
-            : null,
-        },
+        questionCanonicalId: canonicalId,
+        sourceFamily: "practice",
+        section: section || null,
+        domain: domain || null,
+        skill: skill || null,
+      });
+    } else if (canonicalId && !difficultyBucket) {
+      console.warn("[practice] mastery emission skipped (invalid difficulty bucket)", {
+        requestId,
+        sessionId: payload.sessionId,
+        questionCanonicalId: canonicalId,
+        sourceFamily: "practice",
+        rawDifficulty: sessionItem.question_difficulty ?? null,
       });
     }
   } catch (masteryErr: any) {
@@ -2461,37 +2358,45 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   const questionId = String(sessionItem.question_id);
-  const existingAttempt = await findExistingAttempt({
-    userId,
-    sessionId,
-    questionId,
-    sessionItemId: sessionItem.id,
-    idempotencyKey: payload.clientAttemptId,
-  });
+  if (payload.clientAttemptId) {
+    const existingByKey = await findSessionItemByClientAttemptId(userId, payload.clientAttemptId);
+    if (existingByKey) {
+      if (existingByKey.id !== sessionItem.id) {
+        return res.status(409).json({
+          error: "idempotency_key_reuse",
+          message: "The provided clientAttemptId is already bound to a different session item.",
+          requestId,
+        });
+      }
 
-  if (existingAttempt) {
-    if (existingAttempt.session_id !== sessionId || existingAttempt.question_id !== questionId) {
-      return res.status(409).json({
-        error: "idempotency_key_reuse",
-        message: "The provided clientAttemptId is already bound to a different attempt.",
-        requestId,
+      const existingStats = await getSessionStats(sessionId, userId);
+      return res.json({
+        sessionId,
+        sessionItemId: sessionItem.id,
+        skipped: true,
+        mode: "multiple_choice",
+        feedback: "Skipped",
+        stats: existingStats,
+        state: sessionState,
+        idempotentRetried: true,
       });
     }
-
-    const existingStats = await getSessionStats(sessionId, userId);
-    return res.json({
-      sessionId,
-      sessionItemId: sessionItem.id,
-      skipped: true,
-      mode: "multiple_choice",
-      feedback: "Skipped",
-      stats: existingStats,
-      state: sessionState,
-      idempotentRetried: true,
-    });
   }
 
   if (sessionItem.status !== "served") {
+    if (sessionItem.outcome) {
+      const existingStats = await getSessionStats(sessionId, userId);
+      return res.json({
+        sessionId,
+        sessionItemId: sessionItem.id,
+        skipped: sessionItem.outcome === "skipped",
+        mode: "multiple_choice",
+        feedback: sessionItem.outcome === "skipped" ? "Skipped" : "Resolved",
+        stats: existingStats,
+        state: sessionState,
+        idempotentRetried: true,
+      });
+    }
     return res.status(409).json({
       error: "session_item_not_open",
       message: "This practice item is already resolved.",
@@ -2499,77 +2404,33 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  const attemptId = crypto.randomUUID();
   const now = new Date().toISOString();
-
-  const insertPayload: Record<string, unknown> = {
-    id: attemptId,
-    user_id: userId,
-    session_id: sessionId,
-    session_item_id: sessionItem.id,
-    question_id: questionId,
-    selected_answer: null,
-    free_response_answer: null,
-    is_correct: false,
-    outcome: "skipped",
-    time_spent_ms: null,
-    created_at: now,
-    client_attempt_id: payload.clientAttemptId ?? null,
-  };
-
-  const insertResult = await insertAnswerAttempt(insertPayload);
-  if (insertResult.error) {
-    if (isDuplicateConflict(insertResult.error.message)) {
-      const duplicate = await findExistingAttempt({
-        userId,
-        sessionId,
-        questionId,
-        sessionItemId: sessionItem.id,
-        idempotencyKey: payload.clientAttemptId,
-      });
-
-      if (!duplicate) {
-        return res.status(409).json({
-          error: "duplicate_submission",
-          message: "Skip already submitted for this session item.",
-          requestId,
-        });
-      }
-
-      const dupStats = await getSessionStats(sessionId, userId);
-      return res.json({
-        sessionId,
-        sessionItemId: sessionItem.id,
-        skipped: true,
-        mode: "multiple_choice",
-        feedback: "Skipped",
-        stats: dupStats,
-        state: normalizeSessionState(session.status, asSessionMetadata(session.metadata)),
-        idempotentRetried: true,
-      });
-    }
-
-    return res.status(500).json({
-      error: "skip_submit_failed",
-      message: insertResult.error.message ?? "Unable to record skip attempt",
-      requestId,
-    });
-  }
 
   const { data: updatedItem, error: updateItemErr } = await supabaseServer
     .from("practice_session_items")
     .update({
       status: "skipped",
-      attempt_id: attemptId,
+      selected_answer: null,
+      is_correct: false,
+      outcome: "skipped",
+      time_spent_ms: null,
       updated_at: now,
       answered_at: now,
+      client_attempt_id: payload.clientAttemptId ?? null,
     })
     .eq("id", sessionItem.id)
     .eq("status", "served")
-    .select("id")
+    .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
   if (updateItemErr) {
+    if (isDuplicateConflict(updateItemErr.message)) {
+      return res.status(409).json({
+        error: "idempotency_key_reuse",
+        message: "The provided clientAttemptId is already bound to a different session item.",
+        requestId,
+      });
+    }
     return res.status(500).json({
       error: "session_item_update_failed",
       message: updateItemErr.message,
@@ -2578,22 +2439,15 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   if (!updatedItem) {
-    const raceDuplicate = await findExistingAttempt({
-      userId,
-      sessionId,
-      questionId,
-      sessionItemId: sessionItem.id,
-      idempotencyKey: payload.clientAttemptId,
-    });
-
-    if (raceDuplicate) {
+    const raced = await findSessionItemById(sessionId, sessionItem.id);
+    if (raced?.outcome) {
       const raceStats = await getSessionStats(sessionId, userId);
       return res.json({
         sessionId,
         sessionItemId: sessionItem.id,
-        skipped: true,
+        skipped: raced.outcome === "skipped",
         mode: "multiple_choice",
-        feedback: "Skipped",
+        feedback: raced.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: raceStats,
         state: normalizeSessionState(session.status, asSessionMetadata(session.metadata)),
         idempotentRetried: true,
