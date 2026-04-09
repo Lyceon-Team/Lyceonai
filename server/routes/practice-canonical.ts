@@ -831,7 +831,7 @@ async function reservePracticeQuestionQuota(args: {
       status: 402,
       body: {
         error: "Usage limit reached",
-        code: decision.code || "PRACTICE_QUOTA_EXCEEDED",
+        code: decision.code || "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
         limitType: "practice",
         current: decision.current,
         limit: decision.limit,

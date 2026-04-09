@@ -224,7 +224,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
           return {
             data: {
               allowed: false,
-              code: "PRACTICE_QUOTA_EXCEEDED",
+              code: "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
               message: "Practice free-tier limit reached (20 served questions per rolling 24 hours).",
               current: 20,
               limit: 20,

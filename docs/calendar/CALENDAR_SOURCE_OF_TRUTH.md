@@ -43,7 +43,7 @@
 
 ## Entitlement Rules
 - Calendar endpoints under `/api/calendar/*` require active paid entitlement.
-- Entitlement failure is explicit (`402` with `CALENDAR_PREMIUM_REQUIRED`).
+- Entitlement failure is explicit (`402` with `PREMIUM_REQUIRED`).
 - Guardian month view is separately entitlement-gated by guardian middleware.
 
 ## Telemetry Source Of Truth

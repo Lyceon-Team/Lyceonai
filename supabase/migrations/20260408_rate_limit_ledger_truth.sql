@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.usage_rate_limit_ledger (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  scope text NOT NULL CHECK (scope IN ('practice', 'full_length', 'tutor')),
+  scope text NOT NULL CHECK (scope IN ('practice', 'full_length', 'tutor', 'calendar')),
   event_key text NOT NULL,
   student_user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   account_id uuid NULL,
@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS public.usage_rate_limit_ledger (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Premium-required families are entitlement-gated by the server before invoking quota gates:
+-- tutor, full_length, calendar, and mastery surfaces.
+-- This package owns quota/budget truth only (not primary entitlement decisions).
 
 CREATE INDEX IF NOT EXISTS idx_usage_rate_limit_ledger_scope_user_created
   ON public.usage_rate_limit_ledger(scope, student_user_id, created_at DESC);
@@ -253,7 +257,7 @@ BEGIN
   IF v_counts_toward_limit AND v_used >= v_limit THEN
     RETURN jsonb_build_object(
       'allowed', false,
-      'code', 'PRACTICE_QUOTA_EXCEEDED',
+      'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
       'message', 'Practice free-tier limit reached (20 served questions per rolling 24 hours).',
       'current', v_used,
       'limit', v_limit,
@@ -498,6 +502,151 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.check_and_reserve_calendar_quota(
+  p_student_user_id uuid,
+  p_account_id uuid DEFAULT NULL,
+  p_event_key text DEFAULT NULL,
+  p_request_id text DEFAULT NULL,
+  p_now timestamptz DEFAULT now()
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_now timestamptz := COALESCE(p_now, now());
+  v_window_start timestamptz := v_now - interval '7 days';
+  v_limit integer := 3;
+  v_used integer := 0;
+  v_oldest timestamptz := NULL;
+  v_reset_at timestamptz := NULL;
+  v_account uuid := NULL;
+  v_inserted_id uuid := NULL;
+  v_dedupe_key text := NULL;
+  v_existing_id uuid := NULL;
+  v_allowed_event_keys text[] := ARRAY[
+    'calendar_refresh_auto',
+    'calendar_regenerate_full',
+    'calendar_regenerate_day'
+  ];
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('calendar_quota:' || p_student_user_id::text));
+
+  IF p_event_key IS NULL OR NOT (p_event_key = ANY(v_allowed_event_keys)) THEN
+    RETURN jsonb_build_object(
+      'allowed', true,
+      'code', 'CALENDAR_EVENT_NOT_COUNTED',
+      'message', 'Calendar action does not count toward refresh quota.',
+      'current', NULL,
+      'limit', NULL,
+      'remaining', NULL,
+      'reset_at', NULL,
+      'cooldown_until', NULL,
+      'reservation_id', NULL,
+      'duplicate', false
+    );
+  END IF;
+
+  v_account := public._rl_resolve_student_account(p_student_user_id, p_account_id);
+
+  SELECT
+    COALESCE(SUM(units), 0)::integer,
+    MIN(created_at)
+  INTO v_used, v_oldest
+  FROM public.usage_rate_limit_ledger l
+  WHERE l.scope = 'calendar'
+    AND l.student_user_id = p_student_user_id
+    AND l.reservation_state IN ('consumed', 'finalized')
+    AND l.event_key = ANY(v_allowed_event_keys)
+    AND l.created_at >= v_window_start;
+
+  IF v_oldest IS NOT NULL THEN
+    v_reset_at := v_oldest + interval '7 days';
+  ELSE
+    v_reset_at := v_now + interval '7 days';
+  END IF;
+
+  IF p_request_id IS NOT NULL AND length(trim(p_request_id)) > 0 THEN
+    v_dedupe_key := 'calendar:' || p_student_user_id::text || ':' || p_event_key || ':' || trim(p_request_id);
+    SELECT l.id
+    INTO v_existing_id
+    FROM public.usage_rate_limit_ledger l
+    WHERE l.dedupe_key = v_dedupe_key
+    LIMIT 1;
+
+    IF v_existing_id IS NOT NULL THEN
+      RETURN jsonb_build_object(
+        'allowed', true,
+        'code', 'CALENDAR_ALREADY_RESERVED',
+        'message', 'Calendar action already counted for this request.',
+        'current', v_used,
+        'limit', v_limit,
+        'remaining', GREATEST(v_limit - v_used, 0),
+        'reset_at', v_reset_at,
+        'cooldown_until', NULL,
+        'reservation_id', v_existing_id,
+        'duplicate', true
+      );
+    END IF;
+  END IF;
+
+  IF v_used >= v_limit THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'CALENDAR_REFRESH_QUOTA_EXCEEDED',
+      'message', 'Calendar refresh/regeneration limit reached (3 actions per rolling 7 days).',
+      'current', v_used,
+      'limit', v_limit,
+      'remaining', GREATEST(v_limit - v_used, 0),
+      'reset_at', v_reset_at,
+      'cooldown_until', NULL,
+      'reservation_id', NULL,
+      'duplicate', false
+    );
+  END IF;
+
+  INSERT INTO public.usage_rate_limit_ledger (
+    scope,
+    event_key,
+    student_user_id,
+    account_id,
+    dedupe_key,
+    units,
+    reservation_state,
+    metadata,
+    created_at,
+    updated_at
+  )
+  VALUES (
+    'calendar',
+    p_event_key,
+    p_student_user_id,
+    v_account,
+    v_dedupe_key,
+    1,
+    'consumed',
+    jsonb_build_object('request_id', p_request_id, 'counts_toward_limit', true),
+    v_now,
+    v_now
+  )
+  RETURNING id INTO v_inserted_id;
+
+  RETURN jsonb_build_object(
+    'allowed', true,
+    'code', 'CALENDAR_RESERVED',
+    'message', 'Calendar refresh/regeneration quota reserved.',
+    'current', v_used + 1,
+    'limit', v_limit,
+    'remaining', GREATEST(v_limit - (v_used + 1), 0),
+    'reset_at', v_reset_at,
+    'cooldown_until', NULL,
+    'reservation_id', v_inserted_id,
+    'duplicate', false
+  );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.check_and_reserve_tutor_budget(
   p_student_user_id uuid,
   p_account_id uuid DEFAULT NULL,
@@ -590,14 +739,14 @@ BEGIN
     )
     VALUES (
       'tutor', 'tutor_deny_density', p_student_user_id, v_account, 0, 'denied',
-      v_cooldown_until, 'TUTOR_DENSITY_EXCEEDED',
-      jsonb_build_object('request_id', p_request_id, 'session_key', p_session_key),
+      v_cooldown_until, 'TUTOR_DENSITY_LIMIT_EXCEEDED',
+      jsonb_build_object('request_id', p_request_id, 'session_key', p_session_key, 'density_scope', 'global'),
       v_now, v_now
     );
 
     RETURN jsonb_build_object(
       'allowed', false,
-      'code', 'TUTOR_DENSITY_EXCEEDED',
+      'code', 'TUTOR_DENSITY_LIMIT_EXCEEDED',
       'message', 'Tutor request density exceeded. Please slow down.',
       'current', v_interactions_5m,
       'limit', v_global_density_limit,
@@ -628,14 +777,14 @@ BEGIN
       )
       VALUES (
         'tutor', 'tutor_deny_session_density', p_student_user_id, v_account, 0, 'denied',
-        v_cooldown_until, 'TUTOR_SESSION_DENSITY_EXCEEDED',
-        jsonb_build_object('request_id', p_request_id, 'session_key', trim(p_session_key)),
+        v_cooldown_until, 'TUTOR_DENSITY_LIMIT_EXCEEDED',
+        jsonb_build_object('request_id', p_request_id, 'session_key', trim(p_session_key), 'density_scope', 'session'),
         v_now, v_now
       );
 
       RETURN jsonb_build_object(
         'allowed', false,
-        'code', 'TUTOR_SESSION_DENSITY_EXCEEDED',
+        'code', 'TUTOR_DENSITY_LIMIT_EXCEEDED',
         'message', 'Tutor interaction density exceeded for this session context.',
         'current', v_session_interactions_5m,
         'limit', v_session_density_limit,
@@ -853,6 +1002,8 @@ GRANT EXECUTE ON FUNCTION public.check_and_reserve_practice_quota(uuid, uuid, uu
 GRANT EXECUTE ON FUNCTION public.check_and_reserve_practice_quota(uuid, uuid, uuid, uuid, boolean, text, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.check_and_reserve_full_length_quota(uuid, uuid, text, timestamptz) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_and_reserve_full_length_quota(uuid, uuid, text, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.check_and_reserve_calendar_quota(uuid, uuid, text, text, timestamptz) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.check_and_reserve_calendar_quota(uuid, uuid, text, text, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.check_and_reserve_tutor_budget(uuid, uuid, text, integer, integer, text, timestamptz) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_and_reserve_tutor_budget(uuid, uuid, text, integer, integer, text, timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.finalize_tutor_usage(uuid, boolean, text, integer, integer, bigint, timestamptz) TO authenticated;

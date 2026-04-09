@@ -8,7 +8,7 @@ export interface RateLimitDecision {
   allowed: boolean;
   code: string;
   message: string;
-  limitType: "practice" | "full_length" | "tutor";
+  limitType: "practice" | "full_length" | "tutor" | "calendar";
   current: number | null;
   limit: number | null;
   remaining: number | null;
@@ -236,6 +236,35 @@ export async function checkAndReserveTutorBudget(args: {
   );
 }
 
+export async function checkAndReserveCalendarQuota(args: {
+  studentUserId: string;
+  accountId?: string | null;
+  eventKey: "calendar_refresh_auto" | "calendar_regenerate_full" | "calendar_regenerate_day";
+  requestId?: string | null;
+  role?: string | null;
+  supabase?: RpcClient;
+}): Promise<RateLimitDecision> {
+  if (args.role === "admin") {
+    return {
+      ...defaultBypassDecision("calendar"),
+      code: "RATE_LIMIT_BYPASS_ADMIN",
+      message: "Admin bypass",
+    };
+  }
+
+  return callDecisionRpc(
+    "check_and_reserve_calendar_quota",
+    {
+      p_student_user_id: args.studentUserId,
+      p_account_id: args.accountId ?? null,
+      p_event_key: args.eventKey,
+      p_request_id: args.requestId ?? null,
+    },
+    "calendar",
+    args.supabase,
+  );
+}
+
 export async function finalizeTutorUsage(args: {
   reservationId: string;
   success: boolean;
@@ -330,4 +359,3 @@ export function estimateTutorCostMicros(inputTokens: number, outputTokens: numbe
   const costMicros = Math.ceil((safeIn / 1000) * 75 + (safeOut / 1000) * 300);
   return Number.isFinite(costMicros) ? Math.max(0, costMicros) : 0;
 }
-

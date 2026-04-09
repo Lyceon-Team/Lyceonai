@@ -151,7 +151,7 @@ export default function LyceonDashboard() {
 
   const estimateErrorMessage = estimateError instanceof Error ? estimateError.message : "";
   const estimatePremiumLocked =
-    estimateErrorMessage.includes("402") || estimateErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+    estimateErrorMessage.includes("402") || estimateErrorMessage.includes("PREMIUM_REQUIRED");
 
   const todayPlan: StudyPlanDay | undefined = useMemo(
     () => calendarData?.days?.find((day) => day.day_date === todayISO),

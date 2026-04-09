@@ -45,7 +45,13 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
 }));
 
 vi.mock("../../server/services/kpi-access", () => ({
-  resolvePaidKpiAccessForUser: vi.fn(async () => ({ hasPaidAccess: true, reason: "mock" })),
+  resolvePaidKpiAccessForUser: vi.fn(async () => ({
+    hasPaidAccess: true,
+    reason: "active premium",
+    plan: "paid",
+    status: "active",
+    currentPeriodEnd: "2099-01-01T00:00:00.000Z",
+  })),
 }));
 
 vi.mock("../../server/services/kpi-truth-layer", () => ({
@@ -72,4 +78,3 @@ describe("Full-Length Quota Denial Contract", () => {
     expect(res.body.requestId).toBe("req-full-length-quota");
   });
 });
-

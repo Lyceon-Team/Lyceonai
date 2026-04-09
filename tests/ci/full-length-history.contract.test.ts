@@ -47,7 +47,7 @@ describe("Full-Length History Route Contract", () => {
     vi.clearAllMocks();
   });
 
-  it("returns canonical session history with entitlement-aware report/review flags", async () => {
+  it("returns canonical session history when premium entitlement is active", async () => {
     serviceMocks.listExamSessions.mockResolvedValue([
       {
         sessionId: "session-completed-1",
@@ -73,8 +73,11 @@ describe("Full-Length History Route Contract", () => {
       },
     ]);
     kpiAccessMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-      hasPaidAccess: false,
-      reason: "inactive",
+      hasPaidAccess: true,
+      reason: "active entitlement",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: "2099-01-01T00:00:00.000Z",
     });
 
     const router = (await import("../../server/routes/full-length-exam-routes")).default;
@@ -92,13 +95,13 @@ describe("Full-Length History Route Contract", () => {
     });
     expect(kpiAccessMocks.resolvePaidKpiAccessForUser).toHaveBeenCalledWith("student-1", "student");
     expect(res.body.reportAccess).toEqual({
-      hasPaidAccess: false,
-      reason: "inactive",
+      hasPaidAccess: true,
+      reason: "active entitlement",
     });
     expect(res.body.sessions).toEqual([
       expect.objectContaining({
         sessionId: "session-completed-1",
-        reportAvailable: false,
+        reportAvailable: true,
         reviewAvailable: true,
       }),
       expect.objectContaining({
@@ -114,6 +117,9 @@ describe("Full-Length History Route Contract", () => {
     kpiAccessMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
       hasPaidAccess: true,
       reason: "active",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
     });
 
     const router = (await import("../../server/routes/full-length-exam-routes")).default;
@@ -136,6 +142,9 @@ describe("Full-Length History Route Contract", () => {
     kpiAccessMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
       hasPaidAccess: true,
       reason: "active",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
     });
 
     const router = (await import("../../server/routes/full-length-exam-routes")).default;
@@ -150,5 +159,28 @@ describe("Full-Length History Route Contract", () => {
       error: "Internal error",
       requestId: "req-full-length-history",
     });
+  });
+
+  it("denies full-length history when premium entitlement is inactive", async () => {
+    serviceMocks.listExamSessions.mockResolvedValue([]);
+    kpiAccessMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: false,
+      reason: "inactive",
+      plan: "free",
+      status: "inactive",
+      currentPeriodEnd: null,
+    });
+
+    const router = (await import("../../server/routes/full-length-exam-routes")).default;
+    const app = express();
+    app.use(express.json());
+    app.use("/api/full-length", router);
+
+    const res = await request(app).get("/api/full-length/sessions");
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("PREMIUM_REQUIRED");
+    expect(res.body.feature).toBe("full_length");
+    expect(serviceMocks.listExamSessions).not.toHaveBeenCalled();
   });
 });
