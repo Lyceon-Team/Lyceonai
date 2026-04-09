@@ -21,6 +21,7 @@ interface ChatMessage {
 }
 
 export default function ChatInterface() {
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -62,12 +63,32 @@ export default function ChatInterface() {
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      const response = await apiRequest('/api/tutor/v2', {
+      let activeConversationId = conversationId;
+      if (!activeConversationId) {
+        const startResponse = await apiRequest('/api/tutor/conversations', {
+          method: 'POST',
+          body: JSON.stringify({
+            entry_mode: 'general',
+            source_surface: 'dashboard',
+            source_session_id: null,
+            source_session_item_id: null,
+            source_question_row_id: null,
+            source_question_canonical_id: null,
+          }),
+        });
+        const startResult = await startResponse.json();
+        activeConversationId = startResult?.data?.conversation_id ?? null;
+        if (!activeConversationId) throw new Error('Failed to initialize tutor conversation');
+        setConversationId(activeConversationId);
+      }
+
+      const response = await apiRequest('/api/tutor/messages', {
         method: 'POST',
         body: JSON.stringify({
+          conversation_id: activeConversationId,
           message: messageContent,
-          mode: 'concept',
-          testCode: 'SAT'
+          content_kind: 'message',
+          client_turn_id: crypto.randomUUID(),
         })
       });
       
@@ -76,14 +97,8 @@ export default function ChatInterface() {
       const tutorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'tutor',
-        content: result.answer,
+        content: result?.data?.response?.content ?? 'I could not generate a response right now.',
         timestamp: new Date(),
-        sources: result.ragContext?.primaryQuestion ? [{
-          questionId: result.ragContext.primaryQuestion.canonicalId || '',
-          documentName: `SAT ${result.ragContext.primaryQuestion.sectionCode || 'Question'}`,
-          pageNumber: 0,
-          questionNumber: 0
-        }] : undefined
       };
 
       setMessages(prev => [...prev, tutorMessage]);

@@ -10,10 +10,13 @@ All mutating HTTP endpoints (POST/PUT/PATCH/DELETE) that use cookie-based authen
 
 Updated the following route files to include CSRF protection:
 
-#### tutor-v2.ts
+#### tutor-runtime.ts
 - Added `import { csrfGuard } from "../middleware/csrf"`
 - Created `csrfProtection` constant
-- Applied to `POST /` endpoint (line 162)
+- Applied via canonical mount protection in `server/index.ts` for:
+  - `POST /api/tutor/messages`
+  - `POST /api/tutor/conversations`
+  - `POST /api/tutor/conversations/:conversationId/close`
 
 #### guardian-routes.ts
 - Added `import { csrfGuard } from '../middleware/csrf'`
@@ -122,7 +125,9 @@ Scanning all mutating HTTP endpoints for CSRF protection...
 20. POST /api/questions/validate
 21. POST /api/questions/feedback
 22. POST /api/review-errors/attempt
-23. POST /api/tutor/v2
+23. POST /api/tutor/messages
+24. POST /api/tutor/conversations
+25. POST /api/tutor/conversations/:conversationId/close
 
 ## Exempt Endpoints (1 total)
 

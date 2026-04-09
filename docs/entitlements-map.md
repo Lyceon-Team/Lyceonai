@@ -56,7 +56,7 @@ Some features are available to free tier but with **usage limits**:
 | **Student Routes** | | | | | |
 | `/dashboard` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:85`, `server/index.ts:330-333` |
 | `/calendar` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:86`, `server/index.ts:327` |
-| `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `client/src/App.tsx:87`, `server/index.ts:273` |
+| `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `client/src/App.tsx:87`, `server/index.ts` |
 | `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | None (UI-disabled stub) | `client/src/App.tsx:88` |
 | `/practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:89`, `server/index.ts:478-480` |
 | `/practice/math` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:90` |
@@ -115,7 +115,8 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/practice/answer` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/practice-canonical.ts` |
 | `GET /api/practice/topics` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:479` |
 | `GET /api/practice/reference/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:480` |
-| `POST /api/tutor/v2` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `server/index.ts:273` |
+| `POST /api/tutor/messages` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `server/index.ts` |
+| `POST /api/tutor/conversations` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `server/index.ts` |
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
 | `GET /api/questions/stats` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |

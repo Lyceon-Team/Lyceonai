@@ -5,7 +5,7 @@
  * with a clean production-ready server focused on:
  *   - Supabase authentication (httpOnly cookies)
  *   - POST /api/rag/v2 (structured retrieval)
- *   - POST /api/tutor/v2 (tutor runtime)
+ *   - /api/tutor/* (tutor runtime)
  *   - Practice and tutoring endpoints
  *   - GET /healthz
  */
@@ -17,11 +17,12 @@ import cookieParser from "cookie-parser";
 import { PUBLIC_SSR_ROUTES, getPublicPageSeo } from "./seo-content";
 import { LEGAL_META, PUBLIC_META } from "../shared/seo/public-meta";
 import rateLimit from "express-rate-limit";
-// SECURITY GUARD: /api/tutor/v2 remains server-owned in server/routes/tutor-v2.ts.
+// Canonical mounted owner: server/routes/tutor-* is the production owner.
+// Any duplicate tutor route under apps/api/** must remain unmounted.
 // Canonical RAG route owner is apps/api/src/routes/rag-v2.ts.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import ragV2Router from "../apps/api/src/routes/rag-v2";
-import tutorV2Router from "./routes/tutor-v2";
+import tutorRuntimeRouter from "./routes/tutor-runtime";
 import { legalRouter } from "./routes/legal-routes.js";
 import fullLengthExamRouter from "./routes/full-length-exam-routes";
 import {
@@ -292,14 +293,19 @@ app.use(
   ragV2Router
 );
 
-// Tutor v2 endpoint - tutor runtime with canonical RAG context
+// Canonical tutor runtime endpoints:
+// POST /api/tutor/conversations
+// POST /api/tutor/messages
+// GET  /api/tutor/conversations/:conversationId
+// GET  /api/tutor/conversations
+// POST /api/tutor/conversations/:conversationId/close
 app.use(
-  "/api/tutor/v2",
+  "/api/tutor",
   ragLimiter,
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  tutorV2Router
+  tutorRuntimeRouter
 );
 
 // Google OAuth Routes (direct OAuth flow)
@@ -469,7 +475,7 @@ app.get("/api/_whoami", (_req, res) => {
     service: "lyceon-api",
     env: process.env.NODE_ENV || "development",
     version: "1.0.0",
-    routes: ["rag/v2", "tutor/v2"],
+    routes: ["rag/v2", "tutor/conversations", "tutor/messages"],
     timestamp: new Date().toISOString(),
   });
 });
@@ -721,7 +727,11 @@ if (isMainModule) {
     console.log(`\n📋 Core API endpoints:`);
     console.log(`  GET    /healthz`);
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/v2 (tutor runtime with canonical RAG)`);
+    console.log(`  POST   /api/tutor/conversations (requires Supabase auth)`);
+    console.log(`  POST   /api/tutor/messages (requires Supabase auth)`);
+    console.log(`  GET    /api/tutor/conversations/:conversationId (requires Supabase auth)`);
+    console.log(`  GET    /api/tutor/conversations (requires Supabase auth)`);
+    console.log(`  POST   /api/tutor/conversations/:conversationId/close (requires Supabase auth)`);
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
