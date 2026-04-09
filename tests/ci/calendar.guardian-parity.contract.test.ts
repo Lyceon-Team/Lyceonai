@@ -20,13 +20,6 @@ const kpiAccessMocks = vi.hoisted(() => ({
   })),
 }));
 
-const kpiMocks = vi.hoisted(() => ({
-  buildCanonicalPracticeKpiSnapshot: vi.fn(),
-  buildStudentKpiView: vi.fn(),
-  buildFullTestKpis: vi.fn(),
-  fullTestMeasurementModel: vi.fn(),
-}));
-
 type TableName =
   | "student_study_profile"
   | "student_study_plan_days"
@@ -235,8 +228,6 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
 vi.mock("../../apps/api/src/services/mastery-derived", () => ({
   getDerivedWeaknessSignals: vi.fn(async () => []),
 }));
-vi.mock("../../server/services/kpi-truth-layer", () => kpiMocks);
-
 import { calendarRouter } from "../../apps/api/src/routes/calendar";
 
 function buildStudentApp() {

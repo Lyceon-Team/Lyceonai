@@ -6,10 +6,9 @@
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
 import {
-  buildCanonicalPracticeKpiSnapshot,
-  buildPersistedScoreProjection,
-  buildStudentKpiView,
-} from "../../services/kpi-truth-layer";
+  buildScoreEstimateFromCanonical,
+  buildStudentKpiViewFromCanonical,
+} from "../../services/canonical-runtime-views";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 
 function estimateExplanation(label: string, detail: string): {
@@ -71,8 +70,8 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       });
     }
 
-    const scoreProjection = await buildPersistedScoreProjection(user.id);
-    const totalQuestions = scoreProjection.totalQuestions;
+    const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
+    const totalQuestions = scoreProjection.totalQuestionsAttempted;
 
     if (totalQuestions === 0) {
       return res.json({
@@ -116,12 +115,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         diagnostic: ["mastery_evidence_count"],
       },
       estimate: {
-        composite: scoreProjection.projection.composite,
-        math: scoreProjection.projection.math,
-        rw: scoreProjection.projection.rw,
-        range: scoreProjection.projection.range,
-        confidence: scoreProjection.projection.confidence,
-        breakdown: scoreProjection.projection.breakdown,
+        composite: scoreProjection.estimate.composite,
+        math: scoreProjection.estimate.math,
+        rw: scoreProjection.estimate.rw,
+        range: scoreProjection.estimate.range,
+        confidence: scoreProjection.estimate.confidence,
+        breakdown: scoreProjection.estimate.breakdown,
       },
       explanations: {
         estimated_scaled_total: estimateExplanation(
@@ -166,8 +165,7 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
 
-    const snapshot = await buildCanonicalPracticeKpiSnapshot(user.id);
-    const view = buildStudentKpiView(snapshot, includeHistoricalTrends);
+    const view = await buildStudentKpiViewFromCanonical(user.id, includeHistoricalTrends);
 
     return res.json({
       modelVersion: view.modelVersion,
