@@ -36,7 +36,7 @@ This document is the single authoritative registry of:
 | `/terms` | public | free | Redirect→`/legal/student-terms` | N/A | ACTIVE |
 | `/dashboard` | student, admin | free | LyceonDashboard | `/api/progress/kpis`, `/api/progress/projection`, `/api/calendar/profile`, `/api/calendar/month` | ACTIVE |
 | `/calendar` | student, admin | free | CalendarPage | `/api/calendar/month`, `/api/calendar/profile` | ACTIVE |
-| `/chat` | student, admin | entitled† | Chat | `/api/tutor/v2` (with usage limits) | ACTIVE |
+| `/chat` | student, admin | entitled† | Chat | `/api/tutor/conversations`, `/api/tutor/messages` (with runtime budget/throttle gates) | ACTIVE |
 | `/full-test` | student, admin | free | FullTest | `/api/full-length/sessions`, `/api/full-length/sessions/current`, `/api/full-length/sessions/:id/start`, `/api/full-length/sessions/:id/answer`, `/api/full-length/sessions/:id/module/submit`, `/api/full-length/sessions/:id/break/continue`, `/api/full-length/sessions/:id/complete` | ACTIVE |
 | `/practice` | student, admin | free | Practice | `/api/questions/stats`, `/api/practice/topics`, `/api/progress/kpis`, `/api/calendar/month` | ACTIVE |
 | `/practice/topics` | student, admin | free | BrowseTopics | `/api/practice/topics`, `/api/practice/reference/questions` | ACTIVE |
@@ -134,7 +134,11 @@ Removed auth endpoints (must return 404):
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
-| `/api/tutor/v2` | POST | Yes | student/admin | entitled† | tutor chat |
+| `/api/tutor/conversations` | POST | Yes | student/admin | entitled† | start/reuse tutor conversation |
+| `/api/tutor/messages` | POST | Yes | student/admin | entitled† | append tutor turn + response |
+| `/api/tutor/conversations/:conversationId` | GET | Yes | student/admin | entitled† | fetch tutor conversation + messages |
+| `/api/tutor/conversations` | GET | Yes | student/admin | entitled† | list tutor conversations |
+| `/api/tutor/conversations/:conversationId/close` | POST | Yes | student/admin | entitled† | close/abandon tutor conversation |
 | `/api/questions` | GET | Yes | student/admin | free | Get questions list |
 | `/api/questions/:id` | GET | Yes | student/admin | free | Get specific question |
 | `/api/questions/validate` | POST | No (unmounted) | N/A | N/A | UNMOUNTED in runtime (404 contract) |

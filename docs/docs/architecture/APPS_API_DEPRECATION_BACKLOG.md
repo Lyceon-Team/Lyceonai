@@ -10,7 +10,6 @@ The following route files in `apps/api/src/routes/` are not imported by `server/
 - `apps/api/src/routes/admin-questions.ts`
 - `apps/api/src/routes/healthz.ts`
 - `apps/api/src/routes/question-feedback.ts`
-- `apps/api/src/routes/tutor-v2.ts`
 
 ## Deprecation Process
 

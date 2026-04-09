@@ -87,10 +87,15 @@ describe('CI Routes Tests', () => {
         needsOrigin: true,
       },
       { 
-        path: '/api/tutor/v2', 
+        path: '/api/tutor/messages', 
         method: 'post', 
-        name: 'Tutor v2',
-        body: { message: 'Help me with math' },
+        name: 'Tutor runtime append',
+        body: {
+          conversation_id: '11111111-1111-4111-8111-111111111111',
+          message: 'Help me with math',
+          content_kind: 'message',
+          client_turn_id: '22222222-2222-4222-8222-222222222222',
+        },
         requiresAuth: true,
         requiresAdmin: false,
         needsOrigin: true,
