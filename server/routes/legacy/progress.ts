@@ -24,13 +24,28 @@ function estimateExplanation(label: string, detail: string): {
   };
 }
 
-function premiumKpiRequired(res: Response, requestId: string | undefined, feature: string, reason: string) {
+function premiumKpiRequired(
+  res: Response,
+  requestId: string | undefined,
+  feature: string,
+  entitlement: {
+    reason: string;
+    plan: "free" | "paid";
+    status: "active" | "trialing" | "past_due" | "canceled" | "inactive";
+    currentPeriodEnd: string | null;
+  },
+) {
   return res.status(402).json({
-    error: "Premium KPI feature required",
-    code: "PREMIUM_KPI_REQUIRED",
+    error: "Premium feature required",
+    code: "PREMIUM_REQUIRED",
     feature,
     message: "Upgrade to an active paid plan to unlock this KPI surface.",
-    reason,
+    reason: entitlement.reason,
+    entitlement: {
+      plan: entitlement.plan,
+      status: entitlement.status,
+      currentPeriodEnd: entitlement.currentPeriodEnd,
+    },
     requestId,
   });
 }
@@ -48,7 +63,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     if (!access.hasPaidAccess) {
-      return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
+      return premiumKpiRequired(res, req.requestId, "mastery_hexagon", {
+        reason: access.reason,
+        plan: access.plan,
+        status: access.status,
+        currentPeriodEnd: access.currentPeriodEnd,
+      });
     }
 
     const scoreProjection = await buildPersistedScoreProjection(user.id);

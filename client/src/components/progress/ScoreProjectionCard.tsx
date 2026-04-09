@@ -14,7 +14,7 @@ export function ScoreProjectionCard() {
   });
   const errorMessage = error instanceof Error ? error.message : "";
   const isPremiumLocked =
-    errorMessage.includes("402") || errorMessage.includes("PREMIUM_KPI_REQUIRED");
+    errorMessage.includes("402") || errorMessage.includes("PREMIUM_REQUIRED");
 
   if (isLoading) {
     return (

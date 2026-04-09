@@ -6,6 +6,7 @@ import { updateStudentStyle } from "../../apps/api/src/lib/profile-service";
 import { logTutorInteraction } from "../../apps/api/src/lib/tutor-log";
 import type { RagQueryRequest, StudentProfile, QuestionContext } from "../../apps/api/src/lib/rag-types";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
 import {
   checkAndReserveTutorBudget,
   estimateTokenCount,
@@ -269,6 +270,26 @@ router.post("/", async (req: Request, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
+    const paidAccess = await resolvePaidKpiAccessForUser(
+      userId,
+      (req.user?.role ?? "student") as "student" | "guardian" | "admin",
+    );
+    if (!paidAccess.hasPaidAccess) {
+      return res.status(402).json({
+        error: "Premium feature required",
+        code: "PREMIUM_REQUIRED",
+        feature: "tutor",
+        message: "Upgrade to an active paid plan to unlock this feature.",
+        reason: paidAccess.reason,
+        entitlement: {
+          plan: paidAccess.plan,
+          status: paidAccess.status,
+          currentPeriodEnd: paidAccess.currentPeriodEnd,
+        },
+        requestId: req.requestId,
+      });
+    }
+
     const parsed = TutorV2RequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({
@@ -291,8 +312,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     if (!tutorBudget.allowed) {
       const isThrottle = tutorBudget.code === "TUTOR_COOLDOWN_ACTIVE"
-        || tutorBudget.code === "TUTOR_DENSITY_EXCEEDED"
-        || tutorBudget.code === "TUTOR_SESSION_DENSITY_EXCEEDED";
+        || tutorBudget.code === "TUTOR_DENSITY_LIMIT_EXCEEDED";
       return res.status(isThrottle ? 429 : 402).json({
         error: "Tutor limit reached",
         code: tutorBudget.code,

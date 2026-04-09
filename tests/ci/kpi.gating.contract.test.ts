@@ -205,9 +205,13 @@ describe('KPI Gating Contract', () => {
 
     expect(getStatus()).toBe(402);
     const payload = getBody();
-    expect(payload.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(payload.code).toBe('PREMIUM_REQUIRED');
     expect(payload.feature).toBe('mastery_hexagon');
     expect(payload.requestId).toBe('req-1');
+    expect(payload.entitlement).toMatchObject({
+      plan: 'free',
+      status: 'inactive',
+    });
   });
 
   it('returns estimate payload shape when paid access is active', async () => {
@@ -268,7 +272,7 @@ describe('KPI Gating Contract', () => {
     const res = await request(app).get('/api/full-length/sessions/session-free-1/report');
 
     expect(res.status).toBe(402);
-    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
     expect(res.body.feature).toBe('full_test_analytics');
     expect(getExamReport).not.toHaveBeenCalled();
   });
@@ -287,8 +291,22 @@ describe('KPI Gating Contract', () => {
     const res = await request(app).get('/api/me/mastery/skills');
 
     expect(res.status).toBe(402);
-    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
     expect(res.body.feature).toBe('mastery_hexagon');
+  });
+
+  it('denies free-tier full-length session creation surface', async () => {
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app).post('/api/full-length/sessions').send({});
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
+    expect(res.body.feature).toBe('full_length');
   });
 });
 

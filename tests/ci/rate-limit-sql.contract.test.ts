@@ -12,8 +12,10 @@ describe("Rate-Limit SQL Contract", () => {
     const sql = fs.readFileSync(migrationPath, "utf8");
 
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS public.usage_rate_limit_ledger");
+    expect(sql).toContain("scope IN ('practice', 'full_length', 'tutor', 'calendar')");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_practice_quota");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_full_length_quota");
+    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_calendar_quota");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_tutor_budget");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.finalize_tutor_usage");
   });
@@ -33,5 +35,24 @@ describe("Rate-Limit SQL Contract", () => {
     expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_rate_limit_ledger_dedupe");
     expect(sql).toMatch(/dedupe_key/i);
   });
-});
 
+  it("locks stable denial codes for canonical quota surfaces", () => {
+    const sql = fs.readFileSync(migrationPath, "utf8");
+
+    expect(sql).toContain("PRACTICE_FREE_DAILY_QUOTA_EXCEEDED");
+    expect(sql).toContain("FULL_LENGTH_QUOTA_EXCEEDED");
+    expect(sql).toContain("TUTOR_BUDGET_EXCEEDED");
+    expect(sql).toContain("TUTOR_COOLDOWN_ACTIVE");
+    expect(sql).toContain("TUTOR_DENSITY_LIMIT_EXCEEDED");
+    expect(sql).toContain("CALENDAR_REFRESH_QUOTA_EXCEEDED");
+  });
+
+  it("locks counted calendar events for rolling seven-day quota", () => {
+    const sql = fs.readFileSync(migrationPath, "utf8");
+
+    expect(sql).toContain("calendar_refresh_auto");
+    expect(sql).toContain("calendar_regenerate_full");
+    expect(sql).toContain("calendar_regenerate_day");
+    expect(sql).toMatch(/calendar_quota:/i);
+  });
+});

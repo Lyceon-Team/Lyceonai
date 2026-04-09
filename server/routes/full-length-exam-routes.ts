@@ -65,6 +65,46 @@ function sendRouteError(
   });
 }
 
+function sendPremiumRequired(
+  req: Request,
+  res: Response,
+  feature: string,
+  access: { reason: string; plan: string; status: string; currentPeriodEnd?: string | null },
+) {
+  return res.status(402).json({
+    error: "Premium feature required",
+    code: "PREMIUM_REQUIRED",
+    feature,
+    message: "Upgrade to an active paid plan to unlock this feature.",
+    reason: access.reason,
+    entitlement: {
+      plan: access.plan,
+      status: access.status,
+      currentPeriodEnd: access.currentPeriodEnd ?? null,
+    },
+    requestId: req.requestId,
+  });
+}
+
+async function ensureFullLengthPremium(
+  req: Request,
+  res: Response,
+  user: { id: string; role: string },
+  feature = "full_length",
+): Promise<boolean> {
+  const access = await resolvePaidKpiAccessForUser(user.id, user.role as "student" | "guardian" | "admin");
+  if (!access.hasPaidAccess) {
+    sendPremiumRequired(req, res, feature, {
+      reason: access.reason,
+      plan: access.plan,
+      status: access.status,
+      currentPeriodEnd: access.currentPeriodEnd,
+    });
+    return false;
+  }
+  return true;
+}
+
 function sendClientInstanceConflict(req: Request, res: Response, clientInstanceId: string | null) {
   return res.status(409).json({
     error: "client_instance_conflict",
@@ -129,6 +169,9 @@ router.post("/sessions", requireSupabaseAuth, doubleCsrfProtection, async (req: 
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -203,6 +246,9 @@ router.get("/sessions", requireSupabaseAuth, async (req: Request, res: Response)
     if (!user) {
       return;
     }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+      return;
+    }
 
     const rawLimit = Number(req.query.limit ?? 20);
     const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(Math.trunc(rawLimit), 50)) : 20;
@@ -249,6 +295,9 @@ router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, asy
     if (!user) {
       return;
     }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+      return;
+    }
 
     const sessionId = req.query.sessionId as string;
     if (!sessionId) {
@@ -288,6 +337,9 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtect
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -339,6 +391,9 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, doubleCsrfProtec
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -408,6 +463,9 @@ router.post(
       if (!user) {
         return;
       }
+      if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+        return;
+      }
 
       const { sessionId, moduleId } = req.params;
       if (!sessionId || !moduleId) {
@@ -473,6 +531,9 @@ router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, doubleCsr
     if (!user) {
       return;
     }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+      return;
+    }
 
     const { sessionId } = req.params;
     if (!sessionId) {
@@ -530,6 +591,9 @@ router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, doubleCs
     if (!user) {
       return;
     }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
+      return;
+    }
 
     const { sessionId } = req.params;
     if (!sessionId) {
@@ -578,6 +642,9 @@ router.post("/sessions/:sessionId/complete", requireSupabaseAuth, doubleCsrfProt
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -629,22 +696,13 @@ router.get("/sessions/:sessionId/report", requireSupabaseAuth, async (req: Reque
     if (!user) {
       return;
     }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_test_analytics"))) {
+      return;
+    }
 
     const { sessionId } = req.params;
     if (!sessionId) {
       return sendRouteError(req, res, 400, "sessionId required");
-    }
-
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    if (!access.hasPaidAccess) {
-      return res.status(402).json({
-        error: "Premium KPI feature required",
-        code: "PREMIUM_KPI_REQUIRED",
-        feature: "full_test_analytics",
-        message: "Upgrade to an active paid plan to unlock full-test analytics.",
-        reason: access.reason,
-        requestId: req.requestId,
-      });
     }
 
     const result = await fullLengthExamService.getExamReport({
@@ -676,6 +734,9 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
