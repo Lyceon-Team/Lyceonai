@@ -16,7 +16,7 @@ import { buildAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
-import { buildStudentFullLengthReportView } from "../services/kpi-truth-layer";
+import { buildStudentFullLengthReportView } from "../services/canonical-runtime-views";
 import { z } from "zod";
 
 const router = Router();

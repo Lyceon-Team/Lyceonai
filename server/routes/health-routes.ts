@@ -26,7 +26,6 @@ interface HealthReport {
   schema: {
     questions: SchemaCheck;
     practice_sessions: SchemaCheck;
-    answer_attempts: SchemaCheck;
     practice_events: SchemaCheck;
   };
 }
@@ -55,7 +54,6 @@ router.get('/practice', async (req: Request, res: Response) => {
     schema: {
       questions: { hasColumns: [], missingColumns: [] },
       practice_sessions: { hasColumns: [], missingColumns: [] },
-      answer_attempts: { hasColumns: [], missingColumns: [] },
       practice_events: { hasColumns: [], missingColumns: [] },
     },
   };
@@ -94,7 +92,6 @@ router.get('/practice', async (req: Request, res: Response) => {
     const requiredColumns: Record<string, string[]> = {
       questions: ['id', 'canonical_id', 'status', 'section', 'section_code', 'question_type', 'stem', 'options', 'correct_answer', 'answer_text', 'explanation', 'option_metadata', 'domain', 'skill', 'subskill', 'skill_code', 'difficulty', 'source_type'],
       practice_sessions: ['id', 'user_id', 'section', 'status', 'started_at'],
-      answer_attempts: ['id', 'user_id', 'session_id', 'question_id', 'selected_answer', 'is_correct', 'attempted_at'],
       practice_events: ['id', 'user_id', 'event_type', 'created_at'],
     };
 

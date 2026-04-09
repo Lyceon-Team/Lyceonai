@@ -54,7 +54,7 @@ vi.mock("../../server/services/kpi-access", () => ({
   })),
 }));
 
-vi.mock("../../server/services/kpi-truth-layer", () => ({
+vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildStudentFullLengthReportView: (x: any) => x,
 }));
 
