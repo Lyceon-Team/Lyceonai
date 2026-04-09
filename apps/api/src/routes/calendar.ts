@@ -21,6 +21,7 @@ import {
   type TaskType,
 } from "../services/calendar-planner";
 import { buildCalendarMonthView, isCalendarCountedEventType } from "../services/calendar-month-view";
+import { checkAndReserveCalendarQuota, RateLimitUnavailableError } from "../lib/rate-limit-ledger";
 export { isCalendarCountedEventType };
 
 export const calendarRouter = Router();
@@ -483,9 +484,10 @@ async function ensurePremiumAccess(
   const access = await resolvePaidKpiAccessForUser(user.id, user.role);
   if (!access.hasPaidAccess) {
     res.status(402).json({
-      error: "Calendar planner requires active entitlement",
-      code: "CALENDAR_PREMIUM_REQUIRED",
+      error: "Premium feature required",
+      code: "PREMIUM_REQUIRED",
       feature,
+      message: "Upgrade to an active paid plan to unlock this feature.",
       reason: access.reason,
       entitlement: {
         plan: access.plan,
@@ -503,6 +505,55 @@ async function ensurePremiumAccess(
     reason: access.reason,
     currentPeriodEnd: access.currentPeriodEnd,
   };
+}
+
+async function reserveCalendarMutationQuota(args: {
+  user: SupabaseUser;
+  requestId?: string;
+  eventKey: "calendar_refresh_auto" | "calendar_regenerate_full" | "calendar_regenerate_day";
+}): Promise<{ ok: true } | { ok: false; response: Record<string, unknown>; status: 402 | 503 }> {
+  try {
+    const decision = await checkAndReserveCalendarQuota({
+      studentUserId: args.user.id,
+      role: args.user.role,
+      eventKey: args.eventKey,
+      requestId: args.requestId ?? null,
+    });
+
+    if (decision.allowed) {
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      status: 402,
+      response: {
+        error: "Calendar quota reached",
+        code: decision.code || "CALENDAR_REFRESH_QUOTA_EXCEEDED",
+        limitType: "calendar",
+        current: decision.current,
+        limit: decision.limit,
+        remaining: decision.remaining,
+        resetAt: decision.resetAt,
+        message: decision.message || "Calendar refresh/regeneration limit reached.",
+        requestId: args.requestId,
+      },
+    };
+  } catch (error) {
+    if (error instanceof RateLimitUnavailableError || (error as any)?.code === "RATE_LIMIT_DB_UNAVAILABLE") {
+      return {
+        ok: false,
+        status: 503,
+        response: {
+          error: "Calendar quota check unavailable",
+          code: "RATE_LIMIT_DB_UNAVAILABLE",
+          message: "Unable to verify calendar refresh quota at this time. Please retry shortly.",
+          requestId: args.requestId,
+        },
+      };
+    }
+    throw error;
+  }
 }
 
 async function loadProfile(userId: string): Promise<StudyProfileRow | null> {
@@ -1251,6 +1302,15 @@ calendarRouter.post("/refresh/auto", async (req: AuthenticatedRequest, res: Resp
       });
     }
 
+    const quota = await reserveCalendarMutationQuota({
+      user,
+      requestId: req.requestId,
+      eventKey: "calendar_refresh_auto",
+    });
+    if (!quota.ok) {
+      return res.status(quota.status).json(quota.response);
+    }
+
     const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
     const window = resolvePlannerWindow({
       startDate: windowInput.startDate,
@@ -1334,6 +1394,15 @@ calendarRouter.post("/regenerate", async (req: AuthenticatedRequest, res: Respon
       requestedDays: windowInput.requestedDays,
     });
 
+    const quota = await reserveCalendarMutationQuota({
+      user,
+      requestId: req.requestId,
+      eventKey: "calendar_regenerate_full",
+    });
+    if (!quota.ok) {
+      return res.status(quota.status).json(quota.response);
+    }
+
     const generated = await generatePlanForWindow({
       userId: user.id,
       profile,
@@ -1398,6 +1467,15 @@ calendarRouter.post("/day/:dayDate/regenerate", async (req: AuthenticatedRequest
     const todayDate = DateTime.now().setZone(settings.timezone).toISODate()!;
     if (dayDate < todayDate) {
       return res.status(409).json({ error: "Past days are immutable", code: "PAST_DAY_IMMUTABLE", requestId: req.requestId });
+    }
+
+    const quota = await reserveCalendarMutationQuota({
+      user,
+      requestId: req.requestId,
+      eventKey: "calendar_regenerate_day",
+    });
+    if (!quota.ok) {
+      return res.status(quota.status).json(quota.response);
     }
 
     const generated = await generatePlanForWindow({

@@ -6,10 +6,9 @@
 import { Request, Response } from "express";
 import { requireRequestUser } from "../../middleware/supabase-auth";
 import {
-  buildCanonicalPracticeKpiSnapshot,
-  buildPersistedScoreProjection,
-  buildStudentKpiView,
-} from "../../services/kpi-truth-layer";
+  buildScoreEstimateFromCanonical,
+  buildStudentKpiViewFromCanonical,
+} from "../../services/canonical-runtime-views";
 import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
 
 function estimateExplanation(label: string, detail: string): {
@@ -24,13 +23,28 @@ function estimateExplanation(label: string, detail: string): {
   };
 }
 
-function premiumKpiRequired(res: Response, requestId: string | undefined, feature: string, reason: string) {
+function premiumKpiRequired(
+  res: Response,
+  requestId: string | undefined,
+  feature: string,
+  entitlement: {
+    reason: string;
+    plan: "free" | "paid";
+    status: "active" | "trialing" | "past_due" | "canceled" | "inactive";
+    currentPeriodEnd: string | null;
+  },
+) {
   return res.status(402).json({
-    error: "Premium KPI feature required",
-    code: "PREMIUM_KPI_REQUIRED",
+    error: "Premium feature required",
+    code: "PREMIUM_REQUIRED",
     feature,
     message: "Upgrade to an active paid plan to unlock this KPI surface.",
-    reason,
+    reason: entitlement.reason,
+    entitlement: {
+      plan: entitlement.plan,
+      status: entitlement.status,
+      currentPeriodEnd: entitlement.currentPeriodEnd,
+    },
     requestId,
   });
 }
@@ -48,11 +62,16 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     if (!access.hasPaidAccess) {
-      return premiumKpiRequired(res, req.requestId, "mastery_hexagon", access.reason);
+      return premiumKpiRequired(res, req.requestId, "mastery_hexagon", {
+        reason: access.reason,
+        plan: access.plan,
+        status: access.status,
+        currentPeriodEnd: access.currentPeriodEnd,
+      });
     }
 
-    const scoreProjection = await buildPersistedScoreProjection(user.id);
-    const totalQuestions = scoreProjection.totalQuestions;
+    const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
+    const totalQuestions = scoreProjection.totalQuestionsAttempted;
 
     if (totalQuestions === 0) {
       return res.json({
@@ -96,12 +115,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         diagnostic: ["mastery_evidence_count"],
       },
       estimate: {
-        composite: scoreProjection.projection.composite,
-        math: scoreProjection.projection.math,
-        rw: scoreProjection.projection.rw,
-        range: scoreProjection.projection.range,
-        confidence: scoreProjection.projection.confidence,
-        breakdown: scoreProjection.projection.breakdown,
+        composite: scoreProjection.estimate.composite,
+        math: scoreProjection.estimate.math,
+        rw: scoreProjection.estimate.rw,
+        range: scoreProjection.estimate.range,
+        confidence: scoreProjection.estimate.confidence,
+        breakdown: scoreProjection.estimate.breakdown,
       },
       explanations: {
         estimated_scaled_total: estimateExplanation(
@@ -146,8 +165,7 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
 
-    const snapshot = await buildCanonicalPracticeKpiSnapshot(user.id);
-    const view = buildStudentKpiView(snapshot, includeHistoricalTrends);
+    const view = await buildStudentKpiViewFromCanonical(user.id, includeHistoricalTrends);
 
     return res.json({
       modelVersion: view.modelVersion,

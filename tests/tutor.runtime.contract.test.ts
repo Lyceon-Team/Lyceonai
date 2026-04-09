@@ -13,6 +13,11 @@ const state = vi.hoisted(() => ({
   retryIsCorrect: false,
   retryOutcome: "incorrect" as "correct" | "incorrect" | "skipped",
   questionLookupMissing: false,
+  tutorBudgetAllowed: true,
+  tutorBudgetCode: "TUTOR_RESERVED",
+  tutorBudgetMessage: "Tutor budget reserved.",
+  tutorCooldownUntil: null as string | null,
+  hasPaidAccess: true,
   tableCalls: [] as string[],
   rpcCalls: [] as string[],
 }));
@@ -30,6 +35,17 @@ const accountMocks = vi.hoisted(() => ({
   resolveLinkedPairPremiumAccessForStudent: vi.fn(async () => ({ hasPremiumAccess: false })),
   resolveLinkedPairPremiumAccessForGuardian: vi.fn(async () => ({ hasPremiumAccess: false })),
   FREE_TIER_LIMITS: { ai_chat: 5, practice: 10 },
+}));
+
+const kpiAccessMocks = vi.hoisted(() => ({
+  resolvePaidKpiAccessForUser: vi.fn(async () => ({
+    hasPaidAccess: state.hasPaidAccess,
+    accountId: state.hasPaidAccess ? "acc-paid" : "acc-free",
+    plan: state.hasPaidAccess ? "paid" : "free",
+    status: state.hasPaidAccess ? "active" : "inactive",
+    currentPeriodEnd: state.hasPaidAccess ? "2099-01-01T00:00:00.000Z" : null,
+    reason: state.hasPaidAccess ? "Active paid entitlement." : "Student entitlement is free/inactive/expired for premium KPI surfaces.",
+  })),
 }));
 
 const { callLlmMock, handleRagQueryMock, updateStudentStyleMock, logTutorInteractionMock } = vi.hoisted(() => ({
@@ -115,6 +131,7 @@ vi.mock("../apps/api/src/lib/tutor-log", () => ({
 }));
 
 vi.mock("../server/lib/account", () => accountMocks);
+vi.mock("../server/services/kpi-access", () => kpiAccessMocks);
 
 vi.mock("../apps/api/src/lib/supabase-server", () => {
   function createBuilder(table: string) {
@@ -184,6 +201,58 @@ vi.mock("../apps/api/src/lib/supabase-server", () => {
       }),
       rpc: vi.fn(async (fnName: string) => {
         state.rpcCalls.push(fnName);
+        if (fnName === "check_and_reserve_tutor_budget") {
+          if (!state.tutorBudgetAllowed) {
+            return {
+              data: {
+                allowed: false,
+                code: state.tutorBudgetCode,
+                message: state.tutorBudgetMessage,
+                current: 10,
+                limit: 10,
+                remaining: 0,
+                reset_at: "2099-01-01T00:00:00.000Z",
+                cooldown_until: state.tutorCooldownUntil,
+                reservation_id: null,
+                duplicate: false,
+              },
+              error: null,
+            };
+          }
+
+          return {
+            data: {
+              allowed: true,
+              code: "TUTOR_RESERVED",
+              message: "Tutor budget reserved.",
+              current: 1,
+              limit: 100,
+              remaining: 99,
+              reset_at: "2099-01-01T00:00:00.000Z",
+              cooldown_until: null,
+              reservation_id: "33333333-3333-4333-8333-333333333333",
+              duplicate: false,
+            },
+            error: null,
+          };
+        }
+
+        if (fnName === "finalize_tutor_usage") {
+          return {
+            data: {
+              ok: true,
+              code: "TUTOR_FINALIZED",
+              message: "Tutor usage finalized.",
+              reservation_id: "33333333-3333-4333-8333-333333333333",
+              state: "finalized",
+              final_input_tokens: 1000,
+              final_output_tokens: 400,
+              final_cost_micros: 200,
+            },
+            error: null,
+          };
+        }
+
         return { data: null, error: null };
       }),
     },
@@ -282,6 +351,11 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     state.retryIsCorrect = false;
     state.retryOutcome = "incorrect";
     state.questionLookupMissing = false;
+    state.tutorBudgetAllowed = true;
+    state.tutorBudgetCode = "TUTOR_RESERVED";
+    state.tutorBudgetMessage = "Tutor budget reserved.";
+    state.tutorCooldownUntil = null;
+    state.hasPaidAccess = true;
     state.tableCalls = [];
     state.rpcCalls = [];
     agent = request.agent(app);
@@ -455,6 +529,79 @@ describe("Tutor Runtime Contract - Wave 1.5", () => {
     expect(res.body.ragContext.primaryQuestion.explanation).toBeNull();
     expect(res.body.ragContext.supportingQuestions[0].answer).toBeNull();
     expect(res.body.ragContext.supportingQuestions[0].explanation).toBeNull();
+  });
+
+  it("denies tutor requests when DB budget gate rejects", async () => {
+    state.tutorBudgetAllowed = false;
+    state.tutorBudgetCode = "TUTOR_BUDGET_EXCEEDED";
+    state.tutorBudgetMessage = "Tutor token/cost budget reached. Please try again after reset.";
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("TUTOR_BUDGET_EXCEEDED");
+    expect(res.body.limitType).toBe("tutor");
+    expect(state.rpcCalls).toContain("check_and_reserve_tutor_budget");
+    expect(state.rpcCalls).not.toContain("finalize_tutor_usage");
+  });
+
+  it("returns throttle denial for tutor density gate", async () => {
+    state.tutorBudgetAllowed = false;
+    state.tutorBudgetCode = "TUTOR_DENSITY_LIMIT_EXCEEDED";
+    state.tutorBudgetMessage = "Tutor request density exceeded. Please slow down.";
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("TUTOR_DENSITY_LIMIT_EXCEEDED");
+    expect(state.rpcCalls).toContain("check_and_reserve_tutor_budget");
+  });
+
+  it("returns throttle denial for tutor cooldown", async () => {
+    state.tutorBudgetAllowed = false;
+    state.tutorBudgetCode = "TUTOR_COOLDOWN_ACTIVE";
+    state.tutorBudgetMessage = "Tutor cooldown is active. Please wait before sending another request.";
+    state.tutorCooldownUntil = "2099-01-01T00:00:00.000Z";
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("TUTOR_COOLDOWN_ACTIVE");
+    expect(res.body.cooldownUntil).toBe("2099-01-01T00:00:00.000Z");
+  });
+
+  it("returns premium-required denial before tutor budget reservation", async () => {
+    state.hasPaidAccess = false;
+
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("PREMIUM_REQUIRED");
+    expect(res.body.feature).toBe("tutor");
+    expect(state.rpcCalls).not.toContain("check_and_reserve_tutor_budget");
+  });
+
+  it("finalizes tutor reservation after successful response", async () => {
+    const res = await agent
+      .post("/api/tutor/v2")
+      .set("x-csrf-token", csrfToken)
+      .send({ message: "help", mode: "question", canonicalQuestionId: "q1" });
+
+    expect(res.status).toBe(200);
+    expect(state.rpcCalls).toContain("check_and_reserve_tutor_budget");
+    expect(state.rpcCalls).toContain("finalize_tutor_usage");
   });
 
   it("enforces role guard server-side (guardian blocked)", async () => {

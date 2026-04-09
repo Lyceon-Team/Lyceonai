@@ -3,9 +3,9 @@ import express from 'express';
 import request from 'supertest';
 
 const resolvePaidKpiAccessForUser = vi.fn();
-const buildCanonicalPracticeKpiSnapshot = vi.fn();
-const buildStudentKpiView = vi.fn();
-const buildPersistedScoreProjection = vi.fn();
+const buildStudentKpiViewFromCanonical = vi.fn();
+const buildScoreEstimateFromCanonical = vi.fn();
+const buildStudentFullLengthReportView = vi.fn((x: any) => x);
 const getExamReport = vi.fn();
 const supabaseFrom = vi.fn();
 
@@ -13,13 +13,10 @@ vi.mock('../../server/services/kpi-access', () => ({
   resolvePaidKpiAccessForUser,
 }));
 
-vi.mock('../../server/services/kpi-truth-layer', () => ({
-  KPI_TRUTH_LAYER_VERSION: 'kpi_truth_v1',
-  buildCanonicalPracticeKpiSnapshot,
-  buildPersistedScoreProjection,
-  buildStudentKpiView,
-  buildFullTestKpis: vi.fn(() => []),
-  fullTestMeasurementModel: vi.fn(() => ({ official: ['official_sat_score'], weighted: [], diagnostic: [] })),
+vi.mock('../../server/services/canonical-runtime-views', () => ({
+  buildScoreEstimateFromCanonical,
+  buildStudentKpiViewFromCanonical,
+  buildStudentFullLengthReportView,
 }));
 
 vi.mock('../../apps/api/src/lib/supabase-server', () => ({
@@ -108,32 +105,7 @@ describe('KPI Gating Contract', () => {
       reason: 'Student entitlement is free/inactive/expired for premium KPI surfaces.',
     });
 
-    buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
-      modelVersion: 'kpi_truth_v1',
-      timezone: 'America/Chicago',
-      generatedAt: '2026-03-10T00:00:00.000Z',
-      currentWeek: {
-        practiceSessions: 2,
-        practiceMinutes: 45,
-        questionsSolved: 24,
-        accuracyPercent: 58,
-        avgSecondsPerQuestion: 87.5,
-      },
-      previousWeek: {
-        practiceSessions: 1,
-        practiceMinutes: 20,
-        questionsSolved: 10,
-        accuracyPercent: 50,
-        avgSecondsPerQuestion: 95,
-      },
-      recency200: {
-        totalAttempts: 24,
-        accuracyPercent: 58,
-        avgSecondsPerQuestion: 87.5,
-      },
-    });
-
-    buildStudentKpiView.mockReturnValue({
+    buildStudentKpiViewFromCanonical.mockResolvedValue({
       modelVersion: 'kpi_truth_v1',
       timezone: 'America/Chicago',
       week: {
@@ -177,10 +149,10 @@ describe('KPI Gating Contract', () => {
       },
     });
 
-    buildPersistedScoreProjection.mockResolvedValue({
-      totalQuestions: 40,
+    buildScoreEstimateFromCanonical.mockResolvedValue({
+      totalQuestionsAttempted: 40,
       lastUpdated: '2026-03-10T00:00:00.000Z',
-      projection: {
+      estimate: {
         composite: 1080,
         math: 540,
         rw: 540,
@@ -205,9 +177,13 @@ describe('KPI Gating Contract', () => {
 
     expect(getStatus()).toBe(402);
     const payload = getBody();
-    expect(payload.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(payload.code).toBe('PREMIUM_REQUIRED');
     expect(payload.feature).toBe('mastery_hexagon');
     expect(payload.requestId).toBe('req-1');
+    expect(payload.entitlement).toMatchObject({
+      plan: 'free',
+      status: 'inactive',
+    });
   });
 
   it('returns estimate payload shape when paid access is active', async () => {
@@ -254,8 +230,7 @@ describe('KPI Gating Contract', () => {
     expect(payload.week.explanations.week_sessions.whatThisMeans).toEqual(expect.stringMatching(/\S/));
     expect(payload.week.explanations.week_sessions.whyThisChanged).toEqual(expect.stringMatching(/\S/));
     expect(payload.week.explanations.week_sessions.whatToDoNext).toEqual(expect.stringMatching(/\S/));
-    expect(buildCanonicalPracticeKpiSnapshot).toHaveBeenCalledWith('student-1');
-    expect(buildStudentKpiView).toHaveBeenCalled();
+    expect(buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-1', false);
   });
 
   it('denies free-tier full-test analytics report route', async () => {
@@ -268,7 +243,7 @@ describe('KPI Gating Contract', () => {
     const res = await request(app).get('/api/full-length/sessions/session-free-1/report');
 
     expect(res.status).toBe(402);
-    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
     expect(res.body.feature).toBe('full_test_analytics');
     expect(getExamReport).not.toHaveBeenCalled();
   });
@@ -287,8 +262,22 @@ describe('KPI Gating Contract', () => {
     const res = await request(app).get('/api/me/mastery/skills');
 
     expect(res.status).toBe(402);
-    expect(res.body.code).toBe('PREMIUM_KPI_REQUIRED');
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
     expect(res.body.feature).toBe('mastery_hexagon');
+  });
+
+  it('denies free-tier full-length session creation surface', async () => {
+    const router = (await import('../../server/routes/full-length-exam-routes')).default;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/full-length', router);
+
+    const res = await request(app).post('/api/full-length/sessions').send({});
+
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
+    expect(res.body.feature).toBe('full_length');
   });
 });
 

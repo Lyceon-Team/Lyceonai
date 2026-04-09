@@ -136,9 +136,6 @@ function mapSession(row: any): SessionRow {
 
 function mapItem(row: any): ItemRow {
   const bucketFromColumn = typeof row.question_difficulty_bucket === "number" ? row.question_difficulty_bucket : null;
-  const fallbackBucket = row.question_difficulty_bucket === undefined
-    ? resolveDifficultyBucketStrict(row.question_difficulty ?? null)
-    : null;
   return {
     id: String(row.id),
     review_session_id: String(row.review_session_id),
@@ -159,7 +156,7 @@ function mapItem(row: any): ItemRow {
     question_stem: optionalString(row.question_stem),
     question_options: parseOptions(row.question_options),
     question_difficulty: row.question_difficulty ?? null,
-    question_difficulty_bucket: bucketFromColumn ?? fallbackBucket,
+    question_difficulty_bucket: bucketFromColumn,
     question_domain: optionalString(row.question_domain),
     question_skill: optionalString(row.question_skill),
     question_subskill: optionalString(row.question_subskill),

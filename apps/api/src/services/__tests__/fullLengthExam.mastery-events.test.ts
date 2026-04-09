@@ -103,6 +103,10 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
         if (table === 'full_length_exam_questions') {
           return {
             select: () => ({
+              eq: async (_k: string, _v: string) => ({
+                data: [{ id: 'fq-1' }],
+                error: null,
+              }),
               in: (_k1: string, _v1: any[]) => ({
                 in: async (_k2: string, _v2: any[]) => ({
                   data: [{
@@ -242,6 +246,10 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
         if (table === 'full_length_exam_questions') {
           return {
             select: () => ({
+              eq: async (_k: string, _v: string) => ({
+                data: [{ id: 'fq-2' }],
+                error: null,
+              }),
               in: (_k1: string, _v1: any[]) => ({
                 in: async (_k2: string, _v2: any[]) => ({
                   data: [{
@@ -374,6 +382,10 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
         if (table === 'full_length_exam_questions') {
           return {
             select: () => ({
+              eq: async (_k: string, _v: string) => ({
+                data: [{ id: 'fq-3' }],
+                error: null,
+              }),
               in: (_k1: string, _v1: any[]) => ({
                 in: async (_k2: string, _v2: any[]) => ({
                   data: [{
@@ -511,6 +523,10 @@ describe('Full-Length -> Canonical Mastery Event Bridge', () => {
         if (table === 'full_length_exam_questions') {
           return {
             select: () => ({
+              eq: async (_k: string, _v: string) => ({
+                data: [{ id: 'fq-4' }],
+                error: null,
+              }),
               in: (_k1: string, _v1: any[]) => ({
                 in: async (_k2: string, _v2: any[]) => ({
                   data: [{

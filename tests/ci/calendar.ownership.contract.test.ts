@@ -7,11 +7,95 @@ const mocks = vi.hoisted(() => ({
   client: null as any,
   resolveAccess: vi.fn(),
   readErrors: {} as Partial<Record<TableName, { message: string }>>,
+  enforceCalendarQuota: false,
+  calendarQuotaUsed: 0,
+  calendarQuotaSeenRequestIds: new Set<string>(),
 }));
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => mocks.client.from(table),
+    rpc: async (fnName: string, args: Record<string, any>) => {
+      if (fnName !== "check_and_reserve_calendar_quota") {
+        return { data: null, error: null };
+      }
+
+      if (!mocks.enforceCalendarQuota) {
+        return {
+          data: {
+            allowed: true,
+            code: "CALENDAR_RESERVED",
+            message: "Calendar refresh/regeneration quota reserved.",
+            current: 1,
+            limit: 3,
+            remaining: 2,
+            reset_at: "2099-01-01T00:00:00.000Z",
+            cooldown_until: null,
+            reservation_id: "cal-resv-bypass",
+            duplicate: false,
+          },
+          error: null,
+        };
+      }
+
+      const requestId = typeof args?.p_request_id === "string" ? args.p_request_id : null;
+      if (requestId && mocks.calendarQuotaSeenRequestIds.has(requestId)) {
+        return {
+          data: {
+            allowed: true,
+            code: "CALENDAR_ALREADY_RESERVED",
+            message: "Calendar action already counted for this request.",
+            current: mocks.calendarQuotaUsed,
+            limit: 3,
+            remaining: Math.max(0, 3 - mocks.calendarQuotaUsed),
+            reset_at: "2099-01-01T00:00:00.000Z",
+            cooldown_until: null,
+            reservation_id: "cal-resv-duplicate",
+            duplicate: true,
+          },
+          error: null,
+        };
+      }
+
+      if (mocks.calendarQuotaUsed >= 3) {
+        return {
+          data: {
+            allowed: false,
+            code: "CALENDAR_REFRESH_QUOTA_EXCEEDED",
+            message: "Calendar refresh/regeneration limit reached (3 actions per rolling 7 days).",
+            current: mocks.calendarQuotaUsed,
+            limit: 3,
+            remaining: 0,
+            reset_at: "2099-01-01T00:00:00.000Z",
+            cooldown_until: null,
+            reservation_id: null,
+            duplicate: false,
+          },
+          error: null,
+        };
+      }
+
+      mocks.calendarQuotaUsed += 1;
+      if (requestId) {
+        mocks.calendarQuotaSeenRequestIds.add(requestId);
+      }
+
+      return {
+        data: {
+          allowed: true,
+          code: "CALENDAR_RESERVED",
+          message: "Calendar refresh/regeneration quota reserved.",
+          current: mocks.calendarQuotaUsed,
+          limit: 3,
+          remaining: Math.max(0, 3 - mocks.calendarQuotaUsed),
+          reset_at: "2099-01-01T00:00:00.000Z",
+          cooldown_until: null,
+          reservation_id: `cal-resv-${mocks.calendarQuotaUsed}`,
+          duplicate: false,
+        },
+        error: null,
+      };
+    },
   },
 }));
 
@@ -311,6 +395,9 @@ function buildCalendarApp(role: "student" | "guardian" = "student") {
       isGuardian: role === "guardian",
     };
     req.supabase = mocks.client;
+    if (typeof req.headers["x-request-id"] === "string") {
+      req.requestId = req.headers["x-request-id"];
+    }
     next();
   });
 
@@ -358,6 +445,9 @@ describe("Calendar Ownership Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.readErrors = {};
+    mocks.enforceCalendarQuota = false;
+    mocks.calendarQuotaUsed = 0;
+    mocks.calendarQuotaSeenRequestIds = new Set<string>();
     mocks.resolveAccess.mockResolvedValue({
       hasPaidAccess: true,
       reason: "active entitlement",
@@ -536,6 +626,90 @@ describe("Calendar Ownership Contract", () => {
     expect(refresh.status).toBe(402);
     expect(edit.status).toBe(402);
     expect(mocks.client.store.writes.upsert).toBe(0);
+  });
+
+  it("denies the 4th counted calendar refresh/regeneration action in rolling window", async () => {
+    mocks.enforceCalendarQuota = true;
+    const start = isoDatePlus(1);
+    const day = isoDatePlus(2);
+    const app = buildCalendarApp("student");
+
+    const one = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+    const two = await request(app).post("/api/calendar/regenerate").send({ start_date: start, days: 2 });
+    const three = await request(app).post(`/api/calendar/day/${day}/regenerate`).send({});
+    const four = await request(app).post("/api/calendar/refresh/auto").send({ start_date: start, days: 2 });
+
+    expect(one.status).toBe(200);
+    expect(two.status).toBe(200);
+    expect(three.status).toBe(200);
+    expect(four.status).toBe(402);
+    expect(four.body.code).toBe("CALENDAR_REFRESH_QUOTA_EXCEEDED");
+    expect(four.body.limitType).toBe("calendar");
+  });
+
+  it("deduplicates calendar quota reservations by request id replay", async () => {
+    mocks.enforceCalendarQuota = true;
+    const start = isoDatePlus(1);
+    const day = isoDatePlus(2);
+    const app = buildCalendarApp("student");
+
+    const replay1 = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .set("x-request-id", "dup-refresh-1")
+      .send({ start_date: start, days: 2 });
+    const replay2 = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .set("x-request-id", "dup-refresh-1")
+      .send({ start_date: start, days: 2 });
+    const third = await request(app)
+      .post("/api/calendar/regenerate")
+      .set("x-request-id", "unique-2")
+      .send({ start_date: start, days: 2 });
+    const fourth = await request(app)
+      .post(`/api/calendar/day/${day}/regenerate`)
+      .set("x-request-id", "unique-3")
+      .send({});
+    const denied = await request(app)
+      .post("/api/calendar/refresh/auto")
+      .set("x-request-id", "unique-4")
+      .send({ start_date: start, days: 2 });
+
+    expect(replay1.status).toBe(200);
+    expect(replay2.status).toBe(200);
+    expect(third.status).toBe(200);
+    expect(fourth.status).toBe(200);
+    expect(denied.status).toBe(402);
+    expect(denied.body.code).toBe("CALENDAR_REFRESH_QUOTA_EXCEEDED");
+    expect(mocks.calendarQuotaUsed).toBe(3);
+  });
+
+  it("does not apply calendar quota gate to non-counted actions", async () => {
+    const start = isoDatePlus(1);
+    const app = buildCalendarApp("student");
+    const generated = await request(app).post("/api/calendar/generate").send({ start_date: start, days: 1 });
+    expect(generated.status).toBe(200);
+
+    mocks.enforceCalendarQuota = true;
+    mocks.calendarQuotaUsed = 3;
+
+    const month = await request(app).get(`/api/calendar/month?start=${start}&end=${start}`);
+    const edit = await request(app).put(`/api/calendar/day/${start}`).send({
+      planned_minutes: 25,
+      focus: [{ section: "Math", weight: 1 }],
+      tasks: [
+        {
+          type: "practice",
+          task_type: "practice",
+          section: "Math",
+          mode: "mixed",
+          minutes: 25,
+        },
+      ],
+    });
+
+    expect(month.status).toBe(200);
+    expect(edit.status).not.toBe(402);
+    expect(edit.body.code).not.toBe("CALENDAR_REFRESH_QUOTA_EXCEEDED");
   });
 
   it("custom mode returns catch-up suggestions without writes", async () => {

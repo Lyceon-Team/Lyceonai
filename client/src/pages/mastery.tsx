@@ -121,7 +121,7 @@ export default function MasteryPage() {
 
         {error && (() => {
           const message = error instanceof Error ? error.message : "";
-          const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_KPI_REQUIRED");
+          const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_REQUIRED");
 
           if (isPremiumLocked) {
             return (
