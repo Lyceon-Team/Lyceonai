@@ -295,9 +295,6 @@ router.get("/sessions/current", requireSupabaseAuth, enforceMutatingGetCsrf, asy
     if (!user) {
       return;
     }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-      return;
-    }
 
     const sessionId = req.query.sessionId as string;
     if (!sessionId) {
@@ -337,9 +334,6 @@ router.post("/sessions/:sessionId/start", requireSupabaseAuth, doubleCsrfProtect
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
-      return;
-    }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -391,9 +385,6 @@ router.post("/sessions/:sessionId/answer", requireSupabaseAuth, doubleCsrfProtec
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
-      return;
-    }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -463,9 +454,6 @@ router.post(
       if (!user) {
         return;
       }
-      if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-        return;
-      }
 
       const { sessionId, moduleId } = req.params;
       if (!sessionId || !moduleId) {
@@ -531,9 +519,6 @@ router.post("/sessions/:sessionId/module/submit", requireSupabaseAuth, doubleCsr
     if (!user) {
       return;
     }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-      return;
-    }
 
     const { sessionId } = req.params;
     if (!sessionId) {
@@ -591,9 +576,6 @@ router.post("/sessions/:sessionId/break/continue", requireSupabaseAuth, doubleCs
     if (!user) {
       return;
     }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
-      return;
-    }
 
     const { sessionId } = req.params;
     if (!sessionId) {
@@ -642,9 +624,6 @@ router.post("/sessions/:sessionId/complete", requireSupabaseAuth, doubleCsrfProt
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
-      return;
-    }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
@@ -734,9 +713,6 @@ router.get("/sessions/:sessionId/review", requireSupabaseAuth, async (req: Reque
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
-      return;
-    }
-    if (!(await ensureFullLengthPremium(req, res, user, "full_length"))) {
       return;
     }
 
