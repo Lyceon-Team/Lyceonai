@@ -68,7 +68,7 @@ export async function embeddings(text: string): Promise<number[]> {
 
 /**
  * Lightweight text generation wrapper for Gemini.
- * Used by tutor-v2.ts and related runtime AI services.
+ * Used by the canonical tutor runtime route and related AI services.
  * 
  * @param contents - Simple string or structured content parts/roles
  * @param systemInstruction - Optional system instruction to guide the model

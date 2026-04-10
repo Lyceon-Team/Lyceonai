@@ -109,8 +109,10 @@ All of the following mutating endpoints are protected by CSRF:
 - POST /api/questions/feedback
 - POST /api/review-errors/attempt
 
-### Tutor Routes (tutor-v2.ts)
-- POST /api/tutor/v2
+### Tutor Routes (tutor-runtime.ts)
+- POST /api/tutor/messages
+- POST /api/tutor/conversations
+- POST /api/tutor/conversations/:conversationId/close
 
 ## Verification Script
 

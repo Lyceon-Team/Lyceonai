@@ -1,7 +1,7 @@
 # Lyceonai Threat Model
 
 ## Executive summary
-Lyceon is a public, internet-exposed SAT learning platform with cookie-based Supabase auth, a Node/Express API, and third-party integrations for payments (Stripe) and AI tutoring (Gemini). The highest-risk themes are cross-tenant data access because authorization is enforced at the application layer (service-role Supabase access is used in several paths), abuse of authenticated session cookies (XSS/CSRF and session fixation), and integrity risks around billing webhooks and admin-only capabilities if misconfigured. AI/RAG features add prompt injection and answer leakage risks, but there are explicit server-side reveal gates that reduce the impact. Evidence: `server/index.ts`, `server/middleware/supabase-auth.ts`, `apps/api/src/routes/rag-v2.ts`, `server/routes/tutor-v2.ts`, `server/lib/webhookHandlers.ts`, `server/routes/billing-routes.ts`.
+Lyceon is a public, internet-exposed SAT learning platform with cookie-based Supabase auth, a Node/Express API, and third-party integrations for payments (Stripe) and AI tutoring (Gemini). The highest-risk themes are cross-tenant data access because authorization is enforced at the application layer (service-role Supabase access is used in several paths), abuse of authenticated session cookies (XSS/CSRF and session fixation), and integrity risks around billing webhooks and admin-only capabilities if misconfigured. AI/RAG features add prompt injection and answer leakage risks, but there are explicit server-side reveal gates that reduce the impact. Evidence: `server/index.ts`, `server/middleware/supabase-auth.ts`, `apps/api/src/routes/rag-v2.ts`, `server/routes/tutor-runtime.ts`, `server/lib/webhookHandlers.ts`, `server/routes/billing-routes.ts`.
 
 ## Scope and assumptions
 In-scope paths:
@@ -26,7 +26,7 @@ Open questions that could change risk ranking:
 ## System model
 ### Primary components
 - Browser SPA (React) served from Express static output. Evidence: `server/index.ts` (staticPath + express.static).
-- Express API server with auth, practice, and tutoring routes. Evidence: `server/index.ts` (route mounts), `server/routes/tutor-v2.ts`.
+- Express API server with auth, practice, and tutoring routes. Evidence: `server/index.ts` (route mounts), `server/routes/tutor-runtime.ts`.
 - Supabase Auth + Supabase Postgres accessed via anon and service role keys. Evidence: `server/middleware/supabase-auth.ts`, `apps/api/src/lib/supabase-server.ts`.
 - Stripe billing and webhook processing. Evidence: `server/routes/billing-routes.ts`, `server/lib/webhookHandlers.ts`.
 - Gemini LLM and embeddings for RAG/tutor. Evidence: `apps/api/src/lib/embeddings.ts`, `apps/api/src/routes/rag-v2.ts`.
@@ -52,7 +52,7 @@ Open questions that could change risk ranking:
 - Express API -> Gemini (LLM/embeddings).
   - Data: student prompts, context, question metadata.
   - Channel: HTTPS.
-  - Security: server-side prompt construction and answer reveal gating. Evidence: `apps/api/src/lib/embeddings.ts`, `server/routes/tutor-v2.ts`.
+  - Security: server-side prompt construction and answer reveal gating. Evidence: `apps/api/src/lib/embeddings.ts`, `server/routes/tutor-runtime.ts`.
 
 #### Diagram
 ```mermaid
@@ -93,7 +93,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | `/api/auth/*` (signup/signin/refresh/reset/update) | Public HTTP | Internet -> API | Rate limited; cookie-only sessions; CSRF required | `server/routes/supabase-auth-routes.ts`, `server/middleware/csrf-double-submit.ts` |
 | `/api/rag/v2` | Authenticated HTTP | Browser -> API | RAG retrieval; sanitized responses | `server/index.ts`, `apps/api/src/routes/rag-v2.ts` |
-| `/api/tutor/v2` | Authenticated HTTP | Browser -> API | LLM tutor; answer reveal policy | `server/index.ts`, `server/routes/tutor-v2.ts` |
+| `/api/tutor/messages` | Authenticated HTTP | Browser -> API | LLM tutor; answer reveal policy | `server/index.ts`, `server/routes/tutor-runtime.ts` |
 | `/api/questions/*` | Authenticated HTTP | Browser -> API | Student data and question access | `server/index.ts` (questions routes) |
 | `/api/practice/*` and `/api/full-length/*` | Authenticated HTTP | Browser -> API | Practice/session state changes | `server/index.ts` (practice/full-length mounts) |
 | `/api/profile`, `/api/notifications` | Authenticated HTTP | Browser -> API | PII/profile updates | `server/index.ts`, `server/routes/profile-routes.ts` |
@@ -153,7 +153,7 @@ Abuse Path 8 (Secret exposure through debug paths)
 | TM-003 | External attacker | XSS in SPA or injected content | Issue authenticated API requests from victim browser | Account actions performed without consent | Auth cookies, user data | CSP and security headers. Evidence: `server/middleware/security-headers.ts` | CSP allows unsafe-inline; SPA content sanitization not shown | Tighten CSP (remove unsafe-inline where possible), audit content rendering for sanitization, add client-side escaping guidelines | Content-Security-Policy violation reports; unusual action patterns | Medium | High | High |
 | TM-004 | External attacker | Stripe webhook secret leaked or misconfigured | Forge or replay webhook events | Incorrect premium entitlements | Billing entitlements | Stripe signature verification + idempotency gate. Evidence: `server/lib/webhookHandlers.ts`, `server/index.ts` | Webhook endpoint is public; relies solely on secret | Rotate webhook secret, restrict to Stripe IPs if possible, verify event livemode and account_id mapping | Alert on duplicate or unexpected webhook types, track entitlement changes | Low | High | Medium |
 | TM-005 | External attacker | ADMIN_PROVISION_ENABLE enabled + passcode leaked | Provision admin account | Full admin access | Admin accounts, all data | Admin provision blocked in production. Evidence: `server/routes/supabase-auth-routes.ts` | Risk if NODE_ENV mis-set or previews expose route | Remove admin provision from production builds, IP allowlist for provisioning, alert when ADMIN_PROVISION_ENABLE is true | Audit logs for admin provisioning events | Low | High | Medium |
-| TM-006 | Authenticated user | Access to tutor/RAG endpoints | Prompt injection or attempt answer leakage | Integrity loss, potential data leakage | Question bank, student data | Answer reveal gate and sanitization. Evidence: `server/routes/tutor-v2.ts`, `apps/api/src/routes/rag-v2.ts` | LLM behavior can be unpredictable; relies on logic correctness | Add tests for reveal policy, limit context fields passed to LLM, segregate sensitive data from prompts | Log cases where reveal is suppressed; alert on large prompt sizes | Medium | Medium | Medium |
+| TM-006 | Authenticated user | Access to tutor/RAG endpoints | Prompt injection or attempt answer leakage | Integrity loss, potential data leakage | Question bank, student data | Answer reveal gate and sanitization. Evidence: `server/routes/tutor-runtime.ts`, `apps/api/src/routes/rag-v2.ts` | LLM behavior can be unpredictable; relies on logic correctness | Add tests for reveal policy, limit context fields passed to LLM, segregate sensitive data from prompts | Log cases where reveal is suppressed; alert on large prompt sizes | Medium | Medium | Medium |
 | TM-007 | External attacker | Ability to send high-volume traffic | DoS or cost escalation on RAG/tutor/auth | Availability degradation, cost | Service availability, AI usage limits | Rate limits and usage limits. Evidence: `server/index.ts` (ragLimiter), `server/middleware/usage-limits.ts`, `server/routes/supabase-auth-routes.ts` | Rate limits are per-IP; distributed attacks possible | Add WAF/bot protection, per-account and per-token limits, adaptive rate limiting | Monitor request rates, 429 spikes, and model usage anomalies | Medium | Medium | Medium |
 | TM-008 | External attacker | Non-prod deployment exposed with real secrets | Use debug endpoints to gather sensitive config | Secret leakage | API keys, environment config | Debug routes disabled in production. Evidence: `server/routes/supabase-auth-routes.ts`, `server/routes/billing-routes.ts` | Preview deployments may not set NODE_ENV=production | Enforce auth on debug routes, disable in previews with real secrets, separate preview secrets | Log debug endpoint access; alert on usage outside dev | Low | Medium | Low |
 
@@ -171,7 +171,7 @@ Abuse Path 8 (Secret exposure through debug paths)
 | `apps/api/src/lib/supabase-server.ts` | Service role client and data access | TM-001 |
 | `server/middleware/csrf-double-submit.ts` | CSRF token generation/validation | TM-002 |
 | `server/routes/supabase-auth-routes.ts` | Auth flows + admin provisioning | TM-002, TM-005, TM-008 |
-| `server/routes/tutor-v2.ts` | LLM prompt construction and answer reveal gates | TM-006 |
+| `server/routes/tutor-runtime.ts` | LLM prompt construction and answer reveal gates | TM-006 |
 | `apps/api/src/routes/rag-v2.ts` | RAG endpoint sanitization | TM-006 |
 | `server/lib/webhookHandlers.ts` | Stripe webhook verification and idempotency | TM-004 |
 | `server/routes/billing-routes.ts` | Checkout, portal, billing state | TM-004 |

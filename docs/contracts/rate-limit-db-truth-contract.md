@@ -51,7 +51,7 @@
   - File: [fullLengthExam.ts](/C:/Users/14438/projects/Lyceonai/apps/api/src/services/fullLengthExam.ts)
   - Behavior: reserve after session insert, before expensive module materialization; delete new session on deny.
 - Tutor reserve/finalize:
-  - File: [tutor-v2.ts](/C:/Users/14438/projects/Lyceonai/server/routes/tutor-v2.ts)
+  - File: [tutor-runtime.ts](/C:/Users/14438/projects/Lyceonai/server/routes/tutor-runtime.ts)
   - Behavior: reserve before RAG/LLM work, finalize on success/failure.
 - Calendar mutation gate:
   - File: [calendar.ts](/C:/Users/14438/projects/Lyceonai/apps/api/src/routes/calendar.ts)

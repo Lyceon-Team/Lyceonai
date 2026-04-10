@@ -16,7 +16,7 @@
 | Question-state reads | `server/routes/review-session-routes.ts` | `review_session_items` | Locked |
 | Correctness write | `server/routes/review-session-routes.ts` | `review_error_attempts` | Locked |
 | Mastery trigger | `server/routes/review-session-routes.ts` | `apply_learning_event_to_mastery(...)` | Locked (`question_difficulty_bucket` only, strict `1/2/3`) |
-| Competing paths | `server/routes/tutor-v2.ts` | N/A | Locked (tutor telemetry only) |
+| Competing paths | `server/routes/tutor-runtime.ts` | N/A | Locked (tutor telemetry only) |
 
 ## Full-Length (Implemented)
 | Chain Step | Runtime Anchor | Canonical DB Surface | Status |

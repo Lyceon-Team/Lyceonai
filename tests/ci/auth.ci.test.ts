@@ -265,7 +265,18 @@ describe('CI Auth Tests', () => {
       { method: 'get', path: '/api/profile', name: 'profile', needsOrigin: false },
       { method: 'post', path: '/api/practice/sessions', name: 'practice sessions', body: { mode: 'flow', section: 'math' }, needsOrigin: true },
       { method: 'post', path: '/api/rag/v2', name: 'RAG v2 endpoint', body: { userId: 'ignored', message: 'test', mode: 'concept' }, needsOrigin: true },
-      { method: 'post', path: '/api/tutor/v2', name: 'Tutor v2', body: { message: 'test' }, needsOrigin: true },
+      {
+        method: 'post',
+        path: '/api/tutor/messages',
+        name: 'Tutor runtime append',
+        body: {
+          conversation_id: '11111111-1111-4111-8111-111111111111',
+          message: 'test',
+          content_kind: 'message',
+          client_turn_id: '22222222-2222-4222-8222-222222222222',
+        },
+        needsOrigin: true,
+      },
     ];
 
     protectedEndpoints.forEach(({ method, path, name, body, needsOrigin }) => {

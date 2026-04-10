@@ -1,5 +1,5 @@
 $kind: http-request
-url: "{{baseUrl}}/api/tutor/v2"
+url: "{{baseUrl}}/api/tutor/messages"
 method: POST
 headers:
   Content-Type: application/json
@@ -7,7 +7,9 @@ body:
   type: text
   content: |-
     {
+      "conversation_id": "{{tutorConversationId}}",
       "message": "Can you help me understand quadratic equations?",
-      "questionId": "{{questionId}}"
+      "content_kind": "message",
+      "client_turn_id": "11111111-1111-4111-8111-111111111111"
     }
 order: 1000
