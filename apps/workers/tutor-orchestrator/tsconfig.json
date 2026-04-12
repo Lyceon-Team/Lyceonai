@@ -10,10 +10,8 @@
         "noImplicitReturns": true,
         "exactOptionalPropertyTypes": true,
         "esModuleInterop": true,
-        "skipLibCheck": true,
         "allowSyntheticDefaultImports": true,
-        "forceConsistentCasingInFileNames": true,
-        "verbatimModuleSyntax": true
+        "skipLibCheck": true
     },
     "include": [
         "src"

@@ -1,5 +1,5 @@
-import * as express from "express";
-import { Request, Response } from "express";
+import express from "express";
+import type { Request, Response } from "express";
 import { compactRouter } from "./routes/compact.js";
 import { orchestrateRouter } from "./routes/orchestrate.js";
 
