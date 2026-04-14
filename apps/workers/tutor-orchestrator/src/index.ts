@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import type { Request, Response } from "express";
 import { compactRouter } from "./routes/compact.js";
