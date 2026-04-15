@@ -22,11 +22,6 @@ const EXCLUDED_SEGMENTS = [
   ".d.ts",
 ];
 
-const ALLOWED_WRITE_FILES = new Set([
-  "apps/api/src/services/mastery-write.ts",
-  "server/services/kpi-truth-layer.ts",
-]);
-
 const WRITE_TOKENS = [
   "upsertStudentKpiCountersCurrent(",
   "persistCanonicalPracticeKpiSnapshot(",
@@ -103,9 +98,9 @@ function collectViolations(repoRoot: string, tokens: string[], allowedFiles: Set
 }
 
 describe("KPI write path contract", () => {
-  it("keeps mounted KPI writers on the mastery choke point only", () => {
+  it("blocks local KPI writer helper ownership in mounted runtime", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const writeHelperViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(0, 2), ALLOWED_WRITE_FILES);
+    const writeHelperViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(0, 2), new Set());
 
     expect(
       writeHelperViolations,
@@ -115,11 +110,9 @@ describe("KPI write path contract", () => {
     ).toEqual([]);
   });
 
-  it("keeps direct KPI table writes inside the KPI truth layer only", () => {
+  it("blocks direct writes to compatibility KPI tables/RPC in mounted runtime", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
-    const tableWriteViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(2), new Set([
-      "server/services/kpi-truth-layer.ts",
-    ]));
+    const tableWriteViolations = collectViolations(repoRoot, WRITE_TOKENS.slice(2), new Set());
 
     expect(
       tableWriteViolations,
@@ -129,12 +122,12 @@ describe("KPI write path contract", () => {
     ).toEqual([]);
   });
 
-  it("keeps mounted KPI writer invocation on mastery-write choke point", () => {
+  it("blocks legacy KPI writer invocation tokens in mounted runtime", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const invocationViolations = collectViolations(
       repoRoot,
       CHOKE_POINT_CALL_TOKENS,
-      new Set(["apps/api/src/services/mastery-write.ts"]),
+      new Set(),
     );
 
     expect(

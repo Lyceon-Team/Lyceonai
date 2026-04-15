@@ -126,6 +126,32 @@ function mapWeakestStatus(
 
 const router = Router();
 
+async function ensurePremiumMasteryAccess(
+  req: AuthenticatedRequest,
+  res: Response,
+  user: { id: string; role: string },
+  feature: string,
+): Promise<boolean> {
+  const access = await resolvePaidKpiAccessForUser(user.id, user.role as "student" | "guardian" | "admin");
+  if (!access.hasPaidAccess) {
+    res.status(402).json({
+      error: "Premium feature required",
+      code: "PREMIUM_REQUIRED",
+      feature,
+      message: "Upgrade to an active paid plan to unlock this feature.",
+      reason: access.reason,
+      entitlement: {
+        plan: access.plan,
+        status: access.status,
+        currentPeriodEnd: access.currentPeriodEnd,
+      },
+      requestId: (req as any).requestId,
+    });
+    return false;
+  }
+  return true;
+}
+
 /**
  * GET /mastery/summary - READ ONLY endpoint
  * 
@@ -136,6 +162,9 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_summary"))) {
       return;
     }
 
@@ -170,17 +199,8 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     if (!user) {
       return;
     }
-
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    if (!access.hasPaidAccess) {
-      return res.status(402).json({
-        error: 'Premium KPI feature required',
-        code: 'PREMIUM_KPI_REQUIRED',
-        feature: 'mastery_hexagon',
-        message: 'Upgrade to an active paid plan to unlock mastery KPI surfaces.',
-        reason: access.reason,
-        requestId: (req as any).requestId,
-      });
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_hexagon"))) {
+      return;
     }
     const rows = await fetchSkillMasteryRows({ userId: user.id });
     const result = buildMasterySkillTreeFromRows(rows, SAT_TAXONOMY);
@@ -201,6 +221,9 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_weakest"))) {
       return;
     }
 
@@ -235,6 +258,9 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_plan_mutation"))) {
       return;
     }
 

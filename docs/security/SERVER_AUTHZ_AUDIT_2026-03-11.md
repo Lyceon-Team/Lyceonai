@@ -18,7 +18,7 @@ Scope: `server/index.ts`, `server/middleware/supabase-auth.ts`, and protected ro
 | Admin authz gate | `server/middleware/supabase-auth.ts:429-468` (`requireSupabaseAdmin`) | PASS: non-admin requests get 403 |
 | Student-only gate (guardian denied) | `server/middleware/supabase-auth.ts:491-515` (`requireStudentOrAdmin`) | PASS: guardians blocked from student-only surfaces |
 | Legal acceptance API protected | `server/index.ts:141` | PASS: `/api/legal/*` mounted behind `requireSupabaseAuth` |
-| Tutor endpoint protected | `server/index.ts:272` | PASS: `/api/tutor/v2` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
+| Tutor endpoints protected | `server/index.ts` | PASS: `/api/tutor/*` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
 | Practice canonical protected | `server/index.ts:488` | PASS: `/api/practice` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
 | Full-length exam API protected | `server/index.ts:492` | PASS: `/api/full-length` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |
 | Admin health endpoint protected | `server/index.ts:317` | PASS: `/api/admin/db-health` requires `requireSupabaseAuth` + `requireSupabaseAdmin` |

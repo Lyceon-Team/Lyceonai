@@ -200,7 +200,7 @@ export default function FullTest() {
 
   const reportErrorMessage = reportError instanceof Error ? reportError.message : "";
   const reportPremiumLocked =
-    reportErrorMessage.includes("402") || reportErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+    reportErrorMessage.includes("402") || reportErrorMessage.includes("PREMIUM_REQUIRED");
   const reportLocked = reportErrorMessage.includes("423") || reportErrorMessage.toLowerCase().includes("locked");
   const reportNotFound = reportErrorMessage.includes("404");
   const reviewErrorMessage = reviewError instanceof Error ? reviewError.message : "";

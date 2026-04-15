@@ -25,7 +25,8 @@ Define the minimum Cloudflare edge configuration for Lyceon production traffic.
 1. Block or challenge requests with known malicious user agents.
 2. Add rate limiting for auth and chat endpoints:
    - `/api/auth/*`
-   - `/api/tutor/v2`
+   - `/api/tutor/messages`
+   - `/api/tutor/conversations`
    - `/api/rag`
 3. Exempt Stripe webhook endpoint from generic JS/browser challenge rules:
    - `/api/billing/webhook`
