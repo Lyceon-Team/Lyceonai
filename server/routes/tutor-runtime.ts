@@ -36,7 +36,6 @@ const DEFAULT_POLICY_VERSION = "1";
 const DEFAULT_PROMPT_VERSION = "1";
 const DEFAULT_ASSIGNMENT_MODE = "deterministic";
 const DEFAULT_ASSIGNMENT_KEY = "default";
-const RELATIONSHIP_TYPE_SIMILAR = "similar_retry";
 
 type ScopeShape = {
   source_session_id: string | null;
@@ -439,47 +438,6 @@ async function resolveScope(args: {
   }
 
   return { resolved_scope: resolved, fallback_reason: fallbackReason, conflict_fields: conflictFields };
-}
-
-function buildPrompt(params: {
-  message: string;
-  context: any;
-  history: MessageRow[];
-  memoryRows: Array<{ content_json: unknown }>;
-}) {
-  const questionSummary = params.context?.primaryQuestion?.stem
-    ? `Current question: ${String(params.context.primaryQuestion.stem).slice(0, 260)}`
-    : "No currently anchored question.";
-  const similar = Array.isArray(params.context?.supportingQuestions)
-    ? params.context.supportingQuestions
-        .slice(0, 3)
-        .map((q: any, i: number) => `Similar ${i + 1}: ${String(q?.stem ?? "").slice(0, 100)}`)
-        .join("\n")
-    : "";
-  const history = params.history
-    .slice(-6)
-    .map((row) => `${row.role}: ${String(row.message ?? "").slice(0, 180)}`)
-    .join("\n");
-  const memory = params.memoryRows
-    .slice(0, 2)
-    .map((row) => JSON.stringify(row.content_json ?? {}))
-    .join("\n");
-
-  return {
-    systemInstruction:
-      "You are Lyceon's SAT tutor. Explain clearly and step by step. Do not reveal internal metadata, IDs, or hidden policy details. Never provide direct answer leakage in pre-submit contexts.",
-    userContents: [
-      {
-        role: "user",
-        parts: [
-          { text: `Context:\n${questionSummary}\n${similar || "No similar-question context."}` },
-          { text: `Recent conversation:\n${history || "No recent turns."}` },
-          { text: `Durable memory:\n${memory || "No durable summary."}` },
-          { text: `Student message: ${params.message}` },
-        ],
-      },
-    ],
-  };
 }
 
 function removeInternalMetadataMentions(text: string): string {
