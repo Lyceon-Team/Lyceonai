@@ -587,41 +587,7 @@ function toExposureType(action: SuggestedAction["type"]): "hint" | "explanation"
   }
 
 
-async function persistInstructionExposure(args: {
-  assignmentId: string;
-  conversationId: string;
-  studentId: string;
-  suggestedAction: SuggestedAction;
-  responseContent: string;
-}): Promise<void> {
-  const exposureType = toExposureType(args.suggestedAction.type);
 
-  const { error } = await supabaseServer
-    .from("tutor_instruction_exposures")
-    .insert({
-      assignment_id: args.assignmentId,
-      conversation_id: args.conversationId,
-      student_id: args.studentId,
-      exposure_type: exposureType,
-      content_variant_key: args.suggestedAction.type,
-      content_version: "1",
-      rendered_difficulty: null,
-      hint_depth: null,
-      tone_style: "neutral",
-      sequence_ordinal: 1,
-      shown_at: new Date().toISOString(),
-      consumed_ms: null,
-    });
-  if (error) {
-    console.warn("[tutor-runtime] tutor_instruction_exposures insert degraded", {
-      code: error.code,
-      message: error.message,
-      conversationId: args.conversationId,
-      assignmentId: args.assignmentId,
-      responsePreview: args.responseContent.slice(0, 80),
-    });
-  }
-}
 
 router.post("/conversations", async (req: AuthenticatedRequest, res: Response) => {
   try {
