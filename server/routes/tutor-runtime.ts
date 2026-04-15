@@ -1,6 +1,4 @@
 import { NextFunction, Response, Router } from "express";
-import { callLlm } from "../../apps/api/src/lib/embeddings";
-import { getRagService } from "../../apps/api/src/lib/rag-service";
 import {
   RateLimitUnavailableError,
   checkAndReserveTutorBudget,
@@ -20,6 +18,7 @@ import {
   requireRequestUser,
   sendForbidden,
 } from "../middleware/supabase-auth";
+import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
 
 const router = Router();
@@ -1110,37 +1109,88 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const rag = getRagService();
-    const ragResult = await rag.handleRagQuery({
-      userId: user.id,
-      message: body.message,
-      mode: "concept",
-      canonicalQuestionId: resolvedScope.source_question_canonical_id ?? undefined,
-    });
-
     const { data: historyRows } = await supabaseServer
       .from("tutor_messages")
       .select("*")
       .eq("conversation_id", conversation.id)
       .order("created_at", { ascending: false })
-      .limit(8);
+      .limit(12);
 
     const { data: memoryRows } = await supabaseServer
       .from("tutor_memory_summaries")
-      .select("content_json")
+      .select("summary_type, summary_version, content_json, source_window_start, source_window_end")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3);
 
-    const prompt = buildPrompt({
-      message: body.message,
-      context: ragResult.context,
-      history: ((historyRows ?? []) as MessageRow[]).reverse(),
-      memoryRows: (memoryRows ?? []) as Array<{ content_json: unknown }>,
-    });
+    const orchestratorPayload = {
+      conversation_id: conversation.id,
+      student_id: user.id,
+      entry_mode: conversation.entry_mode,
+      source_surface: conversation.source_surface,
+      resolved_scope: {
+        source_session_id: resolvedScope.source_session_id,
+        source_session_item_id: resolvedScope.source_session_item_id,
+        source_question_row_id: resolvedScope.source_question_row_id,
+        source_question_canonical_id: resolvedScope.source_question_canonical_id,
+      },
+      recent_messages: ((historyRows ?? []) as MessageRow[])
+        .reverse()
+        .map((row) => ({
+          id: String(row.id),
+          role: row.role,
+          content_kind: row.content_kind,
+          message: String(row.message ?? ""),
+          created_at: String(row.created_at),
+        })),
+      memory_summaries: (memoryRows ?? []).map((row: any) => ({
+        summary_type: row.summary_type,
+        summary_version: row.summary_version,
+        content_json: row.content_json ?? {},
+        source_window_start: row.source_window_start ?? null,
+        source_window_end: row.source_window_end ?? null,
+      })),
+      student_context: {
+        recent_practice: {},
+        recent_review: {},
+        recent_full_length: {},
+        kpi_state: {},
+        mastery_state: {},
+        study_plan_context: {},
+      },
+      policy_assignment: {
+        policy_family: conversation.policy_family,
+        policy_variant: conversation.policy_variant,
+        policy_version: conversation.policy_version,
+        prompt_version: conversation.prompt_version,
+        assignment_mode: conversation.assignment_mode,
+        assignment_key: conversation.assignment_key,
+        reason_snapshot: {
+          trigger_type: "student_turn",
+          source_surface: conversation.source_surface,
+          entry_mode: conversation.entry_mode,
+          scoped_anchor:
+            resolvedScope.source_question_canonical_id
+            ?? resolvedScope.source_question_row_id
+            ?? null,
+          policy_inputs: {
+            content_kind: body.content_kind,
+          },
+          fallback_used: scopeResolution.fallback_reason,
+          ignored_conflicts: scopeResolution.conflict_fields,
+        },
+      },
+      runtime_limits: {
+        max_output_tokens: 600,
+        timeout_ms: 8000,
+      },
+    };
 
-    const llmRaw = await callLlm(prompt.userContents, prompt.systemInstruction);
-    let cleaned = removeInternalMetadataMentions(String(llmRaw ?? "").trim());
+    const orchestratorResult = await callTutorOrchestrator(orchestratorPayload);
+
+    let cleaned = removeInternalMetadataMentions(
+      String(orchestratorResult.response.content ?? "").trim(),
+    );
     if (!cleaned) {
       sendRecoverableRetry(res, req.requestId);
       return;
@@ -1161,7 +1211,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    const suggestedAction = deriveSuggestedAction(body.message, ragResult.context);
+    const suggestedAction = orchestratorResult.response.suggested_action;
+    const orchestratorUiHints = orchestratorResult.response.ui_hints;
 
     const { data: insertedTutorMessage, error: insertTutorError } = await supabaseServer
       .from("tutor_messages")
@@ -1173,11 +1224,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         message: cleaned,
         content_json: {
           suggested_action: suggestedAction,
-          ui_hints: {
-            show_accept_decline: suggestedAction.type === "offer_similar_question",
-            allow_freeform_reply: true,
-            suggested_chip: suggestedAction.label,
-          },
+          ui_hints: orchestratorUiHints,
+          orchestration_meta: orchestratorResult.orchestration_meta,
         },
         client_turn_id: null,
         explanation_level: null,
@@ -1194,24 +1242,71 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    if (suggestedAction.type === "offer_similar_question" && policyAssignmentId) {
-      await persistQuestionLinkForSimilarOffer({
-        conversationId: conversation.id,
-        studentId: user.id,
-        scope: resolvedScope,
-        context: ragResult.context,
-        assignmentId: policyAssignmentId,
-      });
+    if (
+      policyAssignmentId
+      && Array.isArray(orchestratorResult.question_links)
+      && orchestratorResult.question_links.length > 0
+    ) {
+      for (const link of orchestratorResult.question_links) {
+        const { error } = await supabaseServer
+          .from("tutor_question_links")
+          .insert({
+            conversation_id: conversation.id,
+            student_id: user.id,
+            source_question_row_id: link.source_question_row_id,
+            source_question_canonical_id: link.source_question_canonical_id,
+            related_question_row_id: link.related_question_row_id,
+            related_question_canonical_id: link.related_question_canonical_id,
+            relationship_type: link.relationship_type,
+            difficulty_delta: link.difficulty_delta,
+            reason_code: link.reason_code,
+            link_snapshot: link.link_snapshot,
+          });
+
+        if (error) {
+          console.warn("[tutor-runtime] tutor_question_links insert degraded", {
+            code: error.code,
+            message: error.message,
+            conversationId: conversation.id,
+            assignmentId: policyAssignmentId,
+          });
+        }
+      }
     }
 
-    if (policyAssignmentId) {
-      await persistInstructionExposure({
-        assignmentId: policyAssignmentId,
-        conversationId: conversation.id,
-        studentId: user.id,
-        suggestedAction,
-        responseContent: cleaned,
-      });
+    if (
+      policyAssignmentId
+      && Array.isArray(orchestratorResult.instruction_exposures)
+      && orchestratorResult.instruction_exposures.length > 0
+    ) {
+      for (const exposure of orchestratorResult.instruction_exposures) {
+        const { error } = await supabaseServer
+          .from("tutor_instruction_exposures")
+          .insert({
+            assignment_id: policyAssignmentId,
+            conversation_id: conversation.id,
+            student_id: user.id,
+            exposure_type: exposure.exposure_type,
+            content_variant_key: exposure.content_variant_key,
+            content_version: exposure.content_version,
+            rendered_difficulty: exposure.rendered_difficulty,
+            hint_depth: exposure.hint_depth,
+            tone_style: exposure.tone_style,
+            sequence_ordinal: exposure.sequence_ordinal,
+            shown_at: new Date().toISOString(),
+            consumed_ms: null,
+          });
+
+        if (error) {
+          console.warn("[tutor-runtime] tutor_instruction_exposures insert degraded", {
+            code: error.code,
+            message: error.message,
+            conversationId: conversation.id,
+            assignmentId: policyAssignmentId,
+            responsePreview: cleaned.slice(0, 80),
+          });
+        }
+      }
     }
 
     await supabaseServer
@@ -1239,11 +1334,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           content: cleaned,
           content_kind: "message",
           suggested_action: suggestedAction,
-          ui_hints: {
-            show_accept_decline: suggestedAction.type === "offer_similar_question",
-            allow_freeform_reply: true,
-            suggested_chip: suggestedAction.label,
-          },
+          ui_hints: orchestratorUiHints,
         },
       },
     });
