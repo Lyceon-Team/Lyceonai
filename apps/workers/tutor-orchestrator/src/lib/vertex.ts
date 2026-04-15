@@ -34,18 +34,21 @@ function cleanJsonText(text: string): string {
 
 function getResponseSchema(): Record<string, unknown> {
     return {
-        type: "OBJECT",
+        type: FunctionDeclarationSchemaType.OBJECT,
         properties: {
             response: {
                 type: FunctionDeclarationSchemaType.OBJECT,
                 properties: {
-                    content: { type: "STRING" },
-                    content_kind: { type: "STRING", enum: ["message"] },
+                    content: { type: FunctionDeclarationSchemaType.STRING },
+                    content_kind: {
+                        type: FunctionDeclarationSchemaType.STRING,
+                        enum: ["message"],
+                    },
                     suggested_action: {
                         type: FunctionDeclarationSchemaType.OBJECT,
                         properties: {
                             type: {
-                                type: "STRING",
+                                type: FunctionDeclarationSchemaType.STRING,
                                 enum: [
                                     "none",
                                     "offer_similar_question",
@@ -53,16 +56,26 @@ function getResponseSchema(): Record<string, unknown> {
                                     "offer_stay_focused",
                                 ],
                             },
-                            label: { type: "STRING", nullable: true },
+                            label: {
+                                type: FunctionDeclarationSchemaType.STRING,
+                                nullable: true,
+                            },
                         },
                         required: ["type", "label"],
                     },
                     ui_hints: {
                         type: FunctionDeclarationSchemaType.OBJECT,
                         properties: {
-                            show_accept_decline: { type: "BOOLEAN" },
-                            allow_freeform_reply: { type: "BOOLEAN" },
-                            suggested_chip: { type: "STRING", nullable: true },
+                            show_accept_decline: {
+                                type: FunctionDeclarationSchemaType.BOOLEAN,
+                            },
+                            allow_freeform_reply: {
+                                type: FunctionDeclarationSchemaType.BOOLEAN,
+                            },
+                            suggested_chip: {
+                                type: FunctionDeclarationSchemaType.STRING,
+                                nullable: true,
+                            },
                         },
                         required: [
                             "show_accept_decline",
@@ -78,10 +91,20 @@ function getResponseSchema(): Record<string, unknown> {
                 items: {
                     type: FunctionDeclarationSchemaType.OBJECT,
                     properties: {
-                        source_question_row_id: { type: "STRING", nullable: true },
-                        source_question_canonical_id: { type: "STRING" },
-                        related_question_row_id: { type: "STRING", nullable: true },
-                        related_question_canonical_id: { type: "STRING" },
+                        source_question_row_id: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            nullable: true,
+                        },
+                        source_question_canonical_id: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                        },
+                        related_question_row_id: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            nullable: true,
+                        },
+                        related_question_canonical_id: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                        },
                         relationship_type: {
                             type: FunctionDeclarationSchemaType.STRING,
                             enum: [
@@ -92,9 +115,12 @@ function getResponseSchema(): Record<string, unknown> {
                                 "concept_extension",
                             ],
                         },
-                        difficulty_delta: { type: "INTEGER", nullable: true },
-                        reason_code: { type: "STRING" },
-                        link_snapshot: { type: "OBJECT" },
+                        difficulty_delta: {
+                            type: FunctionDeclarationSchemaType.INTEGER,
+                            nullable: true,
+                        },
+                        reason_code: { type: FunctionDeclarationSchemaType.STRING },
+                        link_snapshot: { type: FunctionDeclarationSchemaType.OBJECT },
                     },
                     required: [
                         "source_question_row_id",
@@ -124,12 +150,29 @@ function getResponseSchema(): Record<string, unknown> {
                                 "consent_prompt",
                             ],
                         },
-                        content_variant_key: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
-                        content_version: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
-                        rendered_difficulty: { type: FunctionDeclarationSchemaType.INTEGER, nullable: true },
-                        hint_depth: { type: FunctionDeclarationSchemaType.INTEGER, nullable: true },
-                        tone_style: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
-                        sequence_ordinal: { type: FunctionDeclarationSchemaType.INTEGER },
+                        content_variant_key: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            nullable: true,
+                        },
+                        content_version: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            nullable: true,
+                        },
+                        rendered_difficulty: {
+                            type: FunctionDeclarationSchemaType.INTEGER,
+                            nullable: true,
+                        },
+                        hint_depth: {
+                            type: FunctionDeclarationSchemaType.INTEGER,
+                            nullable: true,
+                        },
+                        tone_style: {
+                            type: FunctionDeclarationSchemaType.STRING,
+                            nullable: true,
+                        },
+                        sequence_ordinal: {
+                            type: FunctionDeclarationSchemaType.INTEGER,
+                        },
                     },
                     required: [
                         "exposure_type",
@@ -147,7 +190,9 @@ function getResponseSchema(): Record<string, unknown> {
                 properties: {
                     model_name: { type: FunctionDeclarationSchemaType.STRING },
                     cache_used: { type: FunctionDeclarationSchemaType.BOOLEAN },
-                    compaction_recommended: { type: FunctionDeclarationSchemaType.BOOLEAN },
+                    compaction_recommended: {
+                        type: FunctionDeclarationSchemaType.BOOLEAN,
+                    },
                 },
                 required: ["model_name", "cache_used", "compaction_recommended"],
             },
@@ -185,70 +230,51 @@ function buildPrompt(input: OrchestrateRequest): string {
             policy_assignment: input.policy_assignment,
             runtime_limits: input.runtime_limits,
         },
-        required_response_shape: {
-            response: {
-                content: "string",
-                content_kind: "message",
-                suggested_action: {
-                    type: [
-                        "none",
-                        "offer_similar_question",
-                        "offer_broader_coaching",
-                        "offer_stay_focused",
-                    ],
-                    label: "string|null",
-                },
-                ui_hints: {
-                    show_accept_decline: "boolean",
-                    allow_freeform_reply: "boolean",
-                    suggested_chip: "string|null",
-                },
+        question_links: [
+            {
+                source_question_row_id: "uuid|null",
+                source_question_canonical_id: FunctionDeclarationSchemaType.STRING,
+                related_question_row_id: "uuid|null",
+                related_question_canonical_id: FunctionDeclarationSchemaType.STRING,
+                relationship_type: [
+                    "current",
+                    "similar_retry",
+                    "simpler_variant",
+                    "harder_variant",
+                    "concept_extension",
+                ],
+                difficulty_delta: "integer|null",
+                reason_code: "string",
+                link_snapshot: "object",
             },
-            question_links: [
-                {
-                    source_question_row_id: "uuid|null",
-                    source_question_canonical_id: FunctionDeclarationSchemaType.STRING,
-                    related_question_row_id: "uuid|null",
-                    related_question_canonical_id: FunctionDeclarationSchemaType.STRING,
-                    relationship_type: [
-                        "current",
-                        "similar_retry",
-                        "simpler_variant",
-                        "harder_variant",
-                        "concept_extension",
-                    ],
-                    difficulty_delta: "integer|null",
-                    reason_code: "string",
-                    link_snapshot: "object",
-                },
-            ],
-            instruction_exposures: [
-                {
-                    exposure_type: [
-                        "hint",
-                        "explanation",
-                        "strategy",
-                        "similar_question_offer",
-                        "broader_coaching_offer",
-                        "consent_prompt",
-                    ],
-                    content_variant_key: "string|null",
-                    content_version: "string|null",
-                    rendered_difficulty: "integer|null",
-                    hint_depth: "integer|null",
-                    tone_style: "string|null",
-                    sequence_ordinal: "integer",
-                },
-            ],
-            orchestration_meta: {
-                model_name: "string",
-                cache_used: "boolean",
-                compaction_recommended: "boolean",
+        ],
+        instruction_exposures: [
+            {
+                exposure_type: [
+                    "hint",
+                    "explanation",
+                    "strategy",
+                    "similar_question_offer",
+                    "broader_coaching_offer",
+                    "consent_prompt",
+                ],
+                content_variant_key: "string|null",
+                content_version: "string|null",
+                rendered_difficulty: "integer|null",
+                hint_depth: "integer|null",
+                tone_style: "string|null",
+                sequence_ordinal: "integer",
             },
+        ],
+        orchestration_meta: {
+            model_name: "string",
+            cache_used: "boolean",
+            compaction_recommended: "boolean",
         },
-    };
+    },
+};
 
-    return JSON.stringify(prompt, null, 2);
+return JSON.stringify(prompt, null, 2);
 }
 
 export async function generateTutorResponse(
@@ -289,6 +315,7 @@ export async function generateTutorResponse(
     try {
         parsedJson = JSON.parse(cleanJsonText(text));
     } catch {
+        console.error("FAILED JSON TEXT:", cleanJsonText(text));
         throw new Error("Vertex returned non-JSON output");
     }
 
