@@ -36,7 +36,6 @@ const DEFAULT_POLICY_VERSION = "1";
 const DEFAULT_PROMPT_VERSION = "1";
 const DEFAULT_ASSIGNMENT_MODE = "deterministic";
 const DEFAULT_ASSIGNMENT_KEY = "default";
-const RELATIONSHIP_TYPE_SIMILAR = "similar_retry";
 
 type ScopeShape = {
   source_session_id: string | null;
@@ -441,47 +440,6 @@ async function resolveScope(args: {
   return { resolved_scope: resolved, fallback_reason: fallbackReason, conflict_fields: conflictFields };
 }
 
-function buildPrompt(params: {
-  message: string;
-  context: any;
-  history: MessageRow[];
-  memoryRows: Array<{ content_json: unknown }>;
-}) {
-  const questionSummary = params.context?.primaryQuestion?.stem
-    ? `Current question: ${String(params.context.primaryQuestion.stem).slice(0, 260)}`
-    : "No currently anchored question.";
-  const similar = Array.isArray(params.context?.supportingQuestions)
-    ? params.context.supportingQuestions
-        .slice(0, 3)
-        .map((q: any, i: number) => `Similar ${i + 1}: ${String(q?.stem ?? "").slice(0, 100)}`)
-        .join("\n")
-    : "";
-  const history = params.history
-    .slice(-6)
-    .map((row) => `${row.role}: ${String(row.message ?? "").slice(0, 180)}`)
-    .join("\n");
-  const memory = params.memoryRows
-    .slice(0, 2)
-    .map((row) => JSON.stringify(row.content_json ?? {}))
-    .join("\n");
-
-  return {
-    systemInstruction:
-      "You are Lyceon's SAT tutor. Explain clearly and step by step. Do not reveal internal metadata, IDs, or hidden policy details. Never provide direct answer leakage in pre-submit contexts.",
-    userContents: [
-      {
-        role: "user",
-        parts: [
-          { text: `Context:\n${questionSummary}\n${similar || "No similar-question context."}` },
-          { text: `Recent conversation:\n${history || "No recent turns."}` },
-          { text: `Durable memory:\n${memory || "No durable summary."}` },
-          { text: `Student message: ${params.message}` },
-        ],
-      },
-    ],
-  };
-}
-
 function removeInternalMetadataMentions(text: string): string {
   return text
     .replace(/\b(canonical id|canonical_id|internal metadata|distractor taxonomy|policy flags|reason codes)\b/gi, "")
@@ -510,139 +468,6 @@ async function getPracticeItemStatus(studentId: string, itemId: string | null): 
     .maybeSingle();
   if (error || !data) return null;
   return typeof data.status === "string" ? data.status : null;
-}
-
-async function getQuestionRowIdForCanonicalId(canonicalId: string | null): Promise<string | null> {
-  if (!canonicalId) return null;
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("id")
-    .eq("canonical_id", canonicalId)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data?.id) return null;
-  return String(data.id);
-}
-
-type SuggestedAction = {
-  type: "none" | "offer_similar_question" | "offer_broader_coaching" | "offer_stay_focused";
-  label: string | null;
-};
-
-function deriveSuggestedAction(message: string, context: any): SuggestedAction {
-  const normalized = message.toLowerCase();
-  const hasSupporting = Array.isArray(context?.supportingQuestions) && context.supportingQuestions.length > 0;
-  if (hasSupporting && /\b(similar|another example|easier version|harder version)\b/.test(normalized)) {
-    return { type: "offer_similar_question", label: "Try a similar question" };
-  }
-  if (/\b(plan|schedule|what should i study|what to study)\b/.test(normalized)) {
-    return { type: "offer_broader_coaching", label: "Get a study plan" };
-  }
-  if (/\b(stuck|confused|lost)\b/.test(normalized)) {
-    return { type: "offer_stay_focused", label: "Stay on this question" };
-  }
-  return { type: "none", label: null };
-}
-
-function toExposureType(action: SuggestedAction["type"]): "hint" | "explanation" | "strategy" | "similar_question_offer" | "broader_coaching_offer" | "consent_prompt" {
-  if (action === "offer_similar_question") return "similar_question_offer";
-  if (action === "offer_broader_coaching") return "broader_coaching_offer";
-  if (action === "offer_stay_focused") return "hint";
-  return "explanation";
-}
-
-async function persistQuestionLinkForSimilarOffer(args: {
-  conversationId: string;
-  studentId: string;
-  scope: ScopeShape;
-  context: any;
-  assignmentId: string;
-}): Promise<void> {
-  const supporting = Array.isArray(args.context?.supportingQuestions) ? args.context.supportingQuestions : [];
-  const first = supporting[0];
-  if (!first) return;
-
-  const sourceCanonical = args.scope.source_question_canonical_id ?? null;
-  const sourceRowId = args.scope.source_question_row_id ?? await getQuestionRowIdForCanonicalId(sourceCanonical);
-  const normalizedSourceCanonical = sourceCanonical ?? await canonicalIdForQuestionRow(sourceRowId);
-  const relatedCanonical = typeof first?.canonicalId === "string" ? first.canonicalId : null;
-  const relatedRowId = await getQuestionRowIdForCanonicalId(relatedCanonical);
-
-  if (!normalizedSourceCanonical) return;
-  if (!relatedCanonical) return;
-
-  const sourceDifficulty = Number.isFinite(args.context?.primaryQuestion?.difficulty)
-    ? Number(args.context.primaryQuestion.difficulty)
-    : null;
-  const relatedDifficulty = Number.isFinite(first?.difficulty) ? Number(first.difficulty) : null;
-  const rawDifficultyDelta = (sourceDifficulty !== null && relatedDifficulty !== null)
-    ? relatedDifficulty - sourceDifficulty
-    : null;
-  const difficultyDelta = rawDifficultyDelta === null
-    ? null
-    : Math.max(-4, Math.min(4, rawDifficultyDelta));
-
-  const { error } = await supabaseServer
-    .from("tutor_question_links")
-    .insert({
-      conversation_id: args.conversationId,
-      student_id: args.studentId,
-      source_question_row_id: sourceRowId,
-      source_question_canonical_id: normalizedSourceCanonical,
-      related_question_row_id: relatedRowId,
-      related_question_canonical_id: relatedCanonical,
-      relationship_type: RELATIONSHIP_TYPE_SIMILAR,
-      difficulty_delta: difficultyDelta,
-      reason_code: "student_consented_similar_offer",
-      link_snapshot: {
-        assignment_id: args.assignmentId,
-        source_surface: args.context?.source_surface ?? null,
-      },
-    });
-
-  if (error) {
-    console.warn("[tutor-runtime] tutor_question_links insert degraded", {
-      code: error.code,
-      message: error.message,
-      conversationId: args.conversationId,
-    });
-  }
-}
-
-async function persistInstructionExposure(args: {
-  assignmentId: string;
-  conversationId: string;
-  studentId: string;
-  suggestedAction: SuggestedAction;
-  responseContent: string;
-}): Promise<void> {
-  const exposureType = toExposureType(args.suggestedAction.type);
-
-  const { error } = await supabaseServer
-    .from("tutor_instruction_exposures")
-    .insert({
-      assignment_id: args.assignmentId,
-      conversation_id: args.conversationId,
-      student_id: args.studentId,
-      exposure_type: exposureType,
-      content_variant_key: args.suggestedAction.type,
-      content_version: "1",
-      rendered_difficulty: null,
-      hint_depth: null,
-      tone_style: "neutral",
-      sequence_ordinal: 1,
-      shown_at: new Date().toISOString(),
-      consumed_ms: null,
-    });
-  if (error) {
-    console.warn("[tutor-runtime] tutor_instruction_exposures insert degraded", {
-      code: error.code,
-      message: error.message,
-      conversationId: args.conversationId,
-      assignmentId: args.assignmentId,
-      responsePreview: args.responseContent.slice(0, 80),
-    });
-  }
 }
 
 router.post("/conversations", async (req: AuthenticatedRequest, res: Response) => {
