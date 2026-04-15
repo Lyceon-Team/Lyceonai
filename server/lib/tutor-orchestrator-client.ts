@@ -84,8 +84,8 @@ async function resolveServiceAuthHeader(baseUrl: string): Promise<string | null>
     const auth = new GoogleAuth();
     const idTokenClient = await auth.getIdTokenClient(audience);
     const headerBag = await idTokenClient.getRequestHeaders(baseUrl);
-    const authHeader = (headerBag as Record<string, string | undefined>).Authorization
-        ?? (headerBag as Record<string, string | undefined>).authorization;
+    const authHeader = headerBag.get("authorization")
+        ?? headerBag.get("Authorization");
     if (!authHeader || authHeader.trim().length === 0) {
         throw new Error("Failed to acquire service auth header for tutor orchestrator");
     }
@@ -100,12 +100,12 @@ export async function callTutorOrchestrator(
         throw new Error("TUTOR_ORCHESTRATOR_URL is not configured");
     }
 
-    const headers: Record<string, string> = {
+    const headers = new Headers({
         "Content-Type": "application/json",
-    };
+    });
     const serviceAuthHeader = await resolveServiceAuthHeader(baseUrl);
     if (serviceAuthHeader) {
-        headers.Authorization = serviceAuthHeader;
+        headers.set("Authorization", serviceAuthHeader);
     }
 
     const response = await fetch(`${baseUrl}/orchestrate`, {
