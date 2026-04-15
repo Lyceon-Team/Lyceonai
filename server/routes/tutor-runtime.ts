@@ -11,7 +11,9 @@ import {
   TutorAppendMessageRequestSchema,
   TutorCloseConversationRequestSchema,
   TutorListConversationsQuerySchema,
+  TutorSuggestedActionSchema,
   TutorStartConversationRequestSchema,
+  TutorUiHintsSchema,
 } from "../../shared/tutor-contract";
 import {
   type AuthenticatedRequest,
@@ -20,6 +22,7 @@ import {
 } from "../middleware/supabase-auth";
 import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+import { z } from "zod";
 
 const router = Router();
 
@@ -85,6 +88,61 @@ type ScopeResolution = {
   fallback_reason: string | null;
   conflict_fields: string[];
 };
+
+const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY = "__internal_question_links_snapshot";
+const INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY = "__internal_instruction_exposures_snapshot";
+
+const orchestrationMetaSchema = z.object({
+  model_name: z.string(),
+  cache_used: z.boolean(),
+  compaction_recommended: z.boolean(),
+});
+
+const questionLinkSnapshotSchema = z.object({
+  source_question_row_id: z.string().uuid().nullable(),
+  source_question_canonical_id: z.string(),
+  related_question_row_id: z.string().uuid().nullable(),
+  related_question_canonical_id: z.string(),
+  relationship_type: z.enum([
+    "current",
+    "similar_retry",
+    "simpler_variant",
+    "harder_variant",
+    "concept_extension",
+  ]),
+  difficulty_delta: z.number().int().nullable(),
+  reason_code: z.string(),
+  link_snapshot: z.record(z.string(), z.unknown()),
+});
+
+const instructionExposureSnapshotSchema = z.object({
+  exposure_type: z.enum([
+    "hint",
+    "explanation",
+    "strategy",
+    "similar_question_offer",
+    "broader_coaching_offer",
+    "consent_prompt",
+  ]),
+  content_variant_key: z.string().nullable(),
+  content_version: z.string().nullable(),
+  rendered_difficulty: z.number().int().nullable(),
+  hint_depth: z.number().int().nullable(),
+  tone_style: z.string().nullable(),
+  sequence_ordinal: z.number().int().nonnegative(),
+});
+
+const tutorReplayContentSchema = z.object({
+  suggested_action: TutorSuggestedActionSchema,
+  ui_hints: TutorUiHintsSchema,
+  orchestration_meta: orchestrationMetaSchema.optional(),
+  [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: z.array(questionLinkSnapshotSchema).optional(),
+  [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: z.array(instructionExposureSnapshotSchema).optional(),
+});
+
+type QuestionLinkSnapshot = z.infer<typeof questionLinkSnapshotSchema>;
+type InstructionExposureSnapshot = z.infer<typeof instructionExposureSnapshotSchema>;
+type TutorReplayContent = z.infer<typeof tutorReplayContentSchema>;
 
 function emptyScope(): ScopeShape {
   return {
@@ -470,6 +528,210 @@ async function getPracticeItemStatus(studentId: string, itemId: string | null): 
   return typeof data.status === "string" ? data.status : null;
 }
 
+function asJsonObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function publicTutorMessageContentJson(value: unknown): Record<string, unknown> {
+  const contentJson = { ...asJsonObject(value) };
+  delete contentJson[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
+  delete contentJson[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
+  return contentJson;
+}
+
+function canonicalizeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalizeJsonValue(entry));
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    const out: Record<string, unknown> = {};
+    for (const key of keys) {
+      out[key] = canonicalizeJsonValue(record[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function canonicalizeJsonString(value: unknown): string {
+  return JSON.stringify(canonicalizeJsonValue(value));
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeNullableInt(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function isDuplicateKeyError(error: { code?: string | null } | null | undefined): boolean {
+  return String(error?.code ?? "") === "23505";
+}
+
+function questionLinkMatchesSnapshot(
+  row: Record<string, unknown>,
+  snapshot: QuestionLinkSnapshot,
+): boolean {
+  return (
+    normalizeNullableString(row.source_question_row_id) === snapshot.source_question_row_id
+    && normalizeNullableString(row.source_question_canonical_id) === snapshot.source_question_canonical_id
+    && normalizeNullableString(row.related_question_row_id) === snapshot.related_question_row_id
+    && normalizeNullableString(row.related_question_canonical_id) === snapshot.related_question_canonical_id
+    && normalizeNullableString(row.relationship_type) === snapshot.relationship_type
+    && normalizeNullableInt(row.difficulty_delta) === snapshot.difficulty_delta
+    && normalizeNullableString(row.reason_code) === snapshot.reason_code
+    && canonicalizeJsonString(asJsonObject(row.link_snapshot)) === canonicalizeJsonString(snapshot.link_snapshot)
+  );
+}
+
+function exposureMatchesSnapshot(
+  row: Record<string, unknown>,
+  snapshot: InstructionExposureSnapshot,
+): boolean {
+  return (
+    normalizeNullableString(row.exposure_type) === snapshot.exposure_type
+    && normalizeNullableString(row.content_variant_key) === snapshot.content_variant_key
+    && normalizeNullableString(row.content_version) === snapshot.content_version
+    && normalizeNullableInt(row.rendered_difficulty) === snapshot.rendered_difficulty
+    && normalizeNullableInt(row.hint_depth) === snapshot.hint_depth
+    && normalizeNullableString(row.tone_style) === snapshot.tone_style
+    && normalizeNullableInt(row.sequence_ordinal) === snapshot.sequence_ordinal
+  );
+}
+
+async function ensureQuestionLinksPersisted(args: {
+  conversationId: string;
+  studentId: string;
+  links: QuestionLinkSnapshot[];
+}): Promise<boolean> {
+  if (!Array.isArray(args.links) || args.links.length === 0) return true;
+
+  const { data: existingRows, error: existingError } = await supabaseServer
+    .from("tutor_question_links")
+    .select("*")
+    .eq("conversation_id", args.conversationId)
+    .eq("student_id", args.studentId);
+
+  if (existingError || !Array.isArray(existingRows)) return false;
+  const knownRows = [...existingRows] as Record<string, unknown>[];
+
+  for (const link of args.links) {
+    if (knownRows.some((row) => questionLinkMatchesSnapshot(row, link))) continue;
+
+    const { data: inserted, error: insertError } = await supabaseServer
+      .from("tutor_question_links")
+      .insert({
+        conversation_id: args.conversationId,
+        student_id: args.studentId,
+        source_question_row_id: link.source_question_row_id,
+        source_question_canonical_id: link.source_question_canonical_id,
+        related_question_row_id: link.related_question_row_id,
+        related_question_canonical_id: link.related_question_canonical_id,
+        relationship_type: link.relationship_type,
+        difficulty_delta: link.difficulty_delta,
+        reason_code: link.reason_code,
+        link_snapshot: link.link_snapshot,
+      })
+      .select("*")
+      .single();
+
+    if (insertError && !isDuplicateKeyError(insertError)) {
+      return false;
+    }
+    if (inserted) {
+      knownRows.push(inserted as Record<string, unknown>);
+    }
+  }
+
+  return true;
+}
+
+async function ensureInstructionExposuresPersisted(args: {
+  assignmentId: string;
+  conversationId: string;
+  studentId: string;
+  exposures: InstructionExposureSnapshot[];
+}): Promise<boolean> {
+  if (!Array.isArray(args.exposures) || args.exposures.length === 0) return true;
+
+  const { data: existingRows, error: existingError } = await supabaseServer
+    .from("tutor_instruction_exposures")
+    .select("*")
+    .eq("assignment_id", args.assignmentId)
+    .eq("conversation_id", args.conversationId)
+    .eq("student_id", args.studentId);
+
+  if (existingError || !Array.isArray(existingRows)) return false;
+  const knownRows = [...existingRows] as Record<string, unknown>[];
+
+  for (const exposure of args.exposures) {
+    if (knownRows.some((row) => exposureMatchesSnapshot(row, exposure))) continue;
+
+    const { data: inserted, error: insertError } = await supabaseServer
+      .from("tutor_instruction_exposures")
+      .insert({
+        assignment_id: args.assignmentId,
+        conversation_id: args.conversationId,
+        student_id: args.studentId,
+        exposure_type: exposure.exposure_type,
+        content_variant_key: exposure.content_variant_key,
+        content_version: exposure.content_version,
+        rendered_difficulty: exposure.rendered_difficulty,
+        hint_depth: exposure.hint_depth,
+        tone_style: exposure.tone_style,
+        sequence_ordinal: exposure.sequence_ordinal,
+        shown_at: new Date().toISOString(),
+        consumed_ms: null,
+      })
+      .select("*")
+      .single();
+
+    if (insertError && !isDuplicateKeyError(insertError)) {
+      return false;
+    }
+    if (inserted) {
+      knownRows.push(inserted as Record<string, unknown>);
+    }
+  }
+
+  return true;
+}
+
+async function ensureCanonicalArtifactsPersisted(args: {
+  assignmentId: string;
+  conversationId: string;
+  studentId: string;
+  questionLinks: QuestionLinkSnapshot[];
+  instructionExposures: InstructionExposureSnapshot[];
+}): Promise<boolean> {
+  const linksOk = await ensureQuestionLinksPersisted({
+    conversationId: args.conversationId,
+    studentId: args.studentId,
+    links: args.questionLinks,
+  });
+  if (!linksOk) return false;
+
+  return ensureInstructionExposuresPersisted({
+    assignmentId: args.assignmentId,
+    conversationId: args.conversationId,
+    studentId: args.studentId,
+    exposures: args.instructionExposures,
+  });
+}
+
+function parseReplayTutorContent(value: unknown): TutorReplayContent | null {
+  const parsed = tutorReplayContentSchema.safeParse(asJsonObject(value));
+  return parsed.success ? parsed.data : null;
+}
+
 router.post("/conversations", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
@@ -597,7 +859,7 @@ router.get("/conversations/:conversationId", async (req: AuthenticatedRequest, r
         role: row.role,
         content_kind: row.content_kind,
         message: row.message,
-        content_json: row.content_json ?? {},
+        content_json: publicTutorMessageContentJson(row.content_json),
         client_turn_id: row.client_turn_id ?? null,
         created_at: row.created_at,
       })),
@@ -899,6 +1161,31 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       .maybeSingle();
 
     if (existingTutorResponse) {
+      const replayContent = parseReplayTutorContent((existingTutorResponse as MessageRow).content_json);
+      if (!replayContent || !policyAssignmentId) {
+        sendRecoverableRetry(res, req.requestId);
+        return;
+      }
+
+      const replayQuestionLinks = replayContent[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
+      const replayExposures = replayContent[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
+      if (!Array.isArray(replayQuestionLinks) || !Array.isArray(replayExposures)) {
+        sendRecoverableRetry(res, req.requestId);
+        return;
+      }
+
+      const artifactsReady = await ensureCanonicalArtifactsPersisted({
+        assignmentId: policyAssignmentId,
+        conversationId: conversation.id,
+        studentId: user.id,
+        questionLinks: replayQuestionLinks,
+        instructionExposures: replayExposures,
+      });
+      if (!artifactsReady) {
+        sendRecoverableRetry(res, req.requestId);
+        return;
+      }
+
       finalizedWithSuccess = true;
       if (tutorReservationId) {
         finalizedReservation = true;
@@ -920,15 +1207,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           response: {
             content: String((existingTutorResponse as MessageRow).message ?? ""),
             content_kind: (existingTutorResponse as MessageRow).content_kind,
-            suggested_action: {
-              type: "none",
-              label: null,
-            },
-            ui_hints: {
-              show_accept_decline: false,
-              allow_freeform_reply: true,
-              suggested_chip: null,
-            },
+            suggested_action: replayContent.suggested_action,
+            ui_hints: replayContent.ui_hints,
           },
         },
       });
@@ -1038,6 +1318,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
 
     const suggestedAction = orchestratorResult.response.suggested_action;
     const orchestratorUiHints = orchestratorResult.response.ui_hints;
+    const questionLinksSnapshot = orchestratorResult.question_links;
+    const instructionExposureSnapshot = orchestratorResult.instruction_exposures;
 
     const { data: insertedTutorMessage, error: insertTutorError } = await supabaseServer
       .from("tutor_messages")
@@ -1051,6 +1333,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           suggested_action: suggestedAction,
           ui_hints: orchestratorUiHints,
           orchestration_meta: orchestratorResult.orchestration_meta,
+          [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: questionLinksSnapshot,
+          [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: instructionExposureSnapshot,
         },
         client_turn_id: null,
         explanation_level: null,
@@ -1067,71 +1351,20 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    if (
-      policyAssignmentId
-      && Array.isArray(orchestratorResult.question_links)
-      && orchestratorResult.question_links.length > 0
-    ) {
-      for (const link of orchestratorResult.question_links) {
-        const { error } = await supabaseServer
-          .from("tutor_question_links")
-          .insert({
-            conversation_id: conversation.id,
-            student_id: user.id,
-            source_question_row_id: link.source_question_row_id,
-            source_question_canonical_id: link.source_question_canonical_id,
-            related_question_row_id: link.related_question_row_id,
-            related_question_canonical_id: link.related_question_canonical_id,
-            relationship_type: link.relationship_type,
-            difficulty_delta: link.difficulty_delta,
-            reason_code: link.reason_code,
-            link_snapshot: link.link_snapshot,
-          });
-
-        if (error) {
-          console.warn("[tutor-runtime] tutor_question_links insert degraded", {
-            code: error.code,
-            message: error.message,
-            conversationId: conversation.id,
-            assignmentId: policyAssignmentId,
-          });
-        }
-      }
+    if (!policyAssignmentId) {
+      sendRecoverableRetry(res, req.requestId);
+      return;
     }
-
-    if (
-      policyAssignmentId
-      && Array.isArray(orchestratorResult.instruction_exposures)
-      && orchestratorResult.instruction_exposures.length > 0
-    ) {
-      for (const exposure of orchestratorResult.instruction_exposures) {
-        const { error } = await supabaseServer
-          .from("tutor_instruction_exposures")
-          .insert({
-            assignment_id: policyAssignmentId,
-            conversation_id: conversation.id,
-            student_id: user.id,
-            exposure_type: exposure.exposure_type,
-            content_variant_key: exposure.content_variant_key,
-            content_version: exposure.content_version,
-            rendered_difficulty: exposure.rendered_difficulty,
-            hint_depth: exposure.hint_depth,
-            tone_style: exposure.tone_style,
-            sequence_ordinal: exposure.sequence_ordinal,
-            shown_at: new Date().toISOString(),
-            consumed_ms: null,
-          });
-
-        if (error) {
-          console.warn("[tutor-runtime] tutor_instruction_exposures insert degraded", {
-            code: error.code,
-            message: error.message,
-            conversationId: conversation.id,
-            assignmentId: policyAssignmentId,
-            responsePreview: cleaned.slice(0, 80),
-          });
-        }
-      }
+    const canonicalWritesComplete = await ensureCanonicalArtifactsPersisted({
+      assignmentId: policyAssignmentId,
+      conversationId: conversation.id,
+      studentId: user.id,
+      questionLinks: questionLinksSnapshot,
+      instructionExposures: instructionExposureSnapshot,
+    });
+    if (!canonicalWritesComplete) {
+      sendRecoverableRetry(res, req.requestId);
+      return;
     }
 
     await supabaseServer

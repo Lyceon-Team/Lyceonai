@@ -18,6 +18,16 @@ const generativeModel = vertexAI.getGenerativeModel({
     model: modelName,
 });
 
+export class OrchestratorTimeoutError extends Error {
+    readonly timeoutMs: number;
+
+    constructor(timeoutMs: number) {
+        super(`Vertex orchestration timed out after ${timeoutMs}ms`);
+        this.name = "OrchestratorTimeoutError";
+        this.timeoutMs = timeoutMs;
+    }
+}
+
 function cleanJsonText(text: string): string {
     const trimmed = text.trim();
 
@@ -30,6 +40,24 @@ function cleanJsonText(text: string): string {
     }
 
     return trimmed;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timeoutHandle = setTimeout(() => {
+            reject(new OrchestratorTimeoutError(timeoutMs));
+        }, timeoutMs);
+
+        promise
+            .then((result) => {
+                clearTimeout(timeoutHandle);
+                resolve(result);
+            })
+            .catch((error) => {
+                clearTimeout(timeoutHandle);
+                reject(error);
+            });
+    });
 }
 
 function getResponseSchema(): Record<string, unknown> {
@@ -240,21 +268,24 @@ export async function generateTutorResponse(
     const maxOutputTokens = input.runtime_limits.max_output_tokens;
     const prompt = buildPrompt(input);
 
-    const result = await generativeModel.generateContent({
-        contents: [
-            {
-                role: "user",
-                parts: [{ text: prompt }],
+    const result = await withTimeout(
+        generativeModel.generateContent({
+            contents: [
+                {
+                    role: "user",
+                    parts: [{ text: prompt }],
+                },
+            ],
+            generationConfig: {
+                maxOutputTokens: maxOutputTokens,
+                temperature: 0.2,
+                topP: 0.9,
+                responseMimeType: "application/json",
+                responseSchema: getResponseSchema(),
             },
-        ],
-        generationConfig: {
-            maxOutputTokens: maxOutputTokens,
-            temperature: 0.2,
-            topP: 0.9,
-            responseMimeType: "application/json",
-            responseSchema: getResponseSchema(),
-        },
-    });
+        }),
+        input.runtime_limits.timeout_ms,
+    );
 
     const text =
         result.response.candidates?.[0]?.content?.parts?.[0] &&

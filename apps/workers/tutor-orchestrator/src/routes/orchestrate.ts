@@ -4,7 +4,7 @@ import {
     orchestrateRequestSchema,
     orchestrateResponseSchema,
 } from "../lib/schema.js";
-import { generateTutorResponse } from "../lib/vertex.js";
+import { generateTutorResponse, OrchestratorTimeoutError } from "../lib/vertex.js";
 
 export const orchestrateRouter = express.Router();
 
@@ -37,6 +37,16 @@ orchestrateRouter.post("/", async (req: Request, res: Response) => {
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Unknown orchestrator failure";
+
+        if (error instanceof OrchestratorTimeoutError) {
+            return res.status(504).json({
+                error: {
+                    code: "ORCHESTRATOR_TIMEOUT",
+                    message: "Vertex orchestration timed out",
+                    details: message,
+                },
+            });
+        }
 
         return res.status(502).json({
             error: {

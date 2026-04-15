@@ -187,8 +187,18 @@ const state = vi.hoisted(() => ({
   failStudentMessageInsert: false,
   failAssignmentInsert: false,
   failTutorMessageInsert: false,
+  failQuestionLinkInsert: false,
+  failExposureInsert: false,
   nowCursor: 0,
 }));
+
+let userSeed = 0;
+
+function nextUserId(): string {
+  userSeed += 1;
+  const tail = userSeed.toString().padStart(12, "0");
+  return `11111111-1111-4111-8111-${tail}`;
+}
 
 function isoAt(offset: number): string {
   return new Date(Date.UTC(2026, 3, 9, 12, 0, offset)).toISOString();
@@ -312,6 +322,14 @@ function createBuilder(table: string) {
       if (table === "tutor_instruction_assignments" && state.failAssignmentInsert) {
         pendingInsert = null;
         return { data: null, error: { code: "insert_failed", message: "assignment insert failed" } };
+      }
+      if (table === "tutor_question_links" && state.failQuestionLinkInsert) {
+        pendingInsert = null;
+        return { data: null, error: { code: "insert_failed", message: "question link insert failed" } };
+      }
+      if (table === "tutor_instruction_exposures" && state.failExposureInsert) {
+        pendingInsert = null;
+        return { data: null, error: { code: "insert_failed", message: "exposure insert failed" } };
       }
 
       const inserted = pendingInsert.map((row) => {
@@ -509,7 +527,7 @@ vi.mock("../server/middleware/csrf-double-submit", () => ({
   generateToken: () => "test-csrf-token",
 }));
 
-const { default: app } = await import("../server/index");
+let app: any;
 
 async function createConversation(agent: request.SuperAgentTest, payload?: Record<string, unknown>) {
   const res = await agent.post("/api/tutor/conversations").send({
@@ -527,9 +545,11 @@ async function createConversation(agent: request.SuperAgentTest, payload?: Recor
 describe("Tutor Runtime Contract Cutover", () => {
   let agent: request.SuperAgentTest;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    vi.resetModules();
+    app = (await import("../server/index")).default;
     state.currentRole = "student";
-    state.currentUserId = "11111111-1111-4111-8111-111111111111";
+    state.currentUserId = nextUserId();
     state.hasPaidAccess = true;
     state.orchestratorResult = {
       response: {
@@ -573,9 +593,14 @@ describe("Tutor Runtime Contract Cutover", () => {
     state.failStudentMessageInsert = false;
     state.failAssignmentInsert = false;
     state.failTutorMessageInsert = false;
+    state.failQuestionLinkInsert = false;
+    state.failExposureInsert = false;
     state.nowCursor = 0;
     state.practiceItems = [
       { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
+    ];
+    state.practiceSessions = [
+      { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", user_id: state.currentUserId },
     ];
     callTutorOrchestratorMock.mockReset();
     callTutorOrchestratorMock.mockImplementation(async () => state.orchestratorResult);
@@ -685,6 +710,136 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     expect(state.messages.filter((m) => m.role === "student" && m.client_turn_id === payload.client_turn_id)).toHaveLength(1);
+  });
+
+  it("replay uses stored suggested_action and ui_hints from persisted tutor content_json", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    const payload = {
+      conversation_id: conversationId,
+      message: "Please help again",
+      content_kind: "message",
+      client_turn_id: "f4444444-4444-4444-8444-444444444445",
+    };
+
+    const first = await agent.post("/api/tutor/messages").send(payload);
+    expect(first.status).toBe(200);
+
+    const tutorMessage = state.messages.find((m) => m.role === "tutor");
+    expect(tutorMessage).toBeTruthy();
+    tutorMessage!.content_json = {
+      ...(tutorMessage!.content_json ?? {}),
+      suggested_action: {
+        type: "offer_broader_coaching",
+        label: "Zoom out",
+      },
+      ui_hints: {
+        show_accept_decline: true,
+        allow_freeform_reply: false,
+        suggested_chip: "Zoom out",
+      },
+    };
+
+    const replay = await agent.post("/api/tutor/messages").send(payload);
+    expect(replay.status).toBe(200);
+    expect(replay.body.data.response.suggested_action).toEqual({
+      type: "offer_broader_coaching",
+      label: "Zoom out",
+    });
+    expect(replay.body.data.response.ui_hints).toEqual({
+      show_accept_decline: true,
+      allow_freeform_reply: false,
+      suggested_chip: "Zoom out",
+    });
+    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns recoverable retry when question link persistence fails, then replay-heals without re-orchestrating", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.orchestratorResult = {
+      ...state.orchestratorResult,
+      question_links: [
+        {
+          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_canonical_id: "q1",
+          related_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+          related_question_canonical_id: "q2",
+          relationship_type: "similar_retry",
+          difficulty_delta: -1,
+          reason_code: "student_consented_similar_offer",
+          link_snapshot: { source: "orchestrator" },
+        },
+      ],
+    };
+    state.failQuestionLinkInsert = true;
+
+    const payload = {
+      conversation_id: conversationId,
+      message: "Try this",
+      content_kind: "message",
+      client_turn_id: "f4444444-4444-4444-8444-444444444446",
+    };
+
+    const failed = await agent.post("/api/tutor/messages").send(payload);
+    expect(failed.status).toBe(409);
+    expect(failed.body.error.code).toBe("TUTOR_RECOVERABLE_RETRY_REQUIRED");
+    expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(1);
+    expect(state.questionLinks).toHaveLength(0);
+
+    state.failQuestionLinkInsert = false;
+    const recovered = await agent.post("/api/tutor/messages").send(payload);
+    expect(recovered.status).toBe(200);
+    expect(state.questionLinks).toHaveLength(1);
+    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns recoverable retry when instruction exposure persistence fails, then replay-heals without re-orchestrating", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.failExposureInsert = true;
+
+    const payload = {
+      conversation_id: conversationId,
+      message: "Try this",
+      content_kind: "message",
+      client_turn_id: "f4444444-4444-4444-8444-444444444447",
+    };
+
+    const failed = await agent.post("/api/tutor/messages").send(payload);
+    expect(failed.status).toBe(409);
+    expect(failed.body.error.code).toBe("TUTOR_RECOVERABLE_RETRY_REQUIRED");
+    expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(1);
+    expect(state.exposures).toHaveLength(0);
+
+    state.failExposureInsert = false;
+    const recovered = await agent.post("/api/tutor/messages").send(payload);
+    expect(recovered.status).toBe(200);
+    expect(state.exposures).toHaveLength(1);
+    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns recoverable retry when replayed tutor content_json is missing stored ui helpers", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    const payload = {
+      conversation_id: conversationId,
+      message: "Retry this safely",
+      content_kind: "message",
+      client_turn_id: "f4444444-4444-4444-8444-444444444448",
+    };
+
+    const first = await agent.post("/api/tutor/messages").send(payload);
+    expect(first.status).toBe(200);
+    const tutorMessage = state.messages.find((m) => m.role === "tutor");
+    expect(tutorMessage).toBeTruthy();
+    const stripped = { ...(tutorMessage!.content_json ?? {}) };
+    delete (stripped as Record<string, unknown>).suggested_action;
+    tutorMessage!.content_json = stripped;
+
+    const replay = await agent.post("/api/tutor/messages").send(payload);
+    expect(replay.status).toBe(409);
+    expect(replay.body.error.code).toBe("TUTOR_RECOVERABLE_RETRY_REQUIRED");
   });
 
   it("returns explicit recoverable failure shape when blocking assignment write fails", async () => {
