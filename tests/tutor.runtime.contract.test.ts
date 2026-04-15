@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
+const {
+  callTutorOrchestratorMock,
+  callLlmMock,
+  handleRagQueryMock,
+} = vi.hoisted(() => ({
+  callTutorOrchestratorMock: vi.fn(),
+  callLlmMock: vi.fn(),
+  handleRagQueryMock: vi.fn(),
+}));
+
 type Role = "student" | "guardian" | "admin";
 
 type ConversationRow = {
@@ -81,8 +91,8 @@ type InstructionExposureRow = {
   conversation_id: string;
   student_id: string;
   exposure_type: string;
-  content_variant_key: string;
-  content_version: string;
+  content_variant_key: string | null;
+  content_version: string | null;
   rendered_difficulty: number | null;
   hint_depth: number | null;
   tone_style: string | null;
@@ -117,13 +127,52 @@ const state = vi.hoisted(() => ({
   currentRole: "student" as Role,
   currentUserId: "11111111-1111-4111-8111-111111111111",
   hasPaidAccess: true,
-  llmAnswer: "Let's work through this step-by-step.",
+  orchestratorResult: {
+    response: {
+      content: "Let's work through this step-by-step.",
+      content_kind: "message",
+      suggested_action: {
+        type: "offer_stay_focused",
+        label: "Stay on this question",
+      },
+      ui_hints: {
+        show_accept_decline: false,
+        allow_freeform_reply: true,
+        suggested_chip: "Stay on this question",
+      },
+    },
+    question_links: [],
+    instruction_exposures: [
+      {
+        exposure_type: "hint",
+        content_variant_key: "offer_stay_focused",
+        content_version: "1",
+        rendered_difficulty: null,
+        hint_depth: 1,
+        tone_style: "neutral",
+        sequence_ordinal: 1,
+      },
+    ],
+    orchestration_meta: {
+      model_name: "vertex-test-model",
+      cache_used: false,
+      compaction_recommended: false,
+    },
+  },
   conversations: [] as ConversationRow[],
   messages: [] as MessageRow[],
   assignments: [] as InstructionAssignmentRow[],
   questionLinks: [] as QuestionLinkRow[],
   exposures: [] as InstructionExposureRow[],
-  memorySummaries: [] as Array<{ student_id: string; content_json: Record<string, unknown>; created_at: string }>,
+  memorySummaries: [] as Array<{
+    student_id: string;
+    summary_type: string;
+    summary_version: string;
+    content_json: Record<string, unknown>;
+    source_window_start: string | null;
+    source_window_end: string | null;
+    created_at: string;
+  }>,
   questions: [
     { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", canonical_id: "q1" },
     { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", canonical_id: "q2" },
@@ -358,29 +407,18 @@ vi.mock("../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
+vi.mock("../server/lib/tutor-orchestrator-client", () => ({
+  callTutorOrchestrator: callTutorOrchestratorMock,
+}));
+
 vi.mock("../apps/api/src/lib/rag-service", () => ({
   getRagService: () => ({
-    handleRagQuery: vi.fn(async () => ({
-      context: {
-        primaryQuestion: {
-          canonicalId: "q1",
-          difficulty: 2,
-          stem: "A sample SAT question",
-        },
-        supportingQuestions: [
-          {
-            canonicalId: "q2",
-            difficulty: 1,
-            stem: "A similar SAT question",
-          },
-        ],
-      },
-    })),
+    handleRagQuery: handleRagQueryMock,
   }),
 }));
 
 vi.mock("../apps/api/src/lib/embeddings", () => ({
-  callLlm: vi.fn(async () => state.llmAnswer),
+  callLlm: callLlmMock,
 }));
 
 vi.mock("../apps/api/src/lib/rate-limit-ledger", () => ({
@@ -493,7 +531,38 @@ describe("Tutor Runtime Contract Cutover", () => {
     state.currentRole = "student";
     state.currentUserId = "11111111-1111-4111-8111-111111111111";
     state.hasPaidAccess = true;
-    state.llmAnswer = "Let's work through this step-by-step.";
+    state.orchestratorResult = {
+      response: {
+        content: "Let's work through this step-by-step.",
+        content_kind: "message",
+        suggested_action: {
+          type: "offer_stay_focused",
+          label: "Stay on this question",
+        },
+        ui_hints: {
+          show_accept_decline: false,
+          allow_freeform_reply: true,
+          suggested_chip: "Stay on this question",
+        },
+      },
+      question_links: [],
+      instruction_exposures: [
+        {
+          exposure_type: "hint",
+          content_variant_key: "offer_stay_focused",
+          content_version: "1",
+          rendered_difficulty: null,
+          hint_depth: 1,
+          tone_style: "neutral",
+          sequence_ordinal: 1,
+        },
+      ],
+      orchestration_meta: {
+        model_name: "vertex-test-model",
+        cache_used: false,
+        compaction_recommended: false,
+      },
+    };
     state.conversations = [];
     state.messages = [];
     state.assignments = [];
@@ -508,6 +577,27 @@ describe("Tutor Runtime Contract Cutover", () => {
     state.practiceItems = [
       { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
     ];
+    callTutorOrchestratorMock.mockReset();
+    callTutorOrchestratorMock.mockImplementation(async () => state.orchestratorResult);
+    callLlmMock.mockReset();
+    callLlmMock.mockResolvedValue("legacy fallback should not run");
+    handleRagQueryMock.mockReset();
+    handleRagQueryMock.mockResolvedValue({
+      context: {
+        primaryQuestion: {
+          canonicalId: "q1",
+          difficulty: 2,
+          stem: "A sample SAT question",
+        },
+        supportingQuestions: [
+          {
+            canonicalId: "q2",
+            difficulty: 1,
+            stem: "A similar SAT question",
+          },
+        ],
+      },
+    });
     agent = request.agent(app);
   });
 
@@ -525,9 +615,15 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(turn.status).toBe(200);
     expect(turn.body.data.conversation_id).toBe(conversationId);
     expect(turn.body.data.response.content).toContain("step-by-step");
+    expect(turn.body.data.response.ui_hints).toEqual(state.orchestratorResult.response.ui_hints);
     expect(state.messages.filter((m) => m.role === "student")).toHaveLength(1);
     expect(state.assignments).toHaveLength(1);
     expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(1);
+    const tutorMessage = state.messages.find((m) => m.role === "tutor");
+    expect(tutorMessage?.content_json?.orchestration_meta).toEqual(state.orchestratorResult.orchestration_meta);
+    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+    expect(callLlmMock).not.toHaveBeenCalled();
+    expect(handleRagQueryMock).not.toHaveBeenCalled();
   });
 
   it("denies guardians from tutor boundaries", async () => {
@@ -613,10 +709,66 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
   });
 
+  it("returns recoverable retry when orchestrator call throws", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    callTutorOrchestratorMock.mockRejectedValueOnce(new Error("orchestrator unavailable"));
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Try turn",
+      content_kind: "message",
+      client_turn_id: "f5555555-5555-4555-8555-555555555556",
+    });
+
+    expect(turn.status).toBe(409);
+    expect(turn.body).toMatchObject({
+      error: {
+        code: "TUTOR_RECOVERABLE_RETRY_REQUIRED",
+        message: "The tutor turn could not be completed safely. Please retry.",
+        retryable: true,
+      },
+    });
+    expect(callLlmMock).not.toHaveBeenCalled();
+    expect(handleRagQueryMock).not.toHaveBeenCalled();
+  });
+
+  it("returns recoverable retry when orchestrator response shape is invalid", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    callTutorOrchestratorMock.mockRejectedValueOnce(
+      new Error("Tutor orchestrator returned invalid response shape"),
+    );
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Try turn",
+      content_kind: "message",
+      client_turn_id: "f5555555-5555-4555-8555-555555555557",
+    });
+
+    expect(turn.status).toBe(409);
+    expect(turn.body).toMatchObject({
+      error: {
+        code: "TUTOR_RECOVERABLE_RETRY_REQUIRED",
+        message: "The tutor turn could not be completed safely. Please retry.",
+        retryable: true,
+      },
+    });
+    expect(callLlmMock).not.toHaveBeenCalled();
+    expect(handleRagQueryMock).not.toHaveBeenCalled();
+  });
+
   it("blocks anti-leak answer reveal in pre-submit practice", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
-    state.llmAnswer = "The correct answer is A.";
+    state.orchestratorResult = {
+      ...state.orchestratorResult,
+      response: {
+        ...state.orchestratorResult.response,
+        content: "The correct answer is A.",
+      },
+    };
     state.practiceItems = [
       { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
     ];
@@ -681,6 +833,51 @@ describe("Tutor Runtime Contract Cutover", () => {
   it("persists similar-question links with row+canonical ids and difficulty delta", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
+    state.orchestratorResult = {
+      response: {
+        content: "Let's try a similar one next.",
+        content_kind: "message",
+        suggested_action: {
+          type: "offer_similar_question",
+          label: "Try a similar question",
+        },
+        ui_hints: {
+          show_accept_decline: true,
+          allow_freeform_reply: true,
+          suggested_chip: "Try a similar question",
+        },
+      },
+      question_links: [
+        {
+          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_canonical_id: "q1",
+          related_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+          related_question_canonical_id: "q2",
+          relationship_type: "similar_retry",
+          difficulty_delta: -1,
+          reason_code: "student_consented_similar_offer",
+          link_snapshot: {
+            source: "orchestrator",
+          },
+        },
+      ],
+      instruction_exposures: [
+        {
+          exposure_type: "similar_question_offer",
+          content_variant_key: "offer_similar_question",
+          content_version: "1",
+          rendered_difficulty: null,
+          hint_depth: null,
+          tone_style: "neutral",
+          sequence_ordinal: 1,
+        },
+      ],
+      orchestration_meta: {
+        model_name: "vertex-test-model",
+        cache_used: false,
+        compaction_recommended: false,
+      },
+    };
 
     const turn = await agent.post("/api/tutor/messages").send({
       conversation_id: conversationId,
@@ -699,6 +896,11 @@ describe("Tutor Runtime Contract Cutover", () => {
       related_question_canonical_id: "q2",
       relationship_type: "similar_retry",
       difficulty_delta: -1,
+    });
+    expect(state.exposures).toHaveLength(1);
+    expect(state.exposures[0]).toMatchObject({
+      exposure_type: "similar_question_offer",
+      content_variant_key: "offer_similar_question",
     });
   });
 });
