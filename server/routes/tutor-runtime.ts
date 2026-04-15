@@ -529,13 +529,6 @@ type SuggestedAction = {
   label: string | null;
 };
 
-function toExposureType(action: SuggestedAction["type"]): "hint" | "explanation" | "strategy" | "similar_question_offer" | "broader_coaching_offer" | "consent_prompt" {
-  if (action === "offer_similar_question") return "similar_question_offer";
-  if (action === "offer_broader_coaching") return "broader_coaching_offer";
-  if (action === "offer_stay_focused") return "hint";
-  return "explanation";
-}
-
 
   const first = supporting[0];
   if (!first) return;
