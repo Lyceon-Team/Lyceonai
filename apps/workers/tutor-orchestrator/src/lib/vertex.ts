@@ -1,4 +1,7 @@
-import { VertexAI } from "@google-cloud/vertexai";
+import {
+    VertexAI,
+    FunctionDeclarationSchemaType,
+} from "@google-cloud/vertexai";
 import type { OrchestrateRequest, OrchestrateResponse } from "./schema.js";
 import { orchestrateResponseSchema } from "./schema.js";
 
@@ -34,12 +37,12 @@ function getResponseSchema(): Record<string, unknown> {
         type: "OBJECT",
         properties: {
             response: {
-                type: "OBJECT",
+                type: FunctionDeclarationSchemaType.OBJECT,
                 properties: {
                     content: { type: "STRING" },
                     content_kind: { type: "STRING", enum: ["message"] },
                     suggested_action: {
-                        type: "OBJECT",
+                        type: FunctionDeclarationSchemaType.OBJECT,
                         properties: {
                             type: {
                                 type: "STRING",
@@ -55,7 +58,7 @@ function getResponseSchema(): Record<string, unknown> {
                         required: ["type", "label"],
                     },
                     ui_hints: {
-                        type: "OBJECT",
+                        type: FunctionDeclarationSchemaType.OBJECT,
                         properties: {
                             show_accept_decline: { type: "BOOLEAN" },
                             allow_freeform_reply: { type: "BOOLEAN" },
@@ -71,16 +74,16 @@ function getResponseSchema(): Record<string, unknown> {
                 required: ["content", "content_kind", "suggested_action", "ui_hints"],
             },
             question_links: {
-                type: "ARRAY",
+                type: FunctionDeclarationSchemaType.ARRAY,
                 items: {
-                    type: "OBJECT",
+                    type: FunctionDeclarationSchemaType.OBJECT,
                     properties: {
                         source_question_row_id: { type: "STRING", nullable: true },
                         source_question_canonical_id: { type: "STRING" },
                         related_question_row_id: { type: "STRING", nullable: true },
                         related_question_canonical_id: { type: "STRING" },
                         relationship_type: {
-                            type: "STRING",
+                            type: FunctionDeclarationSchemaType.STRING,
                             enum: [
                                 "current",
                                 "similar_retry",
@@ -106,12 +109,12 @@ function getResponseSchema(): Record<string, unknown> {
                 },
             },
             instruction_exposures: {
-                type: "ARRAY",
+                type: FunctionDeclarationSchemaType.ARRAY,
                 items: {
-                    type: "OBJECT",
+                    type: FunctionDeclarationSchemaType.OBJECT,
                     properties: {
                         exposure_type: {
-                            type: "STRING",
+                            type: FunctionDeclarationSchemaType.STRING,
                             enum: [
                                 "hint",
                                 "explanation",
@@ -121,12 +124,12 @@ function getResponseSchema(): Record<string, unknown> {
                                 "consent_prompt",
                             ],
                         },
-                        content_variant_key: { type: "STRING", nullable: true },
-                        content_version: { type: "STRING", nullable: true },
-                        rendered_difficulty: { type: "INTEGER", nullable: true },
-                        hint_depth: { type: "INTEGER", nullable: true },
-                        tone_style: { type: "STRING", nullable: true },
-                        sequence_ordinal: { type: "INTEGER" },
+                        content_variant_key: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
+                        content_version: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
+                        rendered_difficulty: { type: FunctionDeclarationSchemaType.INTEGER, nullable: true },
+                        hint_depth: { type: FunctionDeclarationSchemaType.INTEGER, nullable: true },
+                        tone_style: { type: FunctionDeclarationSchemaType.STRING, nullable: true },
+                        sequence_ordinal: { type: FunctionDeclarationSchemaType.INTEGER },
                     },
                     required: [
                         "exposure_type",
@@ -140,11 +143,11 @@ function getResponseSchema(): Record<string, unknown> {
                 },
             },
             orchestration_meta: {
-                type: "OBJECT",
+                type: FunctionDeclarationSchemaType.OBJECT,
                 properties: {
-                    model_name: { type: "STRING" },
-                    cache_used: { type: "BOOLEAN" },
-                    compaction_recommended: { type: "BOOLEAN" },
+                    model_name: { type: FunctionDeclarationSchemaType.STRING },
+                    cache_used: { type: FunctionDeclarationSchemaType.BOOLEAN },
+                    compaction_recommended: { type: FunctionDeclarationSchemaType.BOOLEAN },
                 },
                 required: ["model_name", "cache_used", "compaction_recommended"],
             },
@@ -204,9 +207,9 @@ function buildPrompt(input: OrchestrateRequest): string {
             question_links: [
                 {
                     source_question_row_id: "uuid|null",
-                    source_question_canonical_id: "string",
+                    source_question_canonical_id: FunctionDeclarationSchemaType.STRING,
                     related_question_row_id: "uuid|null",
-                    related_question_canonical_id: "string",
+                    related_question_canonical_id: FunctionDeclarationSchemaType.STRING,
                     relationship_type: [
                         "current",
                         "similar_retry",
