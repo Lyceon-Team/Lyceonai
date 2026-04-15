@@ -536,14 +536,7 @@ function toExposureType(action: SuggestedAction["type"]): "hint" | "explanation"
   return "explanation";
 }
 
-async function persistQuestionLinkForSimilarOffer(args: {
-  conversationId: string;
-  studentId: string;
-  scope: ScopeShape;
-  context: any;
-  assignmentId: string;
-}): Promise<void> {
-  const supporting = Array.isArray(args.context?.supportingQuestions) ? args.context.supportingQuestions : [];
+
   const first = supporting[0];
   if (!first) return;
 
@@ -592,7 +585,7 @@ async function persistQuestionLinkForSimilarOffer(args: {
       conversationId: args.conversationId,
     });
   }
-}
+
 
 async function persistInstructionExposure(args: {
   assignmentId: string;
