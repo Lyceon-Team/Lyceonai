@@ -529,21 +529,6 @@ type SuggestedAction = {
   label: string | null;
 };
 
-function deriveSuggestedAction(message: string, context: any): SuggestedAction {
-  const normalized = message.toLowerCase();
-  const hasSupporting = Array.isArray(context?.supportingQuestions) && context.supportingQuestions.length > 0;
-  if (hasSupporting && /\b(similar|another example|easier version|harder version)\b/.test(normalized)) {
-    return { type: "offer_similar_question", label: "Try a similar question" };
-  }
-  if (/\b(plan|schedule|what should i study|what to study)\b/.test(normalized)) {
-    return { type: "offer_broader_coaching", label: "Get a study plan" };
-  }
-  if (/\b(stuck|confused|lost)\b/.test(normalized)) {
-    return { type: "offer_stay_focused", label: "Stay on this question" };
-  }
-  return { type: "none", label: null };
-}
-
 function toExposureType(action: SuggestedAction["type"]): "hint" | "explanation" | "strategy" | "similar_question_offer" | "broader_coaching_offer" | "consent_prompt" {
   if (action === "offer_similar_question") return "similar_question_offer";
   if (action === "offer_broader_coaching") return "broader_coaching_offer";
