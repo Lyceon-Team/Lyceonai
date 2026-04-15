@@ -215,9 +215,9 @@ function buildPrompt(input: OrchestrateRequest): string {
         task: "Generate a bounded tutor response for Lyceon.",
         rules: [
             "You are an SAT tutor.",
-            "Do not reveal answers unless the server/runtime context already allows it.",
-            "Do not output hidden reasoning or internal metadata.",
-            "Return only JSON matching the requested response shape.",
+            "Do not reveal answers unless the provided context already allows it.",
+            "Do not output hidden reasoning, internal metadata, or markdown code fences.",
+            "Return only JSON that matches the response schema.",
             "Keep content concise, helpful, and student-safe.",
         ],
         input: {
@@ -230,53 +230,10 @@ function buildPrompt(input: OrchestrateRequest): string {
             policy_assignment: input.policy_assignment,
             runtime_limits: input.runtime_limits,
         },
-        question_links: [
-            {
-                source_question_row_id: "uuid|null",
-                source_question_canonical_id: FunctionDeclarationSchemaType.STRING,
-                related_question_row_id: "uuid|null",
-                related_question_canonical_id: FunctionDeclarationSchemaType.STRING,
-                relationship_type: [
-                    "current",
-                    "similar_retry",
-                    "simpler_variant",
-                    "harder_variant",
-                    "concept_extension",
-                ],
-                difficulty_delta: "integer|null",
-                reason_code: "string",
-                link_snapshot: "object",
-            },
-        ],
-        instruction_exposures: [
-            {
-                exposure_type: [
-                    "hint",
-                    "explanation",
-                    "strategy",
-                    "similar_question_offer",
-                    "broader_coaching_offer",
-                    "consent_prompt",
-                ],
-                content_variant_key: "string|null",
-                content_version: "string|null",
-                rendered_difficulty: "integer|null",
-                hint_depth: "integer|null",
-                tone_style: "string|null",
-                sequence_ordinal: "integer",
-            },
-        ],
-        orchestration_meta: {
-            model_name: "string",
-            cache_used: "boolean",
-            compaction_recommended: "boolean",
-        },
-    },
-};
+    };
 
-return JSON.stringify(prompt, null, 2);
+    return JSON.stringify(prompt, null, 2);
 }
-
 export async function generateTutorResponse(
     input: OrchestrateRequest,
 ): Promise<OrchestrateResponse> {
