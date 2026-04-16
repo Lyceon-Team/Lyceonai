@@ -44,7 +44,9 @@ describe("Tutor orchestrator client auth boundary", () => {
     process.env.TUTOR_ORCHESTRATOR_URL = "http://127.0.0.1:8080";
     delete process.env.TUTOR_ORCHESTRATOR_AUTH_MODE;
     delete process.env.TUTOR_ORCHESTRATOR_AUDIENCE;
-    getRequestHeadersMock.mockResolvedValue({ Authorization: "Bearer service-token" });
+    getRequestHeadersMock.mockResolvedValue(
+      new Headers([["authorization", "Bearer service-token"]]),
+    );
     getIdTokenClientMock.mockResolvedValue({
       getRequestHeaders: getRequestHeadersMock,
     });
@@ -66,9 +68,9 @@ describe("Tutor orchestrator client auth boundary", () => {
 
     expect(getIdTokenClientMock).not.toHaveBeenCalled();
     const options = fetchMock.mock.calls[0]?.[1] as Record<string, unknown>;
-    const headers = (options?.headers ?? {}) as Record<string, string>;
-    expect(headers["Content-Type"]).toBe("application/json");
-    expect(headers.Authorization).toBeUndefined();
+    const headers = options?.headers as Headers;
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Authorization")).toBeNull();
   });
 
   it("uses gcp id-token auth when configured", async () => {
@@ -80,17 +82,38 @@ describe("Tutor orchestrator client auth boundary", () => {
 
     expect(getIdTokenClientMock).toHaveBeenCalledWith("https://orchestrator.internal");
     const options = fetchMock.mock.calls[0]?.[1] as Record<string, unknown>;
-    const headers = (options?.headers ?? {}) as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer service-token");
+    const headers = options?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer service-token");
   });
 
   it("fails explicitly when id-token auth header cannot be acquired", async () => {
     process.env.TUTOR_ORCHESTRATOR_AUTH_MODE = "gcp_id_token";
-    getRequestHeadersMock.mockResolvedValue({});
+    getRequestHeadersMock.mockResolvedValue(new Headers());
 
     const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
     await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
       "Failed to acquire service auth header for tutor orchestrator",
     );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly for unsupported auth mode config", async () => {
+    process.env.TUTOR_ORCHESTRATOR_AUTH_MODE = "bad_mode";
+
+    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
+      "Unsupported tutor orchestrator auth mode: bad_mode",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly when orchestrator URL config is missing", async () => {
+    delete process.env.TUTOR_ORCHESTRATOR_URL;
+
+    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
+      "TUTOR_ORCHESTRATOR_URL is not configured",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
