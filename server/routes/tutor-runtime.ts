@@ -89,6 +89,26 @@ type ScopeResolution = {
   conflict_fields: string[];
 };
 
+const memorySummarySchema = z.object({
+  summary_type: z.enum([
+    "teaching_profile",
+    "chat_compaction",
+    "recent_learning_pattern",
+    "study_context",
+  ]),
+  summary_version: z.string(),
+  content_json: z.record(z.string(), z.unknown()),
+  source_window_start: z.string().nullable(),
+  source_window_end: z.string().nullable(),
+});
+
+type MemorySummary = z.infer<typeof memorySummarySchema>;
+type MemorySummaryNormalization = {
+  summaries: MemorySummary[];
+  accepted_count: number;
+  rejected_count: number;
+};
+
 const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY = "__internal_question_links_snapshot";
 const INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY = "__internal_instruction_exposures_snapshot";
 
@@ -508,11 +528,45 @@ function removeInternalMetadataMentions(text: string): string {
 function hasDirectAnswerLeak(text: string): boolean {
   const patterns = [
     /\bthe correct answer is\b/i,
+    /\bthe right answer is\b/i,
     /\bchoose option [A-D]\b/i,
     /\banswer:\s*[A-D]\b/i,
     /\bdefinitely option [A-D]\b/i,
+    /\b(option|choice)\s*[A-D]\s*(is|=)\s*(correct|right)\b/i,
+    /\bit(?:'s| is)\s*(definitely|clearly)\s*(option|choice)\s*[A-D]\b/i,
+    /\bonly\s+(option|choice)\s*[A-D]\s+(can|could)\s+be\s+(correct|right)\b/i,
+    /\beliminate\s+all\s+but\s+(option|choice)\s*[A-D]\b/i,
   ];
   return patterns.some((p) => p.test(text));
+}
+
+function normalizeMemorySummaries(rows: unknown): MemorySummaryNormalization {
+  if (!Array.isArray(rows)) {
+    return { summaries: [], accepted_count: 0, rejected_count: 0 };
+  }
+
+  const summaries: MemorySummary[] = [];
+  let rejectedCount = 0;
+  for (const row of rows) {
+    const parsed = memorySummarySchema.safeParse({
+      summary_type: (row as Record<string, unknown>)?.summary_type,
+      summary_version: (row as Record<string, unknown>)?.summary_version,
+      content_json: (row as Record<string, unknown>)?.content_json ?? {},
+      source_window_start: (row as Record<string, unknown>)?.source_window_start ?? null,
+      source_window_end: (row as Record<string, unknown>)?.source_window_end ?? null,
+    });
+    if (!parsed.success) {
+      rejectedCount += 1;
+      continue;
+    }
+    summaries.push(parsed.data);
+  }
+
+  return {
+    summaries,
+    accepted_count: summaries.length,
+    rejected_count: rejectedCount,
+  };
 }
 
 async function getPracticeItemStatus(studentId: string, itemId: string | null): Promise<string | null> {
@@ -1227,6 +1281,15 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3);
+    const normalizedMemory = normalizeMemorySummaries(memoryRows);
+    if (normalizedMemory.rejected_count > 0) {
+      console.warn("[tutor-runtime] filtered incompatible memory summaries", {
+        conversationId: conversation.id,
+        studentId: user.id,
+        acceptedCount: normalizedMemory.accepted_count,
+        rejectedCount: normalizedMemory.rejected_count,
+      });
+    }
 
     const orchestratorPayload = {
       conversation_id: conversation.id,
@@ -1248,13 +1311,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           message: String(row.message ?? ""),
           created_at: String(row.created_at),
         })),
-      memory_summaries: (memoryRows ?? []).map((row: any) => ({
-        summary_type: row.summary_type,
-        summary_version: row.summary_version,
-        content_json: row.content_json ?? {},
-        source_window_start: row.source_window_start ?? null,
-        source_window_end: row.source_window_end ?? null,
-      })),
+      memory_summaries: normalizedMemory.summaries,
       student_context: {
         recent_practice: {},
         recent_review: {},
@@ -1280,6 +1337,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
             ?? null,
           policy_inputs: {
             content_kind: body.content_kind,
+            memory_summary_counts: {
+              accepted: normalizedMemory.accepted_count,
+              rejected: normalizedMemory.rejected_count,
+            },
           },
           fallback_used: scopeResolution.fallback_reason,
           ignored_conflicts: scopeResolution.conflict_fields,

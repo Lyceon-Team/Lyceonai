@@ -694,6 +694,113 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(studentMessage?.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
   });
 
+  it("reuses recent valid conversation scope when stored scoped question becomes stale", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    const conversation = state.conversations.find((row) => row.id === conversationId)!;
+    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    conversation.source_question_canonical_id = "q_missing";
+    state.messages.push({
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      conversation_id: conversationId,
+      student_id: state.currentUserId,
+      role: "student",
+      content_kind: "message",
+      message: "Earlier scoped context",
+      content_json: {},
+      client_turn_id: "f9999999-9999-4999-8999-999999999991",
+      explanation_level: null,
+      source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      source_question_canonical_id: "q2",
+      created_at: isoAt(100),
+    });
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Scope should reuse recent valid question",
+      content_kind: "message",
+      client_turn_id: "f9999999-9999-4999-8999-999999999992",
+    });
+
+    expect(turn.status).toBe(200);
+    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "f9999999-9999-4999-8999-999999999992");
+    expect(newStudentMessage?.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
+    expect(newStudentMessage?.source_question_canonical_id).toBe("q2");
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("reused_recent_conversation_scope");
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.resolved_scope.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
+    expect(payload.resolved_scope.source_question_canonical_id).toBe("q2");
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("reused_recent_conversation_scope");
+  });
+
+  it("degrades stale scoped question to scoped_session when session remains valid", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    const conversation = state.conversations.find((row) => row.id === conversationId)!;
+    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    conversation.source_question_canonical_id = "q_missing";
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Use scoped session fallback",
+      content_kind: "message",
+      client_turn_id: "fa999999-9999-4999-8999-999999999991",
+    });
+
+    expect(turn.status).toBe(200);
+    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "fa999999-9999-4999-8999-999999999991");
+    expect(newStudentMessage?.source_session_id).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1");
+    expect(newStudentMessage?.source_session_item_id).toBe("cccccccc-cccc-4ccc-8ccc-ccccccccccc1");
+    expect(newStudentMessage?.source_question_row_id).toBeNull();
+    expect(newStudentMessage?.source_question_canonical_id).toBeNull();
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("degraded_to_scoped_session");
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.resolved_scope).toMatchObject({
+      source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      source_question_row_id: null,
+      source_question_canonical_id: null,
+    });
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("degraded_to_scoped_session");
+  });
+
+  it("degrades stale scoped references to general when no valid scoped session exists (no fail-open)", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    const conversation = state.conversations.find((row) => row.id === conversationId)!;
+    conversation.source_session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb9";
+    conversation.source_session_item_id = "cccccccc-cccc-4ccc-8ccc-ccccccccccc9";
+    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    conversation.source_question_canonical_id = "q_missing";
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Degrade safely",
+      content_kind: "message",
+      client_turn_id: "fb999999-9999-4999-8999-999999999991",
+    });
+
+    expect(turn.status).toBe(200);
+    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "fb999999-9999-4999-8999-999999999991");
+    expect(newStudentMessage).toMatchObject({
+      source_session_id: null,
+      source_session_item_id: null,
+      source_question_row_id: null,
+      source_question_canonical_id: null,
+    });
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("degraded_to_general");
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.resolved_scope).toEqual({
+      source_session_id: null,
+      source_session_item_id: null,
+      source_question_row_id: null,
+      source_question_canonical_id: null,
+    });
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("degraded_to_general");
+  });
+
   it("is idempotent on duplicate client_turn_id and does not duplicate student rows", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
@@ -842,6 +949,143 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(replay.body.error.code).toBe("TUTOR_RECOVERABLE_RETRY_REQUIRED");
   });
 
+  it("passes compatible memory summaries through to orchestrator unchanged", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.memorySummaries = [
+      {
+        student_id: state.currentUserId,
+        summary_type: "teaching_profile",
+        summary_version: "1",
+        content_json: { pace: "steady" },
+        source_window_start: "2026-04-09T00:00:00.000Z",
+        source_window_end: "2026-04-10T00:00:00.000Z",
+        created_at: isoAt(10),
+      },
+    ];
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Use memory summaries",
+      content_kind: "message",
+      client_turn_id: "fc999999-9999-4999-8999-999999999991",
+    });
+
+    expect(turn.status).toBe(200);
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.memory_summaries).toEqual([
+      {
+        summary_type: "teaching_profile",
+        summary_version: "1",
+        content_json: { pace: "steady" },
+        source_window_start: "2026-04-09T00:00:00.000Z",
+        source_window_end: "2026-04-10T00:00:00.000Z",
+      },
+    ]);
+    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+      accepted: 1,
+      rejected: 0,
+    });
+  });
+
+  it("filters incompatible memory summaries and only reduces memory context for the turn", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.memorySummaries = [
+      {
+        student_id: state.currentUserId,
+        summary_type: "teaching_profile",
+        summary_version: "1",
+        content_json: { confidence: "medium" },
+        source_window_start: "2026-04-09T00:00:00.000Z",
+        source_window_end: "2026-04-10T00:00:00.000Z",
+        created_at: isoAt(30),
+      },
+      {
+        student_id: state.currentUserId,
+        summary_type: "unsupported_type",
+        summary_version: "1",
+        content_json: { invalid: true },
+        source_window_start: "2026-04-09T00:00:00.000Z",
+        source_window_end: "2026-04-10T00:00:00.000Z",
+        created_at: isoAt(20),
+      },
+      {
+        student_id: state.currentUserId,
+        summary_type: "study_context",
+        summary_version: 7 as unknown as string,
+        content_json: "not-an-object" as unknown as Record<string, unknown>,
+        source_window_start: null,
+        source_window_end: null,
+        created_at: isoAt(10),
+      },
+    ];
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Filter invalid summaries safely",
+      content_kind: "message",
+      client_turn_id: "fd999999-9999-4999-8999-999999999991",
+    });
+
+    expect(turn.status).toBe(200);
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.memory_summaries).toHaveLength(1);
+    expect(payload.memory_summaries[0]).toMatchObject({
+      summary_type: "teaching_profile",
+      summary_version: "1",
+      content_json: { confidence: "medium" },
+    });
+    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+      accepted: 1,
+      rejected: 2,
+    });
+    expect(payload.resolved_scope.source_question_canonical_id).toBe("q1");
+    expect(payload.resolved_scope.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    expect(callLlmMock).not.toHaveBeenCalled();
+    expect(handleRagQueryMock).not.toHaveBeenCalled();
+  });
+
+  it("continues safely with empty memory summaries when all stored rows are incompatible", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.memorySummaries = [
+      {
+        student_id: state.currentUserId,
+        summary_type: "unsupported_type",
+        summary_version: "1",
+        content_json: { invalid: true },
+        source_window_start: "2026-04-09T00:00:00.000Z",
+        source_window_end: "2026-04-10T00:00:00.000Z",
+        created_at: isoAt(20),
+      },
+      {
+        student_id: state.currentUserId,
+        summary_type: "study_context",
+        summary_version: "1",
+        content_json: [] as unknown as Record<string, unknown>,
+        source_window_start: 1 as unknown as string,
+        source_window_end: null,
+        created_at: isoAt(10),
+      },
+    ];
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "All summaries invalid should still be bounded-safe",
+      content_kind: "message",
+      client_turn_id: "fe999999-9999-4999-8999-999999999991",
+    });
+
+    expect(turn.status).toBe(200);
+    const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
+    expect(payload.memory_summaries).toEqual([]);
+    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+      accepted: 0,
+      rejected: 2,
+    });
+  });
+
   it("returns explicit recoverable failure shape when blocking assignment write fails", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
@@ -914,14 +1158,19 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(handleRagQueryMock).not.toHaveBeenCalled();
   });
 
-  it("blocks anti-leak answer reveal in pre-submit practice", async () => {
+  it.each([
+    "The correct answer is A.",
+    "Choose option C.",
+    "Option B is correct.",
+    "Eliminate all but option D.",
+  ])("blocks anti-leak answer reveal in pre-submit practice for '%s'", async (content) => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
     state.orchestratorResult = {
       ...state.orchestratorResult,
       response: {
         ...state.orchestratorResult.response,
-        content: "The correct answer is A.",
+        content,
       },
     };
     state.practiceItems = [
@@ -937,6 +1186,61 @@ describe("Tutor Runtime Contract Cutover", () => {
 
     expect(turn.status).toBe(422);
     expect(turn.body.error.code).toBe("TUTOR_ANTI_LEAK_BLOCKED");
+    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+    expect(state.assignments).toHaveLength(1);
+    expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(0);
+    expect(state.questionLinks).toHaveLength(0);
+    expect(state.exposures).toHaveLength(0);
+  });
+
+  it("allows direct-answer explanation content after submit in practice", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.orchestratorResult = {
+      ...state.orchestratorResult,
+      response: {
+        ...state.orchestratorResult.response,
+        content: "The correct answer is A because the slope is positive across the interval.",
+      },
+    };
+    state.practiceItems = [
+      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "answered" },
+    ];
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Explain why that answer works",
+      content_kind: "message",
+      client_turn_id: "f6766666-6666-4666-8666-666666666666",
+    });
+
+    expect(turn.status).toBe(200);
+    expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(1);
+  });
+
+  it("keeps non-answer instructional hints allowed in pre-submit practice", async () => {
+    const start = await createConversation(agent);
+    const conversationId = start.body.data.conversation_id;
+    state.orchestratorResult = {
+      ...state.orchestratorResult,
+      response: {
+        ...state.orchestratorResult.response,
+        content: "Try eliminating choices that violate the units before solving exactly.",
+      },
+    };
+    state.practiceItems = [
+      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
+    ];
+
+    const turn = await agent.post("/api/tutor/messages").send({
+      conversation_id: conversationId,
+      message: "Give me a strategy hint only",
+      content_kind: "message",
+      client_turn_id: "f6866666-6666-4666-8666-666666666666",
+    });
+
+    expect(turn.status).toBe(200);
+    expect(turn.body.data.response.content).toContain("eliminating");
   });
 
   it("blocks tutor while a full-length exam is live", async () => {
