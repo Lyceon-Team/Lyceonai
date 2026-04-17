@@ -1,0 +1,18 @@
+# apps/workers/tutor-orchestrator/cloudbuild.yaml
+
+steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -lc
+      - |
+        cd apps/workers/tutor-orchestrator
+        gcloud run deploy lyceon-tutor-orchestrator \
+          --source . \
+          --region us-central1 \
+          --service-account lyceon-tasks-sa@replit-cop.iam.gserviceaccount.com \
+          --no-allow-unauthenticated \
+          --set-env-vars=NODE_ENV=production,TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE=require_bearer,VERTEX_MODEL=gemini-2.5-flash,VERTEX_LOCATION=us-central1,GOOGLE_CLOUD_PROJECT=replit-cop,VERTEX_PROJECT_ID=replit-cop
+
+options:
+  logging: CLOUD_LOGGING_ONLY
