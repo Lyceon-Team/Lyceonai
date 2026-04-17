@@ -1,84 +1,121 @@
-import { useState, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Sparkles, FileText, Info, MessageSquare, RefreshCw, AlertCircle } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { Send, Sparkles, Info, MessageSquare, RefreshCw, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import {
+  appendTutorMessage,
+  fetchTutorConversation,
+  startTutorConversation,
+  TutorClientRequestError,
+  type TutorFetchConversationResponse,
+} from "@/lib/tutor-client";
+import { TutorSuggestedActionSchema, TutorUiHintsSchema } from "@shared/tutor-contract";
+
+type TutorSuggestedAction = {
+  type: "none" | "offer_similar_question" | "offer_broader_coaching" | "offer_stay_focused";
+  label: string | null;
+};
+
+type TutorUiHints = {
+  show_accept_decline: boolean;
+  allow_freeform_reply: boolean;
+  suggested_chip: string | null;
+};
+
+type MessageType = "user" | "tutor";
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'tutor';
+  type: MessageType;
   content: string;
   timestamp: Date;
-  sources?: Array<{
-    questionId: string;
-    documentName: string;
-    pageNumber: number;
-    questionNumber: number;
-  }>;
+  pending?: boolean;
+  suggestedAction?: TutorSuggestedAction | null;
+  uiHints?: TutorUiHints | null;
 }
 
-interface RagQuestionContext {
-  canonicalId?: string;
-  sectionCode?: string;
-  stem?: string;
+interface PendingTurnState {
+  clientTurnId: string;
+  message: string;
+  userMessageId: string;
+  tutorPlaceholderId: string;
+  retryable: boolean;
 }
 
-interface RagQueryV2Response {
-  context?: {
-    primaryQuestion?: RagQuestionContext | null;
-    supportingQuestions?: RagQuestionContext[];
-    competencyContext?: {
-      studentWeakAreas?: string[];
-      studentStrongAreas?: string[];
+function makeClientTurnId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function toDate(value: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return new Date();
+  }
+  return date;
+}
+
+function extractTutorMetadata(contentJson: unknown): {
+  suggestedAction?: TutorSuggestedAction | null;
+  uiHints?: TutorUiHints | null;
+} {
+  if (!contentJson || typeof contentJson !== "object") {
+    return {};
+  }
+  const record = contentJson as Record<string, unknown>;
+  const suggestedActionParsed = TutorSuggestedActionSchema.safeParse(record.suggested_action);
+  const uiHintsParsed = TutorUiHintsSchema.safeParse(record.ui_hints);
+
+  return {
+    suggestedAction: suggestedActionParsed.success ? suggestedActionParsed.data : undefined,
+    uiHints: uiHintsParsed.success ? uiHintsParsed.data : undefined,
+  };
+}
+
+function toUiMessages(
+  messages: TutorFetchConversationResponse["data"]["messages"],
+): ChatMessage[] {
+  return messages.map((message) => {
+    const role = message.role === "student" ? "user" : "tutor";
+    const tutorMetadata = role === "tutor" ? extractTutorMetadata(message.content_json) : {};
+    return {
+      id: message.id,
+      type: role,
+      content: message.message,
+      timestamp: toDate(message.created_at),
+      ...tutorMetadata,
     };
-  };
-  metadata?: {
-    processingTimeMs?: number;
-  };
+  });
 }
 
-function formatRagContextMessage(payload: RagQueryV2Response): string {
-  const context = payload.context;
-  const primaryQuestion = context?.primaryQuestion;
-  const supportingQuestions = context?.supportingQuestions ?? [];
-  const weakAreas = context?.competencyContext?.studentWeakAreas ?? [];
-  const strongAreas = context?.competencyContext?.studentStrongAreas ?? [];
-
-  const lines: string[] = [];
-  if (primaryQuestion?.stem) {
-    const stem = primaryQuestion.stem.length > 220 ? `${primaryQuestion.stem.slice(0, 220)}...` : primaryQuestion.stem;
-    lines.push(`Primary context: ${stem}`);
-  }
-  if (supportingQuestions.length > 0) {
-    lines.push(`Retrieved ${supportingQuestions.length} related SAT question contexts.`);
-  }
-  if (weakAreas.length > 0) {
-    lines.push(`Likely weak areas: ${weakAreas.slice(0, 4).join(", ")}.`);
-  }
-  if (strongAreas.length > 0) {
-    lines.push(`Likely strong areas: ${strongAreas.slice(0, 3).join(", ")}.`);
-  }
-  if (payload.metadata?.processingTimeMs != null) {
-    lines.push(`Runtime latency: ${payload.metadata.processingTimeMs}ms.`);
-  }
-  if (lines.length === 0) {
-    return "No matching SAT context was retrieved. Try adding a section or a more specific question.";
-  }
-  return lines.join("\n");
+function replaceMessage(
+  messages: ChatMessage[],
+  messageId: string,
+  updater: (message: ChatMessage) => ChatMessage,
+): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.id !== messageId) return message;
+    return updater(message);
+  });
 }
 
 export default function Chat() {
   const { user } = useSupabaseAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [pendingTurn, setPendingTurn] = useState<PendingTurnState | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const bootstrapPromiseRef = useRef<Promise<string | null> | null>(null);
   const { toast } = useToast();
 
   const scrollToBottom = () => {
@@ -89,85 +126,179 @@ export default function Chat() {
     scrollToBottom();
   }, [messages]);
 
-  const sendMessage = async (messageContent: string) => {
-    if (!messageContent.trim() || isLoading) return;
+  const bootstrapConversation = useCallback(async (): Promise<string | null> => {
+    if (conversationId) return conversationId;
+    if (bootstrapPromiseRef.current) return bootstrapPromiseRef.current;
 
-    setRequestError(null);
-    setInputValue("");
-    setIsLoading(true);
+    const bootstrapPromise = (async () => {
+      setIsBootstrapping(true);
+      try {
+        const startResponse = await startTutorConversation({
+          entry_mode: "general",
+          source_surface: "dashboard",
+          source_session_id: null,
+          source_session_item_id: null,
+          source_question_row_id: null,
+          source_question_canonical_id: null,
+        });
+        const activeConversationId = startResponse.data.conversation_id;
+        setConversationId(activeConversationId);
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: messageContent,
-      timestamp: new Date()
-    };
+        const conversationResponse = await fetchTutorConversation(activeConversationId);
+        setMessages(toUiMessages(conversationResponse.data.messages));
+        setRequestError(null);
+        return activeConversationId;
+      } catch (error) {
+        const message =
+          error instanceof TutorClientRequestError
+            ? error.message
+            : "Unable to initialize tutor conversation.";
+        setRequestError(message);
+        return null;
+      } finally {
+        setIsBootstrapping(false);
+      }
+    })().finally(() => {
+      bootstrapPromiseRef.current = null;
+    });
 
-    setMessages(prev => [...prev, userMessage]);
+    bootstrapPromiseRef.current = bootstrapPromise;
+    return bootstrapPromise;
+  }, [conversationId]);
 
-    try {
-      const response = await apiRequest('/api/rag/v2', {
-        method: 'POST',
-        body: JSON.stringify({
-          message: messageContent,
-          mode: 'concept',
-          testCode: 'SAT',
-        })
-      });
-      
-      const result = (await response.json()) as RagQueryV2Response;
-      const supportingQuestions = result.context?.supportingQuestions ?? [];
-      const primaryQuestion = result.context?.primaryQuestion;
-      const sourceRows = [primaryQuestion, ...supportingQuestions]
-        .filter((question): question is RagQuestionContext => Boolean(question?.canonicalId))
-        .slice(0, 4)
-        .map((question, index) => ({
-          questionId: question.canonicalId as string,
-          documentName: question.sectionCode ? `SAT ${question.sectionCode}` : "SAT Context",
-          pageNumber: 0,
-          questionNumber: index + 1,
-        }));
+  useEffect(() => {
+    void bootstrapConversation();
+  }, [bootstrapConversation]);
 
-      const tutorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'tutor',
-        content: formatRagContextMessage(result),
-        timestamp: new Date(),
-        sources: sourceRows.length > 0 ? sourceRows : undefined,
-      };
+  const submitTurn = useCallback(
+    async (args: { activeConversationId: string; turn: PendingTurnState }) => {
+      setIsSubmitting(true);
+      setRequestError(null);
 
-      setMessages(prev => [...prev, tutorMessage]);
-      setLastFailedMessage(null);
-    } catch (error) {
-      console.error('Chat error:', error);
-      setInputValue(messageContent);
-      setLastFailedMessage(messageContent);
-      setRequestError("RAG context request failed. You can retry this message.");
-      toast({
-        title: "Error",
-        description: "Failed to retrieve SAT context. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      try {
+        const response = await appendTutorMessage({
+          conversation_id: args.activeConversationId,
+          message: args.turn.message,
+          content_kind: "message",
+          client_turn_id: args.turn.clientTurnId,
+        });
+
+        setMessages((currentMessages) =>
+          replaceMessage(currentMessages, args.turn.tutorPlaceholderId, (message) => ({
+            ...message,
+            pending: false,
+            content: response.data.response.content,
+            suggestedAction: response.data.response.suggested_action ?? null,
+            uiHints: response.data.response.ui_hints ?? null,
+          })),
+        );
+        setPendingTurn((currentPendingTurn) =>
+          currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
+        );
+      } catch (error) {
+        if (error instanceof TutorClientRequestError && error.code === "TUTOR_RECOVERABLE_RETRY_REQUIRED") {
+          setPendingTurn((currentPendingTurn) => {
+            if (!currentPendingTurn || currentPendingTurn.clientTurnId !== args.turn.clientTurnId) {
+              return currentPendingTurn;
+            }
+            return {
+              ...currentPendingTurn,
+              retryable: true,
+            };
+          });
+          setRequestError(error.message);
+          return;
+        }
+
+        setMessages((currentMessages) =>
+          currentMessages.filter((message) => message.id !== args.turn.tutorPlaceholderId),
+        );
+        setPendingTurn((currentPendingTurn) =>
+          currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
+        );
+
+        const message =
+          error instanceof TutorClientRequestError
+            ? error.message
+            : "Failed to send message. Please try again.";
+        setRequestError(message);
+        toast({
+          title: "Tutor request failed",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [toast],
+  );
 
   const handleSendMessage = async () => {
     const messageContent = inputValue.trim();
-    if (!messageContent || isLoading) return;
-    await sendMessage(messageContent);
+    if (!messageContent || isSubmitting || pendingTurn) return;
+
+    const activeConversationId = conversationId ?? (await bootstrapConversation());
+    if (!activeConversationId) {
+      toast({
+        title: "Tutor unavailable",
+        description: "Unable to initialize tutor conversation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const clientTurnId = makeClientTurnId();
+    const userMessageId = `user-${clientTurnId}`;
+    const tutorPlaceholderId = `pending-${clientTurnId}`;
+    const turn: PendingTurnState = {
+      clientTurnId,
+      message: messageContent,
+      userMessageId,
+      tutorPlaceholderId,
+      retryable: false,
+    };
+
+    setInputValue("");
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: userMessageId,
+        type: "user",
+        content: messageContent,
+        timestamp: new Date(),
+      },
+      {
+        id: tutorPlaceholderId,
+        type: "tutor",
+        content: "Lisa is thinking...",
+        timestamp: new Date(),
+        pending: true,
+      },
+    ]);
+    setPendingTurn(turn);
+    await submitTurn({ activeConversationId, turn });
   };
 
   const handleRetryLastMessage = async () => {
-    if (!lastFailedMessage || isLoading) return;
-    await sendMessage(lastFailedMessage);
+    if (!pendingTurn || !pendingTurn.retryable || isSubmitting) return;
+
+    const activeConversationId = conversationId ?? (await bootstrapConversation());
+    if (!activeConversationId) return;
+
+    const retryTurn = {
+      ...pendingTurn,
+      retryable: false,
+    };
+    setPendingTurn(retryTurn);
+    setRequestError(null);
+    await submitTurn({ activeConversationId, turn: retryTurn });
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSendMessage();
+      void handleSendMessage();
     }
   };
 
@@ -175,50 +306,49 @@ export default function Chat() {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
+
+    if (diffMins < 1) return "Just now";
     if (diffMins < 60) return `${diffMins}m ago`;
-    
+
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    
+
     return date.toLocaleDateString();
   };
+
+  const inputDisabled = isSubmitting || isBootstrapping || Boolean(pendingTurn);
 
   return (
     <AppShell>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
-        {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">AI Context</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">AI Tutor</p>
               <h1 className="text-3xl font-bold text-foreground mb-2" data-testid="page-title">
-                SAT Context Chat
+                Lisa Tutor Chat
               </h1>
               <p className="text-muted-foreground">
-                Ask questions against the live SAT retrieval runtime.
+                Ask SAT questions and get canonical tutor guidance from the secured runtime.
               </p>
             </div>
-             
-            {/* AI Provider Badge */}
+
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/70 border border-border/60 self-start">
               <Sparkles className="h-4 w-4 text-foreground" />
-              <span className="text-sm font-medium text-foreground">RAG Context · /api/rag/v2</span>
+              <span className="text-sm font-medium text-foreground">Tutor Runtime · /api/tutor/messages</span>
             </div>
           </div>
         </div>
 
-        {/* Info Banner */}
         <div className="mb-6 p-4 rounded-lg bg-secondary/60 border border-border/60">
           <div className="flex items-start gap-3">
             <Info className="h-5 w-5 text-foreground flex-shrink-0 mt-0.5" />
             <div className="text-sm text-foreground">
-              <p className="font-medium mb-1">How to get the best context:</p>
+              <p className="font-medium mb-1">How this tutor works:</p>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                <li>Share the exact SAT concept or question type you need help with</li>
-                <li>Include Math or Reading & Writing when possible</li>
-                <li>Use the retrieved context to guide your next practice set</li>
+                <li>Conversation and message flow is server-authoritative.</li>
+                <li>Hints and suggested actions come from backend policy/runtime responses.</li>
+                <li>When safe completion fails, retry reuses the same logical turn.</li>
               </ul>
             </div>
           </div>
@@ -235,8 +365,8 @@ export default function Chat() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleRetryLastMessage}
-                disabled={!lastFailedMessage || isLoading}
+                onClick={() => void handleRetryLastMessage()}
+                disabled={!pendingTurn?.retryable || isSubmitting}
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Retry
@@ -245,130 +375,137 @@ export default function Chat() {
           </div>
         )}
 
-        {/* Chat Container */}
         <div className="rounded-xl border border-border/60 bg-card/90 shadow-sm">
-          {/* Messages Area */}
-          <div 
+          <div
             className="h-[500px] overflow-y-auto p-6 space-y-6"
             data-testid="chat-messages-container"
           >
-            {messages.length === 0 && !isLoading ? (
-              // Empty state when no messages
+            {messages.length === 0 && !isSubmitting && !isBootstrapping ? (
               <div className="h-full flex flex-col items-center justify-center text-center px-4">
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
                   <MessageSquare className="h-8 w-8 text-primary" />
                 </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Start a conversation
-                </h3>
+                <h3 className="text-xl font-semibold text-foreground mb-2">Start a conversation</h3>
                 <p className="text-muted-foreground max-w-md">
-                  Ask a SAT question or concept and I will pull real runtime context, related questions, and skill-area signals.
+                  Ask a SAT question and Lisa will respond using the canonical tutor runtime.
                 </p>
               </div>
             ) : (
               <>
                 {messages.map((message) => (
-              <div 
-                key={message.id}
-                className={`flex gap-3 ${message.type === 'user' ? 'flex-row-reverse' : ''}`}
-                data-testid={`message-${message.id}`}
-              >
-                {/* Avatar */}
-                {message.type === 'tutor' && (
-                  <div className="flex-shrink-0">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
-                      <Sparkles className="h-5 w-5 text-primary-foreground" />
-                    </div>
-                  </div>
-                )}
-                
-                {/* Message Bubble */}
-                <div className={`flex-1 max-w-[85%] ${message.type === 'user' ? 'flex justify-end' : ''}`}>
-                  <div>
-                    <div 
-                      className={`rounded-2xl p-4 ${
-                        message.type === 'user' 
-                          ? 'bg-primary text-primary-foreground' 
-                          : 'bg-muted'
-                      }`}
-                    >
-                      <p 
-                        className="text-sm whitespace-pre-wrap leading-relaxed"
-                        data-testid={`text-message-content-${message.id}`}
-                      >
-                        {message.content}
-                      </p>
-                      
-                      {/* Citation Sources */}
-                      {message.sources && message.sources.length > 0 && (
-                        <div className="border-t border-border/50 pt-3 mt-3">
-                          <p className="text-xs opacity-80 mb-2">Referenced sources:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {message.sources.map((source, index) => (
-                              <Badge
-                                key={index}
-                                variant="secondary"
-                                className="text-xs"
-                                data-testid={`badge-source-${message.id}-${index}`}
-                              >
-                                <FileText className="h-3 w-3 mr-1" />
-                                {source.documentName}{source.pageNumber > 0 ? ` - Page ${source.pageNumber}` : ''}
-                              </Badge>
-                            ))}
-                          </div>
+                  <div
+                    key={message.id}
+                    className={`flex gap-3 ${message.type === "user" ? "flex-row-reverse" : ""}`}
+                    data-testid={`message-${message.id}`}
+                  >
+                    {message.type === "tutor" && (
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
+                          <Sparkles className="h-5 w-5 text-primary-foreground" />
                         </div>
-                      )}
-                    </div>
-                    <p 
-                      className={`text-xs text-muted-foreground mt-2 ${
-                        message.type === 'user' ? 'text-right' : ''
-                      }`}
-                      data-testid={`text-message-time-${message.id}`}
-                    >
-                      {formatTime(message.timestamp)}
-                    </p>
-                  </div>
-                </div>
+                      </div>
+                    )}
 
-                {/* User Avatar Placeholder */}
-                {message.type === 'user' && (
-                  <div className="flex-shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center">
-                      <span className="text-sm font-semibold text-foreground">
-                        {user?.email?.charAt(0).toUpperCase() || 'U'}
-                      </span>
+                    <div className={`flex-1 max-w-[85%] ${message.type === "user" ? "flex justify-end" : ""}`}>
+                      <div>
+                        <div
+                          className={`rounded-2xl p-4 ${
+                            message.type === "user"
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted"
+                          }`}
+                        >
+                          <p
+                            className="text-sm whitespace-pre-wrap leading-relaxed"
+                            data-testid={`text-message-content-${message.id}`}
+                          >
+                            {message.content}
+                          </p>
+
+                          {message.pending && (
+                            <p className="text-xs text-muted-foreground mt-3" data-testid={`text-message-pending-${message.id}`}>
+                              Waiting for canonical tutor response...
+                            </p>
+                          )}
+
+                          {message.type === "tutor" && !message.pending && (message.suggestedAction || message.uiHints) && (
+                            <div className="border-t border-border/50 pt-3 mt-3">
+                              <div className="flex flex-wrap gap-2">
+                                {message.suggestedAction && message.suggestedAction.type !== "none" && (
+                                  <Badge
+                                    variant="secondary"
+                                    data-testid={`badge-suggested-action-${message.id}`}
+                                  >
+                                    {message.suggestedAction.label ?? message.suggestedAction.type}
+                                  </Badge>
+                                )}
+                                {message.uiHints?.suggested_chip && (
+                                  <Badge
+                                    variant="secondary"
+                                    data-testid={`badge-suggested-chip-${message.id}`}
+                                  >
+                                    {message.uiHints.suggested_chip}
+                                  </Badge>
+                                )}
+                              </div>
+                              {message.uiHints && (
+                                <p
+                                  className="text-xs text-muted-foreground mt-2"
+                                  data-testid={`text-ui-hints-${message.id}`}
+                                >
+                                  UI hints: accept/decline {message.uiHints.show_accept_decline ? "on" : "off"} · freeform {message.uiHints.allow_freeform_reply ? "on" : "off"}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <p
+                          className={`text-xs text-muted-foreground mt-2 ${
+                            message.type === "user" ? "text-right" : ""
+                          }`}
+                          data-testid={`text-message-time-${message.id}`}
+                        >
+                          {formatTime(message.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {message.type === "user" && (
+                      <div className="flex-shrink-0">
+                        <div className="w-10 h-10 rounded-full bg-secondary border border-border flex items-center justify-center">
+                          <span className="text-sm font-semibold text-foreground">
+                            {user?.email?.charAt(0).toUpperCase() || "U"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {(isSubmitting || isBootstrapping) && (
+                  <div className="flex gap-3" data-testid="loading-indicator">
+                    <div className="flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
+                        <Sparkles className="h-5 w-5 text-primary-foreground" />
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="bg-muted rounded-2xl p-4">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
-              </div>
-            ))}
-            
-            {/* Loading Indicator */}
-            {isLoading && (
-              <div className="flex gap-3" data-testid="loading-indicator">
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-primary">
-                    <Sparkles className="h-5 w-5 text-primary-foreground" />
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="bg-muted rounded-2xl p-4">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-            </>
+
+                <div ref={messagesEndRef} />
+              </>
             )}
           </div>
 
-          {/* Input Area */}
           <div className="border-t p-4">
             <div className="flex gap-2">
               <Input
@@ -377,13 +514,13 @@ export default function Chat() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading}
+                disabled={inputDisabled}
                 className="flex-1"
                 data-testid="input-chat-message"
               />
-              <Button 
-                onClick={handleSendMessage}
-                disabled={isLoading || !inputValue.trim()}
+              <Button
+                onClick={() => void handleSendMessage()}
+                disabled={inputDisabled || !inputValue.trim()}
                 size="lg"
                 data-testid="button-send-message"
               >
