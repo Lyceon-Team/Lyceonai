@@ -66,13 +66,15 @@ async function fetchWithSessionRefresh(
   return res;
 }
 
-export async function apiRequest(
+type ApiRequestOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | FormData;
+};
+
+export async function apiRequestRaw(
   url: string,
-  options?: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: string | FormData;
-  }
+  options?: ApiRequestOptions
 ): Promise<Response> {
   const { method = 'GET', headers = {}, body } = options || {};
   
@@ -88,6 +90,14 @@ export async function apiRequest(
     body,
   });
 
+  return res;
+}
+
+export async function apiRequest(
+  url: string,
+  options?: ApiRequestOptions
+): Promise<Response> {
+  const res = await apiRequestRaw(url, options);
   await throwIfResNotOk(res);
   return res;
 }
