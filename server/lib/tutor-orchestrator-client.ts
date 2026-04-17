@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GoogleAuth } from "google-auth-library";
 
 const orchestratorResponseSchema = z.object({
     response: z.object({
@@ -66,6 +67,31 @@ export type TutorOrchestratorResponse = z.infer<
     typeof orchestratorResponseSchema
 >;
 
+type OrchestratorAuthMode = "none" | "gcp_id_token";
+
+function resolveOrchestratorAuthMode(): OrchestratorAuthMode {
+    const raw = (process.env.TUTOR_ORCHESTRATOR_AUTH_MODE ?? "none").trim().toLowerCase();
+    if (!raw || raw === "none" || raw === "local") return "none";
+    if (raw === "gcp_id_token" || raw === "id_token") return "gcp_id_token";
+    throw new Error(`Unsupported tutor orchestrator auth mode: ${raw}`);
+}
+
+async function resolveServiceAuthHeader(baseUrl: string): Promise<string | null> {
+    const authMode = resolveOrchestratorAuthMode();
+    if (authMode === "none") return null;
+
+    const audience = (process.env.TUTOR_ORCHESTRATOR_AUDIENCE ?? "").trim() || baseUrl;
+    const auth = new GoogleAuth();
+    const idTokenClient = await auth.getIdTokenClient(audience);
+    const headerBag = await idTokenClient.getRequestHeaders(baseUrl);
+    const authHeader = headerBag.get("authorization")
+        ?? headerBag.get("Authorization");
+    if (!authHeader || authHeader.trim().length === 0) {
+        throw new Error("Failed to acquire service auth header for tutor orchestrator");
+    }
+    return authHeader;
+}
+
 export async function callTutorOrchestrator(
     payload: unknown,
 ): Promise<TutorOrchestratorResponse> {
@@ -74,11 +100,17 @@ export async function callTutorOrchestrator(
         throw new Error("TUTOR_ORCHESTRATOR_URL is not configured");
     }
 
+    const headers = new Headers({
+        "Content-Type": "application/json",
+    });
+    const serviceAuthHeader = await resolveServiceAuthHeader(baseUrl);
+    if (serviceAuthHeader) {
+        headers.set("Authorization", serviceAuthHeader);
+    }
+
     const response = await fetch(`${baseUrl}/orchestrate`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(payload),
     });
 

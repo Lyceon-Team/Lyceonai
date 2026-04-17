@@ -18,6 +18,43 @@ const generativeModel = vertexAI.getGenerativeModel({
     model: modelName,
 });
 
+const MODEL_OUTPUT_PREVIEW_LIMIT = 240;
+type GenerateContentFn = (request: Record<string, unknown>) => Promise<unknown>;
+let generateContentImpl: GenerateContentFn = (request) =>
+    generativeModel.generateContent(request as never) as Promise<unknown>;
+
+export function setGenerateContentForTests(impl: GenerateContentFn | null): void {
+    generateContentImpl = impl ?? ((request) =>
+        generativeModel.generateContent(request as never) as Promise<unknown>);
+}
+
+export class OrchestratorTimeoutError extends Error {
+    readonly timeoutMs: number;
+
+    constructor(timeoutMs: number) {
+        super(`Vertex orchestration timed out after ${timeoutMs}ms`);
+        this.name = "OrchestratorTimeoutError";
+        this.timeoutMs = timeoutMs;
+    }
+}
+
+export type ModelOutputErrorCode =
+    | "MODEL_OUTPUT_INVALID"
+    | "MODEL_OUTPUT_TRUNCATED"
+    | "MODEL_OUTPUT_SCHEMA_MISMATCH";
+
+export class ModelOutputError extends Error {
+    readonly code: ModelOutputErrorCode;
+    readonly preview: string;
+
+    constructor(code: ModelOutputErrorCode, message: string, preview: string) {
+        super(message);
+        this.name = "ModelOutputError";
+        this.code = code;
+        this.preview = preview;
+    }
+}
+
 function cleanJsonText(text: string): string {
     const trimmed = text.trim();
 
@@ -30,6 +67,143 @@ function cleanJsonText(text: string): string {
     }
 
     return trimmed;
+}
+
+function buildPreview(text: string): string {
+    return text.replace(/\s+/g, " ").trim().slice(0, MODEL_OUTPUT_PREVIEW_LIMIT);
+}
+
+function hasClearlyIncompleteJson(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+        return false;
+    }
+
+    const stack: string[] = [];
+    let inString = false;
+    let escaped = false;
+
+    for (const char of trimmed) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (inString) {
+            if (char === "\\") {
+                escaped = true;
+            } else if (char === "\"") {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (char === "\"") {
+            inString = true;
+            continue;
+        }
+
+        if (char === "{" || char === "[") {
+            stack.push(char);
+            continue;
+        }
+
+        if (char === "}" || char === "]") {
+            const open = stack.pop();
+            if ((char === "}" && open !== "{") || (char === "]" && open !== "[")) {
+                return false;
+            }
+        }
+    }
+
+    if (inString) {
+        return true;
+    }
+
+    if (stack.length > 0) {
+        return true;
+    }
+
+    return /[,:]$/.test(trimmed);
+}
+
+function extractCandidateText(result: unknown): { text: string; finishReason?: string } {
+    const candidate =
+        typeof result === "object" &&
+            result !== null &&
+            "response" in result &&
+            typeof result.response === "object" &&
+            result.response !== null &&
+            "candidates" in result.response &&
+            Array.isArray(result.response.candidates)
+            ? result.response.candidates[0]
+            : undefined;
+
+    const finishReason =
+        candidate &&
+            typeof candidate === "object" &&
+            "finishReason" in candidate &&
+            typeof candidate.finishReason === "string"
+            ? candidate.finishReason
+            : undefined;
+
+    const parts =
+        candidate &&
+            typeof candidate === "object" &&
+            "content" in candidate &&
+            typeof candidate.content === "object" &&
+            candidate.content !== null &&
+            "parts" in candidate.content &&
+            Array.isArray(candidate.content.parts)
+            ? candidate.content.parts
+            : [];
+
+    const text = parts
+        .map((part: unknown) => {
+            if (
+                typeof part === "object" &&
+                part !== null &&
+                "text" in part &&
+                typeof part.text === "string"
+            ) {
+                return part.text;
+            }
+            return "";
+        })
+        .join("")
+        .trim();
+
+    return { text, finishReason };
+}
+
+function logModelOutputFailure(
+    error: ModelOutputError,
+    extra: Record<string, unknown> = {},
+): void {
+    console.error("VERTEX_MODEL_OUTPUT_FAILURE", {
+        code: error.code,
+        message: error.message,
+        preview: error.preview,
+        ...extra,
+    });
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timeoutHandle = setTimeout(() => {
+            reject(new OrchestratorTimeoutError(timeoutMs));
+        }, timeoutMs);
+
+        promise
+            .then((result) => {
+                clearTimeout(timeoutHandle);
+                resolve(result);
+            })
+            .catch((error) => {
+                clearTimeout(timeoutHandle);
+                reject(error);
+            });
+    });
 }
 
 function getResponseSchema(): Record<string, unknown> {
@@ -240,45 +414,82 @@ export async function generateTutorResponse(
     const maxOutputTokens = input.runtime_limits.max_output_tokens;
     const prompt = buildPrompt(input);
 
-    const result = await generativeModel.generateContent({
-        contents: [
-            {
-                role: "user",
-                parts: [{ text: prompt }],
+    const result = await withTimeout(
+        generateContentImpl({
+            contents: [
+                {
+                    role: "user",
+                    parts: [{ text: prompt }],
+                },
+            ],
+            generationConfig: {
+                maxOutputTokens: maxOutputTokens,
+                temperature: 0,
+                topP: 1,
+                candidateCount: 1,
+                responseMimeType: "application/json",
+                responseSchema: getResponseSchema(),
             },
-        ],
-        generationConfig: {
-            maxOutputTokens: maxOutputTokens,
-            temperature: 0.2,
-            topP: 0.9,
-            responseMimeType: "application/json",
-            responseSchema: getResponseSchema(),
-        },
-    });
+        }),
+        input.runtime_limits.timeout_ms,
+    );
 
-    const text =
-        result.response.candidates?.[0]?.content?.parts?.[0] &&
-            "text" in result.response.candidates[0].content.parts[0]
-            ? result.response.candidates[0].content.parts[0].text
-            : "";
-
-    console.log("RAW VERTEX TEXT:", text);
+    const { text, finishReason } = extractCandidateText(result);
+    const cleanedText = cleanJsonText(text);
+    const preview = buildPreview(cleanedText);
 
     if (!text) {
-        throw new Error("Vertex returned an empty response");
+        const error = new ModelOutputError(
+            "MODEL_OUTPUT_INVALID",
+            "Vertex returned an empty response",
+            preview,
+        );
+        logModelOutputFailure(error, { finish_reason: finishReason });
+        throw error;
+    }
+
+    if (hasClearlyIncompleteJson(cleanedText)) {
+        const error = new ModelOutputError(
+            "MODEL_OUTPUT_TRUNCATED",
+            "Vertex returned truncated JSON output",
+            preview,
+        );
+        logModelOutputFailure(error, { finish_reason: finishReason });
+        throw error;
     }
 
     let parsedJson: unknown;
     try {
-        parsedJson = JSON.parse(cleanJsonText(text));
+        parsedJson = JSON.parse(cleanedText);
     } catch {
-        console.error("FAILED JSON TEXT:", cleanJsonText(text));
-        throw new Error("Vertex returned non-JSON output");
+        const parseFailedAsTruncated =
+            finishReason === "MAX_TOKENS" || hasClearlyIncompleteJson(cleanedText);
+        const error = new ModelOutputError(
+            parseFailedAsTruncated ? "MODEL_OUTPUT_TRUNCATED" : "MODEL_OUTPUT_INVALID",
+            parseFailedAsTruncated
+                ? "Vertex returned truncated JSON output"
+                : "Vertex returned non-JSON output",
+            preview,
+        );
+        logModelOutputFailure(error, { finish_reason: finishReason });
+        throw error;
     }
 
     const validated = orchestrateResponseSchema.safeParse(parsedJson);
     if (!validated.success) {
-        throw new Error("Vertex returned invalid orchestrator response shape");
+        const error = new ModelOutputError(
+            "MODEL_OUTPUT_SCHEMA_MISMATCH",
+            "Vertex returned invalid orchestrator response shape",
+            preview,
+        );
+        logModelOutputFailure(error, {
+            finish_reason: finishReason,
+            issues: validated.error.issues.slice(0, 3).map((issue) => ({
+                path: issue.path,
+                message: issue.message,
+            })),
+        });
+        throw error;
     }
 
     return validated.data;
