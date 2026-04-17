@@ -4,23 +4,6 @@ const { generateContentMock } = vi.hoisted(() => ({
   generateContentMock: vi.fn(),
 }));
 
-vi.mock("@google-cloud/vertexai", () => ({
-  FunctionDeclarationSchemaType: {
-    OBJECT: "OBJECT",
-    STRING: "STRING",
-    ARRAY: "ARRAY",
-    INTEGER: "INTEGER",
-    BOOLEAN: "BOOLEAN",
-  },
-  VertexAI: class {
-    getGenerativeModel() {
-      return {
-        generateContent: generateContentMock,
-      };
-    }
-  },
-}));
-
 function buildRequest(timeoutMs: number) {
   return {
     conversation_id: "11111111-1111-4111-8111-111111111111",
@@ -54,26 +37,32 @@ function buildRequest(timeoutMs: number) {
 
 describe("Tutor orchestrator vertex timeout", () => {
   it("enforces runtime_limits.timeout_ms", async () => {
-    generateContentMock.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => {
-            resolve({
-              response: {
-                candidates: [
-                  {
-                    content: {
-                      parts: [{ text: "{\"response\":{\"content\":\"ok\",\"content_kind\":\"message\",\"suggested_action\":{\"type\":\"none\",\"label\":null},\"ui_hints\":{\"show_accept_decline\":false,\"allow_freeform_reply\":true,\"suggested_chip\":null}},\"question_links\":[],\"instruction_exposures\":[],\"orchestration_meta\":{\"model_name\":\"m\",\"cache_used\":false,\"compaction_recommended\":false}}" }],
-                    },
-                  },
-                ],
-              },
-            });
-          }, 35);
-        }),
-    );
+    const { generateTutorResponse, OrchestratorTimeoutError, setGenerateContentForTests } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
+    setGenerateContentForTests(generateContentMock);
 
-    const { generateTutorResponse, OrchestratorTimeoutError } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
-    await expect(generateTutorResponse(buildRequest(5))).rejects.toBeInstanceOf(OrchestratorTimeoutError);
+    try {
+      generateContentMock.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({
+                response: {
+                  candidates: [
+                    {
+                      content: {
+                        parts: [{ text: "{\"response\":{\"content\":\"ok\",\"content_kind\":\"message\",\"suggested_action\":{\"type\":\"none\",\"label\":null},\"ui_hints\":{\"show_accept_decline\":false,\"allow_freeform_reply\":true,\"suggested_chip\":null}},\"question_links\":[],\"instruction_exposures\":[],\"orchestration_meta\":{\"model_name\":\"m\",\"cache_used\":false,\"compaction_recommended\":false}}" }],
+                      },
+                    },
+                  ],
+                },
+              });
+            }, 35);
+          }),
+      );
+
+      await expect(generateTutorResponse(buildRequest(5))).rejects.toBeInstanceOf(OrchestratorTimeoutError);
+    } finally {
+      setGenerateContentForTests(null);
+    }
   });
 });

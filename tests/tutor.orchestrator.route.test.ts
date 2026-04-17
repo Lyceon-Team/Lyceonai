@@ -69,4 +69,16 @@ describe("Tutor orchestrate route", () => {
     expect(res.status).toBe(504);
     expect(res.body.error.message).toBe("Vertex orchestration timed out");
   });
+
+  it("maps invalid model output failures to safe upstream failure", async () => {
+    generateTutorResponseMock.mockRejectedValueOnce(new Error("Vertex returned truncated JSON output"));
+
+    const app = express();
+    app.use(express.json());
+    app.use("/orchestrate", orchestrateRouter);
+
+    const res = await request(app).post("/orchestrate").send(validPayload());
+    expect(res.status).toBe(502);
+    expect(res.body.error.message).toBe("Vertex orchestration failed");
+  });
 });
