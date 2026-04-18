@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { Link } from "wouter";
@@ -28,6 +28,8 @@ import {
   getConfidenceLabel,
   type EstimateResponse,
 } from "@/lib/projectionApi";
+import { startSubscriptionCheckout } from "@/lib/billing-client";
+import { useToast } from "@/hooks/use-toast";
 
 interface KpiExplanation {
   ruleId: string;
@@ -108,6 +110,8 @@ function ScoreSnapshotRow({
 
 export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
+  const { toast } = useToast();
+  const [upgradePending, setUpgradePending] = useState(false);
 
   const { data: profileData, error: profileError } = useQuery<StudyProfile | null>({
     queryKey: ["calendar-profile"],
@@ -203,6 +207,22 @@ export default function LyceonDashboard() {
     return "Complete one focused SAT practice block today.";
   })();
 
+  const handleUpgradeToPremium = async () => {
+    if (upgradePending) return;
+    setUpgradePending(true);
+    try {
+      await startSubscriptionCheckout('monthly');
+    } catch (error: any) {
+      toast({
+        title: 'Unable to start checkout',
+        description: error?.message || 'Please try again in a moment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpgradePending(false);
+    }
+  };
+
   return (
     <AppShell showFooter>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
@@ -293,8 +313,8 @@ export default function LyceonDashboard() {
                   <p className="text-sm text-primary-foreground/80">
                     Score estimate is a premium KPI surface.
                   </p>
-                  <Button asChild variant="secondary" className="w-fit">
-                    <Link href="/">Upgrade to Premium</Link>
+                  <Button variant="secondary" className="w-fit" onClick={handleUpgradeToPremium} disabled={upgradePending}>
+                    {upgradePending ? "Starting checkout..." : "Upgrade to Premium"}
                   </Button>
                 </div>
               ) : estimateData ? (
@@ -406,8 +426,8 @@ export default function LyceonDashboard() {
                   <p className="text-sm text-muted-foreground">
                     Detailed score breakdown is locked behind paid KPI access.
                   </p>
-                  <Button asChild variant="outline">
-                    <Link href="/">Upgrade to Premium</Link>
+                  <Button variant="outline" onClick={handleUpgradeToPremium} disabled={upgradePending}>
+                    {upgradePending ? "Starting checkout..." : "Upgrade to Premium"}
                   </Button>
                 </div>
               ) : (

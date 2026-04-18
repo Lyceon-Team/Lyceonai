@@ -26,6 +26,7 @@ import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { apiRequest } from '@/lib/queryClient';
 import { SUPPORT_EMAIL } from '@/lib/support-contact';
+import { openBillingPortal, startSubscriptionCheckout } from '@/lib/billing-client';
 import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
 
 interface UserProfile {
@@ -38,6 +39,23 @@ interface UserProfile {
   createdAt?: string;
   lastLoginAt?: string;
   studentLinkCode?: string | null;
+}
+
+interface BillingStatusResponse {
+  accountId: string | null;
+  plan: string;
+  stripeStatus: string;
+  currentPeriodEnd: string | null;
+  stripeSubscriptionId: string | null;
+  effectiveAccess: boolean;
+  needsPaymentUpdate: boolean;
+  requiresStudentSubscription?: boolean;
+  isPaid: boolean;
+  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
+  hasLinkedStudent?: boolean;
+  linkRequiredForPremium?: boolean;
+  billingOwnerRole?: 'student' | 'guardian';
+  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
 
@@ -199,6 +217,17 @@ export default function UserProfile() {
     enabled: !!user,
   });
 
+  const {
+    data: billingStatus,
+    isLoading: billingStatusLoading,
+    isError: billingStatusError,
+    error: billingStatusErrorObj,
+    refetch: refetchBillingStatus,
+  } = useQuery<BillingStatusResponse>({
+    queryKey: ['/api/billing/status'],
+    enabled: !!user,
+  });
+
   // Logout handler
   const handleLogout = async () => {
     try {
@@ -288,9 +317,39 @@ export default function UserProfile() {
     },
   });
 
+  const startCheckoutMutation = useMutation({
+    mutationFn: async () => startSubscriptionCheckout('monthly'),
+    onError: (error) => {
+      toast({
+        title: 'Unable to start checkout',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const openPortalMutation = useMutation({
+    mutationFn: async () => openBillingPortal(),
+    onError: (error) => {
+      toast({
+        title: 'Unable to open billing portal',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
   const roleSwitchPreview = [`To: ${SUPPORT_EMAIL}`, `Subject: ${roleSwitchSubject}`, '', roleSwitchMessage].join('\n');
+  const hasManageableSubscription = !!billingStatus && (
+    billingStatus.effectiveAccess ||
+    billingStatus.needsPaymentUpdate ||
+    !!billingStatus.stripeSubscriptionId ||
+    billingStatus.stripeStatus === 'active' ||
+    billingStatus.stripeStatus === 'trialing' ||
+    billingStatus.stripeStatus === 'past_due'
+  );
 
   if (profileLoading) {
     return (
@@ -943,20 +1002,63 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Plan details are not runtime-backed on this page yet. Use the guardian dashboard paywall and billing portal flow for live subscription state.
-                  </AlertDescription>
-                </Alert>
+                {billingStatusLoading ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>Loading live billing status...</AlertDescription>
+                  </Alert>
+                ) : billingStatusError ? (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="flex items-center justify-between gap-3">
+                      <span>
+                        {(billingStatusErrorObj as Error)?.message ?? 'Failed to load billing status.'}
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => refetchBillingStatus()}>
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <>
+                    <Alert>
+                      <Star className="h-4 w-4" />
+                      <AlertDescription>
+                        Subscription access is server-authoritative and sourced from the canonical entitlement state.
+                      </AlertDescription>
+                    </Alert>
 
-                <Alert>
-                  <Star className="h-4 w-4" />
-                  <AlertDescription>
-                    Billing management is currently handled outside this settings surface.
-                    When in-product controls are fully runtime-backed, they will appear here.
-                  </AlertDescription>
-                </Alert>
+                    <div className="rounded-lg border p-4 space-y-2">
+                      <p className="text-sm text-muted-foreground">Current status</p>
+                      <p className="font-medium">
+                        {billingStatus?.stripeStatus ? billingStatus.stripeStatus.replace('_', ' ') : 'unknown'}
+                      </p>
+                      {billingStatus?.linkRequiredForPremium && (
+                        <p className="text-sm text-muted-foreground">
+                          Link a student account first to unlock guardian premium billing.
+                        </p>
+                      )}
+                    </div>
+
+                    {hasManageableSubscription ? (
+                      <Button
+                        onClick={() => openPortalMutation.mutate()}
+                        disabled={openPortalMutation.isPending}
+                        data-testid="button-manage-subscription"
+                      >
+                        {openPortalMutation.isPending ? 'Opening portal...' : 'Manage Subscription'}
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => startCheckoutMutation.mutate()}
+                        disabled={startCheckoutMutation.isPending || !!billingStatus?.linkRequiredForPremium}
+                        data-testid="button-upgrade-subscription"
+                      >
+                        {startCheckoutMutation.isPending ? 'Starting checkout...' : 'Upgrade'}
+                      </Button>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

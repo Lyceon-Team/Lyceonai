@@ -1,12 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Target, AlertCircle } from "lucide-react";
 import { fetchScoreEstimate, getConfidenceLabel, getConfidenceColor } from "@/lib/projectionApi";
+import { startSubscriptionCheckout } from "@/lib/billing-client";
+import { useToast } from "@/hooks/use-toast";
 
 export function ScoreProjectionCard() {
+  const { toast } = useToast();
+  const [upgradePending, setUpgradePending] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/progress/projection"],
     queryFn: fetchScoreEstimate,
@@ -15,6 +20,22 @@ export function ScoreProjectionCard() {
   const errorMessage = error instanceof Error ? error.message : "";
   const isPremiumLocked =
     errorMessage.includes("402") || errorMessage.includes("PREMIUM_REQUIRED");
+
+  const handleUpgrade = async () => {
+    if (upgradePending) return;
+    setUpgradePending(true);
+    try {
+      await startSubscriptionCheckout("monthly");
+    } catch (error: any) {
+      toast({
+        title: "Unable to start checkout",
+        description: error?.message || "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpgradePending(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -50,8 +71,8 @@ export function ScoreProjectionCard() {
                 <AlertCircle className="h-4 w-4" />
                 <span>Score estimate is a premium KPI feature.</span>
               </div>
-              <Button asChild variant="outline" size="sm">
-                <a href="/">View Upgrade Options</a>
+              <Button variant="outline" size="sm" onClick={handleUpgrade} disabled={upgradePending}>
+                {upgradePending ? "Starting checkout..." : "View Upgrade Options"}
               </Button>
             </div>
           ) : (
