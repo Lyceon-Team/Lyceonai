@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { openBillingPortal, startSubscriptionCheckout } from './billing-client';
+import { getBillingPlans, openBillingPortal, startSubscriptionCheckout } from './billing-client';
 
 const csrfFetchMock = vi.hoisted(() => vi.fn());
 
@@ -47,5 +47,23 @@ describe('billing-client', () => {
       credentials: 'include',
     }));
     expect(url).toBe('https://stripe.example/portal');
+  });
+
+  it('loads canonical billing plan metadata', async () => {
+    csrfFetchMock.mockResolvedValueOnce(jsonResponse({
+      plans: [
+        { plan: 'monthly', amountCents: 9999, currency: 'usd', intervalLabel: 'per month', label: 'Monthly', stripePriceIdConfigured: true },
+        { plan: 'quarterly', amountCents: 19999, currency: 'usd', intervalLabel: 'per 3 months', label: 'Quarterly', stripePriceIdConfigured: true },
+        { plan: 'yearly', amountCents: 69999, currency: 'usd', intervalLabel: 'per year', label: 'Yearly', stripePriceIdConfigured: true },
+      ],
+    }, 200));
+
+    const plans = await getBillingPlans();
+
+    expect(csrfFetchMock).toHaveBeenCalledWith('/api/billing/plans', expect.objectContaining({
+      credentials: 'include',
+    }));
+    expect(plans).toHaveLength(3);
+    expect(plans.map((plan) => plan.plan)).toEqual(['monthly', 'quarterly', 'yearly']);
   });
 });

@@ -7,6 +7,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, RefreshCw, Settings } from "lucide-react";
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
+import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
+import { getPremiumDenialReason, isTransportError } from "@/lib/api-error";
 import {
   getCalendarProfile,
   saveCalendarProfile,
@@ -134,10 +136,12 @@ export default function CalendarPage() {
 
   const [profile, setProfile] = useState<StudyProfile | null | undefined>(undefined);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [profileLoadError, setProfileLoadError] = useState<unknown>(null);
   const [monthData, setMonthData] = useState<StudyPlanDay[]>([]);
   const [streak, setStreak] = useState<{ current: number; longest: number }>({ current: 0, longest: 0 });
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
+  const [monthErrorObj, setMonthErrorObj] = useState<unknown>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
@@ -153,8 +157,14 @@ export default function CalendarPage() {
   useEffect(() => {
     setProfileLoading(true);
     getCalendarProfile()
-      .then((p) => setProfile(p))
-      .catch(() => setProfile(null))
+      .then((p) => {
+        setProfileLoadError(null);
+        setProfile(p);
+      })
+      .catch((error) => {
+        setProfileLoadError(error);
+        setProfile(null);
+      })
       .finally(() => setProfileLoading(false));
   }, []);
 
@@ -162,11 +172,13 @@ export default function CalendarPage() {
     if (!profile) return;
     setMonthLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       const response = await getCalendarMonth(gridStartDate, gridEndDate);
       setMonthData(response.days);
       setStreak(response.streak);
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to load calendar data");
       setMonthData([]);
       setStreak({ current: 0, longest: 0 });
@@ -258,10 +270,12 @@ export default function CalendarPage() {
     if (!profile) return;
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await refreshCalendarPlan(gridStartDate, 28);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to refresh plan");
     } finally {
       setActionLoading(false);
@@ -274,10 +288,12 @@ export default function CalendarPage() {
     if (!confirmed) return;
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await regenerateCalendarPlan(gridStartDate, 28);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to regenerate plan");
     } finally {
       setActionLoading(false);
@@ -294,6 +310,7 @@ export default function CalendarPage() {
 
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       const updated = await saveCalendarProfile({
         daily_minutes: parsedMinutes,
@@ -302,6 +319,7 @@ export default function CalendarPage() {
       setProfile(updated);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to update settings");
     } finally {
       setActionLoading(false);
@@ -417,6 +435,7 @@ export default function CalendarPage() {
 
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await updateCalendarDay(day.dateKey, {
         planned_minutes: nextMinutes,
@@ -425,6 +444,7 @@ export default function CalendarPage() {
       });
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to update day");
     } finally {
       setActionLoading(false);
@@ -438,10 +458,12 @@ export default function CalendarPage() {
     }
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await regenerateCalendarDay(day.dateKey);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to regenerate day");
     } finally {
       setActionLoading(false);
@@ -455,10 +477,12 @@ export default function CalendarPage() {
     }
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await resetCalendarDayToAuto(day.dateKey);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to reset day");
     } finally {
       setActionLoading(false);
@@ -476,10 +500,12 @@ export default function CalendarPage() {
     }
     setActionLoading(true);
     setMonthError(null);
+    setMonthErrorObj(null);
     try {
       await updateCalendarTaskStatus(day.dateKey, taskId, nextStatus);
       await loadMonthData();
     } catch (err: any) {
+      setMonthErrorObj(err);
       setMonthError(err?.message || "Failed to update task status");
     } finally {
       setActionLoading(false);
@@ -491,6 +517,35 @@ export default function CalendarPage() {
       <AppShell>
         <div className="container mx-auto px-4 py-6 flex items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  const profilePremiumReason = getPremiumDenialReason(profileLoadError);
+  if (profilePremiumReason) {
+    return (
+      <AppShell>
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <PremiumUpgradePrompt reason={profilePremiumReason} mode="inline" />
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (profileLoadError && !profilePremiumReason) {
+    return (
+      <AppShell>
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <Alert variant={isTransportError(profileLoadError) ? "destructive" : "default"}>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>{profileLoadError instanceof Error ? profileLoadError.message : "Failed to load calendar profile."}</span>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
         </div>
       </AppShell>
     );
@@ -543,23 +598,38 @@ export default function CalendarPage() {
           </div>
         )}
 
-        {monthError && !monthLoading && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <span>{monthError}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={loadMonthData}
-                className="ml-4"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
+        {(() => {
+          const monthPremiumReason = getPremiumDenialReason(monthErrorObj);
+          if (monthPremiumReason && !monthLoading) {
+            return (
+              <div className="mb-6">
+                <PremiumUpgradePrompt reason={monthPremiumReason} mode="inline" />
+              </div>
+            );
+          }
+
+          if (monthError && !monthLoading) {
+            return (
+              <Alert variant={isTransportError(monthErrorObj) ? "destructive" : "default"} className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between">
+                  <span>{monthError}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadMonthData}
+                    className="ml-4"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            );
+          }
+
+          return null;
+        })()}
 
         {/* Streak Display */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
