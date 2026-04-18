@@ -189,28 +189,44 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       }
     }
 
+    const hasCanonicalSession = !!authData.session;
+
     // Set session cookies using helper (correct maxAge based on expires_in)
-    if (authData.session) {
+    if (hasCanonicalSession && authData.session) {
       const isProd = process.env.NODE_ENV === 'production';
       setAuthCookies(res, authData.session, isProd);
     }
 
     logger.info('AUTH', 'signup_success', 'User signed up successfully', {
       userId: authData.user.id,
-      email: authData.user.email
+      email: authData.user.email,
+      canonicalSessionEstablished: hasCanonicalSession,
     });
 
-    res.status(201).json({
+    if (hasCanonicalSession) {
+      return res.status(201).json({
+        success: true,
+        status: 'authenticated',
+        message: isUnder13
+          ? 'Account created. Guardian consent required to continue.'
+          : 'Account created successfully',
+        user: {
+          id: authData.user.id,
+          email: authData.user.email
+        },
+        requiresConsent: isUnder13
+        // SECURITY: Session tokens are stored in HTTP-only cookies, not returned in response
+      });
+    }
+
+    return res.status(201).json({
       success: true,
+      status: 'verification_required',
       message: isUnder13
-        ? 'Account created. Guardian consent required to continue.'
-        : 'Account created successfully',
-      user: {
-        id: authData.user.id,
-        email: authData.user.email
-      },
-      requiresConsent: isUnder13
-      // SECURITY: Session tokens are stored in HTTP-only cookies, not returned in response
+        ? 'Account created. Confirm your email and complete guardian consent before signing in.'
+        : 'Check your email to confirm your account before signing in.',
+      requiresConsent: isUnder13,
+      verificationRequired: true,
     });
   } catch (error) {
     logger.error('AUTH', 'signup_error', 'Signup endpoint error', error);

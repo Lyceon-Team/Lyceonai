@@ -25,17 +25,16 @@ export function SupabaseAuthForm() {
   const [guardianEmail, setGuardianEmail] = useState('');
   const [isGuardian, setIsGuardian] = useState(false);
   const [error, setError] = useState('');
+  const [verificationNotice, setVerificationNotice] = useState('');
   const resolvePostAuthPath = async (): Promise<string> => {
-    try {
-      const response = await csrfFetch('/api/profile', { credentials: 'include' });
-      if (!response.ok) return '/dashboard';
-
-      const data = await response.json();
-      const role = data?.user?.role;
-      return role === 'guardian' ? '/guardian' : '/dashboard';
-    } catch {
-      return '/dashboard';
+    const response = await csrfFetch('/api/profile', { credentials: 'include' });
+    if (!response.ok) {
+      throw new Error('Failed to load profile after authentication');
     }
+
+    const data = await response.json();
+    const role = data?.user?.role;
+    return role === 'guardian' ? '/guardian' : '/dashboard';
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -62,6 +61,7 @@ export function SupabaseAuthForm() {
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setVerificationNotice('');
 
     try {
       if (mode === 'signin') {
@@ -85,26 +85,38 @@ export function SupabaseAuthForm() {
         }
 
         const signupRole = isGuardian ? 'guardian' : 'student';
-        await signUp(email, password, displayName, isUnder13, guardianEmail, signupRole);
-        
+        const signupResult = await signUp(email, password, displayName, isUnder13, guardianEmail, signupRole);
+
+        if (signupResult.status === 'verification_required') {
+          const verificationMessage = signupResult.message || 'Check your email to confirm your account before signing in.';
+          setVerificationNotice(verificationMessage);
+          toast({
+            title: 'Confirmation required',
+            description: verificationMessage,
+          });
+          setMode('signin');
+          return;
+        }
+
         if (isUnder13) {
-          toast({ 
-            title: 'Account created!', 
+          toast({
+            title: 'Account created!',
             description: 'Guardian consent is required before continuing.',
             variant: 'default'
           });
         } else {
-          toast({ 
-            title: 'Welcome!', 
-            description: 'Your account has been created successfully.' 
+          toast({
+            title: 'Welcome!',
+            description: 'Your account has been created successfully.'
           });
         }
-        
+
         setLocation(await resolvePostAuthPath());
       }
     } catch (err: any) {
       const errorMsg = err.message || 'Authentication failed';
       setError(errorMsg);
+      setVerificationNotice('');
       toast({ 
         title: mode === 'signin' ? 'Sign In Failed' : 'Sign Up Failed', 
         description: errorMsg,
@@ -170,6 +182,13 @@ export function SupabaseAuthForm() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
+            {verificationNotice && (
+              <Alert data-testid="alert-verification-required">
+                <Mail className="h-4 w-4" />
+                <AlertDescription>{verificationNotice}</AlertDescription>
+              </Alert>
+            )}
             
             <div className="flex flex-col space-y-2 mt-4">
               <Button type="submit" disabled={isLoading} className="w-full" data-testid="button-reset">
@@ -187,7 +206,7 @@ export function SupabaseAuthForm() {
           </form>
         ) : (
           <>
-            <Tabs value={mode} onValueChange={(v) => setMode(v as 'signin' | 'signup')}>
+            <Tabs value={mode} onValueChange={(v) => { setMode(v as 'signin' | 'signup'); setError(''); setVerificationNotice(''); }}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="signin" data-testid="tab-signin">Sign In</TabsTrigger>
             <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
@@ -242,6 +261,13 @@ export function SupabaseAuthForm() {
                 <Alert variant="destructive" data-testid="alert-error">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {verificationNotice && (
+                <Alert data-testid="alert-verification-required">
+                  <Mail className="h-4 w-4" />
+                  <AlertDescription>{verificationNotice}</AlertDescription>
                 </Alert>
               )}
 
@@ -364,6 +390,13 @@ export function SupabaseAuthForm() {
                 <Alert variant="destructive" data-testid="alert-error">
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {verificationNotice && (
+                <Alert data-testid="alert-verification-required">
+                  <Mail className="h-4 w-4" />
+                  <AlertDescription>{verificationNotice}</AlertDescription>
                 </Alert>
               )}
 
