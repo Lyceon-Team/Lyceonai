@@ -3,6 +3,18 @@ import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { csrfFetch } from '@/lib/csrf';
 
+type SignUpResult =
+  | {
+    status: 'authenticated';
+    message?: string;
+    requiresConsent?: boolean;
+  }
+  | {
+    status: 'verification_required';
+    message: string;
+    requiresConsent?: boolean;
+  };
+
 interface SupabaseAuthContextType {
   user: SupabaseProfile | null;
   isLoading: boolean;
@@ -11,7 +23,7 @@ interface SupabaseAuthContextType {
   isAdmin: boolean;
   isGuardian: boolean;
   requiresConsent: boolean;
-  signUp: (email: string, password: string, displayName?: string, isUnder13?: boolean, guardianEmail?: string, role?: 'student' | 'guardian') => Promise<void>;
+  signUp: (email: string, password: string, displayName?: string, isUnder13?: boolean, guardianEmail?: string, role?: 'student' | 'guardian') => Promise<SignUpResult>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -51,10 +63,14 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         if (refreshResp.ok) {
           console.log('[AUTH] Token refreshed, retrying user fetch');
           response = await tryFetchUserProfile();
+        } else {
+          setUser(null);
+          return null;
         }
       }
 
       if (response.status === 401 || response.status === 403) {
+        setUser(null);
         return null;
       }
 
@@ -126,7 +142,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isUnder13: boolean = false,
     guardianEmail?: string,
     role: 'student' | 'guardian' = 'student'
-  ) => {
+  ): Promise<SignUpResult> => {
     setAuthLoading(true);
     try {
       const response = await csrfFetch('/api/auth/signup', {
@@ -150,12 +166,34 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Failed to sign up');
       }
 
-      // Backend already set HTTP-only cookies
-      // Fetch user from backend using the newly set cookies
+      if (data?.status === 'verification_required') {
+        setUser(null);
+        return {
+          status: 'verification_required',
+          message: data?.message || 'Check your email to confirm your account before signing in.',
+          requiresConsent: !!data?.requiresConsent,
+        };
+      }
+
+      if (data?.status !== 'authenticated') {
+        throw new Error('Unexpected signup response from server');
+      }
+
+      // Backend set canonical HTTP-only cookies for authenticated signups.
+      // Fetch user from backend using the newly set cookies.
       const backendUser = await fetchUserFromBackend();
       if (backendUser) {
         setUser(backendUser);
+      } else {
+        setUser(null);
+        throw new Error('Failed to load user profile after sign-up');
       }
+
+      return {
+        status: 'authenticated',
+        message: data?.message,
+        requiresConsent: !!data?.requiresConsent,
+      };
     } catch (error: any) {
       console.error('[AUTH] Sign up error:', error);
       throw new Error(error.message || 'Failed to sign up');
