@@ -31,7 +31,17 @@ describe('Signup frontend contract', () => {
     const source = read('client/src/contexts/SupabaseAuthContext.tsx');
 
     expect(source).toContain("if (refreshResp.ok)");
-    expect(source).toContain("setUser(null);");
+    expect(source).toContain("clearAuthState();");
     expect(source).toContain("if (response.status === 401 || response.status === 403)");
+  });
+
+  it('clears cached CSRF token on auth transitions', () => {
+    const source = read('client/src/contexts/SupabaseAuthContext.tsx');
+
+    expect(source).toContain("import { clearCsrfToken, csrfFetch } from '@/lib/csrf';");
+    expect(source).toContain("const clearAuthState = () => {");
+    expect(source).toContain("clearCsrfToken();");
+    expect(source).toContain("if (refreshResp.ok)");
+    expect(source).toContain("clearCsrfToken();");
   });
 });

@@ -7,10 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useEffect, useMemo, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
-import { startSubscriptionCheckout } from "@/lib/billing-client";
+import { isEntitlementDenialError } from "@/lib/api-error";
 
 interface SkillNode {
   id: string;
@@ -68,27 +67,14 @@ function getStatusLabel(status: string): string {
 }
 
 export default function MasteryPage() {
-  const { toast } = useToast();
-  const [upgradePending, setUpgradePending] = useState(false);
+  const [, navigate] = useLocation();
 
   const handleBack = () => {
     window.history.back();
   };
 
-  const handleUpgrade = async () => {
-    if (upgradePending) return;
-    setUpgradePending(true);
-    try {
-      await startSubscriptionCheckout('monthly');
-    } catch (error: any) {
-      toast({
-        title: 'Unable to start checkout',
-        description: error?.message || 'Please try again in a moment.',
-        variant: 'destructive',
-      });
-    } finally {
-      setUpgradePending(false);
-    }
+  const handleUpgrade = () => {
+    navigate("/upgrade");
   };
 
   const { data, isLoading, error } = useQuery<MasteryResponse>({
@@ -141,8 +127,7 @@ export default function MasteryPage() {
         )}
 
         {error && (() => {
-          const message = error instanceof Error ? error.message : "";
-          const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_REQUIRED");
+          const isPremiumLocked = isEntitlementDenialError(error);
 
           if (isPremiumLocked) {
             return (
@@ -151,8 +136,8 @@ export default function MasteryPage() {
                   <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70 mb-3">Premium Insight</p>
                   <h2 className="text-2xl font-bold mb-2">Mastery analytics are locked</h2>
                   <p className="text-sm text-primary-foreground/85 mb-5">This account needs premium KPI access before `/api/me/mastery/skills` can be displayed in the dashboard.</p>
-                  <Button variant="secondary" size="sm" onClick={handleUpgrade} disabled={upgradePending}>
-                    {upgradePending ? "Starting checkout..." : "View Upgrade Options"}
+                  <Button variant="secondary" size="sm" onClick={handleUpgrade}>
+                    View Plans
                   </Button>
                 </CardContent>
               </Card>

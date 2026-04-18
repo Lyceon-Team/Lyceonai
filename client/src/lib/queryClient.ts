@@ -1,10 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { csrfFetch } from "./csrf";
+import { clearCsrfToken, csrfFetch } from "./csrf";
+import { parseApiErrorFromResponse } from "./api-error";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    throw await parseApiErrorFromResponse(res, res.statusText || "Request failed");
   }
 }
 
@@ -59,6 +59,8 @@ async function fetchWithSessionRefresh(
     });
 
     if (refreshRes.ok) {
+      // Refresh changes session identity cookies, so force a fresh CSRF token next mutation.
+      clearCsrfToken();
       res = await doFetch();
     }
   }

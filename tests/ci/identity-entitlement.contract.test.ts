@@ -270,6 +270,59 @@ describe('Identity + Entitlement Runtime Contract', () => {
     }));
   });
 
+  it('returns canonical billing plan metadata from /api/billing/plans', async () => {
+    process.env.STRIPE_PRICE_PARENT_MONTHLY = 'price_monthly';
+    process.env.STRIPE_PRICE_PARENT_QUARTERLY = 'price_quarterly';
+    process.env.STRIPE_PRICE_PARENT_YEARLY = 'price_yearly';
+
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    const res = await request(app).get('/api/billing/plans');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.plans)).toBe(true);
+    expect(res.body.plans).toHaveLength(3);
+    expect(res.body.plans.map((p: any) => p.plan)).toEqual(['monthly', 'quarterly', 'yearly']);
+    expect(res.body.plans.every((p: any) => typeof p.amountCents === 'number')).toBe(true);
+    expect(res.body.plans.every((p: any) => typeof p.stripePriceIdConfigured === 'boolean')).toBe(true);
+    expect(res.body).not.toHaveProperty('accountId');
+    expect(res.body).not.toHaveProperty('entitlement');
+  });
+
+  it('rejects checkout bodies containing client-controlled billing/account fields', async () => {
+    process.env.STRIPE_PRICE_PARENT_MONTHLY = 'price_monthly';
+    process.env.STRIPE_PRICE_PARENT_QUARTERLY = 'price_quarterly';
+    process.env.STRIPE_PRICE_PARENT_YEARLY = 'price_yearly';
+
+    authState.currentUser = {
+      id: 'student-1',
+      role: 'student',
+      email: 'student@test.com',
+      isGuardian: false,
+      isAdmin: false,
+    } as any;
+
+    const app = buildApp();
+    const billingRoutes = (await import('../../server/routes/billing-routes')).default;
+    app.use('/api/billing', billingRoutes);
+
+    const res = await request(app)
+      .post('/api/billing/checkout')
+      .set('Origin', 'http://localhost:5000')
+      .send({
+        plan: 'monthly',
+        priceId: 'price_from_client',
+        accountId: 'acc_from_client',
+        studentId: 'student_from_client',
+        customerId: 'cus_from_client',
+      });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error || '')).toMatch(/unrecognized|invalid/i);
+  });
+
   it('fails closed when student-owned account resolution fails for billing status', async () => {
     const app = buildApp();
     const billingRoutes = (await import('../../server/routes/billing-routes')).default;

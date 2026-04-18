@@ -40,6 +40,7 @@ const TrustHub = lazy(() => import("@/pages/trust"));
 const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
 const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
+const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
 const GuardianConsentVerify = lazy(() => import("@/pages/guardian-consent-verify"));
@@ -98,6 +99,7 @@ function Router() {
         <Route path="/math-practice" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/reading-writing-practice" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/mastery" component={() => <RequireRole allow={['student', 'admin']}><MasteryPage /></RequireRole>} />
+        <Route path="/upgrade" component={() => <RequireRole allow={['student', 'admin']}><UpgradePage /></RequireRole>} />
         <Route path="/review-errors" component={() => <RequireRole allow={['student', 'admin']}><ReviewErrors /></RequireRole>} />
         <Route path="/flow-cards" component={() => <RequireRole allow={['student', 'admin']}><FlowCards /></RequireRole>} />
         <Route path="/structured-practice" component={() => <RequireRole allow={['student', 'admin']}><StructuredPractice /></RequireRole>} />
