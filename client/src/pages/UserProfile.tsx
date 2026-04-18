@@ -26,7 +26,7 @@ import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { apiRequest } from '@/lib/queryClient';
 import { SUPPORT_EMAIL } from '@/lib/support-contact';
-import { openBillingPortal, startSubscriptionCheckout } from '@/lib/billing-client';
+import { openBillingPortal } from '@/lib/billing-client';
 import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
 
 interface UserProfile {
@@ -311,17 +311,6 @@ export default function UserProfile() {
     onError: (error) => {
       toast({
         title: 'Unable to save notification preferences',
-        description: error instanceof Error ? error.message : 'Please try again.',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const startCheckoutMutation = useMutation({
-    mutationFn: async () => startSubscriptionCheckout('monthly'),
-    onError: (error) => {
-      toast({
-        title: 'Unable to start checkout',
         description: error instanceof Error ? error.message : 'Please try again.',
         variant: 'destructive',
       });
@@ -1050,11 +1039,11 @@ export default function UserProfile() {
                       </Button>
                     ) : (
                       <Button
-                        onClick={() => startCheckoutMutation.mutate()}
-                        disabled={startCheckoutMutation.isPending || !!billingStatus?.linkRequiredForPremium}
+                        onClick={() => navigate('/upgrade')}
+                        disabled={!!billingStatus?.linkRequiredForPremium}
                         data-testid="button-upgrade-subscription"
                       >
-                        {startCheckoutMutation.isPending ? 'Starting checkout...' : 'Upgrade'}
+                        View Plans
                       </Button>
                     )}
                   </>

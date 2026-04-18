@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Send, Sparkles, Info, MessageSquare, RefreshCw, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { PremiumUpgradePrompt, type PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
 import {
   appendTutorMessage,
   fetchTutorConversation,
@@ -105,6 +106,14 @@ function replaceMessage(
   });
 }
 
+function mapTutorErrorToPremiumReason(error: unknown): PremiumPromptReason | null {
+  if (!(error instanceof TutorClientRequestError)) return null;
+  const normalized = error.code.trim().toUpperCase();
+  if (normalized === "PAYMENT_REQUIRED") return "payment_required";
+  if (normalized === "PREMIUM_REQUIRED") return "premium_required";
+  return null;
+}
+
 export default function Chat() {
   const { user } = useSupabaseAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -114,6 +123,8 @@ export default function Chat() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [premiumPromptReason, setPremiumPromptReason] = useState<PremiumPromptReason | null>(null);
+  const [premiumPromptDismissed, setPremiumPromptDismissed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const bootstrapPromiseRef = useRef<Promise<string | null> | null>(null);
   const { toast } = useToast();
@@ -147,8 +158,17 @@ export default function Chat() {
         const conversationResponse = await fetchTutorConversation(activeConversationId);
         setMessages(toUiMessages(conversationResponse.data.messages));
         setRequestError(null);
+        setPremiumPromptReason(null);
+        setPremiumPromptDismissed(false);
         return activeConversationId;
       } catch (error) {
+        const premiumReason = mapTutorErrorToPremiumReason(error);
+        if (premiumReason) {
+          setPremiumPromptReason(premiumReason);
+          setPremiumPromptDismissed(false);
+          setRequestError(null);
+          return null;
+        }
         const message =
           error instanceof TutorClientRequestError
             ? error.message
@@ -195,7 +215,22 @@ export default function Chat() {
         setPendingTurn((currentPendingTurn) =>
           currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
         );
+        setPremiumPromptReason(null);
       } catch (error) {
+        const premiumReason = mapTutorErrorToPremiumReason(error);
+        if (premiumReason) {
+          setPremiumPromptReason(premiumReason);
+          setPremiumPromptDismissed(false);
+          setRequestError(null);
+          setMessages((currentMessages) =>
+            currentMessages.filter((message) => message.id !== args.turn.tutorPlaceholderId),
+          );
+          setPendingTurn((currentPendingTurn) =>
+            currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
+          );
+          return;
+        }
+
         if (error instanceof TutorClientRequestError && error.code === "TUTOR_RECOVERABLE_RETRY_REQUIRED") {
           setPendingTurn((currentPendingTurn) => {
             if (!currentPendingTurn || currentPendingTurn.clientTurnId !== args.turn.clientTurnId) {
@@ -240,6 +275,9 @@ export default function Chat() {
 
     const activeConversationId = conversationId ?? (await bootstrapConversation());
     if (!activeConversationId) {
+      if (premiumPromptReason) {
+        return;
+      }
       toast({
         title: "Tutor unavailable",
         description: "Unable to initialize tutor conversation.",
@@ -320,6 +358,13 @@ export default function Chat() {
 
   return (
     <AppShell>
+      {premiumPromptReason && !premiumPromptDismissed && (
+        <PremiumUpgradePrompt
+          reason={premiumPromptReason}
+          mode="floating"
+          onDismiss={() => setPremiumPromptDismissed(true)}
+        />
+      )}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-5xl">
         <div className="mb-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

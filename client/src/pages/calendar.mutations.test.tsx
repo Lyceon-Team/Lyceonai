@@ -85,6 +85,10 @@ describe("Calendar mutation ownership", () => {
       const url = asUrl(input);
       const method = init?.method ?? "GET";
 
+      if (url === "/api/csrf-token" && method === "GET") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
+
       if (url === "/api/calendar/profile" && method === "GET") {
         return jsonResponse({
           profile: {

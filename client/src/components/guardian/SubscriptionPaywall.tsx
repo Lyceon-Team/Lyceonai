@@ -6,6 +6,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, CheckCircle, Loader2, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { csrfFetch } from '@/lib/csrf';
+import {
+  getBillingPlans,
+  startSubscriptionCheckout,
+  type BillingPlan,
+  type BillingPlanMetadata,
+} from '@/lib/billing-client';
 
 interface BillingStatus {
   accountId: string | null;
@@ -24,32 +30,16 @@ interface BillingStatus {
   lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
-interface PriceOption {
-  id: string;
-  label: string;
-  amount: number;
-  interval: string;
-  intervalCount: number;
-  badge?: string;
-  plan?: 'monthly' | 'quarterly' | 'yearly';
-}
-
 interface SubscriptionPaywallProps {
   children: React.ReactNode;
 }
 
-function formatPrice(amount: number): string {
-  return `$${(amount / 100).toFixed(0)}`;
-}
-
-function formatInterval(interval: string, intervalCount: number): string {
-  if (intervalCount === 1) {
-    return `per ${interval}`;
-  }
-  if (interval === 'month' && intervalCount === 3) {
-    return 'every 3 months';
-  }
-  return `every ${intervalCount} ${interval}s`;
+function formatPrice(amountCents: number, currency = 'usd'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: 2,
+  }).format(amountCents / 100);
 }
 
 const SHOW_BILLING_DEBUG = import.meta.env.DEV || (typeof window !== 'undefined' && window.location.search.includes('billingDebug=1'));
@@ -138,51 +128,18 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  const { data: pricesData, isLoading: pricesLoading, error: pricesError } = useQuery<PriceOption[]>({
-    queryKey: ['billing-prices'],
-    queryFn: async () => {
-      const res = await csrfFetch('/api/billing/prices', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch prices');
-      const data = await res.json();
-      
-      let pricesArray: PriceOption[] = [];
-      if (Array.isArray(data.prices)) {
-        pricesArray = data.prices;
-      } else if (data.prices && typeof data.prices === 'object') {
-        console.error('[Billing] prices payload unexpected shape - converting object to array', data.prices);
-        pricesArray = Object.values(data.prices);
-      }
-      
-      return pricesArray;
-    },
+  const { data: pricesData, isLoading: pricesLoading, error: pricesError } = useQuery<BillingPlanMetadata[]>({
+    queryKey: ['/api/billing/plans'],
+    queryFn: getBillingPlans,
     enabled: !billingStatus?.effectiveAccess,
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async (plan: 'monthly' | 'quarterly' | 'yearly') => {
-      console.log('[Billing] Starting checkout with plan:', plan);
-      const res = await csrfFetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ plan }),
-      });
-      console.log('[Billing] Checkout response status:', res.status);
-      const data = await res.json();
-      if (!res.ok) {
-        const err = new Error(data.error || 'Failed to create checkout') as Error & { details?: any };
-        (err as any).stripeMessage = data.stripeMessage;
-        (err as any).requestId = data.requestId;
-        (err as any).details = data.details;
-        throw err;
-      }
-      return data;
+    mutationFn: async (plan: BillingPlan) => {
+      await startSubscriptionCheckout(plan);
+      return { url: true };
     },
-    onSuccess: (data) => {
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    },
+    onSuccess: () => {},
     onError: (err: Error & { stripeMessage?: string; requestId?: string; details?: any }) => {
       setCheckoutError(err.message);
       setCheckoutErrorDetails({
@@ -344,6 +301,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             </div>
           </div>
 
+          {/* TODO(billing): Guardian selector is legacy and should be removed only after /upgrade parity tests pass. */}
           {pricesLoading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />
@@ -355,37 +313,40 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {prices.map((price) => (
-                <button
-                  key={price.id}
-                  onClick={() => {
-                    if (price.plan) {
-                      console.log('[Billing] Selected plan:', price.plan, 'priceId:', price.id?.slice(0, 12) + '...' + price.id?.slice(-4));
-                      setSelectedPlan(price.plan);
-                    }
-                  }}
-                  className={cn(
-                    "relative p-4 rounded-lg border-2 text-left transition-all",
-                    selectedPlan === price.plan
-                      ? "border-[#0F2E48] bg-[#0F2E48]/5"
-                      : "border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
-                  )}
-                >
-                  {price.badge && (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full whitespace-nowrap">
-                      {price.badge}
-                    </span>
-                  )}
-                  <div className="text-lg font-semibold text-[#0F2E48]">{price.label}</div>
-                  <div className="text-2xl font-bold text-[#0F2E48] mt-1">
-                    {formatPrice(price.amount)}
-                  </div>
-                  <div className="text-sm text-[#0F2E48]/60">
-                    {formatInterval(price.interval, price.intervalCount)}
-                  </div>
-                </button>
-              ))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {prices.map((price) => {
+                  const savingsBadge = typeof price.savingsPercent === "number" && price.savingsPercent > 0
+                    ? `Save ${price.savingsPercent.toFixed(1)}%`
+                    : null;
+
+                  return (
+                    <button
+                      key={price.plan}
+                      onClick={() => {
+                        setSelectedPlan(price.plan);
+                      }}
+                      className={cn(
+                        "relative p-4 rounded-lg border-2 text-left transition-all",
+                        selectedPlan === price.plan
+                          ? "border-[#0F2E48] bg-[#0F2E48]/5"
+                          : "border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
+                      )}
+                    >
+                      {savingsBadge && (
+                        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full whitespace-nowrap">
+                          {savingsBadge}
+                        </span>
+                      )}
+                      <div className="text-lg font-semibold text-[#0F2E48]">{price.label}</div>
+                      <div className="text-2xl font-bold text-[#0F2E48] mt-1">
+                        {formatPrice(price.amountCents, price.currency)}
+                      </div>
+                      <div className="text-sm text-[#0F2E48]/60">
+                        {price.intervalLabel}
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
           )}
 
