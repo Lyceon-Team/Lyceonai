@@ -203,7 +203,7 @@ export default function DesmosCalculator({
       data-testid="desmos-calculator-shell"
     >
       {loadError && (
-        <div className="mb-2 text-sm text-red-600" data-testid="desmos-calculator-error">
+        <div className="mb-2 text-sm text-amber-700" data-testid="desmos-calculator-error">
           {loadError}
         </div>
       )}

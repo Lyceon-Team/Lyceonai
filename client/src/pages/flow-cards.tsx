@@ -240,7 +240,7 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
     return (
       <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center p-4">
         <Card className="max-w-md w-full text-center p-8">
-          <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <XCircle className="w-16 h-16 text-amber-600 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-[#0F2E48] mb-2">Error</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <Button onClick={() => startSession()} className="bg-[#0F2E48]">
@@ -286,7 +286,7 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
             <span className="font-semibold text-[#0F2E48]">{score.streak}</span>
           </div>
           <div className="flex items-center gap-1">
-            <Heart className="w-5 h-5 text-red-500" />
+            <Heart className="w-5 h-5 text-rose-500" />
             <span className="font-semibold text-[#0F2E48]">{score.correct}</span>
           </div>
         </div>
@@ -347,7 +347,7 @@ function FlowCards({ section = 'mixed', difficulty = 'adaptive' }: FlowCardsProp
                     {validationResult?.isCorrect ? (
                       <><CheckCircle className="w-6 h-6 text-green-400" /> <span className="font-bold">Correct!</span></>
                     ) : (
-                      <><XCircle className="w-6 h-6 text-red-400" /> <span className="font-bold">Incorrect</span></>
+                      <><XCircle className="w-6 h-6 text-amber-300" /> <span className="font-bold">Incorrect</span></>
                     )}
                   </div>
                   

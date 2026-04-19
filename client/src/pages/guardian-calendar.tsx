@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Loader2, Flame, ArrowLeft } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { csrfFetch } from "@/lib/csrf";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
 interface GuardianCalendarDay {
   day_date: string;
@@ -41,7 +42,7 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
     case "planned":
       return { label: "Planned", className: "bg-muted text-muted-foreground" };
     case "missed":
-      return { label: "Missed", className: "bg-red-100 text-red-700" };
+      return { label: "Missed", className: "bg-amber-100 text-amber-800" };
     case "in_progress":
       return { label: "In Progress", className: "bg-teal-100 text-teal-700" };
     case "complete":
@@ -244,11 +245,12 @@ export default function GuardianCalendarPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-[#0F2E48]/50" />
               </div>
             ) : error ? (
-              <div className="text-center py-12">
-                <p className="text-red-600 mb-4">Failed to load calendar</p>
-                <Button variant="outline" onClick={() => refetch()}>
-                  Retry
-                </Button>
+              <div className="py-6">
+                <RecoveryNotice
+                  title="We couldn't load this calendar."
+                  message="Try again. If this keeps happening, refresh the page."
+                  onRetry={() => void refetch()}
+                />
               </div>
             ) : !calendarData?.days || calendarData.days.length === 0 ? (
               <div className="text-center py-12">

@@ -1,10 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
-import { buildAllowedOrigins, normalizeOrigin } from "./origin-utils";
+import { buildCsrfAllowedOrigins, normalizeOrigin } from "./origin-utils";
 
 export function csrfGuard() {
-  const { normalized, raw } = buildAllowedOrigins({
+  const { normalized, raw } = buildCsrfAllowedOrigins({
     nodeEnv: process.env.NODE_ENV,
-    corsOriginsCsv: process.env.CORS_ORIGINS,
     csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
   });
 

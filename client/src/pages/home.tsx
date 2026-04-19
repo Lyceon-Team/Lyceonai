@@ -43,7 +43,6 @@ export default function HomePage() {
       toast({
         title: "Sign out failed",
         description: error.message || "Please try again",
-        variant: "destructive"
       });
     } finally {
       setIsSigningOut(false);
@@ -147,7 +146,7 @@ export default function HomePage() {
                     <button
                       onClick={handleSignOut}
                       disabled={isSigningOut}
-                      className="px-6 py-3 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-destructive/20 disabled:opacity-50"
+                      className="px-6 py-3 bg-card border border-border rounded-lg font-medium transition-colors flex items-center justify-center gap-2 hover:bg-secondary disabled:opacity-50"
                       data-testid="button-sign-out"
                     >
                       <LogOut className="w-4 h-4" />
@@ -637,7 +636,7 @@ export default function HomePage() {
                   <button
                     onClick={handleSignOut}
                     disabled={isSigningOut}
-                    className="px-8 py-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-lg font-medium hover:bg-destructive/20 transition-colors text-center text-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2 disabled:opacity-50"
                     data-testid="button-footer-signout"
                   >
                     <LogOut className="w-5 h-5" />

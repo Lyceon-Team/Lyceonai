@@ -63,7 +63,7 @@ export default function LyceonQuestionCard({
                 w-full text-left p-4 rounded-xl border-2 transition-all
                 ${isSelected && !showFeedback ? 'border-border bg-secondary' : 'border-border bg-background'}
                 ${isCorrectOption ? 'border-green-600 bg-green-50' : ''}
-                ${isWrongSelection ? 'border-red-500 bg-red-50' : ''}
+                ${isWrongSelection ? 'border-amber-500 bg-amber-50' : ''}
                 ${!showFeedback ? 'hover:border-warm-gray-700 hover:bg-secondary' : ''}
               `}
               disabled={showFeedback}
@@ -77,7 +77,7 @@ export default function LyceonQuestionCard({
                   <CheckCircle className="h-5 w-5 text-green-600" data-testid="correct-icon" />
                 )}
                 {isWrongSelection && (
-                  <XCircle className="h-5 w-5 text-red-500" data-testid="incorrect-icon" />
+                  <XCircle className="h-5 w-5 text-amber-500" data-testid="incorrect-icon" />
                 )}
               </div>
             </motion.button>
@@ -100,10 +100,10 @@ export default function LyceonQuestionCard({
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`mt-6 p-4 rounded-xl ${isCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}
+          className={`mt-6 p-4 rounded-xl ${isCorrect ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}
           data-testid="feedback-message"
         >
-          <p className={`text-sm font-medium ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+          <p className={`text-sm font-medium ${isCorrect ? 'text-green-700' : 'text-amber-700'}`}>
             {isCorrect ? '✓ Correct!' : `✗ Incorrect. The correct answer is ${correctAnswer}.`}
           </p>
         </motion.div>

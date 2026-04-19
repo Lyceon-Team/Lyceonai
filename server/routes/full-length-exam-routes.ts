@@ -12,7 +12,7 @@
 import { Router, Request, Response, type NextFunction } from "express";
 import { requireRequestUser, requireSupabaseAuth } from "../middleware/supabase-auth";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
-import { buildAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
+import { buildCsrfAllowedOrigins, normalizeOrigin } from "../middleware/origin-utils";
 // Intentional cross-boundary import: server runtime route delegates exam scoring/state logic to shared apps/api service.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
@@ -20,9 +20,8 @@ import { buildStudentFullLengthReportView } from "../services/canonical-runtime-
 import { z } from "zod";
 
 const router = Router();
-const fullLengthMutatingGetAllowedOrigins = buildAllowedOrigins({
+const fullLengthMutatingGetAllowedOrigins = buildCsrfAllowedOrigins({
   nodeEnv: process.env.NODE_ENV,
-  corsOriginsCsv: process.env.CORS_ORIGINS,
   csrfOriginsCsv: process.env.CSRF_ALLOWED_ORIGINS,
 }).normalized;
 
@@ -58,6 +57,17 @@ function sendRouteError(
   error: string,
   extra: Record<string, unknown> = {}
 ) {
+  if (error === "csrf_blocked") {
+    return res.status(status).json({
+      error: {
+        code: "csrf_blocked",
+        message: "Request blocked by CSRF protection",
+      },
+      ...extra,
+      requestId: req.requestId,
+    });
+  }
+
   return res.status(status).json({
     error,
     ...extra,
@@ -133,7 +143,7 @@ function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction)
 
   if (!origin && !referer) {
     return sendRouteError(req, res, 403, "csrf_blocked", {
-      message: "Cross-site request blocked by CSRF protection",
+      reason: "missing_origin",
     });
   }
 
@@ -148,7 +158,7 @@ function enforceMutatingGetCsrf(req: Request, res: Response, next: NextFunction)
   }
 
   return sendRouteError(req, res, 403, "csrf_blocked", {
-    message: "Cross-site request blocked by CSRF protection",
+    reason: "disallowed_origin",
     origin: origin || null,
   });
 }

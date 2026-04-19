@@ -242,7 +242,7 @@ export default function ProfileComplete() {
     onError: (error: any) => {
       const errorMessage = error.message || 'Failed to complete profile. Please try again.';
       setErrorMessage(errorMessage);
-      toast({ title: "Profile completion failed", description: errorMessage, variant: "destructive" });
+      toast({ title: "Profile completion failed", description: errorMessage });
     }
   });
 
@@ -270,7 +270,7 @@ export default function ProfileComplete() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-600">
+            <CardTitle className="flex items-center gap-2 text-[#0F2E48]">
               <AlertCircle className="h-5 w-5" />
               Authentication Error
             </CardTitle>
@@ -279,9 +279,9 @@ export default function ProfileComplete() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertCircle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-800">
                 {authError instanceof Error ? authError.message : 'Unable to connect to authentication service'}
               </AlertDescription>
             </Alert>
@@ -382,7 +382,6 @@ export default function ProfileComplete() {
       toast({
         title: "Legal acceptance failed",
         description: message,
-        variant: "destructive",
       });
       return;
     }
@@ -392,7 +391,7 @@ export default function ProfileComplete() {
         await updatePassword(data.password);
       } catch (err: any) {
         setErrorMessage(err.message || 'Failed to set password');
-        toast({ title: 'Password setup failed', description: err.message || 'Failed to set password', variant: 'destructive' });
+        toast({ title: 'Password setup failed', description: err.message || 'Failed to set password' });
         return;
       }
     }
@@ -759,9 +758,9 @@ export default function ProfileComplete() {
             Loading your recorded legal acceptances...
           </p>
         ) : legalAcceptancesError ? (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
+          <Alert className="mb-4 border-amber-200 bg-amber-50">
+            <AlertCircle className="h-4 w-4 text-amber-700" />
+            <AlertDescription className="text-amber-800">
               Could not load previously recorded legal acceptances. You can still continue by accepting all required agreements below.
             </AlertDescription>
           </Alert>
@@ -1062,9 +1061,9 @@ export default function ProfileComplete() {
           <CardContent>
             {/* Error Alert */}
             {errorMessage && (
-              <Alert variant="destructive" className="mb-4" data-testid="alert-error">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{errorMessage}</AlertDescription>
+              <Alert className="mb-4 border-amber-200 bg-amber-50" data-testid="alert-error">
+                <AlertCircle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">{errorMessage}</AlertDescription>
               </Alert>
             )}
 

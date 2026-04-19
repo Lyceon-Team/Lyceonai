@@ -12,6 +12,7 @@ import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { apiRequest } from "@/lib/queryClient";
 import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
 interface PracticeTopics {
   sections?: Array<{
@@ -142,10 +143,11 @@ function BrowseTopics() {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : topicsError ? (
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <span>Failed to load topics. Please try again.</span>
-            </div>
+            <RecoveryNotice
+              title="We couldn't load topics."
+              message="Try again. If this keeps happening, refresh the page."
+              onRetry={() => window.location.reload()}
+            />
           ) : (
             <div className="space-y-4">
               {/* Section Selection */}
@@ -269,10 +271,11 @@ function BrowseTopics() {
               </PageCard>
             ) : questionsError ? (
               <PageCard title="Error">
-                <div className="flex items-center gap-2 text-destructive">
-                  <AlertCircle className="h-5 w-5" />
-                  <span>Failed to load questions. Please try again.</span>
-                </div>
+                <RecoveryNotice
+                  title="We couldn't load questions."
+                  message="Try again. If this keeps happening, refresh the page."
+                  onRetry={() => void searchQuestions()}
+                />
               </PageCard>
             ) : questionsData && questionsData.questions.length === 0 ? (
               <PageCard title="No Results">
