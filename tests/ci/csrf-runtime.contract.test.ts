@@ -90,13 +90,14 @@ describe("CSRF runtime contract - production origin rules", () => {
       res.json({ csrfToken: token });
     });
 
-    // Scope cookie parsing + CSRF to the mutation router so static analysis
-    // can see cookie-backed handlers are guarded.
-    const protectedRouter = express.Router();
-    protectedRouter.use(cookieParser());
-    protectedRouter.use(doubleCsrfProtection);
+    app.use((req, res, next) => {
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+        return doubleCsrfProtection(req, res, next);
+      }
+      next();
+    });
 
-    protectedRouter.post("/protected", (_req, res) => {
+    app.post("/api/protected", doubleCsrfProtection, (_req, res) => {
       res.status(200).json({ ok: true });
     });
 
