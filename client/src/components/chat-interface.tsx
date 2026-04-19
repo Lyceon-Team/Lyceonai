@@ -107,9 +107,8 @@ export default function ChatInterface() {
       // Restore input value if there was an error
       setInputValue(messageContent);
       toast({
-        title: "Error",
+        title: "Unable to send message",
         description: "Failed to get response. Please try again.",
-        variant: "destructive"
       });
     } finally {
       setIsLoading(false);

@@ -38,8 +38,8 @@ export class PracticeErrorBoundary extends React.Component<Props, State> {
         <div className="min-h-screen bg-background flex items-center justify-center px-4">
           <Card className="w-full max-w-md">
             <CardContent className="pt-6 text-center">
-              <div className="mx-auto mb-4 p-3 bg-red-100 rounded-full w-fit">
-                <AlertTriangle className="h-8 w-8 text-red-600" />
+              <div className="mx-auto mb-4 p-3 bg-amber-100 rounded-full w-fit">
+                <AlertTriangle className="h-8 w-8 text-amber-700" />
               </div>
               <h2 className="text-xl font-semibold mb-2 text-foreground">
                 Something went wrong loading practice.
@@ -49,12 +49,12 @@ export class PracticeErrorBoundary extends React.Component<Props, State> {
               </p>
               
               {isDev && this.state.error && (
-                <div className="mb-4 p-3 bg-red-50 rounded-lg text-left overflow-auto max-h-40">
-                  <p className="text-sm font-mono text-red-800 break-words">
+                <div className="mb-4 p-3 bg-amber-50 rounded-lg text-left overflow-auto max-h-40">
+                  <p className="text-sm font-mono text-amber-900 break-words">
                     {this.state.error.message}
                   </p>
                   {this.state.error.stack && (
-                    <pre className="text-xs text-red-600 mt-2 whitespace-pre-wrap">
+                    <pre className="text-xs text-amber-800 mt-2 whitespace-pre-wrap">
                       {this.state.error.stack}
                     </pre>
                   )}

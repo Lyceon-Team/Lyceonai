@@ -79,7 +79,6 @@ export function SupabaseAuthForm() {
           toast({ 
             title: 'Validation Error', 
             description: errorMsg,
-            variant: 'destructive'
           });
           return;
         }
@@ -120,7 +119,6 @@ export function SupabaseAuthForm() {
       toast({ 
         title: mode === 'signin' ? 'Sign In Failed' : 'Sign Up Failed', 
         description: errorMsg,
-        variant: 'destructive'
       });
     }
   };
@@ -140,7 +138,6 @@ export function SupabaseAuthForm() {
       toast({ 
         title: 'Google Sign-In Failed', 
         description: errorMsg,
-        variant: 'destructive'
       });
     }
   };
@@ -177,9 +174,9 @@ export function SupabaseAuthForm() {
             </div>
             
             {error && (
-              <Alert variant="destructive" data-testid="alert-error">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+              <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                <AlertCircle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">{error}</AlertDescription>
               </Alert>
             )}
 
@@ -258,9 +255,9 @@ export function SupabaseAuthForm() {
               </div>
 
               {error && (
-                <Alert variant="destructive" data-testid="alert-error">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                  <AlertCircle className="h-4 w-4 text-amber-700" />
+                  <AlertDescription className="text-amber-800">{error}</AlertDescription>
                 </Alert>
               )}
 
@@ -387,9 +384,9 @@ export function SupabaseAuthForm() {
               )}
 
               {error && (
-                <Alert variant="destructive" data-testid="alert-error">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                  <AlertCircle className="h-4 w-4 text-amber-700" />
+                  <AlertDescription className="text-amber-800">{error}</AlertDescription>
                 </Alert>
               )}
 

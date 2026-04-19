@@ -25,6 +25,7 @@ import { getCalendarMonth } from "@/lib/calendarApi";
 import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
 import { appendPracticeDuration } from "@/lib/practice-duration";
 import { DateTime } from "luxon";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
 interface QuestionStats {
   total: number;
@@ -220,13 +221,13 @@ function Practice() {
                 </div>
 
                 {statsError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    <p className="font-medium">We couldn't load question totals.</p>
-                    <p className="mt-1">{(statsErrorObj as Error)?.message ?? "Please try again."}</p>
-                    <Button className="mt-3" variant="outline" size="sm" onClick={() => refetchStats()}>
-                      Retry
-                    </Button>
-                  </div>
+                  <RecoveryNotice
+                    title="We couldn't load question totals."
+                    message={(statsErrorObj as Error)?.message ?? "Try again. If this keeps happening, refresh the page."}
+                    onRetry={() => void refetchStats()}
+                    retryLabel="Retry"
+                    className="rounded-lg"
+                  />
                 )}
               </div>
             </PageCard>
@@ -244,13 +245,12 @@ function Practice() {
                   <Skeleton className="h-20 w-full" />
                 </div>
               ) : topicsError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-medium">We couldn't load domain taxonomy.</p>
-                  <p className="mt-1">{(topicsErrorObj as Error)?.message ?? "Please try again."}</p>
-                  <Button className="mt-4" variant="outline" size="sm" onClick={() => refetchTopics()}>
-                    Retry
-                  </Button>
-                </div>
+                <RecoveryNotice
+                  title="We couldn't load domain taxonomy."
+                  message={(topicsErrorObj as Error)?.message ?? "Try again. If this keeps happening, refresh the page."}
+                  onRetry={() => void refetchTopics()}
+                  retryLabel="Retry"
+                />
               ) : (
                 <div className="space-y-6">
                   <div>
@@ -302,20 +302,19 @@ function Practice() {
             <PageCard title="Weekly Activity" className="bg-card/80 border-border/50">
               <div className="space-y-4">
                 {(kpiError || streakError) && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                    <p className="font-medium">We couldn't load your activity summary.</p>
-                    <p className="mt-1">
-                      {(kpiErrorObj as Error)?.message || (streakErrorObj as Error)?.message || "Please try again."}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" onClick={() => refetchKpis()}>
-                        Retry KPIs
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => refetchStreak()}>
-                        Retry Streak
-                      </Button>
-                    </div>
-                  </div>
+                  <RecoveryNotice
+                    title="We couldn't load your activity summary."
+                    message={
+                      (kpiErrorObj as Error)?.message ||
+                      (streakErrorObj as Error)?.message ||
+                      "Try again. If this keeps happening, refresh the page."
+                    }
+                    onRetry={() => {
+                      void refetchKpis();
+                      void refetchStreak();
+                    }}
+                    retryLabel="Retry summary"
+                  />
                 )}
 
                 <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">

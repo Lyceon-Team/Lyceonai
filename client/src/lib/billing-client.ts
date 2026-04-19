@@ -1,6 +1,18 @@
 import { csrfFetch } from '@/lib/csrf';
+import { parseApiErrorFromResponse } from '@/lib/api-error';
 
 export type BillingPlan = 'monthly' | 'quarterly' | 'yearly';
+
+export interface BillingPlanMetadata {
+  plan: BillingPlan;
+  label: string;
+  amountCents: number;
+  currency: string;
+  intervalLabel: string;
+  equivalentMonthlyCents?: number;
+  savingsPercent?: number;
+  stripePriceIdConfigured: boolean;
+}
 
 type BillingRedirectPayload = {
   url?: string;
@@ -22,7 +34,7 @@ async function requestBillingRedirect(
   const payload: BillingRedirectPayload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.error || 'Unable to start billing flow');
+    throw await parseApiErrorFromResponse(response, payload.error || 'Unable to start billing flow');
   }
 
   if (!payload.url || typeof payload.url !== 'string') {
@@ -36,7 +48,21 @@ async function requestBillingRedirect(
   return payload.url;
 }
 
-export async function startSubscriptionCheckout(plan: BillingPlan = 'monthly'): Promise<string> {
+export async function getBillingPlans(): Promise<BillingPlanMetadata[]> {
+  const response = await csrfFetch('/api/billing/plans', {
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw await parseApiErrorFromResponse(response, 'Unable to load billing plans');
+  }
+
+  const payload = await response.json().catch(() => ({} as { plans?: BillingPlanMetadata[] }));
+  const plans = Array.isArray(payload?.plans) ? payload.plans : [];
+  return plans;
+}
+
+export async function startSubscriptionCheckout(plan: BillingPlan): Promise<string> {
   return requestBillingRedirect('/api/billing/checkout', { plan });
 }
 

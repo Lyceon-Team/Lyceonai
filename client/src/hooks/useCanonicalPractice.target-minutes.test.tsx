@@ -35,6 +35,9 @@ describe("useCanonicalPractice target_minutes contract", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = asUrl(input);
       const method = init?.method ?? "GET";
+      if (url === "/api/csrf-token" && method === "GET") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
 
       if (url === "/api/practice/sessions" && method === "POST") {
         return jsonResponse({ sessionId: "session-1" });

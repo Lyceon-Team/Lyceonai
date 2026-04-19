@@ -31,7 +31,7 @@ export default function DemoQuestionCard() {
             selected === opt 
               ? isCorrect 
                 ? "border-green-500 bg-green-50" 
-                : "border-red-500 bg-red-50"
+                : "border-amber-500 bg-amber-50"
               : "border-neutral-300 hover:border-primary"
           }`}
           data-testid={`option-${opt.charAt(0)}`}
@@ -46,7 +46,7 @@ export default function DemoQuestionCard() {
           className={`mt-3 p-3 rounded-xl text-sm ${
             isCorrect 
               ? "bg-green-50 border border-green-200" 
-              : "bg-red-50 border border-red-200"
+              : "bg-amber-50 border border-amber-200"
           }`}
           data-testid="question-explanation"
         >
@@ -57,7 +57,7 @@ export default function DemoQuestionCard() {
             </>
           ) : (
             <>
-              <span className="font-semibold text-red-700">❌ Incorrect.</span>{" "}
+              <span className="font-semibold text-amber-700">❌ Incorrect.</span>{" "}
               <span className="text-neutral-700">The correct answer is {question.answer}. {question.explanation}</span>
             </>
           )}

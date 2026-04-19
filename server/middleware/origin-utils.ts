@@ -26,6 +26,24 @@ function splitCsv(csv?: string): string[] {
     .filter(Boolean);
 }
 
+const CANONICAL_PROD_ORIGINS = [
+  "https://lyceon.ai",
+  "https://www.lyceon.ai",
+];
+
+const TEST_ORIGINS = [
+  "http://localhost:5000",
+  "http://localhost:3000",
+  "http://localhost:3001",
+];
+
+function buildLocalDevOrigins() {
+  return [
+    "http://localhost:5173",
+    `http://localhost:${process.env.PORT || 5000}`,
+  ];
+}
+
 export function buildAllowedOrigins(opts: {
   nodeEnv?: string;
   corsOriginsCsv?: string;
@@ -36,22 +54,9 @@ export function buildAllowedOrigins(opts: {
   const isTest = nodeEnv === "test";
 
   // Hard defaults for production safety
-  const DEFAULTS = [
-    "https://lyceon.ai",
-    "https://www.lyceon.ai",
-  ];
-
-  // In test mode, add localhost origins for testing
-  const TEST_DEFAULTS = isTest ? [
-    "http://localhost:5000",
-    "http://localhost:3000",
-    "http://localhost:3001",
-  ] : [];
-
-  const DEV_DEFAULTS = isDev ? [
-    "http://localhost:5173",
-    "http://localhost:" + (process.env.PORT || 5000),
-  ] : [];
+  const DEFAULTS = CANONICAL_PROD_ORIGINS;
+  const TEST_DEFAULTS = isTest ? TEST_ORIGINS : [];
+  const DEV_DEFAULTS = isDev ? buildLocalDevOrigins() : [];
 
   const fromCors = splitCsv(opts.corsOriginsCsv);
   const fromCsrf = splitCsv(opts.csrfOriginsCsv);
@@ -62,4 +67,23 @@ export function buildAllowedOrigins(opts: {
   const normalized = new Set(raw.map(normalizeOrigin));
 
   return { isDev, raw, normalized };
+}
+
+/**
+ * CSRF origin allowlist uses one canonical source: CSRF_ALLOWED_ORIGINS.
+ * No wildcard matching; every allowed origin must be explicitly enumerated.
+ */
+export function buildCsrfAllowedOrigins(opts: {
+  nodeEnv?: string;
+  csrfOriginsCsv?: string;
+}) {
+  const nodeEnv = opts.nodeEnv || process.env.NODE_ENV;
+  const isDev = nodeEnv === "development";
+  const isTest = nodeEnv === "test";
+  const configured = splitCsv(opts.csrfOriginsCsv ?? process.env.CSRF_ALLOWED_ORIGINS);
+  const baseOrigins = configured.length > 0 ? configured : CANONICAL_PROD_ORIGINS;
+  const localOrigins = isTest ? TEST_ORIGINS : isDev ? buildLocalDevOrigins() : [];
+  const raw = Array.from(new Set([...baseOrigins, ...localOrigins]));
+  const normalized = new Set(raw.map(normalizeOrigin));
+  return { isDev, isTest, raw, normalized };
 }

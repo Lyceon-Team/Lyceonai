@@ -36,7 +36,6 @@ export function ConsentGate() {
         toast({
           title: 'Access restricted',
           description: 'You must be 13 or older, or have guardian consent to use this service.',
-          variant: 'destructive',
         });
         await signOut();
       }
@@ -88,9 +87,9 @@ export function ConsentGate() {
           </div>
 
           {error && (
-            <Alert variant="destructive" data-testid="alert-error">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
+            <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+              <AlertCircle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-800">{error}</AlertDescription>
             </Alert>
           )}
 

@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DateTime } from "luxon";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { AppShell } from "@/components/layout/app-shell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   ArrowRight,
   Calendar,
@@ -28,8 +29,7 @@ import {
   getConfidenceLabel,
   type EstimateResponse,
 } from "@/lib/projectionApi";
-import { startSubscriptionCheckout } from "@/lib/billing-client";
-import { useToast } from "@/hooks/use-toast";
+import { isEntitlementDenialError } from "@/lib/api-error";
 
 interface KpiExplanation {
   ruleId: string;
@@ -110,8 +110,7 @@ function ScoreSnapshotRow({
 
 export default function LyceonDashboard() {
   const { user } = useSupabaseAuth();
-  const { toast } = useToast();
-  const [upgradePending, setUpgradePending] = useState(false);
+  const [, setLocation] = useLocation();
 
   const { data: profileData, error: profileError } = useQuery<StudyProfile | null>({
     queryKey: ["calendar-profile"],
@@ -153,9 +152,7 @@ export default function LyceonDashboard() {
     staleTime: 60000,
   });
 
-  const estimateErrorMessage = estimateError instanceof Error ? estimateError.message : "";
-  const estimatePremiumLocked =
-    estimateErrorMessage.includes("402") || estimateErrorMessage.includes("PREMIUM_REQUIRED");
+  const estimatePremiumLocked = isEntitlementDenialError(estimateError);
 
   const todayPlan: StudyPlanDay | undefined = useMemo(
     () => calendarData?.days?.find((day) => day.day_date === todayISO),
@@ -207,20 +204,8 @@ export default function LyceonDashboard() {
     return "Complete one focused SAT practice block today.";
   })();
 
-  const handleUpgradeToPremium = async () => {
-    if (upgradePending) return;
-    setUpgradePending(true);
-    try {
-      await startSubscriptionCheckout('monthly');
-    } catch (error: any) {
-      toast({
-        title: 'Unable to start checkout',
-        description: error?.message || 'Please try again in a moment.',
-        variant: 'destructive',
-      });
-    } finally {
-      setUpgradePending(false);
-    }
+  const handleUpgradeToPremium = () => {
+    setLocation("/upgrade");
   };
 
   return (
@@ -236,11 +221,12 @@ export default function LyceonDashboard() {
         </div>
 
         {(profileError || calendarError || kpiError) && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>
-              Some dashboard data failed to load. Please refresh the page or try again later.
-            </AlertDescription>
-          </Alert>
+          <RecoveryNotice
+            className="mb-6"
+            title="We couldn’t load part of your dashboard."
+            message="Try again. If this keeps happening, refresh the page."
+            onRetry={() => window.location.reload()}
+          />
         )}
 
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
@@ -309,14 +295,12 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
               ) : estimatePremiumLocked ? (
-                <div className="space-y-4">
-                  <p className="text-sm text-primary-foreground/80">
-                    Score estimate is a premium KPI surface.
-                  </p>
-                  <Button variant="secondary" className="w-fit" onClick={handleUpgradeToPremium} disabled={upgradePending}>
-                    {upgradePending ? "Starting checkout..." : "Upgrade to Premium"}
-                  </Button>
-                </div>
+                <EmptyStateCTA
+                  title="Unlock score insights"
+                  message="Score estimate is a premium KPI surface."
+                  actionLabel="View plans"
+                  onAction={handleUpgradeToPremium}
+                />
               ) : estimateData ? (
                 <div className="space-y-4">
                   <p className="text-5xl font-semibold leading-none tracking-tight">
@@ -422,14 +406,12 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-full" />
                 </div>
               ) : estimatePremiumLocked ? (
-                <div className="rounded-lg bg-muted/45 p-5 space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Detailed score breakdown is locked behind paid KPI access.
-                  </p>
-                  <Button variant="outline" onClick={handleUpgradeToPremium} disabled={upgradePending}>
-                    {upgradePending ? "Starting checkout..." : "Upgrade to Premium"}
-                  </Button>
-                </div>
+                <EmptyStateCTA
+                  title="Unlock detailed breakdown"
+                  message="Detailed score breakdown is locked behind paid KPI access."
+                  actionLabel="View plans"
+                  onAction={handleUpgradeToPremium}
+                />
               ) : (
                 <div className="space-y-4">
                   <ScoreSnapshotRow
