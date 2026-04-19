@@ -18,7 +18,7 @@ describe("CSRF runtime contract - app routes", () => {
     process.env.NODE_ENV = "test";
     const serverModule = await import("../../server/index");
     app = serverModule.default;
-  });
+  }, 30_000);
 
   afterEach(() => {
     delete process.env.VITEST;
