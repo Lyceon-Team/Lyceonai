@@ -1,0 +1,40 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/csrf-token"
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    x-request-id: 992ae23f-0a05-4cc8-9818-5f7f96841408
+    content-security-policy: "default-src 'self';base-uri 'self';frame-ancestors
+      'none';object-src 'none';img-src 'self' data: https:;font-src 'self' data:
+      https:;connect-src 'self' https: wss:;script-src 'self' 'unsafe-inline'
+      'unsafe-eval';style-src 'self' 'unsafe-inline' https:;form-action 'self'"
+    cross-origin-opener-policy: same-origin
+    cross-origin-resource-policy: same-site
+    origin-agent-cluster: ?1
+    referrer-policy: strict-origin-when-cross-origin
+    x-content-type-options: nosniff
+    x-dns-prefetch-control: off
+    x-download-options: noopen
+    x-frame-options: DENY
+    x-permitted-cross-domain-policies: none
+    x-xss-protection: "0"
+    permissions-policy: camera=(), microphone=(), geolocation=(), payment=(),
+      usb=(), browsing-topics=(), interest-cohort=()
+    access-control-allow-origin: http://localhost:5173
+    vary: Origin
+    access-control-allow-credentials: "true"
+    set-cookie: dev-csrf=1e107f1b844ed117a1c9072b149d4e18c5853ed08d4a37d3f1f2de4a17b1df31.82b55b2343224239aaacf7c99aa1033eba63b05b688e42aa317121e9488014e1;
+      Path=/; SameSite=Lax
+    content-type: application/json; charset=utf-8
+    content-length: "145"
+    etag: W/"91-/fLBPH7r+wK0e0HB+zr4eujZgk0"
+    date: Thu, 02 Apr 2026 05:27:31 GMT
+    connection: keep-alive
+    keep-alive: timeout=5
+  body:
+    type: json
+    content: '{"csrfToken":"1e107f1b844ed117a1c9072b149d4e18c5853ed08d4a37d3f1f2de4a17b1df31.82b55b2343224239aaacf7c99aa1033eba63b05b688e42aa317121e9488014e1"}'
+order: 1775107917620

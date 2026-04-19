@@ -90,5 +90,6 @@ When practice runtime is contract-disabled:
 ## Unlock acceptance gates
 
 - runtime serve/resume/progression reads only `practice_session_items` (plus `practice_sessions` header state)
-- answer writes persist session-owned answer state and longitudinal attempt history (`answer_attempts` + `student_question_attempts`)
+- answer writes persist session-owned answer state in `practice_session_items`
+- mastery writes are emitted via `apply_learning_event_to_mastery(...)` to canonical derived tables
 - if materialized items are missing after session creation, runtime fails closed with explicit contract error (no regeneration fallback)

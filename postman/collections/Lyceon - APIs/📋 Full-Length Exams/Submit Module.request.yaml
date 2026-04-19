@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/api/full-length/sessions/{{fullLengthSessionId}}/module/submit"
+method: POST
+headers:
+  Content-Type: application/json
+order: 5000

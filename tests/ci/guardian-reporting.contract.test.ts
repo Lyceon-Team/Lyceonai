@@ -11,8 +11,7 @@ const accountMocks = {
 };
 
 const kpiMocks = {
-  buildCanonicalPracticeKpiSnapshot: vi.fn(),
-  buildStudentKpiView: vi.fn(),
+  buildStudentKpiViewFromCanonical: vi.fn(),
   buildStudentFullLengthReportView: vi.fn(),
   projectGuardianFullLengthReportView: vi.fn(),
 };
@@ -223,7 +222,7 @@ vi.mock('../../apps/api/src/services/weakness-view', () => ({
 vi.mock('../../apps/api/src/services/calendar-month-view', () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
-vi.mock('../../server/services/kpi-truth-layer', () => kpiMocks);
+vi.mock('../../server/services/canonical-runtime-views', () => kpiMocks);
 
 function buildApp(role: 'guardian' | 'student' = 'guardian') {
   const app = express();
@@ -250,31 +249,7 @@ describe('Guardian reporting runtime contract', () => {
       { student_user_id: 'student-1', linked_at: '2026-03-01T00:00:00.000Z' },
     ]);
 
-    kpiMocks.buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
-      modelVersion: 'kpi-v1',
-      timezone: 'America/Chicago',
-      generatedAt: '2026-03-10T00:00:00.000Z',
-      currentWeek: {
-        practiceSessions: 1,
-        practiceMinutes: 22,
-        questionsSolved: 11,
-        accuracyPercent: 55,
-        avgSecondsPerQuestion: 88.2,
-      },
-      previousWeek: {
-        practiceSessions: 1,
-        practiceMinutes: 21,
-        questionsSolved: 10,
-        accuracyPercent: 50,
-        avgSecondsPerQuestion: 90.5,
-      },
-      recency200: {
-        totalAttempts: 11,
-        accuracyPercent: 55,
-        avgSecondsPerQuestion: 88.2,
-      },
-    });
-    kpiMocks.buildStudentKpiView.mockReturnValue({
+    kpiMocks.buildStudentKpiViewFromCanonical.mockResolvedValue({
       modelVersion: 'kpi-v1',
       timezone: 'America/Chicago',
       week: {
@@ -483,8 +458,8 @@ describe('Guardian reporting runtime contract', () => {
     expect(response.body.explanation).toBeUndefined();
     expect(response.body.tutorInteractions).toBeUndefined();
     expect(response.body.mastery_score).toBeUndefined();
-    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledTimes(1);
-    expect(kpiMocks.buildStudentKpiView).toHaveBeenCalledWith(expect.any(Object), true);
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledTimes(1);
+    expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-1', true);
     expect(response.body.progress).toEqual({
       practiceMinutesLast7Days: 120,
       sessionsLast7Days: 4,
@@ -563,7 +538,7 @@ describe('Guardian reporting runtime contract', () => {
   });
 
   it('fails closed when canonical student KPI snapshot source fails', async () => {
-    kpiMocks.buildCanonicalPracticeKpiSnapshot.mockRejectedValueOnce(new Error('snapshot_failed'));
+    kpiMocks.buildStudentKpiViewFromCanonical.mockRejectedValueOnce(new Error('snapshot_failed'));
     const router = (await import('../../server/routes/guardian-routes')).default;
     const app = buildApp('guardian');
     app.use('/api/guardian', router);
@@ -632,7 +607,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
+          accuracy: 0.25,
           mastery_score: 25,
         },
       ],
@@ -655,8 +630,8 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
-          mastery_score: 25,
+          accuracyPercent: 25,
+          status: 'weak',
         }),
       ],
     }));
@@ -672,7 +647,7 @@ describe('Guardian reporting runtime contract', () => {
     expect(weaknessViewed).toBeDefined();
   });
 
-  it('matches student weakness view output for the same student input', async () => {
+  it('projects guardian weakness output without raw mastery internals', async () => {
     weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
       ok: true,
       count: 2,
@@ -683,7 +658,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Linear Equations',
           attempts: 8,
           correct: 2,
-          accuracy: 25,
+          accuracy: 0.25,
           mastery_score: 25,
         },
         {
@@ -692,7 +667,7 @@ describe('Guardian reporting runtime contract', () => {
           skill: 'Main Idea',
           attempts: 6,
           correct: 3,
-          accuracy: 50,
+          accuracy: 0.5,
           mastery_score: 50,
         },
       ],
@@ -716,11 +691,11 @@ describe('Guardian reporting runtime contract', () => {
 
     expect(studentResponse.status).toBe(200);
     expect(guardianResponse.status).toBe(200);
-    expect(guardianResponse.body).toEqual(expect.objectContaining({
-      ok: studentResponse.body.ok,
-      count: studentResponse.body.count,
-      skills: studentResponse.body.skills,
-    }));
+    expect(guardianResponse.body.skills[0].mastery_score).toBeUndefined();
+    expect(guardianResponse.body.skills[0].accuracyPercent).toBe(25);
+    expect(guardianResponse.body.skills[0].status).toBe('weak');
+    expect(guardianResponse.body.skills[1].accuracyPercent).toBe(50);
+    expect(guardianResponse.body.skills[1].status).toBe('improving');
   });
 
   it('denies unlinked guardian summary requests and emits denied event', async () => {

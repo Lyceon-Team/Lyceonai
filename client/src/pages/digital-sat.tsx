@@ -1,5 +1,4 @@
 import { Link } from 'wouter';
-import { SEO, JsonLd, createBreadcrumbJsonLd, createFaqJsonLd, organizationJsonLd, websiteJsonLd } from '@/components/SEO';
 import { BookOpen, Calculator, ArrowRight, Brain, Target, Clock, CheckCircle2 } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
 import { Container, Hero, Card, Breadcrumb, Section } from '@/components/layout/primitives';
@@ -18,8 +17,8 @@ const faqs = [
     answer: 'Yes. Lyceon includes full-length timed SAT exam sessions alongside daily adaptive practice and review.',
   },
   {
-    question: 'How does mastery tracking work in Lyceon?',
-    answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and proficiency progression over time.',
+    question: 'How does progress tracking work in Lyceon?',
+    answer: 'Lyceon tracks skill and domain performance so students can see weak areas, improving areas, and progress over time.',
   },
   {
     question: 'How does Lisa work?',
@@ -27,26 +26,13 @@ const faqs = [
   },
   {
     question: 'What is free vs paid?',
-    answer: 'Free includes daily limits (10 practice questions and 5 Lisa messages). Paid plans remove those limits and expand guardian visibility features.',
+    answer: 'Free includes daily limits (10 practice questions and 5 tutor messages). Paid plans remove those limits and expand guardian visibility features.',
   },
 ];
 
 export default function DigitalSATPage() {
   return (
     <PublicLayout>
-      <SEO
-        title="Digital SAT Prep - Study Smarter, Score Higher"
-        description="Prepare for the Digital SAT with adaptive practice, full-length exams, mastery tracking, and Lisa."
-        canonical="https://lyceon.ai/digital-sat"
-      />
-      <JsonLd data={organizationJsonLd} />
-      <JsonLd data={websiteJsonLd} />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Digital SAT', url: 'https://lyceon.ai/digital-sat' },
-      ])} />
-      <JsonLd data={createFaqJsonLd(faqs)} />
-
       <Container>
         <Breadcrumb items={[
           { label: 'Home', href: '/' },
@@ -55,7 +41,7 @@ export default function DigitalSATPage() {
 
         <Hero
           title="Digital SAT Prep: Study Smarter, Score Higher"
-          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear mastery tracking."
+          subtitle="Build consistency with adaptive SAT-style practice, full-length test simulation, and clear progress tracking."
         />
 
         <Section title="Choose Your Focus Area">
@@ -120,20 +106,20 @@ export default function DigitalSATPage() {
                 <Brain className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Lisa Guidance</h3>
+                <h3 className="font-semibold mb-1">Tutor Guidance</h3>
                 <p className="text-muted-foreground">
-                  Lisa gives step-by-step explanations tied to SAT-style question context.
+                  Step-by-step explanations stay tied to SAT-style question context.
                 </p>
               </div>
             </div>
           </div>
         </Section>
 
-        <Section title="Scoring, Mastery, and Planning Clarity">
+        <Section title="Scoring, Progress, and Planning Clarity">
           <div className="grid sm:grid-cols-2 gap-4">
             {[
               'Digital SAT scoring explanation and adaptive module behavior',
-              'Skill and domain mastery status tracking',
+              'Skill and domain performance status tracking',
               'Guardian-linked visibility for student summaries',
               'Calendar and planning views for ongoing prep',
               'Daily limits on free plan with paid unlimited usage',

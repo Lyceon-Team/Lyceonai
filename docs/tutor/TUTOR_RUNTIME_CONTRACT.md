@@ -1,38 +1,70 @@
-# Tutor Runtime Contract (Wave 1.5)
+# Tutor Runtime Contract (Cutover)
 
-## Canonical Production Route
-- Canonical mounted tutor route: `POST /api/tutor/v2`
+## Canonical Mounted Owner
+- Canonical mounted owner: `server/routes/tutor-*` is the production owner.
 - Mount source: `server/index.ts`
-- Route handler source: `server/routes/tutor-v2.ts`
+- Production route handler: `server/routes/tutor-runtime.ts`
+- Any duplicate tutor route under `apps/api/**` must remain removed, quarantined, or unmounted.
 
-## Route Unification
-- Production runtime source of truth is `server/**`.
-- Exactly one tutor route is mounted in production: `POST /api/tutor/v2`.
-- Deprecated duplicate removed:
-  - `apps/api/src/routes/tutor-v2.ts` (unmounted legacy duplicate)
+## Live Schema Preflight (Blocking)
+- Before runtime changes, run:
+  - `pnpm tutor:schema:proof`
+  - `pnpm tutor:schema:assert`
+- Proof output is saved to `tmp/tutor_schema_proof.latest.json`.
+- Runtime wiring must use only live-proven column names and constraint-compatible values.
+- Contract gate requires:
+  - `tutor_messages.client_turn_id` exists
+  - unique idempotency index on `(student_id, conversation_id, client_turn_id)` with `client_turn_id IS NOT NULL`
+  - locked enum check constraints match the approved contract values.
 
-## Security Controls Present
-- Auth identity is server-derived (`req.user.id` from Supabase auth middleware).
-- Request-body `userId` is not accepted by tutor schema and is ignored.
-- Role enforcement is server-side (`requireStudentOrAdmin` at mount).
-- CSRF guard is present on tutor POST (`csrfGuard()` in route handler).
-- Reveal policy is server-enforced:
-  - answer/explanation blocked pre-submit
-  - answer/explanation allowed only for server-verified admin or verified prior submission
-  - reveal checks fail closed on lookup errors
+## Canonical Tutor Endpoints
+- `POST /api/tutor/conversations`
+- `POST /api/tutor/messages`
+- `GET /api/tutor/conversations/:conversationId`
+- `GET /api/tutor/conversations`
+- `POST /api/tutor/conversations/:conversationId/close`
 
-## Anti-Leak Behavior
-- Pre-submit: tutor context strips `answer` and `explanation`.
-- Active full-length exam: tutor is forced to `strategy` mode only.
-- During active full-length exam, question-specific tutoring context is suppressed and answer/explanation leakage is blocked.
+## Cutover Notes
+- Legacy `POST /api/tutor/v2` is removed from production mount.
+- Tutor runtime remains server-authoritative for auth, role, entitlement, scope resolution, and anti-leak behavior.
+- Guardians are denied tutor access.
+- Admin is allowed by explicit override policy.
 
-## Verification Semantics
-- Verified retry is represented by a server-side `answer_attempts` record for `(user_id, question_id)`.
-- Tutor open alone does not perform mastery table writes.
-- Tutor-related downstream reveal behavior is unlocked only after server-verified retry evidence.
-- Full-length exam guard takes precedence over retry reveal (strategy-only during active exam).
+## Runtime Persistence Order
+For successful append-turn requests (`POST /api/tutor/messages`), writes are authoritative in this order:
+1. Persist student message (`tutor_messages`)
+2. Persist instructional assignment (`tutor_instruction_assignments`)
+3. Invoke orchestration/model layer
+4. Run anti-leak checks
+5. Persist tutor message (`tutor_messages`)
+6. Persist question links (`tutor_question_links`)
+7. Persist instruction exposures (`tutor_instruction_exposures`)
 
-## Response Metadata Contract
-- `metadata.mode`: effective mode used by server (`strategy` forced during active full test).
-- `metadata.requestedMode`: original client-requested mode.
-- `metadata.fullTestStrategyEnforced`: boolean enforcement flag.
+Message and policy-assignment persistence are blocking for success.
+
+## Idempotent Retry Contract
+- `client_turn_id` is the append-turn idempotency key.
+- Duplicate retries must not create duplicate student turn rows.
+- Recovery resumes from existing logical turn when safe; otherwise runtime returns explicit recoverable failure:
+
+```json
+{
+  "error": {
+    "code": "TUTOR_RECOVERABLE_RETRY_REQUIRED",
+    "message": "The tutor turn could not be completed safely. Please retry.",
+    "retryable": true
+  }
+}
+```
+
+## Rate Limiting Policy
+- Primary hard throttle key: `student_id`
+- Secondary abuse guard: IP fallback signal for burst abuse patterns
+- DB tutor budget gate (`check_and_reserve_tutor_budget` / `finalize_tutor_usage`) remains authoritative for usage/cost
+- Admin bypasses tutor budget quota gate, but does not bypass hard abuse throttles
+
+## Anti-Leak Rules
+- Pre-submit practice: direct answer leakage is blocked.
+- Review-safe contexts: explanations allowed, internal metadata disallowed.
+- Full-length live states (`not_started`, `in_progress`, `break`): tutor unavailable.
+- Full-length review explanations only after completion/unlock.

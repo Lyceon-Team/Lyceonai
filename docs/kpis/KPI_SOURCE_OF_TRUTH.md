@@ -9,11 +9,10 @@
 - Runtime mounts:
   - `GET /api/progress/kpis` -> `server/routes/legacy/progress.ts`.
   - `server/routes/legacy/progress.ts` is intentionally active runtime code despite its file path name.
-  - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts`.
+  - `GET /api/progress/projection` -> `server/routes/legacy/progress.ts` (returns `estimate` payload key).
   - `GET /api/guardian/students/:studentId/summary` -> `server/routes/guardian-routes.ts`.
   - `GET /api/full-length/sessions/:sessionId/report` -> `server/routes/full-length-exam-routes.ts`.
   - `GET /api/guardian/students/:studentId/exams/full-length/:sessionId/report` -> `server/routes/guardian-routes.ts`.
-  - `GET /api/admin/kpis/student/:studentId` -> `server/routes/admin-stats-routes.ts`.
 
 ## Segmentation Rules
 - Student view:
@@ -23,9 +22,9 @@
   - Receives linked-student summary metrics only.
   - Receives guardian-safe full-test report (estimated scaled scores + explained KPI list).
   - Never receives question-level dumps, tutor interactions, mastery scores, or raw delta payloads.
-- Internal/admin view:
-  - Receives canonical student KPI snapshot through `/api/admin/kpis/student/:studentId`.
-  - Admin bypasses paid gating and can inspect full canonical KPI payload.
+- Admin access:
+  - No admin-only KPI endpoint is mounted in this runtime.
+  - Admins can access the same authenticated student/guardian KPI surfaces gated by role middleware.
 
 ## Gating Rules
 - Premium KPI surfaces (explicit):
@@ -66,7 +65,7 @@ No LLM-generated KPI explanations are used in runtime responses.
 
 ## Deprecated or Conflicting Legacy Paths
 - Deprecated active KPI computation duplication removed:
-  - Guardian summary no longer computes its own ad hoc KPI math from `answer_attempts` + `question_ids`.
+  - Guardian summary no longer computes its own ad hoc KPI math from `practice_session_items` + `question_ids`.
   - Student and guardian summaries now derive from `buildCanonicalPracticeKpiSnapshot`.
 - Guardian calendar no longer computes guardian-local attempt aggregates; runtime projects the canonical student month payload (`buildCalendarMonthView`) with guardian visibility filtering only.
 - Legacy/misaligned field usage retired from active KPI path:
@@ -79,8 +78,19 @@ No LLM-generated KPI explanations are used in runtime responses.
 - `server/routes/legacy/progress.ts`
 - `server/routes/guardian-routes.ts`
 - `server/routes/full-length-exam-routes.ts`
-- `server/routes/admin-stats-routes.ts`
 - `apps/api/src/routes/mastery.ts`
+
+## Mounted Route Ownership Audit
+This audit is based on mounted routes in `server/index.ts` and is required before declaring canonical status.
+
+- Canonical (student KPI surfaces):
+`/api/progress/kpis`, `/api/progress/projection`, `/api/full-length/sessions/:sessionId/report`
+- Canonical (guardian KPI surfaces):
+`/api/guardian/students/:studentId/summary`, `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`
+- Compatibility-only:
+None for KPI product truth.
+- Dead/disabled:
+None for KPI product truth.
 
 
 

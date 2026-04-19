@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
+<<<<<<< HEAD
 import { csrfFetch } from '@/lib/csrf';
 import type { ConsentSource } from '@shared/legal-consent';
 
@@ -21,6 +22,21 @@ export interface SignupLegalConsent {
   privacyPolicyAccepted: boolean;
   consentSource?: ConsentSource;
 }
+=======
+import { clearCsrfToken, csrfFetch } from '@/lib/csrf';
+
+type SignUpResult =
+  | {
+    status: 'authenticated';
+    message?: string;
+    requiresConsent?: boolean;
+  }
+  | {
+    status: 'verification_required';
+    message: string;
+    requiresConsent?: boolean;
+  };
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
 
 interface SupabaseAuthContextType {
   user: SupabaseProfile | null;
@@ -29,7 +45,12 @@ interface SupabaseAuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
+<<<<<<< HEAD
   signUp: (email: string, password: string, legalConsent: SignupLegalConsent, displayName?: string) => Promise<SignupResult>;
+=======
+  requiresConsent: boolean;
+  signUp: (email: string, password: string, displayName?: string, isUnder13?: boolean, guardianEmail?: string, role?: 'student' | 'guardian') => Promise<SignUpResult>;
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: (legalConsent: SignupLegalConsent) => Promise<void>;
   signOut: () => Promise<void>;
@@ -45,6 +66,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true); // Default true as requested
   const queryClient = useQueryClient();
   const isInitializing = useRef(true); // Flag to prevent auth state changes during init
+  const clearAuthState = () => {
+    clearCsrfToken();
+    setUser(null);
+  };
 
   // Fetch user profile from backend
   const fetchUserFromBackend = async (): Promise<SupabaseProfile | null> => {
@@ -66,12 +91,17 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (refreshResp.ok) {
+          clearCsrfToken();
           console.log('[AUTH] Token refreshed, retrying user fetch');
           response = await tryFetchUserProfile();
+        } else {
+          clearAuthState();
+          return null;
         }
       }
 
       if (response.status === 401 || response.status === 403) {
+        clearAuthState();
         return null;
       }
 
@@ -123,7 +153,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
       console.log('[AUTH] No existing backend cookie session found');
       if (mounted) {
-        setUser(null);
+        clearAuthState();
         setAuthLoading(false);
         isInitializing.current = false;
       }
@@ -141,7 +171,14 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     password: string,
     legalConsent: SignupLegalConsent,
     displayName?: string,
+<<<<<<< HEAD
   ): Promise<SignupResult> => {
+=======
+    isUnder13: boolean = false,
+    guardianEmail?: string,
+    role: 'student' | 'guardian' = 'student'
+  ): Promise<SignUpResult> => {
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
     setAuthLoading(true);
     try {
       const response = await csrfFetch('/api/auth/signup', {
@@ -167,6 +204,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Failed to sign up');
       }
 
+<<<<<<< HEAD
       const outcome = data?.outcome as SignupOutcome | undefined;
       if (outcome === 'verification_required') {
         setUser(null);
@@ -190,6 +228,37 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         message: data?.message,
         nextPath: data?.nextPath,
         user: data?.user,
+=======
+      if (data?.status === 'verification_required') {
+        clearAuthState();
+        return {
+          status: 'verification_required',
+          message: data?.message || 'Check your email to confirm your account before signing in.',
+          requiresConsent: !!data?.requiresConsent,
+        };
+      }
+
+      if (data?.status !== 'authenticated') {
+        throw new Error('Unexpected signup response from server');
+      }
+
+      clearCsrfToken();
+
+      // Backend set canonical HTTP-only cookies for authenticated signups.
+      // Fetch user from backend using the newly set cookies.
+      const backendUser = await fetchUserFromBackend();
+      if (backendUser) {
+        setUser(backendUser);
+      } else {
+        clearAuthState();
+        throw new Error('Failed to load user profile after sign-up');
+      }
+
+      return {
+        status: 'authenticated',
+        message: data?.message,
+        requiresConsent: !!data?.requiresConsent,
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
       };
     } catch (error: any) {
       console.error('[AUTH] Sign up error:', error);
@@ -216,11 +285,13 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data?.error || 'Invalid email or password');
       }
 
+      clearCsrfToken();
+
       const backendUser = await fetchUserFromBackend();
       if (backendUser) {
         setUser(backendUser);
       } else {
-        setUser(null);
+        clearAuthState();
         throw new Error('Failed to load user profile after sign-in');
       }
 
@@ -263,7 +334,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Sign out failed with status ${response.status}`);
       }
 
-      setUser(null);
+      clearAuthState();
       queryClient.invalidateQueries();
     } catch (error: any) {
       console.error('[AUTH] Sign out error:', error);

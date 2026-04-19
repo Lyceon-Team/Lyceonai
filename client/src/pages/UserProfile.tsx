@@ -26,7 +26,11 @@ import { useLocation } from 'wouter';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 import { apiRequest } from '@/lib/queryClient';
 import { SUPPORT_EMAIL } from '@/lib/support-contact';
+import { openBillingPortal } from '@/lib/billing-client';
 import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
+import { SessionNotice } from '@/components/feedback/SessionNotice';
+import { isSessionError, toUserFacingMessage } from '@/lib/api-error';
 
 interface UserProfile {
   id: string;
@@ -38,6 +42,23 @@ interface UserProfile {
   createdAt?: string;
   lastLoginAt?: string;
   studentLinkCode?: string | null;
+}
+
+interface BillingStatusResponse {
+  accountId: string | null;
+  plan: string;
+  stripeStatus: string;
+  currentPeriodEnd: string | null;
+  stripeSubscriptionId: string | null;
+  effectiveAccess: boolean;
+  needsPaymentUpdate: boolean;
+  requiresStudentSubscription?: boolean;
+  isPaid: boolean;
+  premiumSource?: 'student' | 'guardian' | 'both' | 'none';
+  hasLinkedStudent?: boolean;
+  linkRequiredForPremium?: boolean;
+  billingOwnerRole?: 'student' | 'guardian';
+  lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
 
@@ -162,7 +183,7 @@ export function formatMemberSince(createdAt?: string): string {
 }
 
 // Note: UserStats are not currently tracked by backend
-// Progress tracking uses /api/progress/kpis and /api/progress/projection
+// Progress tracking uses /api/progress/kpis and /api/progress/projection (score estimate)
 // These features are temporarily disabled and shown as placeholders
 
 export default function UserProfile() {
@@ -199,6 +220,17 @@ export default function UserProfile() {
     enabled: !!user,
   });
 
+  const {
+    data: billingStatus,
+    isLoading: billingStatusLoading,
+    isError: billingStatusError,
+    error: billingStatusErrorObj,
+    refetch: refetchBillingStatus,
+  } = useQuery<BillingStatusResponse>({
+    queryKey: ['/api/billing/status'],
+    enabled: !!user,
+  });
+
   // Logout handler
   const handleLogout = async () => {
     try {
@@ -210,10 +242,10 @@ export default function UserProfile() {
         description: "You have been successfully logged out.",
       });
     } catch (error) {
+      const notice = toUserFacingMessage(error);
       toast({
-        title: "Logout Failed",
-        description: "Failed to log out. Please try again.",
-        variant: "destructive",
+        title: notice.title,
+        description: notice.message,
       });
     }
   };
@@ -280,10 +312,21 @@ export default function UserProfile() {
       });
     },
     onError: (error) => {
+      const notice = toUserFacingMessage(error);
       toast({
-        title: 'Unable to save notification preferences',
-        description: error instanceof Error ? error.message : 'Please try again.',
-        variant: 'destructive',
+        title: notice.title,
+        description: error instanceof Error ? error.message : notice.message,
+      });
+    },
+  });
+
+  const openPortalMutation = useMutation({
+    mutationFn: async () => openBillingPortal(),
+    onError: (error) => {
+      const notice = toUserFacingMessage(error);
+      toast({
+        title: notice.title,
+        description: error instanceof Error ? error.message : notice.message,
       });
     },
   });
@@ -291,6 +334,14 @@ export default function UserProfile() {
   const roleSwitchSubject = `Role update request: ${currentRole} -> ${roleSwitchTarget}`;
   const roleSwitchMailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(roleSwitchSubject)}&body=${encodeURIComponent(roleSwitchMessage)}`;
   const roleSwitchPreview = [`To: ${SUPPORT_EMAIL}`, `Subject: ${roleSwitchSubject}`, '', roleSwitchMessage].join('\n');
+  const hasManageableSubscription = !!billingStatus && (
+    billingStatus.effectiveAccess ||
+    billingStatus.needsPaymentUpdate ||
+    !!billingStatus.stripeSubscriptionId ||
+    billingStatus.stripeStatus === 'active' ||
+    billingStatus.stripeStatus === 'trialing' ||
+    billingStatus.stripeStatus === 'past_due'
+  );
 
   if (profileLoading) {
     return (
@@ -306,23 +357,23 @@ export default function UserProfile() {
   }
 
   if (profileError) {
+    const profileMessage = (profileErrorObj as Error)?.message ?? toUserFacingMessage(profileErrorObj).message;
     return (
       <AppShell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
-          <Card className="max-w-md w-full text-center">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <AlertCircle className="h-5 w-5 text-red-500" />
-                Unable to load profile
-              </CardTitle>
-              <CardDescription>
-                {(profileErrorObj as Error)?.message ?? "Please try again."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => refetchProfile()}>Retry</Button>
-            </CardContent>
-          </Card>
+          {isSessionError(profileErrorObj) ? (
+            <SessionNotice
+              title="Your profile session needs to be refreshed."
+              message={profileMessage}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              title="We couldn’t load your profile."
+              message={profileMessage}
+              onRetry={() => void refetchProfile()}
+            />
+          )}
         </div>
       </AppShell>
     );
@@ -708,17 +759,23 @@ export default function UserProfile() {
                     <AlertDescription>Loading saved notification preferences...</AlertDescription>
                   </Alert>
                 ) : notificationPreferencesError ? (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="flex items-center justify-between gap-3">
-                      <span>
-                        {(notificationPreferencesErrorObj as Error)?.message ?? 'Failed to load notification preferences.'}
-                      </span>
-                      <Button variant="outline" size="sm" onClick={() => refetchNotificationPreferences()}>
-                        Retry
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
+                  isSessionError(notificationPreferencesErrorObj) ? (
+                    <SessionNotice
+                      message={
+                        (notificationPreferencesErrorObj as Error)?.message ??
+                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                      }
+                      onRefreshSession={() => window.location.reload()}
+                    />
+                  ) : (
+                    <RecoveryNotice
+                      message={
+                        (notificationPreferencesErrorObj as Error)?.message ??
+                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                      }
+                      onRetry={() => void refetchNotificationPreferences()}
+                    />
+                  )
                 ) : (
                   <div className="space-y-6">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -943,20 +1000,63 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Plan details are not runtime-backed on this page yet. Use the guardian dashboard paywall and billing portal flow for live subscription state.
-                  </AlertDescription>
-                </Alert>
+                {billingStatusLoading ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>Loading live billing status...</AlertDescription>
+                  </Alert>
+                ) : billingStatusError ? (
+                  isSessionError(billingStatusErrorObj) ? (
+                    <SessionNotice
+                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      onRefreshSession={() => window.location.reload()}
+                    />
+                  ) : (
+                    <RecoveryNotice
+                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      onRetry={() => void refetchBillingStatus()}
+                    />
+                  )
+                ) : (
+                  <>
+                    <Alert>
+                      <Star className="h-4 w-4" />
+                      <AlertDescription>
+                        Subscription access is server-authoritative and sourced from the canonical entitlement state.
+                      </AlertDescription>
+                    </Alert>
 
-                <Alert>
-                  <Star className="h-4 w-4" />
-                  <AlertDescription>
-                    Billing management is currently handled outside this settings surface.
-                    When in-product controls are fully runtime-backed, they will appear here.
-                  </AlertDescription>
-                </Alert>
+                    <div className="rounded-lg border p-4 space-y-2">
+                      <p className="text-sm text-muted-foreground">Current status</p>
+                      <p className="font-medium">
+                        {billingStatus?.stripeStatus ? billingStatus.stripeStatus.replace('_', ' ') : 'unknown'}
+                      </p>
+                      {billingStatus?.linkRequiredForPremium && (
+                        <p className="text-sm text-muted-foreground">
+                          Link a student account first to unlock guardian premium billing.
+                        </p>
+                      )}
+                    </div>
+
+                    {hasManageableSubscription ? (
+                      <Button
+                        onClick={() => openPortalMutation.mutate()}
+                        disabled={openPortalMutation.isPending}
+                        data-testid="button-manage-subscription"
+                      >
+                        {openPortalMutation.isPending ? 'Opening portal...' : 'Manage Subscription'}
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() => navigate('/upgrade')}
+                        disabled={!!billingStatus?.linkRequiredForPremium}
+                        data-testid="button-upgrade-subscription"
+                      >
+                        View Plans
+                      </Button>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

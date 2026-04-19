@@ -38,7 +38,9 @@ const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
 const TrustEvidence = lazy(() => import("@/pages/trust-evidence"));
+const TutorPage = lazy(() => import("@/pages/tutor"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
+const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
 const GuardianConsentVerify = lazy(() => import("@/pages/guardian-consent-verify"));
@@ -76,6 +78,7 @@ function Router() {
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
         <Route path="/trust/evidence" component={TrustEvidence} />
+        <Route path="/tutor" component={TutorPage} />
         <Route path="/legal" component={LegalHub} />
         <Route path="/legal/:slug" component={LegalDoc} />
 
@@ -96,6 +99,7 @@ function Router() {
         <Route path="/math-practice" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/reading-writing-practice" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/mastery" component={() => <RequireRole allow={['student', 'admin']}><MasteryPage /></RequireRole>} />
+        <Route path="/upgrade" component={() => <RequireRole allow={['student', 'admin']}><UpgradePage /></RequireRole>} />
         <Route path="/review-errors" component={() => <RequireRole allow={['student', 'admin']}><ReviewErrors /></RequireRole>} />
         <Route path="/flow-cards" component={() => <RequireRole allow={['student', 'admin']}><FlowCards /></RequireRole>} />
         <Route path="/structured-practice" component={() => <RequireRole allow={['student', 'admin']}><StructuredPractice /></RequireRole>} />
@@ -110,15 +114,6 @@ function Router() {
         <Route path="/guardian/verify-consent" component={GuardianConsentVerify} />
         <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
         <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
-
-        {/* Admin product surface shelved: keep routes non-functional */}
-        <Route path="/admin">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-dashboard">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-system-config">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-questions">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-review">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-portal">{() => <Redirect to="/dashboard" replace />}</Route>
-        <Route path="/admin-review-v2">{() => <Redirect to="/dashboard" replace />}</Route>
 
         {/* 404 */}
         <Route component={NotFound} />

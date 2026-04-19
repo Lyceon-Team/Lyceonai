@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/review-errors/sessions"
+method: POST
+headers:
+  Content-Type: application/json
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var json = pm.response.json();
+          if (json.sessionId) pm.collectionVariables.set('reviewSessionId', json.sessionId);
+      }
+    language: text/javascript
+order: 2000

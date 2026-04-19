@@ -6,11 +6,13 @@
  * REQUIREMENT: Only apps/api/src/services/mastery-write.ts should contain
  * write operations (.insert, .update, .upsert, rpc) on canonical mastery tables:
  * - student_skill_mastery
- * - student_cluster_mastery
+ * - student_domain_mastery
+ * - student_section_projections
+ * - student_kpi_rollups_current
  * 
  * INVARIANTS ENFORCED:
  * 1. No direct SQL writes to mastery tables outside mastery-write.ts
- * 2. No RPC calls to upsert_skill_mastery or upsert_cluster_mastery outside mastery-write.ts
+ * 2. No RPC calls to apply_learning_event_to_mastery outside mastery-write.ts
  * 3. Read functions must not mutate mastery state
  * 
  * This is a deterministic, filesystem-only test that scans source code
@@ -54,7 +56,12 @@ function getNormalizedChokePoint(repoRoot: string): string {
 }
 
 // Canonical mastery tables
-const MASTERY_TABLES = ["student_skill_mastery", "student_cluster_mastery"];
+const MASTERY_TABLES = [
+  "student_skill_mastery",
+  "student_domain_mastery",
+  "student_section_projections",
+  "student_kpi_rollups_current",
+];
 
 // Write operation patterns to detect
 const WRITE_PATTERNS = [
@@ -67,8 +74,7 @@ const WRITE_PATTERNS = [
 
 // Specific mastery RPC calls that should only be in choke point
 const MASTERY_RPC_CALLS = [
-  "upsert_skill_mastery",
-  "upsert_cluster_mastery",
+  "apply_learning_event_to_mastery",
 ];
 
 // Directories to scan
@@ -230,7 +236,7 @@ describe("Mastery Write Paths Guard", () => {
         }),
         "",
         "ACTION REQUIRED:",
-        "  - Move write logic to applyMasteryUpdate() in mastery-write.ts",
+        "  - Move write logic to applyLearningEventToMastery() in mastery-write.ts",
         "  - Update the code to call the choke point instead of direct writes",
         "",
       ].join("\n");
@@ -251,14 +257,10 @@ describe("Mastery Write Paths Guard", () => {
 
     const content = fs.readFileSync(chokePointPath, "utf-8");
 
-    // Verify it contains the canonical RPC calls
-    expect(content).toContain("upsert_skill_mastery");
-    expect(content).toContain("upsert_cluster_mastery");
-    expect(content).toContain("student_skill_mastery");
-    expect(content).toContain("student_cluster_mastery");
-
+    // Verify it contains the canonical RPC call
+    expect(content).toContain("apply_learning_event_to_mastery");
     // Verify it contains the canonical function
-    expect(content).toContain("applyMasteryUpdate");
+    expect(content).toContain("applyLearningEventToMastery");
     
     // Verify it has proper documentation
     expect(content).toContain("CANONICAL MASTERY WRITE CHOKE POINT");
@@ -331,7 +333,7 @@ describe("Mastery Write Paths Guard", () => {
         "",
         "ACTION REQUIRED:",
         "  - Remove direct RPC calls",
-        "  - Use applyMasteryUpdate() from mastery-write.ts instead",
+        "  - Use applyLearningEventToMastery() from mastery-write.ts instead",
         "",
       ].join("\n");
 

@@ -231,8 +231,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       console.error("Failed to fetch session state:", error);
       const message = error instanceof Error ? error.message : "Failed to load exam session";
       toast({
-        variant: "destructive",
-        title: "Error",
+        title: "Unable to load exam session",
         description: message,
       });
       setLoading(false);
@@ -321,8 +320,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       console.error("Failed to submit answer:", error);
       const message = error instanceof Error ? error.message : "Failed to submit answer";
       toast({
-        variant: "destructive",
-        title: "Error",
+        title: "Unable to submit answer",
         description: message,
       });
     } finally {
@@ -366,8 +364,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       console.error("Failed to submit module:", error);
       const message = error instanceof Error ? error.message : "Failed to submit module";
       toast({
-        variant: "destructive",
-        title: "Error",
+        title: "Unable to submit module",
         description: message,
       });
     } finally {
@@ -409,8 +406,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       console.error("Failed to continue from break:", error);
       const message = error instanceof Error ? error.message : "Failed to continue from break";
       toast({
-        variant: "destructive",
-        title: "Error",
+        title: "Unable to continue from break",
         description: message,
       });
     } finally {
@@ -458,8 +454,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       console.error("Failed to complete exam:", error);
       const message = error instanceof Error ? error.message : "Failed to complete exam";
       toast({
-        variant: "destructive",
-        title: "Error",
+        title: "Unable to complete exam",
         description: message,
       });
     } finally {
@@ -534,7 +529,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       <AppShell>
         <div className="container mx-auto px-4 py-8 max-w-5xl">
           <div className="text-center py-12">
-            <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
+            <AlertCircle className="h-16 w-16 text-amber-600 mx-auto mb-4" />
             <h1 className="text-2xl font-bold mb-4">Session Not Found</h1>
             <Button onClick={onExit || (() => window.location.href = "/full-test")}>
               Return to Full Test
@@ -693,7 +688,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
               </span>
             </div>
             {displayTime !== null && displayTime < 5 * 60 * 1000 && (
-              <Badge variant="destructive">Low Time</Badge>
+              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+                Low Time
+              </Badge>
             )}
           </div>
         </div>

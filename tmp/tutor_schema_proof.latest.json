@@ -1,0 +1,1276 @@
+{
+  "generated_at": "2026-04-09T12:26:31.081Z",
+  "table_columns": {
+    "tutor_conversations": [
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "entry_mode",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "source_surface",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "source_session_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "source_session_item_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "source_question_row_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "source_question_canonical_id",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 8
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "policy_family",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 9
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "policy_variant",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 10
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "policy_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 11
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "prompt_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 12
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "assignment_mode",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 13
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "assignment_key",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 14
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "initialization_snapshot",
+        "data_type": "jsonb",
+        "udt_name": "jsonb",
+        "is_nullable": "NO",
+        "column_default": "'{}'::jsonb",
+        "ordinal_position": 15
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "status",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": "'active'::text",
+        "ordinal_position": 16
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 17
+      },
+      {
+        "table_name": "tutor_conversations",
+        "column_name": "updated_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 18
+      }
+    ],
+    "tutor_messages": [
+      {
+        "table_name": "tutor_messages",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "role",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "content_kind",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": "'message'::text",
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "message",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "content_json",
+        "data_type": "jsonb",
+        "udt_name": "jsonb",
+        "is_nullable": "NO",
+        "column_default": "'{}'::jsonb",
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "explanation_level",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 8
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "source_session_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 9
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "source_session_item_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 10
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "source_question_row_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 11
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "source_question_canonical_id",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 12
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 13
+      },
+      {
+        "table_name": "tutor_messages",
+        "column_name": "client_turn_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 14
+      }
+    ],
+    "tutor_instruction_assignments": [
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "related_message_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "source_session_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "source_session_item_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "source_question_row_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "source_question_canonical_id",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 8
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "policy_family",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 9
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "policy_variant",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 10
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "policy_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 11
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "prompt_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 12
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "assignment_mode",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 13
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "assignment_key",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 14
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "reason_snapshot",
+        "data_type": "jsonb",
+        "udt_name": "jsonb",
+        "is_nullable": "NO",
+        "column_default": "'{}'::jsonb",
+        "ordinal_position": 15
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 16
+      }
+    ],
+    "tutor_question_links": [
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "source_question_row_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "source_question_canonical_id",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "related_question_row_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "related_question_canonical_id",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "relationship_type",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 8
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "difficulty_delta",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 9
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "reason_code",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 10
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "link_snapshot",
+        "data_type": "jsonb",
+        "udt_name": "jsonb",
+        "is_nullable": "NO",
+        "column_default": "'{}'::jsonb",
+        "ordinal_position": 11
+      },
+      {
+        "table_name": "tutor_question_links",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 12
+      }
+    ],
+    "tutor_memory_summaries": [
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "summary_type",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "summary_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "content_json",
+        "data_type": "jsonb",
+        "udt_name": "jsonb",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "source_window_start",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "source_window_end",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_memory_summaries",
+        "column_name": "created_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 8
+      }
+    ],
+    "tutor_instruction_exposures": [
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": "gen_random_uuid()",
+        "ordinal_position": 1
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "assignment_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 2
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "conversation_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 3
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "student_id",
+        "data_type": "uuid",
+        "udt_name": "uuid",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 4
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "exposure_type",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 5
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "content_variant_key",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 6
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "content_version",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 7
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "rendered_difficulty",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 8
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "hint_depth",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 9
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "tone_style",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 10
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "sequence_ordinal",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "NO",
+        "column_default": null,
+        "ordinal_position": 11
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "shown_at",
+        "data_type": "timestamp with time zone",
+        "udt_name": "timestamptz",
+        "is_nullable": "NO",
+        "column_default": "now()",
+        "ordinal_position": 12
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "column_name": "consumed_ms",
+        "data_type": "integer",
+        "udt_name": "int4",
+        "is_nullable": "YES",
+        "column_default": null,
+        "ordinal_position": 13
+      }
+    ]
+  },
+  "indexes": {
+    "tutor_conversations": [
+      {
+        "tablename": "tutor_conversations",
+        "indexname": "idx_tutor_conversations_source_question_canonical",
+        "indexdef": "CREATE INDEX idx_tutor_conversations_source_question_canonical ON public.tutor_conversations USING btree (source_question_canonical_id)"
+      },
+      {
+        "tablename": "tutor_conversations",
+        "indexname": "idx_tutor_conversations_source_question_row",
+        "indexdef": "CREATE INDEX idx_tutor_conversations_source_question_row ON public.tutor_conversations USING btree (source_question_row_id)"
+      },
+      {
+        "tablename": "tutor_conversations",
+        "indexname": "idx_tutor_conversations_student_created",
+        "indexdef": "CREATE INDEX idx_tutor_conversations_student_created ON public.tutor_conversations USING btree (student_id, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_conversations",
+        "indexname": "idx_tutor_conversations_student_status",
+        "indexdef": "CREATE INDEX idx_tutor_conversations_student_status ON public.tutor_conversations USING btree (student_id, status, updated_at DESC)"
+      },
+      {
+        "tablename": "tutor_conversations",
+        "indexname": "tutor_conversations_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_conversations_pkey ON public.tutor_conversations USING btree (id)"
+      }
+    ],
+    "tutor_messages": [
+      {
+        "tablename": "tutor_messages",
+        "indexname": "idx_tutor_messages_conversation_created",
+        "indexdef": "CREATE INDEX idx_tutor_messages_conversation_created ON public.tutor_messages USING btree (conversation_id, created_at)"
+      },
+      {
+        "tablename": "tutor_messages",
+        "indexname": "idx_tutor_messages_source_question_canonical",
+        "indexdef": "CREATE INDEX idx_tutor_messages_source_question_canonical ON public.tutor_messages USING btree (source_question_canonical_id)"
+      },
+      {
+        "tablename": "tutor_messages",
+        "indexname": "idx_tutor_messages_source_question_row",
+        "indexdef": "CREATE INDEX idx_tutor_messages_source_question_row ON public.tutor_messages USING btree (source_question_row_id)"
+      },
+      {
+        "tablename": "tutor_messages",
+        "indexname": "idx_tutor_messages_student_created",
+        "indexdef": "CREATE INDEX idx_tutor_messages_student_created ON public.tutor_messages USING btree (student_id, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_messages",
+        "indexname": "tutor_messages_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_messages_pkey ON public.tutor_messages USING btree (id)"
+      },
+      {
+        "tablename": "tutor_messages",
+        "indexname": "uq_tutor_messages_student_conversation_turn",
+        "indexdef": "CREATE UNIQUE INDEX uq_tutor_messages_student_conversation_turn ON public.tutor_messages USING btree (student_id, conversation_id, client_turn_id) WHERE (client_turn_id IS NOT NULL)"
+      }
+    ],
+    "tutor_instruction_assignments": [
+      {
+        "tablename": "tutor_instruction_assignments",
+        "indexname": "idx_tutor_instruction_assignments_conversation_created",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_assignments_conversation_created ON public.tutor_instruction_assignments USING btree (conversation_id, created_at)"
+      },
+      {
+        "tablename": "tutor_instruction_assignments",
+        "indexname": "idx_tutor_instruction_assignments_source_question_canonical",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_assignments_source_question_canonical ON public.tutor_instruction_assignments USING btree (source_question_canonical_id)"
+      },
+      {
+        "tablename": "tutor_instruction_assignments",
+        "indexname": "idx_tutor_instruction_assignments_source_question_row",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_assignments_source_question_row ON public.tutor_instruction_assignments USING btree (source_question_row_id)"
+      },
+      {
+        "tablename": "tutor_instruction_assignments",
+        "indexname": "idx_tutor_instruction_assignments_student_created",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_assignments_student_created ON public.tutor_instruction_assignments USING btree (student_id, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_instruction_assignments",
+        "indexname": "tutor_instruction_assignments_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_instruction_assignments_pkey ON public.tutor_instruction_assignments USING btree (id)"
+      }
+    ],
+    "tutor_question_links": [
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_conversation_created",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_conversation_created ON public.tutor_question_links USING btree (conversation_id, created_at)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_related_question_canonical",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_related_question_canonical ON public.tutor_question_links USING btree (related_question_canonical_id)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_related_question_row",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_related_question_row ON public.tutor_question_links USING btree (related_question_row_id)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_source_question_canonical",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_source_question_canonical ON public.tutor_question_links USING btree (source_question_canonical_id)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_source_question_row",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_source_question_row ON public.tutor_question_links USING btree (source_question_row_id)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "idx_tutor_question_links_student_created",
+        "indexdef": "CREATE INDEX idx_tutor_question_links_student_created ON public.tutor_question_links USING btree (student_id, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "indexname": "tutor_question_links_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_question_links_pkey ON public.tutor_question_links USING btree (id)"
+      }
+    ],
+    "tutor_memory_summaries": [
+      {
+        "tablename": "tutor_memory_summaries",
+        "indexname": "idx_tutor_memory_summaries_student_created",
+        "indexdef": "CREATE INDEX idx_tutor_memory_summaries_student_created ON public.tutor_memory_summaries USING btree (student_id, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_memory_summaries",
+        "indexname": "idx_tutor_memory_summaries_student_type_created",
+        "indexdef": "CREATE INDEX idx_tutor_memory_summaries_student_type_created ON public.tutor_memory_summaries USING btree (student_id, summary_type, created_at DESC)"
+      },
+      {
+        "tablename": "tutor_memory_summaries",
+        "indexname": "tutor_memory_summaries_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_memory_summaries_pkey ON public.tutor_memory_summaries USING btree (id)"
+      }
+    ],
+    "tutor_instruction_exposures": [
+      {
+        "tablename": "tutor_instruction_exposures",
+        "indexname": "idx_tutor_instruction_exposures_assignment",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_exposures_assignment ON public.tutor_instruction_exposures USING btree (assignment_id, sequence_ordinal)"
+      },
+      {
+        "tablename": "tutor_instruction_exposures",
+        "indexname": "idx_tutor_instruction_exposures_conversation",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_exposures_conversation ON public.tutor_instruction_exposures USING btree (conversation_id, shown_at)"
+      },
+      {
+        "tablename": "tutor_instruction_exposures",
+        "indexname": "idx_tutor_instruction_exposures_student",
+        "indexdef": "CREATE INDEX idx_tutor_instruction_exposures_student ON public.tutor_instruction_exposures USING btree (student_id, shown_at DESC)"
+      },
+      {
+        "tablename": "tutor_instruction_exposures",
+        "indexname": "tutor_instruction_exposures_pkey",
+        "indexdef": "CREATE UNIQUE INDEX tutor_instruction_exposures_pkey ON public.tutor_instruction_exposures USING btree (id)"
+      }
+    ]
+  },
+  "checks": {
+    "tutor_conversations": [
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_assignment_mode_check",
+        "constraint_def": "CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text])))"
+      },
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_entry_mode_check",
+        "constraint_def": "CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text])))"
+      },
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_source_surface_check",
+        "constraint_def": "CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text])))"
+      },
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_status_check",
+        "constraint_def": "CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text])))"
+      }
+    ],
+    "tutor_messages": [
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "chk_tutor_messages_client_turn_id_student_only",
+        "constraint_def": "CHECK ((((role = 'student'::text) AND (client_turn_id IS NOT NULL)) OR (role = ANY (ARRAY['tutor'::text, 'system'::text]))))"
+      },
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_content_kind_check",
+        "constraint_def": "CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text])))"
+      },
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_explanation_level_check",
+        "constraint_def": "CHECK (((explanation_level >= 1) AND (explanation_level <= 5)))"
+      },
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_role_check",
+        "constraint_def": "CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text])))"
+      }
+    ],
+    "tutor_instruction_assignments": [
+      {
+        "table_name": "tutor_instruction_assignments",
+        "constraint_name": "tutor_instruction_assignments_assignment_mode_check",
+        "constraint_def": "CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text])))"
+      }
+    ],
+    "tutor_question_links": [
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "chk_tutor_question_links_not_same_canonical",
+        "constraint_def": "CHECK ((source_question_canonical_id <> related_question_canonical_id))"
+      },
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_difficulty_delta_check",
+        "constraint_def": "CHECK (((difficulty_delta >= '-4'::integer) AND (difficulty_delta <= 4)))"
+      },
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_relationship_type_check",
+        "constraint_def": "CHECK ((relationship_type = ANY (ARRAY['current'::text, 'similar_retry'::text, 'simpler_variant'::text, 'harder_variant'::text, 'concept_extension'::text])))"
+      }
+    ],
+    "tutor_memory_summaries": [
+      {
+        "table_name": "tutor_memory_summaries",
+        "constraint_name": "tutor_memory_summaries_summary_type_check",
+        "constraint_def": "CHECK ((summary_type = ANY (ARRAY['teaching_profile'::text, 'chat_compaction'::text, 'recent_learning_pattern'::text, 'study_context'::text])))"
+      }
+    ],
+    "tutor_instruction_exposures": [
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_consumed_ms_check",
+        "constraint_def": "CHECK ((consumed_ms >= 0))"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_exposure_type_check",
+        "constraint_def": "CHECK ((exposure_type = ANY (ARRAY['hint'::text, 'explanation'::text, 'strategy'::text, 'similar_question_offer'::text, 'broader_coaching_offer'::text, 'consent_prompt'::text])))"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_hint_depth_check",
+        "constraint_def": "CHECK (((hint_depth >= 1) AND (hint_depth <= 5)))"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_rendered_difficulty_check",
+        "constraint_def": "CHECK (((rendered_difficulty >= 1) AND (rendered_difficulty <= 5)))"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_sequence_ordinal_check",
+        "constraint_def": "CHECK ((sequence_ordinal >= 0))"
+      }
+    ]
+  },
+  "fks": {
+    "tutor_conversations": [
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_source_question_row_id_fkey",
+        "constraint_def": "FOREIGN KEY (source_question_row_id) REFERENCES questions(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_conversations",
+        "constraint_name": "tutor_conversations_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ],
+    "tutor_messages": [
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_conversation_id_fkey",
+        "constraint_def": "FOREIGN KEY (conversation_id) REFERENCES tutor_conversations(id) ON DELETE CASCADE"
+      },
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_source_question_row_id_fkey",
+        "constraint_def": "FOREIGN KEY (source_question_row_id) REFERENCES questions(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_messages",
+        "constraint_name": "tutor_messages_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ],
+    "tutor_instruction_assignments": [
+      {
+        "table_name": "tutor_instruction_assignments",
+        "constraint_name": "tutor_instruction_assignments_conversation_id_fkey",
+        "constraint_def": "FOREIGN KEY (conversation_id) REFERENCES tutor_conversations(id) ON DELETE CASCADE"
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "constraint_name": "tutor_instruction_assignments_related_message_id_fkey",
+        "constraint_def": "FOREIGN KEY (related_message_id) REFERENCES tutor_messages(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "constraint_name": "tutor_instruction_assignments_source_question_row_id_fkey",
+        "constraint_def": "FOREIGN KEY (source_question_row_id) REFERENCES questions(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_instruction_assignments",
+        "constraint_name": "tutor_instruction_assignments_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ],
+    "tutor_question_links": [
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_conversation_id_fkey",
+        "constraint_def": "FOREIGN KEY (conversation_id) REFERENCES tutor_conversations(id) ON DELETE CASCADE"
+      },
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_related_question_row_id_fkey",
+        "constraint_def": "FOREIGN KEY (related_question_row_id) REFERENCES questions(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_source_question_row_id_fkey",
+        "constraint_def": "FOREIGN KEY (source_question_row_id) REFERENCES questions(id) ON DELETE SET NULL"
+      },
+      {
+        "table_name": "tutor_question_links",
+        "constraint_name": "tutor_question_links_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ],
+    "tutor_memory_summaries": [
+      {
+        "table_name": "tutor_memory_summaries",
+        "constraint_name": "tutor_memory_summaries_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ],
+    "tutor_instruction_exposures": [
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_assignment_id_fkey",
+        "constraint_def": "FOREIGN KEY (assignment_id) REFERENCES tutor_instruction_assignments(id) ON DELETE CASCADE"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_conversation_id_fkey",
+        "constraint_def": "FOREIGN KEY (conversation_id) REFERENCES tutor_conversations(id) ON DELETE CASCADE"
+      },
+      {
+        "table_name": "tutor_instruction_exposures",
+        "constraint_name": "tutor_instruction_exposures_student_id_fkey",
+        "constraint_def": "FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE"
+      }
+    ]
+  },
+  "rls": {
+    "tutor_conversations": {
+      "table_name": "tutor_conversations",
+      "rls_enabled": true,
+      "rls_forced": false
+    },
+    "tutor_messages": {
+      "table_name": "tutor_messages",
+      "rls_enabled": true,
+      "rls_forced": false
+    },
+    "tutor_instruction_assignments": {
+      "table_name": "tutor_instruction_assignments",
+      "rls_enabled": true,
+      "rls_forced": false
+    },
+    "tutor_question_links": {
+      "table_name": "tutor_question_links",
+      "rls_enabled": true,
+      "rls_forced": false
+    },
+    "tutor_memory_summaries": {
+      "table_name": "tutor_memory_summaries",
+      "rls_enabled": true,
+      "rls_forced": false
+    },
+    "tutor_instruction_exposures": {
+      "table_name": "tutor_instruction_exposures",
+      "rls_enabled": true,
+      "rls_forced": false
+    }
+  },
+  "policies": {
+    "tutor_conversations": [
+      {
+        "tablename": "tutor_conversations",
+        "policyname": "tutor_conversations_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_conversations",
+        "policyname": "tutor_conversations_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      },
+      {
+        "tablename": "tutor_conversations",
+        "policyname": "tutor_conversations_student_update",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "UPDATE",
+        "qual": "(student_id = auth.uid())",
+        "with_check": "(student_id = auth.uid())"
+      }
+    ],
+    "tutor_messages": [
+      {
+        "tablename": "tutor_messages",
+        "policyname": "tutor_messages_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_messages",
+        "policyname": "tutor_messages_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      }
+    ],
+    "tutor_instruction_assignments": [
+      {
+        "tablename": "tutor_instruction_assignments",
+        "policyname": "tutor_instruction_assignments_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_instruction_assignments",
+        "policyname": "tutor_instruction_assignments_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      }
+    ],
+    "tutor_question_links": [
+      {
+        "tablename": "tutor_question_links",
+        "policyname": "tutor_question_links_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_question_links",
+        "policyname": "tutor_question_links_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      }
+    ],
+    "tutor_memory_summaries": [
+      {
+        "tablename": "tutor_memory_summaries",
+        "policyname": "tutor_memory_summaries_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_memory_summaries",
+        "policyname": "tutor_memory_summaries_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      }
+    ],
+    "tutor_instruction_exposures": [
+      {
+        "tablename": "tutor_instruction_exposures",
+        "policyname": "tutor_instruction_exposures_student_insert",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "INSERT",
+        "qual": null,
+        "with_check": "(student_id = auth.uid())"
+      },
+      {
+        "tablename": "tutor_instruction_exposures",
+        "policyname": "tutor_instruction_exposures_student_select",
+        "permissive": "PERMISSIVE",
+        "roles": "{authenticated}",
+        "cmd": "SELECT",
+        "qual": "(student_id = auth.uid())",
+        "with_check": null
+      }
+    ]
+  }
+}

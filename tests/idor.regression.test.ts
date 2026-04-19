@@ -9,27 +9,39 @@ vi.mock('../server/middleware/csrf-double-submit', () => ({
 
 // ESM-safe mocking: Use vi.mock/vi.doMock and dynamic import after mocks are set.
 describe('IDOR Regression Invariants', () => {
-  // Security test: Verify that /api/tutor/v2 uses req.user.id, not body.userId
+  // Security test: Verify tutor append uses req.user.id, not body user-controlled identifiers
   // This prevents IDOR attacks where an attacker tries to impersonate another user
-  it('tutor_v2_userid_from_auth_not_body', async () => {
+  it('tutor_runtime_userid_from_auth_not_body', async () => {
     // This test validates that the endpoint requires authentication
     // and rejects requests without proper auth (preventing IDOR)
 
     // Test 1: Unauthenticated request should be rejected
     const res = await request(app)
-      .post('/api/tutor/v2')
+      .post('/api/tutor/messages')
       .set('Origin', 'http://localhost:5000')
-      .send({ userId: 'victim-id', message: 'hi', mode: 'concept' });
+      .send({
+        userId: 'victim-id',
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        message: 'hi',
+        content_kind: 'message',
+        client_turn_id: '22222222-2222-4222-8222-222222222222',
+      });
 
     // Should reject (401) - cannot proceed without auth
     expect(res.status).toBe(401);
 
     // Test 2: Bearer auth should be rejected (cookie-only policy)
     const res2 = await request(app)
-      .post('/api/tutor/v2')
+      .post('/api/tutor/messages')
       .set('Authorization', 'Bearer fake-token')
       .set('Origin', 'http://localhost:5000')
-      .send({ userId: 'victim-id', message: 'hi', mode: 'concept' });
+      .send({
+        userId: 'victim-id',
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        message: 'hi',
+        content_kind: 'message',
+        client_turn_id: '33333333-3333-4333-8333-333333333333',
+      });
 
     // Should reject
     expect([401, 403]).toContain(res2.status);

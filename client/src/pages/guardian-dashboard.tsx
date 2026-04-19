@@ -22,6 +22,7 @@ import { Users, Plus, Clock, Target, AlertCircle, CheckCircle, UserMinus, Refres
 import { Link } from 'wouter';
 import { SubscriptionPaywall, ManageSubscriptionButton } from '@/components/guardian/SubscriptionPaywall';
 import FullLengthResultsView, { type FullLengthResultsData } from '@/components/full-length-exam/FullLengthResultsView';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
 
 interface LinkedStudent {
   id: string;
@@ -62,8 +63,8 @@ interface GuardianWeaknessResponse {
     skill: string;
     attempts: number;
     correct: number;
-    accuracy: number;
-    mastery_score: number;
+    accuracyPercent: number;
+    status: 'not_started' | 'weak' | 'improving' | 'proficient';
   }>;
 }
 
@@ -108,6 +109,10 @@ export default function GuardianDashboard() {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const [reportSessionInput, setReportSessionInput] = useState('');
   const [requestedReportSessionId, setRequestedReportSessionId] = useState<string | null>(null);
+
+  const formatStatus = (status: GuardianWeaknessResponse['skills'][number]['status']) => {
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   const { data: studentsData, isLoading: studentsLoading, error: studentsError, refetch: refetchStudents } = useQuery({
     queryKey: ['guardian-students'],
@@ -414,13 +419,13 @@ export default function GuardianDashboard() {
               </Button>
             </form>
             {linkError && (
-              <Alert variant={isRateLimited ? 'default' : 'destructive'} className={`mt-4 ${isRateLimited ? 'bg-amber-50 border-amber-200' : ''}`}>
+              <Alert className={`mt-4 ${isRateLimited ? 'bg-amber-50 border-amber-200' : 'border-border/70 bg-card/70'}`}>
                 {isRateLimited ? (
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                 ) : (
-                  <AlertCircle className="h-4 w-4" />
+                  <AlertCircle className="h-4 w-4 text-[#0F2E48]/70" />
                 )}
-                <AlertDescription className={isRateLimited ? 'text-amber-800' : ''}>
+                <AlertDescription className={isRateLimited ? 'text-amber-800' : 'text-[#0F2E48]/80'}>
                   {linkError}
                 </AlertDescription>
               </Alert>
@@ -468,11 +473,12 @@ export default function GuardianDashboard() {
             {studentsLoading ? (
               <div className="text-center py-8 text-[#0F2E48]/60">Loading students...</div>
             ) : studentsError ? (
-              <div className="text-center py-8">
-                <p className="text-red-600 mb-4">Failed to load students</p>
-                <Button variant="outline" onClick={() => refetchStudents()}>
-                  <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                </Button>
+              <div className="py-6">
+                <RecoveryNotice
+                  title="We couldn't load students."
+                  message="Try again. If this keeps happening, refresh the page."
+                  onRetry={() => void refetchStudents()}
+                />
               </div>
             ) : students.length === 0 ? (
               <div className="text-center py-12 px-4">
@@ -549,11 +555,12 @@ export default function GuardianDashboard() {
                 {summaryLoading ? (
                   <div className="text-center py-8 text-[#0F2E48]/60">Loading progress...</div>
                 ) : summaryError ? (
-                  <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">Failed to load progress data</p>
-                    <Button variant="outline" onClick={() => refetchSummary()}>
-                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                    </Button>
+                  <div className="py-6">
+                    <RecoveryNotice
+                      title="We couldn't load progress data."
+                      message="Try again. If this keeps happening, refresh the page."
+                      onRetry={() => void refetchSummary()}
+                    />
                   </div>
                 ) : summaryData ? (
                   <div className="space-y-6">
@@ -635,11 +642,12 @@ export default function GuardianDashboard() {
                 {weaknessLoading ? (
                   <div className="text-center py-8 text-[#0F2E48]/60">Loading weaknesses...</div>
                 ) : weaknessError ? (
-                  <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">Failed to load weakness data</p>
-                    <Button variant="outline" onClick={() => refetchWeakness()}>
-                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                    </Button>
+                  <div className="py-6">
+                    <RecoveryNotice
+                      title="We couldn't load weakness data."
+                      message="Try again. If this keeps happening, refresh the page."
+                      onRetry={() => void refetchWeakness()}
+                    />
                   </div>
                 ) : !weaknessData || weaknessData.count === 0 ? (
                   <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
@@ -651,11 +659,11 @@ export default function GuardianDashboard() {
                       <div key={`${skill.section}-${skill.skill}`} className="rounded-lg border border-border/60 bg-secondary/35 p-3">
                         <div className="flex items-center justify-between gap-3 mb-1">
                           <p className="text-sm font-medium text-[#0F2E48]">{skill.skill}</p>
-                          <p className="text-sm font-semibold text-[#0F2E48]">{skill.mastery_score}%</p>
+                          <p className="text-sm font-semibold text-[#0F2E48]">{formatStatus(skill.status)}</p>
                         </div>
                         <div className="text-xs text-[#0F2E48]/65 flex items-center justify-between gap-2">
                           <span>{skill.section} · {skill.domain || 'Unspecified domain'}</span>
-                          <span>{skill.correct}/{skill.attempts} correct</span>
+                          <span>{skill.correct}/{skill.attempts} correct • {skill.accuracyPercent}% accuracy</span>
                         </div>
                       </div>
                     ))}
@@ -668,7 +676,7 @@ export default function GuardianDashboard() {
               <CardHeader>
                 <CardTitle className="text-[#0F2E48]">Full-Length Exam Report</CardTitle>
                 <CardDescription>
-                  Load guardian read-only report projection using a real exam session ID.
+                  Load guardian read-only report view using a real exam session ID.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -676,9 +684,10 @@ export default function GuardianDashboard() {
                   <p className="text-sm text-[#0F2E48]/70">Loading full-length session history...</p>
                 )}
                 {guardianExamHistoryError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{guardianExamHistoryErrorMessage}</AlertDescription>
-                  </Alert>
+                  <RecoveryNotice
+                    title="We couldn't load full-length session history."
+                    message={guardianExamHistoryErrorMessage || "Try again. If this keeps happening, refresh the page."}
+                  />
                 )}
                 {guardianExamHistoryData && guardianExamHistoryData.sessions.length > 0 && (
                   <div className="rounded-lg border border-border/60 bg-secondary/35 p-3">
@@ -744,7 +753,7 @@ export default function GuardianDashboard() {
                 {guardianReportLocked && (
                   <Alert className="border-amber-200 bg-amber-50">
                     <AlertDescription className="text-amber-800">
-                      This exam session is not completed yet, so guardian report projection is still locked.
+                      This exam session is not completed yet, so the guardian report view is still locked.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -758,16 +767,17 @@ export default function GuardianDashboard() {
                 )}
 
                 {guardianExamReportError && !guardianReportNotFound && !guardianReportLocked && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{guardianExamReportErrorMessage}</AlertDescription>
-                  </Alert>
+                  <RecoveryNotice
+                    title="We couldn't load this full-length report."
+                    message={guardianExamReportErrorMessage || "Try again. If this keeps happening, refresh the page."}
+                  />
                 )}
 
                 {guardianExamReportData?.report && (
                   <FullLengthResultsView
                     data={guardianExamReportData.report}
-                    title="Guardian Report Projection"
-                    description="Read-only student-truth projection from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
+                    title="Guardian Report View"
+                    description="Read-only student-truth view from `/api/guardian/students/:studentId/exams/full-length/:sessionId/report`."
                   />
                 )}
               </CardContent>

@@ -6,6 +6,16 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, CheckCircle, Loader2, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { csrfFetch } from '@/lib/csrf';
+import { parseApiErrorFromResponse, isApiError, isSessionError, toUserFacingMessage } from '@/lib/api-error';
+import { AppNotice } from '@/components/feedback/AppNotice';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
+import { SessionNotice } from '@/components/feedback/SessionNotice';
+import {
+  getBillingPlans,
+  startSubscriptionCheckout,
+  type BillingPlan,
+  type BillingPlanMetadata,
+} from '@/lib/billing-client';
 
 interface BillingStatus {
   accountId: string | null;
@@ -24,32 +34,16 @@ interface BillingStatus {
   lockedReason?: 'link_required' | 'student_subscription_required' | 'student_subscription_expired' | 'student_payment_past_due' | null;
 }
 
-interface PriceOption {
-  id: string;
-  label: string;
-  amount: number;
-  interval: string;
-  intervalCount: number;
-  badge?: string;
-  plan?: 'monthly' | 'quarterly' | 'yearly';
-}
-
 interface SubscriptionPaywallProps {
   children: React.ReactNode;
 }
 
-function formatPrice(amount: number): string {
-  return `$${(amount / 100).toFixed(0)}`;
-}
-
-function formatInterval(interval: string, intervalCount: number): string {
-  if (intervalCount === 1) {
-    return `per ${interval}`;
-  }
-  if (interval === 'month' && intervalCount === 3) {
-    return 'every 3 months';
-  }
-  return `every ${intervalCount} ${interval}s`;
+function formatPrice(amountCents: number, currency = 'usd'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: 2,
+  }).format(amountCents / 100);
 }
 
 const SHOW_BILLING_DEBUG = import.meta.env.DEV || (typeof window !== 'undefined' && window.location.search.includes('billingDebug=1'));
@@ -70,8 +64,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     queryFn: async () => {
       const res = await csrfFetch('/api/billing/status', { credentials: 'include' });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to get billing status');
+        throw await parseApiErrorFromResponse(res, 'Failed to get billing status');
       }
       return res.json() as Promise<BillingStatus>;
     },
@@ -138,59 +131,43 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  const { data: pricesData, isLoading: pricesLoading, error: pricesError } = useQuery<PriceOption[]>({
-    queryKey: ['billing-prices'],
-    queryFn: async () => {
-      const res = await csrfFetch('/api/billing/prices', { credentials: 'include' });
-      if (!res.ok) throw new Error('Failed to fetch prices');
-      const data = await res.json();
-      
-      let pricesArray: PriceOption[] = [];
-      if (Array.isArray(data.prices)) {
-        pricesArray = data.prices;
-      } else if (data.prices && typeof data.prices === 'object') {
-        console.error('[Billing] prices payload unexpected shape - converting object to array', data.prices);
-        pricesArray = Object.values(data.prices);
-      }
-      
-      return pricesArray;
-    },
+  const { data: pricesData, isLoading: pricesLoading, error: pricesError, refetch: refetchPrices } = useQuery<BillingPlanMetadata[]>({
+    queryKey: ['/api/billing/plans'],
+    queryFn: getBillingPlans,
     enabled: !billingStatus?.effectiveAccess,
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async (plan: 'monthly' | 'quarterly' | 'yearly') => {
-      console.log('[Billing] Starting checkout with plan:', plan);
-      const res = await csrfFetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ plan }),
-      });
-      console.log('[Billing] Checkout response status:', res.status);
-      const data = await res.json();
-      if (!res.ok) {
-        const err = new Error(data.error || 'Failed to create checkout') as Error & { details?: any };
-        (err as any).stripeMessage = data.stripeMessage;
-        (err as any).requestId = data.requestId;
-        (err as any).details = data.details;
-        throw err;
-      }
-      return data;
+    mutationFn: async (plan: BillingPlan) => {
+      await startSubscriptionCheckout(plan);
+      return { url: true };
     },
-    onSuccess: (data) => {
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    },
-    onError: (err: Error & { stripeMessage?: string; requestId?: string; details?: any }) => {
-      setCheckoutError(err.message);
+    onSuccess: () => {},
+    onError: (err: unknown) => {
+      const fallbackMessage = err instanceof Error ? err.message : 'Could not start checkout. Please try again.';
+      const details = isApiError(err) ? err.details : (err as any)?.details;
+      const detailsRecord = details && typeof details === 'object' ? (details as Record<string, unknown>) : null;
+      setCheckoutError(fallbackMessage);
       setCheckoutErrorDetails({
-        stripeMessage: err.stripeMessage,
-        requestId: err.requestId,
-        details: err.details,
+        stripeMessage:
+          typeof (err as any)?.stripeMessage === 'string'
+            ? (err as any).stripeMessage
+            : detailsRecord && typeof detailsRecord.stripeMessage === 'string'
+              ? detailsRecord.stripeMessage
+              : undefined,
+        requestId:
+          typeof (err as any)?.requestId === 'string'
+            ? (err as any).requestId
+            : detailsRecord && typeof detailsRecord.requestId === 'string'
+              ? detailsRecord.requestId
+              : undefined,
+        details: detailsRecord,
       });
-      console.error('[Billing] Checkout error:', { message: err.message, stripeMessage: err.stripeMessage, requestId: err.requestId, details: err.details });
+      console.error('[Billing] Checkout error:', {
+        message: fallbackMessage,
+        stripeMessage: detailsRecord?.stripeMessage ?? (err as any)?.stripeMessage,
+        requestId: detailsRecord?.requestId ?? (err as any)?.requestId,
+      });
     },
   });
 
@@ -200,8 +177,10 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
         method: 'POST',
         credentials: 'include',
       });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, 'Failed to open billing portal');
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to open billing portal');
       return data;
     },
     onSuccess: (data) => {
@@ -284,14 +263,18 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const requiresStudentSubscription = !!billingStatus?.requiresStudentSubscription;
 
   if (pricesError) {
+    const pricesErrorMessage = pricesError instanceof Error
+      ? pricesError.message
+      : toUserFacingMessage(pricesError).message;
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
-        <Card className="w-full max-w-md border-red-200">
+        <Card className="w-full max-w-md border-[#0F2E48]/20">
           <CardContent className="pt-6">
-            <div className="p-4 border border-red-200 bg-red-50 rounded-lg text-sm">
-              <div className="font-semibold text-red-800">Pricing is temporarily unavailable.</div>
-              <div className="mt-1 opacity-80 text-red-700">Please refresh the page or try again in a minute.</div>
-            </div>
+            <RecoveryNotice
+              title="Pricing is temporarily unavailable."
+              message={pricesErrorMessage}
+              onRetry={() => void refetchPrices()}
+            />
           </CardContent>
         </Card>
       </div>
@@ -344,6 +327,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
             </div>
           </div>
 
+          {/* TODO(billing): Guardian selector is legacy and should be removed only after /upgrade parity tests pass. */}
           {pricesLoading ? (
             <div className="flex justify-center py-6">
               <Loader2 className="h-6 w-6 animate-spin text-[#0F2E48]" />
@@ -355,62 +339,72 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {prices.map((price) => (
-                <button
-                  key={price.id}
-                  onClick={() => {
-                    if (price.plan) {
-                      console.log('[Billing] Selected plan:', price.plan, 'priceId:', price.id?.slice(0, 12) + '...' + price.id?.slice(-4));
-                      setSelectedPlan(price.plan);
-                    }
-                  }}
-                  className={cn(
-                    "relative p-4 rounded-lg border-2 text-left transition-all",
-                    selectedPlan === price.plan
-                      ? "border-[#0F2E48] bg-[#0F2E48]/5"
-                      : "border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
-                  )}
-                >
-                  {price.badge && (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full whitespace-nowrap">
-                      {price.badge}
-                    </span>
-                  )}
-                  <div className="text-lg font-semibold text-[#0F2E48]">{price.label}</div>
-                  <div className="text-2xl font-bold text-[#0F2E48] mt-1">
-                    {formatPrice(price.amount)}
-                  </div>
-                  <div className="text-sm text-[#0F2E48]/60">
-                    {formatInterval(price.interval, price.intervalCount)}
-                  </div>
-                </button>
-              ))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {prices.map((price) => {
+                  const savingsBadge = typeof price.savingsPercent === "number" && price.savingsPercent > 0
+                    ? `Save ${price.savingsPercent.toFixed(1)}%`
+                    : null;
+
+                  return (
+                    <button
+                      key={price.plan}
+                      onClick={() => {
+                        setSelectedPlan(price.plan);
+                      }}
+                      className={cn(
+                        "relative p-4 rounded-lg border-2 text-left transition-all",
+                        selectedPlan === price.plan
+                          ? "border-[#0F2E48] bg-[#0F2E48]/5"
+                          : "border-[#0F2E48]/20 hover:border-[#0F2E48]/40"
+                      )}
+                    >
+                      {savingsBadge && (
+                        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-green-600 text-white text-xs font-medium rounded-full whitespace-nowrap">
+                          {savingsBadge}
+                        </span>
+                      )}
+                      <div className="text-lg font-semibold text-[#0F2E48]">{price.label}</div>
+                      <div className="text-2xl font-bold text-[#0F2E48] mt-1">
+                        {formatPrice(price.amountCents, price.currency)}
+                      </div>
+                      <div className="text-sm text-[#0F2E48]/60">
+                        {price.intervalLabel}
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
           )}
 
           {checkoutError && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <div className="font-medium">Could not start checkout. Please try again.</div>
-                {SHOW_BILLING_DEBUG && (
-                  <div className="mt-2 text-xs font-mono opacity-80 space-y-1">
-                    <div>Error: {checkoutError}</div>
-                    {checkoutErrorDetails?.stripeMessage && <div>Stripe: {checkoutErrorDetails.stripeMessage}</div>}
-                    {checkoutErrorDetails?.requestId && <div>Request ID: {checkoutErrorDetails.requestId}</div>}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
+            <AppNotice
+              variant="warning"
+              title="Could not start checkout."
+              message={checkoutError}
+              mode="inline"
+            />
+          )}
+
+          {SHOW_BILLING_DEBUG && checkoutErrorDetails && (
+            <div className="rounded-lg border border-border/70 bg-card/70 p-3 text-xs font-mono space-y-1">
+              <div>Error: {checkoutError}</div>
+              {checkoutErrorDetails?.stripeMessage && <div>Stripe: {checkoutErrorDetails.stripeMessage}</div>}
+              {checkoutErrorDetails?.requestId && <div>Request ID: {checkoutErrorDetails.requestId}</div>}
+            </div>
           )}
 
           {billingError && (
-            <Alert>
-              <AlertDescription>
-                Unable to load billing information. Please try again later.
-              </AlertDescription>
-            </Alert>
+            isSessionError(billingError) ? (
+              <SessionNotice
+                message={billingError instanceof Error ? billingError.message : toUserFacingMessage(billingError).message}
+                onRefreshSession={() => window.location.reload()}
+              />
+            ) : (
+              <RecoveryNotice
+                message={billingError instanceof Error ? billingError.message : toUserFacingMessage(billingError).message}
+                onRetry={() => void refetch()}
+              />
+            )
           )}
         </CardContent>
 
@@ -459,8 +453,10 @@ export function ManageSubscriptionButton() {
         method: 'POST',
         credentials: 'include',
       });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, 'Failed to open billing portal');
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to open billing portal');
       return data;
     },
     onSuccess: (data) => {

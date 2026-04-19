@@ -9,7 +9,7 @@
 
 ## Canonical Tables
 - Eligibility source:
-  - `public.answer_attempts`
+  - `public.practice_session_items`
   - `public.full_length_exam_responses` joined to completed `public.full_length_exam_sessions`
 - Review lifecycle truth:
   - `public.review_sessions`
@@ -18,7 +18,7 @@
 - Review outcome ledger:
   - `public.review_error_attempts`
 - Mastery writer:
-  - `apps/api/src/services/mastery-write.ts#applyMasteryUpdate`
+  - `public.apply_learning_event_to_mastery(...)` (via `apps/api/src/services/mastery-write.ts#applyLearningEventToMastery`)
 
 ## Session + Item Lifecycle
 - Session state machine: `created -> active -> completed` with `abandoned` terminal branch.
@@ -33,7 +33,8 @@
 - Duplicate submit is idempotent via `client_attempt_id` and served-item lock.
 - Duplicate submit returns prior authoritative result and does not double-write mastery.
 - Correct submit emits `review_pass`; incorrect submit emits `review_fail`.
-- Tutor context can add `tutor_helped`/`tutor_fail`; tutor-only interaction emits no mastery write.
+- Mastery emission requires a strict difficulty bucket (1|2|3); invalid/missing buckets fail closed and log.
+- Tutor context is telemetry-only; it does not write mastery.
 
 ## Anti-Leak Contract
 - Pre-submit state payload returns question with:

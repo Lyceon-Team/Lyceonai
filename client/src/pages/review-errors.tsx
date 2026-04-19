@@ -402,7 +402,7 @@ function ReviewErrors() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="max-w-md w-full text-center">
           <CardHeader>
-            <AlertCircle className="h-10 w-10 mx-auto text-red-500 mb-2" />
+            <AlertCircle className="h-10 w-10 mx-auto text-amber-600 mb-2" />
             <CardTitle>Unable to load review data</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -433,8 +433,8 @@ function ReviewErrors() {
                     <p className="text-2xl font-bold text-green-600">{runStats.correct}</p>
                     <p className="text-sm text-muted-foreground">Correct</p>
                   </div>
-                  <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20">
-                    <p className="text-2xl font-bold text-red-600">{runStats.incorrect}</p>
+                  <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                    <p className="text-2xl font-bold text-amber-700">{runStats.incorrect}</p>
                     <p className="text-sm text-muted-foreground">Incorrect</p>
                   </div>
                   <div className="p-4 rounded-lg bg-muted">
@@ -497,9 +497,9 @@ function ReviewErrors() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
-                  <XCircle className="h-5 w-5 text-red-600" />
+                  <XCircle className="h-5 w-5 text-amber-700" />
                   <Badge variant="secondary">{currentQuestion.section}</Badge>
-                  <Badge variant="destructive">Review</Badge>
+                  <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-800">Review</Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -520,7 +520,7 @@ function ReviewErrors() {
                             ? isCorrect
                               ? "bg-green-50 dark:bg-green-900/20 border-green-500"
                               : isWrongSelection
-                              ? "bg-red-50 dark:bg-red-900/20 border-red-500"
+                              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500"
                               : "bg-muted/50"
                             : isSelected
                             ? "bg-primary/10 border-primary"
@@ -535,7 +535,7 @@ function ReviewErrors() {
                 </div>
 
                 {submitResult && (
-                  <div className={`p-4 rounded-lg border ${submitResult.verified_is_correct ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"}`}>
+                  <div className={`p-4 rounded-lg border ${submitResult.verified_is_correct ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"}`}>
                     <p className="font-medium mb-2">{submitResult.verified_is_correct ? "Correct" : "Incorrect"}</p>
                     {submitResult.correctAnswerText && (
                       <p className="text-sm text-muted-foreground"><strong>Correct answer:</strong> {submitResult.correctAnswerText}</p>
@@ -665,12 +665,18 @@ function ReviewErrors() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <div className="text-center p-4 rounded-lg bg-muted/50"><p className="text-2xl font-bold">{summary.totalCount}</p><p className="text-sm text-muted-foreground">Total</p></div>
                 <div className="text-center p-4 rounded-lg bg-green-50 dark:bg-green-900/20"><p className="text-2xl font-bold text-green-600">{summary.correctCount}</p><p className="text-sm text-muted-foreground">Correct</p></div>
-                <div className="text-center p-4 rounded-lg bg-red-50 dark:bg-red-900/20"><p className="text-2xl font-bold text-red-600">{summary.incorrectCount}</p><p className="text-sm text-muted-foreground">Incorrect</p></div>
+                <div className="text-center p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20"><p className="text-2xl font-bold text-amber-700">{summary.incorrectCount}</p><p className="text-sm text-muted-foreground">Incorrect</p></div>
                 <div className="text-center p-4 rounded-lg bg-muted"><p className="text-2xl font-bold text-muted-foreground">{summary.skippedCount}</p><p className="text-sm text-muted-foreground">Skipped</p></div>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
-                <Button onClick={() => startReview("incorrect")} variant="destructive" className="flex-1">Review Incorrect ({incorrectAttempts.length})</Button>
+                <Button
+                  onClick={() => startReview("incorrect")}
+                  variant="outline"
+                  className="flex-1 border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-200"
+                >
+                  Review Incorrect ({incorrectAttempts.length})
+                </Button>
                 <Button onClick={() => startReview("skipped")} variant="outline" className="flex-1">Review Skipped ({skippedAttempts.length})</Button>
                 <Button onClick={() => startReview("all")} className="flex-1">Review All ({incorrectAttempts.length + skippedAttempts.length})</Button>
               </div>

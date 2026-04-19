@@ -15,11 +15,20 @@ import ExamRunner from "@/components/full-length-exam/ExamRunner";
 import FullLengthResultsView, { type FullLengthResultsData } from "@/components/full-length-exam/FullLengthResultsView";
 import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import { PremiumUpgradePrompt, type PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
 import {
   parseRuntimeContractDisabledFromError,
   parseRuntimeContractDisabledFromPayload,
   type RuntimeContractDisabledState,
 } from "@/lib/runtime-contract-disable";
+import {
+  getPremiumDenialReason,
+  isSessionError,
+  parseApiErrorFromResponse,
+  toUserFacingMessage,
+} from "@/lib/api-error";
 
 interface FullLengthHistorySession {
   sessionId: string;
@@ -52,6 +61,7 @@ export default function FullTest() {
   const [reportSessionId, setReportSessionId] = useState<string | null>(null);
   const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
   const [contractDisabled, setContractDisabled] = useState<RuntimeContractDisabledState | null>(null);
+  const [fullTestPremiumReason, setFullTestPremiumReason] = useState<PremiumPromptReason | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -98,6 +108,7 @@ export default function FullTest() {
     data: reportData,
     isLoading: reportLoading,
     error: reportError,
+    refetch: refetchReport,
   } = useQuery<FullLengthResultsData>({
     queryKey: ["full-length-report", reportSessionId],
     enabled: !!reportSessionId && !!user && !isStarted && !contractDisabled,
@@ -122,9 +133,7 @@ export default function FullTest() {
       }
 
       if (!res.ok) {
-        const code = payload?.code ? ` ${payload.code}` : "";
-        const message = payload?.message || payload?.error || "Failed to load exam report";
-        throw new Error(`${res.status}:${code} ${message}`);
+        throw await parseApiErrorFromResponse(res, "Failed to load exam report");
       }
 
       return payload as FullLengthResultsData;
@@ -135,6 +144,7 @@ export default function FullTest() {
     data: reviewData,
     isLoading: reviewLoading,
     error: reviewError,
+    refetch: refetchReview,
   } = useQuery<FullLengthReviewData>({
     queryKey: ["full-length-review", reviewSessionId],
     enabled: !!reviewSessionId && !!user && !isStarted && !contractDisabled,
@@ -159,9 +169,7 @@ export default function FullTest() {
       }
 
       if (!res.ok) {
-        const code = payload?.code ? ` ${payload.code}` : "";
-        const message = payload?.message || payload?.error || "Failed to load exam review";
-        throw new Error(`${res.status}:${code} ${message}`);
+        throw await parseApiErrorFromResponse(res, "Failed to load exam review");
       }
 
       return payload as FullLengthReviewData;
@@ -171,6 +179,7 @@ export default function FullTest() {
     data: historyData,
     isLoading: historyLoading,
     error: historyError,
+    refetch: refetchHistory,
   } = useQuery<FullLengthHistoryData>({
     queryKey: ["full-length-history"],
     enabled: !!user && !isStarted && !contractDisabled,
@@ -190,17 +199,22 @@ export default function FullTest() {
       }
 
       if (!res.ok) {
-        const code = payload?.code ? ` ${payload.code}` : "";
-        const message = payload?.message || payload?.error || "Failed to load full-length history";
-        throw new Error(`${res.status}:${code} ${message}`);
+        throw await parseApiErrorFromResponse(res, "Failed to load full-length history");
       }
       return payload as FullLengthHistoryData;
     },
   });
 
+  const reportPremiumReason = getPremiumDenialReason(reportError);
+  const reviewPremiumReason = getPremiumDenialReason(reviewError);
+  const historyPremiumReason = getPremiumDenialReason(historyError);
+  const accessPremiumReason =
+    historyData && !historyData.reportAccess.hasPaidAccess ? "premium_required" : null;
+  const activePremiumReason =
+    fullTestPremiumReason || reportPremiumReason || reviewPremiumReason || historyPremiumReason || accessPremiumReason;
+
   const reportErrorMessage = reportError instanceof Error ? reportError.message : "";
-  const reportPremiumLocked =
-    reportErrorMessage.includes("402") || reportErrorMessage.includes("PREMIUM_KPI_REQUIRED");
+  const reportPremiumLocked = Boolean(reportPremiumReason);
   const reportLocked = reportErrorMessage.includes("423") || reportErrorMessage.toLowerCase().includes("locked");
   const reportNotFound = reportErrorMessage.includes("404");
   const reviewErrorMessage = reviewError instanceof Error ? reviewError.message : "";
@@ -232,12 +246,13 @@ export default function FullTest() {
       }
 
       if (!res.ok) {
-        throw new Error(payload?.message || "Failed to create exam session");
+        throw await parseApiErrorFromResponse(res, "Failed to create exam session");
       }
 
       return payload;
     },
     onSuccess: (data) => {
+      setFullTestPremiumReason(null);
       setSessionId(data.session.id);
       toast({
         title: "Exam Session Created",
@@ -250,10 +265,14 @@ export default function FullTest() {
         setContractDisabled(disabled);
         return;
       }
+      const premiumReason = getPremiumDenialReason(error);
+      if (premiumReason) {
+        setFullTestPremiumReason(premiumReason);
+        return;
+      }
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to create exam session",
+        title: toUserFacingMessage(error).title,
+        description: error.message || toUserFacingMessage(error).message,
       });
     },
   });
@@ -274,12 +293,13 @@ export default function FullTest() {
       }
 
       if (!res.ok) {
-        throw new Error(payload?.message || "Failed to start exam");
+        throw await parseApiErrorFromResponse(res, "Failed to start exam");
       }
 
       return payload;
     },
     onSuccess: (_, sid) => {
+      setFullTestPremiumReason(null);
       setIsStarted(true);
       setActiveSessionId(sid);
       window.history.pushState({}, "", `/full-test?sessionId=${sid}`);
@@ -294,15 +314,20 @@ export default function FullTest() {
         setContractDisabled(disabled);
         return;
       }
+      const premiumReason = getPremiumDenialReason(error);
+      if (premiumReason) {
+        setFullTestPremiumReason(premiumReason);
+        return;
+      }
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to start exam",
+        title: toUserFacingMessage(error).title,
+        description: error.message || toUserFacingMessage(error).message,
       });
     },
   });
 
   const handleCreateSession = () => {
+    setFullTestPremiumReason(null);
     setReportSessionId(null);
     setReviewSessionId(null);
     createSessionMutation.mutate();
@@ -325,7 +350,6 @@ export default function FullTest() {
     const normalized = value.trim();
     if (!normalized) {
       toast({
-        variant: "destructive",
         title: "Session ID required",
         description: "Enter a full-length session ID to load report truth.",
       });
@@ -350,7 +374,6 @@ export default function FullTest() {
     const sessionToLoad = (sourceSessionId ?? reportLookupSessionId).trim();
     if (!sessionToLoad) {
       toast({
-        variant: "destructive",
         title: "Session ID required",
         description: "Enter a full-length session ID to load review truth.",
       });
@@ -470,10 +493,20 @@ export default function FullTest() {
             {historyLoading && (
               <p className="text-xs text-muted-foreground mb-4">Loading session history...</p>
             )}
-            {historyError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{historyErrorMessage}</AlertDescription>
-              </Alert>
+            {historyError && !historyPremiumReason && (
+              isSessionError(historyError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={historyErrorMessage || toUserFacingMessage(historyError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={historyErrorMessage || toUserFacingMessage(historyError).message}
+                  onRetry={() => void refetchHistory()}
+                />
+              )
             )}
             {historyData && historyData.sessions.length > 0 && (
               <div className="mb-4 rounded-lg border border-border/50 bg-secondary/35 p-3">
@@ -557,20 +590,10 @@ export default function FullTest() {
                 Clear
               </Button>
             </form>
-            {historyData && !historyData.reportAccess.hasPaidAccess && (
-              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
-                <AlertDescription className="text-[#0F2E48]">
-                  Report actions remain premium-gated by runtime entitlement checks. Review is available after completion.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {reportPremiumLocked && (
-              <Alert className="mb-4 border-[#0F2E48]/20 bg-[#0F2E48]/5">
-                <AlertDescription className="text-[#0F2E48]">
-                  Full-test analytics are premium-gated by runtime contract. Upgrade access is required for this report endpoint.
-                </AlertDescription>
-              </Alert>
+            {activePremiumReason && (
+              <div className="mb-4">
+                <PremiumUpgradePrompt reason={activePremiumReason} mode="inline" />
+              </div>
             )}
 
             {reportLocked && !reportPremiumLocked && (
@@ -590,11 +613,19 @@ export default function FullTest() {
             )}
 
             {reportError && !reportPremiumLocked && !reportLocked && !reportNotFound && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>
-                  {(reportError as Error).message}
-                </AlertDescription>
-              </Alert>
+              isSessionError(reportError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={(reportError as Error).message || toUserFacingMessage(reportError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={(reportError as Error).message || toUserFacingMessage(reportError).message}
+                  onRetry={() => void refetchReport()}
+                />
+              )
             )}
 
             {reviewLocked && (
@@ -613,12 +644,20 @@ export default function FullTest() {
               </Alert>
             )}
 
-            {reviewError && !reviewLocked && !reviewNotFound && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>
-                  {(reviewError as Error).message}
-                </AlertDescription>
-              </Alert>
+            {reviewError && !reviewLocked && !reviewNotFound && !reviewPremiumReason && (
+              isSessionError(reviewError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={(reviewError as Error).message || toUserFacingMessage(reviewError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={(reviewError as Error).message || toUserFacingMessage(reviewError).message}
+                  onRetry={() => void refetchReview()}
+                />
+              )
             )}
 
             {reportData && (

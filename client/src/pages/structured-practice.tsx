@@ -73,7 +73,6 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
       toast({
         title: "Failed to start session",
         description: "Please try again.",
-        variant: "destructive"
       });
     }
   };
@@ -195,7 +194,7 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
     return (
       <div className="min-h-screen bg-[#FFFAEF] flex items-center justify-center p-4">
         <Card className="max-w-md w-full text-center p-8">
-          <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <XCircle className="w-16 h-16 text-amber-600 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-[#0F2E48] mb-2">Error</h2>
           <p className="text-gray-600 mb-4">{error}</p>
           <Button onClick={handleStartSession} className="bg-[#0F2E48]">
@@ -230,8 +229,8 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
           
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <Timer className={`w-5 h-5 ${timer.remainingMs < 60000 ? 'text-red-500' : 'text-[#0F2E48]'}`} />
-              <span className={`font-mono font-medium ${timer.remainingMs < 60000 ? 'text-red-500' : 'text-[#0F2E48]'}`}>
+              <Timer className={`w-5 h-5 ${timer.remainingMs < 60000 ? 'text-amber-600' : 'text-[#0F2E48]'}`} />
+              <span className={`font-mono font-medium ${timer.remainingMs < 60000 ? 'text-amber-700' : 'text-[#0F2E48]'}`}>
                 {formatTime(timer.remainingMs)}
               </span>
             </div>
@@ -281,12 +280,12 @@ function StructuredPractice({ section = 'rw', difficulty = 'medium' }: Structure
               />
 
               {showExplanation && validationResult && (
-                <div className={`p-4 rounded-lg ${validationResult.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <div className={`p-4 rounded-lg ${validationResult.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
                   <div className="flex items-center gap-2 mb-2">
                     {validationResult.isCorrect ? (
                       <><CheckCircle className="w-5 h-5 text-green-600" /> <span className="font-medium text-green-800">Correct!</span></>
                     ) : (
-                      <><XCircle className="w-5 h-5 text-red-600" /> <span className="font-medium text-red-800">Incorrect</span></>
+                      <><XCircle className="w-5 h-5 text-amber-700" /> <span className="font-medium text-amber-900">Incorrect</span></>
                     )}
                   </div>
                   {validationResult.correctAnswerKey && !validationResult.isCorrect && (

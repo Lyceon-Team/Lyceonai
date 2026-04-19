@@ -6,7 +6,7 @@ import {
 } from '../middleware/supabase-auth';
 import { getUncachableStripeClient, getStripePublishableKeySafe } from '../lib/stripeClient';
 import { billingStorage } from '../lib/billingStorage';
-import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, upsertEntitlement, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
+import { getOrCreateEntitlement, ensureAccountForUser, getPrimaryGuardianLink, mapStripeStatusToEntitlement, setEntitlementStripeCustomerId, resolveLinkedPairPremiumAccessForGuardian, resolveLinkedPairPremiumAccessForStudent } from '../lib/account';
 import { logger } from '../logger';
 import { z } from 'zod';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
@@ -20,13 +20,10 @@ const requireGuardianBillingAccess = requireGuardianRole({
 });
 
 const checkoutSchema = z.object({
-  plan: z.enum(['monthly', 'quarterly', 'yearly']).optional(),
-  priceId: z.string().min(1).optional(),
-}).refine((v) => !!v.plan || !!v.priceId, {
-  message: 'plan or priceId is required',
-});
+  plan: z.enum(['monthly', 'quarterly', 'yearly']),
+}).strict();
 
-function resolvePriceIdAndPlan(input: { plan?: string; priceId?: string }): { plan: 'monthly' | 'quarterly' | 'yearly'; priceId: string } {
+function resolvePriceIdAndPlan(input: { plan: 'monthly' | 'quarterly' | 'yearly' }): { plan: 'monthly' | 'quarterly' | 'yearly'; priceId: string } {
   const monthly = process.env.STRIPE_PRICE_PARENT_MONTHLY;
   const quarterly = process.env.STRIPE_PRICE_PARENT_QUARTERLY;
   const yearly = process.env.STRIPE_PRICE_PARENT_YEARLY;
@@ -46,23 +43,9 @@ function resolvePriceIdAndPlan(input: { plan?: string; priceId?: string }): { pl
     yearly,
   } as const;
 
-  if (input.plan) {
-    const plan = input.plan as keyof typeof map;
-    const priceId = map[plan];
-    return { plan, priceId };
-  }
-
-  const allowed = new Set([monthly, quarterly, yearly]);
-  if (!input.priceId || !allowed.has(input.priceId)) {
-    throw new Error('Invalid priceId');
-  }
-
-  const plan =
-    input.priceId === monthly ? 'monthly' :
-      input.priceId === quarterly ? 'quarterly' :
-        'yearly';
-
-  return { plan, priceId: input.priceId };
+  const plan = input.plan as keyof typeof map;
+  const priceId = map[plan];
+  return { plan, priceId };
 }
 
 router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Request, res: Response) => {
@@ -178,8 +161,8 @@ router.post('/checkout', requireSupabaseAuth, csrfProtection, async (req: Reques
 
       customerId = customer.id;
 
-      // Persist at ENTITLEMENT level (source of truth)
-      await upsertEntitlement(accountId, { stripe_customer_id: customerId });
+      // Persist stripe_customer_id only (non-premium metadata)
+      await setEntitlementStripeCustomerId(accountId, customerId);
 
       logger.info('BILLING', 'checkout', 'Created Stripe customer', {
         userId,
@@ -329,75 +312,6 @@ router.get('/status', requireSupabaseAuth, async (req: Request, res: Response) =
 
   let billingIsPaid = plan === 'paid' && isActiveOrTrialing && !periodExpired;
 
-  if (!billingIsPaid && accountId) {
-    try {
-      const stripeCustomerId = entitlement?.stripe_customer_id || null;
-      if (stripeCustomerId) {
-        logger.info('BILLING', 'status', 'Self-heal: if DB says not paid but Stripe says active, reconcile now', {
-          userId,
-          accountId,
-          stripeCustomerId,
-          currentStatus: status,
-          requestId,
-        });
-
-        const stripe = await getUncachableStripeClient();
-        const subs = await stripe.subscriptions.list({
-          customer: stripeCustomerId,
-          status: 'all',
-          limit: 10,
-        });
-
-        const accountSubs = subs.data.filter(s => {
-          const subAccountId = s.metadata?.account_id;
-          return subAccountId === accountId;
-        });
-
-        const best =
-          accountSubs.find(s => s.status === 'active') ||
-          accountSubs.find(s => s.status === 'trialing') ||
-          accountSubs.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
-
-        if (best) {
-          const mapped = mapStripeStatusToEntitlement(best.status);
-          const periodEnd = (best as any).current_period_end;
-          const reconciledPeriodEnd = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
-
-          await upsertEntitlement(accountId, {
-            plan: mapped.plan,
-            status: mapped.status,
-            stripe_customer_id: stripeCustomerId,
-            stripe_subscription_id: best.id,
-            current_period_end: reconciledPeriodEnd,
-          });
-
-          entitlement = await getOrCreateEntitlement(accountId);
-          plan = entitlement?.plan || 'free';
-          status = entitlement?.status || 'inactive';
-          currentPeriodEnd = entitlement?.current_period_end || null;
-          isActiveOrTrialing = status === 'active' || status === 'trialing';
-          periodExpired = currentPeriodEnd ? new Date(currentPeriodEnd) < new Date() : false;
-          billingIsPaid = plan === 'paid' && isActiveOrTrialing && !periodExpired;
-
-          logger.info('BILLING', 'status', 'Self-heal: reconciliation complete', {
-            userId,
-            accountId,
-            newPlan: plan,
-            newStatus: status,
-            subscriptionId: best.id,
-            requestId,
-          });
-        }
-      }
-    } catch (e: any) {
-      logger.warn('BILLING', 'status', 'Self-heal reconcile failed', { error: e.message, requestId });
-      return res.status(503).json({
-        error: 'Billing status unavailable',
-        code: 'BILLING_STATUS_UNAVAILABLE',
-        requestId,
-      });
-    }
-  }
 
   try {
     if (userRole === 'guardian') {
@@ -497,7 +411,56 @@ router.get('/products', requireSupabaseAuth, requireGuardianBillingAccess, async
   }
 });
 
-async function getPricesHandler(req: Request, res: Response) {
+type BillingPlanKey = 'monthly' | 'quarterly' | 'yearly';
+
+type BillingPlanMetadata = {
+  plan: BillingPlanKey;
+  label: string;
+  amountCents: number;
+  currency: string;
+  intervalLabel: string;
+  equivalentMonthlyCents?: number;
+  savingsPercent?: number;
+  stripePriceIdConfigured: boolean;
+};
+
+const planFallbacks: Record<BillingPlanKey, Omit<BillingPlanMetadata, 'plan' | 'stripePriceIdConfigured'>> = {
+  monthly: {
+    label: 'Monthly',
+    amountCents: 9999,
+    currency: 'usd',
+    intervalLabel: 'per month',
+    equivalentMonthlyCents: 9999,
+    savingsPercent: 0,
+  },
+  quarterly: {
+    label: 'Quarterly',
+    amountCents: 19999,
+    currency: 'usd',
+    intervalLabel: 'per 3 months',
+    equivalentMonthlyCents: 6666,
+    savingsPercent: 33.3,
+  },
+  yearly: {
+    label: 'Yearly',
+    amountCents: 69999,
+    currency: 'usd',
+    intervalLabel: 'per year',
+    equivalentMonthlyCents: 5833,
+    savingsPercent: 41.7,
+  },
+};
+
+function toIntervalLabel(interval: string | null | undefined, intervalCount: number | null | undefined): string | null {
+  if (!interval || !intervalCount || intervalCount < 1) return null;
+  if (interval === 'month' && intervalCount === 1) return 'per month';
+  if (interval === 'month' && intervalCount === 3) return 'per 3 months';
+  if (interval === 'year' && intervalCount === 1) return 'per year';
+  if (intervalCount === 1) return `per ${interval}`;
+  return `per ${intervalCount} ${interval}s`;
+}
+
+async function getPlansHandler(req: Request, res: Response) {
   const requestId = req.requestId;
   res.setHeader('Cache-Control', 'no-store');
   try {
@@ -505,64 +468,73 @@ async function getPricesHandler(req: Request, res: Response) {
     const quarterlyId = process.env.STRIPE_PRICE_PARENT_QUARTERLY;
     const yearlyId = process.env.STRIPE_PRICE_PARENT_YEARLY;
 
-    const missing: string[] = [];
-    if (!monthlyId) missing.push('STRIPE_PRICE_PARENT_MONTHLY');
-    if (!quarterlyId) missing.push('STRIPE_PRICE_PARENT_QUARTERLY');
-    if (!yearlyId) missing.push('STRIPE_PRICE_PARENT_YEARLY');
+    const ids: Record<BillingPlanKey, string | undefined> = {
+      monthly: monthlyId,
+      quarterly: quarterlyId,
+      yearly: yearlyId,
+    };
 
-    if (missing.length > 0) {
-      logger.error('BILLING', 'prices', 'Missing price env vars', { missing, requestId });
-      return res.status(500).json({
-        error: 'Subscription prices not configured',
-        missing,
-        requestId
-      });
-    }
+    const stripe = await getUncachableStripeClient();
+    const plans: BillingPlanMetadata[] = await Promise.all(
+      (Object.keys(ids) as BillingPlanKey[]).map(async (planKey) => {
+        const fallback = planFallbacks[planKey];
+        const configuredPriceId = ids[planKey];
 
-    const prices = [
-      {
-        id: monthlyId,
-        plan: 'monthly' as const,
-        priceId: monthlyId,
-        amount: 9900,
-        currency: 'usd',
-        interval: 'month',
-        intervalCount: 1,
-        label: 'Monthly',
-      },
-      {
-        id: quarterlyId,
-        plan: 'quarterly' as const,
-        priceId: quarterlyId,
-        amount: 19900,
-        currency: 'usd',
-        interval: 'month',
-        intervalCount: 3,
-        label: 'Quarterly',
-        badge: 'Best value',
-      },
-      {
-        id: yearlyId,
-        plan: 'yearly' as const,
-        priceId: yearlyId,
-        amount: 69900,
-        currency: 'usd',
-        interval: 'year',
-        intervalCount: 1,
-        label: 'Yearly',
-      },
-    ];
+        if (!configuredPriceId || !configuredPriceId.startsWith('price_')) {
+          return {
+            plan: planKey,
+            ...fallback,
+            stripePriceIdConfigured: false,
+          };
+        }
 
-    res.json({ prices, requestId });
+        try {
+          const stripePrice = await stripe.prices.retrieve(configuredPriceId);
+          const stripeAmount = typeof stripePrice.unit_amount === 'number'
+            ? stripePrice.unit_amount
+            : fallback.amountCents;
+          const stripeCurrency = typeof stripePrice.currency === 'string'
+            ? stripePrice.currency.toLowerCase()
+            : fallback.currency;
+          const stripeInterval = toIntervalLabel(
+            stripePrice.recurring?.interval ?? null,
+            stripePrice.recurring?.interval_count ?? null,
+          ) ?? fallback.intervalLabel;
+
+          return {
+            plan: planKey,
+            label: fallback.label,
+            amountCents: stripeAmount,
+            currency: stripeCurrency,
+            intervalLabel: stripeInterval,
+            equivalentMonthlyCents: fallback.equivalentMonthlyCents,
+            savingsPercent: fallback.savingsPercent,
+            stripePriceIdConfigured: true,
+          };
+        } catch (err: any) {
+          logger.warn('BILLING', 'plans', 'Failed to load Stripe price metadata, returning fallback', {
+            plan: planKey,
+            requestId,
+            error: err?.message,
+          });
+
+          return {
+            plan: planKey,
+            ...fallback,
+            stripePriceIdConfigured: true,
+          };
+        }
+      })
+    );
+
+    res.json({ plans, requestId });
   } catch (err: any) {
-    logger.error('BILLING', 'prices', 'Failed to list prices', { err: err.message, requestId });
-    res.status(500).json({ error: 'Failed to list prices', requestId });
+    logger.error('BILLING', 'plans', 'Failed to list plans', { err: err.message, requestId });
+    res.status(500).json({ error: 'Failed to list plans', requestId });
   }
 }
 
-router.get('/prices', getPricesHandler);
-
-router.get('/prices/authenticated', requireSupabaseAuth, getPricesHandler);
+router.get('/plans', requireSupabaseAuth, getPlansHandler);
 router.get('/products/:productId/prices', requireSupabaseAuth, async (req: Request, res: Response) => {
   const requestId = req.requestId;
   try {

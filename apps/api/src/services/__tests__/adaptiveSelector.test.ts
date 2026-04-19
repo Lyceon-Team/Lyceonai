@@ -79,9 +79,9 @@ function createChainableMock(returnData: any[] = []) {
   return mock;
 }
 
-vi.mock('../studentMastery', () => ({
-  getWeakestSkills: vi.fn(),
-  getWeakestClusters: vi.fn(),
+vi.mock('../mastery-read', () => ({
+  fetchWeakestSkills: vi.fn(),
+  fetchWeakestClusters: vi.fn(),
 }));
 
 vi.mock('../../lib/supabase-admin', () => ({
@@ -96,13 +96,13 @@ vi.mock('../../lib/supabase-admin', () => ({
 }));
 
 import { selectNextQuestionForStudent } from '../adaptiveSelector';
-import { getWeakestSkills, getWeakestClusters } from '../studentMastery';
+import { fetchWeakestSkills, fetchWeakestClusters } from '../mastery-read';
 
 describe('adaptiveSelector', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (getWeakestSkills as Mock).mockResolvedValue([]);
-    (getWeakestClusters as Mock).mockResolvedValue([]);
+    (fetchWeakestSkills as Mock).mockResolvedValue([]);
+    (fetchWeakestClusters as Mock).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -124,7 +124,7 @@ describe('adaptiveSelector', () => {
   });
 
   it('should use cluster mode when specified', async () => {
-    (getWeakestClusters as Mock).mockResolvedValue([
+    (fetchWeakestClusters as Mock).mockResolvedValue([
       { structure_cluster_id: 'cluster-1', accuracy: 0.3, attempts: 10, correct: 3, mastery_score: 0.3 },
     ]);
 
@@ -139,7 +139,7 @@ describe('adaptiveSelector', () => {
   });
 
   it('should use skill mode when specified', async () => {
-    (getWeakestSkills as Mock).mockResolvedValue([
+    (fetchWeakestSkills as Mock).mockResolvedValue([
       { section: 'math', domain: 'Algebra', skill: 'Linear equations', accuracy: 0.4, attempts: 10, correct: 4, mastery_score: 0.4 },
     ]);
 
@@ -154,7 +154,7 @@ describe('adaptiveSelector', () => {
   });
 
   it('marks bounded degraded fallback when weak-skill source fails', async () => {
-    (getWeakestSkills as Mock).mockRejectedValueOnce(new Error('weakest_skills_query_failed'));
+    (fetchWeakestSkills as Mock).mockRejectedValueOnce(new Error('weakest_skills_query_failed'));
 
     const result = await selectNextQuestionForStudent({
       userId: 'user-123',
@@ -172,7 +172,7 @@ describe('adaptiveSelector', () => {
   });
 
   it('does not emit source warning when weak-skill source is healthy', async () => {
-    (getWeakestSkills as Mock).mockResolvedValueOnce([
+    (fetchWeakestSkills as Mock).mockResolvedValueOnce([
       { section: 'math', domain: 'Algebra', skill: 'Linear equations', accuracy: 0.4, attempts: 10, correct: 4, mastery_score: 0.4 },
     ]);
 

@@ -85,9 +85,9 @@ export default function UpdatePassword() {
             </div>
 
             {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertCircle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">{error}</AlertDescription>
               </Alert>
             )}
 

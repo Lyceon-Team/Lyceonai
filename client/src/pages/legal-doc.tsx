@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
-import { Helmet } from "react-helmet-async";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,19 +148,6 @@ export default function LegalDocPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Helmet>
-        <title>{doc.title} | Lyceon</title>
-        <meta name="description" content={doc.shortDescription} />
-        <link rel="canonical" href={`https://lyceon.ai/legal/${doc.slug}`} />
-        <meta property="og:title" content={`${doc.title} | Lyceon`} />
-        <meta property="og:description" content={doc.shortDescription} />
-        <meta property="og:url" content={`https://lyceon.ai/legal/${doc.slug}`} />
-        <meta property="og:type" content="article" />
-        <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content={`${doc.title} | Lyceon`} />
-        <meta name="twitter:description" content={doc.shortDescription} />
-      </Helmet>
-
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">

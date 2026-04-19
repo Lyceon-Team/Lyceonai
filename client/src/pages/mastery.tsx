@@ -1,14 +1,16 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, Target, AlertCircle, TrendingUp } from "lucide-react";
+import { ArrowLeft, Target, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useEffect, useMemo, useState } from "react";
+import { isEntitlementDenialError } from "@/lib/api-error";
+import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
 interface SkillNode {
   id: string;
@@ -66,11 +68,17 @@ function getStatusLabel(status: string): string {
 }
 
 export default function MasteryPage() {
+  const [, navigate] = useLocation();
+
   const handleBack = () => {
     window.history.back();
   };
 
-  const { data, isLoading, error } = useQuery<MasteryResponse>({
+  const handleUpgrade = () => {
+    navigate("/upgrade");
+  };
+
+  const { data, isLoading, error, refetch } = useQuery<MasteryResponse>({
     queryKey: ["/api/me/mastery/skills"],
     retry: 1,
   });
@@ -120,29 +128,25 @@ export default function MasteryPage() {
         )}
 
         {error && (() => {
-          const message = error instanceof Error ? error.message : "";
-          const isPremiumLocked = message.includes("402") || message.includes("PREMIUM_KPI_REQUIRED");
+          const isPremiumLocked = isEntitlementDenialError(error);
 
           if (isPremiumLocked) {
             return (
-              <Card className="bg-primary-container text-primary-foreground border-transparent">
-                <CardContent className="pt-6">
-                  <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70 mb-3">Premium Insight</p>
-                  <h2 className="text-2xl font-bold mb-2">Mastery analytics are locked</h2>
-                  <p className="text-sm text-primary-foreground/85 mb-5">This account needs premium KPI access before `/api/me/mastery/skills` can be displayed in the dashboard.</p>
-                  <Button asChild variant="secondary" size="sm">
-                    <a href="/">View Upgrade Options</a>
-                  </Button>
-                </CardContent>
-              </Card>
+              <EmptyStateCTA
+                title="Mastery analytics are locked"
+                message="This account needs premium KPI access before mastery insights can be displayed."
+                actionLabel="View plans"
+                onAction={handleUpgrade}
+              />
             );
           }
 
           return (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>Failed to load mastery data. Please try again later.</AlertDescription>
-            </Alert>
+            <RecoveryNotice
+              title="We couldn’t load mastery data."
+              message="Try again. If this keeps happening, refresh the page."
+              onRetry={() => void refetch()}
+            />
           );
         })()}
 

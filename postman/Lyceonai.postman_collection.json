@@ -30,7 +30,24 @@
 				"type": "text/javascript",
 				"exec": [
 					"// Set Origin header for CSRF protection (must match allowed origins)",
-					"pm.request.headers.upsert({ key: 'Origin', value: pm.collectionVariables.get('siteUrl') });"
+					"pm.request.headers.upsert({ key: 'Origin', value: pm.collectionVariables.get('siteUrl') });",
+					"",
+					"// Automatically handle the double-submit CSRF token for mutating requests",
+					"if (pm.request.method !== 'GET' && pm.request.method !== 'HEAD' && pm.request.method !== 'OPTIONS') {",
+					"    const tokenUrl = pm.collectionVariables.get('baseUrl') + '/api/csrf-token';",
+					"    pm.sendRequest({",
+					"        url: tokenUrl,",
+					"        method: 'GET',",
+					"        header: { 'Origin': pm.collectionVariables.get('siteUrl') }",
+					"    }, function (err, res) {",
+					"        if (!err && res.code === 200) {",
+					"            const json = res.json();",
+					"            if (json.csrfToken) {",
+					"                pm.request.headers.upsert({ key: 'x-csrf-token', value: json.csrfToken });",
+					"            }",
+					"        }",
+					"    });",
+					"}"
 				]
 			}
 		}
@@ -39,6 +56,13 @@
 		{
 			"name": "🔐 Authentication",
 			"item": [
+				{
+					"name": "Get CSRF Token",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/api/csrf-token", "host": ["{{baseUrl}}"], "path": ["api","csrf-token"] }
+					}
+				},
 				{
 					"name": "Sign Up",
 					"request": {
@@ -422,15 +446,15 @@
 			"name": "🤖 AI Tutor",
 			"item": [
 				{
-					"name": "Chat with Tutor (v2)",
+					"name": "Append Tutor Message",
 					"request": {
 						"method": "POST",
 						"header": [{ "key": "Content-Type", "value": "application/json" }],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"message\": \"Can you help me understand quadratic equations?\",\n  \"questionId\": \"{{questionId}}\"\n}"
+							"raw": "{\n  \"conversation_id\": \"{{tutorConversationId}}\",\n  \"message\": \"Can you help me understand quadratic equations?\",\n  \"content_kind\": \"message\",\n  \"client_turn_id\": \"11111111-1111-4111-8111-111111111111\"\n}"
 						},
-						"url": { "raw": "{{baseUrl}}/api/tutor/v2", "host": ["{{baseUrl}}"], "path": ["api","tutor","v2"] }
+						"url": { "raw": "{{baseUrl}}/api/tutor/messages", "host": ["{{baseUrl}}"], "path": ["api","tutor","messages"] }
 					}
 				}
 			]

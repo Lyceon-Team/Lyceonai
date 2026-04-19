@@ -61,7 +61,7 @@ export function createUsageLimitMiddleware(limitType: 'practice' | 'ai_chat', op
           current: check.current,
           limit: check.limit,
           resetAt: check.resetAt,
-          message: `You've reached your daily ${limitType === 'practice' ? 'practice question' : 'AI chat'} limit. Upgrade to unlock unlimited access.`,
+          message: `You've reached your daily ${limitType === 'practice' ? 'practice question' : 'tutor chat'} limit. Upgrade to unlock unlimited access.`,
           requestId,
         });
       }

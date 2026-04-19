@@ -1,6 +1,6 @@
 /**
  * Offline RAG pipeline utilities for SAT question metadata and embeddings.
- * Not a mounted runtime owner for /api/rag/v2 or /api/tutor/v2.
+ * Not a mounted runtime owner for /api/rag/v2 or /api/tutor/*.
  */
 
 import { GoogleGenAI } from "@google/genai";

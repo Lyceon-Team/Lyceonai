@@ -1,10 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { csrfFetch } from "./csrf";
+import { clearCsrfToken, csrfFetch } from "./csrf";
+import { parseApiErrorFromResponse } from "./api-error";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    throw await parseApiErrorFromResponse(res, res.statusText || "Request failed");
   }
 }
 
@@ -59,6 +59,8 @@ async function fetchWithSessionRefresh(
     });
 
     if (refreshRes.ok) {
+      // Refresh changes session identity cookies, so force a fresh CSRF token next mutation.
+      clearCsrfToken();
       res = await doFetch();
     }
   }
@@ -66,13 +68,15 @@ async function fetchWithSessionRefresh(
   return res;
 }
 
-export async function apiRequest(
+type ApiRequestOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string | FormData;
+};
+
+export async function apiRequestRaw(
   url: string,
-  options?: {
-    method?: string;
-    headers?: Record<string, string>;
-    body?: string | FormData;
-  }
+  options?: ApiRequestOptions
 ): Promise<Response> {
   const { method = 'GET', headers = {}, body } = options || {};
   
@@ -88,6 +92,14 @@ export async function apiRequest(
     body,
   });
 
+  return res;
+}
+
+export async function apiRequest(
+  url: string,
+  options?: ApiRequestOptions
+): Promise<Response> {
+  const res = await apiRequestRaw(url, options);
   await throwIfResNotOk(res);
   return res;
 }

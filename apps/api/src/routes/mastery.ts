@@ -1,10 +1,14 @@
 import { Response, Router } from 'express';
 import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
-import { getMasterySummary, getWeakestSkills } from '../services/studentMastery';
-import { getSupabaseAdmin } from '../lib/supabase-admin';
-import { getMasteryStatus } from '../services/mastery-projection';
+import {
+  buildMasterySkillTreeFromRows,
+  buildMasterySummaryFromRows,
+  fetchSkillMasteryRows,
+  fetchWeakestSkills,
+} from '../services/mastery-read';
 import { DateTime } from 'luxon';
 import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
+import { getSupabaseAdmin } from '../lib/supabase-admin';
 
 const SAT_TAXONOMY = {
   math: {
@@ -98,46 +102,55 @@ const SAT_TAXONOMY = {
   },
 };
 
-interface SkillMasteryRow {
-  section: string;
-  domain: string | null;
-  skill: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-}
-
-interface SkillNode {
-  id: string;
-  label: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
-}
-
-interface DomainNode {
-  id: string;
-  label: string;
-  skills: SkillNode[];
-  avgMastery: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
-}
-
-interface SectionNode {
-  id: string;
-  label: string;
-  domains: DomainNode[];
-  avgMastery: number;
-}
-
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
 }
 
+function mapWeakestStatus(
+  masteryLevel: unknown,
+  attempts: number,
+  masteryScore: number
+): "not_started" | "weak" | "improving" | "proficient" {
+  if (!Number.isFinite(attempts) || attempts < 0.01) {
+    return "not_started";
+  }
+
+  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
+  if (masteryLevel === 2) return "improving";
+  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
+
+  if (masteryScore < 40) return "weak";
+  if (masteryScore < 70) return "improving";
+  return "proficient";
+}
+
 const router = Router();
+
+async function ensurePremiumMasteryAccess(
+  req: AuthenticatedRequest,
+  res: Response,
+  user: { id: string; role: string },
+  feature: string,
+): Promise<boolean> {
+  const access = await resolvePaidKpiAccessForUser(user.id, user.role as "student" | "guardian" | "admin");
+  if (!access.hasPaidAccess) {
+    res.status(402).json({
+      error: "Premium feature required",
+      code: "PREMIUM_REQUIRED",
+      feature,
+      message: "Upgrade to an active paid plan to unlock this feature.",
+      reason: access.reason,
+      entitlement: {
+        plan: access.plan,
+        status: access.status,
+        currentPeriodEnd: access.currentPeriodEnd,
+      },
+      requestId: (req as any).requestId,
+    });
+    return false;
+  }
+  return true;
+}
 
 /**
  * GET /mastery/summary - READ ONLY endpoint
@@ -151,10 +164,14 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
     if (!user) {
       return;
     }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_summary"))) {
+      return;
+    }
 
     const section = req.query.section as string | undefined;
 
-    const summary = await getMasterySummary(user.id, section);
+    const rows = await fetchSkillMasteryRows({ userId: user.id, section });
+    const summary = buildMasterySummaryFromRows(rows);
 
     res.json({
       ok: true,
@@ -182,97 +199,11 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
     if (!user) {
       return;
     }
-
-    const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    if (!access.hasPaidAccess) {
-      return res.status(402).json({
-        error: 'Premium KPI feature required',
-        code: 'PREMIUM_KPI_REQUIRED',
-        feature: 'mastery_hexagon',
-        message: 'Upgrade to an active paid plan to unlock mastery KPI surfaces.',
-        reason: access.reason,
-        requestId: (req as any).requestId,
-      });
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_hexagon"))) {
+      return;
     }
-    const userId = user.id;
-    const supabase = getSupabaseAdmin();
-
-    // READ ONLY: Fetch stored mastery scores
-    const { data: masteryData, error } = await supabase
-      .from("student_skill_mastery")
-      .select("section, domain, skill, attempts, correct, accuracy, mastery_score")
-      .eq("user_id", userId);
-
-    if (error) {
-      console.error("[Mastery] Failed to fetch skills:", error.message);
-      return res.status(500).json({ error: "Failed to fetch mastery data" });
-    }
-
-    const masteryMap = new Map<string, SkillMasteryRow>();
-    for (const row of masteryData || []) {
-      const key = `${row.section}:${row.domain || "unknown"}:${row.skill}`;
-      masteryMap.set(key, row);
-    }
-
-    const result: SectionNode[] = [];
-
-    for (const [sectionId, sectionDef] of Object.entries(SAT_TAXONOMY)) {
-      const domains: DomainNode[] = [];
-      let sectionTotalMastery = 0;
-      let sectionDomainCount = 0;
-
-      for (const [domainId, domainDef] of Object.entries(sectionDef.domains)) {
-        const skills: SkillNode[] = [];
-        let domainTotalMastery = 0;
-
-        for (const skillId of domainDef.skills) {
-          const key = `${sectionId}:${domainId}:${skillId}`;
-          const row = masteryMap.get(key);
-
-          const attempts = row?.attempts ?? 0;
-          const correct = row?.correct ?? 0;
-          const accuracy = row?.accuracy ?? 0;
-          const mastery_score = row?.mastery_score ?? 0;
-
-          skills.push({
-            id: skillId,
-            label: skillId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-            attempts,
-            correct,
-            accuracy: Math.round(accuracy * 100), // accuracy still in 0-1 range
-            mastery_score: Math.round(mastery_score), // mastery_score now in 0-100 range
-            status: getMasteryStatus(mastery_score, attempts),
-          });
-
-          domainTotalMastery += mastery_score;
-        }
-
-        const avgDomainMastery = domainDef.skills.length > 0 
-          ? domainTotalMastery / domainDef.skills.length 
-          : 0;
-
-        domains.push({
-          id: domainId,
-          label: domainDef.label,
-          skills,
-          avgMastery: Math.round(avgDomainMastery),
-          status: getMasteryStatus(avgDomainMastery, skills.reduce((a, s) => a + s.attempts, 0)),
-        });
-
-        sectionTotalMastery += avgDomainMastery;
-        sectionDomainCount++;
-      }
-
-      result.push({
-        id: sectionId,
-        label: sectionDef.label,
-        domains,
-        avgMastery: sectionDomainCount > 0 
-          ? Math.round(sectionTotalMastery / sectionDomainCount) 
-          : 0,
-      });
-    }
-
+    const rows = await fetchSkillMasteryRows({ userId: user.id });
+    const result = buildMasterySkillTreeFromRows(rows, SAT_TAXONOMY);
     return res.json({ sections: result });
   } catch (err: any) {
     console.error("[Mastery] Error:", err.message);
@@ -292,11 +223,14 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
     if (!user) {
       return;
     }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_weakest"))) {
+      return;
+    }
 
     const userId = user.id;
     const limit = parseInt(req.query.limit as string) || 5;
 
-    const weakest = await getWeakestSkills({
+    const weakest = await fetchWeakestSkills({
       userId,
       limit,
       minAttempts: 2,
@@ -310,7 +244,7 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
       attempts: row.attempts,
       accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
       mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: getMasteryStatus(row.mastery_score, row.attempts),
+      status: mapWeakestStatus((row as any).mastery_level, row.attempts, row.mastery_score),
     }));
 
     return res.json({ weakest: formatted });
@@ -324,6 +258,9 @@ router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => 
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
+      return;
+    }
+    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_plan_mutation"))) {
       return;
     }
 

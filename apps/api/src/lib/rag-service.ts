@@ -683,7 +683,7 @@ export class RagService {
     const scoringContext = this.buildScoringContext(primaryQuestion, studentProfile);
 
     // 3. Vector search with combined query
-    const topK = request.topK || this.defaultTopK;
+    const topK = this.defaultTopK;
     const searchTopK = Math.max(12, topK * 2); // At least 2x for filtering
 
     try {
@@ -766,7 +766,7 @@ export class RagService {
   ): Promise<RagContext> {
     const supportingQuestions: QuestionContext[] = [];
     const seenCanonicalIds = new Set<string>();
-    const topK = request.topK || this.defaultTopK;
+    const topK = this.defaultTopK;
     const searchTopK = Math.max(12, topK * 2); // At least 10-12 for filtering
 
     // Build filters from request
@@ -1031,9 +1031,10 @@ export class RagService {
     const startTime = Date.now();
     console.log(`🔍 [RAG-V2] Processing ${request.mode} mode query for user ${request.userId}`);
 
-    // Load or use provided student profile
-    const studentProfile = request.studentProfile || 
-      await this.loadStudentProfile(request.userId);
+    // Always load student profile server-side
+    const studentProfile = this.profileLoader
+      ? await this.profileLoader.loadProfile(request.userId)
+      : await this.loadStudentProfile(request.userId);
 
     let context: RagContext;
 

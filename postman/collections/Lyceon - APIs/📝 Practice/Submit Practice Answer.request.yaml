@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/api/practice/answer"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "questionId": "{{questionId}}",
+      "answer": "A",
+      "sessionId": "{{sessionId}}"
+    }
+order: 6000

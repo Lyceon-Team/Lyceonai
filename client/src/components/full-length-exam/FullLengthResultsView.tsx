@@ -166,7 +166,6 @@ export default function FullLengthResultsView({
         return;
       }
       toast({
-        variant: "destructive",
         title: "Unable to share",
         description: "Please try again.",
       });
@@ -261,7 +260,7 @@ export default function FullLengthResultsView({
 
         {!hasStudentSectionScores && (
           <div className="rounded-lg border border-border/50 bg-secondary/30 p-4 text-sm text-muted-foreground">
-            Section-level raw counts are not present in this projection payload.
+            Section-level raw counts are not present in this estimate payload.
           </div>
         )}
 

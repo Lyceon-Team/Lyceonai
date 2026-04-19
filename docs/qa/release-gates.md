@@ -217,13 +217,13 @@ curl -s http://localhost:5000/api/guardian/students | jq .
 
 ## 9. Linking Model (Source of Truth)
 
-**Authoritative:** `profiles.guardian_profile_id` (FK to profiles.id)
+**Authoritative:** `guardian_links` (active link rows only)
 
 **Constraints:**
-- `profiles_guardian_profile_id_fkey` - FK to profiles.id
-- `profiles_guardian_not_self` - CHECK (guardian_profile_id IS NULL OR guardian_profile_id <> id)
+- `guardian_links_no_self_link` - CHECK (guardian_profile_id <> student_user_id)
+- Unique guardian↔student link rows enforced in `guardian_links`
 
-**NOT used:** `guardian_student_links` join table
+**Deprecated:** `profiles.guardian_profile_id` (legacy only; must not be used for authorization)
 
 ---
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UserCircle, Settings, LogOut, Crown, Zap, Users } from "lucide-react";
+import { UserCircle, Settings, LogOut, Zap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { 
@@ -30,7 +30,6 @@ export default function Navigation() {
       toast({ 
         title: "Logout failed", 
         description: "Please try again",
-        variant: "destructive"
       });
     } finally {
       setIsSigningOut(false);
@@ -112,16 +111,6 @@ export default function Navigation() {
                   </Link>
                 </>
               )}
-              {isAdmin && (
-                <Link 
-                  href="/admin" 
-                  className={`${location.startsWith('/admin') ? 'text-foreground font-medium border-b-2 border-foreground' : 'text-muted-foreground hover:text-foreground'} transition-colors pb-1 flex items-center gap-1`}
-                  data-testid="nav-admin"
-                >
-                  <Crown className="h-4 w-4" />
-                  Admin
-                </Link>
-              )}
             </nav>
           </div>
           <div className="flex items-center space-x-4">
@@ -163,12 +152,6 @@ export default function Navigation() {
                     <Settings className="mr-2 h-4 w-4" />
                     Profile & Settings
                   </DropdownMenuItem>
-                  {isAdmin && (
-                    <DropdownMenuItem onClick={() => navigate('/admin')} data-testid="menu-admin">
-                      <Crown className="mr-2 h-4 w-4" />
-                      Admin Panel
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     onClick={handleLogout}

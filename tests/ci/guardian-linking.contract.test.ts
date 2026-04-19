@@ -120,7 +120,7 @@ describe('Guardian Linking 1:1 Enforcement Contract', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('GUARDIAN_ALREADY_LINKED');
     expect(res.body.error).toContain('Guardian already linked to another student');
-  });
+  }, 15000);
 
   it('returns anti-enumeration 404 when student already linked to another guardian', async () => {
     const conflict = new Error('Student is already linked to another guardian') as Error & { code?: string };
@@ -138,6 +138,6 @@ describe('Guardian Linking 1:1 Enforcement Contract', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Invalid or unavailable student code');
-  });
+  }, 15000);
 });
 

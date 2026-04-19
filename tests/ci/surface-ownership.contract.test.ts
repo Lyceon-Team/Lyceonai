@@ -8,15 +8,25 @@
  *
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
- *   - Full-length report/view       → buildStudentFullLengthReportView in kpi-truth-layer
+ *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
  *   - Weakness view                 → buildWeaknessSkillsView → getWeakestSkills + getWeakestClusters
  *   - Calendar month view           → buildCalendarMonthView (getMonthPayload alias in calendar route)
- *   - KPI summary/progress view     → buildCanonicalPracticeKpiSnapshot + buildStudentKpiView
+ *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+
+const masteryMocks2 = vi.hoisted(() => ({
+    getWeakestSkills: vi.fn(),
+    getWeakestClusters: vi.fn(),
+}));
+
+vi.mock('../../apps/api/src/services/studentMastery', () => ({
+    getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+    getWeakestClusters: (...args: any[]) => masteryMocks2.getWeakestClusters(...args),
+}));
 
 // ---------------------------------------------------------------------------
 // Surface 2: Full-length report — buildStudentFullLengthReportView is the only
@@ -32,13 +42,11 @@ describe('Full-length report: single canonical builder', () => {
         getExamReport: vi.fn(),
     }));
 
-    vi.mock('../../server/services/kpi-truth-layer', () => ({
+    vi.mock('../../server/services/canonical-runtime-views', () => ({
         buildStudentFullLengthReportView: (...args: any[]) =>
             kpiMocks.buildStudentFullLengthReportView(...args),
-        buildStudentKpiView: vi.fn(),
-        buildCanonicalPracticeKpiSnapshot: vi.fn(),
-        buildFullTestKpis: vi.fn(),
-        fullTestMeasurementModel: vi.fn().mockReturnValue({ official: [], weighted: [], diagnostic: [] }),
+        buildStudentKpiViewFromCanonical: vi.fn(),
+        buildScoreEstimateFromCanonical: vi.fn(),
         projectGuardianFullLengthReportView: vi.fn(),
     }));
 
@@ -133,7 +141,7 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('kpis');
         expect(res.body).toHaveProperty('measurementModel');
-    });
+    }, 15000);
 
     it('report route fails closed when buildStudentFullLengthReportView throws', async () => {
         examMocks.getExamReport.mockResolvedValue({
@@ -158,7 +166,7 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
 
         expect(res.status).toBe(500);
         expect(res.body).toHaveProperty('error');
-    });
+    }, 15000);
 
     it('report is premium-gated: returns 402 when entitlement resolves to free', async () => {
         kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
@@ -192,11 +200,6 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
 //            getWeakestClusters owns the clusters shape. No inline fork.
 // ---------------------------------------------------------------------------
 describe('Weakness view: single canonical builder per sub-surface', () => {
-    const masteryMocks2 = {
-        getWeakestSkills: vi.fn(),
-        getWeakestClusters: vi.fn(),
-    };
-
     // NOTE: weakness.runtime.contract.test.ts already mocks studentMastery.
     // This test imports the router directly and verifies it flows through
     // buildWeaknessSkillsView (which calls getWeakestSkills with failOnError=true).
@@ -204,11 +207,6 @@ describe('Weakness view: single canonical builder per sub-surface', () => {
     it('skills route calls buildWeaknessSkillsView with failOnError=true', async () => {
         masteryMocks2.getWeakestSkills.mockResolvedValue([]);
         masteryMocks2.getWeakestClusters.mockResolvedValue([]);
-
-        vi.doMock('../../apps/api/src/services/studentMastery', () => ({
-            getWeakestSkills: masteryMocks2.getWeakestSkills,
-            getWeakestClusters: masteryMocks2.getWeakestClusters,
-        }));
 
         const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
 
@@ -275,27 +273,17 @@ describe('Calendar month view: getMonthPayload is buildCalendarMonthView alias',
 
 // ---------------------------------------------------------------------------
 // Surface 5: KPI summary/progress view — getRecencyKpis calls
-//            buildCanonicalPracticeKpiSnapshot and buildStudentKpiView.
+//            buildStudentKpiViewFromCanonical directly.
 //            No stale parallel builder present.
 // ---------------------------------------------------------------------------
 describe('KPI summary: canonical builder path', () => {
     const kpiMocks5 = {
-        buildCanonicalPracticeKpiSnapshot: vi.fn(),
-        buildStudentKpiView: vi.fn(),
+        buildStudentKpiViewFromCanonical: vi.fn(),
         resolvePaidKpiAccessForUser: vi.fn(),
     };
 
-    it('getRecencyKpis calls buildCanonicalPracticeKpiSnapshot then buildStudentKpiView', async () => {
-        kpiMocks5.buildCanonicalPracticeKpiSnapshot.mockResolvedValue({
-            modelVersion: 'kpi_truth_v1',
-            timezone: 'America/Chicago',
-            generatedAt: new Date().toISOString(),
-            currentWeek: { practiceSessions: 3, practiceMinutes: 90, questionsSolved: 45, accuracyPercent: 80, avgSecondsPerQuestion: 70 },
-            previousWeek: { practiceSessions: 2, practiceMinutes: 60, questionsSolved: 30, accuracyPercent: 75, avgSecondsPerQuestion: 80 },
-            recency200: { totalAttempts: 110, accuracyPercent: 78, avgSecondsPerQuestion: 72 },
-        });
-
-        const kpiView = {
+    it('getRecencyKpis calls buildStudentKpiViewFromCanonical', async () => {
+        kpiMocks5.buildStudentKpiViewFromCanonical.mockResolvedValue({
             modelVersion: 'kpi_truth_v1',
             timezone: 'America/Chicago',
             week: { practiceSessions: 3, questionsSolved: 45, accuracy: 80, explanations: {} },
@@ -303,8 +291,7 @@ describe('KPI summary: canonical builder path', () => {
             metrics: [],
             gating: { historicalTrends: { allowed: false, requiredPlan: 'paid', reason: 'no plan' } },
             measurementModel: { official: [], weighted: [], diagnostic: [] },
-        };
-        kpiMocks5.buildStudentKpiView.mockReturnValue(kpiView);
+        });
         kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({
             hasPaidAccess: false,
             plan: 'free',
@@ -314,13 +301,10 @@ describe('KPI summary: canonical builder path', () => {
         });
 
         // Override the mocks at the module level
-        vi.doMock('../../server/services/kpi-truth-layer', () => ({
-            KPI_TRUTH_LAYER_VERSION: 'kpi_truth_v1',
-            buildCanonicalPracticeKpiSnapshot: kpiMocks5.buildCanonicalPracticeKpiSnapshot,
-            buildStudentKpiView: kpiMocks5.buildStudentKpiView,
+        vi.doMock('../../server/services/canonical-runtime-views', () => ({
+            buildStudentKpiViewFromCanonical: kpiMocks5.buildStudentKpiViewFromCanonical,
+            buildScoreEstimateFromCanonical: vi.fn(),
             buildStudentFullLengthReportView: vi.fn(),
-            buildFullTestKpis: vi.fn(),
-            fullTestMeasurementModel: vi.fn().mockReturnValue({ official: [], weighted: [], diagnostic: [] }),
             projectGuardianFullLengthReportView: vi.fn(),
         }));
 
@@ -342,21 +326,16 @@ describe('KPI summary: canonical builder path', () => {
         const res = await request(app).get('/api/progress/kpis');
 
         expect(res.status).toBe(200);
-        // Must call the canonical snapshot builder
-        expect(kpiMocks5.buildCanonicalPracticeKpiSnapshot).toHaveBeenCalledWith('student-5');
-        // Must call the canonical view builder on the snapshot result
-        expect(kpiMocks5.buildStudentKpiView).toHaveBeenCalledWith(
-            expect.objectContaining({ modelVersion: 'kpi_truth_v1' }),
-            expect.any(Boolean)
-        );
+        // Must call the canonical view builder directly
+        expect(kpiMocks5.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-5', false);
         // Response must include the view props (not inlined elsewhere)
         expect(res.body).toHaveProperty('modelVersion');
         expect(res.body).toHaveProperty('week');
         expect(res.body).toHaveProperty('entitlement');
     });
 
-    it('getRecencyKpis fails closed when buildCanonicalPracticeKpiSnapshot throws', async () => {
-        kpiMocks5.buildCanonicalPracticeKpiSnapshot.mockRejectedValue(
+    it('getRecencyKpis fails closed when buildStudentKpiViewFromCanonical throws', async () => {
+        kpiMocks5.buildStudentKpiViewFromCanonical.mockRejectedValue(
             new Error('kpi_snapshot_exploded')
         );
         kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({

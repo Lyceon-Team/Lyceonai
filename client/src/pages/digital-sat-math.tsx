@@ -1,5 +1,4 @@
 import { Link } from 'wouter';
-import { SEO, JsonLd, createBreadcrumbJsonLd, createFaqJsonLd } from '@/components/SEO';
 import { Calculator, ArrowRight, CheckCircle2, AlertTriangle, BookOpen } from 'lucide-react';
 import PublicLayout from '@/components/layout/PublicLayout';
 import { Container, Card, Breadcrumb, Section } from '@/components/layout/primitives';
@@ -41,18 +40,6 @@ const topics = [
 export default function DigitalSATMathPage() {
   return (
     <PublicLayout>
-      <SEO
-        title="Digital SAT Math Prep - Algebra, Geometry & Data Analysis"
-        description="Master Digital SAT Math with adaptive practice, step-by-step review, and focused error correction."
-        canonical="https://lyceon.ai/digital-sat/math"
-      />
-      <JsonLd data={createBreadcrumbJsonLd([
-        { name: 'Home', url: 'https://lyceon.ai' },
-        { name: 'Digital SAT', url: 'https://lyceon.ai/digital-sat' },
-        { name: 'Math', url: 'https://lyceon.ai/digital-sat/math' },
-      ])} />
-      <JsonLd data={createFaqJsonLd(faqs)} />
-
       <Container>
         <Breadcrumb items={[
           { label: 'Home', href: '/' },

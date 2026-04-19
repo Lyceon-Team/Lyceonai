@@ -175,7 +175,7 @@ export interface StudentSafeQuestionProjection {
   question_type: "multiple_choice";
   stem: string;
   options: CanonicalMcOption[];
-  difficulty: unknown;
+  difficulty: string | number | null;
   domain: string | null;
   skill: string | null;
   subskill: string | null;
@@ -186,7 +186,16 @@ export interface StudentSafeQuestionProjection {
   explanation: null;
 }
 
+export interface StudentSafeOption {
+  id: string;
+  text: string;
+}
+
 export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): StudentSafeQuestionProjection {
+  const difficulty =
+    typeof row.difficulty === "string" || typeof row.difficulty === "number"
+      ? row.difficulty
+      : null;
   return {
     id: String(row.id),
     canonical_id: typeof row.canonical_id === "string" ? row.canonical_id : null,
@@ -195,7 +204,7 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     question_type: "multiple_choice",
     stem: normalizeText(row.stem),
     options: parseCanonicalMcOptions(row.options ?? null),
-    difficulty: row.difficulty ?? null,
+    difficulty,
     domain: typeof row.domain === "string" ? row.domain : null,
     skill: typeof row.skill === "string" ? row.skill : null,
     subskill: typeof row.subskill === "string" ? row.subskill : null,
@@ -207,14 +216,192 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
   };
 }
 
+export type ClientInstanceResolutionAction = "allow" | "bind" | "conflict";
+
+export interface ClientInstanceResolution {
+  action: ClientInstanceResolutionAction;
+  boundClientInstanceId: string | null;
+  requestedClientInstanceId: string | null;
+}
+
+export function normalizeClientInstanceId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+export function resolveClientInstanceBinding(args: {
+  boundClientInstanceId: unknown;
+  requestedClientInstanceId: unknown;
+}): ClientInstanceResolution {
+  const bound = normalizeClientInstanceId(args.boundClientInstanceId);
+  const requested = normalizeClientInstanceId(args.requestedClientInstanceId);
+
+  if (bound && (!requested || requested !== bound)) {
+    return { action: "conflict", boundClientInstanceId: bound, requestedClientInstanceId: requested };
+  }
+  if (!bound && requested) {
+    return { action: "bind", boundClientInstanceId: null, requestedClientInstanceId: requested };
+  }
+  return { action: "allow", boundClientInstanceId: bound, requestedClientInstanceId: requested };
+}
+
+function parseStoredOptionOrder(raw: unknown): CanonicalOptionKey[] | null {
+  if (Array.isArray(raw)) {
+    const values = raw
+      .map((v) => (typeof v === "string" ? normalizeAnswerKey(v) : null))
+      .filter((v) => !!v) as CanonicalOptionKey[];
+    return values.length > 0 ? values : null;
+  }
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) return null;
+      const values = inner.split(",").map((k) => normalizeAnswerKey(k.trim())).filter((k) => !!k) as CanonicalOptionKey[];
+      return values.length > 0 ? values : null;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parseStoredOptionOrder(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function parseStoredOptionTokenMap(raw: unknown): Record<string, CanonicalOptionKey> | null {
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const out: Record<string, CanonicalOptionKey> = {};
+  for (const [token, keyRaw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof token !== "string" || token.trim().length === 0) return null;
+    const normalizedKey = normalizeAnswerKey(keyRaw);
+    if (!normalizedKey) return null;
+    out[token] = normalizedKey;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+export function parseStudentSafeOptionTokenMap(raw: unknown): Record<string, CanonicalOptionKey> | null {
+  return parseStoredOptionTokenMap(raw);
+}
+
+export function buildStudentSafeOptionTokens(
+  options: ReadonlyArray<CanonicalMcOption>,
+  order?: ReadonlyArray<CanonicalOptionKey>
+) {
+  const optionOrder = order && order.length > 0 ? Array.from(order) : options.map((opt) => opt.key);
+  const optionTokenMap: Record<string, CanonicalOptionKey> = {};
+  const safeOptions: StudentSafeOption[] = [];
+
+  for (const key of optionOrder) {
+    const option = options.find((opt) => opt.key === key);
+    if (!option) continue;
+    let token = "opt_" + randomBytes(8).toString("hex");
+    while (optionTokenMap[token]) {
+      token = "opt_" + randomBytes(8).toString("hex");
+    }
+    optionTokenMap[token] = key;
+    safeOptions.push({ id: token, text: option.text });
+  }
+
+  return { optionOrder, optionTokenMap, safeOptions };
+}
+
+export function buildStudentSafeOptionsFromStoredMap(
+  options: ReadonlyArray<CanonicalMcOption>,
+  optionOrderRaw: unknown,
+  optionTokenMapRaw: unknown
+): StudentSafeOption[] | null {
+  const optionOrder = parseStoredOptionOrder(optionOrderRaw);
+  const optionTokenMap = parseStoredOptionTokenMap(optionTokenMapRaw);
+  if (!optionOrder || !optionTokenMap) return null;
+
+  if (optionOrder.length !== options.length) return null;
+
+  const optionByKey = new Map<CanonicalOptionKey, string>();
+  for (const opt of options) {
+    const normalized = normalizeAnswerKey(opt.key);
+    if (!normalized) return null;
+    optionByKey.set(normalized, opt.text);
+  }
+
+  const canonicalKeys = new Set(optionByKey.keys());
+  if (canonicalKeys.size !== options.length) return null;
+
+  const orderKeySet = new Set(optionOrder);
+  if (orderKeySet.size !== optionOrder.length) return null;
+  if (!Array.from(orderKeySet).every((key) => canonicalKeys.has(key))) return null;
+
+  const entries = Object.entries(optionTokenMap);
+  if (entries.length !== options.length) return null;
+
+  const tokenSet = new Set<string>();
+  const mappedKeySet = new Set<CanonicalOptionKey>();
+  const tokenByKey = new Map<CanonicalOptionKey, string>();
+
+  for (const [token, key] of entries) {
+    if (!token || !key) return null;
+    if (tokenSet.has(token)) return null;
+    tokenSet.add(token);
+
+    if (!canonicalKeys.has(key)) return null;
+    if (mappedKeySet.has(key)) return null;
+    mappedKeySet.add(key);
+    tokenByKey.set(key, token);
+  }
+
+  const safeOptions: StudentSafeOption[] = [];
+  for (const key of optionOrder) {
+    const token = tokenByKey.get(key);
+    const textValue = optionByKey.get(key);
+    if (!token || !textValue) return null;
+    safeOptions.push({ id: token, text: textValue });
+  }
+
+  return safeOptions;
+}
+
 const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 export const CANONICAL_ID_SUFFIX_LENGTH = 6;
 
 export function generateCanonicalIdSuffix(length: number = CANONICAL_ID_SUFFIX_LENGTH): string {
-  const bytes = randomBytes(length);
+  const charsetLength = CHARSET.length;
+  if (charsetLength <= 0) {
+    throw new Error("CHARSET must not be empty");
+  }
+  const maxUnbiased = Math.floor(256 / charsetLength) * charsetLength;
+
   let token = "";
-  for (let i = 0; i < length; i += 1) {
-    token += CHARSET[bytes[i] % CHARSET.length];
+  while (token.length < length) {
+    const bytes = randomBytes(length);
+    for (let i = 0; i < bytes.length && token.length < length; i += 1) {
+      const byte = bytes[i];
+      if (byte >= maxUnbiased) {
+        continue;
+      }
+      const index = byte % charsetLength;
+      token += CHARSET[index];
+    }
   }
   return token;
 }

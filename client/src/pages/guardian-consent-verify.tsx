@@ -81,9 +81,8 @@ export default function GuardianConsentVerify() {
     },
     onError: (err: any) => {
       toast({
-        title: "Error",
+        title: "Verification setup failed",
         description: err.message,
-        variant: "destructive"
       });
     }
   });
@@ -149,7 +148,7 @@ export default function GuardianConsentVerify() {
       <PublicLayout>
         <Container className="py-24">
           <Card className="max-w-xl mx-auto p-8 text-center">
-            <AlertTriangle className="w-16 h-16 mx-auto text-red-500 mb-6" />
+            <AlertTriangle className="w-16 h-16 mx-auto text-amber-600 mb-6" />
             <h1 className="text-2xl font-bold mb-4">Verification Error</h1>
             <p className="text-muted-foreground mb-8">
               {requestError ? "We couldn't find this consent request. It may have expired or been already approved." : 
@@ -278,7 +277,7 @@ export default function GuardianConsentVerify() {
                 </Button>
                 
                 {isCanceled && (
-                  <p className="text-center text-xs text-red-500 mt-4">
+                  <p className="text-center text-xs text-amber-700 mt-4">
                     Verification was canceled. Please try again when you are ready to complete the process.
                   </p>
                 )}

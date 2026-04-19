@@ -26,6 +26,7 @@ export function SupabaseAuthForm() {
   const [signupLegalAccepted, setSignupLegalAccepted] = useState(false);
   const [googleLegalAccepted, setGoogleLegalAccepted] = useState(false);
   const [error, setError] = useState('');
+<<<<<<< HEAD
   const [verificationState, setVerificationState] = useState<{
     email: string;
     message: string;
@@ -53,7 +54,18 @@ export function SupabaseAuthForm() {
       return role === 'guardian' ? '/guardian' : '/dashboard';
     } catch {
       return '/dashboard';
+=======
+  const [verificationNotice, setVerificationNotice] = useState('');
+  const resolvePostAuthPath = async (): Promise<string> => {
+    const response = await csrfFetch('/api/profile', { credentials: 'include' });
+    if (!response.ok) {
+      throw new Error('Failed to load profile after authentication');
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
     }
+
+    const data = await response.json();
+    const role = data?.user?.role;
+    return role === 'guardian' ? '/guardian' : '/dashboard';
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -81,7 +93,11 @@ export function SupabaseAuthForm() {
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+<<<<<<< HEAD
     setVerificationState(null);
+=======
+    setVerificationNotice('');
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
 
     try {
       if (mode === 'signin') {
@@ -91,7 +107,50 @@ export function SupabaseAuthForm() {
           description: 'You have been signed in successfully.',
         });
         setLocation(await resolvePostAuthPath());
+<<<<<<< HEAD
         return;
+=======
+      } else {
+        // Validate under-13 guardian email
+        if (isUnder13 && !guardianEmail) {
+          const errorMsg = 'Guardian email is required for users under 13';
+          setError(errorMsg);
+          toast({ 
+            title: 'Validation Error', 
+            description: errorMsg,
+          });
+          return;
+        }
+
+        const signupRole = isGuardian ? 'guardian' : 'student';
+        const signupResult = await signUp(email, password, displayName, isUnder13, guardianEmail, signupRole);
+
+        if (signupResult.status === 'verification_required') {
+          const verificationMessage = signupResult.message || 'Check your email to confirm your account before signing in.';
+          setVerificationNotice(verificationMessage);
+          toast({
+            title: 'Confirmation required',
+            description: verificationMessage,
+          });
+          setMode('signin');
+          return;
+        }
+
+        if (isUnder13) {
+          toast({
+            title: 'Account created!',
+            description: 'Guardian consent is required before continuing.',
+            variant: 'default'
+          });
+        } else {
+          toast({
+            title: 'Welcome!',
+            description: 'Your account has been created successfully.'
+          });
+        }
+
+        setLocation(await resolvePostAuthPath());
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
       }
 
       if (!signupLegalAccepted) {
@@ -130,10 +189,15 @@ export function SupabaseAuthForm() {
     } catch (err: any) {
       const errorMsg = err.message || 'Authentication failed';
       setError(errorMsg);
+<<<<<<< HEAD
       toast({
         title: mode === 'signin' ? 'Sign In Failed' : 'Sign Up Failed',
+=======
+      setVerificationNotice('');
+      toast({ 
+        title: mode === 'signin' ? 'Sign In Failed' : 'Sign Up Failed', 
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
         description: errorMsg,
-        variant: 'destructive'
       });
     }
   };
@@ -162,7 +226,6 @@ export function SupabaseAuthForm() {
       toast({
         title: 'Google Sign-In Failed',
         description: errorMsg,
-        variant: 'destructive'
       });
     }
   };
@@ -199,9 +262,16 @@ export function SupabaseAuthForm() {
             </div>
 
             {error && (
-              <Alert variant="destructive" data-testid="alert-error">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+              <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                <AlertCircle className="h-4 w-4 text-amber-700" />
+                <AlertDescription className="text-amber-800">{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {verificationNotice && (
+              <Alert data-testid="alert-verification-required">
+                <Mail className="h-4 w-4" />
+                <AlertDescription>{verificationNotice}</AlertDescription>
               </Alert>
             )}
 
@@ -221,11 +291,19 @@ export function SupabaseAuthForm() {
           </form>
         ) : (
           <>
+<<<<<<< HEAD
             <Tabs value={mode} onValueChange={(v) => { setMode(v as AuthMode); setVerificationState(null); }}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin" data-testid="tab-signin">Sign In</TabsTrigger>
                 <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
               </TabsList>
+=======
+            <Tabs value={mode} onValueChange={(v) => { setMode(v as 'signin' | 'signup'); setError(''); setVerificationNotice(''); }}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="signin" data-testid="tab-signin">Sign In</TabsTrigger>
+            <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
+          </TabsList>
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
 
               <TabsContent value="signin" className="space-y-4 mt-4">
                 <form onSubmit={handleEmailAuth} className="space-y-4">
@@ -388,8 +466,53 @@ export function SupabaseAuthForm() {
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t" />
               </div>
+<<<<<<< HEAD
               <div className="relative flex justify-center text-xs uppercase">
                 <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+=======
+
+              {error && (
+                <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                  <AlertCircle className="h-4 w-4 text-amber-700" />
+                  <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {verificationNotice && (
+                <Alert data-testid="alert-verification-required">
+                  <Mail className="h-4 w-4" />
+                  <AlertDescription>{verificationNotice}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading}
+                data-testid="button-signin"
+              >
+                {isLoading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="signup" className="space-y-4 mt-4">
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="signup-name">Display Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="signup-name"
+                    data-testid="input-signup-name"
+                    type="text"
+                    placeholder="Your Name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
               </div>
             </div>
 
@@ -406,12 +529,70 @@ export function SupabaseAuthForm() {
                 </Label>
               </div>
 
+<<<<<<< HEAD
               <Button
                 variant="outline"
                 className="w-full"
                 onClick={handleGoogleSignIn}
                 disabled={isLoading || !googleLegalAccepted}
                 data-testid="button-google-signin"
+=======
+              {!isGuardian && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="under-13"
+                    data-testid="checkbox-under13"
+                    checked={isUnder13}
+                    onCheckedChange={(checked) => setIsUnder13(checked as boolean)}
+                  />
+                  <Label htmlFor="under-13" className="text-sm font-normal">
+                    I am under 13 years old (requires guardian consent)
+                  </Label>
+                </div>
+              )}
+
+              {isUnder13 && (
+                <div className="space-y-2">
+                  <Label htmlFor="guardian-email">Guardian's Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="guardian-email"
+                      data-testid="input-guardian-email"
+                      type="email"
+                      placeholder="guardian@email.com"
+                      value={guardianEmail}
+                      onChange={(e) => setGuardianEmail(e.target.value)}
+                      className="pl-10"
+                      required={isUnder13}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This email is stored on the student profile so guardian consent can be completed before protected access.
+                  </p>
+                </div>
+              )}
+
+              {error && (
+                <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                  <AlertCircle className="h-4 w-4 text-amber-700" />
+                  <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {verificationNotice && (
+                <Alert data-testid="alert-verification-required">
+                  <Mail className="h-4 w-4" />
+                  <AlertDescription>{verificationNotice}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={isLoading}
+                data-testid="button-signup"
+>>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
               >
                 <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                   <path

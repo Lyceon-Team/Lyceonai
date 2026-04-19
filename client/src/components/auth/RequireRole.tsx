@@ -72,7 +72,7 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
       return <Redirect to="/guardian" replace />;
     }
     if (isAdmin) {
-      return <Redirect to="/admin" replace />;
+      return <Redirect to="/dashboard" replace />;
     }
     return <Redirect to="/dashboard" replace />;
   }

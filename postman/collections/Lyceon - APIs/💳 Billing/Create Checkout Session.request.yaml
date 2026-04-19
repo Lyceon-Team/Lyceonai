@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/billing/checkout"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "priceId": "price_REPLACE_ME",
+      "studentId": "{{studentId}}"
+    }
+order: 2000

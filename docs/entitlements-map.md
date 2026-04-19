@@ -56,7 +56,7 @@ Some features are available to free tier but with **usage limits**:
 | **Student Routes** | | | | | |
 | `/dashboard` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:85`, `server/index.ts:330-333` |
 | `/calendar` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:86`, `server/index.ts:327` |
-| `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `client/src/App.tsx:87`, `server/index.ts:273` |
+| `/chat` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `client/src/App.tsx:87`, `server/index.ts` |
 | `/full-test` | student, admin | free | RequireRole allow=['student', 'admin'] | None (UI-disabled stub) | `client/src/App.tsx:88` |
 | `/practice` | student, admin | free | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin | `client/src/App.tsx:89`, `server/index.ts:478-480` |
 | `/practice/math` | student, admin | entitled† | RequireRole allow=['student', 'admin'] | requireSupabaseAuth, requireStudentOrAdmin, checkPracticeLimit | `client/src/App.tsx:90` |
@@ -74,14 +74,6 @@ Some features are available to free tier but with **usage limits**:
 | **Guardian Routes** | | | | | |
 | `/guardian` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'], SubscriptionPaywall | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:105`, `client/src/pages/guardian-dashboard.tsx:175-188`, `server/routes/guardian-routes.ts:51-72` |
 | `/guardian/students/:studentId/calendar` | guardian, admin | entitled | RequireRole allow=['guardian', 'admin'] | requireSupabaseAuth, requireGuardianRole, requireGuardianEntitlement | `client/src/App.tsx:106`, `server/routes/guardian-routes.ts` (canonical month projection via `buildCalendarMonthView`) |
-| **Admin Routes** | | | | | |
-| `/admin` | admin | admin-only | AdminGuard (internal) | requireSupabaseAdmin | `client/src/App.tsx:109`, `client/src/pages/AdminPortal.tsx:22-36`, `server/index.ts:336-339` |
-| `/admin-dashboard` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:112` |
-| `/admin-system-config` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:113` |
-| `/admin-questions` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:114` |
-| `/admin-review` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:115` |
-| `/admin-portal` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:116` |
-| `/admin-review-v2` | N/A | N/A | None (redirect) | None | `client/src/App.tsx:117` |
 
 **†** entitled = Free tier has daily usage limits; entitled tier has unlimited access
 
@@ -123,7 +115,8 @@ Some features are available to free tier but with **usage limits**:
 | `POST /api/practice/answer` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/routes/practice-canonical.ts` |
 | `GET /api/practice/topics` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:479` |
 | `GET /api/practice/reference/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:480` |
-| `POST /api/tutor/v2` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, checkAiChatLimit | `server/index.ts:273` |
+| `POST /api/tutor/messages` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `server/index.ts` |
+| `POST /api/tutor/conversations` | student, admin | entitled† | requireSupabaseAuth, requireStudentOrAdmin, tutor runtime budget/throttle gate | `server/index.ts` |
 | `GET /api/questions` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:374` |
 | `GET /api/questions/:id` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts:416` |
 | `GET /api/questions/stats` | student, admin | free | requireSupabaseAuth, requireStudentOrAdmin | `server/index.ts` |
@@ -155,12 +148,6 @@ Some features are available to free tier but with **usage limits**:
 
 | Endpoint | Role | Entitlement | Server Gate | Evidence |
 |----------|------|-------------|-------------|----------|
-| `GET /api/admin/stats` | admin | admin-only | requireSupabaseAdmin | `server/routes/admin-stats-routes.ts` |
-| `GET /api/admin/kpis` | admin | admin-only | requireSupabaseAdmin | `server/routes/admin-stats-routes.ts` |
-| `GET /api/admin/questions/needs-review` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
-| `GET /api/admin/questions/statistics` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
-| `POST /api/admin/questions/:id/approve` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
-| `POST /api/admin/questions/:id/reject` | admin | admin-only | UNMOUNTED in runtime (service-only legacy/admin path) | `server/index.ts` (no mount), `tests/ci/canonical-content.publish.contract.test.ts:264-273` |
 | `GET /api/admin/db-health` | admin | admin-only | requireSupabaseAdmin | `server/index.ts:351` |
 
 ### Billing APIs
@@ -186,7 +173,7 @@ Some features are available to free tier but with **usage limits**:
 - Checks if user's role is in the `allow` array
 - Redirects to appropriate landing page if unauthorized:
   - Not authenticated → `/login`
-  - Wrong role → role-specific dashboard (`/admin`, `/guardian`, or `/dashboard`)
+  - Wrong role → role-specific dashboard (`/guardian` or `/dashboard`)
 
 **Usage:**
 ```tsx
@@ -198,30 +185,6 @@ Some features are available to free tier but with **usage limits**:
 ```
 
 **Evidence:** `client/src/components/auth/RequireRole.tsx:13-57`
-
----
-
-### AdminGuard
-**File:** `client/src/components/auth/AdminGuard.tsx`
-
-**Purpose:** Enforces admin-only access within AdminPortal component
-
-**Behavior:**
-- Used internally by AdminPortal component
-- Shows "Access Denied" UI for non-admins
-- Does not redirect (unlike RequireRole)
-
-**Usage:**
-```tsx
-// Inside AdminPortal component
-return (
-  <AdminGuard>
-    <AdminDashboard />
-  </AdminGuard>
-);
-```
-
-**Evidence:** `client/src/components/auth/AdminGuard.tsx:6-78`, `client/src/pages/AdminPortal.tsx:22-36`
 
 ---
 
@@ -300,9 +263,9 @@ return (
 
 **checkAiChatLimit()**
 - **File:** `server/middleware/usage-limits.ts`
-- **Purpose:** Enforces AI chat usage limits
+- **Purpose:** Enforces tutor chat usage limits
 - **Behavior:**
-  - Free tier: 5 AI chat messages per day
+  - Free tier: 5 tutor chat messages per day
   - Entitled tier: Unlimited
   - Admin: Unlimited
   - Returns 429 if limit exceeded
@@ -317,7 +280,7 @@ return (
 Admins have unrestricted access to:
 - All student features (dashboard, practice, chat, etc.)
 - All guardian features (student monitoring, calendar, etc.)
-- All admin-only features (question review, system stats, etc.)
+- Admin-only endpoints (for example `/api/admin/db-health`)
 
 **Key Properties:**
 - Admins bypass ALL entitlement checks
@@ -326,12 +289,10 @@ Admins have unrestricted access to:
 - Admin access is still authenticated (requires valid Supabase session)
 
 **Implementation:**
-- Client: AdminGuard checks `user.isAdmin`
 - Server: requireSupabaseAdmin checks role === 'admin'
 - Entitlements: Admin role bypasses `checkUsageLimit` checks
 
 **Evidence:**
-- `client/src/components/auth/AdminGuard.tsx:6-78`
 - `server/middleware/supabase-auth.ts:427-469`
 - `server/lib/account.ts:298-325` (admin bypass in usage limits)
 

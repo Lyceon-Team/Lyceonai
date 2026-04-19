@@ -53,12 +53,12 @@ function createWrapper() {
   };
 }
 
-describe('GuardianDashboard full-length history projection UX', () => {
+describe('GuardianDashboard full-length history view UX', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('shows report action only when runtime projection marks reportAvailable', async () => {
+  it('shows report action only when runtime view marks reportAvailable', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = asUrl(input);
 
@@ -140,9 +140,10 @@ describe('GuardianDashboard full-length history projection UX', () => {
       expect(screen.getByText('Alex Student')).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText('Alex Student'));
+    fireEvent.click(screen.getByRole('button', { name: /Alex Student/i }));
 
     await waitFor(() => {
+      expect(screen.getByText('Linked student session history')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Open Report' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Report Locked' })).toBeTruthy();
     });

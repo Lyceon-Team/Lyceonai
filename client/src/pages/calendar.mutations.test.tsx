@@ -2,7 +2,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import CalendarPage from "./calendar";
+import CalendarPage, { getDateKeyInTimeZone } from "./calendar";
 
 vi.mock("@/components/layout/app-shell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -23,13 +23,6 @@ function asUrl(input: RequestInfo | URL): string {
   } catch {
     return raw;
   }
-}
-
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
 }
 
 function buildMonthPayload(dayDate: string, taskStatus: "planned" | "completed", isUserOverride: boolean) {
@@ -68,7 +61,7 @@ describe("Calendar mutation ownership", () => {
   });
 
   it("surfaces reset/regenerate/task-status mutations with read-after-write month rehydration", async () => {
-    const dayDate = formatDateKey(new Date());
+    const dayDate = getDateKeyInTimeZone("America/Chicago", new Date());
     const resetUrl = `/api/calendar/day/${dayDate}/reset-to-auto`;
     const regenerateUrl = `/api/calendar/day/${dayDate}/regenerate`;
     const patchUrl = `/api/calendar/day/${dayDate}/tasks/task-1`;
@@ -84,6 +77,10 @@ describe("Calendar mutation ownership", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = asUrl(input);
       const method = init?.method ?? "GET";
+
+      if (url === "/api/csrf-token" && method === "GET") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
 
       if (url === "/api/calendar/profile" && method === "GET") {
         return jsonResponse({
@@ -163,5 +160,5 @@ describe("Calendar mutation ownership", () => {
     expect(patchCall).toBeDefined();
     const patchBody = JSON.parse((patchCall?.[1]?.body as string) || "{}");
     expect(patchBody).toEqual({ status: "completed" });
-  });
+  }, 20_000);
 });

@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   fromMock,
-  applyMasteryUpdateMock,
+  applyLearningEventToMasteryMock,
 } = vi.hoisted(() => ({
   fromMock: vi.fn(),
-  applyMasteryUpdateMock: vi.fn(),
+  applyLearningEventToMasteryMock: vi.fn(),
 }));
 
 vi.mock("../apps/api/src/lib/supabase-server", () => ({
@@ -15,7 +15,7 @@ vi.mock("../apps/api/src/lib/supabase-server", () => ({
 }));
 
 vi.mock("../apps/api/src/services/studentMastery", () => ({
-  applyMasteryUpdate: applyMasteryUpdateMock,
+  applyLearningEventToMastery: applyLearningEventToMasteryMock,
 }));
 
 vi.mock("../server/lib/review-runtime-gate", () => ({
@@ -24,7 +24,6 @@ vi.mock("../server/lib/review-runtime-gate", () => ({
 }));
 
 import { submitReviewSessionAnswer } from "../server/routes/review-session-routes";
-import { MasteryEventType } from "../apps/api/src/services/mastery-constants";
 
 function makeRes() {
   let statusCode = 200;
@@ -62,10 +61,12 @@ function buildChain(result: { data: any; error: any }) {
 }
 
 function setupSupabase(options: { hasTutorContext: boolean }) {
+  const reviewSessionId = "11111111-1111-4111-8111-111111111111";
+  const reviewSessionItemId = "22222222-2222-4222-8222-222222222222";
   fromMock.mockImplementation((table: string) => {
     if (table === "review_sessions") {
       const sessionRow = {
-        id: "sess-1",
+        id: reviewSessionId,
         student_id: "student-1",
         status: "active",
         started_at: "2026-03-10T10:00:00.000Z",
@@ -82,8 +83,8 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 
     if (table === "review_session_items") {
       const itemRow = {
-        id: "item-1",
-        review_session_id: "sess-1",
+        id: reviewSessionItemId,
+        review_session_id: reviewSessionId,
         student_id: "student-1",
         ordinal: 1,
         question_canonical_id: "SATM1ABC123",
@@ -106,6 +107,7 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
           { key: "D", text: "5" },
         ],
         question_difficulty: 2,
+        question_difficulty_bucket: 2,
         question_domain: "Algebra",
         question_skill: "Linear equations",
         question_subskill: null,
@@ -165,9 +167,8 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 describe("Review Error -> Canonical Mastery Bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    applyMasteryUpdateMock.mockResolvedValue({
-      attemptId: "m-1",
-      rollupUpdated: true,
+    applyLearningEventToMasteryMock.mockResolvedValue({
+      ok: true,
       error: undefined,
     });
   });
@@ -180,8 +181,8 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
       user: { id: "student-1" },
       requestId: "req-review-1",
       body: {
-        session_id: "sess-1",
-        review_session_item_id: "item-1",
+        session_id: "11111111-1111-4111-8111-111111111111",
+        review_session_item_id: "22222222-2222-4222-8222-222222222222",
         selected_option_id: "opt_A",
         seconds_spent: 12,
         source_context: "review_errors",
@@ -192,15 +193,20 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyMasteryUpdateMock).toHaveBeenCalledWith(
+    expect(applyLearningEventToMasteryMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: MasteryEventType.REVIEW_PASS,
-        questionCanonicalId: "SATM1ABC123",
+        studentId: "student-1",
+        sourceFamily: "review",
+        section: "Math",
+        domain: "Algebra",
+        skill: "Linear equations",
+        difficulty: 2,
+        correct: true,
       })
     );
   });
 
-  it("emits REVIEW_PASS + TUTOR_HELPED when tutor context is present", async () => {
+  it("emits REVIEW_PASS only when tutor context is present (no tutor mastery)", async () => {
     setupSupabase({ hasTutorContext: true });
     const { res, getStatus, getBody } = makeRes();
 
@@ -208,8 +214,8 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
       user: { id: "student-1" },
       requestId: "req-review-2",
       body: {
-        session_id: "sess-1",
-        review_session_item_id: "item-1",
+        session_id: "11111111-1111-4111-8111-111111111111",
+        review_session_item_id: "22222222-2222-4222-8222-222222222222",
         selected_option_id: "opt_A",
         seconds_spent: 12,
         source_context: "review_errors",
@@ -220,8 +226,12 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyMasteryUpdateMock).toHaveBeenCalledTimes(2);
-    expect(applyMasteryUpdateMock.mock.calls[0][0].eventType).toBe(MasteryEventType.REVIEW_PASS);
-    expect(applyMasteryUpdateMock.mock.calls[1][0].eventType).toBe(MasteryEventType.TUTOR_HELPED);
+    expect(applyLearningEventToMasteryMock).toHaveBeenCalledTimes(1);
+    expect(applyLearningEventToMasteryMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        sourceFamily: "review",
+        correct: true,
+      })
+    );
   });
 });

@@ -41,7 +41,15 @@ describe("CI Security Tests - CSRF", () => {
       const res = await request(app).post("/api/auth/signout");
 
       expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty("error", "csrf_blocked");
+      expect(res.body).toHaveProperty("error.code", "csrf_blocked");
+      expect(res.body).toHaveProperty("requestId");
+    });
+
+    it("should block /api/auth/refresh without CSRF token (403)", async () => {
+      const res = await request(app).post("/api/auth/refresh");
+
+      expect(res.status).toBe(403);
+      expect(res.body).toHaveProperty("error.code", "csrf_blocked");
       expect(res.body).toHaveProperty("requestId");
     });
 

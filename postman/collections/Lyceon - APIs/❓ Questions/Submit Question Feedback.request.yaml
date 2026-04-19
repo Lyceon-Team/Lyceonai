@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/api/questions/feedback"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "questionId": "{{questionId}}",
+      "feedback": "This question has a typo in option B."
+    }
+order: 5000

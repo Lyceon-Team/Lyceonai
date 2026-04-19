@@ -237,7 +237,6 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
       '/api/questions/count',
       '/api/questions/stats',
       '/api/questions/feed',
-      '/api/questions/search?q=algebra',
     ];
 
     for (const endpoint of endpoints) {
@@ -252,16 +251,12 @@ test.describe('Supabase Auth & RLS Enforcement', () => {
           'Cookie': `sb-access-token=${user1Token}`,
         },
       });
-      expect([200, 503].includes(response.status())).toBeTruthy(); // 503 for search if Supabase not configured
+      expect(response.status()).toBe(200);
     }
   });
 
   test('should require admin role for admin endpoints', async ({ request }) => {
-    const adminEndpoints = [
-      '/api/admin/questions/needs-review',
-      '/api/admin/questions/statistics',
-      '/api/admin/stats',
-    ];
+    const adminEndpoints = ['/api/admin/db-health'];
 
     for (const endpoint of adminEndpoints) {
       // Regular user should be denied

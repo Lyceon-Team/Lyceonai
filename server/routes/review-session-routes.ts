@@ -6,13 +6,19 @@ import { type AuthenticatedRequest, requireRequestUser } from "../middleware/sup
 import { buildReviewQueueForStudent } from "../services/review-queue";
 import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 import {
+  buildStudentSafeOptionTokens,
+  buildStudentSafeOptionsFromStoredMap,
+  type CanonicalMcOption,
   hasCanonicalOptionSet,
   hasSingleCanonicalCorrectAnswer,
   isCanonicalRuntimeMcQuestion,
+  normalizeClientInstanceId,
   normalizeAnswerKey,
+  parseStudentSafeOptionTokenMap,
+  projectStudentSafeQuestion,
+  resolveClientInstanceBinding,
 } from "../../shared/question-bank-contract";
-import { applyMasteryUpdate } from "../../apps/api/src/services/studentMastery";
-import { MasteryEventType } from "../../apps/api/src/services/mastery-constants";
+import { applyLearningEventToMastery } from "../../apps/api/src/services/studentMastery";
 
 type SessionStatus = "created" | "active" | "completed" | "abandoned";
 type ItemStatus = "queued" | "served" | "answered" | "skipped";
@@ -49,6 +55,7 @@ type ItemRow = {
   question_stem: string | null;
   question_options: McOption[];
   question_difficulty: string | number | null;
+  question_difficulty_bucket: number | null;
   question_domain: string | null;
   question_skill: string | null;
   question_subskill: string | null;
@@ -58,7 +65,7 @@ type ItemRow = {
   question_explanation: string | null;
 };
 
-type McOption = { key: string; text: string };
+type McOption = CanonicalMcOption;
 
 type CanonicalQuestion = {
   canonical_id: string;
@@ -70,7 +77,7 @@ type CanonicalQuestion = {
   explanation: string | null;
 };
 
-const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
+const REVIEW_ITEM_SELECT = "id, review_session_id, student_id, ordinal, question_canonical_id, source_question_id, source_question_canonical_id, source_origin, retry_mode, status, attempt_id, tutor_opened_at, source_attempted_at, option_order, option_token_map, question_section, question_stem, question_options, question_difficulty, question_difficulty_bucket, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation";
 
 const startSchema = z.object({
   mode: z.enum(["all_past_mistakes", "by_practice_session", "by_full_length_session"]),
@@ -105,6 +112,16 @@ function optionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function sendClientInstanceConflict(res: Response, requestId: string | undefined, clientInstanceId: string | null) {
+  return res.status(409).json({
+    error: "client_instance_conflict",
+    code: "CLIENT_INSTANCE_CONFLICT",
+    message: "Session client instance conflict",
+    client_instance_id: clientInstanceId ?? null,
+    requestId,
+  });
+}
+
 function mapSession(row: any): SessionRow {
   return {
     id: String(row.id),
@@ -118,6 +135,7 @@ function mapSession(row: any): SessionRow {
 }
 
 function mapItem(row: any): ItemRow {
+  const bucketFromColumn = typeof row.question_difficulty_bucket === "number" ? row.question_difficulty_bucket : null;
   return {
     id: String(row.id),
     review_session_id: String(row.review_session_id),
@@ -138,6 +156,7 @@ function mapItem(row: any): ItemRow {
     question_stem: optionalString(row.question_stem),
     question_options: parseOptions(row.question_options),
     question_difficulty: row.question_difficulty ?? null,
+    question_difficulty_bucket: bucketFromColumn,
     question_domain: optionalString(row.question_domain),
     question_skill: optionalString(row.question_skill),
     question_subskill: optionalString(row.question_subskill),
@@ -169,23 +188,17 @@ function parseOptions(raw: unknown): McOption[] {
   return out;
 }
 
-function parseOptionMap(raw: unknown): Record<string, string> | null {
-  let value: unknown = raw;
+function resolveDifficultyBucketStrict(value: unknown): 1 | 2 | 3 | null {
+  if (value === 1 || value === 2 || value === 3) return value;
   if (typeof value === "string") {
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return null;
-    }
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "easy" || normalized === "1") return 1;
+    if (normalized === "medium" || normalized === "2") return 2;
+    if (normalized === "hard" || normalized === "3") return 3;
+    const parsed = Number.parseInt(normalized, 10);
+    if (parsed === 1 || parsed === 2 || parsed === 3) return parsed as 1 | 2 | 3;
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const out: Record<string, string> = {};
-  for (const [token, keyRaw] of Object.entries(value as Record<string, unknown>)) {
-    const normalized = normalizeAnswerKey(keyRaw);
-    if (!normalized) return null;
-    out[token] = normalized;
-  }
-  return Object.keys(out).length > 0 ? out : null;
+  return null;
 }
 
 function resolveReviewQuestionId(item: ItemRow): string {
@@ -204,16 +217,7 @@ function fisherYates<T>(items: T[]): T[] {
 function buildServedOptions(options: McOption[]) {
   const shuffled = fisherYates(options);
   const optionOrder = shuffled.map((o) => o.key);
-  const optionTokenMap: Record<string, string> = {};
-  const safeOptions = shuffled.map((o) => {
-    let token = "opt_" + crypto.randomBytes(8).toString("hex");
-    while (optionTokenMap[token]) {
-      token = "opt_" + crypto.randomBytes(8).toString("hex");
-    }
-    optionTokenMap[token] = o.key;
-    return { id: token, text: o.text };
-  });
-  return { optionOrder, optionTokenMap, safeOptions };
+  return buildStudentSafeOptionTokens(shuffled, optionOrder);
 }
 
 async function logEvent(sessionId: string, studentId: string, eventType: string, itemId?: string | null, payload?: Record<string, unknown>) {
@@ -318,13 +322,9 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
   const question = await loadQuestionFromItem(served);
   if (!question) throw new Error("review_question_unavailable");
 
-  let optionMap = parseOptionMap(served.option_token_map);
-  let safeOptions: Array<{ id: string; text: string }> = [];
-
-  if (!optionMap || Object.keys(optionMap).length !== question.options.length) {
+  let safeOptions = buildStudentSafeOptionsFromStoredMap(question.options, served.option_order, served.option_token_map);
+  if (!safeOptions) {
     const built = buildServedOptions(question.options);
-    optionMap = built.optionTokenMap;
-    safeOptions = built.safeOptions;
     const { error: mapUpdateError } = await supabaseServer
       .from("review_session_items")
       .update({ option_order: built.optionOrder, option_token_map: built.optionTokenMap, updated_at: new Date().toISOString() })
@@ -332,19 +332,31 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
       .eq("review_session_id", session.id)
       .eq("student_id", studentId);
     if (mapUpdateError) throw new Error(`review_option_map_update_failed:${mapUpdateError.message}`);
-  } else {
-    const tokenByKey = new Map<string, string>();
-    for (const [token, key] of Object.entries(optionMap)) tokenByKey.set(key, token);
-    const fallbackOrder = question.options.map((o) => o.key);
-    const order = Array.isArray(served.option_order) && served.option_order.length === question.options.length
-      ? served.option_order
-      : fallbackOrder;
-    safeOptions = order.map((key) => {
-      const token = tokenByKey.get(key) ?? `opt_missing_${key}`;
-      const text = question.options.find((o) => o.key === key)?.text ?? "";
-      return { id: token, text };
-    });
+
+    safeOptions = buildStudentSafeOptionsFromStoredMap(question.options, built.optionOrder, built.optionTokenMap);
+    if (!safeOptions) {
+      throw new Error("review_option_map_invalid");
+    }
   }
+
+  const safeBase = projectStudentSafeQuestion({
+    id: question.canonical_id,
+    canonical_id: question.canonical_id,
+    section: question.section,
+    section_code: question.section,
+    question_type: "multiple_choice",
+    stem: question.stem,
+    options: question.options,
+    difficulty: question.difficulty,
+    domain: null,
+    skill: null,
+    subskill: null,
+    skill_code: null,
+    tags: null,
+    competencies: null,
+    correct_answer: question.correct_answer,
+    explanation: question.explanation,
+  });
 
   return {
     session: {
@@ -364,11 +376,11 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
       retryMode: served.retry_mode,
       question: {
         sessionItemId: served.id,
-        stem: question.stem,
-        section: question.section,
+        stem: safeBase.stem,
+        section: safeBase.section ?? question.section,
         questionType: "multiple_choice",
         options: safeOptions,
-        difficulty: question.difficulty,
+        difficulty: safeBase.difficulty,
         correct_answer: null,
         explanation: null,
       },
@@ -448,16 +460,20 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
       if (replaySessions.length === 1) {
         const existing = replaySessions[0];
-        if (existing.client_instance_id && clientInstanceId && existing.client_instance_id !== clientInstanceId) {
-          return res.status(409).json({ error: "Session client instance conflict", code: "REVIEW_CLIENT_INSTANCE_CONFLICT", requestId });
+        const binding = resolveClientInstanceBinding({
+          boundClientInstanceId: existing.client_instance_id,
+          requestedClientInstanceId: clientInstanceId,
+        });
+        if (binding.action === "conflict") {
+          return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
         }
-        if (!existing.client_instance_id && clientInstanceId) {
+        if (binding.action === "bind") {
           await supabaseServer
             .from("review_sessions")
-            .update({ client_instance_id: clientInstanceId, updated_at: new Date().toISOString() })
+            .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
             .eq("id", existing.id)
             .eq("student_id", user.id);
-          existing.client_instance_id = clientInstanceId;
+          existing.client_instance_id = binding.requestedClientInstanceId;
         }
         const state = await buildState(existing, user.id, clientInstanceId);
         return res.status(200).json({ replayed: true, session: existing, state });
@@ -504,16 +520,20 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
     if (activeSessions.length === 1) {
       const existing = activeSessions[0];
-      if (existing.client_instance_id && clientInstanceId && existing.client_instance_id !== clientInstanceId) {
-        return res.status(409).json({ error: "Session client instance conflict", code: "REVIEW_CLIENT_INSTANCE_CONFLICT", requestId });
+      const binding = resolveClientInstanceBinding({
+        boundClientInstanceId: existing.client_instance_id,
+        requestedClientInstanceId: clientInstanceId,
+      });
+      if (binding.action === "conflict") {
+        return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
       }
-      if (!existing.client_instance_id && clientInstanceId) {
+      if (binding.action === "bind") {
         await supabaseServer
           .from("review_sessions")
-          .update({ client_instance_id: clientInstanceId, updated_at: new Date().toISOString() })
+          .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
           .eq("id", existing.id)
           .eq("student_id", user.id);
-        existing.client_instance_id = clientInstanceId;
+        existing.client_instance_id = binding.requestedClientInstanceId;
       }
       const state = await buildState(existing, user.id, clientInstanceId);
       return res.status(200).json({ replayed: true, session: existing, state });
@@ -546,16 +566,20 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
 
         if (existingByKey) {
           const existing = mapSession(existingByKey);
-          if (existing.client_instance_id && clientInstanceId && existing.client_instance_id !== clientInstanceId) {
-            return res.status(409).json({ error: "Session client instance conflict", code: "REVIEW_CLIENT_INSTANCE_CONFLICT", requestId });
+          const binding = resolveClientInstanceBinding({
+            boundClientInstanceId: existing.client_instance_id,
+            requestedClientInstanceId: clientInstanceId,
+          });
+          if (binding.action === "conflict") {
+            return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
           }
-          if (!existing.client_instance_id && clientInstanceId) {
+          if (binding.action === "bind") {
             await supabaseServer
               .from("review_sessions")
-              .update({ client_instance_id: clientInstanceId, updated_at: new Date().toISOString() })
+              .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
               .eq("id", existing.id)
               .eq("student_id", user.id);
-            existing.client_instance_id = clientInstanceId;
+            existing.client_instance_id = binding.requestedClientInstanceId;
           }
           const state = await buildState(existing, user.id, clientInstanceId);
           return res.status(200).json({ replayed: true, session: existing, state });
@@ -609,6 +633,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
         question_stem: String(snapshot.questionText ?? ""),
         question_options: options,
         question_difficulty: snapshot.difficulty ?? null,
+        question_difficulty_bucket: resolveDifficultyBucketStrict(snapshot.difficulty ?? null),
         question_domain: snapshot.domain ?? null,
         question_skill: snapshot.skill ?? null,
         question_subskill: snapshot.subskill ?? null,
@@ -660,21 +685,24 @@ export async function getReviewErrorSessionState(req: AuthenticatedRequest, res:
     const sessionId = optionalString(req.params.sessionId);
     if (!sessionId) return res.status(400).json({ error: "sessionId is required", code: "MISSING_REVIEW_SESSION_ID", requestId });
 
-    const clientInstanceId = optionalString(req.query.client_instance_id);
+    const clientInstanceId = normalizeClientInstanceId(req.query.client_instance_id);
     const session = await getSession(sessionId, user.id);
     if (!session) return res.status(404).json({ error: "Review session not found", code: "REVIEW_SESSION_NOT_FOUND", requestId });
 
-    if (session.client_instance_id && clientInstanceId && session.client_instance_id !== clientInstanceId) {
-      return res.status(409).json({ error: "Session client instance conflict", code: "REVIEW_CLIENT_INSTANCE_CONFLICT", requestId });
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: session.client_instance_id,
+      requestedClientInstanceId: clientInstanceId,
+    });
+    if (binding.action === "conflict") {
+      return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
     }
-
-    if (!session.client_instance_id && clientInstanceId) {
+    if (binding.action === "bind") {
       await supabaseServer
         .from("review_sessions")
-        .update({ client_instance_id: clientInstanceId, updated_at: new Date().toISOString() })
+        .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
         .eq("id", session.id)
         .eq("student_id", user.id);
-      session.client_instance_id = clientInstanceId;
+      session.client_instance_id = binding.requestedClientInstanceId;
     }
 
     const state = await buildState(session, user.id, clientInstanceId);
@@ -709,18 +737,22 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     const session = await getSession(parsed.data.session_id, userId);
     if (!session) return res.status(404).json({ error: "Review session not found", code: "REVIEW_SESSION_NOT_FOUND", requestId });
 
-    if (session.client_instance_id && parsed.data.client_instance_id && session.client_instance_id !== parsed.data.client_instance_id) {
-      return res.status(409).json({ error: "Session client instance conflict", code: "REVIEW_CLIENT_INSTANCE_CONFLICT", requestId });
+    const clientInstanceId = normalizeClientInstanceId(parsed.data.client_instance_id);
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: session.client_instance_id,
+      requestedClientInstanceId: clientInstanceId,
+    });
+    if (binding.action === "conflict") {
+      return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
     }
-
-    if (!session.client_instance_id && parsed.data.client_instance_id) {
+    if (binding.action === "bind") {
       await supabaseServer
         .from("review_sessions")
-        .update({ client_instance_id: parsed.data.client_instance_id, updated_at: new Date().toISOString() })
+        .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
         .eq("id", session.id)
         .eq("student_id", userId)
         .in("status", ["created", "active"]);
-      session.client_instance_id = parsed.data.client_instance_id;
+      session.client_instance_id = binding.requestedClientInstanceId;
     }
 
     const { data: itemRow, error: itemError } = await supabaseServer
@@ -785,9 +817,9 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     const question = await loadQuestionFromItem(item);
     if (!question) return res.status(422).json({ error: "Question could not be loaded for review submission", code: "INVALID_QUESTION_DATA", requestId });
 
-    const optionMap = parseOptionMap(item.option_token_map);
+    const optionMap = parseStudentSafeOptionTokenMap(item.option_token_map);
     const selectedAnswerKey = parsed.data.selected_option_id && optionMap
-      ? normalizeAnswerKey(optionMap[parsed.data.selected_option_id])
+      ? optionMap[parsed.data.selected_option_id] ?? null
       : null;
     if (!selectedAnswerKey) return res.status(400).json({ error: "selected_option_id is required", code: "REVIEW_SELECTED_OPTION_REQUIRED", requestId });
 
@@ -818,39 +850,55 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     await supabaseServer.from("review_session_items").update({ status: "answered", attempt_id: String((insertedAttempt as any).id), answered_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", item.id).eq("review_session_id", session.id).eq("student_id", userId).eq("status", "served");
 
-    const masteryEvents: MasteryEventType[] = [];
+    const masteryEvents: string[] = [];
     const masteryErrors: string[] = [];
-    const emit = async (eventType: MasteryEventType) => {
+    const emit = async () => {
       if (!item.question_canonical_id) {
         masteryErrors.push("Missing canonical ID for mastery emission");
         return;
       }
-      const result = await applyMasteryUpdate({
-        userId,
-        questionCanonicalId: item.question_canonical_id,
-        sessionId: session.id,
-        isCorrect: verifiedIsCorrect,
-        selectedChoice: selectedAnswerKey,
-        timeSpentMs: typeof parsed.data.seconds_spent === "number" ? parsed.data.seconds_spent * 1000 : null,
-        eventType,
-        metadata: {
-          exam: item.question_exam ?? null,
-          section: item.question_section ?? null,
-          domain: item.question_domain ?? null,
-          skill: item.question_skill ?? null,
-          subskill: item.question_subskill ?? null,
-          skill_code: null,
-          difficulty: item.question_difficulty === 1 || item.question_difficulty === 2 || item.question_difficulty === 3
-            ? item.question_difficulty
-            : null,
-          structure_cluster_id: item.question_structure_cluster_id ?? null,
-        },
+      const section = item.question_section?.trim() ?? "";
+      const domain = item.question_domain?.trim() ?? "";
+      const skill = item.question_skill?.trim() ?? "";
+      const difficultyBucket = resolveDifficultyBucketStrict(item.question_difficulty_bucket);
+      if (!difficultyBucket) {
+        masteryErrors.push("Invalid difficulty bucket for mastery emission");
+        console.warn("[review] mastery emission skipped (invalid difficulty bucket)", {
+          sessionId: session.id,
+          questionCanonicalId: item.question_canonical_id,
+          sourceFamily: "review",
+          rawDifficulty: item.question_difficulty_bucket ?? null,
+        });
+        return;
+      }
+      if (!section || !domain || !skill) {
+        masteryErrors.push("Missing section/domain/skill metadata for mastery emission");
+        console.warn("[review] mastery emission skipped (missing metadata)", {
+          sessionId: session.id,
+          questionCanonicalId: item.question_canonical_id,
+          sourceFamily: "review",
+          section: section || null,
+          domain: domain || null,
+          skill: skill || null,
+        });
+        return;
+      }
+      const result = await applyLearningEventToMastery({
+        studentId: userId,
+        section,
+        domain,
+        skill,
+        difficulty: difficultyBucket,
+        sourceFamily: "review",
+        correct: verifiedIsCorrect,
+        latencyMs: typeof parsed.data.seconds_spent === "number" ? parsed.data.seconds_spent * 1000 : null,
+        occurredAt: (insertedAttempt as any)?.created_at ?? new Date().toISOString(),
       });
-      masteryEvents.push(eventType);
-      if (result.error) masteryErrors.push(result.error);
+      masteryEvents.push(verifiedIsCorrect ? "review_pass" : "review_fail");
+      if (!result.ok && result.error) masteryErrors.push(result.error);
     };
 
-    await emit(verifiedIsCorrect ? MasteryEventType.REVIEW_PASS : MasteryEventType.REVIEW_FAIL);
+    await emit();
 
     let tutorVerifiedRetry = false;
     let tutorOutcome: TutorOutcome | null = null;
@@ -860,7 +908,6 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       tutorOutcome = verifiedIsCorrect ? "tutor_helped" : "tutor_fail";
       await logEvent(session.id, userId, "tutor_opened", item.id);
       await logEvent(session.id, userId, "tutor_response_served", item.id);
-      await emit(verifiedIsCorrect ? MasteryEventType.TUTOR_HELPED : MasteryEventType.TUTOR_FAIL);
     }
 
     await logEvent(session.id, userId, "review_answer_submitted", item.id, { is_correct: verifiedIsCorrect });

@@ -8,7 +8,7 @@ export interface DomainBreakdown {
   contribution: number;
 }
 
-export interface ScoreProjection {
+export interface ScoreEstimate {
   composite: number;
   math: number;
   rw: number;
@@ -23,13 +23,13 @@ export interface ScoreProjection {
   };
 }
 
-export interface ProjectionResponse {
-  projection: ScoreProjection;
+export interface EstimateResponse {
+  estimate: ScoreEstimate;
   totalQuestionsAttempted: number;
   lastUpdated: string;
 }
 
-export async function fetchScoreProjection(): Promise<ProjectionResponse> {
+export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   const response = await apiRequest("/api/progress/projection");
   return response.json();
 }
@@ -45,5 +45,5 @@ export function getConfidenceColor(confidence: number): string {
   if (confidence >= 0.9) return "text-green-600";
   if (confidence >= 0.7) return "text-yellow-600";
   if (confidence >= 0.5) return "text-orange-600";
-  return "text-red-600";
+  return "text-amber-700";
 }

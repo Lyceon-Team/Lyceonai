@@ -1,4 +1,5 @@
 import { csrfFetch } from "./csrf";
+import { parseApiErrorFromResponse } from "./api-error";
 
 export type CalendarTaskType =
   | "practice"
@@ -99,7 +100,7 @@ export async function getCalendarProfile(): Promise<StudyProfile | null> {
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Failed to fetch calendar profile');
+    throw await parseApiErrorFromResponse(response, 'Failed to fetch calendar profile');
   }
   const data = await response.json();
   return data.profile ?? null;
@@ -124,8 +125,7 @@ export async function saveCalendarProfile(profile: {
     body: JSON.stringify(profile),
   });
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to save calendar profile');
+    throw await parseApiErrorFromResponse(response, 'Failed to save calendar profile');
   }
   const data = await response.json();
   return data.profile;
@@ -141,7 +141,7 @@ export async function getCalendarMonth(start: string, end: string): Promise<Cale
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Failed to fetch calendar month');
+    throw await parseApiErrorFromResponse(response, 'Failed to fetch calendar month');
   }
   const data = await response.json();
   return {
@@ -157,10 +157,10 @@ export async function generateCalendarPlan(startDate: string, days = 28): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ start_date: startDate, days }),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to generate plan');
+    throw await parseApiErrorFromResponse(response, 'Failed to generate plan');
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -171,10 +171,10 @@ export async function refreshCalendarPlan(startDate: string, days = 28): Promise
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ start_date: startDate, days }),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to refresh plan');
+    throw await parseApiErrorFromResponse(response, 'Failed to refresh plan');
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -185,10 +185,10 @@ export async function regenerateCalendarPlan(startDate: string, days = 28): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ start_date: startDate, days }),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to regenerate plan');
+    throw await parseApiErrorFromResponse(response, 'Failed to regenerate plan');
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -228,10 +228,10 @@ export async function updateCalendarDay(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to update day');
+    throw await parseApiErrorFromResponse(response, 'Failed to update day');
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -242,10 +242,10 @@ export async function regenerateCalendarDay(dayDate: string): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "Failed to regenerate day");
+    throw await parseApiErrorFromResponse(response, "Failed to regenerate day");
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -256,10 +256,10 @@ export async function resetCalendarDayToAuto(dayDate: string): Promise<any> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "Failed to reset day to auto");
+    throw await parseApiErrorFromResponse(response, "Failed to reset day to auto");
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }
 
@@ -274,9 +274,9 @@ export async function updateCalendarTaskStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
-  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "Failed to update task status");
+    throw await parseApiErrorFromResponse(response, "Failed to update task status");
   }
+  const data = await response.json().catch(() => ({}));
   return data;
 }

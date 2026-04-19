@@ -158,11 +158,11 @@ export async function ensureAccountForUser(
 }
 
 /**
- * Get account_id for a user by looking up lyceon_account_members
+ * Get account_id for a user by looking up account_members
  */
 export async function getAccountIdForUser(userId: string): Promise<string | null> {
   const { data, error } = await supabaseServer
-    .from('lyceon_account_members')
+    .from('account_members')
     .select('account_id')
     .eq('user_id', userId)
     .single();
@@ -180,10 +180,10 @@ export async function getAccountIdForUser(userId: string): Promise<string | null
  */
 export async function getAllAccountsForUser(userId: string): Promise<Array<{ accountId: string; role: string; createdAt: string }>> {
   const { data, error } = await supabaseServer
-    .from('lyceon_account_members')
-    .select('account_id, role, lyceon_accounts(created_at)')
+    .from('account_members')
+    .select('account_id, role, accounts(created_at)')
     .eq('user_id', userId)
-    .order('created_at', { foreignTable: 'lyceon_accounts', ascending: false });
+    .order('created_at', { foreignTable: 'accounts', ascending: false });
 
   if (error) {
     console.error('[Account] Failed to get accounts for user:', error);
@@ -193,7 +193,7 @@ export async function getAllAccountsForUser(userId: string): Promise<Array<{ acc
   return (data || []).map((row: any) => ({
     accountId: row.account_id,
     role: row.role,
-    createdAt: row.lyceon_accounts?.created_at || new Date().toISOString(),
+    createdAt: row.accounts?.created_at || new Date().toISOString(),
   }));
 }
 
@@ -266,7 +266,7 @@ export async function getOrCreateEntitlement(accountId: string): Promise<Entitle
 
   const { data: created, error: createErr } = await supabaseServer
     .from('entitlements')
-    .insert({ account_id: accountId, plan: 'free', status: 'inactive' })
+    .insert({ account_id: accountId })
     .select()
     .single();
 
@@ -295,7 +295,8 @@ export async function getEntitlement(accountId: string): Promise<Entitlement | n
 }
 
 /**
- * Upsert entitlement by account_id (UNIQUE constraint)
+ * Upsert entitlement by account_id (UNIQUE constraint).
+ * WEBHOOK-ONLY: This is the only writer for plan/status/current_period_end/stripe_subscription_id.
  */
 export async function upsertEntitlement(
   accountId: string,
@@ -312,6 +313,27 @@ export async function upsertEntitlement(
 
   if (error) {
     throw new Error(`Failed to upsert entitlement: ${error.message}`);
+  }
+
+  return data as Entitlement;
+}
+
+/**
+ * Update entitlement stripe_customer_id only (non-premium metadata).
+ */
+export async function setEntitlementStripeCustomerId(
+  accountId: string,
+  stripeCustomerId: string
+): Promise<Entitlement> {
+  const { data, error } = await supabaseServer
+    .from('entitlements')
+    .update({ stripe_customer_id: stripeCustomerId })
+    .eq('account_id', accountId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update entitlement stripe_customer_id: ${error.message}`);
   }
 
   return data as Entitlement;
