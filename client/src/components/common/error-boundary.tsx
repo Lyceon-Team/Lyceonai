@@ -18,7 +18,7 @@ export class ErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <div
-          className="p-4 rounded-lg border bg-destructive/10 text-destructive"
+          className="p-4 rounded-lg border border-border/70 bg-card text-foreground"
           data-testid="error-boundary"
         >
           Something went wrong. Please reload.

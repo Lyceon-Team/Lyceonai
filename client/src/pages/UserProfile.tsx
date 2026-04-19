@@ -28,6 +28,9 @@ import { apiRequest } from '@/lib/queryClient';
 import { SUPPORT_EMAIL } from '@/lib/support-contact';
 import { openBillingPortal } from '@/lib/billing-client';
 import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
+import { SessionNotice } from '@/components/feedback/SessionNotice';
+import { isSessionError, toUserFacingMessage } from '@/lib/api-error';
 
 interface UserProfile {
   id: string;
@@ -239,10 +242,10 @@ export default function UserProfile() {
         description: "You have been successfully logged out.",
       });
     } catch (error) {
+      const notice = toUserFacingMessage(error);
       toast({
-        title: "Logout Failed",
-        description: "Failed to log out. Please try again.",
-        variant: "destructive",
+        title: notice.title,
+        description: notice.message,
       });
     }
   };
@@ -309,10 +312,10 @@ export default function UserProfile() {
       });
     },
     onError: (error) => {
+      const notice = toUserFacingMessage(error);
       toast({
-        title: 'Unable to save notification preferences',
-        description: error instanceof Error ? error.message : 'Please try again.',
-        variant: 'destructive',
+        title: notice.title,
+        description: error instanceof Error ? error.message : notice.message,
       });
     },
   });
@@ -320,10 +323,10 @@ export default function UserProfile() {
   const openPortalMutation = useMutation({
     mutationFn: async () => openBillingPortal(),
     onError: (error) => {
+      const notice = toUserFacingMessage(error);
       toast({
-        title: 'Unable to open billing portal',
-        description: error instanceof Error ? error.message : 'Please try again.',
-        variant: 'destructive',
+        title: notice.title,
+        description: error instanceof Error ? error.message : notice.message,
       });
     },
   });
@@ -354,23 +357,23 @@ export default function UserProfile() {
   }
 
   if (profileError) {
+    const profileMessage = (profileErrorObj as Error)?.message ?? toUserFacingMessage(profileErrorObj).message;
     return (
       <AppShell>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
-          <Card className="max-w-md w-full text-center">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-center gap-2">
-                <AlertCircle className="h-5 w-5 text-red-500" />
-                Unable to load profile
-              </CardTitle>
-              <CardDescription>
-                {(profileErrorObj as Error)?.message ?? "Please try again."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => refetchProfile()}>Retry</Button>
-            </CardContent>
-          </Card>
+          {isSessionError(profileErrorObj) ? (
+            <SessionNotice
+              title="Your profile session needs to be refreshed."
+              message={profileMessage}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              title="We couldn’t load your profile."
+              message={profileMessage}
+              onRetry={() => void refetchProfile()}
+            />
+          )}
         </div>
       </AppShell>
     );
@@ -756,17 +759,23 @@ export default function UserProfile() {
                     <AlertDescription>Loading saved notification preferences...</AlertDescription>
                   </Alert>
                 ) : notificationPreferencesError ? (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="flex items-center justify-between gap-3">
-                      <span>
-                        {(notificationPreferencesErrorObj as Error)?.message ?? 'Failed to load notification preferences.'}
-                      </span>
-                      <Button variant="outline" size="sm" onClick={() => refetchNotificationPreferences()}>
-                        Retry
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
+                  isSessionError(notificationPreferencesErrorObj) ? (
+                    <SessionNotice
+                      message={
+                        (notificationPreferencesErrorObj as Error)?.message ??
+                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                      }
+                      onRefreshSession={() => window.location.reload()}
+                    />
+                  ) : (
+                    <RecoveryNotice
+                      message={
+                        (notificationPreferencesErrorObj as Error)?.message ??
+                        toUserFacingMessage(notificationPreferencesErrorObj).message
+                      }
+                      onRetry={() => void refetchNotificationPreferences()}
+                    />
+                  )
                 ) : (
                   <div className="space-y-6">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -997,17 +1006,17 @@ export default function UserProfile() {
                     <AlertDescription>Loading live billing status...</AlertDescription>
                   </Alert>
                 ) : billingStatusError ? (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription className="flex items-center justify-between gap-3">
-                      <span>
-                        {(billingStatusErrorObj as Error)?.message ?? 'Failed to load billing status.'}
-                      </span>
-                      <Button variant="outline" size="sm" onClick={() => refetchBillingStatus()}>
-                        Retry
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
+                  isSessionError(billingStatusErrorObj) ? (
+                    <SessionNotice
+                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      onRefreshSession={() => window.location.reload()}
+                    />
+                  ) : (
+                    <RecoveryNotice
+                      message={(billingStatusErrorObj as Error)?.message ?? toUserFacingMessage(billingStatusErrorObj).message}
+                      onRetry={() => void refetchBillingStatus()}
+                    />
+                  )
                 ) : (
                   <>
                     <Alert>

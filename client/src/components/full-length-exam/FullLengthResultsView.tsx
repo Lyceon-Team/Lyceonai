@@ -166,7 +166,6 @@ export default function FullLengthResultsView({
         return;
       }
       toast({
-        variant: "destructive",
         title: "Unable to share",
         description: "Please try again.",
       });

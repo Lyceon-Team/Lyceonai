@@ -138,11 +138,74 @@ export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
 }
 
+export function isEntitlementError(error: unknown): boolean {
+  return isEntitlementDenialError(error);
+}
+
+export function isPaymentUpdateRequired(error: unknown): boolean {
+  const reason = getPremiumDenialReason(error);
+  return reason === "payment_required" || reason === "payment_past_due";
+}
+
+export function isCsrfError(error: unknown): boolean {
+  if (!isApiError(error)) return false;
+  const code = normalizeCode(error.code);
+  const reason = normalizeReason(error.reason);
+  const message = error.message.trim().toLowerCase();
+  return code === "CSRF_BLOCKED" || reason === "csrf_blocked" || message.includes("csrf");
+}
+
+export function isSessionError(error: unknown): boolean {
+  if (!isApiError(error)) return false;
+  if (isEntitlementDenialError(error)) return false;
+  if (isCsrfError(error)) return true;
+  return error.status === 401 || error.status === 403;
+}
+
 export function isTransportError(error: unknown): boolean {
   if (error instanceof TypeError) return true;
+  if (error instanceof SyntaxError) return true;
   if (isApiError(error)) {
     return error.status >= 500 || error.status === 0;
   }
   return false;
 }
 
+export type UserFacingErrorMessage = {
+  title: string;
+  message: string;
+  action: "upgrade" | "billing" | "retry" | "refresh_session";
+};
+
+export function toUserFacingMessage(error: unknown): UserFacingErrorMessage {
+  const premiumReason = getPremiumDenialReason(error);
+  if (premiumReason === "payment_required" || premiumReason === "payment_past_due") {
+    return {
+      title: "Payment update required",
+      message: "Please update your billing details to continue.",
+      action: "billing",
+    };
+  }
+
+  if (premiumReason) {
+    return {
+      title: "Premium required",
+      message: "Upgrade to an active premium plan to continue.",
+      action: "upgrade",
+    };
+  }
+
+  if (isSessionError(error)) {
+    return {
+      title: "Session refresh required",
+      message: "Your session needs to be refreshed before continuing.",
+      action: "refresh_session",
+    };
+  }
+
+  return {
+    title: "Unable to load right now",
+    message: "Please try again. If this keeps happening, refresh the page.",
+    action: "retry",
+  };
+}

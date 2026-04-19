@@ -3,10 +3,13 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Send, Sparkles, Info, MessageSquare, RefreshCw, AlertCircle } from "lucide-react";
+import { Send, Sparkles, Info, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { PremiumUpgradePrompt, type PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
+import { isApiError, isCsrfError, isSessionError, toUserFacingMessage } from "@/lib/api-error";
 import {
   appendTutorMessage,
   fetchTutorConversation,
@@ -123,6 +126,7 @@ export default function Chat() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [requestErrorMode, setRequestErrorMode] = useState<"recovery" | "session" | null>(null);
   const [premiumPromptReason, setPremiumPromptReason] = useState<PremiumPromptReason | null>(null);
   const [premiumPromptDismissed, setPremiumPromptDismissed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -158,6 +162,7 @@ export default function Chat() {
         const conversationResponse = await fetchTutorConversation(activeConversationId);
         setMessages(toUiMessages(conversationResponse.data.messages));
         setRequestError(null);
+        setRequestErrorMode(null);
         setPremiumPromptReason(null);
         setPremiumPromptDismissed(false);
         return activeConversationId;
@@ -167,13 +172,13 @@ export default function Chat() {
           setPremiumPromptReason(premiumReason);
           setPremiumPromptDismissed(false);
           setRequestError(null);
+          setRequestErrorMode(null);
           return null;
         }
-        const message =
-          error instanceof TutorClientRequestError
-            ? error.message
-            : "Unable to initialize tutor conversation.";
+        const userMessage = toUserFacingMessage(error);
+        const message = isApiError(error) ? error.message : userMessage.message;
         setRequestError(message);
+        setRequestErrorMode(isSessionError(error) || isCsrfError(error) ? "session" : "recovery");
         return null;
       } finally {
         setIsBootstrapping(false);
@@ -194,6 +199,7 @@ export default function Chat() {
     async (args: { activeConversationId: string; turn: PendingTurnState }) => {
       setIsSubmitting(true);
       setRequestError(null);
+      setRequestErrorMode(null);
 
       try {
         const response = await appendTutorMessage({
@@ -222,6 +228,7 @@ export default function Chat() {
           setPremiumPromptReason(premiumReason);
           setPremiumPromptDismissed(false);
           setRequestError(null);
+          setRequestErrorMode(null);
           setMessages((currentMessages) =>
             currentMessages.filter((message) => message.id !== args.turn.tutorPlaceholderId),
           );
@@ -242,6 +249,7 @@ export default function Chat() {
             };
           });
           setRequestError(error.message);
+          setRequestErrorMode("recovery");
           return;
         }
 
@@ -252,15 +260,20 @@ export default function Chat() {
           currentPendingTurn?.clientTurnId === args.turn.clientTurnId ? null : currentPendingTurn,
         );
 
+        const fallbackMessage = "Failed to send message. Please try again.";
         const message =
           error instanceof TutorClientRequestError
             ? error.message
-            : "Failed to send message. Please try again.";
+            : isApiError(error)
+              ? error.message
+              : fallbackMessage;
+        const notice = toUserFacingMessage(error);
+        const isSessionNotice = isSessionError(error) || isCsrfError(error);
         setRequestError(message);
+        setRequestErrorMode(isSessionNotice ? "session" : "recovery");
         toast({
-          title: "Tutor request failed",
-          description: message,
-          variant: "destructive",
+          title: notice.title,
+          description: notice.message,
         });
       } finally {
         setIsSubmitting(false);
@@ -281,7 +294,6 @@ export default function Chat() {
       toast({
         title: "Tutor unavailable",
         description: "Unable to initialize tutor conversation.",
-        variant: "destructive",
       });
       return;
     }
@@ -399,25 +411,22 @@ export default function Chat() {
           </div>
         </div>
 
-        {requestError && (
-          <div className="mb-6 p-4 rounded-lg border border-red-200 bg-red-50/70">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm text-red-700">
-                <AlertCircle className="h-4 w-4" />
-                <span>{requestError}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void handleRetryLastMessage()}
-                disabled={!pendingTurn?.retryable || isSubmitting}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Retry
-              </Button>
-            </div>
-          </div>
+        {requestError && requestErrorMode === "session" && (
+          <SessionNotice
+            className="mb-6"
+            message={requestError}
+            onRefreshSession={() => window.location.reload()}
+            onSignInAgain={() => window.location.assign("/login")}
+          />
+        )}
+
+        {requestError && requestErrorMode !== "session" && (
+          <RecoveryNotice
+            className="mb-6"
+            message={requestError}
+            onRetry={pendingTurn?.retryable ? () => void handleRetryLastMessage() : undefined}
+            retryLabel="Retry"
+          />
         )}
 
         <div className="rounded-xl border border-border/60 bg-card/90 shadow-sm">

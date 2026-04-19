@@ -3,6 +3,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Chat from "./chat";
+import { HttpApiError } from "@/lib/api-error";
 
 const apiRequestRawMock = vi.fn();
 
@@ -235,5 +236,69 @@ describe("Chat request payload", () => {
 
     expect(messagesContainer.querySelectorAll('[data-testid^="message-"]').length).toBe(2);
     expect(screen.getAllByText("Retry this")).toHaveLength(1);
+  });
+
+  it("renders session notice when csrf recovery is exhausted", async () => {
+    apiRequestRawMock
+      .mockResolvedValueOnce(jsonResponse(startConversationBody()))
+      .mockResolvedValueOnce(jsonResponse(fetchConversationBody()))
+      .mockRejectedValueOnce(
+        new HttpApiError({
+          status: 403,
+          code: "csrf_blocked",
+          message: "Your session security token expired. Please refresh and try again.",
+          retryable: false,
+        }),
+      );
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(apiRequestRawMock).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.change(screen.getByTestId("input-chat-message"), {
+      target: { value: "Need help" },
+    });
+    fireEvent.click(screen.getByTestId("button-send-message"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Your session needs to be refreshed.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Refresh session" })).toBeTruthy();
+    });
+  });
+
+  it("renders premium conversion prompt for tutor entitlement denials", async () => {
+    apiRequestRawMock
+      .mockResolvedValueOnce(jsonResponse(startConversationBody()))
+      .mockResolvedValueOnce(jsonResponse(fetchConversationBody()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "PREMIUM_REQUIRED",
+              message: "Upgrade to continue",
+              retryable: false,
+            },
+            requestId: "req-premium",
+          },
+          402,
+        ),
+      );
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(apiRequestRawMock).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.change(screen.getByTestId("input-chat-message"), {
+      target: { value: "Need a premium tutor turn" },
+    });
+    fireEvent.click(screen.getByTestId("button-send-message"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "View plans" })).toBeTruthy();
+    });
   });
 });

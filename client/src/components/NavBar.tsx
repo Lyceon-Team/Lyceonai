@@ -25,7 +25,6 @@ export default function NavBar() {
       toast({ 
         title: "Sign out failed", 
         description: "Please try again",
-        variant: "destructive"
       });
     }
   };

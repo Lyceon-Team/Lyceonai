@@ -23,7 +23,7 @@ export default function StatCard({ title, value, trend, trendUp = true, index = 
       <div className="flex items-end justify-between">
         <p className="text-3xl font-semibold text-lyceon-primary" data-testid="stat-value">{value}</p>
         {trend && (
-          <div className={`flex items-center gap-1 text-sm ${trendUp ? 'text-green-600' : 'text-red-600'}`} data-testid="stat-trend">
+          <div className={`flex items-center gap-1 text-sm ${trendUp ? 'text-green-600' : 'text-amber-700'}`} data-testid="stat-trend">
             {trendUp ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
             <span>{trend}</span>
           </div>

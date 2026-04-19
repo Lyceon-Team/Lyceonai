@@ -590,8 +590,10 @@ app.use((err: any, req: Request, res: Response, next: any) => {
 
   if (csrfError) {
     return res.status(403).json({
-      error: "csrf_blocked",
-      message: "Cross-site request blocked by CSRF protection",
+      error: {
+        code: "csrf_blocked",
+        message: "Request blocked by CSRF protection",
+      },
       requestId,
     });
   }

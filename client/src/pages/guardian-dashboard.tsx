@@ -22,6 +22,7 @@ import { Users, Plus, Clock, Target, AlertCircle, CheckCircle, UserMinus, Refres
 import { Link } from 'wouter';
 import { SubscriptionPaywall, ManageSubscriptionButton } from '@/components/guardian/SubscriptionPaywall';
 import FullLengthResultsView, { type FullLengthResultsData } from '@/components/full-length-exam/FullLengthResultsView';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
 
 interface LinkedStudent {
   id: string;
@@ -418,13 +419,13 @@ export default function GuardianDashboard() {
               </Button>
             </form>
             {linkError && (
-              <Alert variant={isRateLimited ? 'default' : 'destructive'} className={`mt-4 ${isRateLimited ? 'bg-amber-50 border-amber-200' : ''}`}>
+              <Alert className={`mt-4 ${isRateLimited ? 'bg-amber-50 border-amber-200' : 'border-border/70 bg-card/70'}`}>
                 {isRateLimited ? (
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                 ) : (
-                  <AlertCircle className="h-4 w-4" />
+                  <AlertCircle className="h-4 w-4 text-[#0F2E48]/70" />
                 )}
-                <AlertDescription className={isRateLimited ? 'text-amber-800' : ''}>
+                <AlertDescription className={isRateLimited ? 'text-amber-800' : 'text-[#0F2E48]/80'}>
                   {linkError}
                 </AlertDescription>
               </Alert>
@@ -472,11 +473,12 @@ export default function GuardianDashboard() {
             {studentsLoading ? (
               <div className="text-center py-8 text-[#0F2E48]/60">Loading students...</div>
             ) : studentsError ? (
-              <div className="text-center py-8">
-                <p className="text-red-600 mb-4">Failed to load students</p>
-                <Button variant="outline" onClick={() => refetchStudents()}>
-                  <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                </Button>
+              <div className="py-6">
+                <RecoveryNotice
+                  title="We couldn't load students."
+                  message="Try again. If this keeps happening, refresh the page."
+                  onRetry={() => void refetchStudents()}
+                />
               </div>
             ) : students.length === 0 ? (
               <div className="text-center py-12 px-4">
@@ -553,11 +555,12 @@ export default function GuardianDashboard() {
                 {summaryLoading ? (
                   <div className="text-center py-8 text-[#0F2E48]/60">Loading progress...</div>
                 ) : summaryError ? (
-                  <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">Failed to load progress data</p>
-                    <Button variant="outline" onClick={() => refetchSummary()}>
-                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                    </Button>
+                  <div className="py-6">
+                    <RecoveryNotice
+                      title="We couldn't load progress data."
+                      message="Try again. If this keeps happening, refresh the page."
+                      onRetry={() => void refetchSummary()}
+                    />
                   </div>
                 ) : summaryData ? (
                   <div className="space-y-6">
@@ -639,11 +642,12 @@ export default function GuardianDashboard() {
                 {weaknessLoading ? (
                   <div className="text-center py-8 text-[#0F2E48]/60">Loading weaknesses...</div>
                 ) : weaknessError ? (
-                  <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">Failed to load weakness data</p>
-                    <Button variant="outline" onClick={() => refetchWeakness()}>
-                      <RefreshCw className="h-4 w-4 mr-2" /> Retry
-                    </Button>
+                  <div className="py-6">
+                    <RecoveryNotice
+                      title="We couldn't load weakness data."
+                      message="Try again. If this keeps happening, refresh the page."
+                      onRetry={() => void refetchWeakness()}
+                    />
                   </div>
                 ) : !weaknessData || weaknessData.count === 0 ? (
                   <div className="rounded-lg bg-[#FFFAEF] p-4 text-sm text-[#0F2E48]/70">
@@ -680,9 +684,10 @@ export default function GuardianDashboard() {
                   <p className="text-sm text-[#0F2E48]/70">Loading full-length session history...</p>
                 )}
                 {guardianExamHistoryError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{guardianExamHistoryErrorMessage}</AlertDescription>
-                  </Alert>
+                  <RecoveryNotice
+                    title="We couldn't load full-length session history."
+                    message={guardianExamHistoryErrorMessage || "Try again. If this keeps happening, refresh the page."}
+                  />
                 )}
                 {guardianExamHistoryData && guardianExamHistoryData.sessions.length > 0 && (
                   <div className="rounded-lg border border-border/60 bg-secondary/35 p-3">
@@ -762,9 +767,10 @@ export default function GuardianDashboard() {
                 )}
 
                 {guardianExamReportError && !guardianReportNotFound && !guardianReportLocked && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{guardianExamReportErrorMessage}</AlertDescription>
-                  </Alert>
+                  <RecoveryNotice
+                    title="We couldn't load this full-length report."
+                    message={guardianExamReportErrorMessage || "Try again. If this keeps happening, refresh the page."}
+                  />
                 )}
 
                 {guardianExamReportData?.report && (

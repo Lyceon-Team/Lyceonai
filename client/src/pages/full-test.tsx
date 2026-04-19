@@ -16,12 +16,19 @@ import FullLengthResultsView, { type FullLengthResultsData } from "@/components/
 import FullLengthReviewView, { type FullLengthReviewData } from "@/components/full-length-exam/FullLengthReviewView";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import { PremiumUpgradePrompt, type PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
 import {
   parseRuntimeContractDisabledFromError,
   parseRuntimeContractDisabledFromPayload,
   type RuntimeContractDisabledState,
 } from "@/lib/runtime-contract-disable";
-import { getPremiumDenialReason, parseApiErrorFromResponse } from "@/lib/api-error";
+import {
+  getPremiumDenialReason,
+  isSessionError,
+  parseApiErrorFromResponse,
+  toUserFacingMessage,
+} from "@/lib/api-error";
 
 interface FullLengthHistorySession {
   sessionId: string;
@@ -101,6 +108,7 @@ export default function FullTest() {
     data: reportData,
     isLoading: reportLoading,
     error: reportError,
+    refetch: refetchReport,
   } = useQuery<FullLengthResultsData>({
     queryKey: ["full-length-report", reportSessionId],
     enabled: !!reportSessionId && !!user && !isStarted && !contractDisabled,
@@ -136,6 +144,7 @@ export default function FullTest() {
     data: reviewData,
     isLoading: reviewLoading,
     error: reviewError,
+    refetch: refetchReview,
   } = useQuery<FullLengthReviewData>({
     queryKey: ["full-length-review", reviewSessionId],
     enabled: !!reviewSessionId && !!user && !isStarted && !contractDisabled,
@@ -170,6 +179,7 @@ export default function FullTest() {
     data: historyData,
     isLoading: historyLoading,
     error: historyError,
+    refetch: refetchHistory,
   } = useQuery<FullLengthHistoryData>({
     queryKey: ["full-length-history"],
     enabled: !!user && !isStarted && !contractDisabled,
@@ -261,9 +271,8 @@ export default function FullTest() {
         return;
       }
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to create exam session",
+        title: toUserFacingMessage(error).title,
+        description: error.message || toUserFacingMessage(error).message,
       });
     },
   });
@@ -311,9 +320,8 @@ export default function FullTest() {
         return;
       }
       toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to start exam",
+        title: toUserFacingMessage(error).title,
+        description: error.message || toUserFacingMessage(error).message,
       });
     },
   });
@@ -342,7 +350,6 @@ export default function FullTest() {
     const normalized = value.trim();
     if (!normalized) {
       toast({
-        variant: "destructive",
         title: "Session ID required",
         description: "Enter a full-length session ID to load report truth.",
       });
@@ -367,7 +374,6 @@ export default function FullTest() {
     const sessionToLoad = (sourceSessionId ?? reportLookupSessionId).trim();
     if (!sessionToLoad) {
       toast({
-        variant: "destructive",
         title: "Session ID required",
         description: "Enter a full-length session ID to load review truth.",
       });
@@ -488,9 +494,19 @@ export default function FullTest() {
               <p className="text-xs text-muted-foreground mb-4">Loading session history...</p>
             )}
             {historyError && !historyPremiumReason && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{historyErrorMessage}</AlertDescription>
-              </Alert>
+              isSessionError(historyError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={historyErrorMessage || toUserFacingMessage(historyError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={historyErrorMessage || toUserFacingMessage(historyError).message}
+                  onRetry={() => void refetchHistory()}
+                />
+              )
             )}
             {historyData && historyData.sessions.length > 0 && (
               <div className="mb-4 rounded-lg border border-border/50 bg-secondary/35 p-3">
@@ -597,11 +613,19 @@ export default function FullTest() {
             )}
 
             {reportError && !reportPremiumLocked && !reportLocked && !reportNotFound && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>
-                  {(reportError as Error).message}
-                </AlertDescription>
-              </Alert>
+              isSessionError(reportError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={(reportError as Error).message || toUserFacingMessage(reportError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={(reportError as Error).message || toUserFacingMessage(reportError).message}
+                  onRetry={() => void refetchReport()}
+                />
+              )
             )}
 
             {reviewLocked && (
@@ -621,11 +645,19 @@ export default function FullTest() {
             )}
 
             {reviewError && !reviewLocked && !reviewNotFound && !reviewPremiumReason && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>
-                  {(reviewError as Error).message}
-                </AlertDescription>
-              </Alert>
+              isSessionError(reviewError) ? (
+                <SessionNotice
+                  className="mb-4"
+                  message={(reviewError as Error).message || toUserFacingMessage(reviewError).message}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-4"
+                  message={(reviewError as Error).message || toUserFacingMessage(reviewError).message}
+                  onRetry={() => void refetchReview()}
+                />
+              )
             )}
 
             {reportData && (

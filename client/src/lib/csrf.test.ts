@@ -37,7 +37,7 @@ describe("csrfFetch recovery", () => {
           return callUrl === "/api/test/mutate";
         }).length;
         if (mutationCalls < 3) {
-          return jsonResponse({ error: "csrf_blocked" }, 403);
+          return jsonResponse({ error: { code: "csrf_blocked", message: "Request blocked by CSRF protection" } }, 403);
         }
         return jsonResponse({ ok: true }, 200);
       }
@@ -69,7 +69,7 @@ describe("csrfFetch recovery", () => {
         return jsonResponse({ csrfToken: "token-blocked" }, 200);
       }
       if (url === "/api/test/fail") {
-        return jsonResponse({ error: "csrf_blocked" }, 403);
+        return jsonResponse({ error: { code: "csrf_blocked", message: "Request blocked by CSRF protection" } }, 403);
       }
       return jsonResponse({ error: "Unexpected URL" }, 500);
     });
@@ -106,4 +106,3 @@ describe("csrfFetch recovery", () => {
     expect(third).not.toBe(first);
   });
 });
-
