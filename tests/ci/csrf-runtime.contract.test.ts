@@ -1,5 +1,4 @@
 import express, { type Express } from "express";
-import cookieParser from "cookie-parser";
 import request, { type SuperAgentTest } from "supertest";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
