@@ -9,6 +9,7 @@ import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
 import { Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
 function isMathSection(section: string | null | undefined): boolean {
   if (!section) return false;
@@ -124,13 +125,12 @@ export default function CanonicalPracticePage(props: {
               <p className="mt-3 text-sm">Loading your next question...</p>
             </div>
           ) : error && !question ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              <p className="font-medium">Unable to load a question.</p>
-              <p className="mt-1">{error}</p>
-              <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
-                Retry
-              </Button>
-            </div>
+            <RecoveryNotice
+              title="Unable to load a question."
+              message={error}
+              onRetry={() => void fetchNextQuestion()}
+              retryLabel="Retry"
+            />
           ) : !question ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               <p className="font-medium">No questions available right now.</p>

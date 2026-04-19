@@ -64,7 +64,6 @@ function AppHeader() {
       toast({
         title: "Sign out failed",
         description: error.message || "Please try again",
-        variant: "destructive"
       });
     } finally {
       setIsSigningOut(false);
@@ -157,7 +156,7 @@ function AppHeader() {
                   </Button>
                   <Button 
                     variant="outline" 
-                    className="w-full justify-start gap-3 text-destructive"
+                    className="w-full justify-start gap-3"
                     disabled={isSigningOut}
                     onClick={async () => {
                       setMobileMenuOpen(false);
@@ -202,7 +201,6 @@ function AppHeader() {
                   <DropdownMenuItem 
                     onClick={handleSignOut} 
                     disabled={isSigningOut}
-                    className="text-destructive"
                     data-testid="menu-logout"
                   >
                     <LogOut className="mr-2 h-4 w-4" />

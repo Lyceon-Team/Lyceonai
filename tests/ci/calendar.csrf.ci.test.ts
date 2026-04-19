@@ -82,7 +82,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
 const { default: app } = await import("../../server/index");
 
 function isCsrfBlocked(res: request.Response): boolean {
-  return res.status === 403 && res.body?.error === "csrf_blocked";
+  return res.status === 403 && res.body?.error?.code === "csrf_blocked";
 }
 
 async function getCsrfToken(agent: request.SuperAgentTest): Promise<string> {
@@ -98,7 +98,7 @@ describe("Calendar CSRF CI", () => {
       .send({ start_date: "2026-03-01", days: 1 });
 
     expect(res.status).toBe(403);
-    expect(res.body).toHaveProperty("error", "csrf_blocked");
+    expect(res.body).toHaveProperty("error.code", "csrf_blocked");
   });
 
   it("calendar_mutation_allows_with_valid_csrf", async () => {

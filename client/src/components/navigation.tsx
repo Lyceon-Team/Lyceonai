@@ -30,7 +30,6 @@ export default function Navigation() {
       toast({ 
         title: "Logout failed", 
         description: "Please try again",
-        variant: "destructive"
       });
     } finally {
       setIsSigningOut(false);

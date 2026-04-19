@@ -140,6 +140,7 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
  * POST /api/account/execute-deletions
  * Admin-only / system endpoint to execute pending deletions that have passed the 24h window
  */
+// CSRF_EXEMPT_REASON: Non-browser admin/system operation with server-side auth gating.
 router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, async (req: Request, res: Response) => {
     const requestId = req.requestId;
 

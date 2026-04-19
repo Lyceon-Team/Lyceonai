@@ -4,10 +4,11 @@ import { DateTime } from "luxon";
 import { Link, useLocation } from "wouter";
 import { AppShell } from "@/components/layout/app-shell";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import {
   ArrowRight,
   Calendar,
@@ -220,11 +221,12 @@ export default function LyceonDashboard() {
         </div>
 
         {(profileError || calendarError || kpiError) && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertDescription>
-              Some dashboard data failed to load. Please refresh the page or try again later.
-            </AlertDescription>
-          </Alert>
+          <RecoveryNotice
+            className="mb-6"
+            title="We couldn’t load part of your dashboard."
+            message="Try again. If this keeps happening, refresh the page."
+            onRetry={() => window.location.reload()}
+          />
         )}
 
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
@@ -293,14 +295,12 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
               ) : estimatePremiumLocked ? (
-                <div className="space-y-4">
-                  <p className="text-sm text-primary-foreground/80">
-                    Score estimate is a premium KPI surface.
-                  </p>
-                  <Button variant="secondary" className="w-fit" onClick={handleUpgradeToPremium}>
-                    View Plans
-                  </Button>
-                </div>
+                <EmptyStateCTA
+                  title="Unlock score insights"
+                  message="Score estimate is a premium KPI surface."
+                  actionLabel="View plans"
+                  onAction={handleUpgradeToPremium}
+                />
               ) : estimateData ? (
                 <div className="space-y-4">
                   <p className="text-5xl font-semibold leading-none tracking-tight">
@@ -406,14 +406,12 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-full" />
                 </div>
               ) : estimatePremiumLocked ? (
-                <div className="rounded-lg bg-muted/45 p-5 space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Detailed score breakdown is locked behind paid KPI access.
-                  </p>
-                  <Button variant="outline" onClick={handleUpgradeToPremium}>
-                    View Plans
-                  </Button>
-                </div>
+                <EmptyStateCTA
+                  title="Unlock detailed breakdown"
+                  message="Detailed score breakdown is locked behind paid KPI access."
+                  actionLabel="View plans"
+                  onAction={handleUpgradeToPremium}
+                />
               ) : (
                 <div className="space-y-4">
                   <ScoreSnapshotRow

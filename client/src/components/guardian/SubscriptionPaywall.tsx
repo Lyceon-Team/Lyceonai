@@ -6,6 +6,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, CheckCircle, Loader2, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { csrfFetch } from '@/lib/csrf';
+import { parseApiErrorFromResponse, isApiError, isSessionError, toUserFacingMessage } from '@/lib/api-error';
+import { AppNotice } from '@/components/feedback/AppNotice';
+import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
+import { SessionNotice } from '@/components/feedback/SessionNotice';
 import {
   getBillingPlans,
   startSubscriptionCheckout,
@@ -60,8 +64,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     queryFn: async () => {
       const res = await csrfFetch('/api/billing/status', { credentials: 'include' });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to get billing status');
+        throw await parseApiErrorFromResponse(res, 'Failed to get billing status');
       }
       return res.json() as Promise<BillingStatus>;
     },
@@ -128,7 +131,7 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
     );
   }
 
-  const { data: pricesData, isLoading: pricesLoading, error: pricesError } = useQuery<BillingPlanMetadata[]>({
+  const { data: pricesData, isLoading: pricesLoading, error: pricesError, refetch: refetchPrices } = useQuery<BillingPlanMetadata[]>({
     queryKey: ['/api/billing/plans'],
     queryFn: getBillingPlans,
     enabled: !billingStatus?.effectiveAccess,
@@ -140,14 +143,31 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
       return { url: true };
     },
     onSuccess: () => {},
-    onError: (err: Error & { stripeMessage?: string; requestId?: string; details?: any }) => {
-      setCheckoutError(err.message);
+    onError: (err: unknown) => {
+      const fallbackMessage = err instanceof Error ? err.message : 'Could not start checkout. Please try again.';
+      const details = isApiError(err) ? err.details : (err as any)?.details;
+      const detailsRecord = details && typeof details === 'object' ? (details as Record<string, unknown>) : null;
+      setCheckoutError(fallbackMessage);
       setCheckoutErrorDetails({
-        stripeMessage: err.stripeMessage,
-        requestId: err.requestId,
-        details: err.details,
+        stripeMessage:
+          typeof (err as any)?.stripeMessage === 'string'
+            ? (err as any).stripeMessage
+            : detailsRecord && typeof detailsRecord.stripeMessage === 'string'
+              ? detailsRecord.stripeMessage
+              : undefined,
+        requestId:
+          typeof (err as any)?.requestId === 'string'
+            ? (err as any).requestId
+            : detailsRecord && typeof detailsRecord.requestId === 'string'
+              ? detailsRecord.requestId
+              : undefined,
+        details: detailsRecord,
       });
-      console.error('[Billing] Checkout error:', { message: err.message, stripeMessage: err.stripeMessage, requestId: err.requestId, details: err.details });
+      console.error('[Billing] Checkout error:', {
+        message: fallbackMessage,
+        stripeMessage: detailsRecord?.stripeMessage ?? (err as any)?.stripeMessage,
+        requestId: detailsRecord?.requestId ?? (err as any)?.requestId,
+      });
     },
   });
 
@@ -157,8 +177,10 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
         method: 'POST',
         credentials: 'include',
       });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, 'Failed to open billing portal');
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to open billing portal');
       return data;
     },
     onSuccess: (data) => {
@@ -241,14 +263,18 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
   const requiresStudentSubscription = !!billingStatus?.requiresStudentSubscription;
 
   if (pricesError) {
+    const pricesErrorMessage = pricesError instanceof Error
+      ? pricesError.message
+      : toUserFacingMessage(pricesError).message;
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFAEF] p-4">
-        <Card className="w-full max-w-md border-red-200">
+        <Card className="w-full max-w-md border-[#0F2E48]/20">
           <CardContent className="pt-6">
-            <div className="p-4 border border-red-200 bg-red-50 rounded-lg text-sm">
-              <div className="font-semibold text-red-800">Pricing is temporarily unavailable.</div>
-              <div className="mt-1 opacity-80 text-red-700">Please refresh the page or try again in a minute.</div>
-            </div>
+            <RecoveryNotice
+              title="Pricing is temporarily unavailable."
+              message={pricesErrorMessage}
+              onRetry={() => void refetchPrices()}
+            />
           </CardContent>
         </Card>
       </div>
@@ -351,27 +377,34 @@ export function SubscriptionPaywall({ children }: SubscriptionPaywallProps) {
           )}
 
           {checkoutError && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <div className="font-medium">Could not start checkout. Please try again.</div>
-                {SHOW_BILLING_DEBUG && (
-                  <div className="mt-2 text-xs font-mono opacity-80 space-y-1">
-                    <div>Error: {checkoutError}</div>
-                    {checkoutErrorDetails?.stripeMessage && <div>Stripe: {checkoutErrorDetails.stripeMessage}</div>}
-                    {checkoutErrorDetails?.requestId && <div>Request ID: {checkoutErrorDetails.requestId}</div>}
-                  </div>
-                )}
-              </AlertDescription>
-            </Alert>
+            <AppNotice
+              variant="warning"
+              title="Could not start checkout."
+              message={checkoutError}
+              mode="inline"
+            />
+          )}
+
+          {SHOW_BILLING_DEBUG && checkoutErrorDetails && (
+            <div className="rounded-lg border border-border/70 bg-card/70 p-3 text-xs font-mono space-y-1">
+              <div>Error: {checkoutError}</div>
+              {checkoutErrorDetails?.stripeMessage && <div>Stripe: {checkoutErrorDetails.stripeMessage}</div>}
+              {checkoutErrorDetails?.requestId && <div>Request ID: {checkoutErrorDetails.requestId}</div>}
+            </div>
           )}
 
           {billingError && (
-            <Alert>
-              <AlertDescription>
-                Unable to load billing information. Please try again later.
-              </AlertDescription>
-            </Alert>
+            isSessionError(billingError) ? (
+              <SessionNotice
+                message={billingError instanceof Error ? billingError.message : toUserFacingMessage(billingError).message}
+                onRefreshSession={() => window.location.reload()}
+              />
+            ) : (
+              <RecoveryNotice
+                message={billingError instanceof Error ? billingError.message : toUserFacingMessage(billingError).message}
+                onRetry={() => void refetch()}
+              />
+            )
           )}
         </CardContent>
 
@@ -420,8 +453,10 @@ export function ManageSubscriptionButton() {
         method: 'POST',
         credentials: 'include',
       });
+      if (!res.ok) {
+        throw await parseApiErrorFromResponse(res, 'Failed to open billing portal');
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to open billing portal');
       return data;
     },
     onSuccess: (data) => {

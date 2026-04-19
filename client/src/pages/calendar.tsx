@@ -8,7 +8,10 @@ import { ChevronLeft, ChevronRight, Loader2, Plus, Play, Flame, AlertCircle, Ref
 import { TripleProgressRing } from "@/components/progress/TripleProgressRing";
 import { useLocation } from "wouter";
 import { PremiumUpgradePrompt } from "@/components/billing/PremiumUpgradePrompt";
-import { getPremiumDenialReason, isTransportError } from "@/lib/api-error";
+import { AppNotice } from "@/components/feedback/AppNotice";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
+import { getPremiumDenialReason, isSessionError, isTransportError, toUserFacingMessage } from "@/lib/api-error";
 import {
   getCalendarProfile,
   saveCalendarProfile,
@@ -50,7 +53,7 @@ function getStatusBadge(status: DayStatus, completedMin: number, plannedMin: num
     case "planned":
       return { label: "Planned", className: "bg-muted text-muted-foreground" };
     case "missed":
-      return { label: "Missed", className: "bg-red-100 text-red-700" };
+      return { label: "Missed", className: "bg-amber-100 text-amber-800" };
     case "in_progress":
       return { label: "In Progress", className: "bg-teal-100 text-teal-700" };
     case "complete":
@@ -534,18 +537,26 @@ export default function CalendarPage() {
   }
 
   if (profileLoadError && !profilePremiumReason) {
+    const profileErrorMessage =
+      profileLoadError instanceof Error ? profileLoadError.message : "Failed to load calendar profile.";
+    const profileNoticeMessage = isTransportError(profileLoadError)
+      ? profileErrorMessage
+      : toUserFacingMessage(profileLoadError).message;
     return (
       <AppShell>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <Alert variant={isTransportError(profileLoadError) ? "destructive" : "default"}>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <span>{profileLoadError instanceof Error ? profileLoadError.message : "Failed to load calendar profile."}</span>
-              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
+          {isSessionError(profileLoadError) ? (
+            <SessionNotice
+              message={profileNoticeMessage}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              message={profileNoticeMessage}
+              onRetry={() => window.location.reload()}
+              retryLabel="Retry"
+            />
+          )}
         </div>
       </AppShell>
     );
@@ -609,22 +620,24 @@ export default function CalendarPage() {
           }
 
           if (monthError && !monthLoading) {
+            const monthNoticeMessage = isTransportError(monthErrorObj)
+              ? monthError
+              : toUserFacingMessage(monthErrorObj).message;
             return (
-              <Alert variant={isTransportError(monthErrorObj) ? "destructive" : "default"} className="mb-6">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription className="flex items-center justify-between">
-                  <span>{monthError}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadMonthData}
-                    className="ml-4"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Retry
-                  </Button>
-                </AlertDescription>
-              </Alert>
+              isSessionError(monthErrorObj) ? (
+                <SessionNotice
+                  className="mb-6"
+                  message={monthNoticeMessage}
+                  onRefreshSession={() => window.location.reload()}
+                />
+              ) : (
+                <RecoveryNotice
+                  className="mb-6"
+                  message={monthNoticeMessage}
+                  onRetry={loadMonthData}
+                  retryLabel="Retry"
+                />
+              )
             );
           }
 
@@ -755,7 +768,14 @@ function ProfileSetupPanel({ onSave }: { onSave: (profile: StudyProfile) => void
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error ? (
+            <AppNotice
+              variant="warning"
+              mode="compact"
+              title="Unable to save setup"
+              message={error}
+            />
+          ) : null}
 
           <Button type="submit" className="w-full" disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

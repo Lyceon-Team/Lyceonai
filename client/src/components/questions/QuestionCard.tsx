@@ -92,7 +92,7 @@ export function QuestionCard({
                     ? isCorrect
                       ? 'border-green-500 bg-green-50'
                       : isIncorrect
-                      ? 'border-red-500 bg-red-50'
+                      ? 'border-amber-500 bg-amber-50'
                       : 'border-slate-200 bg-white opacity-60'
                     : isSelected
                     ? 'border-slate-900 bg-slate-900 text-white'
@@ -111,7 +111,7 @@ export function QuestionCard({
                       ? isCorrect
                         ? 'bg-green-500 text-white'
                         : isIncorrect
-                        ? 'bg-red-500 text-white'
+                        ? 'bg-amber-500 text-white'
                         : 'bg-slate-200 text-slate-600'
                       : isSelected
                       ? 'bg-white text-slate-900'
@@ -128,7 +128,7 @@ export function QuestionCard({
                   </div>
                   <div className={`flex-1 ${
                     showResult
-                      ? isCorrect ? 'text-green-900' : isIncorrect ? 'text-red-900' : 'text-slate-600'
+                      ? isCorrect ? 'text-green-900' : isIncorrect ? 'text-amber-900' : 'text-slate-600'
                       : isSelected ? 'text-white' : 'text-slate-900'
                   }`}>
                     <MathRenderer content={option.text} displayMode={false} />
@@ -156,8 +156,8 @@ export function QuestionCard({
             data-testid="input-free-response"
           />
           {showResult && validationResult && (
-            <div className={`p-4 rounded-xl border ${validationResult.isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <p className={validationResult.isCorrect ? 'text-green-800' : 'text-red-800'}>
+            <div className={`p-4 rounded-xl border ${validationResult.isCorrect ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+              <p className={validationResult.isCorrect ? 'text-green-800' : 'text-amber-800'}>
                 {validationResult.feedback || (validationResult.isCorrect ? 'Correct!' : 'Incorrect')}
               </p>
             </div>
@@ -225,7 +225,7 @@ export function QuestionCard({
                   disabled={feedbackSubmitted !== null}
                   className={`p-2 rounded-lg transition-all ${
                     feedbackSubmitted === 'down'
-                      ? 'bg-red-100 text-red-600'
+                      ? 'bg-amber-100 text-amber-700'
                       : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
                   }`}
                   data-testid="button-feedback-down"

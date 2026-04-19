@@ -47,9 +47,9 @@ const getNotificationIcon = (type: string, category: string) => {
 const getPriorityColor = (priority: string) => {
   switch (priority) {
     case 'urgent':
-      return 'bg-red-500 text-white';
+      return 'bg-amber-700 text-white';
     case 'high':
-      return 'bg-orange-500 text-white';
+      return 'bg-amber-500 text-white';
     case 'normal':
       return 'bg-blue-500 text-white';
     case 'low':
@@ -164,8 +164,7 @@ export default function NotificationDropdown() {
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
             <Badge
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center text-xs p-0 min-w-5"
-              variant="destructive"
+              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center text-xs p-0 min-w-5 bg-primary text-primary-foreground hover:bg-primary"
               data-testid="notification-badge"
             >
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -226,9 +225,9 @@ export default function NotificationDropdown() {
           </div>
         ) : notificationsError ? (
           <div className="p-4 space-y-3" data-testid="notifications-error">
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
+            <Alert className="border-amber-200 bg-amber-50">
+              <AlertCircle className="h-4 w-4 text-amber-700" />
+              <AlertDescription className="text-amber-800">
                 Failed to load notifications. {notificationsError instanceof Error ? notificationsError.message : 'Please try again.'}
               </AlertDescription>
             </Alert>

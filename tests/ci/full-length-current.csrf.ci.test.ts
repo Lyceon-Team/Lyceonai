@@ -51,7 +51,7 @@ describe("Full-Length Current Session CSRF", () => {
     const app = buildApp();
     const res = await request(app).get("/api/full-length/sessions/current").query({ sessionId: "sess-1" });
     expect(res.status).toBe(403);
-    expect(res.body).toHaveProperty("error", "csrf_blocked");
+    expect(res.body).toHaveProperty("error.code", "csrf_blocked");
   });
 
   it("allows mutating GET current session with valid origin", async () => {
