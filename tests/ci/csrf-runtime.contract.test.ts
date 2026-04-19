@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import request, { type SuperAgentTest } from "supertest";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import cookieParser from "cookie-parser";
 
 async function getCsrfToken(agent: SuperAgentTest, path = "/api/csrf-token"): Promise<string> {
   const res = await agent.get(path);
