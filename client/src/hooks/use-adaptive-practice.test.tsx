@@ -39,6 +39,9 @@ describe("useAdaptivePractice canonical wiring", () => {
   it("boots via canonical session endpoints with client_instance_id", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = asUrl(input);
+      if (url === "/api/csrf-token") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
       if (url.endsWith("/api/practice/sessions")) {
         return jsonResponse({ sessionId: "session-1" });
       }
@@ -90,6 +93,9 @@ describe("useAdaptivePractice canonical wiring", () => {
   it("submits skip to canonical /sessions/:id/skip endpoint", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = asUrl(input);
+      if (url === "/api/csrf-token") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
       if (url.endsWith("/api/practice/sessions")) {
         return jsonResponse({ sessionId: "session-1" });
       }
@@ -152,6 +158,9 @@ describe("useAdaptivePractice canonical wiring", () => {
   it("terminates session through backend endpoint instead of local-only reset", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = asUrl(input);
+      if (url === "/api/csrf-token") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
       if (url.endsWith("/api/practice/sessions")) {
         return jsonResponse({ sessionId: "session-1" });
       }
