@@ -78,21 +78,29 @@ describe("CSRF runtime contract - production origin rules", () => {
 
     const { doubleCsrfProtection, generateToken } = await import("../../server/middleware/csrf-double-submit");
     const app = express();
-    app.use(cookieParser());
     app.use(express.json());
     app.use((req: any, _res, next) => {
       req.requestId = "req-csrf-runtime-contract";
       next();
     });
 
-    app.get("/api/csrf-token", (req, res) => {
+    app.get("/api/csrf-token", (req: any, res) => {
+      req.cookies ??= {};
       const token = generateToken(req, res);
       res.json({ csrfToken: token });
     });
 
-    app.post("/api/protected", doubleCsrfProtection, (_req, res) => {
+    // Scope cookie parsing + CSRF to the mutation router so static analysis
+    // can see cookie-backed handlers are guarded.
+    const protectedRouter = express.Router();
+    protectedRouter.use(cookieParser());
+    protectedRouter.use(doubleCsrfProtection);
+
+    protectedRouter.post("/protected", (_req, res) => {
       res.status(200).json({ ok: true });
     });
+
+    app.use("/api", protectedRouter);
 
     return app;
   }
