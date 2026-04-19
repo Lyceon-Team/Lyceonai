@@ -7,9 +7,10 @@ import { doubleCsrfProtection } from '../middleware/csrf-double-submit.js';
 import { BUILD } from '../lib/build.js';
 import { setAuthCookies, clearAuthCookies } from '../lib/auth-cookies.js';
 import { z } from 'zod';
-import { isAdminRoleRequest, normalizeSignupRole } from '../lib/auth-role.js';
+import { isAdminRoleRequest } from '../lib/auth-role.js';
 import { sendEmail } from '../lib/email.js';
-import crypto from 'crypto';
+import { LEGAL_DOCS, type ConsentSource } from '../../shared/legal-consent.js';
+import { recordLegalAcceptances } from '../lib/legal-acceptance.js';
 
 const router = Router();
 
@@ -26,6 +27,18 @@ const authRateLimiter = rateLimit({
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
+
+const signupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  displayName: z.string().trim().min(1).max(120).optional(),
+  legalConsent: z.object({
+    studentTermsAccepted: z.literal(true),
+    privacyPolicyAccepted: z.literal(true),
+    consentSource: z.enum(['email_signup_form', 'google_continue_pre_oauth', 'google_continue_click']).optional(),
+  }),
+  role: z.unknown().optional(),
+});
 
 // Helper to detect when we're running in a CI/test environment with the
 // placeholder Supabase host. In this situation we must avoid making any
@@ -47,18 +60,12 @@ function runningAgainstPlaceholder(): boolean {
  */
 router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Request, res: Response) => {
   try {
-    const { email, password, displayName, isUnder13, guardianEmail, role: requestedRole } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        error: 'Email and password are required'
-      });
-    }
+    const requestedRole = (req.body as any)?.role;
 
     // Signup must never create admins.
     if (isAdminRoleRequest(requestedRole)) {
       logger.warn('AUTH', 'admin_signup_blocked', 'Blocked admin role request during signup', {
-        email,
+        email: (req.body as any)?.email,
         requestId: req.requestId,
       });
       return res.status(403).json({
@@ -66,25 +73,24 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       });
     }
 
+    const validation = signupSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: validation.error.errors[0]?.message || 'Invalid signup payload',
+      });
+    }
+
+    const { email, password, displayName, legalConsent } = validation.data;
+    const consentSource: ConsentSource = legalConsent.consentSource ?? 'email_signup_form';
+
     // In test env we skip making real Supabase calls; behave like signup
     // failed so that downstream logic doesn't try to set cookies.
     if (runningAgainstPlaceholder()) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Under-13 validation
-    if (isUnder13 && !guardianEmail) {
-      return res.status(400).json({
-        error: 'Guardian email is required for users under 13'
-      });
-    }
-
     // Create anon client for signup
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-
-    // Validate role (only allow student or guardian, default to student)
-    const validRole = normalizeSignupRole(requestedRole);
 
     // Sign up user with Supabase Auth
     const { data: authData, error: signupError } = await supabase.auth.signUp({
@@ -93,7 +99,8 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       options: {
         data: {
           display_name: displayName || email.split('@')[0],
-          role: validRole
+          // Safe temporary backend role until profile-complete finalization.
+          role: 'student',
         }
       }
     });
@@ -111,16 +118,10 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       });
     }
 
-    // Profile is auto-created by Supabase trigger (handle_new_user)
-    // Update profile with role and under-13 info if needed
+    // Profile is auto-created by Supabase trigger (handle_new_user).
+    // Keep server-authoritative safe default role until profile completion.
     const admin = getSupabaseAdmin();
-    const profileUpdate: Record<string, any> = { role: validRole };
-
-    if (isUnder13) {
-      profileUpdate.is_under_13 = true;
-      profileUpdate.guardian_email = guardianEmail;
-      profileUpdate.guardian_consent = false;
-    }
+    const profileUpdate: Record<string, any> = { role: 'student' };
 
     const { error: updateError } = await admin
       .from('profiles')
@@ -135,59 +136,26 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       // Don't fail the signup - profile exists
     }
 
-    // Handle Guardian Consent Request for under-13s
-    if (isUnder13) {
-      try {
-        const requestId = crypto.randomUUID();
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 14); // 14 days expiry
-
-        // Insert consent request
-        const { error: requestError } = await admin
-          .from('guardian_consent_requests')
-          .insert({
-            id: requestId,
-            child_id: authData.user.id,
-            guardian_email: guardianEmail,
-            status: 'pending',
-            expires_at: expiresAt.toISOString()
-          });
-
-        if (requestError) {
-          logger.error('AUTH', 'consent_request_failed', 'Failed to create guardian consent request', {
-            userId: authData.user.id,
-            error: requestError
-          });
-        } else {
-          // Send email to guardian
-          const protocol = req.protocol;
-          const host = req.get('host');
-          const siteUrl = process.env.PUBLIC_SITE_URL || `${protocol}://${host}`;
-          const verificationLink = `${siteUrl}/guardian/verify-consent?requestId=${requestId}`;
-
-          await sendEmail({
-            to: guardianEmail,
-            subject: `Consent Required: ${displayName || 'A child'} wants to join Lyceon`,
-            html: `
-              <h1>Guardian Consent Required</h1>
-              <p>${displayName || email} has created an account on Lyceon and specified you as their guardian.</p>
-              <p>To comply with COPPA regulations, we require you to verify your identity and grant consent for them to use the platform.</p>
-              <p>Please click the link below to complete the verification (a $0.50 temporary authorization will be required):</p>
-              <p><a href="${verificationLink}">${verificationLink}</a></p>
-              <p>This link will expire in 14 days.</p>
-            `
-          });
-
-          logger.info('AUTH', 'consent_email_sent', 'Guardian consent email sent', {
-            userId: authData.user.id,
-            guardianEmail,
-            requestId
-          });
-        }
-      } catch (err) {
-        logger.error('AUTH', 'consent_flow_error', 'Unexpected error in guardian consent flow', err);
-      }
-    }
+    await recordLegalAcceptances(admin, {
+      userId: authData.user.id,
+      consentSource,
+      userAgent: req.get('user-agent') ?? null,
+      ipAddress: req.ip ?? null,
+      acceptances: [
+        {
+          docKey: LEGAL_DOCS.studentTerms.docKey,
+          docVersion: LEGAL_DOCS.studentTerms.docVersion,
+          actorType: 'student',
+          minor: false,
+        },
+        {
+          docKey: LEGAL_DOCS.privacyPolicy.docKey,
+          docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
+          actorType: 'student',
+          minor: false,
+        },
+      ],
+    });
 
     // Set session cookies using helper (correct maxAge based on expires_in)
     if (authData.session) {
@@ -200,16 +168,27 @@ router.post('/signup', authRateLimiter, doubleCsrfProtection, async (req: Reques
       email: authData.user.email
     });
 
-    res.status(201).json({
+    if (!authData.session) {
+      return res.status(202).json({
+        success: true,
+        outcome: 'verification_required',
+        message: 'Account created. Please verify your email to continue.',
+        user: {
+          id: authData.user.id,
+          email: authData.user.email,
+        },
+      });
+    }
+
+    return res.status(201).json({
       success: true,
-      message: isUnder13
-        ? 'Account created. Guardian consent required to continue.'
-        : 'Account created successfully',
+      outcome: 'authenticated',
+      message: 'Account created successfully',
+      nextPath: '/profile/complete',
       user: {
         id: authData.user.id,
         email: authData.user.email
       },
-      requiresConsent: isUnder13
       // SECURITY: Session tokens are stored in HTTP-only cookies, not returned in response
     });
   } catch (error) {
@@ -448,54 +427,6 @@ router.post('/signout', doubleCsrfProtection, async (req: Request, res: Response
   }
 });
 
-
-/**
- * POST /api/auth/consent
- * Submit guardian consent for under-13 users
- */
-router.post('/consent', requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
-  try {
-    const { guardianConsent, guardianEmail } = req.body;
-
-    if (!req.user?.is_under_13) {
-      return res.status(400).json({
-        error: 'Consent is only required for users under 13'
-      });
-    }
-
-    const admin = getSupabaseAdmin();
-
-    const { error } = await admin
-      .from('profiles')
-      .update({
-        guardian_consent: guardianConsent,
-        guardian_email: guardianEmail,
-        consent_given_at: guardianConsent ? new Date().toISOString() : null
-      })
-      .eq('id', req.user.id);
-
-    if (error) {
-      logger.error('AUTH', 'consent_update_failed', 'Failed to update consent', {
-        userId: req.user.id,
-        error
-      });
-      return res.status(500).json({ error: 'Failed to update consent' });
-    }
-
-    logger.info('AUTH', 'consent_updated', 'Guardian consent updated', {
-      userId: req.user.id,
-      consent: guardianConsent
-    });
-
-    res.json({
-      success: true,
-      message: 'Consent updated successfully'
-    });
-  } catch (error) {
-    logger.error('AUTH', 'consent_error', 'Consent endpoint error', error);
-    res.status(500).json({ error: 'Failed to update consent' });
-  }
-});
 
 /**
  * POST /api/auth/refresh

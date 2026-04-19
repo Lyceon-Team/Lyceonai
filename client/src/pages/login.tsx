@@ -2,28 +2,46 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
-import { ConsentGate } from "@/components/auth/ConsentGate";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { csrfFetch } from "@/lib/csrf";
 
 export default function Login() {
   const [, navigate] = useLocation();
-  const { isAuthenticated, authLoading, requiresConsent, isGuardian } = useSupabaseAuth();
+  const { isAuthenticated, authLoading, isGuardian } = useSupabaseAuth();
   const hasRedirected = useRef(false);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated && !requiresConsent && !hasRedirected.current) {
+    if (!authLoading && isAuthenticated && !hasRedirected.current) {
       hasRedirected.current = true;
-      const destination = isGuardian ? "/guardian" : "/dashboard";
-      console.log('[LOGIN] Redirecting authenticated user to', destination);
-      navigate(destination);
-    }
-  }, [isAuthenticated, requiresConsent, authLoading, isGuardian, navigate]);
+      void (async () => {
+        let destination = isGuardian ? "/guardian" : "/dashboard";
 
-  // Show consent gate if required
-  if (isAuthenticated && requiresConsent) {
-    return <ConsentGate />;
-  }
+        try {
+          const response = await csrfFetch("/api/profile", { credentials: "include" });
+          if (response.ok) {
+            const data = await response.json();
+            const role = data?.user?.role;
+            const profileCompletedAt = data?.user?.profileCompletedAt;
+            const requiredProfileComplete = data?.user?.requiredProfileComplete;
+            const requiredConsentsComplete = data?.user?.requiredConsentsComplete;
+            const guardianConsentRequired = data?.user?.guardianConsentRequired;
+
+            if (!requiredConsentsComplete || guardianConsentRequired || !requiredProfileComplete || !profileCompletedAt) {
+              destination = "/profile/complete";
+            } else {
+              destination = role === "guardian" ? "/guardian" : "/dashboard";
+            }
+          }
+        } catch (error) {
+          console.error("[LOGIN] Failed to resolve post-auth destination", error);
+        }
+
+        console.log("[LOGIN] Redirecting authenticated user to", destination);
+        navigate(destination);
+      })();
+    }
+  }, [isAuthenticated, authLoading, isGuardian, navigate]);
 
   // Show loading skeleton while checking auth state
   if (authLoading) {

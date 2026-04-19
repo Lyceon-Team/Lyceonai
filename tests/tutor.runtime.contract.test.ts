@@ -206,6 +206,18 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     req.requestId ??= "req-tutor-runtime";
     return next();
   },
+  resolveTokenFromRequest: vi.fn((req: any) => {
+    const token = req.cookies?.["sb-access-token"] ?? null;
+
+    return {
+      token,
+      tokenSource: token ? "cookie:sb-access-token" : null,
+      tokenLength: token ? token.length : null,
+      bearerParsed: false,
+      authHeaderPresent: Boolean(req.headers?.authorization),
+      cookieKeys: Object.keys(req.cookies ?? {}),
+    };
+  }),
   requireRequestUser: (req: any, res: any) => {
     if (!req.user?.id) {
       res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });

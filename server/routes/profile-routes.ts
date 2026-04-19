@@ -2,25 +2,39 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabaseAdmin, requireRequestUser } from '../middleware/supabase-auth';
 import { SUPPORT_EMAIL } from '../lib/support-contact';
+import { LEGAL_DOCS } from '../../shared/legal-consent.js';
+import crypto from 'crypto';
+import { sendEmail } from '../lib/email.js';
 
 const router = Router();
 
-// Profile completion schema - matches client validation
+const REQUIRED_LEGAL_DOCS = [LEGAL_DOCS.studentTerms, LEGAL_DOCS.privacyPolicy] as const;
+
+function calculateAge(birthDate: string): number {
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
+function hasAllCurrentLegalAcceptances(
+  legalRows: Array<{ doc_key: string; doc_version: string }>,
+): boolean {
+  return REQUIRED_LEGAL_DOCS.every((doc) =>
+    legalRows.some((row) => row.doc_key === doc.docKey && row.doc_version === doc.docVersion),
+  );
+}
+
 const profileCompletionSchema = z.object({
-  firstName: z.string().min(1).max(50),
-  lastName: z.string().min(1).max(50),
-  phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/).optional().or(z.literal('')),
-  dateOfBirth: z.string().min(1),
-  address: z.object({
-    street: z.string().optional(),
-    city: z.string().min(1),
-    state: z.string().min(1),
-    zipCode: z.string().min(1),
-    country: z.string().min(1)
-  }),
-  timeZone: z.string().min(1),
-  preferredLanguage: z.string().default('en'),
-  marketingOptIn: z.boolean().default(false),
+  displayName: z.string().trim().min(1).max(120),
+  role: z.enum(['student', 'guardian']),
+  dateOfBirth: z.string().optional().nullable(),
+  guardianEmail: z.string().email().optional().nullable(),
+  marketingOptIn: z.boolean().optional().default(false),
 });
 
 /**
@@ -34,25 +48,59 @@ router.get("/", async (req: Request, res: Response) => {
       return;
     }
 
-    const fallbackUsername = user.email ? user.email.split("@")[0] : null;
-    const normalizedName = user.display_name || fallbackUsername || "Student";
+    const supabase = getSupabaseAdmin();
+    const { data: profileRow, error: profileError } = await supabase
+      .from("profiles")
+      .select(
+        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at",
+      )
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profileRow) {
+      console.error("[PROFILE] Failed to load canonical profile row:", profileError);
+      return res.status(500).json({ error: "Failed to load profile" });
+    }
+
+    const fallbackUsername = profileRow.email ? profileRow.email.split("@")[0] : null;
+    const normalizedName = profileRow.display_name || fallbackUsername || "Student";
+    const { data: legalRows, error: legalError } = await supabase
+      .from('legal_acceptances')
+      .select('doc_key, doc_version')
+      .eq('user_id', user.id);
+
+    if (legalError) {
+      console.error('[PROFILE] Failed to load legal acceptance status:', legalError);
+    }
+
+    const legalAcceptances = legalRows ?? [];
+    const requiredLegalAccepted = hasAllCurrentLegalAcceptances(legalAcceptances);
+    const guardianConsentRequired = !!(profileRow.is_under_13 && !profileRow.guardian_consent);
+    const requiredConsentsComplete = requiredLegalAccepted && !guardianConsentRequired;
+    const requiredProfileComplete = !!profileRow.profile_completed_at;
 
     return res.json({
       authenticated: true,
       user: {
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
+        id: profileRow.id,
+        email: profileRow.email,
+        display_name: profileRow.display_name,
         name: normalizedName,
         username: fallbackUsername,
-        role: user.role,
+        role: profileRow.role,
         isAdmin: user.isAdmin,
         isGuardian: user.isGuardian,
-        is_under_13: user.is_under_13,
-        guardian_consent: user.guardian_consent,
-        studentLinkCode: user.student_link_code,
-        student_link_code: user.student_link_code,
-        profileCompletedAt: user.profile_completed_at ?? null,
+        is_under_13: profileRow.is_under_13,
+        guardian_consent: profileRow.guardian_consent,
+        guardianEmail: profileRow.guardian_email,
+        dateOfBirth: profileRow.date_of_birth,
+        marketingOptIn: profileRow.marketing_opt_in,
+        studentLinkCode: profileRow.student_link_code,
+        student_link_code: profileRow.student_link_code,
+        profileCompletedAt: profileRow.profile_completed_at ?? null,
+        requiredConsentsComplete,
+        requiredProfileComplete,
+        guardianConsentRequired,
       },
     });
   } catch (error: any) {
@@ -74,14 +122,8 @@ router.patch('/', async (req: Request, res: Response) => {
     }
 
     const userId = user.id;
+    const supabase = getSupabaseAdmin();
 
-    if (req.body && typeof req.body === 'object' && Object.prototype.hasOwnProperty.call(req.body, 'role')) {
-      return res.status(403).json({
-        error: 'Role changes are support-mediated only',
-        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
-        supportEmail: SUPPORT_EMAIL,
-      });
-    }
     // Validate request body
     const validation = profileCompletionSchema.safeParse(req.body);
     if (!validation.success) {
@@ -92,21 +134,126 @@ router.patch('/', async (req: Request, res: Response) => {
     }
 
     const data = validation.data;
-    const supabase = getSupabaseAdmin();
 
-    // Update profiles table with profile completion data
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('profiles')
+      .select('id, role, profile_completed_at, guardian_consent, guardian_email')
+      .eq('id', userId)
+      .single();
+
+    if (existingProfileError || !existingProfile) {
+      console.error('[PROFILE] Error loading existing profile:', existingProfileError);
+      return res.status(500).json({ error: 'Failed to load profile state' });
+    }
+
+    if (existingProfile.role === "admin") {
+      return res.status(403).json({
+        error: "Admin profile onboarding is not supported on this endpoint",
+      });
+    }
+
+    if (
+      existingProfile.profile_completed_at &&
+      data.role !== existingProfile.role
+    ) {
+      return res.status(403).json({
+        error: 'Role changes are support-mediated only',
+        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
+        supportEmail: SUPPORT_EMAIL,
+      });
+    }
+
+    if (data.role === 'student' && !data.dateOfBirth) {
+      return res.status(400).json({
+        error: 'Date of birth is required for student accounts',
+      });
+    }
+
+    const isUnder13 = data.role === 'student' && data.dateOfBirth
+      ? calculateAge(data.dateOfBirth) < 13
+      : false;
+    const guardianEmail = data.guardianEmail ?? existingProfile.guardian_email ?? null;
+
+    if (isUnder13 && !guardianEmail) {
+      return res.status(400).json({
+        error: 'Guardian email is required for users under 13',
+      });
+    }
+
+    let guardianConsentRequestId: string | null = null;
+    let guardianConsentRequired = false;
+
+    if (isUnder13 && !existingProfile.guardian_consent) {
+      guardianConsentRequired = true;
+      const expiresThreshold = new Date().toISOString();
+      const { data: existingRequest, error: existingRequestError } = await supabase
+        .from('guardian_consent_requests')
+        .select('id, guardian_email, expires_at, status')
+        .eq('child_id', userId)
+        .eq('status', 'pending')
+        .gt('expires_at', expiresThreshold)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingRequestError) {
+        console.error("[PROFILE] Failed to query existing guardian consent request:", existingRequestError);
+        return res.status(500).json({ error: "Failed to load guardian consent state" });
+      }
+
+      if (existingRequest && existingRequest.guardian_email === guardianEmail) {
+        guardianConsentRequestId = existingRequest.id;
+      } else {
+        const requestId = crypto.randomUUID();
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 14);
+
+        const { error: requestError } = await supabase
+          .from('guardian_consent_requests')
+          .insert({
+            id: requestId,
+            child_id: userId,
+            guardian_email: guardianEmail!,
+            status: 'pending',
+            expires_at: expiresAt.toISOString(),
+          });
+
+        if (requestError) {
+          console.error('[PROFILE] Failed to create guardian consent request:', requestError);
+          return res.status(500).json({ error: 'Failed to start guardian verification flow' });
+        }
+
+        guardianConsentRequestId = requestId;
+      }
+
+      const siteUrl = process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get('host')}`;
+      const verificationLink = `${siteUrl}/guardian/verify-consent?requestId=${guardianConsentRequestId}`;
+
+      await sendEmail({
+        to: guardianEmail!,
+        subject: `Guardian consent required for ${data.displayName}`,
+        html: `
+          <h1>Guardian Consent Required</h1>
+          <p>${data.displayName} has entered profile details on Lyceon.</p>
+          <p>To continue, complete verified guardian consent at:</p>
+          <p><a href="${verificationLink}">${verificationLink}</a></p>
+          <p>This link expires in 14 days.</p>
+        `,
+      });
+    }
+
+    // Finalize profile fields with server-authoritative role and under-13 state.
     const { error: updateError } = await supabase
       .from('profiles')
       .update({
-        first_name: data.firstName,
-        last_name: data.lastName,
-        phone_number: data.phoneNumber || null,
-        date_of_birth: data.dateOfBirth,
-        address: data.address,
-        time_zone: data.timeZone,
-        preferred_language: data.preferredLanguage,
+        display_name: data.displayName,
+        role: data.role,
+        date_of_birth: data.dateOfBirth || null,
+        guardian_email: guardianEmail,
+        is_under_13: isUnder13,
+        guardian_consent: guardianConsentRequired ? false : existingProfile.guardian_consent,
         marketing_opt_in: data.marketingOptIn,
-        profile_completed_at: new Date().toISOString(),
+        profile_completed_at: guardianConsentRequired ? null : new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', userId);
@@ -133,19 +280,18 @@ router.patch('/', async (req: Request, res: Response) => {
       profile: {
         id: profile.id,
         email: profile.email,
-        firstName: profile.first_name,
-        lastName: profile.last_name,
         displayName: profile.display_name,
-        phoneNumber: profile.phone_number,
         dateOfBirth: profile.date_of_birth,
-        address: profile.address,
-        timeZone: profile.time_zone,
-        preferredLanguage: profile.preferred_language,
+        guardianEmail: profile.guardian_email,
+        isUnder13: profile.is_under_13,
+        guardianConsent: profile.guardian_consent,
         marketingOptIn: profile.marketing_opt_in,
         profileCompletedAt: profile.profile_completed_at,
         studentLinkCode: profile.student_link_code,
         role: profile.role
-      }
+      },
+      guardianConsentRequired,
+      guardianConsentRequestId,
     });
   } catch (error: any) {
     console.error('[PROFILE] Unexpected error:', error);

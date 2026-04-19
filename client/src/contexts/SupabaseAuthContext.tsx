@@ -2,6 +2,25 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode } fro
 import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
 import { csrfFetch } from '@/lib/csrf';
+import type { ConsentSource } from '@shared/legal-consent';
+
+export type SignupOutcome = 'authenticated' | 'verification_required';
+
+export interface SignupResult {
+  outcome: SignupOutcome;
+  message?: string;
+  nextPath?: string;
+  user?: {
+    id: string;
+    email: string | null;
+  };
+}
+
+export interface SignupLegalConsent {
+  studentTermsAccepted: boolean;
+  privacyPolicyAccepted: boolean;
+  consentSource?: ConsentSource;
+}
 
 interface SupabaseAuthContextType {
   user: SupabaseProfile | null;
@@ -10,14 +29,12 @@ interface SupabaseAuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
-  requiresConsent: boolean;
-  signUp: (email: string, password: string, displayName?: string, isUnder13?: boolean, guardianEmail?: string, role?: 'student' | 'guardian') => Promise<void>;
+  signUp: (email: string, password: string, legalConsent: SignupLegalConsent, displayName?: string) => Promise<SignupResult>;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (legalConsent: SignupLegalConsent) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
-  submitConsent: (guardianEmail: string, consent: boolean) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -122,11 +139,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (
     email: string,
     password: string,
+    legalConsent: SignupLegalConsent,
     displayName?: string,
-    isUnder13: boolean = false,
-    guardianEmail?: string,
-    role: 'student' | 'guardian' = 'student'
-  ) => {
+  ): Promise<SignupResult> => {
     setAuthLoading(true);
     try {
       const response = await csrfFetch('/api/auth/signup', {
@@ -137,9 +152,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           email,
           password,
           displayName,
-          isUnder13,
-          guardianEmail,
-          role
+          legalConsent: {
+            studentTermsAccepted: legalConsent.studentTermsAccepted,
+            privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
+            consentSource: legalConsent.consentSource ?? 'email_signup_form',
+          },
         }),
       });
 
@@ -150,12 +167,30 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Failed to sign up');
       }
 
-      // Backend already set HTTP-only cookies
-      // Fetch user from backend using the newly set cookies
-      const backendUser = await fetchUserFromBackend();
-      if (backendUser) {
-        setUser(backendUser);
+      const outcome = data?.outcome as SignupOutcome | undefined;
+      if (outcome === 'verification_required') {
+        setUser(null);
+        return {
+          outcome: 'verification_required',
+          message: data?.message || 'Please verify your email to continue.',
+          user: data?.user,
+        };
       }
+
+      // Authenticated signup: hydrate canonical profile from backend cookies.
+      const backendUser = await fetchUserFromBackend();
+      if (!backendUser) {
+        setUser(null);
+        throw new Error('Failed to load user profile after signup');
+      }
+
+      setUser(backendUser);
+      return {
+        outcome: 'authenticated',
+        message: data?.message,
+        nextPath: data?.nextPath,
+        user: data?.user,
+      };
     } catch (error: any) {
       console.error('[AUTH] Sign up error:', error);
       throw new Error(error.message || 'Failed to sign up');
@@ -195,11 +230,20 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (legalConsent: SignupLegalConsent) => {
+    if (!legalConsent.studentTermsAccepted || !legalConsent.privacyPolicyAccepted) {
+      throw new Error('You must accept Terms and Privacy before continuing with Google');
+    }
+
     setAuthLoading(true);
     try {
+      const params = new URLSearchParams({
+        termsAccepted: 'true',
+        privacyAccepted: 'true',
+        consentSource: legalConsent.consentSource ?? 'google_continue_pre_oauth',
+      });
       console.log('[AUTH] Redirecting to Google OAuth');
-      window.location.href = '/api/auth/google/start';
+      window.location.href = `/api/auth/google/start?${params.toString()}`;
     } catch (error: any) {
       console.error('[AUTH] Google sign in error:', error);
       setAuthLoading(false);
@@ -290,39 +334,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const submitConsent = async (guardianEmail: string, consent: boolean) => {
-    if (!user?.is_under_13) {
-      throw new Error('Consent is only required for users under 13');
-    }
-
-    setAuthLoading(true);
-    try {
-      const response = await csrfFetch('/api/auth/consent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          guardianConsent: consent,
-          guardianEmail: guardianEmail,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to submit consent');
-      }
-
-      const updatedUser = await fetchUserFromBackend();
-      setUser(updatedUser);
-    } catch (error: any) {
-      console.error('[AUTH] Consent submission error:', error);
-      throw new Error(error.message || 'Failed to submit consent');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   const refreshUser = async () => {
     const updatedUser = await fetchUserFromBackend();
     setUser(updatedUser);
@@ -335,14 +346,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',
     isGuardian: user?.role === 'guardian',
-    requiresConsent: !!(user?.is_under_13 && !user?.guardian_consent),
     signUp,
     signIn,
     signInWithGoogle,
     signOut,
     resetPassword,
     updatePassword,
-    submitConsent,
     refreshUser,
   };
 
