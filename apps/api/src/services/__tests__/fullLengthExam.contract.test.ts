@@ -331,7 +331,12 @@ describe('Full-Length Exam Contract Closure', () => {
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
                   single: vi.fn(async () => ({
-                    data: { id: 'mq-1' },
+                    data: {
+                      id: 'mq-1',
+                      question_id: '11111111-1111-4111-8111-111111111111',
+                      question_type: 'multiple_choice',
+                      question_correct_answer: 'A',
+                    },
                     error: null,
                   })),
                 })),
@@ -459,7 +464,12 @@ describe('Full-Length Exam Contract Closure', () => {
               eq: vi.fn(() => ({
                 eq: vi.fn(() => ({
                   single: vi.fn(async () => ({
-                    data: { id: 'mq-1' },
+                    data: {
+                      id: 'mq-1',
+                      question_id: '11111111-1111-4111-8111-111111111111',
+                      question_type: 'multiple_choice',
+                      question_correct_answer: 'A',
+                    },
                     error: null,
                   })),
                 })),

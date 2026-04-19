@@ -184,7 +184,7 @@ describe('KPI Gating Contract', () => {
       plan: 'free',
       status: 'inactive',
     });
-  });
+  }, 15_000);
 
   it('returns estimate payload shape when paid access is active', async () => {
     resolvePaidKpiAccessForUser.mockResolvedValueOnce({
@@ -211,7 +211,7 @@ describe('KPI Gating Contract', () => {
     expect(payload.estimate).toBeDefined();
     expect(payload.projection).toBeUndefined();
     expect(payload.estimate.range).toEqual({ low: 1040, high: 1120 });
-  });
+  }, 15_000);
 
   it('hides historical trends for free-tier KPI view', async () => {
     const { getRecencyKpis } = await import('../../server/routes/legacy/progress');

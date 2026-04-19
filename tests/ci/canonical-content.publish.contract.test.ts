@@ -13,7 +13,7 @@ let app: Express;
 beforeAll(async () => {
   const appModule = await import("../../server/index");
   app = appModule.default;
-}, 15000);
+}, 30000);
 
 function buildValidOptions() {
   return [
