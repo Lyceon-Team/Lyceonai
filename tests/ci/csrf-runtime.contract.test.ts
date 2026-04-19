@@ -90,17 +90,12 @@ describe("CSRF runtime contract - production origin rules", () => {
       res.json({ csrfToken: token });
     });
 
-    app.use((req, res, next) => {
-      if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-        return doubleCsrfProtection(req, res, next);
-      }
-      next();
-    });
-
-    app.post("/api/protected", doubleCsrfProtection, (_req, res) => {
+    const protectedRouter = express.Router();
+    protectedRouter.use(cookieParser());
+    protectedRouter.use(doubleCsrfProtection);
+    protectedRouter.post("/protected", (_req, res) => {
       res.status(200).json({ ok: true });
     });
-
     app.use("/api", protectedRouter);
 
     return app;
