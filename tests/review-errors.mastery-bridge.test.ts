@@ -61,10 +61,12 @@ function buildChain(result: { data: any; error: any }) {
 }
 
 function setupSupabase(options: { hasTutorContext: boolean }) {
+  const reviewSessionId = "11111111-1111-4111-8111-111111111111";
+  const reviewSessionItemId = "22222222-2222-4222-8222-222222222222";
   fromMock.mockImplementation((table: string) => {
     if (table === "review_sessions") {
       const sessionRow = {
-        id: "sess-1",
+        id: reviewSessionId,
         student_id: "student-1",
         status: "active",
         started_at: "2026-03-10T10:00:00.000Z",
@@ -81,8 +83,8 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 
     if (table === "review_session_items") {
       const itemRow = {
-        id: "item-1",
-        review_session_id: "sess-1",
+        id: reviewSessionItemId,
+        review_session_id: reviewSessionId,
         student_id: "student-1",
         ordinal: 1,
         question_canonical_id: "SATM1ABC123",
@@ -179,8 +181,8 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
       user: { id: "student-1" },
       requestId: "req-review-1",
       body: {
-        session_id: "sess-1",
-        review_session_item_id: "item-1",
+        session_id: "11111111-1111-4111-8111-111111111111",
+        review_session_item_id: "22222222-2222-4222-8222-222222222222",
         selected_option_id: "opt_A",
         seconds_spent: 12,
         source_context: "review_errors",
@@ -212,8 +214,8 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
       user: { id: "student-1" },
       requestId: "req-review-2",
       body: {
-        session_id: "sess-1",
-        review_session_item_id: "item-1",
+        session_id: "11111111-1111-4111-8111-111111111111",
+        review_session_item_id: "22222222-2222-4222-8222-222222222222",
         selected_option_id: "opt_A",
         seconds_spent: 12,
         source_context: "review_errors",

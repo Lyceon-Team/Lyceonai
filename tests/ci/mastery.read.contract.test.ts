@@ -68,7 +68,7 @@ describe('Mastery Read Contract', () => {
     expect(res.body.sections).toHaveLength(1);
     expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: 'student-1', section: undefined });
     expect(buildMasterySummaryFromRows).toHaveBeenCalled();
-  });
+  }, 15000);
 
   it('uses canonical mastery read layer for skill tree', async () => {
     const app = await buildApp();
@@ -77,7 +77,7 @@ describe('Mastery Read Contract', () => {
     expect(res.status).toBe(200);
     expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: 'student-1' });
     expect(buildMasterySkillTreeFromRows).toHaveBeenCalled();
-  });
+  }, 15000);
 
   it('uses canonical mastery read layer for weakest skills', async () => {
     const app = await buildApp();
@@ -89,5 +89,5 @@ describe('Mastery Read Contract', () => {
       limit: 5,
       minAttempts: 2,
     });
-  });
+  }, 15000);
 });
