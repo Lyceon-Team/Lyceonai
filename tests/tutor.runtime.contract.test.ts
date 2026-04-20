@@ -494,7 +494,15 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     req.user = user;
     return next();
   },
-<<<<<<< HEAD
+  requireStudentOrAdmin: (req: any, res: any, next: any) => {
+    const user = req.user ?? getCurrentUser();
+    if (!user) return res.status(401).json({ error: "Authentication required" });
+    if (user.role === "guardian" && !user.isAdmin) {
+      return res.status(403).json({ error: "Student access required", message: "Guardian access is denied." });
+    }
+    return next();
+  },
+  requireSupabaseAdmin: (_req: any, res: any) => res.status(403).json({ error: "Admin access required" }),
   resolveTokenFromRequest: vi.fn((req: any) => {
     const token = req.cookies?.["sb-access-token"] ?? null;
 
@@ -507,17 +515,6 @@ vi.mock("../server/middleware/supabase-auth", () => ({
       cookieKeys: Object.keys(req.cookies ?? {}),
     };
   }),
-=======
-  requireStudentOrAdmin: (req: any, res: any, next: any) => {
-    const user = req.user ?? getCurrentUser();
-    if (!user) return res.status(401).json({ error: "Authentication required" });
-    if (user.role === "guardian" && !user.isAdmin) {
-      return res.status(403).json({ error: "Student access required", message: "Guardian access is denied." });
-    }
-    return next();
-  },
-  requireSupabaseAdmin: (_req: any, res: any) => res.status(403).json({ error: "Admin access required" }),
->>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
   requireRequestUser: (req: any, res: any) => {
     if (!req.user?.id) {
       res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });
@@ -526,14 +523,6 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     return req.user;
   },
   sendForbidden: (res: any, body: any) => res.status(403).json(body),
-  resolveTokenFromRequest: () => ({
-    token: "token",
-    tokenSource: "cookie:sb-access-token",
-    tokenLength: 21,
-    bearerParsed: false,
-    authHeaderPresent: false,
-    cookieKeys: ["sb-access-token"],
-  }),
   getSupabaseAdmin: () => ({ rpc: vi.fn(async () => ({ data: null, error: null })) }),
 }));
 
