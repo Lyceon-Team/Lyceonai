@@ -122,18 +122,19 @@ router.patch('/', async (req: Request, res: Response) => {
     }
 
     const userId = user.id;
-    const supabase = getSupabaseAdmin();
+    const requestedRole = typeof (req.body as any)?.role === "string"
+      ? (req.body as any).role
+      : null;
 
-    // Validate request body
-    const validation = profileCompletionSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({
-        error: 'Invalid profile data',
-        details: validation.error.errors
+    if (requestedRole && requestedRole !== user.role) {
+      return res.status(403).json({
+        error: 'Role changes are support-mediated only',
+        message: `Email ${SUPPORT_EMAIL} to request a role review.`,
+        supportEmail: SUPPORT_EMAIL,
       });
     }
 
-    const data = validation.data;
+    const supabase = getSupabaseAdmin();
 
     const { data: existingProfile, error: existingProfileError } = await supabase
       .from('profiles')
@@ -152,16 +153,24 @@ router.patch('/', async (req: Request, res: Response) => {
       });
     }
 
-    if (
-      existingProfile.profile_completed_at &&
-      data.role !== existingProfile.role
-    ) {
+    if (existingProfile.profile_completed_at && requestedRole && requestedRole !== existingProfile.role) {
       return res.status(403).json({
         error: 'Role changes are support-mediated only',
         message: `Email ${SUPPORT_EMAIL} to request a role review.`,
         supportEmail: SUPPORT_EMAIL,
       });
     }
+
+    // Validate request body
+    const validation = profileCompletionSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid profile data',
+        details: validation.error.errors
+      });
+    }
+
+    const data = validation.data;
 
     if (data.role === 'student' && !data.dateOfBirth) {
       return res.status(400).json({

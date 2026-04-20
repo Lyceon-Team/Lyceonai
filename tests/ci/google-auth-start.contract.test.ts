@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import express from "express";
 import cookieParser from "cookie-parser";
 import request from "supertest";
@@ -62,18 +61,5 @@ describe("Google Auth Start Contract", () => {
     const cookies = res.headers["set-cookie"] ?? [];
     expect(cookies.some((cookie: string) => cookie.startsWith("google_oauth_state="))).toBe(true);
     expect(cookies.some((cookie: string) => cookie.startsWith("google_oauth_consent="))).toBe(true);
-=======
-import fs from 'node:fs';
-import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-
-describe('Google auth start path contract', () => {
-  it('keeps direct Google sign-in initiation on /api/auth/google/start', () => {
-    const contextPath = path.join(process.cwd(), 'client/src/contexts/SupabaseAuthContext.tsx');
-    const source = fs.readFileSync(contextPath, 'utf8');
-
-    expect(source).toContain("window.location.href = '/api/auth/google/start'");
-    expect(source).not.toContain('signInWithOAuth');
->>>>>>> 8acb2add0221722e9c0895b0dce6c2778f44c4fc
   });
 });
