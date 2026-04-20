@@ -58,7 +58,7 @@ describe("Google Auth Start Contract", () => {
     expect(res.headers.location).toContain("https://accounts.google.com/o/oauth2/v2/auth?");
     expect(res.headers["set-cookie"]).toBeTruthy();
 
-    const cookies = res.headers["set-cookie"] ?? [];
+    const cookies = Array.isArray(res.headers["set-cookie"]) ? res.headers["set-cookie"] : [];
     expect(cookies.some((cookie: string) => cookie.startsWith("google_oauth_state="))).toBe(true);
     expect(cookies.some((cookie: string) => cookie.startsWith("google_oauth_consent="))).toBe(true);
   });
