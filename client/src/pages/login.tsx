@@ -4,44 +4,34 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { csrfFetch } from "@/lib/csrf";
 
 export default function Login() {
   const [, navigate] = useLocation();
-  const { isAuthenticated, authLoading, isGuardian } = useSupabaseAuth();
+  const { user, isAuthenticated, authLoading } = useSupabaseAuth();
   const hasRedirected = useRef(false);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated && !hasRedirected.current) {
+    if (!authLoading && isAuthenticated && user && !hasRedirected.current) {
       hasRedirected.current = true;
-      void (async () => {
-        let destination = isGuardian ? "/guardian" : "/dashboard";
 
-        try {
-          const response = await csrfFetch("/api/profile", { credentials: "include" });
-          if (response.ok) {
-            const data = await response.json();
-            const role = data?.user?.role;
-            const profileCompletedAt = data?.user?.profileCompletedAt;
-            const requiredProfileComplete = data?.user?.requiredProfileComplete;
-            const requiredConsentsComplete = data?.user?.requiredConsentsComplete;
-            const guardianConsentRequired = data?.user?.guardianConsentRequired;
+      // Determine destination based on onboarding status
+      const needsOnboarding =
+        user.guardianConsentRequired === true ||
+        user.requiredConsentsComplete === false ||
+        user.requiredProfileComplete === false ||
+        !user.profile_completed_at;
 
-            if (!requiredConsentsComplete || guardianConsentRequired || !requiredProfileComplete || !profileCompletedAt) {
-              destination = "/profile/complete";
-            } else {
-              destination = role === "guardian" ? "/guardian" : "/dashboard";
-            }
-          }
-        } catch (error) {
-          console.error("[LOGIN] Failed to resolve post-auth destination", error);
-        }
+      let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
 
-        console.log("[LOGIN] Redirecting authenticated user to", destination);
-        navigate(destination);
-      })();
+      // Admins bypass onboarding requirements
+      if (user.role !== 'admin' && needsOnboarding) {
+        destination = "/profile/complete";
+      }
+
+      console.log("[LOGIN] Redirecting authenticated user to", destination);
+      navigate(destination);
     }
-  }, [isAuthenticated, authLoading, isGuardian, navigate]);
+  }, [isAuthenticated, authLoading, user, navigate]);
 
   // Show loading skeleton while checking auth state
   if (authLoading) {
