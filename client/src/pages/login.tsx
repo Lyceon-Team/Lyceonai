@@ -4,26 +4,25 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { csrfFetch } from "@/lib/csrf";
 
 export default function Login() {
   const [, navigate] = useLocation();
-  const { user, isAuthenticated, authLoading, isGuardian } = useSupabaseAuth();
+  const { user, isAuthenticated, authLoading } = useSupabaseAuth();
   const hasRedirected = useRef(false);
 
   useEffect(() => {
     if (!authLoading && isAuthenticated && user && !hasRedirected.current) {
       hasRedirected.current = true;
-      
+
       // Determine destination based on onboarding status
-      const needsOnboarding = 
+      const needsOnboarding =
         user.guardianConsentRequired === true ||
         user.requiredConsentsComplete === false ||
         user.requiredProfileComplete === false ||
         !user.profile_completed_at;
 
       let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
-      
+
       // Admins bypass onboarding requirements
       if (user.role !== 'admin' && needsOnboarding) {
         destination = "/profile/complete";
