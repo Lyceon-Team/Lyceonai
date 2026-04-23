@@ -8,40 +8,31 @@ import { csrfFetch } from "@/lib/csrf";
 
 export default function Login() {
   const [, navigate] = useLocation();
-  const { isAuthenticated, authLoading, isGuardian } = useSupabaseAuth();
+  const { user, isAuthenticated, authLoading, isGuardian } = useSupabaseAuth();
   const hasRedirected = useRef(false);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated && !hasRedirected.current) {
+    if (!authLoading && isAuthenticated && user && !hasRedirected.current) {
       hasRedirected.current = true;
-      void (async () => {
-        let destination = isGuardian ? "/guardian" : "/dashboard";
+      
+      // Determine destination based on onboarding status
+      const needsOnboarding = 
+        user.guardianConsentRequired === true ||
+        user.requiredConsentsComplete === false ||
+        user.requiredProfileComplete === false ||
+        !user.profile_completed_at;
 
-        try {
-          const response = await csrfFetch("/api/profile", { credentials: "include" });
-          if (response.ok) {
-            const data = await response.json();
-            const role = data?.user?.role;
-            const profileCompletedAt = data?.user?.profileCompletedAt;
-            const requiredProfileComplete = data?.user?.requiredProfileComplete;
-            const requiredConsentsComplete = data?.user?.requiredConsentsComplete;
-            const guardianConsentRequired = data?.user?.guardianConsentRequired;
+      let destination = user.role === "guardian" ? "/guardian" : "/dashboard";
+      
+      // Admins bypass onboarding requirements
+      if (user.role !== 'admin' && needsOnboarding) {
+        destination = "/profile/complete";
+      }
 
-            if (!requiredConsentsComplete || guardianConsentRequired || !requiredProfileComplete || !profileCompletedAt) {
-              destination = "/profile/complete";
-            } else {
-              destination = role === "guardian" ? "/guardian" : "/dashboard";
-            }
-          }
-        } catch (error) {
-          console.error("[LOGIN] Failed to resolve post-auth destination", error);
-        }
-
-        console.log("[LOGIN] Redirecting authenticated user to", destination);
-        navigate(destination);
-      })();
+      console.log("[LOGIN] Redirecting authenticated user to", destination);
+      navigate(destination);
     }
-  }, [isAuthenticated, authLoading, isGuardian, navigate]);
+  }, [isAuthenticated, authLoading, user, navigate]);
 
   // Show loading skeleton while checking auth state
   if (authLoading) {
