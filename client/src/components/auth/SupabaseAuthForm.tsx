@@ -8,15 +8,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
-import { csrfFetch } from '@/lib/csrf';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
 export function SupabaseAuthForm() {
   const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } = useSupabaseAuth();
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const [mode, setMode] = useState<AuthMode>('signin');
@@ -35,30 +32,6 @@ export function SupabaseAuthForm() {
     return Boolean(signupLegalAccepted && email && password);
   }, [signupLegalAccepted, email, password]);
 
-  const resolvePostAuthPath = async (): Promise<string> => {
-    try {
-      const response = await csrfFetch('/api/profile', { credentials: 'include' });
-      if (!response.ok) return '/dashboard';
-
-      const data = await response.json();
-      const role = data?.user?.role;
-      const profileCompletedAt = data?.user?.profileCompletedAt;
-      const requiredProfileComplete = data?.user?.requiredProfileComplete;
-      const requiredConsentsComplete = data?.user?.requiredConsentsComplete;
-      const guardianConsentRequired = data?.user?.guardianConsentRequired;
-
-      if (!requiredConsentsComplete || guardianConsentRequired || !requiredProfileComplete || !profileCompletedAt) {
-        return '/profile/complete';
-      }
-      return role === 'guardian' ? '/guardian' : '/dashboard';
-    } catch {
-      return '/dashboard';
-    }
-
-    const data = await response.json();
-    const role = data?.user?.role;
-    return role === 'guardian' ? '/guardian' : '/dashboard';
-  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +67,6 @@ export function SupabaseAuthForm() {
           title: 'Welcome back!',
           description: 'You have been signed in successfully.',
         });
-        setLocation(await resolvePostAuthPath());
         return;
       }
 
@@ -130,7 +102,6 @@ export function SupabaseAuthForm() {
         title: 'Account created',
         description: 'Welcome to Lyceon.',
       });
-      setLocation(signupResult.nextPath || (await resolvePostAuthPath()));
     } catch (err: any) {
       const errorMsg = err.message || 'Authentication failed';
       setError(errorMsg);
@@ -207,10 +178,10 @@ export function SupabaseAuthForm() {
               </Alert>
             )}
 
-            {verificationNotice && (
+            {verificationState && (
               <Alert data-testid="alert-verification-required">
                 <Mail className="h-4 w-4" />
-                <AlertDescription>{verificationNotice}</AlertDescription>
+                <AlertDescription>{verificationState.message}</AlertDescription>
               </Alert>
             )}
 

@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function NavBar() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated, signOut, signInWithGoogle } = useSupabaseAuth();
+  const { user, signOut } = useSupabaseAuth();
   const { toast } = useToast();
 
   const handleSignOut = async () => {
@@ -22,8 +22,8 @@ export default function NavBar() {
       toast({ title: "Signed out successfully" });
       navigate('/');
     } catch (error) {
-      toast({ 
-        title: "Sign out failed", 
+      toast({
+        title: "Sign out failed",
         description: "Please try again",
       });
     }
@@ -39,11 +39,11 @@ export default function NavBar() {
       <h1 className="text-lg font-poppins font-semibold text-foreground" data-testid="app-title">
         Lyceon
       </h1>
-      
+
       <div className="flex space-x-8 text-foreground">
         {navTabs.map(tab => (
-          <Link 
-            key={tab.label} 
+          <Link
+            key={tab.label}
             href={tab.path}
             className={`hover:text-foreground transition-colors ${location === tab.path ? 'text-foreground font-medium' : ''}`}
             data-testid={`nav-${tab.label.toLowerCase()}`}
@@ -85,8 +85,8 @@ export default function NavBar() {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <button 
-            onClick={signInWithGoogle} 
+          <button
+            onClick={() => navigate('/login')}
             className="text-sm text-foreground hover:text-foreground transition-colors font-medium"
             data-testid="button-signin"
           >
