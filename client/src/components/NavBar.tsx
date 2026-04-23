@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function NavBar() {
   const [location, navigate] = useLocation();
-  const { user, isAuthenticated, signOut } = useSupabaseAuth();
+  const { user, signOut } = useSupabaseAuth();
   const { toast } = useToast();
 
   const handleSignOut = async () => {
