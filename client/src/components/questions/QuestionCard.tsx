@@ -95,7 +95,7 @@ export function QuestionCard({
                       ? 'border-amber-500 bg-amber-50'
                       : 'border-slate-200 bg-white opacity-60'
                     : isSelected
-                    ? 'border-slate-900 bg-slate-900 text-white'
+                    ? 'border-brand-navy bg-brand-navy/5 ring-1 ring-brand-navy shadow-sm'
                     : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300'
                   }
                   ${showResult ? 'cursor-default' : 'cursor-pointer'}
@@ -114,7 +114,7 @@ export function QuestionCard({
                         ? 'bg-amber-500 text-white'
                         : 'bg-slate-200 text-slate-600'
                       : isSelected
-                      ? 'bg-white text-slate-900'
+                      ? 'bg-brand-navy text-white'
                       : 'bg-slate-100 text-slate-600'
                     }
                   `}>
@@ -129,7 +129,7 @@ export function QuestionCard({
                   <div className={`flex-1 ${
                     showResult
                       ? isCorrect ? 'text-green-900' : isIncorrect ? 'text-amber-900' : 'text-slate-600'
-                      : isSelected ? 'text-white' : 'text-slate-900'
+                      : isSelected ? 'text-brand-navy font-medium' : 'text-slate-900'
                   }`}>
                     <MathRenderer content={option.text} displayMode={false} />
                   </div>
@@ -152,7 +152,7 @@ export function QuestionCard({
             onChange={(e) => !showResult && !isSubmitting && onFreeResponseChange?.(e.target.value)}
             disabled={showResult || isSubmitting}
             rows={4}
-            className="w-full border-slate-200 focus:border-slate-400 focus:ring-slate-400"
+            className="w-full border-slate-200 focus:border-brand-navy focus:ring-brand-navy"
             data-testid="input-free-response"
           />
           {showResult && validationResult && (
@@ -170,7 +170,7 @@ export function QuestionCard({
           <Button
             onClick={onSubmit}
             disabled={!canSubmit || isSubmitting}
-            className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg"
+            className="px-6 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white font-medium rounded-lg"
             data-testid="button-submit-answer"
           >
             {isSubmitting ? (
@@ -239,7 +239,7 @@ export function QuestionCard({
           {onNext && (
             <Button
               onClick={onNext}
-              className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg"
+              className="px-6 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white font-medium rounded-lg"
               data-testid="button-next-question"
             >
               Next Question

@@ -133,6 +133,7 @@ type CanonicalSessionSpec = {
 
 const router = Router();
 
+const SESSION_LIMIT = 3;
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const DEFAULT_TARGET_QUESTION_COUNT = 20;
@@ -640,13 +641,20 @@ async function listExactFilteredQuestionPool(spec: {
   sections: Array<"Math" | "RW">;
   domains: string[];
   difficulties: Array<"easy" | "medium" | "hard">;
+  excludeIds?: string[];
 }): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  const buildBaseQuery = (selectColumns: string) => supabaseServer
-    .from("questions")
-    .select(selectColumns)
-    .eq("question_type", "multiple_choice")
-    .eq("status", "published")
-    .limit(1000);
+  const buildBaseQuery = (selectColumns: string) => {
+    let q = supabaseServer
+      .from("questions")
+      .select(selectColumns)
+      .eq("question_type", "multiple_choice");
+
+    if (spec.excludeIds && spec.excludeIds.length > 0) {
+      q = q.not("id", "in", `(${spec.excludeIds.join(",")})`);
+    }
+
+    return q.limit(1000);
+  };
 
   let query = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, answer_choice, answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
 
@@ -1010,15 +1018,13 @@ async function startOrReplaySession(args: {
     body: Record<string, unknown>;
   }
 > {
+  // 1) Fetch all open sessions for this user to check global limit and idempotency
   const { data: openSessions, error: openErr } = await supabaseServer
     .from("practice_sessions")
     .select("id, user_id, section, mode, status, completed, metadata")
     .eq("user_id", args.userId)
-    .eq("section", args.section)
-    .eq("mode", args.mode)
     .in("status", [...ACTIVE_DB_STATUSES])
-    .order("started_at", { ascending: false })
-    .limit(5);
+    .order("started_at", { ascending: false });
 
   if (openErr) {
     return {
@@ -1034,6 +1040,7 @@ async function startOrReplaySession(args: {
   const sessions = (openSessions ?? []) as SessionRow[];
   let replay: SessionRow | null = null;
 
+  // 2) Idempotency check: if we have a key, we MUST return that specific session
   if (args.idempotencyKey) {
     replay = sessions.find((candidate) => {
       const metadata = asSessionMetadata(candidate.metadata);
@@ -1041,8 +1048,18 @@ async function startOrReplaySession(args: {
     }) ?? null;
   }
 
-  if (!replay && sessions.length > 0) {
-    replay = sessions[0];
+  // 3) Enforce global limit for NEW sessions (unless replaying)
+  if (!replay && sessions.length >= SESSION_LIMIT) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: "session_limit_exceeded",
+        code: "SESSION_LIMIT_EXCEEDED",
+        message: `You already have ${sessions.length} open sessions. Please complete or terminate some before starting a new one.`,
+        limit: SESSION_LIMIT,
+      },
+    };
   }
 
   if (replay) {
@@ -1109,10 +1126,25 @@ async function startOrReplaySession(args: {
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
   };
+
+  // 1) Minimize repeats: find questions the user has already seen
+  const { data: previousItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id")
+    .eq("user_id", args.userId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  const excludeIds = (previousItems ?? [])
+    .map((item) => item.question_id)
+    .filter(Boolean) as string[];
+
+  // 2) Fetch the pool (excluding previous ones)
   const exactPoolResult = await listExactFilteredQuestionPool({
     sections: args.sessionSpec.sections,
     domains: args.sessionSpec.domains,
     difficulties: args.sessionSpec.difficulties,
+    excludeIds,
   });
 
   if ("error" in exactPoolResult) {
@@ -1127,17 +1159,35 @@ async function startOrReplaySession(args: {
   }
 
   const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
-  const selection = buildDeterministicPrebuiltSet(exactPoolResult.pool, requestedCount);
+
+  // 3) Randomize selection: shuffle the pool before selecting
+  const shuffledPool = fisherYates([...exactPoolResult.pool]);
+  const selection = buildDeterministicPrebuiltSet(shuffledPool, requestedCount);
   if (selection.selected.length === 0) {
-    return {
-      ok: false,
-      status: 422,
-      body: {
-        error: "empty_exact_pool",
-        code: "PRACTICE_EXACT_POOL_EMPTY",
-        message: "No published multiple-choice questions match the requested session filters.",
-      },
-    };
+    // Fallback: if pool was empty due to exclusions, try again without exclusions
+    const unrestrictedPool = await listExactFilteredQuestionPool({
+      sections: args.sessionSpec.sections,
+      domains: args.sessionSpec.domains,
+      difficulties: args.sessionSpec.difficulties,
+    });
+
+    if ("error" in unrestrictedPool || unrestrictedPool.pool.length === 0) {
+      return {
+        ok: false,
+        status: 422,
+        body: {
+          error: "empty_pool",
+          code: "PRACTICE_POOL_EMPTY",
+          message: "No questions match the requested filters.",
+        },
+      };
+    }
+
+    const shuffledFallback = fisherYates([...unrestrictedPool.pool]);
+    const fallbackSelection = buildDeterministicPrebuiltSet(shuffledFallback, requestedCount);
+    selection.selected = fallbackSelection.selected;
+    selection.selectionMode = fallbackSelection.selectionMode;
+    selection.sourcePoolCount = fallbackSelection.sourcePoolCount;
   }
 
   const startedAt = new Date().toISOString();
@@ -1308,7 +1358,7 @@ async function getNextPrebuiltQueuedItem(sessionId: string): Promise<SessionItem
     .select(SESSION_ITEM_SELECT)
     .eq("session_id", sessionId)
     .eq("status", "queued")
-    .eq("attempt_id", null)
+    .is("attempt_id", null)
     .order("ordinal", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -1458,7 +1508,7 @@ async function serveNextForSession(args: {
           options: healedOptions,
           difficulty: canonicalQuestion.difficulty ?? null,
         },
-        totalQuestions: metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT,
+        totalQuestions: await countSessionItems(args.sessionId),
         currentIndex: Math.max(0, unresolved.ordinal - 1),
         state: "active",
         calculatorState: metadata.calculator_state ?? null,
@@ -1486,6 +1536,7 @@ async function serveNextForSession(args: {
         safeOptions,
       }),
       stats: await getSessionStats(args.sessionId, args.userId),
+      totalQuestions: await countSessionItems(args.sessionId),
     });
   }
 
@@ -1546,7 +1597,7 @@ async function serveNextForSession(args: {
     })
     .eq("id", nextPrebuilt.id)
     .eq("status", "queued")
-    .eq("attempt_id", null)
+    .is("attempt_id", null)
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
@@ -1576,7 +1627,7 @@ async function serveNextForSession(args: {
       })
       .eq("id", promoted.id)
       .eq("status", "served")
-      .eq("attempt_id", null);
+      .is("attempt_id", null);
 
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
@@ -1627,8 +1678,141 @@ async function serveNextForSession(args: {
       safeOptions,
     }),
     stats: await getSessionStats(args.sessionId, args.userId),
+    totalQuestions: await countSessionItems(args.sessionId),
   });
 }
+
+/**
+ * Returns a list of uncompleted practice sessions for the current user.
+ */
+router.get("/sessions/open", requireSupabaseAuth, async (req, res) => {
+  const requestId = (req as any).requestId;
+  const user = (req as any).user;
+  const userId = user?.id;
+
+  const { data: sessions, error } = await supabaseServer
+    .from("practice_sessions")
+    .select("id, section, mode, status, started_at, metadata")
+    .eq("user_id", userId)
+    .in("status", [...ACTIVE_DB_STATUSES])
+    .order("started_at", { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ error: "failed_to_fetch_open_sessions", message: error.message, requestId });
+  }
+
+  // Enhance sessions with progress info
+  const enhancedSessions = await Promise.all((sessions || []).map(async (s) => {
+    const { count } = await supabaseServer
+      .from("practice_session_items")
+      .select("*", { count: "exact", head: true })
+      .eq("session_id", s.id);
+
+    const { count: answered } = await supabaseServer
+      .from("practice_session_items")
+      .select("*", { count: "exact", head: true })
+      .eq("session_id", s.id)
+      .in("status", ["answered", "skipped"]);
+
+    const metadata = asSessionMetadata(s.metadata);
+    return {
+      id: s.id,
+      section: s.section,
+      mode: s.mode,
+      status: s.status,
+      started_at: s.started_at,
+      target_question_count: metadata.target_question_count || 0,
+      total_items: count || 0,
+      answered_items: answered || 0,
+    };
+  }));
+
+  return res.json({ sessions: enhancedSessions, requestId });
+});
+
+/**
+ * Explicitly resumes an existing session, handling client instance binding and force takeover.
+ */
+router.post("/sessions/:sessionId/resume", requireSupabaseAuth, async (req, res) => {
+  const requestId = (req as any).requestId;
+  const user = (req as any).user;
+  const userId = user?.id;
+  const sessionId = req.params.sessionId;
+  const { client_instance_id, force_takeover } = req.body || {};
+
+  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
+  if (!owned) {
+    return res.status(404).json({ error: "session_not_found", message: "Practice session not found", requestId });
+  }
+
+  const { session } = owned;
+  const metadata = asSessionMetadata(session.metadata);
+
+  // Check for client instance conflict
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: metadata.client_instance_id,
+    requestedClientInstanceId: client_instance_id,
+  });
+
+  if (binding.action === "conflict" && !force_takeover) {
+    return res.status(409).json({
+      error: "client_instance_conflict",
+      code: "CLIENT_INSTANCE_CONFLICT",
+      message: "Session client instance conflict",
+      client_instance_id: binding.boundClientInstanceId ?? null,
+      requestId,
+    });
+  }
+
+  // Update binding if it's a bind action or a forced takeover
+  if (binding.action === "bind" || (binding.action === "conflict" && force_takeover)) {
+    metadata.client_instance_id = client_instance_id;
+    await updateSessionLifecycle(sessionId, metadata, {
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  const state = await getCurrentUnansweredItem(sessionId);
+  if (!state) {
+    // If no active or queued items, the session is likely complete
+    return res.json({
+      sessionId: session.id,
+      state: normalizeSessionState(session.status, metadata),
+      stats: await getSessionStats(sessionId, userId),
+      requestId,
+    });
+  }
+
+  const canonicalQuestion = toCanonicalQuestionFromSessionItem(state);
+  if (!canonicalQuestion) {
+    return res.status(500).json({ error: "question_load_failed", message: "Failed to load question content from session snapshot", requestId });
+  }
+
+  let safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, state.option_order, state.option_token_map);
+  if (!safeOptions) {
+    const rebuilt = buildServedOptions(canonicalQuestion.options);
+    await supabaseServer
+      .from("practice_session_items")
+      .update({ option_order: rebuilt.optionOrder, option_token_map: rebuilt.optionTokenMap, updated_at: new Date().toISOString() })
+      .eq("id", state.id);
+    safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, rebuilt.optionOrder, rebuilt.optionTokenMap);
+  }
+
+  return res.json({
+    sessionId: session.id,
+    sessionItemId: state.id,
+    ordinal: state.ordinal,
+    state: normalizeSessionState(session.status, metadata),
+    calculatorState: metadata.calculator_state ?? null,
+    question: toStudentSafeQuestionDTO({
+      sessionItemId: state.id,
+      question: canonicalQuestion,
+      safeOptions: safeOptions!,
+    }),
+    stats: await getSessionStats(sessionId, userId),
+    requestId,
+  });
+});
 
 router.post("/sessions", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
@@ -1919,9 +2103,9 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     calculatorState: metadata.calculator_state ?? null,
     lastServedUnansweredItem: unresolved
       ? {
-          sessionItemId: unresolved.id,
-          ordinal: unresolved.ordinal,
-        }
+        sessionItemId: unresolved.id,
+        ordinal: unresolved.ordinal,
+      }
       : null,
     clientInstanceId: boundClient ?? null,
     readOnly: state === "completed" || state === "abandoned",

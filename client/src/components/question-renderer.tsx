@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from "react";
 import MathRenderer from "@/components/MathRenderer";
+import { Textarea } from "@/components/ui/textarea";
 
 type QuestionOption = {
   id?: string | null;
@@ -122,7 +123,48 @@ export default function QuestionRenderer({
   const showCanonicalChoiceLabels = options.every((opt) => !!opt.canonicalKey);
 
   if (!hasUsableMcChoices) {
-    return null;
+    return (
+      <div className="space-y-5">
+        <div className="text-xl font-semibold text-slate-900 leading-relaxed">
+          <MathRenderer content={question.stem} />
+        </div>
+
+        <div className="space-y-3">
+          <label htmlFor="fr-answer" className="text-sm font-medium text-slate-700">
+            Enter your answer:
+          </label>
+          <Textarea
+            id="fr-answer"
+            placeholder="Type your answer here..."
+            value={freeResponseAnswer}
+            onChange={(e) => onFreeResponseAnswerChange?.(e.target.value)}
+            disabled={disabled || showResult}
+            className="min-h-[120px] text-base focus-visible:ring-brand-navy"
+          />
+        </div>
+
+        {showResult && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-semibold text-slate-900">{isCorrect ? "Correct" : "Incorrect"}</div>
+
+            {normalizedCorrectKey ? (
+              <div className="mt-2 text-slate-800">
+                <span className="font-medium">Correct answer:</span> {normalizedCorrectKey}
+              </div>
+            ) : null}
+
+            {(explanation ?? question.explanation) ? (
+              <div className="mt-3 text-slate-700">
+                <div className="font-medium text-slate-900 mb-1">Explanation</div>
+                <div className="whitespace-pre-wrap leading-relaxed">
+                  {explanation ?? question.explanation}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -146,7 +188,9 @@ export default function QuestionRenderer({
               ? "border-emerald-500 bg-emerald-50"
               : showWrong
                 ? "border-rose-500 bg-rose-50"
-                : "border-slate-200 bg-white hover:bg-slate-50";
+                : isSelected
+                  ? "border-brand-navy bg-brand-navy/5 ring-1 ring-brand-navy shadow-sm"
+                  : "border-slate-200 bg-white hover:bg-slate-50";
 
           return (
             <button
@@ -157,7 +201,12 @@ export default function QuestionRenderer({
               onClick={() => onSelectAnswer(opt.id)}
             >
               {showCanonicalChoiceLabels ? (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 font-semibold">
+                <div className={`
+                  flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold transition
+                  ${isSelected && !showResult 
+                    ? "bg-brand-navy text-white" 
+                    : "bg-slate-100 text-slate-700"}
+                `}>
                   {opt.canonicalKey}
                 </div>
               ) : null}
