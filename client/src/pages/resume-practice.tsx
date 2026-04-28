@@ -4,13 +4,23 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { getClientInstanceId } from "@/lib/client-instance";
 
+interface SessionState {
+  sessionId: string;
+  section: string | null;
+  state: string;
+  currentOrdinal: number;
+  answeredCount: number;
+  targetQuestionCount: number;
+  readOnly: boolean;
+}
+
 export default function ResumePracticePage() {
   const [, params] = useRoute("/practice/session/:sessionId");
   const sessionId = params?.sessionId;
   const clientInstanceId = getClientInstanceId();
 
   // We fetch the session details first to know the section/mode
-  const { data: session, isLoading, error } = useQuery({
+  const { data: session, isLoading, error } = useQuery<SessionState>({
     queryKey: [`/api/practice/sessions/${sessionId}/state?client_instance_id=${clientInstanceId}`],
     enabled: !!sessionId,
   });
