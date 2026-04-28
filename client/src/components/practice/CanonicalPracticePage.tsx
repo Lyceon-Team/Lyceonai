@@ -7,7 +7,7 @@ import { useCanonicalPractice, PracticeSectionParam } from "@/hooks/useCanonical
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
-import { Calculator, Flag, Loader2 } from "lucide-react";
+import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
@@ -22,6 +22,7 @@ export default function CanonicalPracticePage(props: {
   badgeLabel: string;
   section: PracticeSectionParam;
   targetMinutes?: number;
+  sessionId?: string | null;
 }) {
   const sessionSpec = React.useMemo(
     () => (typeof props.targetMinutes === "number" ? { targetMinutes: props.targetMinutes } : undefined),
@@ -53,7 +54,8 @@ export default function CanonicalPracticePage(props: {
     calculatorState,
     persistCalculatorState,
     runtimeDisabled,
-  } = useCanonicalPractice(props.section, sessionSpec);
+    setForceTakeover,
+  } = useCanonicalPractice(props.section, sessionSpec, props.sessionId);
 
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
@@ -85,6 +87,18 @@ export default function CanonicalPracticePage(props: {
     [persistCalculatorState],
   );
 
+  // Error handling for conflict or limit
+  const typedError = error as any;
+  const isConflict = typedError?.code === "CLIENT_INSTANCE_CONFLICT";
+  const isLimit = typedError?.code === "SESSION_LIMIT_EXCEEDED";
+
+  const handleForceTakeover = React.useCallback(() => {
+    setForceTakeover(true);
+    setTimeout(() => {
+      fetchNextQuestion();
+    }, 10);
+  }, [fetchNextQuestion, setForceTakeover]);
+
   const showCalculator = isMathSection(question?.section);
   return (
     <PracticeShell
@@ -109,7 +123,9 @@ export default function CanonicalPracticePage(props: {
                 Question {currentIndex + 1}
                 {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
               </Badge>
-              <Badge className="bg-primary-container text-primary-foreground">{props.badgeLabel}</Badge>
+              <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
+                {props.badgeLabel}
+              </Badge>
             </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Flag className="h-3.5 w-3.5" />
@@ -122,12 +138,40 @@ export default function CanonicalPracticePage(props: {
           ) : isLoading && !question ? (
             <div className="flex flex-col items-center justify-center py-14 text-slate-600">
               <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="mt-3 text-sm">Loading your next question...</p>
+              <p className="mt-3 text-sm">Loading your practice session...</p>
+            </div>
+          ) : isConflict ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
+              <AlertCircle className="h-10 w-10 text-amber-600 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-amber-900 mb-2">Session Conflict</h3>
+              <p className="text-sm text-amber-700 mb-6">
+                This session is currently active in another browser tab or device.
+                Resuming here will disconnect the other instance.
+              </p>
+              <div className="flex justify-center gap-3">
+                <Button variant="outline" onClick={() => window.location.assign("/practice")}>
+                  Go Back
+                </Button>
+                <Button onClick={handleForceTakeover}>
+                  Resume Here
+                </Button>
+              </div>
+            </div>
+          ) : isLimit ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+              <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-red-900 mb-2">Session Limit Exceeded</h3>
+              <p className="text-sm text-red-700 mb-6">
+                {typedError.message}
+              </p>
+              <Button onClick={() => window.location.assign("/practice")}>
+                Manage Sessions
+              </Button>
             </div>
           ) : error && !question ? (
             <RecoveryNotice
-              title="Unable to load a question."
-              message={error}
+              title="Unable to load session."
+              message={String(error)}
               onRetry={() => void fetchNextQuestion()}
               retryLabel="Retry"
             />
@@ -186,8 +230,18 @@ export default function CanonicalPracticePage(props: {
                     </Button>
                   </>
                 ) : (
-                  <Button className="w-full" disabled={isSubmitting || isLoading || isEndingSession} onClick={nextQuestion}>
-                    Next Question
+                  <Button
+                    className="w-full"
+                    disabled={isSubmitting || isLoading || isEndingSession}
+                    onClick={() => {
+                      if (currentIndex + 1 === totalQuestions) {
+                        endSession();
+                      } else {
+                        nextQuestion();
+                      }
+                    }}
+                  >
+                    {currentIndex + 1 === totalQuestions ? "Done" : "Next Question"}
                   </Button>
                 )}
               </div>

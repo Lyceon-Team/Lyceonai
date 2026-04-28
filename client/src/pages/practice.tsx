@@ -16,9 +16,11 @@ import {
   Timer,
   Sparkles,
   AlertCircle,
+  PlayCircle,
+  Trash2,
 } from "lucide-react";
-import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
@@ -26,6 +28,18 @@ import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/li
 import { appendPracticeDuration } from "@/lib/practice-duration";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { csrfFetch } from "@/lib/csrf";
+
+interface OpenSession {
+  id: string;
+  section: string;
+  mode: string;
+  status: string;
+  started_at: string;
+  target_question_count: number;
+  total_items: number;
+  answered_items: number;
+}
 
 interface QuestionStats {
   total: number;
@@ -65,6 +79,8 @@ interface KpiResponse {
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const {
     data: stats,
@@ -75,6 +91,28 @@ function Practice() {
   } = useQuery<QuestionStats>({
     queryKey: ["/api/questions/stats"],
     enabled: !!user && !authLoading,
+  });
+
+  const {
+    data: openSessions,
+    isLoading: sessionsLoading,
+    refetch: refetchSessions,
+  } = useQuery<{ sessions: OpenSession[] }>({
+    queryKey: ["/api/practice/sessions/open"],
+    enabled: !!user && !authLoading,
+  });
+
+  const terminateMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await csrfFetch(`/api/practice/sessions/${sessionId}/terminate`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to terminate session");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/practice/sessions/open"] });
+    },
   });
 
   const {
@@ -170,9 +208,56 @@ function Practice() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 space-y-6">
+            {openSessions?.sessions && openSessions.sessions.length > 0 && (
+              <PageCard
+                title="Active Sessions"
+                description={`You have ${openSessions.sessions.length} sessions in progress. Choose one to resume.`}
+                className="bg-primary/5 border-primary/20"
+              >
+                <div className="grid gap-3">
+                  {openSessions.sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                          {s.section?.toLowerCase() === 'math' ? <Calculator className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold capitalize">{s.section?.toLowerCase() === 'math' ? 'Math' : 'Reading & Writing'}</span>
+                            <Badge variant="secondary" className="text-[10px] py-0">{s.mode}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Progress: {s.answered_items} / {s.total_items} questions · Started {DateTime.fromISO(s.started_at).toRelative()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => terminateMutation.mutate(s.id)}
+                          disabled={terminateMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" onClick={() => setLocation(`/practice/session/${s.id}`)}>
+                          <PlayCircle className="h-4 w-4 mr-2" />
+                          Continue
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PageCard>
+            )}
+
             <PageCard
               title="Session Setup"
-              description="Configure your next focused run. Starting a section reuses any compatible active canonical session on the backend."
+              description="Configure your next focused run. You can have up to 3 active sessions at a time."
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
@@ -195,30 +280,43 @@ function Practice() {
                 </div>
 
                 <div className="grid sm:grid-cols-2 gap-4">
-                  {quickFocus.map((focus) => (
-                    <Button
-                      key={focus.href}
-                      asChild
-                      size="lg"
-                      variant={focus.variant}
-                      className="h-auto justify-start py-5 px-5"
-                      data-testid={focus.testId}
-                    >
-                      <Link href={focus.href}>
-                        <div className="w-full flex items-start justify-between gap-4 text-left">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <focus.icon className="h-4 w-4" />
-                              <span className="font-semibold">{focus.title}</span>
+                  {quickFocus.map((focus) => {
+                    const isLimitReached = (openSessions?.sessions?.length ?? 0) >= 5;
+                    return (
+                      <Button
+                        key={focus.href}
+                        asChild
+                        size="lg"
+                        variant={focus.variant}
+                        className="h-auto justify-start py-5 px-5"
+                        data-testid={focus.testId}
+                        disabled={isLimitReached}
+                      >
+                        <Link href={isLimitReached ? "#" : focus.href}>
+                          <div className="w-full flex items-start justify-between gap-4 text-left">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <focus.icon className="h-4 w-4" />
+                                <span className="font-semibold">{focus.title}</span>
+                              </div>
+                              <p className="text-xs opacity-85">
+                                {isLimitReached ? "Limit reached (5 sessions)" : focus.subtitle}
+                              </p>
                             </div>
-                            <p className="text-xs opacity-85">{focus.subtitle}</p>
+                            <ArrowRight className="h-4 w-4 shrink-0" />
                           </div>
-                          <ArrowRight className="h-4 w-4 shrink-0" />
-                        </div>
-                      </Link>
-                    </Button>
-                  ))}
+                        </Link>
+                      </Button>
+                    );
+                  })}
                 </div>
+
+                {(openSessions?.sessions?.length ?? 0) >= 5 && (
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3 text-amber-800 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    You've reached the limit of 5 active sessions. Complete or delete an existing session to start a new one.
+                  </div>
+                )}
 
                 {statsError && (
                   <RecoveryNotice

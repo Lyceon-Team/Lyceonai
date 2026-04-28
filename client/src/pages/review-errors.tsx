@@ -585,11 +585,13 @@ function ReviewErrors() {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/practice">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Practice
-            </Link>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => window.location.assign("/practice")}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Practice
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-foreground">Review Errors</h1>
