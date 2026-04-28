@@ -7,7 +7,7 @@ import { useCanonicalPractice, PracticeSectionParam } from "@/hooks/useCanonical
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
-import { Calculator, Flag, Loader2 } from "lucide-react";
+import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 
@@ -123,7 +123,9 @@ export default function CanonicalPracticePage(props: {
                 Question {currentIndex + 1}
                 {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
               </Badge>
-              <Badge className="bg-primary-container text-primary-foreground">{props.badgeLabel}</Badge>
+              <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
+                {props.badgeLabel}
+              </Badge>
             </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Flag className="h-3.5 w-3.5" />
@@ -228,9 +230,9 @@ export default function CanonicalPracticePage(props: {
                     </Button>
                   </>
                 ) : (
-                  <Button 
-                    className="w-full" 
-                    disabled={isSubmitting || isLoading || isEndingSession} 
+                  <Button
+                    className="w-full"
+                    disabled={isSubmitting || isLoading || isEndingSession}
                     onClick={() => {
                       if (currentIndex + 1 === totalQuestions) {
                         endSession();

@@ -216,8 +216,8 @@ function Practice() {
               >
                 <div className="grid gap-3">
                   {openSessions.sessions.map((s) => (
-                    <div 
-                      key={s.id} 
+                    <div
+                      key={s.id}
                       className="flex items-center justify-between p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-colors"
                     >
                       <div className="flex items-center gap-4">
@@ -235,9 +235,9 @@ function Practice() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="text-muted-foreground hover:text-destructive"
                           onClick={() => terminateMutation.mutate(s.id)}
                           disabled={terminateMutation.isPending}
@@ -257,7 +257,7 @@ function Practice() {
 
             <PageCard
               title="Session Setup"
-              description="Configure your next focused run. You can have up to 5 active sessions at a time."
+              description="Configure your next focused run. You can have up to 3 active sessions at a time."
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">

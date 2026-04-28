@@ -66,8 +66,8 @@ export function QuestionCard({
 
       <div className="prose max-w-none mb-6">
         <div className="text-lg md:text-xl font-semibold text-neutral-900 leading-relaxed" data-testid="question-stem">
-          <MathRenderer 
-            content={question.stem} 
+          <MathRenderer
+            content={question.stem}
             className="whitespace-pre-wrap"
             displayMode={false}
           />
@@ -92,11 +92,11 @@ export function QuestionCard({
                     ? isCorrect
                       ? 'border-green-500 bg-green-50'
                       : isIncorrect
-                      ? 'border-amber-500 bg-amber-50'
-                      : 'border-slate-200 bg-white opacity-60'
+                        ? 'border-amber-500 bg-amber-50'
+                        : 'border-slate-200 bg-white opacity-60'
                     : isSelected
-                    ? 'border-brand-navy bg-brand-navy/5 ring-1 ring-brand-navy shadow-sm'
-                    : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300'
+                      ? 'border-brand-navy bg-brand-navy/5 ring-1 ring-brand-navy shadow-sm'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300'
                   }
                   ${showResult ? 'cursor-default' : 'cursor-pointer'}
                 `}
@@ -111,11 +111,11 @@ export function QuestionCard({
                       ? isCorrect
                         ? 'bg-green-500 text-white'
                         : isIncorrect
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-slate-200 text-slate-600'
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-slate-200 text-slate-600'
                       : isSelected
-                      ? 'bg-brand-navy text-white'
-                      : 'bg-slate-100 text-slate-600'
+                        ? 'bg-brand-navy text-white'
+                        : 'bg-slate-100 text-slate-600'
                     }
                   `}>
                     {showResult && isCorrect ? (
@@ -126,11 +126,10 @@ export function QuestionCard({
                       option.key
                     )}
                   </div>
-                  <div className={`flex-1 ${
-                    showResult
+                  <div className={`flex-1 ${showResult
                       ? isCorrect ? 'text-green-900' : isIncorrect ? 'text-amber-900' : 'text-slate-600'
                       : isSelected ? 'text-brand-navy font-medium' : 'text-slate-900'
-                  }`}>
+                    }`}>
                     <MathRenderer content={option.text} displayMode={false} />
                   </div>
                 </div>
@@ -209,11 +208,10 @@ export function QuestionCard({
                   size="sm"
                   onClick={() => onFeedback('up')}
                   disabled={feedbackSubmitted !== null}
-                  className={`p-2 rounded-lg transition-all ${
-                    feedbackSubmitted === 'up'
+                  className={`p-2 rounded-lg transition-all ${feedbackSubmitted === 'up'
                       ? 'bg-green-100 text-green-600'
                       : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
-                  }`}
+                    }`}
                   data-testid="button-feedback-up"
                 >
                   <ThumbsUp className={`h-4 w-4 ${feedbackSubmitted === 'up' ? 'fill-current' : ''}`} />
@@ -223,11 +221,10 @@ export function QuestionCard({
                   size="sm"
                   onClick={() => onFeedback('down')}
                   disabled={feedbackSubmitted !== null}
-                  className={`p-2 rounded-lg transition-all ${
-                    feedbackSubmitted === 'down'
+                  className={`p-2 rounded-lg transition-all ${feedbackSubmitted === 'down'
                       ? 'bg-amber-100 text-amber-700'
                       : 'hover:bg-slate-100 text-slate-500 hover:text-slate-700'
-                  }`}
+                    }`}
                   data-testid="button-feedback-down"
                 >
                   <ThumbsDown className={`h-4 w-4 ${feedbackSubmitted === 'down' ? 'fill-current' : ''}`} />
@@ -235,7 +232,7 @@ export function QuestionCard({
               </div>
             </div>
           )}
-          
+
           {onNext && (
             <Button
               onClick={onNext}

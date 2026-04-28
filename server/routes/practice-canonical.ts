@@ -719,10 +719,9 @@ function buildDeterministicPrebuiltSet(pool: CanonicalQuestionForServing[], targ
     };
   }
 
-  const selected: CanonicalQuestionForServing[] = [];
-  for (let i = 0; i < targetCount; i += 1) {
-    selected.push(pool[i % sourcePoolCount]);
-  }
+  // Never wrap — cap at pool size to prevent within-session repeats
+  const effectiveCount = Math.min(targetCount, sourcePoolCount);
+  const selected = pool.slice(0, effectiveCount);
 
   return {
     selected,
@@ -1127,24 +1126,11 @@ async function startOrReplaySession(args: {
     session_start_idempotency_key: args.idempotencyKey,
   };
 
-  // 1) Minimize repeats: find questions the user has already seen
-  const { data: previousItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id")
-    .eq("user_id", args.userId)
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  const excludeIds = (previousItems ?? [])
-    .map((item) => item.question_id)
-    .filter(Boolean) as string[];
-
-  // 2) Fetch the pool (excluding previous ones)
+  // 1) Fetch the full question pool (no exclusions — we handle prioritization in-memory)
   const exactPoolResult = await listExactFilteredQuestionPool({
     sections: args.sessionSpec.sections,
     domains: args.sessionSpec.domains,
     difficulties: args.sessionSpec.difficulties,
-    excludeIds,
   });
 
   if ("error" in exactPoolResult) {
@@ -1158,37 +1144,78 @@ async function startOrReplaySession(args: {
     };
   }
 
+  if (exactPoolResult.pool.length === 0) {
+    return {
+      ok: false,
+      status: 422,
+      body: {
+        error: "empty_pool",
+        code: "PRACTICE_POOL_EMPTY",
+        message: "No questions match the requested filters.",
+      },
+    };
+  }
+
   const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
 
-  // 3) Randomize selection: shuffle the pool before selecting
-  const shuffledPool = fisherYates([...exactPoolResult.pool]);
-  const selection = buildDeterministicPrebuiltSet(shuffledPool, requestedCount);
-  if (selection.selected.length === 0) {
-    // Fallback: if pool was empty due to exclusions, try again without exclusions
-    const unrestrictedPool = await listExactFilteredQuestionPool({
-      sections: args.sessionSpec.sections,
-      domains: args.sessionSpec.domains,
-      difficulties: args.sessionSpec.difficulties,
-    });
+  // 2) Hard-exclude: questions in currently active sessions (prevents cross-tab repeats)
+  const { data: activeSessionItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, practice_sessions!inner(status)")
+    .eq("user_id", args.userId)
+    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
 
-    if ("error" in unrestrictedPool || unrestrictedPool.pool.length === 0) {
-      return {
-        ok: false,
-        status: 422,
-        body: {
-          error: "empty_pool",
-          code: "PRACTICE_POOL_EMPTY",
-          message: "No questions match the requested filters.",
-        },
-      };
+  const activeQuestionIds = new Set(
+    (activeSessionItems ?? [])
+      .map((item: any) => item.question_id)
+      .filter(Boolean) as string[],
+  );
+
+  // 3) Soft-deprioritize: fetch full history with last-seen timestamps (section-aware)
+  const { data: historyItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, created_at")
+    .eq("user_id", args.userId)
+    .order("created_at", { ascending: false });
+
+  // Build a map of question_id -> most recent seen timestamp
+  const lastSeenMap = new Map<string, string>();
+  for (const item of (historyItems ?? []) as any[]) {
+    const qid = item.question_id as string;
+    if (!qid) continue;
+    // Only keep the most recent (first encountered since ordered DESC)
+    if (!lastSeenMap.has(qid)) {
+      lastSeenMap.set(qid, item.created_at as string);
     }
-
-    const shuffledFallback = fisherYates([...unrestrictedPool.pool]);
-    const fallbackSelection = buildDeterministicPrebuiltSet(shuffledFallback, requestedCount);
-    selection.selected = fallbackSelection.selected;
-    selection.selectionMode = fallbackSelection.selectionMode;
-    selection.sourcePoolCount = fallbackSelection.sourcePoolCount;
   }
+
+  // 4) Tiered selection: partition pool, then combine
+  const poolAfterExclusion = exactPoolResult.pool.filter(
+    (q) => !activeQuestionIds.has(q.id),
+  );
+
+  const neverSeen: CanonicalQuestionForServing[] = [];
+  const previouslySeen: Array<{ question: CanonicalQuestionForServing; lastSeen: string }> = [];
+
+  for (const question of poolAfterExclusion) {
+    const lastSeen = lastSeenMap.get(question.id);
+    if (!lastSeen) {
+      neverSeen.push(question);
+    } else {
+      previouslySeen.push({ question, lastSeen });
+    }
+  }
+
+  // Shuffle fresh questions randomly
+  const shuffledFresh = fisherYates(neverSeen);
+
+  // Sort previously seen by oldest-first (most stale = highest priority)
+  previouslySeen.sort((a, b) => a.lastSeen.localeCompare(b.lastSeen));
+  const staleOrdered = previouslySeen.map((entry) => entry.question);
+
+  // Combine: fresh first, then stale, then select
+  const prioritizedPool = [...shuffledFresh, ...staleOrdered];
+  const selection = buildDeterministicPrebuiltSet(prioritizedPool, requestedCount);
 
   const startedAt = new Date().toISOString();
   const insertMetadata: SessionMetadata = {
