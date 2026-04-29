@@ -18,6 +18,7 @@ import {
   AlertCircle,
   PlayCircle,
   Trash2,
+  X,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
 import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
 import { appendPracticeDuration } from "@/lib/practice-duration";
+import { appendPracticeFilters, type PracticeDifficulty } from "@/lib/practice-filters";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { csrfFetch } from "@/lib/csrf";
@@ -76,9 +78,18 @@ interface KpiResponse {
   };
 }
 
+const DIFFICULTY_OPTIONS: { value: PracticeDifficulty; label: string; color: string }[] = [
+  { value: "easy", label: "Easy", color: "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" },
+  { value: "medium", label: "Medium", color: "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100" },
+  { value: "hard", label: "Hard", color: "border-red-300 text-red-700 bg-red-50 hover:bg-red-100" },
+];
+
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
+  const [selectedDifficulties, setSelectedDifficulties] = useState<PracticeDifficulty[]>([]);
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [focusSection, setFocusSection] = useState<"math" | "reading_writing" | "">("math");
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
@@ -160,14 +171,47 @@ function Practice() {
   const mathDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "math")?.domains);
   const readingDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "reading_writing")?.domains);
 
+  const visibleDomains = useMemo(() => {
+    if (focusSection === "math") return mathDomains;
+    if (focusSection === "reading_writing") return readingDomains;
+    return [...mathDomains, ...readingDomains];
+  }, [focusSection, mathDomains, readingDomains]);
+
   const statsEmpty = !statsLoading && !statsError && (stats?.total ?? 0) === 0;
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
   const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
 
+  const buildSessionHref = (basePath: string) => {
+    const withDuration = appendPracticeDuration(basePath, timePreference);
+    return appendPracticeFilters(withDuration, {
+      difficulties: selectedDifficulties,
+      domains: selectedDomains,
+    });
+  };
+
+  const toggleDifficulty = (d: PracticeDifficulty) => {
+    setSelectedDifficulties((prev) =>
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]
+    );
+  };
+
+  const toggleDomain = (domain: string) => {
+    setSelectedDomains((prev) =>
+      prev.includes(domain) ? prev.filter((x) => x !== domain) : [...prev, domain]
+    );
+  };
+
+  const clearFilters = () => {
+    setSelectedDifficulties([]);
+    setSelectedDomains([]);
+  };
+
+  const hasActiveFilters = selectedDifficulties.length > 0 || selectedDomains.length > 0;
+
   const quickFocus = useMemo(
     () => [
       {
-        href: appendPracticeDuration("/practice/reading-writing", timePreference),
+        href: buildSessionHref("/practice/reading-writing"),
         title: "Reading & Writing",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
         icon: BookOpen,
@@ -175,7 +219,7 @@ function Practice() {
         variant: "outline" as const,
       },
       {
-        href: appendPracticeDuration("/practice/math", timePreference),
+        href: buildSessionHref("/practice/math"),
         title: "Math",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
         icon: Calculator,
@@ -183,7 +227,8 @@ function Practice() {
         variant: "default" as const,
       },
     ],
-    [stats?.math, stats?.reading_writing, statsError, statsLoading, timePreference],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stats?.math, stats?.reading_writing, statsError, statsLoading, timePreference, selectedDifficulties, selectedDomains],
   );
 
   const secondaryActions = [
@@ -261,11 +306,11 @@ function Practice() {
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
+
+                {/* Duration */}
                 <div className="flex flex-wrap items-center gap-3 rounded-xl bg-secondary/50 p-4">
                   <Timer className="h-4 w-4 text-foreground" />
-                  <p className="text-sm text-foreground/90">
-                    Session target duration
-                  </p>
+                  <p className="text-sm text-foreground/90">Session target duration</p>
                   <Select value={timePreference} onValueChange={setTimePreference}>
                     <SelectTrigger className="w-44 bg-background" data-testid="select-duration">
                       <SelectValue />
@@ -279,12 +324,106 @@ function Practice() {
                   </Select>
                 </div>
 
+                {/* Difficulty Filter */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Difficulty</p>
+                  <div className="flex flex-wrap gap-2">
+                    {DIFFICULTY_OPTIONS.map((opt) => {
+                      const active = selectedDifficulties.includes(opt.value);
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => toggleDifficulty(opt.value)}
+                          className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                            active
+                              ? opt.color + " ring-2 ring-offset-1 ring-current"
+                              : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Select none to include all difficulties</p>
+                </div>
+
+                {/* Topic/Domain Filter */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Topic (Domain)</p>
+                    <div className="flex items-center gap-2">
+                      <Select value={focusSection} onValueChange={(v) => { setFocusSection(v as any); setSelectedDomains([]); }}>
+                        <SelectTrigger className="h-7 w-36 text-xs bg-background">
+                          <SelectValue placeholder="All sections" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="math">Math</SelectItem>
+                          <SelectItem value="reading_writing">Reading & Writing</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {topicsLoading ? (
+                    <div className="flex gap-2">
+                      <Skeleton className="h-7 w-20 rounded-full" />
+                      <Skeleton className="h-7 w-28 rounded-full" />
+                      <Skeleton className="h-7 w-24 rounded-full" />
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {visibleDomains.map((d) => {
+                        const active = selectedDomains.includes(d.domain);
+                        return (
+                          <button
+                            key={d.domain}
+                            type="button"
+                            onClick={() => toggleDomain(d.domain)}
+                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary ring-2 ring-offset-1 ring-primary/50"
+                                : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
+                            }`}
+                          >
+                            {d.domain}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">Select none to include all domains</p>
+                </div>
+
+                {/* Active filter summary + clear */}
+                {hasActiveFilters && (
+                  <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <span className="text-xs text-muted-foreground">Active filters:</span>
+                    {selectedDifficulties.map((d) => (
+                      <Badge key={d} variant="secondary" className="text-[10px] gap-1">
+                        {d}
+                        <button onClick={() => toggleDifficulty(d)} className="ml-0.5 hover:text-destructive"><X className="h-2.5 w-2.5" /></button>
+                      </Badge>
+                    ))}
+                    {selectedDomains.map((domain) => (
+                      <Badge key={domain} variant="secondary" className="text-[10px] gap-1 max-w-[140px] truncate">
+                        {domain}
+                        <button onClick={() => toggleDomain(domain)} className="ml-0.5 hover:text-destructive flex-shrink-0"><X className="h-2.5 w-2.5" /></button>
+                      </Badge>
+                    ))}
+                    <button onClick={clearFilters} className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline">
+                      Clear all
+                    </button>
+                  </div>
+                )}
+
+                {/* Section buttons */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   {quickFocus.map((focus) => {
                     const isLimitReached = (openSessions?.sessions?.length ?? 0) >= 5;
                     return (
                       <Button
-                        key={focus.href}
+                        key={focus.title}
                         asChild
                         size="lg"
                         variant={focus.variant}

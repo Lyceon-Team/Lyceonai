@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import type { PracticeDifficulty } from "@/lib/practice-filters";
 
 function isMathSection(section: string | null | undefined): boolean {
   if (!section) return false;
@@ -17,16 +18,34 @@ function isMathSection(section: string | null | undefined): boolean {
   return normalized === "math" || normalized === "m" || normalized === "m1" || normalized === "m2";
 }
 
+const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
+
+const DIFFICULTY_COLORS: Record<PracticeDifficulty, string> = {
+  easy: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  medium: "bg-amber-50 text-amber-700 border-amber-200",
+  hard: "bg-red-50 text-red-700 border-red-200",
+};
+
 export default function CanonicalPracticePage(props: {
   title: string;
   badgeLabel: string;
   section: PracticeSectionParam;
   targetMinutes?: number;
   sessionId?: string | null;
+  difficulties?: PracticeDifficulty[];
+  domains?: string[];
 }) {
   const sessionSpec = React.useMemo(
-    () => (typeof props.targetMinutes === "number" ? { targetMinutes: props.targetMinutes } : undefined),
-    [props.targetMinutes],
+    () => ({
+      ...(typeof props.targetMinutes === "number" ? { targetMinutes: props.targetMinutes } : {}),
+      ...(props.difficulties && props.difficulties.length > 0 ? { difficulties: props.difficulties } : {}),
+      ...(props.domains && props.domains.length > 0 ? { domains: props.domains } : {}),
+    }),
+    [props.targetMinutes, props.difficulties, props.domains],
   );
 
   const {
@@ -118,7 +137,7 @@ export default function CanonicalPracticePage(props: {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
         <Card className="xl:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center flex-wrap gap-2">
               <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
                 Question {currentIndex + 1}
                 {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
@@ -126,6 +145,16 @@ export default function CanonicalPracticePage(props: {
               <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
                 {props.badgeLabel}
               </Badge>
+              {props.difficulties && props.difficulties.length > 0 && props.difficulties.map((d) => (
+                <Badge key={d} className={`text-[10px] border ${DIFFICULTY_COLORS[d]}`}>
+                  {DIFFICULTY_LABELS[d]}
+                </Badge>
+              ))}
+              {props.domains && props.domains.length > 0 && props.domains.map((domain) => (
+                <Badge key={domain} variant="secondary" className="text-[10px] max-w-[120px] truncate">
+                  {domain}
+                </Badge>
+              ))}
             </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Flag className="h-3.5 w-3.5" />
