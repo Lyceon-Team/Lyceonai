@@ -45,6 +45,7 @@ This document is the single authoritative registry of:
 | `/practice/random` | student, admin | entitled† | RandomPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
 | `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
 | `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
@@ -133,6 +134,8 @@ Removed auth endpoints (must return 404):
 | `/api/calendar/month` | GET | Yes | student/admin | free | Monthly calendar data |
 | `/api/practice/next` | GET | Yes | student/admin | entitled† | Get next practice question |
 | `/api/practice/answer` | POST | Yes | student/admin | free | Submit practice answer |
+| `/api/practice/sessions/:sessionId/state` | GET | Yes | student/admin | entitled† | Resume practice session state |
+| `/api/practice/sessions/:sessionId/next` | GET | Yes | student/admin | entitled† | Resume practice session next |
 | `/api/practice/topics` | GET | Yes | student/admin | free | Get SAT topic taxonomy |
 | `/api/practice/reference/questions` | GET | Yes | student/admin | free | Get filtered questions for practice (reference-only) |
 | `/api/tutor/conversations` | POST | Yes | student/admin | entitled† | start/reuse tutor conversation |

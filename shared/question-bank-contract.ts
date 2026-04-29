@@ -238,6 +238,9 @@ export function resolveClientInstanceBinding(args: {
   const requested = normalizeClientInstanceId(args.requestedClientInstanceId);
 
   if (bound && (!requested || requested !== bound)) {
+    if (typeof bound === "string" && bound.startsWith("server-") && requested) {
+      return { action: "bind", boundClientInstanceId: bound, requestedClientInstanceId: requested };
+    }
     return { action: "conflict", boundClientInstanceId: bound, requestedClientInstanceId: requested };
   }
   if (!bound && requested) {
