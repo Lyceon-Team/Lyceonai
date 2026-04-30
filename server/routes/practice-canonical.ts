@@ -53,7 +53,7 @@ type StudentSafeQuestionDTO = {
 type CanonicalQuestionForServing = {
   id: string;
   canonical_id: string;
-  section: string;
+  section_code: string;
   stem: string;
   options: McOption[];
   difficulty: string | number | null;
@@ -133,6 +133,7 @@ type CanonicalSessionSpec = {
 
 const router = Router();
 
+const SESSION_LIMIT = 3;
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const DEFAULT_TARGET_QUESTION_COUNT = 20;
@@ -382,11 +383,11 @@ function buildServedOptions(options: McOption[]): {
 }
 
 function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
-  const correctAnswer = normalizeAnswerKey(q.correct_answer ?? q.answer_choice ?? q.answer);
+  const correctAnswer = normalizeAnswerKey(q.correct_answer);
   return {
     id: String(q.id),
     canonical_id: String(q.canonical_id),
-    section: String(q.section ?? q.section_code ?? ""),
+    section_code: String(q.section_code ?? ""),
     stem: String(q.stem ?? ""),
     options: safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
@@ -415,7 +416,7 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
   return {
     id: String(item.question_id ?? "").trim(),
     canonical_id: canonicalId,
-    section,
+    section_code: section,
     stem,
     options,
     difficulty: item.question_difficulty ?? null,
@@ -444,8 +445,7 @@ function toStudentSafeQuestionDTO(args: {
   const safe = projectStudentSafeQuestion({
     id: args.question.id,
     canonical_id: args.question.canonical_id,
-    section: args.question.section,
-    section_code: args.question.section,
+    section_code: args.question.section_code ?? null,
     question_type: "multiple_choice",
     stem: args.question.stem,
     options: args.question.options,
@@ -455,14 +455,13 @@ function toStudentSafeQuestionDTO(args: {
     subskill: args.question.subskill ?? null,
     skill_code: null,
     tags: null,
-    competencies: null,
     correct_answer: args.question.correct_answer ?? null,
     explanation: args.question.explanation ?? null,
   });
 
   return {
     sessionItemId: args.sessionItemId,
-    section: safe.section ?? args.question.section,
+    section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
     questionType: "multiple_choice",
     options: args.safeOptions,
@@ -640,15 +639,22 @@ async function listExactFilteredQuestionPool(spec: {
   sections: Array<"Math" | "RW">;
   domains: string[];
   difficulties: Array<"easy" | "medium" | "hard">;
+  excludeIds?: string[];
 }): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  const buildBaseQuery = (selectColumns: string) => supabaseServer
-    .from("questions")
-    .select(selectColumns)
-    .eq("question_type", "multiple_choice")
-    .eq("status", "published")
-    .limit(1000);
+  const buildBaseQuery = (selectColumns: string) => {
+    let q = supabaseServer
+      .from("questions")
+      .select(selectColumns)
+      .eq("question_type", "multiple_choice");
 
-  let query = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, answer_choice, answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
+    if (spec.excludeIds && spec.excludeIds.length > 0) {
+      q = q.not("id", "in", `(${spec.excludeIds.join(",")})`);
+    }
+
+    return q.limit(1000);
+  };
+
+  let query = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
 
   const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
   if (allowedSectionCodes.length > 0) {
@@ -667,7 +673,7 @@ async function listExactFilteredQuestionPool(spec: {
   let validPool = normalizedRows.filter((row: any) => isCanonicalRuntimeMcQuestion(row as any));
 
   if (validPool.length === 0) {
-    let legacyQuery = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
+    let legacyQuery = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
     if (allowedSectionCodes.length > 0) {
       legacyQuery = legacyQuery.in("section_code", allowedSectionCodes);
     }
@@ -711,10 +717,9 @@ function buildDeterministicPrebuiltSet(pool: CanonicalQuestionForServing[], targ
     };
   }
 
-  const selected: CanonicalQuestionForServing[] = [];
-  for (let i = 0; i < targetCount; i += 1) {
-    selected.push(pool[i % sourcePoolCount]);
-  }
+  // Never wrap — cap at pool size to prevent within-session repeats
+  const effectiveCount = Math.min(targetCount, sourcePoolCount);
+  const selected = pool.slice(0, effectiveCount);
 
   return {
     selected,
@@ -1010,15 +1015,13 @@ async function startOrReplaySession(args: {
     body: Record<string, unknown>;
   }
 > {
+  // 1) Fetch all open sessions for this user to check global limit and idempotency
   const { data: openSessions, error: openErr } = await supabaseServer
     .from("practice_sessions")
     .select("id, user_id, section, mode, status, completed, metadata")
     .eq("user_id", args.userId)
-    .eq("section", args.section)
-    .eq("mode", args.mode)
     .in("status", [...ACTIVE_DB_STATUSES])
-    .order("started_at", { ascending: false })
-    .limit(5);
+    .order("started_at", { ascending: false });
 
   if (openErr) {
     return {
@@ -1034,6 +1037,7 @@ async function startOrReplaySession(args: {
   const sessions = (openSessions ?? []) as SessionRow[];
   let replay: SessionRow | null = null;
 
+  // 2) Idempotency check: if we have a key, we MUST return that specific session
   if (args.idempotencyKey) {
     replay = sessions.find((candidate) => {
       const metadata = asSessionMetadata(candidate.metadata);
@@ -1041,8 +1045,18 @@ async function startOrReplaySession(args: {
     }) ?? null;
   }
 
-  if (!replay && sessions.length > 0) {
-    replay = sessions[0];
+  // 3) Enforce global limit for NEW sessions (unless replaying)
+  if (!replay && sessions.length >= SESSION_LIMIT) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: "session_limit_exceeded",
+        code: "SESSION_LIMIT_EXCEEDED",
+        message: `You already have ${sessions.length} open sessions. Please complete or terminate some before starting a new one.`,
+        limit: SESSION_LIMIT,
+      },
+    };
   }
 
   if (replay) {
@@ -1109,6 +1123,8 @@ async function startOrReplaySession(args: {
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
   };
+
+  // 1) Fetch the full question pool (no exclusions — we handle prioritization in-memory)
   const exactPoolResult = await listExactFilteredQuestionPool({
     sections: args.sessionSpec.sections,
     domains: args.sessionSpec.domains,
@@ -1126,19 +1142,78 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
-  const selection = buildDeterministicPrebuiltSet(exactPoolResult.pool, requestedCount);
-  if (selection.selected.length === 0) {
+  if (exactPoolResult.pool.length === 0) {
     return {
       ok: false,
       status: 422,
       body: {
-        error: "empty_exact_pool",
-        code: "PRACTICE_EXACT_POOL_EMPTY",
-        message: "No published multiple-choice questions match the requested session filters.",
+        error: "empty_pool",
+        code: "PRACTICE_POOL_EMPTY",
+        message: "No questions match the requested filters.",
       },
     };
   }
+
+  const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
+
+  // 2) Hard-exclude: questions in currently active sessions (prevents cross-tab repeats)
+  const { data: activeSessionItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, practice_sessions!inner(status)")
+    .eq("user_id", args.userId)
+    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
+
+  const activeQuestionIds = new Set(
+    (activeSessionItems ?? [])
+      .map((item: any) => item.question_id)
+      .filter(Boolean) as string[],
+  );
+
+  // 3) Soft-deprioritize: fetch full history with last-seen timestamps (section-aware)
+  const { data: historyItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, created_at")
+    .eq("user_id", args.userId)
+    .order("created_at", { ascending: false });
+
+  // Build a map of question_id -> most recent seen timestamp
+  const lastSeenMap = new Map<string, string>();
+  for (const item of (historyItems ?? []) as any[]) {
+    const qid = item.question_id as string;
+    if (!qid) continue;
+    // Only keep the most recent (first encountered since ordered DESC)
+    if (!lastSeenMap.has(qid)) {
+      lastSeenMap.set(qid, item.created_at as string);
+    }
+  }
+
+  // 4) Tiered selection: partition pool, then combine
+  const poolAfterExclusion = exactPoolResult.pool.filter(
+    (q) => !activeQuestionIds.has(q.id),
+  );
+
+  const neverSeen: CanonicalQuestionForServing[] = [];
+  const previouslySeen: Array<{ question: CanonicalQuestionForServing; lastSeen: string }> = [];
+
+  for (const question of poolAfterExclusion) {
+    const lastSeen = lastSeenMap.get(question.id);
+    if (!lastSeen) {
+      neverSeen.push(question);
+    } else {
+      previouslySeen.push({ question, lastSeen });
+    }
+  }
+
+  // Shuffle fresh questions randomly
+  const shuffledFresh = fisherYates(neverSeen);
+
+  // Sort previously seen by oldest-first (most stale = highest priority)
+  previouslySeen.sort((a, b) => a.lastSeen.localeCompare(b.lastSeen));
+  const staleOrdered = previouslySeen.map((entry) => entry.question);
+
+  // Combine: fresh first, then stale, then select
+  const prioritizedPool = [...shuffledFresh, ...staleOrdered];
+  const selection = buildDeterministicPrebuiltSet(prioritizedPool, requestedCount);
 
   const startedAt = new Date().toISOString();
   const insertMetadata: SessionMetadata = {
@@ -1194,7 +1269,7 @@ async function startOrReplaySession(args: {
     user_id: args.userId,
     question_id: question.id,
     question_canonical_id: question.canonical_id,
-    question_section: question.section,
+    question_section: question.section_code,
     question_stem: question.stem,
     question_options: question.options,
     question_difficulty: question.difficulty ?? null,
@@ -1308,7 +1383,7 @@ async function getNextPrebuiltQueuedItem(sessionId: string): Promise<SessionItem
     .select(SESSION_ITEM_SELECT)
     .eq("session_id", sessionId)
     .eq("status", "queued")
-    .eq("attempt_id", null)
+    .is("attempt_id", null)
     .order("ordinal", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -1453,12 +1528,12 @@ async function serveNextForSession(args: {
         question: {
           sessionItemId: unresolved.id,
           stem: canonicalQuestion.stem,
-          section: canonicalQuestion.section,
+          section: canonicalQuestion.section_code,
           questionType: "multiple_choice",
           options: healedOptions,
           difficulty: canonicalQuestion.difficulty ?? null,
         },
-        totalQuestions: metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT,
+        totalQuestions: await countSessionItems(args.sessionId),
         currentIndex: Math.max(0, unresolved.ordinal - 1),
         state: "active",
         calculatorState: metadata.calculator_state ?? null,
@@ -1486,6 +1561,7 @@ async function serveNextForSession(args: {
         safeOptions,
       }),
       stats: await getSessionStats(args.sessionId, args.userId),
+      totalQuestions: await countSessionItems(args.sessionId),
     });
   }
 
@@ -1546,7 +1622,7 @@ async function serveNextForSession(args: {
     })
     .eq("id", nextPrebuilt.id)
     .eq("status", "queued")
-    .eq("attempt_id", null)
+    .is("attempt_id", null)
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
@@ -1576,7 +1652,7 @@ async function serveNextForSession(args: {
       })
       .eq("id", promoted.id)
       .eq("status", "served")
-      .eq("attempt_id", null);
+      .is("attempt_id", null);
 
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
@@ -1627,8 +1703,141 @@ async function serveNextForSession(args: {
       safeOptions,
     }),
     stats: await getSessionStats(args.sessionId, args.userId),
+    totalQuestions: await countSessionItems(args.sessionId),
   });
 }
+
+/**
+ * Returns a list of uncompleted practice sessions for the current user.
+ */
+router.get("/sessions/open", requireSupabaseAuth, async (req, res) => {
+  const requestId = (req as any).requestId;
+  const user = (req as any).user;
+  const userId = user?.id;
+
+  const { data: sessions, error } = await supabaseServer
+    .from("practice_sessions")
+    .select("id, section, mode, status, started_at, metadata")
+    .eq("user_id", userId)
+    .in("status", [...ACTIVE_DB_STATUSES])
+    .order("started_at", { ascending: false });
+
+  if (error) {
+    return res.status(500).json({ error: "failed_to_fetch_open_sessions", message: error.message, requestId });
+  }
+
+  // Enhance sessions with progress info
+  const enhancedSessions = await Promise.all((sessions || []).map(async (s) => {
+    const { count } = await supabaseServer
+      .from("practice_session_items")
+      .select("*", { count: "exact", head: true })
+      .eq("session_id", s.id);
+
+    const { count: answered } = await supabaseServer
+      .from("practice_session_items")
+      .select("*", { count: "exact", head: true })
+      .eq("session_id", s.id)
+      .in("status", ["answered", "skipped"]);
+
+    const metadata = asSessionMetadata(s.metadata);
+    return {
+      id: s.id,
+      section: s.section,
+      mode: s.mode,
+      status: s.status,
+      started_at: s.started_at,
+      target_question_count: metadata.target_question_count || 0,
+      total_items: count || 0,
+      answered_items: answered || 0,
+    };
+  }));
+
+  return res.json({ sessions: enhancedSessions, requestId });
+});
+
+/**
+ * Explicitly resumes an existing session, handling client instance binding and force takeover.
+ */
+router.post("/sessions/:sessionId/resume", requireSupabaseAuth, async (req, res) => {
+  const requestId = (req as any).requestId;
+  const user = (req as any).user;
+  const userId = user?.id;
+  const sessionId = req.params.sessionId;
+  const { client_instance_id, force_takeover } = req.body || {};
+
+  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
+  if (!owned) {
+    return res.status(404).json({ error: "session_not_found", message: "Practice session not found", requestId });
+  }
+
+  const { session } = owned;
+  const metadata = asSessionMetadata(session.metadata);
+
+  // Check for client instance conflict
+  const binding = resolveClientInstanceBinding({
+    boundClientInstanceId: metadata.client_instance_id,
+    requestedClientInstanceId: client_instance_id,
+  });
+
+  if (binding.action === "conflict" && !force_takeover) {
+    return res.status(409).json({
+      error: "client_instance_conflict",
+      code: "CLIENT_INSTANCE_CONFLICT",
+      message: "Session client instance conflict",
+      client_instance_id: binding.boundClientInstanceId ?? null,
+      requestId,
+    });
+  }
+
+  // Update binding if it's a bind action or a forced takeover
+  if (binding.action === "bind" || (binding.action === "conflict" && force_takeover)) {
+    metadata.client_instance_id = client_instance_id;
+    await updateSessionLifecycle(sessionId, metadata, {
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  const state = await getCurrentUnansweredItem(sessionId);
+  if (!state) {
+    // If no active or queued items, the session is likely complete
+    return res.json({
+      sessionId: session.id,
+      state: normalizeSessionState(session.status, metadata),
+      stats: await getSessionStats(sessionId, userId),
+      requestId,
+    });
+  }
+
+  const canonicalQuestion = toCanonicalQuestionFromSessionItem(state);
+  if (!canonicalQuestion) {
+    return res.status(500).json({ error: "question_load_failed", message: "Failed to load question content from session snapshot", requestId });
+  }
+
+  let safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, state.option_order, state.option_token_map);
+  if (!safeOptions) {
+    const rebuilt = buildServedOptions(canonicalQuestion.options);
+    await supabaseServer
+      .from("practice_session_items")
+      .update({ option_order: rebuilt.optionOrder, option_token_map: rebuilt.optionTokenMap, updated_at: new Date().toISOString() })
+      .eq("id", state.id);
+    safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, rebuilt.optionOrder, rebuilt.optionTokenMap);
+  }
+
+  return res.json({
+    sessionId: session.id,
+    sessionItemId: state.id,
+    ordinal: state.ordinal,
+    state: normalizeSessionState(session.status, metadata),
+    calculatorState: metadata.calculator_state ?? null,
+    question: toStudentSafeQuestionDTO({
+      sessionItemId: state.id,
+      question: canonicalQuestion,
+      safeOptions: safeOptions!,
+    }),
+    stats: await getSessionStats(sessionId, userId),
+    requestId,
+  });
+});
 
 router.post("/sessions", requireSupabaseAuth, async (req, res) => {
   const requestId = (req as any).requestId;
@@ -1910,6 +2119,7 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
 
   return res.json({
     sessionId: session.id,
+    section: session.section,
     state,
     currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
     answeredCount: progressCounts.answeredCount,
@@ -1919,9 +2129,9 @@ router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) =
     calculatorState: metadata.calculator_state ?? null,
     lastServedUnansweredItem: unresolved
       ? {
-          sessionItemId: unresolved.id,
-          ordinal: unresolved.ordinal,
-        }
+        sessionItemId: unresolved.id,
+        ordinal: unresolved.ordinal,
+      }
       : null,
     clientInstanceId: boundClient ?? null,
     readOnly: state === "completed" || state === "abandoned",

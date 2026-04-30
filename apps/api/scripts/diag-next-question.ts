@@ -18,7 +18,7 @@ async function diagnose() {
 
   const { data, error } = await supabase
     .from("questions")
-    .select("id, stem, options, section, section_code, difficulty, question_type, status")
+    .select("id, stem, options, section_code, difficulty, question_type, status")
     .eq("question_type", "multiple_choice")
     .eq("status", "published")
     .eq("section_code", sectionCode)
@@ -38,7 +38,7 @@ async function diagnose() {
 
     console.log(`\n[SELECTED QUESTION]`);
     console.log(`  id:           ${q.id}`);
-    console.log(`  section:      ${q.section} (${q.section_code})`);
+    console.log(`  section_code:      ${q.section_code}`);
     console.log(`  difficulty:   ${q.difficulty}`);
     console.log(`  questionType: ${q.question_type}`);
     console.log(`  status:       ${q.status}`);

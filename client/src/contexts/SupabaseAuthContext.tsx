@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { SupabaseProfile } from '@/lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
-import { csrfFetch } from '@/lib/csrf';
+import { clearCsrfToken, csrfFetch, getCsrfToken } from '@/lib/csrf';
+// CSRF handshake utilities
 import type { ConsentSource } from '@shared/legal-consent';
 
 export type SignupOutcome = 'authenticated' | 'verification_required';
@@ -105,6 +106,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         last_login_at: backendUser.last_login_at,
         guardian_email: backendUser.guardian_email,
         updated_at: backendUser.updated_at,
+        // Map additional onboarding status flags
+        profile_completed_at: backendUser.profileCompletedAt,
+        requiredConsentsComplete: backendUser.requiredConsentsComplete,
+        requiredProfileComplete: backendUser.requiredProfileComplete,
+        guardianConsentRequired: backendUser.guardianConsentRequired,
       };
     } catch (error) {
       console.error('[AUTH] Network error fetching user from backend:', error);
@@ -115,26 +121,62 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   // Initialize auth on mount
   useEffect(() => {
     let mounted = true;
+    const abortController = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const initializeAuth = async () => {
       console.log('[AUTH] Starting initialization');
 
-      // First try to get user from backend (if cookies exist from previous session)
-      const backendUser = await fetchUserFromBackend();
+      try {
+        // Pre-fetch CSRF token to "warm up" the handshake and detect connectivity issues early.
+        // This avoids a race condition where the first mutating request (login) hangs on the handshake.
+        console.log('[AUTH] Pre-fetching CSRF token...');
+        await getCsrfToken().catch(err => {
+          if (!abortController.signal.aborted) {
+            console.warn('[AUTH] CSRF pre-fetch failed, will retry on first mutation:', err);
+          }
+        });
 
-      if (mounted && backendUser) {
-        console.log('[AUTH] Found user from backend cookies');
-        setUser(backendUser);
-        setAuthLoading(false);
-        isInitializing.current = false;
-        return;
-      }
+        // Bail out early if unmounted (StrictMode cleanup)
+        if (abortController.signal.aborted) return;
 
-      console.log('[AUTH] No existing backend cookie session found');
-      if (mounted) {
-        clearAuthState();
-        setAuthLoading(false);
-        isInitializing.current = false;
+        // Add a safety timeout to profile fetch to prevent boot-hangs if Supabase/API is slow.
+        const profileFetchPromise = fetchUserFromBackend();
+        const timeoutPromise = new Promise<null>((resolve) => {
+          timeoutId = setTimeout(() => {
+            console.warn('[AUTH] Profile fetch timed out, proceeding as unauthenticated');
+            resolve(null);
+          }, 8000);
+        });
+
+        const backendUser = await Promise.race([profileFetchPromise, timeoutPromise]);
+
+        // Clear the timeout so it doesn't fire after the race has resolved
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+
+        // Bail out if unmounted during the async work
+        if (!mounted || abortController.signal.aborted) return;
+
+        if (backendUser) {
+          console.log('[AUTH] Found user from backend cookies');
+          setUser(backendUser);
+        } else {
+          console.log('[AUTH] No existing session found or fetch timed out');
+          clearAuthState();
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.error('[AUTH] Initialization failed:', error);
+        }
+      } finally {
+        if (mounted && !abortController.signal.aborted) {
+          setAuthLoading(false);
+          isInitializing.current = false;
+          console.log('[AUTH] Initialization complete');
+        }
       }
     };
 
@@ -142,6 +184,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      abortController.abort();
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
     };
   }, [queryClient]);
 
