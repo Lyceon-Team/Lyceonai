@@ -47,7 +47,7 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     let query = supabaseServer
       .from("questions")
       .select(
-        "id, canonical_id, stem, section, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, competencies, correct_answer, answer_choice, answer, status"
+        "id, canonical_id, stem, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, correct_answer, status"
       )
       .eq("question_type", "multiple_choice")
       .eq("status", "published")
