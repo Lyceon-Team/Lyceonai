@@ -18,13 +18,11 @@ export interface CanonicalMcOption {
 export interface CanonicalQuestionRowLike {
   id: string;
   canonical_id?: string | null;
-  section?: string | null;
   section_code?: string | null;
+  test_code?: string | null;
   question_type?: string | null;
   options?: unknown;
   correct_answer?: string | null;
-  answer_choice?: string | null;
-  answer?: string | null;
   explanation?: string | null;
   status?: string | null;
   stem?: string | null;
@@ -33,11 +31,10 @@ export interface CanonicalQuestionRowLike {
   skill?: string | null;
   subskill?: string | null;
   skill_code?: string | null;
-  tags?: unknown;
-  competencies?: unknown;
   source_type?: unknown;
-  option_metadata?: unknown;
+  tags?: unknown;
   answer_text?: string | null;
+  diagram_present?: boolean | null;
 }
 
 function normalizeText(value: unknown): string {
@@ -146,9 +143,9 @@ export function isCanonicalPublishedMcQuestion(row: CanonicalQuestionRowLike): b
   if (!isPublishedLifecycleStatus(row.status)) return false;
   if (row.question_type !== "multiple_choice") return false;
   if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
-  if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) return false;
+  if (!normalizeSectionCode(row.section_code ?? null)) return false;
   if (!hasCanonicalOptionSet(row.options ?? null)) return false;
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) return false;
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) return false;
   if (!normalizeText(row.stem)) return false;
   return true;
 }
@@ -160,9 +157,9 @@ export function isCanonicalPublishedMcQuestion(row: CanonicalQuestionRowLike): b
 export function isCanonicalRuntimeMcQuestion(row: CanonicalQuestionRowLike): boolean {
   if (row.question_type !== "multiple_choice") return false;
   if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
-  if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) return false;
+  if (!normalizeSectionCode(row.section_code ?? null)) return false;
   if (!hasCanonicalOptionSet(row.options ?? null)) return false;
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) return false;
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) return false;
   if (!normalizeText(row.stem)) return false;
   return true;
 }
@@ -170,8 +167,8 @@ export function isCanonicalRuntimeMcQuestion(row: CanonicalQuestionRowLike): boo
 export interface StudentSafeQuestionProjection {
   id: string;
   canonical_id: string | null;
-  section: string | null;
   section_code: CanonicalSectionCode | null;
+  test_code: string | null;
   question_type: "multiple_choice";
   stem: string;
   options: CanonicalMcOption[];
@@ -180,8 +177,7 @@ export interface StudentSafeQuestionProjection {
   skill: string | null;
   subskill: string | null;
   skill_code: string | null;
-  tags: unknown;
-  competencies: unknown;
+  tags: string[] | null;
   correct_answer: null;
   explanation: null;
 }
@@ -196,11 +192,25 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     typeof row.difficulty === "string" || typeof row.difficulty === "number"
       ? row.difficulty
       : null;
+  const sectionCode = normalizeSectionCode(row.section_code ?? null);
+  
+  let tags: string[] | null = null;
+  if (Array.isArray(row.tags)) {
+    tags = row.tags.map(String);
+  } else if (typeof row.tags === "string") {
+    try {
+      const parsed = JSON.parse(row.tags);
+      if (Array.isArray(parsed)) tags = parsed.map(String);
+    } catch {
+      tags = null;
+    }
+  }
+
   return {
     id: String(row.id),
     canonical_id: typeof row.canonical_id === "string" ? row.canonical_id : null,
-    section: typeof row.section === "string" ? row.section : null,
-    section_code: normalizeSectionCode(row.section_code ?? row.section ?? null),
+    section_code: sectionCode,
+    test_code: typeof row.test_code === "string" ? row.test_code : "SAT",
     question_type: "multiple_choice",
     stem: normalizeText(row.stem),
     options: parseCanonicalMcOptions(row.options ?? null),
@@ -209,8 +219,7 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     skill: typeof row.skill === "string" ? row.skill : null,
     subskill: typeof row.subskill === "string" ? row.subskill : null,
     skill_code: typeof row.skill_code === "string" ? row.skill_code : null,
-    tags: row.tags ?? null,
-    competencies: row.competencies ?? null,
+    tags,
     correct_answer: null,
     explanation: null,
   };
@@ -438,7 +447,7 @@ export function validateQuestionForPublish(row: CanonicalQuestionRowLike): Publi
   if (row.question_type !== "multiple_choice") {
     errors.push("question_type must be multiple_choice");
   }
-  if (!normalizeSectionCode(row.section_code ?? row.section ?? null)) {
+  if (!normalizeSectionCode(row.section_code ?? null)) {
     errors.push("section_code must normalize to M or RW");
   }
   if (!normalizeSourceType(row.source_type ?? null)) {
@@ -450,7 +459,7 @@ export function validateQuestionForPublish(row: CanonicalQuestionRowLike): Publi
   if (!hasCanonicalOptionSet(row.options ?? null)) {
     errors.push("options must be exactly 4 choices with keys A/B/C/D");
   }
-  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? row.answer_choice ?? row.answer ?? null, row.options ?? null)) {
+  if (!hasSingleCanonicalCorrectAnswer(row.correct_answer ?? null, row.options ?? null)) {
     errors.push("correct_answer must be one of A/B/C/D and match options");
   }
   return { ok: errors.length === 0, errors };

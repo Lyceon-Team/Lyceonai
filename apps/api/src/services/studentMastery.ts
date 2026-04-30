@@ -4,8 +4,8 @@ import type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary } fr
 import { buildMasterySummaryFromRows, fetchSkillMasteryRows, fetchWeakestClusters, fetchWeakestSkills } from "./mastery-read";
 
 export interface QuestionMetadataSnapshot {
-  exam: string | null;
-  section: string | null;
+  test_code: string | null;
+  section_code: string | null;
   domain: string | null;
   skill: string | null;
   subskill: string | null;
@@ -42,8 +42,8 @@ export async function getQuestionMetadataForAttempt(
 
   const queryColumns = `
       canonical_id,
-      exam,
-      section,
+      test_code,
+      section_code,
       domain,
       skill,
       subskill,
@@ -75,8 +75,8 @@ export async function getQuestionMetadataForAttempt(
   if (error || !data) {
     return {
       canonicalId: null,
-      exam: null,
-      section: null,
+      test_code: null,
+      section_code: null,
       domain: null,
       skill: null,
       subskill: null,
@@ -88,8 +88,8 @@ export async function getQuestionMetadataForAttempt(
 
   return {
     canonicalId: data.canonical_id || null,
-    exam: data.exam || null,
-    section: data.section || null,
+    test_code: data.test_code || null,
+    section_code: data.section_code || null,
     domain: data.domain || null,
     skill: data.skill || null,
     subskill: data.subskill || null,
