@@ -26,6 +26,7 @@ const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const FlowCards = lazy(() => import("@/pages/flow-cards"));
 const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
+const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 
@@ -96,6 +97,7 @@ function Router() {
         <Route path="/practice/math" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/practice/reading-writing" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/practice/random" component={() => <RequireRole allow={['student', 'admin']}><RandomPractice /></RequireRole>} />
+        <Route path="/practice/session/:sessionId" component={() => <RequireRole allow={['student', 'admin']}><ResumePractice /></RequireRole>} />
         <Route path="/math-practice" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
         <Route path="/reading-writing-practice" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
         <Route path="/mastery" component={() => <RequireRole allow={['student', 'admin']}><MasteryPage /></RequireRole>} />
