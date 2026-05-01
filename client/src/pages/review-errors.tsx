@@ -10,6 +10,7 @@ import MathRenderer from "@/components/MathRenderer";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
+import { RecentSessionsCombobox } from "@/components/RecentSessionsCombobox";
 import {
   parseRuntimeContractDisabledFromError,
   type RuntimeContractDisabledState,
@@ -164,6 +165,19 @@ function ReviewErrors() {
     refetchOnReconnect: false,
   });
 
+  const { data: recentSessionsData } = useQuery<{ sessions: Array<{id: string, type: string, label: string, date: string}> }>({
+    queryKey: ["/api/review-errors/recent-sessions"],
+    queryFn: async () => {
+      const response = await apiRequest("/api/review-errors/recent-sessions");
+      if (!response.ok) return { sessions: [] };
+      return response.json();
+    },
+  });
+  
+  const recentSessions = recentSessionsData?.sessions ?? [];
+  const practiceOptions = recentSessions.filter(s => s.type === "practice");
+  const fullLengthOptions = recentSessions.filter(s => s.type === "full_length");
+
   const {
     data: sessionState,
     isLoading: stateLoading,
@@ -203,7 +217,7 @@ function ReviewErrors() {
     setMode("summary");
     setActiveSessionId(null);
     resetPerItemState();
-  }, [fullLengthSessionId, mode, practiceSessionId, resetPerItemState, reviewScope]);
+  }, [fullLengthSessionId, practiceSessionId, resetPerItemState, reviewScope]);
 
   const startReview = useCallback(async (filter: ReviewFilter) => {
     if (reviewUnavailable) {
@@ -234,6 +248,7 @@ function ReviewErrors() {
           full_length_session_id: reviewScope === "by_full_length_session" ? fullLengthSessionId.trim() : null,
           client_instance_id: clientInstanceId,
           idempotency_key: `review-session:${reviewScope}:${filter}:${clientInstanceId}`,
+          force_takeover: true,
         }),
       });
       const payload = (await response.json()) as ReviewStartResponse;
@@ -632,23 +647,25 @@ function ReviewErrors() {
             </div>
 
             {reviewScope === "by_practice_session" && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Practice Session ID</label>
-                <Input
+              <div className="space-y-2 max-w-sm">
+                <label className="text-sm font-medium">Practice Session</label>
+                <RecentSessionsCombobox
+                  options={practiceOptions}
                   value={practiceSessionId}
-                  onChange={(event) => setPracticeSessionId(event.target.value)}
-                  placeholder="Enter practice session ID"
+                  onChange={setPracticeSessionId}
+                  placeholder="Select a recent practice session..."
                 />
               </div>
             )}
 
             {reviewScope === "by_full_length_session" && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Full-Length Session ID</label>
-                <Input
+              <div className="space-y-2 max-w-sm">
+                <label className="text-sm font-medium">Full-Length Session</label>
+                <RecentSessionsCombobox
+                  options={fullLengthOptions}
                   value={fullLengthSessionId}
-                  onChange={(event) => setFullLengthSessionId(event.target.value)}
-                  placeholder="Enter full-length session ID"
+                  onChange={setFullLengthSessionId}
+                  placeholder="Select a recent full-length session..."
                 />
               </div>
             )}

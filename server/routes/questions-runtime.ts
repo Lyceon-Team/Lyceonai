@@ -13,7 +13,6 @@ import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../l
 const QUESTION_SAFE_SELECT = [
   "id",
   "canonical_id",
-  "section",
   "section_code",
   "question_type",
   "stem",
@@ -24,7 +23,6 @@ const QUESTION_SAFE_SELECT = [
   "subskill",
   "skill_code",
   "tags",
-  "competencies",
   "created_at",
 ].join(",");
 
@@ -449,7 +447,7 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
       .eq("question_type", "multiple_choice")
-      .eq("unit_tag", unitTag)
+      .eq("skill", unitTag)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
