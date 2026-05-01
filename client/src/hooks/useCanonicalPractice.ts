@@ -6,6 +6,8 @@ import {
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
 
+const inflightEnsureSession = new Map<string, Promise<string>>();
+
 export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
 export type PracticeOption = {
@@ -177,9 +179,21 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     }
     if (sessionId && !forceTakeover) return sessionId;
 
-    // If we have an initialSessionId, we use the resume endpoint
-    if (sessionId) {
-      const resumeRes = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`, {
+    // Deduplicate strict-mode or concurrent calls for the same session setup
+    const lockKey = initialSessionId 
+      ? `resume-${initialSessionId}` 
+      : `start-${section}-${sessionSpec?.mode ?? "balanced"}`;
+
+    if (inflightEnsureSession.has(lockKey)) {
+      const id = await inflightEnsureSession.get(lockKey)!;
+      setSessionId(id);
+      return id;
+    }
+
+    const promise = (async () => {
+      // If we have an initialSessionId, we use the resume endpoint
+      if (sessionId) {
+        const resumeRes = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -209,11 +223,11 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       return resumeBody.sessionId;
     }
 
-    const startPayload: Record<string, unknown> = {
-      section,
-      mode: sessionSpec?.mode ?? "balanced",
-      client_instance_id: clientInstanceId,
-    };
+      const startPayload: Record<string, unknown> = {
+        section,
+        mode: sessionSpec?.mode ?? "balanced",
+        client_instance_id: clientInstanceId,
+      };
 
     if (Array.isArray(sessionSpec?.sections)) startPayload.sections = sessionSpec.sections;
     if (Array.isArray(sessionSpec?.domains)) startPayload.domains = sessionSpec.domains;
@@ -252,12 +266,21 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       throw new Error("Server did not return a sessionId");
     }
 
-    setSessionId(started.sessionId);
-    if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
-      setCalculatorState(started.calculatorState ?? null);
+      setSessionId(started.sessionId);
+      if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
+        setCalculatorState(started.calculatorState ?? null);
+      }
+      return started.sessionId;
+    })();
+
+    inflightEnsureSession.set(lockKey, promise);
+    try {
+      return await promise;
+    } finally {
+      // Small delay before clearing to ensure strict-mode double renders hit the cache
+      setTimeout(() => inflightEnsureSession.delete(lockKey), 100);
     }
-    return started.sessionId;
-  }, [clientInstanceId, forceTakeover, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
+  }, [clientInstanceId, forceTakeover, initialSessionId, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
 
   const fetchNextQuestion = useCallback(async () => {
     if (runtimeDisabled) return null;

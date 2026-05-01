@@ -35,6 +35,7 @@ export interface CanonicalQuestionRowLike {
   tags?: unknown;
   answer_text?: string | null;
   diagram_present?: boolean | null;
+  option_metadata?: unknown;
 }
 
 function normalizeText(value: unknown): string {
@@ -193,7 +194,7 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
       ? row.difficulty
       : null;
   const sectionCode = normalizeSectionCode(row.section_code ?? null);
-  
+
   let tags: string[] | null = null;
   if (Array.isArray(row.tags)) {
     tags = row.tags.map(String);
