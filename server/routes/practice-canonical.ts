@@ -53,7 +53,7 @@ type StudentSafeQuestionDTO = {
 type CanonicalQuestionForServing = {
   id: string;
   canonical_id: string;
-  section: string;
+  section_code: string;
   stem: string;
   options: McOption[];
   difficulty: string | number | null;
@@ -383,11 +383,11 @@ function buildServedOptions(options: McOption[]): {
 }
 
 function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
-  const correctAnswer = normalizeAnswerKey(q.correct_answer ?? q.answer_choice ?? q.answer);
+  const correctAnswer = normalizeAnswerKey(q.correct_answer);
   return {
     id: String(q.id),
     canonical_id: String(q.canonical_id),
-    section: String(q.section ?? q.section_code ?? ""),
+    section_code: String(q.section_code ?? ""),
     stem: String(q.stem ?? ""),
     options: safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
@@ -416,7 +416,7 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
   return {
     id: String(item.question_id ?? "").trim(),
     canonical_id: canonicalId,
-    section,
+    section_code: section,
     stem,
     options,
     difficulty: item.question_difficulty ?? null,
@@ -445,8 +445,7 @@ function toStudentSafeQuestionDTO(args: {
   const safe = projectStudentSafeQuestion({
     id: args.question.id,
     canonical_id: args.question.canonical_id,
-    section: args.question.section,
-    section_code: args.question.section,
+    section_code: args.question.section_code ?? null,
     question_type: "multiple_choice",
     stem: args.question.stem,
     options: args.question.options,
@@ -456,14 +455,13 @@ function toStudentSafeQuestionDTO(args: {
     subskill: args.question.subskill ?? null,
     skill_code: null,
     tags: null,
-    competencies: null,
     correct_answer: args.question.correct_answer ?? null,
     explanation: args.question.explanation ?? null,
   });
 
   return {
     sessionItemId: args.sessionItemId,
-    section: safe.section ?? args.question.section,
+    section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
     questionType: "multiple_choice",
     options: args.safeOptions,
@@ -656,7 +654,7 @@ async function listExactFilteredQuestionPool(spec: {
     return q.limit(1000);
   };
 
-  let query = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, answer_choice, answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
+  let query = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
 
   const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
   if (allowedSectionCodes.length > 0) {
@@ -675,7 +673,7 @@ async function listExactFilteredQuestionPool(spec: {
   let validPool = normalizedRows.filter((row: any) => isCanonicalRuntimeMcQuestion(row as any));
 
   if (validPool.length === 0) {
-    let legacyQuery = buildBaseQuery("id, canonical_id, section, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, exam, structure_cluster_id");
+    let legacyQuery = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
     if (allowedSectionCodes.length > 0) {
       legacyQuery = legacyQuery.in("section_code", allowedSectionCodes);
     }
@@ -1271,7 +1269,7 @@ async function startOrReplaySession(args: {
     user_id: args.userId,
     question_id: question.id,
     question_canonical_id: question.canonical_id,
-    question_section: question.section,
+    question_section: question.section_code,
     question_stem: question.stem,
     question_options: question.options,
     question_difficulty: question.difficulty ?? null,
@@ -1530,7 +1528,7 @@ async function serveNextForSession(args: {
         question: {
           sessionItemId: unresolved.id,
           stem: canonicalQuestion.stem,
-          section: canonicalQuestion.section,
+          section: canonicalQuestion.section_code,
           questionType: "multiple_choice",
           options: healedOptions,
           difficulty: canonicalQuestion.difficulty ?? null,
