@@ -1,0 +1,68 @@
+# Lyceon — Claude Code Operating Rules
+
+Lyceon is an SAT-prep platform for students 13–18. The system is **deterministic, server-authoritative, anti-leak by design, and audit-friendly**. No feature bypasses entitlement, role rules, explainability, or anti-leak constraints.
+
+## Canonical truth lives in `docs/Spec` (READ-ONLY)
+
+The locked spec corpus under `docs/Spec/` is the single source of truth. It is **canonical and immutable**. You may read it freely; you may **never** edit, move, or "improve" it. When code and spec disagree, the **code is wrong** — fix the code, never the spec. Every implementation must trace to a named spec section.
+
+If a task seems to require changing a spec, STOP and surface it to Karl. Do not work around it.
+
+## The non-negotiable invariants (true every turn)
+
+These are hard stops. Generating any of them is a defect, not a tradeoff:
+
+- **Anti-leak:** no endpoint returns `correct_answer` or `explanation` before submit. Pre-submit payloads return them as `null`. (skill: `anti-leak`)
+- **Server-authoritative:** never trust client claims about role, entitlement, session state, or elapsed time. Validate server-side only.
+- **No client privilege:** UI may show/hide by role, but the server always enforces. Never gate access on client-held role state.
+- **Determinism:** no randomness in question selection once mastery data exists. Mutations are idempotent (`idempotency_key`; Stripe webhooks deduped via event ledger).
+- **Guardian model:** guardian visibility is derived ONLY if (link active AND student entitlement active). Guardians are view-only — zero write access to learning state, zero LISA access.
+- **Mastery is earned from observed events only.** Never infer, estimate, or invent "predicted score" / "AI confidence" / vanity metrics. (skill: `mastery-kpi`)
+- **Privacy:** never log secrets, cookies, tokens, student answers, or tutor prompts/responses. Tutor exchanges are ephemeral — never stored verbatim. No PII in AI prompts.
+- **No escape hatches:** no `any`, no `@ts-ignore`/`@ts-expect-error`, no silent/empty `catch`. `unknown` at boundaries, narrow with Zod.
+
+Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads on demand via skills — do not inline it here.
+
+## Workflow — every feature, every time (Coding Standards §18)
+
+1. **Spec alignment** — confirm behavior against the named `docs/Spec` section. Cite it.
+2. **Schema** — Zod schema first in `packages/shared`; infer TS types from it. Never define a type and schema separately.
+3. **Domain logic** — pure functions (deterministic; idempotent where required).
+4. **Route handler** — thin, fixed order: auth → entitlement → Zod parse → domain → serialize.
+5. **Tests** — anti-leak, idempotency, and denial tests for the new behavior.
+6. **Observability** — structured, redacted logs (no content leakage).
+
+Annotate every implementation:
+`@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`
+
+## Verify before you say "done"
+
+Never report success on assertion alone. Run the check and show the evidence (command + output):
+
+```bash
+pnpm -s run build && pnpm test
+```
+
+A task is open until: build passes, tests pass, no invariant violated, result reproducible. Passing CI is necessary, not sufficient.
+
+## Tooling
+
+- **`pnpm` only.** `npm` is prohibited (blocked by hook). No dependency changes without approval.
+- One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
+- Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
+
+## Before declaring a domain change complete
+
+Invoke `/grill-me` to adversarially self-review the diff against the spec, then hand to the `spec-auditor` subagent. Goal: **never fail a Codex audit** — catch everything Codex would catch in the inner loop first.
+
+## Compact policy
+
+When compacting, always preserve: the spec sections referenced this session, the full list of modified files, the exact test/build commands, and any unresolved invariant findings. Summarize exploration briefly.
+
+## Imports
+
+- Full coding standards: @docs/Spec/lyceon-coding-standards (1).md
+  (an `@import` fails silently if the path is wrong — set the actual filename in docs/Spec)
+  (NOTE: this filename contains a space and "(1)"; if the standards don't auto-load,
+   the `@import` parser likely choked on the space — skills cite §-sections directly regardless)
+- Domain skills load on demand once promoted into `.claude/skills/` (see SKILL-BUILD-PLAN.md): anti-leak, auth-entitlements, determinism-idempotency, stripe-billing, practice-engine, mastery-kpi, tutor-runtime, frontend, testing-audit
