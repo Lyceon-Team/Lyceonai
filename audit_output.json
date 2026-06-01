@@ -1,0 +1,753 @@
+[
+  {
+    "path": "analytics-event-taxonomy.md",
+    "title": "Analytics Event Taxonomy",
+    "can_count": 1,
+    "plan_count": 2,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "4. **Consent enforcement**: All analytics tracking must respect user consent preferences"
+    ],
+    "plan_samples": [
+      "**Last Updated:** 2026-02-02 (Sprint 2 Closeout)",
+      "**Code Cleanup (Sprint 2):**"
+    ],
+    "refs": []
+  },
+  {
+    "path": "AUTH_SECURITY.md",
+    "title": "Auth and Security Architecture (Server Truth)",
+    "can_count": 8,
+    "plan_count": 1,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "- `profiles` is the only runtime profile source of truth.",
+      "- Supabase auth runtime is canonicalized in:"
+    ],
+    "plan_samples": [
+      "## Verification Checklist"
+    ],
+    "refs": []
+  },
+  {
+    "path": "entitlements-map.md",
+    "title": "Entitlements Map",
+    "can_count": 10,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "**Single source of truth** for entitlement gates across client and server surfaces.",
+      "**Last Updated:** 2026-03-17 (Canonical content/review runtime truth reconciliation)"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "ENV.md",
+    "title": "Environment Variables - GitHub Native",
+    "can_count": 1,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "- SUPABASE_URL: SUPABASE_URL must be a valid URL"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "FULL_LENGTH_EXAM_IMPLEMENTATION.md",
+    "title": "Full-Length SAT Exam Implementation Summary",
+    "can_count": 4,
+    "plan_count": 2,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "This implementation adds a complete full-length SAT exam feature to Lyceon, following the Bluebook SAT structure with adaptive testing, deterministic question selection, and server-authoritative timing.",
+      "### 3. Server-Authoritative Timing"
+    ],
+    "plan_samples": [
+      "- \"Before You Begin\" checklist",
+      "## Security Audit Checklist"
+    ],
+    "refs": []
+  },
+  {
+    "path": "FULL_LENGTH_EXAM_SECURITY_SUMMARY.md",
+    "title": "Full-Length SAT Exam - Security Summary",
+    "can_count": 4,
+    "plan_count": 3,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "### 4. Server-Authoritative Timing \u2705",
+      "- [x] Server-authoritative timing"
+    ],
+    "plan_samples": [
+      "### Code Review Checklist",
+      "3. Recommend adding RLS policies within 1 sprint"
+    ],
+    "refs": []
+  },
+  {
+    "path": "OPERATIONS.md",
+    "title": "Operations Guide",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "pr3-hardening-verification.md",
+    "title": "PR #3 Hardening Pass - Final Verification Report (Archived)",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": true,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "route-registry.md",
+    "title": "Route Registry",
+    "can_count": 9,
+    "plan_count": 1,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "**CANONICAL SOURCE OF TRUTH** for all client routes, entitlements, and backing server endpoints.",
+      "This document is the single authoritative registry of:"
+    ],
+    "plan_samples": [
+      "**Note:** These ingestion-related routes were removed as part of Sprint 2 \"Kill ingestion surfaces\" initiative."
+    ],
+    "refs": []
+  },
+  {
+    "path": "SECURITY_RUNBOOK.md",
+    "title": "\ud83d\udd12 Lyceon Security Runbook",
+    "can_count": 0,
+    "plan_count": 1,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [
+      "## 6\ufe0f\u20e3 Deployment Checklist"
+    ],
+    "refs": []
+  },
+  {
+    "path": "SEO_CRAWLABILITY.md",
+    "title": "SEO Crawlability Verification",
+    "can_count": 5,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "For each public route, the initial HTML response must contain:",
+      "- `title`, `description`, `canonical`: resolved from `shared/seo/public-meta.ts`"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "supabase-auth-setup.md",
+    "title": "Supabase Auth Setup Guide (Current Runtime)",
+    "can_count": 4,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "Canonical runtime modules:",
+      "Canonical hydration endpoint:"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "calendar/CALENDAR_RUNTIME_CONTRACT.md",
+    "title": "Calendar Runtime Contract",
+    "can_count": 5,
+    "plan_count": 3,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Calendar Runtime Contract",
+      "## Canonical Route Mount"
+    ],
+    "plan_samples": [
+      "- Task ledger truth: `student_study_plan_tasks`.",
+      "- Task-level ownership: `student_study_plan_tasks.planner_owned` + `is_user_override`."
+    ],
+    "refs": []
+  },
+  {
+    "path": "calendar/CALENDAR_SOURCE_OF_TRUTH.md",
+    "title": "Calendar Source Of Truth",
+    "can_count": 7,
+    "plan_count": 2,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Calendar Source Of Truth",
+      "## Canonical Runtime Owners"
+    ],
+    "plan_samples": [
+      "- `student_study_plan_tasks`:",
+      "rg -n \"calendarRouter|/api/calendar|student_study_plan_tasks\" server apps/api/src/routes apps/api/src/services"
+    ],
+    "refs": []
+  },
+  {
+    "path": "compliance/04-retention-deletion.md",
+    "title": "Retention and Deletion Architecture",
+    "can_count": 0,
+    "plan_count": 1,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [
+      "- Study calendar profiles and plan tasks"
+    ],
+    "refs": []
+  },
+  {
+    "path": "content/CANONICAL_QUESTION_SOURCE_OF_TRUTH.md",
+    "title": "CANONICAL QUESTION SOURCE OF TRUTH",
+    "can_count": 26,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": true,
+    "can_samples": [
+      "# CANONICAL QUESTION SOURCE OF TRUTH",
+      "## Runtime Source Of Truth"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/db-reconciliation-practice-first.md",
+    "title": "DB Reconciliation Audit (Practice-First)",
+    "can_count": 9,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "| Chain Step | Runtime Owner | Canonical DB Surface | Status |",
+      "| Session creation | `server/routes/practice-canonical.ts` | `practice_sessions` | Implemented (table-native, no orchestration RPC) |"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/full-length-contract.md",
+    "title": "Full-Length Contract",
+    "can_count": 12,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Full-Length Contract",
+      "## Canonical tables"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/full-length-smoke.md",
+    "title": "Full-Length Deferred Adaptive Smoke (Hard-Kill Remains)",
+    "can_count": 1,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "Scope: UI trigger, backend routes, and DB persistence for canonical full-length runtime."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/legacy-canonicalization.md",
+    "title": "Legacy Table/Path Canonicalization",
+    "can_count": 10,
+    "plan_count": 1,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Legacy Table/Path Canonicalization",
+      "This file captures canonicalization decisions that are enforced by current runtime code."
+    ],
+    "plan_samples": [
+      "- `student_study_plan_tasks`"
+    ],
+    "refs": []
+  },
+  {
+    "path": "contracts/practice-contract.md",
+    "title": "Practice Contract",
+    "can_count": 9,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Practice Contract",
+      "## Canonical tables"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/practice-smoke.md",
+    "title": "Practice Post-Unlock Smoke (Canonical Runtime)",
+    "can_count": 7,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Practice Post-Unlock Smoke (Canonical Runtime)",
+      "Purpose: evidence-backed smoke to confirm Practice unlock is safe and contract-compliant."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/rate-limit-db-truth-contract.md",
+    "title": "Rate-Limit DB Truth Contract",
+    "can_count": 10,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Rate-Limit DB Truth Contract",
+      "## Canonical DB Objects"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/review-contract.md",
+    "title": "Review Contract",
+    "can_count": 8,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Review Contract",
+      "Review must be driven by persisted wrong/missed items from:"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/review-db-verification.md",
+    "title": "Review Live DB Verification Queries",
+    "can_count": 3,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "question_canonical_id,",
+      "where question_canonical_id is null"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/review-smoke.md",
+    "title": "Review Unlock Smoke (Three-Mode Canonical Runtime)",
+    "can_count": 3,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Review Unlock Smoke (Three-Mode Canonical Runtime)",
+      "Scope: UI trigger, backend routes, and DB persistence for canonical review runtime."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/runtime-law.md",
+    "title": "Lyceon Runtime Contract",
+    "can_count": 22,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Lyceon Runtime Contract",
+      "For student runtime, the source of truth is always the **session layer**, never the raw bank."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "contracts/runtime-route-coverage.md",
+    "title": "Runtime Route Coverage Matrix",
+    "can_count": 2,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "This matrix proves contract-disable enforcement coverage for mounted runtime domains.",
+      "| `app.use(\"/api/practice\", requireSupabaseAuth, requireStudentOrAdmin, practiceCanonicalRouter)` | `practice` | `unlocked` |"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "docs/architecture/APPS_API_ALLOWLIST.md",
+    "title": "APPS API ALLOWLIST",
+    "can_count": 2,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "- `POST /api/questions/validate` is intentionally unmounted (404 runtime contract).",
+      "- Canonical mounted owner for `POST /api/review-errors/attempt` is `submitReviewSessionAnswer` in `server/routes/review-session-routes.ts`."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "docs/architecture/APPS_API_DEPRECATION_BACKLOG.md",
+    "title": "APPS API DEPRECATION BACKLOG",
+    "can_count": 1,
+    "plan_count": 1,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "This document lists `apps/api/**` modules that are NOT imported by `server/index.ts` and must be deprecated/removed in future sprints."
+    ],
+    "plan_samples": [
+      "This document lists `apps/api/**` modules that are NOT imported by `server/index.ts` and must be deprecated/removed in future sprints."
+    ],
+    "refs": []
+  },
+  {
+    "path": "docs/architecture/canonical-question-id.md",
+    "title": "",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "exams/EXAM_SOURCE_OF_TRUTH.md",
+    "title": "EXAM SOURCE OF TRUTH",
+    "can_count": 16,
+    "plan_count": 0,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# EXAM SOURCE OF TRUTH",
+      "Canonical mount points:"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "exams/FULL_TEST_SOURCE_OF_TRUTH.md",
+    "title": "FULL TEST SOURCE OF TRUTH",
+    "can_count": 4,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# FULL TEST SOURCE OF TRUTH",
+      "Server runtime source of truth for full-length SAT exam flow:"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "guardian/GUARDIAN_RUNTIME_CONTRACT.md",
+    "title": "Guardian Runtime Contract",
+    "can_count": 5,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Guardian Runtime Contract",
+      "## Canonical Mount"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "guardian/GUARDIAN_SOURCE_OF_TRUTH.md",
+    "title": "Guardian Source Of Truth",
+    "can_count": 9,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Guardian Source Of Truth",
+      "- Guardian runtime and reporting source of truth: `server/routes/guardian-routes.ts`."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "guardian/GUARDIAN_TRUST_SOURCE_OF_TRUTH.md",
+    "title": "Guardian Trust Source of Truth",
+    "can_count": 5,
+    "plan_count": 0,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Guardian Trust Source of Truth",
+      "**Canonical Source of Truth:** `guardian_links` table."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "kpis/KPI_SOURCE_OF_TRUTH.md",
+    "title": "KPI Source of Truth",
+    "can_count": 16,
+    "plan_count": 0,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# KPI Source of Truth",
+      "## Canonical Runtime Model"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "mastery/MASTERY_EVENT_TAXONOMY.md",
+    "title": "Mastery Event Taxonomy",
+    "can_count": 1,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "## Locked Canonical Event Set"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "mastery/MASTERY_SOURCE_OF_TRUTH.md",
+    "title": "Mastery Source of Truth",
+    "can_count": 18,
+    "plan_count": 0,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Mastery Source of Truth",
+      "## Canonical Writer"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "practice/PRACTICE_RUNTIME_CONTRACT.md",
+    "title": "Practice Runtime Contract",
+    "can_count": 21,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Practice Runtime Contract",
+      "This document defines the locked canonical runtime for Lyceon practice."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "qa/guardian.md",
+    "title": "Guardian/Parent Profile QA Checklist",
+    "can_count": 0,
+    "plan_count": 2,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [
+      "# Guardian/Parent Profile QA Checklist",
+      "## Phase 10: Sprint 1 Production Hardening Tests"
+    ],
+    "refs": []
+  },
+  {
+    "path": "qa/release-gates.md",
+    "title": "Guardian Feature Release Gates",
+    "can_count": 9,
+    "plan_count": 2,
+    "is_superseded": true,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "- Trigger function must be `generate_student_link_code()`",
+      "If guardian_link_audit was created with TEXT but profiles.id is UUID, you must manually remediate:"
+    ],
+    "plan_samples": [
+      "## Pre-Launch Checklist",
+      "## 8. Security Checklist"
+    ],
+    "refs": []
+  },
+  {
+    "path": "runtime/apps-api-runtime.md",
+    "title": "apps/api runtime reality (authoritative)",
+    "can_count": 3,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# apps/api runtime reality (authoritative)",
+      "## Production API runtime (source of truth)"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "security/SERVER_AUTHZ_AUDIT_2026-03-11.md",
+    "title": "Server Authorization Audit (Code-Derived)",
+    "can_count": 4,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "| Practice canonical protected | `server/index.ts:488` | PASS: `/api/practice` requires `requireSupabaseAuth` + `requireStudentOrAdmin` |",
+      "- Practice canonical notes and usage assume authenticated user identity, not client-provided user ID (`server/routes/practice-canonical.ts:520`)."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "security/SUPABASE_RLS_AUDIT_2026-03-11.md",
+    "title": "Supabase RLS Audit (Code/Policy-Derived)",
+    "can_count": 2,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "| Practice core (`practice_sessions`, `answer_attempts`, `practice_events`) | `supabase/migrations/20260110_practice_canonical_plus_events.sql:155-260` | PASS: RLS enabled + own-row policies + explicit service-role policy |",
+      "| Guardian links canonical table | `supabase/migrations/20260309_guardian_links_canonical.sql:109-122` | PASS: RLS enabled + guardian/student scoped read + service-role |"
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "security/pen-test/2026-03-02/FINDINGS.md",
+    "title": "",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "security/pen-test/2026-03-02/PROOFS.md",
+    "title": "",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "security/pen-test/2026-03-02/SCOPE.md",
+    "title": "",
+    "can_count": 0,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "seo/SEO_SOURCE_OF_TRUTH.md",
+    "title": "SEO Source of Truth",
+    "can_count": 9,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# SEO Source of Truth",
+      "This document defines the canonical ownership for public metadata, structured data, crawlability artifacts, and request/logging correlation for Lyceon\u2019s public surfaces."
+    ],
+    "plan_samples": [],
+    "refs": []
+  },
+  {
+    "path": "tutor/TUTOR_RUNTIME_CONTRACT.md",
+    "title": "Tutor Runtime Contract (Cutover)",
+    "can_count": 13,
+    "plan_count": 0,
+    "is_superseded": false,
+    "is_archive": false,
+    "is_draft": false,
+    "can_samples": [
+      "# Tutor Runtime Contract (Cutover)",
+      "## Canonical Mounted Owner"
+    ],
+    "plan_samples": [],
+    "refs": []
+  }
+]
