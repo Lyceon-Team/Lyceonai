@@ -30,3 +30,6 @@ test-results/
 !.env.example
 
 .vercel
+
+# skill-creator eval artifacts (not part of the repo)
+skill-drafts/*-workspace/
