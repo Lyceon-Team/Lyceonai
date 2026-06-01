@@ -235,12 +235,20 @@ export class RagService {
   private extractCompetencyCodes(match: MatchResult): string[] {
     if (!match.metadata) return [];
     
-    // Check for competencyCodes array in metadata
+    // Check for competencyCodes or skillCode in metadata
     if (Array.isArray(match.metadata.competencyCodes)) {
       return match.metadata.competencyCodes;
     }
     
-    // Check for competencies array with code property
+    if (typeof match.metadata.skillCode === 'string') {
+      return [match.metadata.skillCode];
+    }
+    
+    if (typeof match.metadata.skill_code === 'string') {
+      return [match.metadata.skill_code];
+    }
+    
+    // Legacy check for competencies array
     if (Array.isArray(match.metadata.competencies)) {
       return match.metadata.competencies
         .filter((c: any) => c && typeof c.code === 'string')
@@ -589,13 +597,13 @@ export class RagService {
     return this.supabaseRowToQuestionContext({
       canonical_id: this.requireCanonicalId(row),
       test_code: row.test_code ?? row.testCode ?? 'SAT',
-      section_code: row.section_code ?? row.sectionCode ?? this.sectionToCode(row.section ?? null),
-      source_type: row.source_type ?? row.sourceType ?? 0,
+      section_code: row.section_code ?? row.sectionCode ?? 'RW',
+      source_type: row.source_type ?? row.sourceType ?? 1,
       stem: row.stem,
       options: row.options,
       correct_answer: row.correct_answer ?? row.correctAnswer ?? null,
       explanation: row.explanation ?? null,
-      competencies: row.competencies ?? [],
+      competencies: row.skill_code ? [{ code: row.skill_code }] : (row.competencies ?? []),
       difficulty: row.difficulty ?? null,
       tags: row.tags ?? null,
     });

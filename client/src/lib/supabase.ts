@@ -1,4 +1,3 @@
-
 // Types for Supabase auth
 export interface SupabaseProfile {
   id: string;
@@ -12,4 +11,9 @@ export interface SupabaseProfile {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  // Onboarding and status flags
+  profile_completed_at?: string | null;
+  requiredConsentsComplete?: boolean;
+  requiredProfileComplete?: boolean;
+  guardianConsentRequired?: boolean;
 }

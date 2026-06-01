@@ -11,7 +11,7 @@ const queryMock = vi.hoisted(() => ({
 
 const navigateMock = vi.hoisted(() => vi.fn());
 
-let profilePayload: { authenticated?: boolean; user?: { profileCompletedAt?: string } | null } = {
+let profilePayload: { authenticated?: boolean; user?: any | null } = {
   authenticated: false,
   user: null,
 };
@@ -35,16 +35,14 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 vi.mock("@/contexts/SupabaseAuthContext", () => ({
-  useSupabaseAuth: () => ({
-    updatePassword: vi.fn(),
-  }),
+  useSupabaseAuth: () => ({}),
 }));
 
 describe("ProfileComplete redirect continuity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryMock.useMutation.mockReturnValue({
-      mutateAsync: vi.fn(),
+      mutate: vi.fn(),
       isPending: false,
     });
     queryMock.useQuery.mockImplementation(({ queryKey }: { queryKey: unknown }) => {
@@ -55,13 +53,6 @@ describe("ProfileComplete redirect continuity", () => {
           isLoading: false,
           error: null,
           refetch: vi.fn(),
-        };
-      }
-      if (key === "/api/legal/acceptances") {
-        return {
-          data: [],
-          isLoading: false,
-          error: null,
         };
       }
       return {
@@ -84,12 +75,33 @@ describe("ProfileComplete redirect continuity", () => {
   it("redirects already-complete profiles declaratively to /dashboard", () => {
     profilePayload = {
       authenticated: true,
-      user: { profileCompletedAt: "2026-03-24T10:00:00.000Z" },
+      user: {
+        role: "student",
+        requiredProfileComplete: true,
+        profileCompletedAt: "2026-03-24T10:00:00.000Z",
+      },
     };
 
     render(<ProfileComplete />);
 
     expect(screen.getByTestId("redirect").getAttribute("data-to")).toBe("/dashboard");
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("shows guardian consent pending alert while profile remains incomplete", () => {
+    profilePayload = {
+      authenticated: true,
+      user: {
+        role: "student",
+        requiredProfileComplete: false,
+        profileCompletedAt: null,
+        guardianConsentRequired: true,
+      },
+    };
+
+    render(<ProfileComplete />);
+
+    expect(screen.getByTestId("alert-guardian-consent-pending")).toBeInTheDocument();
+    expect(screen.queryByTestId("redirect")).toBeNull();
   });
 });

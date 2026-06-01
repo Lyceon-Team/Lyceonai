@@ -15,6 +15,9 @@ interface AuthUserResponse {
   authenticated?: boolean;
   user?: {
     profileCompletedAt?: string | null;
+    requiredProfileComplete?: boolean;
+    requiredConsentsComplete?: boolean;
+    guardianConsentRequired?: boolean;
     [key: string]: any;
   } | null;
 }
@@ -78,8 +81,16 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // Skip this check if we're already on /profile/complete to avoid redirect loops.
   const isProfileCompletePage = location === '/profile/complete';
   const profileCompletedAt = authData?.user?.profileCompletedAt;
+  const requiredProfileComplete = authData?.user?.requiredProfileComplete;
+  const requiredConsentsComplete = authData?.user?.requiredConsentsComplete;
+  const guardianConsentRequired = authData?.user?.guardianConsentRequired;
+  const needsOnboarding =
+    guardianConsentRequired === true ||
+    requiredConsentsComplete === false ||
+    requiredProfileComplete === false ||
+    !profileCompletedAt;
 
-  if (!isAdmin && !isProfileCompletePage && !profileCompletedAt) {
+  if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     return <Redirect to="/profile/complete" replace />;
   }
 

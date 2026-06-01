@@ -21,8 +21,6 @@ const PUBLISH_SELECT = [
   "id",
   "canonical_id",
   "status",
-  "version",
-  "section",
   "section_code",
   "source_type",
   "question_type",
@@ -38,8 +36,6 @@ const PUBLISH_SELECT = [
   "skill_code",
   "difficulty",
   "tags",
-  "competencies",
-  "ai_generated",
   "updated_at",
 ].join(",");
 
@@ -66,9 +62,7 @@ export interface VersionPublishedQuestionParams {
       | "skill_code"
       | "difficulty"
       | "tags"
-      | "competencies"
       | "source_type"
-      | "section"
       | "section_code"
     >
   >;
@@ -86,10 +80,23 @@ async function loadQuestionForPublish(supabase: SupabaseLike, questionId: string
     throw new Error(`question_not_found:${error?.message ?? questionId}`);
   }
 
-  return data as CanonicalQuestionRowLike & {
-    ai_generated?: boolean | null;
-    version?: number | null;
-  };
+  return data as CanonicalQuestionRowLike;
+}
+
+async function getLatestVersionNumber(supabase: SupabaseLike, canonicalId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("question_versions")
+    .select("version_number")
+    .eq("question_canonical_id", canonicalId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`version_lookup_failed:${error.message}`);
+  }
+
+  return (data as { version_number: number } | null)?.version_number ?? 0;
 }
 
 async function isCanonicalIdAvailable(supabase: SupabaseLike, canonicalId: string, questionId: string): Promise<boolean> {
@@ -110,13 +117,10 @@ async function isCanonicalIdAvailable(supabase: SupabaseLike, canonicalId: strin
   return String((data as { id: string }).id) === String(questionId);
 }
 
-function resolvePublishSourceType(row: CanonicalQuestionRowLike & { ai_generated?: boolean | null }) {
+function resolvePublishSourceType(row: CanonicalQuestionRowLike) {
   const explicit = normalizeSourceType(row.source_type ?? null);
   if (explicit) {
     return explicit;
-  }
-  if (row.ai_generated === true) {
-    return 2 as const;
   }
   return 1 as const;
 }
@@ -168,7 +172,7 @@ export async function publishQuestion(params: PublishQuestionParams) {
   }
 
   let canonicalId = row.canonical_id && isValidCanonicalId(row.canonical_id) ? row.canonical_id : null;
-  const sectionCode = normalizeSectionCode(row.section_code ?? row.section ?? null);
+  const sectionCode = normalizeSectionCode(row.section_code ?? null);
   const sourceType = resolvePublishSourceType(row);
 
   if (!sectionCode) {
@@ -197,7 +201,10 @@ export async function publishQuestion(params: PublishQuestionParams) {
   }
 
   const now = new Date().toISOString();
-  const versionNumber = Math.max(Number(row.version ?? 1) || 1, 1);
+  // For new publish, if version exists in history, we might want to start from 1. 
+  // If it's the first time, it's version 1.
+  const currentMax = canonicalId ? await getLatestVersionNumber(supabase, canonicalId) : 0;
+  const versionNumber = currentMax + 1;
 
   const updatePatch = {
     canonical_id: canonicalId,
@@ -257,10 +264,10 @@ export async function versionPublishedQuestion(params: VersionPublishedQuestionP
     throw new Error("version_blocked_canonical_id_immutable");
   }
 
-  const nextVersion = Math.max(Number(row.version ?? 1) || 1, 1) + 1;
+  const nextVersion = (await getLatestVersionNumber(supabase, canonicalId)) + 1;
   const nextStatus = "qa" as const;
   const nextSourceType = normalizeSourceType(params.patch.source_type ?? row.source_type ?? null) ?? resolvePublishSourceType(row);
-  const nextSectionCode = normalizeSectionCode(params.patch.section_code ?? params.patch.section ?? row.section_code ?? row.section ?? null);
+  const nextSectionCode = normalizeSectionCode(params.patch.section_code ?? row.section_code ?? null);
 
   if (!nextSectionCode) {
     throw new Error("version_validation_failed:section_code_invalid");

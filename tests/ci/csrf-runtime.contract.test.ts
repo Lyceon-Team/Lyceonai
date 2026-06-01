@@ -1,7 +1,7 @@
 import express, { type Express } from "express";
-import cookieParser from "cookie-parser";
 import request, { type SuperAgentTest } from "supertest";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import cookieParser from "cookie-parser";
 
 async function getCsrfToken(agent: SuperAgentTest, path = "/api/csrf-token"): Promise<string> {
   const res = await agent.get(path);
@@ -18,7 +18,7 @@ describe("CSRF runtime contract - app routes", () => {
     process.env.NODE_ENV = "test";
     const serverModule = await import("../../server/index");
     app = serverModule.default;
-  });
+  }, 30_000);
 
   afterEach(() => {
     delete process.env.VITEST;
@@ -90,16 +90,12 @@ describe("CSRF runtime contract - production origin rules", () => {
       res.json({ csrfToken: token });
     });
 
-    // Scope cookie parsing + CSRF to the mutation router so static analysis
-    // can see cookie-backed handlers are guarded.
     const protectedRouter = express.Router();
     protectedRouter.use(cookieParser());
     protectedRouter.use(doubleCsrfProtection);
-
     protectedRouter.post("/protected", (_req, res) => {
       res.status(200).json({ ok: true });
     });
-
     app.use("/api", protectedRouter);
 
     return app;

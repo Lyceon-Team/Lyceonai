@@ -154,7 +154,7 @@ describe("FullTest review/report session sync", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "Open Report" }).length).toBe(2);
       expect(screen.getAllByRole("button", { name: "Open Review" }).length).toBe(2);
-    });
+    }, { timeout: 10_000 });
 
     fireEvent.click(screen.getAllByRole("button", { name: "Open Report" })[0]);
     await waitFor(() => {

@@ -5,45 +5,13 @@ export const legalRouter = Router();
 
 /**
  * POST /api/legal/accept
- * Records acceptance for the authenticated user (server-only auth).
+ * Deprecated after auth-flow cutover.
+ *
+ * Legal acceptance is now captured only at canonical auth entry points
+ * (email signup and explicit Google pre-oauth consent).
  */
-legalRouter.post("/accept", async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) return res.status(401).json({ success: false, error: "Not authenticated" });
-
-    const { docKey, docVersion, actorType, minor } = req.body ?? {};
-    if (!docKey || !docVersion || !actorType || typeof minor !== "boolean") {
-      return res.status(400).json({ success: false, error: "Missing required fields" });
-    }
-
-    if (actorType !== "student" && actorType !== "parent") {
-      return res.status(400).json({ success: false, error: "actorType must be 'student' or 'parent'" });
-    }
-
-    const admin = getSupabaseAdmin();
-
-    const { error } = await admin
-      .from("legal_acceptances")
-      .upsert(
-        {
-          user_id: userId,
-          doc_key: docKey,
-          doc_version: docVersion,
-          actor_type: actorType,
-          minor,
-          user_agent: req.headers["user-agent"] || null,
-          accepted_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,doc_key,doc_version,actor_type" }
-      );
-
-    if (error) return res.status(500).json({ success: false, error: error.message });
-
-    return res.json({ success: true });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, error: e?.message || "Unknown error" });
-  }
+legalRouter.post("/accept", (_req: Request, res: Response) => {
+  return res.status(404).json({ success: false, error: "Not found" });
 });
 
 /**

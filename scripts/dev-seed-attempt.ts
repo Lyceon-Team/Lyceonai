@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from "../apps/api/src/lib/supabase-admin";
 async function main() {
   const supabase = getSupabaseAdmin();
   const devUserId = process.env.DEV_USER_ID;
-  
+
   if (!devUserId) {
     console.error("DEV_USER_ID environment variable is required");
     process.exit(1);
@@ -12,7 +12,7 @@ async function main() {
   console.log("Looking for an existing question...");
   const { data: question, error: qError } = await supabase
     .from("questions")
-    .select("id, canonical_id, section, domain, skill, difficulty")
+    .select("id, canonical_id, section_code, domain, skill, difficulty")
     .not("canonical_id", "is", null)
     .limit(1)
     .single();
@@ -34,7 +34,7 @@ async function main() {
       is_correct: true,
       selected_choice: "A",
       exam: "SAT",
-      section: question.section,
+      section_code: question.section_code,
       domain: question.domain,
       skill: question.skill,
       difficulty_bucket: question.difficulty,

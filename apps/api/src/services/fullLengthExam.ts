@@ -184,7 +184,6 @@ type FullLengthQuestionSnapshotRow = {
   canonical_id: string | null;
   question_type: string | null;
   stem: string | null;
-  section: string | null;
   section_code: string | null;
   options: unknown;
   difficulty: unknown;
@@ -193,14 +192,10 @@ type FullLengthQuestionSnapshotRow = {
   subskill: string | null;
   source_type: unknown;
   diagram_present: boolean | null;
-  tags: unknown;
-  competencies: unknown;
-  answer_choice?: string | null;
-  answer?: string | null;
+  correct_answer: string | null;
   answer_text: string | null;
   explanation: string | null;
-  exam: string | null;
-  structure_cluster_id: string | null;
+  test_code: string | null;
 };
 
 const QUESTION_SNAPSHOT_SELECT = [
@@ -208,7 +203,6 @@ const QUESTION_SNAPSHOT_SELECT = [
   "canonical_id",
   "question_type",
   "stem",
-  "section",
   "section_code",
   "options",
   "difficulty",
@@ -217,14 +211,10 @@ const QUESTION_SNAPSHOT_SELECT = [
   "subskill",
   "source_type",
   "diagram_present",
-  "tags",
-  "competencies",
-  "answer_choice",
-  "answer",
+  "correct_answer",
   "answer_text",
   "explanation",
-  "exam",
-  "structure_cluster_id",
+  "test_code",
 ].join(", ");
 
 export interface CreateSessionParams {
@@ -704,16 +694,12 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question options missing`);
   }
 
-  const correctAnswer = normalizeMcAnswerKey((row as any).answer_choice ?? (row as any).answer);
+  const correctAnswer = normalizeMcAnswerKey(row.correct_answer);
   if (!correctAnswer || !options.some((option) => option.key === correctAnswer)) {
     throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question correct answer missing`);
   }
 
-  const sectionCode = normalizeCanonicalSectionCode(row.section_code ?? row.section ?? null);
-  const fallbackSection = sectionCode === "M" ? "math" : sectionCode === "RW" ? "rw" : "";
-  const section = typeof row.section === "string" && row.section.trim().length > 0
-    ? row.section
-    : fallbackSection;
+  const sectionCode = normalizeCanonicalSectionCode(row.section_code ?? null);
 
   const sourceType = typeof row.source_type === "number"
     ? row.source_type
@@ -724,7 +710,6 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
   return {
     question_canonical_id: typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0 ? row.canonical_id : null,
     question_stem: typeof row.stem === "string" ? row.stem : "",
-    question_section: section,
     question_section_code: sectionCode === "M" ? "MATH" : sectionCode,
     question_type: "multiple_choice" as const,
     question_options: options,
@@ -735,14 +720,12 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     question_skill_code: null,
     question_source_type: Number.isFinite(sourceType as number) ? sourceType : null,
     question_diagram_present: row.diagram_present ?? null,
-    question_tags: row.tags ?? null,
-    question_competencies: row.competencies ?? null,
+    question_tags: null,
+    question_competencies: null,
     question_correct_answer: correctAnswer,
     question_answer_text: row.answer_text ?? null,
     question_explanation: row.explanation ?? null,
     question_option_metadata: null,
-    question_exam: row.exam ?? null,
-    question_structure_cluster_id: row.structure_cluster_id ?? null,
   };
 }
 
@@ -1763,11 +1746,11 @@ async function computeCanonicalExamReport(
 function calculateTimeRemaining(module: FullLengthExamModule): number | null {
   if (!module.startedAt) return null;
   if (module.submittedAt) return 0;
-  
+
   const endsAt = new Date(module.endsAt!).getTime();
   const now = Date.now();
   const remaining = endsAt - now;
-  
+
   return Math.max(0, remaining);
 }
 
@@ -2172,7 +2155,7 @@ export async function getCurrentSession(
       .select("*")
       .eq("id", currentModule.id)
       .single();
-    
+
     if (refreshedModule) {
       Object.assign(currentModule, refreshedModule);
     }
@@ -2199,7 +2182,7 @@ export async function getCurrentSession(
     throw new Error(`Failed to fetch responses: ${responsesError.message}`);
   }
 
-    // Build a map of question_id -> response for quick lookup
+  // Build a map of question_id -> response for quick lookup
   const responseMap = new Map(
     responses?.map((r) => [r.question_id, {
       selectedAnswer: r.selected_answer,
@@ -2230,7 +2213,6 @@ export async function getCurrentSession(
       const safeBase = projectStudentSafeQuestion({
         id: target.question_id,
         canonical_id: target.question_canonical_id ?? null,
-        section: target.question_section ?? null,
         section_code: target.question_section ?? null,
         question_type: target.question_type ?? null,
         stem: target.question_stem ?? null,
@@ -2241,7 +2223,6 @@ export async function getCurrentSession(
         subskill: null,
         skill_code: null,
         tags: null,
-        competencies: null,
         correct_answer: null,
         explanation: null,
       });
@@ -2256,7 +2237,6 @@ export async function getCurrentSession(
         id: target.question_id,
         canonicalId: safeBase.canonical_id,
         stem: safeBase.stem,
-        section: safeBase.section ?? target.question_section ?? "",
         question_type: "multiple_choice" as const,
         options: safeBase.options,
         difficulty,
@@ -2266,8 +2246,8 @@ export async function getCurrentSession(
         // Include previously submitted answer if it exists (for resume support)
         submittedAnswer: submittedAnswer
           ? {
-              selectedAnswer: submittedAnswer.selectedAnswer || undefined,
-            }
+            selectedAnswer: submittedAnswer.selectedAnswer || undefined,
+          }
           : undefined,
       };
     }
@@ -3208,7 +3188,6 @@ export interface SafeQuestionPreCompletion {
   id: string;
   canonical_id: string | null;
   stem: string;
-  section: string;
   section_code: CanonicalSectionCode | null;
   question_type: "multiple_choice";
   options: QuestionOption[];
@@ -3220,7 +3199,6 @@ export interface SafeQuestionPreCompletion {
   source_type: CanonicalSourceType | null;
   diagram_present: boolean | null;
   tags: unknown;
-  competencies: unknown;
 }
 
 /**
@@ -3329,7 +3307,6 @@ function projectSafeQuestionFields(
   const safeBase = projectStudentSafeQuestion({
     id: String(question.id),
     canonical_id: (question.canonical_id as string | null) ?? null,
-    section: (question.section as string | null) ?? null,
     section_code: (question.section_code as string | null) ?? null,
     question_type: (question.question_type as string | null) ?? null,
     stem: (question.stem as string | null) ?? null,
@@ -3340,7 +3317,6 @@ function projectSafeQuestionFields(
     subskill: (question.subskill as string | null) ?? null,
     skill_code: (question.skill_code as string | null) ?? null,
     tags: question.tags ?? null,
-    competencies: question.competencies ?? null,
     correct_answer: null,
     explanation: null,
   });
@@ -3353,7 +3329,6 @@ function projectSafeQuestionFields(
     id: safeBase.id,
     canonical_id: safeBase.canonical_id,
     stem: safeBase.stem,
-    section: safeBase.section ?? String(question.section ?? ""),
     section_code: sectionCode,
     question_type: "multiple_choice",
     options: safeBase.options,
@@ -3365,7 +3340,6 @@ function projectSafeQuestionFields(
     source_type: normalizeSourceType(question.source_type),
     diagram_present: (question.diagram_present as boolean | null) ?? null,
     tags: safeBase.tags ?? null,
-    competencies: safeBase.competencies ?? null,
   };
 }
 
@@ -3440,7 +3414,7 @@ export async function getExamReview(
   const moduleIds = (modules || []).map((m) => m.id);
   const { data: moduleQuestions, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_difficulty, question_source_type, question_diagram_present, question_tags, question_competencies, question_correct_answer, question_answer_text, question_explanation")
+    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_difficulty, question_source_type, question_diagram_present, question_tags, question_correct_answer, question_answer_text, question_explanation")
     .in("module_id", moduleIds.length > 0 ? moduleIds : ["__none__"])
     .order("module_id", { ascending: true })
     .order("order_index", { ascending: true });

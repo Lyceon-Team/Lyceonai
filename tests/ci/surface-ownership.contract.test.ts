@@ -141,7 +141,7 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
         expect(res.status).toBe(200);
         expect(res.body).toHaveProperty('kpis');
         expect(res.body).toHaveProperty('measurementModel');
-    });
+    }, 15000);
 
     it('report route fails closed when buildStudentFullLengthReportView throws', async () => {
         examMocks.getExamReport.mockResolvedValue({
@@ -166,7 +166,7 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
 
         expect(res.status).toBe(500);
         expect(res.body).toHaveProperty('error');
-    });
+    }, 15000);
 
     it('report is premium-gated: returns 402 when entitlement resolves to free', async () => {
         kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({

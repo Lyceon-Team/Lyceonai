@@ -140,9 +140,10 @@ describe('GuardianDashboard full-length history view UX', () => {
       expect(screen.getByText('Alex Student')).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText('Alex Student'));
+    fireEvent.click(screen.getByRole('button', { name: /Alex Student/i }));
 
     await waitFor(() => {
+      expect(screen.getByText('Linked student session history')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Open Report' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Report Locked' })).toBeTruthy();
     });

@@ -503,6 +503,18 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     return next();
   },
   requireSupabaseAdmin: (_req: any, res: any) => res.status(403).json({ error: "Admin access required" }),
+  resolveTokenFromRequest: vi.fn((req: any) => {
+    const token = req.cookies?.["sb-access-token"] ?? null;
+
+    return {
+      token,
+      tokenSource: token ? "cookie:sb-access-token" : null,
+      tokenLength: token ? token.length : null,
+      bearerParsed: false,
+      authHeaderPresent: Boolean(req.headers?.authorization),
+      cookieKeys: Object.keys(req.cookies ?? {}),
+    };
+  }),
   requireRequestUser: (req: any, res: any) => {
     if (!req.user?.id) {
       res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });
@@ -511,14 +523,6 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     return req.user;
   },
   sendForbidden: (res: any, body: any) => res.status(403).json(body),
-  resolveTokenFromRequest: () => ({
-    token: "token",
-    tokenSource: "cookie:sb-access-token",
-    tokenLength: 21,
-    bearerParsed: false,
-    authHeaderPresent: false,
-    cookieKeys: ["sb-access-token"],
-  }),
   getSupabaseAdmin: () => ({ rpc: vi.fn(async () => ({ data: null, error: null })) }),
 }));
 

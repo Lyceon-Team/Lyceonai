@@ -190,20 +190,21 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
       id,
       canonical_id,
       stem,
-      section,
       section_code,
       question_type,
       options,
       difficulty,
       explanation,
-      tags,
-      competencies,
       domain,
       skill,
       subskill,
       skill_code,
       correct_answer,
-      answer_text
+      answer_text,
+      test_code,
+      source_type,
+      tags,
+      diagram_present
     `)
     .eq("question_type", "multiple_choice")
     .limit(limit * 2);
@@ -379,24 +380,20 @@ function mapToStudentQuestion(q: any): any {
   if (!canonicalId) {
     throw new Error("question_missing_canonical_id");
   }
+  const sectionCode = q.section_code;
   return {
     id: q.id,
-    canonicalId,
+    canonical_id: canonicalId,
     stem: q.stem,
-    section: q.section,
-    sectionCode: q.section_code,
-    questionType: 'multiple_choice',
+    section_code: sectionCode,
+    question_type: "multiple_choice",
     options: q.options,
     explanation: q.explanation ?? null,
-    tags: Array.isArray(q.tags) ? q.tags : [],
-    competencies: Array.isArray(q.competencies) ? q.competencies : [],
+    tags: q.tags ?? [],
     domain: q.domain ?? null,
     skill: q.skill ?? null,
     subskill: q.subskill ?? null,
-    skillCode: q.skill_code ?? null,
+    skill_code: q.skill_code ?? null,
     difficulty: q.difficulty ?? null,
-    correctAnswer: q.correct_answer ?? null,
-    answerText: q.answer_text ?? null,
   };
 }
-

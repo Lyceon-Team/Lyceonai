@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, Flame, Target } from "lucide-react";
@@ -38,11 +37,13 @@ export function PracticeShell({
         <div className="container mx-auto px-4 py-4 max-w-7xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={backLink}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  {backLabel}
-                </Link>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => window.location.assign(backLink)}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                {backLabel}
               </Button>
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Academic Practice Runner</p>

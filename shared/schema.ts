@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, jsonb, timestamp, boolean, uuid } from "drizzle-orm/pg-core";
 
 export interface QuestionOption {
   key: "A" | "B" | "C" | "D";
@@ -13,30 +13,22 @@ export interface Competency {
 
 export interface StudentQuestion {
   id: string;
-  canonicalId?: string | null;
-  canonical_id?: string | null;
+  canonical_id: string | null;
   stem: string;
-  section: string;
-  sectionCode?: "M" | "RW" | "MATH" | null;
-  section_code?: "M" | "RW" | "MATH" | null;
-  questionType: "multiple_choice" | "free_response";
-  question_type?: "multiple_choice" | "free_response" | null;
-  type?: "mc" | "fr";
+  section_code: "M" | "RW" | "MATH" | null;
+  question_type: "multiple_choice" | "free_response";
   options: QuestionOption[];
   explanation: string | null;
   tags: string[];
   domain?: string | null;
   skill?: string | null;
   subskill?: string | null;
-  skillCode?: string | null;
-  difficulty?: string | number | null;
-  competencies?: Competency[];
+  skill_code?: string | null;
+  difficulty?: number | null;
 }
 
 export type StudentMcQuestion = StudentQuestion & {
-  questionType: "multiple_choice";
-  question_type?: "multiple_choice" | null;
-  type?: "mc";
+  question_type: "multiple_choice";
 };
 
 // Legacy migration source table kept for active script usage.
@@ -58,31 +50,25 @@ export const users = pgTable("users", {
 
 // Canonical question-bank table used by active scripts.
 export const questions = pgTable("questions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   canonicalId: text("canonical_id").unique(),
   status: text("status").notNull().default("draft"),
-  section: text("section").notNull(),
-  sectionCode: text("section_code"),
-  sourceType: integer("source_type"),
+  sectionCode: text("section_code").notNull(),
+  testCode: text("test_code").notNull().default("SAT"),
   questionType: text("question_type").notNull().default("multiple_choice"),
   stem: text("stem").notNull(),
   options: jsonb("options").$type<Array<{ key: string; text: string }> | string[] | null>(),
-  correctAnswer: text("correct_answer"),
+  correctAnswer: text("correct_answer").notNull(),
   answerText: text("answer_text"),
   explanation: text("explanation"),
-  optionMetadata: jsonb("option_metadata"),
-  difficulty: text("difficulty"),
-  difficultyLevel: integer("difficulty_level"),
-  unitTag: text("unit_tag"),
-  tags: jsonb("tags"),
-  competencies: jsonb("competencies").$type<Array<{ code: string; raw?: string | null }> | null>(),
+  difficulty: integer("difficulty"),
   domain: text("domain"),
   skill: text("skill"),
   subskill: text("subskill"),
   skillCode: text("skill_code"),
-  type: text("type"),
-  embedding: jsonb("embedding").$type<number[] | null>(),
-  version: integer("version").default(1),
+  tags: jsonb("tags").$type<string[] | null>(),
+  sourceType: integer("source_type").default(1),
+  diagramPresent: boolean("diagram_present").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
 });

@@ -40,6 +40,9 @@ describe("useCanonicalPractice contract-disable behavior", () => {
   it("enters terminal-disabled state on contract 503 and does not continue runtime fetch loops", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = asUrl(input);
+      if (url === "/api/csrf-token") {
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      }
       if (url === "/api/practice/sessions") {
         return jsonResponse(
           {
@@ -61,8 +64,9 @@ describe("useCanonicalPractice contract-disable behavior", () => {
     });
 
     const calledUrls = fetchMock.mock.calls.map(([input]) => asUrl(input));
+    const nonCsrfUrls = calledUrls.filter((url) => url !== "/api/csrf-token");
     expect(calledUrls).toContain("/api/practice/sessions");
-    expect(calledUrls.some((url) => url.includes("/api/practice/sessions/") && url.includes("/next"))).toBe(false);
-    expect(fetchMock.mock.calls.length).toBe(1);
+    expect(nonCsrfUrls.some((url) => url.includes("/api/practice/sessions/") && url.includes("/next"))).toBe(false);
+    expect(nonCsrfUrls.length).toBe(1);
   });
 });

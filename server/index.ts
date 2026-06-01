@@ -36,7 +36,7 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer } from "./routes/review-session-routes";
+import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer, getRecentReviewSessions } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -399,6 +399,13 @@ app.get(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   getReviewErrors
+);
+
+app.get(
+  "/api/review-errors/recent-sessions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getRecentReviewSessions
 );
 
 // Review errors attempt endpoint - records student attempts during error review

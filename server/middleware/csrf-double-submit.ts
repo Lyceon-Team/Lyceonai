@@ -50,7 +50,14 @@ const { doubleCsrfProtection: doubleCsrfBaseProtection, generateCsrfToken } = do
   ignoredMethods: ["GET", "HEAD", "OPTIONS"],
 });
 
-const generateToken = generateCsrfToken;
+function generateToken(req: Request, res: Response) {
+  const token = generateCsrfToken(req, res);
+  logger.info("CSRF", "token_generated", "Issued new CSRF token and cookie", {
+    requestId: req.requestId,
+    ip: req.ip,
+  });
+  return token;
+}
 
 function sendCsrfBlocked(
   req: Request,

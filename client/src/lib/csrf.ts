@@ -5,15 +5,19 @@ let inflight: Promise<string> | null = null;
 const MAX_CSRF_RECOVERY_RETRIES = 2;
 
 async function fetchCsrfToken(): Promise<string> {
+  console.log("[CSRF] Fetching fresh token from server...");
   const res = await fetch("/api/csrf-token", { credentials: "include" });
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    console.error("[CSRF] Failed to fetch token:", res.status, text);
     throw new Error(`Failed to fetch CSRF token: ${res.status} ${text}`);
   }
   const data = (await res.json()) as { csrfToken?: string };
   if (!data?.csrfToken) {
+    console.error("[CSRF] Token missing in server response body");
     throw new Error("CSRF token missing in response");
   }
+  console.log("[CSRF] Successfully received token");
   return data.csrfToken;
 }
 
@@ -25,14 +29,21 @@ export async function getCsrfToken(): Promise<string> {
         cachedToken = token;
         return token;
       })
+      .catch((err) => {
+        console.error("[CSRF] Inflight token fetch failed:", err);
+        throw err;
+      })
       .finally(() => {
         inflight = null;
       });
+  } else {
+    console.log("[CSRF] Awaiting existing inflight token request...");
   }
   return inflight;
 }
 
 export function clearCsrfToken(): void {
+  console.log("[CSRF] Clearing cached token");
   cachedToken = null;
   inflight = null;
 }
@@ -70,6 +81,7 @@ export async function csrfFetch(
 ): Promise<Response> {
   const method = (init?.method || "GET").toUpperCase();
   const shouldAttachToken = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const url = typeof input === "string" ? input : (input instanceof URL ? input.href : input.url);
 
   const makeAttempt = async (): Promise<Response> => {
     const headers = new Headers(init?.headers || {});
@@ -78,7 +90,6 @@ export async function csrfFetch(
       headers.set("x-csrf-token", token);
     }
 
-    // CSRF middleware rejects before route execution; bounded retries are safe.
     return fetch(input instanceof Request ? input.clone() : input, {
       ...init,
       headers,
@@ -92,14 +103,20 @@ export async function csrfFetch(
 
   let attempts = 0;
   while (attempts <= MAX_CSRF_RECOVERY_RETRIES) {
+    if (attempts > 0) {
+      console.log(`[CSRF] Retrying request to ${url} (attempt ${attempts + 1}/${MAX_CSRF_RECOVERY_RETRIES + 1})...`);
+    }
+
     const response = await makeAttempt();
     const blockedPayload = await getCsrfBlockedPayload(response);
+    
     if (!blockedPayload) {
       return response;
     }
 
     attempts += 1;
     if (attempts > MAX_CSRF_RECOVERY_RETRIES) {
+      console.error(`[CSRF] Max retries reached for ${url}. Throwing recovery error.`);
       throw new HttpApiError({
         status: 403,
         code: "csrf_blocked",

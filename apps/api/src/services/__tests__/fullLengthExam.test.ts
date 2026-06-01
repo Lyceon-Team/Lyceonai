@@ -755,9 +755,7 @@ function buildPublishedFormFixture(formId: string) {
             return {
               select: vi.fn(() => ({
                 eq: vi.fn(() => ({
-                  order: vi.fn(() => ({
-                    order: vi.fn(async () => ({ data: mockModuleQuestions, error: null })),
-                  })),
+                  order: vi.fn(async () => ({ data: mockModuleQuestions, error: null })),
                 })),
               })),
             };
@@ -1484,7 +1482,12 @@ function buildPublishedFormFixture(formId: string) {
                     return chain;
                   },
                   then: (resolve: any, reject: any) => {
-                    const data = filters.module_id === mockModule2.id ? module2Rows : [];
+                    const data =
+                      filters.module_id === mockModule2.id
+                        ? module2Rows
+                        : filters.module_id === mockCurrentModule.id
+                          ? [{ id: 'module-1-question-1' }]
+                          : [];
                     return Promise.resolve({ data, error: null }).then(resolve, reject);
                   },
                 };
@@ -1680,6 +1683,15 @@ function buildPublishedFormFixture(formId: string) {
                 })),
               })),
             };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [{ id: 'timing-q-1' }],
+                  error: null,
+                })),
+              })),
+            };
           }
           return { select: vi.fn() };
         }),
@@ -1785,6 +1797,15 @@ function buildPublishedFormFixture(formId: string) {
               select: vi.fn(() => ({
                 eq: vi.fn(async () => ({
                   data: [],
+                  error: null,
+                })),
+              })),
+            };
+          } else if (table === 'full_length_exam_questions') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  data: [{ id: 'timing-q-1' }],
                   error: null,
                 })),
               })),

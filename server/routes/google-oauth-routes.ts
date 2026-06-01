@@ -25,9 +25,11 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { logger } from '../logger.js';
 import { BUILD } from '../lib/build.js';
-import { setAuthCookies } from '../lib/auth-cookies.js';
+import { clearAuthCookies, setAuthCookies } from '../lib/auth-cookies.js';
 import { getSupabaseAdmin } from '../middleware/supabase-auth.js';
 import { ensureProfileForAuthUser } from '../lib/profile-bootstrap.js';
+import { LEGAL_DOCS, type ConsentSource } from '../../shared/legal-consent.js';
+import { recordLegalAcceptances } from '../lib/legal-acceptance.js';
 
 const router = Router();
 
@@ -84,6 +86,77 @@ function getRedirectUri(): string {
 
 const STATE_COOKIE_NAME = 'google_oauth_state';
 const STATE_COOKIE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
+const CONSENT_COOKIE_NAME = 'google_oauth_consent';
+const CONSENT_COOKIE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
+
+type GoogleConsentCookie = {
+  studentTermsAccepted: true;
+  privacyPolicyAccepted: true;
+  consentSource: ConsentSource;
+  createdAt: string;
+};
+
+function encodeGoogleConsentCookie(consent: GoogleConsentCookie): string {
+  return Buffer.from(JSON.stringify(consent), 'utf-8').toString('base64url');
+}
+
+function decodeGoogleConsentCookie(rawValue: string | undefined): GoogleConsentCookie | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(rawValue, 'base64url').toString('utf-8')) as Partial<GoogleConsentCookie>;
+    const consentSource =
+      decoded.consentSource === 'google_continue_click'
+        ? decoded.consentSource
+        : decoded.consentSource === 'google_continue_pre_oauth'
+          ? decoded.consentSource
+          : null;
+
+    if (
+      decoded.studentTermsAccepted === true &&
+      decoded.privacyPolicyAccepted === true &&
+      consentSource
+    ) {
+      return {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource,
+        createdAt: typeof decoded.createdAt === 'string' ? decoded.createdAt : new Date().toISOString(),
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseGoogleConsentFromQuery(req: Request): GoogleConsentCookie | null {
+  const termsAccepted = String(req.query.termsAccepted ?? '').toLowerCase();
+  const privacyAccepted = String(req.query.privacyAccepted ?? '').toLowerCase();
+  const source = String(req.query.consentSource ?? '').toLowerCase();
+
+  const hasTermsConsent = termsAccepted === '1' || termsAccepted === 'true';
+  const hasPrivacyConsent = privacyAccepted === '1' || privacyAccepted === 'true';
+
+  if (!hasTermsConsent || !hasPrivacyConsent) {
+    return null;
+  }
+
+  const consentSource: ConsentSource =
+    source === 'google_continue_click'
+      ? 'google_continue_click'
+      : 'google_continue_pre_oauth';
+
+  return {
+    studentTermsAccepted: true,
+    privacyPolicyAccepted: true,
+    consentSource,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 
 function clientIdFingerprint(id: string) {
@@ -133,6 +206,7 @@ router.get("/debug", (req: Request, res: Response) => {
 router.get('/start', (req: Request, res: Response) => {
   const siteUrl = getSiteUrl();
   const redirectUri = getRedirectUri();
+  const consent = parseGoogleConsentFromQuery(req);
   
   const clientIdSuffix = GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID.slice(-6) : 'missing';
   console.log(`[google-oauth] build=${BUILD} redirect_uri=${redirectUri} client_id_suffix=${clientIdSuffix}`);
@@ -148,6 +222,11 @@ router.get('/start', (req: Request, res: Response) => {
     return res.redirect(`${siteUrl}/login?error=oauth_not_configured`);
   }
 
+  if (!consent) {
+    logger.warn('GOOGLE_OAUTH', 'consent_missing', 'Blocked Google OAuth start without explicit legal consent action');
+    return res.redirect(`${siteUrl}/login?error=consent_required`);
+  }
+
   const state = crypto.randomBytes(32).toString('hex');
 
   res.cookie(STATE_COOKIE_NAME, state, {
@@ -157,6 +236,15 @@ router.get('/start', (req: Request, res: Response) => {
     path: '/',
     ...(isProduction && { domain: '.lyceon.ai' }),
     maxAge: STATE_COOKIE_MAX_AGE,
+  });
+
+  res.cookie(CONSENT_COOKIE_NAME, encodeGoogleConsentCookie(consent), {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/',
+    ...(isProduction && { domain: '.lyceon.ai' }),
+    maxAge: CONSENT_COOKIE_MAX_AGE,
   });
 
 
@@ -181,12 +269,16 @@ export async function googleCallbackHandler(req: Request, res: Response) {
   const redirectUri = getRedirectUri();
   const { code, state, error: oauthError } = req.query;
   const storedState = req.cookies[STATE_COOKIE_NAME];
+  const consentCookie = decodeGoogleConsentCookie(req.cookies[CONSENT_COOKIE_NAME]);
 
   // Clear both host-only and domain-scoped variants to avoid stale state issues across www/apex
   res.clearCookie(STATE_COOKIE_NAME, { path: '/' });
+  res.clearCookie(CONSENT_COOKIE_NAME, { path: '/' });
   if (isProduction) {
     res.clearCookie(STATE_COOKIE_NAME, { path: '/', domain: '.lyceon.ai' } as any);
     res.clearCookie(STATE_COOKIE_NAME, { path: '/', domain: 'lyceon.ai' } as any);
+    res.clearCookie(CONSENT_COOKIE_NAME, { path: '/', domain: '.lyceon.ai' } as any);
+    res.clearCookie(CONSENT_COOKIE_NAME, { path: '/', domain: 'lyceon.ai' } as any);
   }
 
 
@@ -212,6 +304,11 @@ export async function googleCallbackHandler(req: Request, res: Response) {
       hasStoredState: !!storedState
     });
     return res.redirect(`${siteUrl}/login?error=oauth_state`);
+  }
+
+  if (!consentCookie) {
+    logger.warn('GOOGLE_OAUTH', 'consent_cookie_missing', 'Blocked Google OAuth callback without consent proof cookie');
+    return res.redirect(`${siteUrl}/login?error=consent_required`);
   }
 
   try {
@@ -268,25 +365,61 @@ export async function googleCallbackHandler(req: Request, res: Response) {
     const userId = data.user.id;
     const userEmail = data.user.email || userId;
     
-    let redirectPath = '/dashboard';
-    
+    let redirectPath = '/profile/complete';
+    let profileMinor = false;
+
     try {
       const profile = await ensureProfileForAuthUser(getSupabaseAdmin(), data.user, {
         source: 'google_oauth_callback',
         requestId: req.requestId,
       });
+      profileMinor = !!profile.is_under_13;
 
-      if (profile.role === 'guardian') {
+      await recordLegalAcceptances(getSupabaseAdmin(), {
+        userId: data.user.id,
+        consentSource: consentCookie.consentSource,
+        userAgent: req.get('user-agent') ?? null,
+        ipAddress: req.ip ?? null,
+        acceptances: [
+          {
+            docKey: LEGAL_DOCS.studentTerms.docKey,
+            docVersion: LEGAL_DOCS.studentTerms.docVersion,
+            actorType: 'student',
+            minor: profileMinor,
+          },
+          {
+            docKey: LEGAL_DOCS.privacyPolicy.docKey,
+            docVersion: LEGAL_DOCS.privacyPolicy.docVersion,
+            actorType: 'student',
+            minor: profileMinor,
+          },
+        ],
+      });
+
+      const profileNeedsCompletion = !profile.profile_completed_at || (profile.is_under_13 && !profile.guardian_consent);
+
+      if (profileNeedsCompletion) {
+        redirectPath = '/profile/complete';
+        logger.info('GOOGLE_OAUTH', 'profile_incomplete', 'Routing Google-authenticated user to profile completion', {
+          userId,
+          role: profile.role,
+          profileCompletedAt: profile.profile_completed_at,
+          guardianConsent: profile.guardian_consent,
+          isUnder13: profile.is_under_13,
+        });
+      } else if (profile.role === 'guardian') {
         redirectPath = '/guardian';
         logger.info('GOOGLE_OAUTH', 'role_detected', 'Guardian role detected, redirecting to /guardian', { userId });
       } else {
         logger.info('GOOGLE_OAUTH', 'role_detected', 'Student/default role, redirecting to /dashboard', { userId, role: profile.role });
       }
     } catch (profileErr) {
-      logger.warn('GOOGLE_OAUTH', 'profile_fetch_failed', 'Could not bootstrap profile for role, defaulting to /dashboard', {
+      logger.error('GOOGLE_OAUTH', 'post_auth_finalize_failed', 'Failed to finalize profile/legal acceptance in callback', {
         userId,
         error: profileErr,
       });
+      clearAuthCookies(res, isProduction);
+      return res.redirect(`${siteUrl}/login?error=post_auth_finalize`);
     }
     
     console.log(`[GOOGLE OAUTH] success user=${userEmail} redirecting to ${redirectPath}`);

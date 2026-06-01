@@ -86,6 +86,7 @@ const startSchema = z.object({
   filter: z.enum(["all", "incorrect", "skipped"]).optional().default("all"),
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
+  force_takeover: z.boolean().optional().default(false),
 });
 
 const submitSchema = z.object({
@@ -342,7 +343,6 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
   const safeBase = projectStudentSafeQuestion({
     id: question.canonical_id,
     canonical_id: question.canonical_id,
-    section: question.section,
     section_code: question.section,
     question_type: "multiple_choice",
     stem: question.stem,
@@ -353,7 +353,6 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
     subskill: null,
     skill_code: null,
     tags: null,
-    competencies: null,
     correct_answer: question.correct_answer,
     explanation: question.explanation,
   });
@@ -377,7 +376,7 @@ async function buildState(session: SessionRow, studentId: string, clientInstance
       question: {
         sessionItemId: served.id,
         stem: safeBase.stem,
-        section: safeBase.section ?? question.section,
+        section_code: safeBase.section_code,
         questionType: "multiple_choice",
         options: safeOptions,
         difficulty: safeBase.difficulty,
@@ -415,6 +414,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
     const mode: ReviewSessionMode = parsed.data.mode;
     const practiceSessionId = optionalString(parsed.data.practice_session_id);
     const fullLengthSessionId = optionalString(parsed.data.full_length_session_id);
+    const force_takeover = parsed.data.force_takeover;
 
     if (mode === "by_practice_session" && !practiceSessionId) {
       return res.status(400).json({
@@ -464,10 +464,10 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
           boundClientInstanceId: existing.client_instance_id,
           requestedClientInstanceId: clientInstanceId,
         });
-        if (binding.action === "conflict") {
+        if (binding.action === "conflict" && !force_takeover) {
           return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
         }
-        if (binding.action === "bind") {
+        if (binding.action === "bind" || (binding.action === "conflict" && force_takeover)) {
           await supabaseServer
             .from("review_sessions")
             .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
@@ -501,42 +501,19 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
       return res.status(422).json({ error: "Review session cannot start due to missing canonical question identity", code: "REVIEW_QUEUE_MISSING_CANONICAL_ID", missingCount: missingCanonical.length, requestId });
     }
 
-    const { data: activeRows, error: activeError } = await supabaseServer
+    let abandonQuery = supabaseServer
       .from("review_sessions")
-      .select("id, student_id, status, started_at, completed_at, abandoned_at, client_instance_id")
+      .update({ status: "abandoned", abandoned_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("student_id", user.id)
-      .in("status", ["created", "active"])
-      .order("created_at", { ascending: false })
-      .limit(2);
+      .in("status", ["created", "active"]);
 
-    if (activeError) {
-      return res.status(500).json({ error: "Failed to load active review sessions", code: "REVIEW_SESSION_LOOKUP_FAILED", detail: activeError.message, requestId });
+    if (idempotencyKey) {
+      abandonQuery = abandonQuery.neq("idempotency_key", idempotencyKey);
     }
 
-    const activeSessions = (activeRows ?? []).map(mapSession);
-    if (activeSessions.length > 1) {
-      return res.status(409).json({ error: "Ambiguous active review session state", code: "AMBIGUOUS_ACTIVE_REVIEW_SESSION", requestId });
-    }
-
-    if (activeSessions.length === 1) {
-      const existing = activeSessions[0];
-      const binding = resolveClientInstanceBinding({
-        boundClientInstanceId: existing.client_instance_id,
-        requestedClientInstanceId: clientInstanceId,
-      });
-      if (binding.action === "conflict") {
-        return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
-      }
-      if (binding.action === "bind") {
-        await supabaseServer
-          .from("review_sessions")
-          .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
-          .eq("id", existing.id)
-          .eq("student_id", user.id);
-        existing.client_instance_id = binding.requestedClientInstanceId;
-      }
-      const state = await buildState(existing, user.id, clientInstanceId);
-      return res.status(200).json({ replayed: true, session: existing, state });
+    const { error: abandonError } = await abandonQuery;
+    if (abandonError) {
+      console.warn(`[startReviewErrorSession] Failed to auto-abandon existing review sessions for user ${user.id}: ${abandonError.message}`);
     }
 
     const nowIso = new Date().toISOString();
@@ -570,10 +547,10 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
             boundClientInstanceId: existing.client_instance_id,
             requestedClientInstanceId: clientInstanceId,
           });
-          if (binding.action === "conflict") {
+          if (binding.action === "conflict" && !force_takeover) {
             return sendClientInstanceConflict(res, requestId, binding.boundClientInstanceId);
           }
-          if (binding.action === "bind") {
+          if (binding.action === "bind" || (binding.action === "conflict" && force_takeover)) {
             await supabaseServer
               .from("review_sessions")
               .update({ client_instance_id: binding.requestedClientInstanceId, updated_at: new Date().toISOString() })
@@ -602,6 +579,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
         difficulty: snapshot.difficulty,
         answer_choice: snapshot.questionCorrectAnswer,
         answer: snapshot.questionCorrectAnswer,
+        correct_answer: snapshot.questionCorrectAnswer,
         explanation: snapshot.questionExplanation,
       };
       if (!isCanonicalRuntimeMcQuestion(runtimeSnapshotCandidate as any)) {
@@ -945,6 +923,80 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     return res.status(500).json({ error: "Internal server error", detail: error?.message ?? "unknown", requestId: req.requestId });
   }
 }
+
+
+export async function getRecentReviewSessions(req: AuthenticatedRequest, res: Response) {
+  const requestId = req.requestId;
+  try {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+
+    // Fetch practice sessions
+    const { data: practiceRows, error: practiceError } = await supabaseServer
+      .from("practice_sessions")
+      .select("id, status, started_at, section")
+      .eq("user_id", user.id)
+      .order("started_at", { ascending: false })
+      .limit(20);
+
+    if (practiceError) {
+      console.error("[getRecentReviewSessions] Practice sessions fetch error:", practiceError);
+    }
+
+    // Fetch full-length sessions
+    const { data: fullLengthRows, error: fullLengthError } = await supabaseServer
+      .from("full_length_exam_sessions")
+      .select("id, status, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (fullLengthError) {
+      console.error("[getRecentReviewSessions] Full-length sessions fetch error:", fullLengthError);
+    }
+
+    const sessions: Array<{ id: string; type: string; label: string; date: string }> = [];
+
+    if (practiceRows) {
+      for (const row of practiceRows) {
+        if (!row.started_at) continue;
+        const dateObj = new Date(row.started_at);
+        const dateStr = dateObj.toLocaleDateString();
+        const sectionStr = row.section ? ` - ${row.section}` : "";
+        sessions.push({
+          id: row.id,
+          type: "practice",
+          label: `Practice${sectionStr} (${dateStr})`,
+          date: row.started_at,
+        });
+      }
+    }
+
+    if (fullLengthRows) {
+      for (const row of fullLengthRows) {
+        if (!row.created_at) continue;
+        const dateObj = new Date(row.created_at);
+        const dateStr = dateObj.toLocaleDateString();
+        sessions.push({
+          id: row.id,
+          type: "full_length",
+          label: `Full-Length Exam (${dateStr})`,
+          date: row.created_at,
+        });
+      }
+    }
+
+    // Sort by date descending
+    sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return res.status(200).json({
+      sessions: sessions.slice(0, 30),
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: "Failed to fetch recent sessions", detail: error?.message, requestId });
+  }
+}
+
 
 
 

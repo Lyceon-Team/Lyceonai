@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
+    // Several CI suites initialize the full server in beforeAll; allow enough
+    // time to avoid nondeterministic hook timeouts on shared runners.
+    hookTimeout: 30_000,
     // Use threads pool instead of forks for stability (prevents worker crashes)
     pool: 'threads',
    

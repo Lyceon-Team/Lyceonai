@@ -4,6 +4,25 @@ const { generateContentMock } = vi.hoisted(() => ({
   generateContentMock: vi.fn(),
 }));
 
+vi.mock(
+  "@google-cloud/vertexai",
+  () => ({
+    VertexAI: class {
+      getGenerativeModel() {
+        return { generateContent: generateContentMock };
+      }
+    },
+    FunctionDeclarationSchemaType: {
+      OBJECT: "OBJECT",
+      STRING: "STRING",
+      BOOLEAN: "BOOLEAN",
+      ARRAY: "ARRAY",
+      INTEGER: "INTEGER",
+    },
+  }),
+  { virtual: true },
+);
+
 function buildRequest(timeoutMs: number) {
   return {
     conversation_id: "11111111-1111-4111-8111-111111111111",

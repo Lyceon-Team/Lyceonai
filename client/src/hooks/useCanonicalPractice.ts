@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { csrfFetch } from "@/lib/csrf";
+import { getClientInstanceId } from "@/lib/client-instance";
 import {
   type RuntimeContractDisabledState,
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
+
+const inflightEnsureSession = new Map<string, Promise<string>>();
 
 export type PracticeSectionParam = "math" | "reading_writing" | "random";
 
@@ -119,11 +122,12 @@ function normalizeQuestion(raw: PracticeQuestion | null): PracticeQuestion | nul
   };
 }
 
-export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?: PracticeSessionSpecInput) {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?: PracticeSessionSpecInput, initialSessionId?: string | null) {
+  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
   const [sessionItemId, setSessionItemId] = useState<string | null>(null);
-  const [clientInstanceId] = useState(() => crypto.randomUUID());
+  const [clientInstanceId] = useState(() => getClientInstanceId());
   const [clientAttemptId, setClientAttemptId] = useState(() => crypto.randomUUID());
+  const [forceTakeover, setForceTakeover] = useState(false);
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -173,13 +177,57 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (runtimeDisabled) {
       throw new Error(`${runtimeDisabled.code}: ${runtimeDisabled.message}`);
     }
-    if (sessionId) return sessionId;
+    if (sessionId && !forceTakeover) return sessionId;
 
-    const startPayload: Record<string, unknown> = {
-      section,
-      mode: sessionSpec?.mode ?? "balanced",
-      client_instance_id: clientInstanceId,
-    };
+    // Deduplicate strict-mode or concurrent calls for the same session setup
+    const lockKey = initialSessionId 
+      ? `resume-${initialSessionId}` 
+      : `start-${section}-${sessionSpec?.mode ?? "balanced"}`;
+
+    if (inflightEnsureSession.has(lockKey)) {
+      const id = await inflightEnsureSession.get(lockKey)!;
+      setSessionId(id);
+      return id;
+    }
+
+    const promise = (async () => {
+      // If we have an initialSessionId, we use the resume endpoint
+      if (sessionId) {
+        const resumeRes = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          client_instance_id: clientInstanceId,
+          force_takeover: forceTakeover,
+        }),
+      });
+
+      const resumeBody = await resumeRes.json().catch(() => null);
+      if (resumeRes.status === 409) {
+        throw { code: "CLIENT_INSTANCE_CONFLICT", message: resumeBody.message, boundId: resumeBody.client_instance_id };
+      }
+
+      if (!resumeRes.ok) {
+        throw new Error(resumeBody?.message || `Failed to resume session (${resumeRes.status})`);
+      }
+
+      setSessionId(resumeBody.sessionId);
+      setSessionItemId(resumeBody.sessionItemId);
+      if (Object.prototype.hasOwnProperty.call(resumeBody, "calculatorState")) {
+        setCalculatorState(resumeBody.calculatorState ?? null);
+      }
+      return resumeBody.sessionId;
+    }
+
+      const startPayload: Record<string, unknown> = {
+        section,
+        mode: sessionSpec?.mode ?? "balanced",
+        client_instance_id: clientInstanceId,
+      };
 
     if (Array.isArray(sessionSpec?.sections)) startPayload.sections = sessionSpec.sections;
     if (Array.isArray(sessionSpec?.domains)) startPayload.domains = sessionSpec.domains;
@@ -198,6 +246,11 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     });
 
     const startPayloadBody = await startRes.json().catch(() => null);
+
+    if (startRes.status === 403 && startPayloadBody?.code === "SESSION_LIMIT_EXCEEDED") {
+      throw { code: "SESSION_LIMIT_EXCEEDED", message: startPayloadBody.message };
+    }
+
     const disabled = parseRuntimeContractDisabledFromPayload("practice", startRes.status, startPayloadBody);
     if (disabled) {
       setRuntimeDisabled(disabled);
@@ -205,7 +258,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     }
 
     if (!startRes.ok) {
-      throw new Error(`Failed to start practice session (${startRes.status})`);
+      throw new Error(startPayloadBody?.message || `Failed to start practice session (${startRes.status})`);
     }
 
     const started = (startPayloadBody ?? {}) as { sessionId?: string; calculatorState?: unknown | null };
@@ -213,12 +266,21 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       throw new Error("Server did not return a sessionId");
     }
 
-    setSessionId(started.sessionId);
-    if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
-      setCalculatorState(started.calculatorState ?? null);
+      setSessionId(started.sessionId);
+      if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
+        setCalculatorState(started.calculatorState ?? null);
+      }
+      return started.sessionId;
+    })();
+
+    inflightEnsureSession.set(lockKey, promise);
+    try {
+      return await promise;
+    } finally {
+      // Small delay before clearing to ensure strict-mode double renders hit the cache
+      setTimeout(() => inflightEnsureSession.delete(lockKey), 100);
     }
-    return started.sessionId;
-  }, [clientInstanceId, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
+  }, [clientInstanceId, forceTakeover, initialSessionId, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
 
   const fetchNextQuestion = useCallback(async () => {
     if (runtimeDisabled) return null;
@@ -512,5 +574,6 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     calculatorState,
     persistCalculatorState,
     runtimeDisabled,
+    setForceTakeover,
   };
 }

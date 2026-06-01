@@ -1,9 +1,10 @@
 import { buildDeletedEmail, isGraceWindowExpired } from '../routes/account-deletion-routes';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as authMiddleware from '../middleware/supabase-auth';
 
 describe('Deletion Lifecycle', () => {
     afterEach(() => {
-        jest.restoreAllMocks();
+        vi.restoreAllMocks();
         authMiddleware.setDeletionStatusResolverForTests(null);
     });
     it('deletion request enters pending state', () => {
@@ -34,10 +35,10 @@ describe('Deletion Lifecycle', () => {
 
         const req: any = { user: { id: 'user_123' }, requestId: 'req_1' };
         const res: any = {
-            status: jest.fn().mockReturnThis(),
-            json: jest.fn(),
+            status: vi.fn().mockReturnThis(),
+            json: vi.fn(),
         };
-        const next = jest.fn();
+        const next = vi.fn();
 
         await authMiddleware.requireSupabaseAuth(req, res, next);
 
