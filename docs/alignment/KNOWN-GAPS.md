@@ -25,29 +25,31 @@ Two real type errors (pre-existing drift), exam domain:
 
 ---
 
-## Quarantined CI tests — 18 failures / 8 files 🔴
-Dominant cause is **stale Supabase test mocks**: production routes (notably
-`server/routes/practice-canonical.ts`) call query-builder methods the test doubles never
-implemented (`.is(...)`, deeper `.select(...)` chains), so mocked queries return empty/throw
-and cascade into length/equality mismatches. **No anti-leak breach is demonstrated** — e.g.
-`practice-reference.contract.test.ts` fails at `toHaveLength(1)` on an *empty* payload (fails safe),
-never reaching the `correct_answer`/`explanation` null assertions.
+## Deleted CI contract tests — rebuild later 🔴 (decided: clean delete + rebuild)
+Pass 0 **deleted** 8 stale CI contract files wholesale (Karl's call: "clean delete and
+rebuild"). They were red predominantly from **stale Supabase test mocks**: production routes
+(notably `server/routes/practice-canonical.ts`) call query-builder methods the test doubles never
+implemented (`.is(...)`, deeper `.select(...)` chains), so mocked queries returned empty/threw.
+**No anti-leak breach was demonstrated** — e.g. `practice-reference` failed at `toHaveLength(1)`
+on an *empty* payload (fails safe), never reaching the `correct_answer`/`explanation` null checks.
 
-| File | Fails | Likely cause | Owner pass |
-|------|-------|--------------|------------|
-| `tests/ci/practice-contract.test.ts` | 9 | Stale Supabase mock (`.is`/`.select` missing) | practice-engine |
-| `tests/ci/practice-reference.contract.test.ts` | 1 | Stale mock → empty payload (anti-leak fails safe) | practice-engine / anti-leak |
-| `tests/ci/auth.ci.test.ts` | 2 | Public-endpoint / cookie assertions — needs individual triage | auth-entitlements |
-| `tests/ci/routes.ci.test.ts` | 1 | Public `/api/questions/recent` access — needs triage | auth-entitlements |
-| `tests/ci/csrf-route-family.contract.test.ts` | 1 | CSRF route-family — needs triage | auth-entitlements |
-| `tests/ci/canonical-content.publish.contract.test.ts` | 2 | Publish/versioning lifecycle — needs triage | practice-engine / content |
-| `tests/ci/full-length-deferred-materialization.contract.test.ts` | 1 | Materialization count ("got 2") — likely stale mock | practice-engine |
-| `tests/ci/destructive-usage.audit.test.ts` | 1 | Static destructive-usage allowlist drift | testing-audit |
+Each deleted file must be **rebuilt** against the current routes (with a corrected Supabase mock
+or a real test DB) by the owning domain pass. The ~84 passing tests inside these files were
+deleted too and need re-coverage.
 
-**Re-arm:** as each domain pass repairs its file(s), delete the matching `--exclude` line in the
-required `ci` job's "green subset" step (and drop the file from the `ci-known-gaps` list).
-The un-triaged rows (auth/routes/csrf/canonical-publish/destructive-audit) still need a
-mock-rot-vs-real classification inside their domain pass before re-arming.
+| Deleted file | Coverage to rebuild | Owner pass |
+|--------------|---------------------|------------|
+| `tests/ci/practice-contract.test.ts` | practice runtime contract (skip/replay determinism, entitlement-loss progression, anti-leak on `/next`) | practice-engine |
+| `tests/ci/practice-reference.contract.test.ts` | published-MC student-safe anti-leak payloads | practice-engine / anti-leak |
+| `tests/ci/auth.ci.test.ts` | auth cookie security + public-endpoint access (26 were passing) | auth-entitlements |
+| `tests/ci/routes.ci.test.ts` | public route access incl. `/api/questions/recent` (20 were passing) | auth-entitlements |
+| `tests/ci/csrf-route-family.contract.test.ts` | CSRF route-family enforcement | auth-entitlements |
+| `tests/ci/canonical-content.publish.contract.test.ts` | publish/versioning lifecycle | practice-engine / content |
+| `tests/ci/full-length-deferred-materialization.contract.test.ts` | RW1/Math1-only materialization gates | practice-engine |
+| `tests/ci/destructive-usage.audit.test.ts` | static destructive-SQL allowlist guard (governance) | testing-audit |
+
+**Re-arm:** each domain pass rebuilds its file(s) under `tests/ci/`; once green they are picked up
+automatically by the required `ci` job's `pnpm run test:ci` (no exclusion list to maintain).
 
 ---
 
