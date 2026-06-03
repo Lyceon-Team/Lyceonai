@@ -1,0 +1,42 @@
+{
+  "skill_name": "anti-leak",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "I'm adding a GET /api/practice/next handler that returns the next question for the active practice session. My first cut just selects the row from the `questions` table and returns it as JSON. Wire it up the right way for our codebase.",
+      "expected_output": "Builds a server-authoritative read path that returns only the student-visible projection (stem, passage, options, assets, ordinal) and never correct_answer/explanation/option_metadata pre-submit. Serves from the session_items prefilled snapshot rather than projecting a raw questions row to the client. Cites a real docs/Spec section (e.g. Doc 02B §14/§20 or Coding Standards §5/§17) without restating constant values, and calls for an anti-leak route test (Coding Standards §14).",
+      "files": [],
+      "assertions": [
+        {"text": "Returns only a student-visible projection pre-submit; payload excludes correct_answer, explanation, and option_metadata"},
+        {"text": "Serves from the session_items prefilled snapshot pattern rather than projecting a raw questions row straight to the client"},
+        {"text": "Cites at least one real docs/Spec section that actually exists (e.g. Doc 02B §14, Doc 02B §20, or Coding Standards §5/§17)"},
+        {"text": "Invents no fake section numbers and restates no canonical constant values"},
+        {"text": "Calls for or adds an anti-leak route test per Coding Standards §14"}
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Quick review: my /practice/next response includes correct_answer and explanation in the payload so the client can show instant feedback without an extra round-trip. That keeps it snappy. Looks good to ship?",
+      "expected_output": "Rejects the design as an anti-leak violation. Explains the pre-submit payload must never carry correct_answer/explanation/option_metadata, that enforcement is server-side (a client-side decision is bypassable), and that the fix is a typed projection of the session_items snapshot so the unsafe shape can't be built. Cites a real anti-leak section (Doc 02B §20 / INV-02B-01 / Coding Standards §5/§17) without restating constants.",
+      "files": [],
+      "assertions": [
+        {"text": "Clearly rejects the design and does NOT approve returning correct_answer/explanation pre-submit"},
+        {"text": "Cites a real anti-leak spec section (Doc 02B §20, INV-02B-01, or Coding Standards §5/§17)"},
+        {"text": "Explains the remedy in terms of server-side enforcement and/or an unrepresentable pre-submit shape, not just client-side hiding"},
+        {"text": "Invents no fake section numbers and restates no canonical constant values"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Small UX win for the full-length exam: as soon as the student submits the last question and the exam is complete, let's immediately show them which questions they got right and wrong. Can you add that to the exam-complete handler?",
+      "expected_output": "Rejects revealing correctness on completion. Identifies that full-length exam reveal is gated on review-unlock, which depends on a successful score_runs row (04A completion outbox -> 04B score_runs -> 04C gates unlock), NOT on the student finishing the last question. Mid/at-completion correctness must not be shown. Cites a real section (Doc 04C §2.5/§2.7) without restating constants.",
+      "files": [],
+      "assertions": [
+        {"text": "Rejects showing per-question correctness immediately on exam completion"},
+        {"text": "Identifies that exam reveal is gated on review-unlock / score_runs success, not on completion alone"},
+        {"text": "Cites a real spec section governing exam reveal gating (e.g. Doc 04C §2.5/§2.7 or Doc 02B §20)"},
+        {"text": "Invents no fake section numbers and restates no canonical constant values"}
+      ]
+    }
+  ]
+}
