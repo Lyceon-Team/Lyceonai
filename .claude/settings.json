@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm -s run build)",
+      "Bash(pnpm run build)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm exec prettier:*)",
+      "Bash(pnpm exec eslint:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)"
+    ],
+    "deny": [
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(yarn:*)",
+      "Edit(docs/Spec/**)",
+      "Write(docs/Spec/**)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/block-spec-and-secrets.mjs"] }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/block-npm.mjs"] }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit-checks.mjs"] }
+        ]
+      }
+    ]
+  }
+}
