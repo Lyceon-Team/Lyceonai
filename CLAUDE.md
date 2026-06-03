@@ -51,6 +51,14 @@ A task is open until: build passes, tests pass, no invariant violated, result re
 - One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
 - Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
 
+## Unified code across agents & sessions
+
+Multiple subagents and parallel sessions work this repo. They must produce **one coherent codebase**, not several divergent ones. Before writing a helper, type, schema, pattern, or constant: **search for an existing canonical one and consume it** — never fork a second version. Shared primitives (`packages/shared` schemas/types, DB utilities, the logger, identity helpers) are single-source-of-truth; extend the canonical definition, don't duplicate it. Foundations land before the work that depends on them. When integrating parallel work, verify it reuses existing primitives and follows established patterns rather than introducing a parallel approach. Divergence and duplication are defects, even when no two edits touch the same line.
+
+## Plan before implementing
+
+For any non-trivial change, use **plan mode**: explore and read first, propose a plan, proceed to edits only after the plan is reviewed. Use **subagents** for investigation, parallel exploration, and independent review so the main thread stays focused and uncluttered.
+
 ## Before declaring a domain change complete
 
 Invoke `/grill-me` to adversarially self-review the diff against the spec, then hand to the `spec-auditor` subagent. Goal: **never fail a Codex audit** — catch everything Codex would catch in the inner loop first.
