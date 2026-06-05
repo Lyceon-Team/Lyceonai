@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, cleanup]
 
 # CI runs without secrets by default (for forks and basic validation).
 # Secrets are only required for integration tests, which are skipped here.
@@ -29,8 +29,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -80,8 +80,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -132,8 +132,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4

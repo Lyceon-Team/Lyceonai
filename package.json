@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": "22"
+  },
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx --env-file=.env.local server/index.ts",
     "dev:server": "cross-env NODE_ENV=development tsx --env-file=.env.local server/index.ts",
@@ -14,7 +18,7 @@
     "postbuild": "node scripts/check-no-cdn-katex.js",
     "start": "cross-env NODE_ENV=production node dist/index.js",
     "check": "tsc",
-    "typecheck": "npm run check",
+    "typecheck": "pnpm run check",
     "lint": "echo 'No linting configured'",
     "db:push": "drizzle-kit push",
     "test": "vitest run",
@@ -31,7 +35,7 @@
     "tutor:schema:proof": "tsx scripts/tutor-schema-proof.ts",
     "tutor:schema:assert": "tsx scripts/tutor-schema-proof.ts --assert-only",
     "audit:ci": "pnpm audit --json > audit-output.json || test -s audit-output.json",
-    "verify:csrf": "npx tsx scripts/verify-csrf-protection.ts"
+    "verify:csrf": "pnpm exec tsx scripts/verify-csrf-protection.ts"
   },
   "dependencies": {
     "@google-cloud/documentai": "^9.6.0",
