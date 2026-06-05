@@ -1,5 +1,5 @@
 {
-  "name": "@sat-copilot/shared",
+  "name": "@lyceon/shared",
   "version": "1.0.0",
   "type": "module",
   "main": "./src/index.js",

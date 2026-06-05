@@ -12,12 +12,14 @@ export const createDocSlug = (filename: string): string => {
 };
 
 // Helper to extract page and question index from processing context
+type QuestionRef = { questionId?: string; rawId?: string };
+
 export const extractQuestionIndex = (
-  questions: any[], 
-  currentQuestion: any
+  questions: readonly QuestionRef[],
+  currentQuestion: QuestionRef
 ): number => {
-  return questions.findIndex(q => 
-    q.questionId === currentQuestion.questionId || 
+  return questions.findIndex(q =>
+    q.questionId === currentQuestion.questionId ||
     q.rawId === currentQuestion.rawId
   ) + 1; // 1-based indexing
 };
