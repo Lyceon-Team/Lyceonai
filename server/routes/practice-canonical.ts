@@ -1525,6 +1525,7 @@ async function serveNextForSession(args: {
         sessionId: args.sessionId,
         sessionItemId: unresolved.id,
         ordinal: unresolved.ordinal,
+        // @spec [Preamble V3 §12 Reveal Matrix; Doc 02B §20 Per-Endpoint Enforcement] | @implemented 2026-06-06
         // Anti-leak: consolidated onto the single canonical serializer — no second
         // inline question shape. projectStudentSafeQuestion null-strips reveal fields.
         question: toStudentSafeQuestionDTO({
