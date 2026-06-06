@@ -28,10 +28,6 @@ Object.entries(SECURITY_TEST_ENV).forEach(([key, value]) => {
  * Use this BEFORE dynamically importing the app.
  */
 export function setupSecurityMocks() {
-  vi.doMock('../../server/middleware/csrf', () => ({
-    csrfGuard: () => (req: any, res: any, next: any) => next(),
-  }));
-
   vi.doMock('../../server/middleware/csrf-double-submit', () => ({
     doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
     generateToken: () => 'test-csrf-token',

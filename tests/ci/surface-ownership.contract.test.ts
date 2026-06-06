@@ -68,10 +68,6 @@ describe('Full-length report: single canonical builder', () => {
             kpiMocks.resolvePaidKpiAccessForUser(...args),
     }));
 
-vi.mock('../../server/middleware/csrf', () => ({
-        csrfGuard: () => (_req: any, _res: any, next: any) => next(),
-}));
-
 vi.mock('../../server/middleware/csrf-double-submit', () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
   generateToken: () => 'test-csrf-token',

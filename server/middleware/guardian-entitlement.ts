@@ -37,7 +37,18 @@ export async function requireGuardianEntitlement(
   const userId = req.user.id;
   const userRole = req.user.role;
 
+  // @spec [Doc 01 V6 §543 Permission Matrix (Admin ✓ linked-student read / Admin surfaces);
+  //   §1229 admin student-data access is support-purpose only; §272/§561 all admin actions audited]
+  //   | @implemented 2026-06-06
+  // Admin gets the generic aggregate student-surface view for audit/testing — not full student
+  // information, and not a UI browsing path. Every admin access is recorded to the audit log
+  // (the §1229/§561 support data-trail); no student content is logged (privacy §12.1).
   if (userRole === 'admin') {
+    logger.info('GUARDIAN', 'admin_surface_access', 'Admin accessed a guardian/student surface', {
+      studentId: req.params?.studentId ?? null,
+      path: req.path,
+      method: req.method,
+    }, { userId, requestId });
     return next();
   }
 
