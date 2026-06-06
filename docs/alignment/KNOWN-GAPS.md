@@ -528,14 +528,18 @@ a clean filename.
 
 **Outstanding work:**
 - Rename `docs/Spec/lyceon-coding-standards (1).md` →
-  `docs/Spec/Coding_Standards.md` (Karl's choice on naming convention)
-- Update any references in other spec docs or alignment docs that point
-  to the old filename
-- Git-history preservation: use `git mv` rather than delete+add
+  `docs/Spec/Coding_Standards.md` (content-preserving `git mv`, not delete+add)
+- Update the live references to the old filename: `CLAUDE.md` `@import`
+  (line ~72) and this entry. (The `skill-drafts/anti-leak-workspace/.../response.md`
+  hit is a frozen eval transcript — leave it.)
 
 **Spec citations:** N/A (file hygiene)
 
 **Owner:** `platform` (trivial rename)
 
-**Note:** This entry is closed by D4 (Coding Standards filename rename),
-which lands in the same combined audit-response PR. Marked RESOLVED at D4.
+**Note:** D4 (the rename) was **DEFERRED** (Karl, 2026-06-06, option c). The
+`git mv` of a `docs/Spec` file is denied by the docs/Spec immutability boundary
+(the permission system blocks it to keep the "never edit/move/improve docs/Spec"
+rule intact), so the rename was NOT performed in PR #335. **Remains Open (P3)** —
+resolved when the owner performs the content-preserving `git mv` and the live
+references above are updated. Not blocking.
