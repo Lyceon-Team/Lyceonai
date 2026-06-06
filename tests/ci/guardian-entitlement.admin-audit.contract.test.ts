@@ -71,7 +71,7 @@ describe("requireGuardianEntitlement — admin audit (Doc 01 V6 §543 / §1229 /
 
     const contextArg = vi.mocked(logger.info).mock.calls[0][4] as Record<string, unknown>;
     expect(Object.keys(contextArg).sort()).toEqual(["requestId", "userId"]);
-    expect(contextArg).toMatchObject({
+    expect(contextArg).toEqual({
       userId: "admin-1",
       requestId: expect.stringMatching(/^[a-zA-Z0-9-]+$/),
     });
