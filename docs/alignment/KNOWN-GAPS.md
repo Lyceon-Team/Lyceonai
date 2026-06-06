@@ -178,12 +178,30 @@ systems and rested on a misread of Privacy Policy §3.4. Per the locked corpus:
   compounds Privacy Policy violation)
 
 **Reactivation trigger:** N/A — this is the gap itself. Resolved when:
-1. Backfill of existing rows complete (operational evidence)
-2. Replacement schema deployed and serving traffic
-3. `tutor_interactions.message` / `.answer` columns dropped via migration
-4. Stop-the-bleed flag removed from `tutor-log.ts`
+1. Backfill of existing rows complete (operational evidence) — ✅ PR #337 (tutor_interactions)
+2. Replacement schema deployed and serving traffic — pending PR2 (canonical store retention)
+3. `tutor_interactions.message` / `.answer` columns dropped via migration — ✅ PR #337
+4. Stop-the-bleed flag removed from `tutor-log.ts` — ✅ PR #337
 5. Doc 03 §14.2 retention crons running and proving via 06D INV-06-09
-   restore-test pattern
+   restore-test pattern — pending PR2/PR3
+
+---
+
+## TUTOR-RUNTIME-PR1 FAST-FOLLOWS (LOW — from PR #337)
+
+Minor, non-blocking items surfaced during PR1 (spec-auditor LOW#2 + grill-me).
+Whichever later tutor-runtime PR has shoulder-room absorbs them.
+
+- **review-session.lifecycle test DbState key rename:** `tests/review-session.lifecycle.contract.test.ts`
+  still declares `tutor_interactions: []` in its `DbState` (~13 cases). The router now
+  queries `tutor_messages`; the generic `fromMock` falls back to empty (harmless), so
+  the key is dead weight. Rename to `tutor_messages` for alignment. (Separately, that
+  file carries a **pre-existing** replay-idempotency failure — 201≠200 — owned by the
+  `determinism-idempotency` unit, not this rename.)
+- **`console.warn` → structured logger:** the repointed audit-signal error log in
+  `server/routes/review-session-routes.ts` uses `console.warn` to match the file's
+  existing `console.*` house style (§16 prefers the structured logger). Fold into the
+  cross-cutting **logger-relocation** fast-follow rather than diverging one line.
 
 ---
 

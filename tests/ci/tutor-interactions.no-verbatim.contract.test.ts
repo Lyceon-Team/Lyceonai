@@ -52,7 +52,13 @@ function collectSources(relDir: string): string[] {
   return out;
 }
 
-const APP_SOURCE_DIRS = ["server", "apps", "client/src", "shared"] as const;
+const APP_SOURCE_DIRS = [
+  "server",
+  "apps",
+  "client/src",
+  "shared",
+  "packages",
+] as const;
 
 describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime PR1; Privacy Policy §3.4 / Coding Standards §12.2)", () => {
   it("the TUTOR_VERBATIM_PERSIST stop-the-bleed flag is gone from all application source", () => {
