@@ -517,29 +517,21 @@ touches)
 
 ---
 
-## CODING-STANDARDS-FILENAME (P3 — trivial)
+## CODING-STANDARDS-FILENAME (P3 — trivial) ✅ RESOLVED 2026-06-06
 
-**Status:** Open. The canonical Coding Standards file lives at
-`docs/Spec/lyceon-coding-standards (1).md`. The `(1)` suffix suggests an
-upload duplication or rename artifact. Audit reproducibility benefits from
-a clean filename.
+**Status:** RESOLVED. The canonical Coding Standards file was renamed
+`docs/Spec/lyceon-coding-standards (1).md` → `docs/Spec/lyceon-coding-standards.md`
+(the spurious ` (1)` suffix dropped). The rename was performed **manually by Karl
+outside the Claude Code session**, respecting the `docs/Spec` immutability boundary
+(the in-session `git mv` was denied by that boundary in PR #335 — option-c deferral).
+This PR completed the **reference follow-up**: the `CLAUDE.md` `@import` now points
+to the clean filename (and the space/`(1)` that previously broke that `@import` parse
+is gone, so the standards auto-load). The `skill-drafts/anti-leak-workspace/.../response.md`
+hit is a frozen eval transcript and was intentionally left unchanged.
 
-**Origin:** Codex audit 2026-06-06, out-of-scope observation.
-
-**Outstanding work:**
-- Rename `docs/Spec/lyceon-coding-standards (1).md` →
-  `docs/Spec/Coding_Standards.md` (content-preserving `git mv`, not delete+add)
-- Update the live references to the old filename: `CLAUDE.md` `@import`
-  (line ~72) and this entry. (The `skill-drafts/anti-leak-workspace/.../response.md`
-  hit is a frozen eval transcript — leave it.)
+**Origin:** Codex audit 2026-06-06, out-of-scope observation. Deferred as D4 in PR #335;
+resolved here (manual rename by Karl + reference follow-up).
 
 **Spec citations:** N/A (file hygiene)
 
-**Owner:** `platform` (trivial rename)
-
-**Note:** D4 (the rename) was **DEFERRED** (Karl, 2026-06-06, option c). The
-`git mv` of a `docs/Spec` file is denied by the docs/Spec immutability boundary
-(the permission system blocks it to keep the "never edit/move/improve docs/Spec"
-rule intact), so the rename was NOT performed in PR #335. **Remains Open (P3)** —
-resolved when the owner performs the content-preserving `git mv` and the live
-references above are updated. Not blocking.
+**Owner:** `platform` (done)
