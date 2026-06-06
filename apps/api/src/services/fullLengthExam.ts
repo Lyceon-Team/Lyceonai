@@ -3110,8 +3110,10 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
  */
 // Doc 04A §10.2: the exam pre-completion (active-section / pre-unlock) payload
 // MUST NOT carry domain, skill_code, or difficulty — they are stripped, not
-// merely omitted-by-convention. (Practice may expose difficulty per Doc 02B §20;
-// this allowlist is exam-surface-only.) Post-completion review re-adds them.
+// merely omitted-by-convention. This allowlist is exam-surface-only. (The practice
+// surface's difficulty exposure is PRE-EXISTING behavior; Doc 02B §20 / Preamble §12
+// do not explicitly authorize it — not changed here, tracked as a separate gap.)
+// Post-completion review re-adds these fields.
 export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
   "id",
   "canonical_id",
@@ -3191,21 +3193,28 @@ export interface SafeQuestionPreCompletion {
   section_code: CanonicalSectionCode | null;
   question_type: "multiple_choice";
   options: QuestionOption[];
-  domain: string | null;
+  // Doc 04A §10.2: stripped pre-completion. Typed as literal `null` so the unsafe
+  // (non-null) shape cannot be constructed for a pre-completion exam payload — the
+  // compiler enforces the strip, not convention.
+  domain: null;
   skill: string | null;
   subskill: string | null;
-  skill_code: string | null;
-  difficulty: QuestionDifficulty | null;
+  skill_code: null;
+  difficulty: null;
   source_type: CanonicalSourceType | null;
   diagram_present: boolean | null;
   tags: unknown;
 }
 
 /**
- * Full question type for post-completion review.
- * Includes answer and explanation fields.
+ * Full question type for post-completion review (Doc 04C §2.7).
+ * Re-widens the three §10.2-stripped fields and adds answer/explanation.
  */
-export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
+export interface FullQuestionPostCompletion
+  extends Omit<SafeQuestionPreCompletion, "domain" | "skill_code" | "difficulty"> {
+  domain: string | null;
+  skill_code: string | null;
+  difficulty: QuestionDifficulty | null;
   correct_answer: "A" | "B" | "C" | "D" | null;
   answer_text: string | null;
   explanation: string | null;
@@ -3508,10 +3517,12 @@ export async function getExamReview(
     }
   }
 
-  // Project questions based on completion status using allowlist
-  const projectedQuestions = questions.map((q) =>
-    isCompleted ? projectFullQuestionFields(q) : projectSafeQuestionFields(q)
-  );
+  // Project questions based on completion status using allowlist. Branch outside
+  // the map so the result is a homogeneous SafeQuestionPreCompletion[] OR
+  // FullQuestionPostCompletion[] (the two are now disjoint types — §10.2 strip).
+  const projectedQuestions = isCompleted
+    ? questions.map((q) => projectFullQuestionFields(q))
+    : questions.map((q) => projectSafeQuestionFields(q));
 
   // Format modules
   const formattedModules: ExamReviewModule[] = (modules || []).map((m) => ({
