@@ -9,6 +9,31 @@ Status legend: 🔴 broken · 🟡 nondeterministic/external · ✅ fixed (remov
 
 ---
 
+## Exam review unlock not gated on `score_runs` 🔴 (HIGH spec-conformance — no exploitable leak today)
+**Spec:** Doc 04C §2.5 / §2.7 — review reveal (`correct_answer` / `explanation` / `domain` /
+`skill_code` / `difficulty`) MUST unlock only after 04B writes a successful `score_runs` row
+(chain: 04A completion outbox → 04B `score_runs` → 04C gates unlock). Completion alone must NOT unlock.
+
+**Code:** `apps/api/src/services/fullLengthExam.ts` gates reveal on `session.status === 'completed'`
+(`getExamReview` `isCompleted`; `getExamReviewAfterCompletion`) with **no `score_runs` lookup** (see the
+inline `@gap` note at `isCompleted`).
+
+**Why this is deferred (Karl, Wave 1), not a hidden miss:** the async 04B / `score_runs` /
+`exam_failure_ledger` pipeline is **not built** in this codebase — `score_runs` does not exist as a
+table, so the spec-auditor's suggested "query `score_runs`" fix is impossible without building it.
+Scoring here is **synchronous** (per-response `is_correct` is written at answer time; the report is
+computed on demand), so a `completed` session is always fully scored and the spec's `scoring_pending`
+leak window **cannot occur**. Gating on status is therefore **safe today but not spec-conformant**. The
+anti-leak spec-auditor flagged this HIGH; it was consciously **accepted as a deferral** so Codex and
+future auditors can see the reasoning rather than re-discovering it.
+
+**Owner / re-arm:** a dedicated **exam-scoring unit** builds 04B `score_runs` + 04C state derivation
+(`scored` / `partial_scored` / `scoring_pending` / `failed_requires_review`) + 04D failure ledger, then
+replaces the status gate with the real `score_runs` gate. Until then, do not treat status-gating as
+spec-conformant.
+
+---
+
 ## Typecheck — `tsc -p tsconfig.ci.json` 🔴
 Two real type errors (pre-existing drift), exam domain:
 

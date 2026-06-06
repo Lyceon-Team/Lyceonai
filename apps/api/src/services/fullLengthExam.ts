@@ -3088,6 +3088,9 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
     throw new Error("Session not found or access denied");
   }
 
+  // KNOWN GAP (exam-scoring unit): spec gates review unlock on a successful
+  // `score_runs` row (Doc 04C §2.5/§2.7), not status alone — see the detailed note
+  // in getExamReview and docs/alignment/KNOWN-GAPS.md. Safe today (synchronous scoring).
   if (session.status !== "completed") {
     throw new Error("Review locked until completion");
   }
@@ -3450,7 +3453,15 @@ export async function getExamReview(
     );
   }
 
-  // Determine if session is completed (needed for query projection below)
+  // KNOWN GAP — exam-scoring unit (see docs/alignment/KNOWN-GAPS.md).
+  // @gap [Doc 04C §2.5/§2.7]: per spec, review reveal MUST be gated on a successful
+  // `score_runs` row (04A completion outbox -> 04B score_runs -> 04C unlock), NOT on
+  // session completion alone. This codebase has NOT built the async 04B/`score_runs`
+  // pipeline; scoring is SYNCHRONOUS (per-response `is_correct` is written at answer
+  // time, the report is computed on demand), so a `completed` session is always fully
+  // scored and the spec's `scoring_pending` leak window cannot occur here. Gating on
+  // status is therefore safe TODAY but not spec-conformant. Replacing this with the
+  // real `score_runs` gate is owned by the exam-scoring unit (it builds 04B/04C/04D).
   const isCompleted = session.status === "completed";
 
   let questions: Record<string, unknown>[] = [];
