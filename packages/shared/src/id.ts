@@ -1,3 +1,9 @@
+/**
+ * @spec [Coding Standards, §5.1 Canonical IDs Are Opaque and Immutable] | @implemented 2026-06-06
+ * plain English: canonical question-ID construction + filename/index helpers.
+ * The ID format is locked — do not introduce alternate ID schemes.
+ */
+
 export const canonicalId = (docSlug: string, page: number, index: number) =>
   `${docSlug}_p${page}_q${index}`;
 

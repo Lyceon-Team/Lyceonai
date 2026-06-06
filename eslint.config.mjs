@@ -28,13 +28,17 @@ export default tseslint.config(
       "@typescript-eslint/ban-ts-comment": "error",
       "no-empty": ["error", { allowEmptyCatch: false }],
       "no-var": "error",
+      // §16 — no console.log in product code (use the structured logger).
+      "no-console": "error",
       "@typescript-eslint/no-unused-vars": [
         "error",
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
           ignoreRestSiblings: true,
-          caughtErrors: "none",
+          // §17 — caught error vars must be used; with no-empty this closes the
+          // silent-catch hole (both empty-body and unused-error swallows).
+          caughtErrors: "all",
         },
       ],
     },

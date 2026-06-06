@@ -44,6 +44,8 @@ export function seededShuffle<T>(items: readonly T[], seed: number | string): T[
   const rng = createRng(seed);
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
+    // In-bounds by the Fisher-Yates loop invariant (i: length-1..1, j ≤ i); the
+    // `as T` only strips `T | undefined` forced by noUncheckedIndexedAccess.
     const a = out[i] as T;
     const b = out[j] as T;
     out[i] = b;
