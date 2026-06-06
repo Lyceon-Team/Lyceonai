@@ -40,9 +40,11 @@ export async function requireGuardianEntitlement(
   // @spec [Doc 01 V6 §543 Permission Matrix (Admin ✓ linked-student read / Admin surfaces);
   //   §1229 admin student-data access is support-purpose only; §272/§561 all admin actions audited]
   //   | @implemented 2026-06-06
-  // Admin gets the generic aggregate student-surface view for audit/testing — not full student
-  // information, and not a UI browsing path. Every admin access is recorded to the audit log
-  // (the §1229/§561 support data-trail); no student content is logged (privacy §12.1).
+  // Admin bypasses the guardian link + entitlement checks here (per §543 Admin ✓). This gateway
+  // does NOT itself content-scope: the aggregate-only nature of guardian surfaces and the
+  // support-purpose limit (§1229) are enforced downstream (RLS + the guardian route handlers,
+  // which already exclude question-level data). This middleware's obligation is the audit trail
+  // (§272/§561): every admin access is logged with access-metadata only — no student content (§12.1).
   if (userRole === 'admin') {
     logger.info('GUARDIAN', 'admin_surface_access', 'Admin accessed a guardian/student surface', {
       studentId: req.params?.studentId ?? null,
