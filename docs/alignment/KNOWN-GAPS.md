@@ -107,10 +107,40 @@ ADVISORY for the legacy tree via `ci-known-gaps`).
 
 ## TUTOR-VERBATIM-PERSIST (P0 — URGENT — BLOCKS BUNDLE PUBLICATION)
 
-**Status:** Stop-the-bleed feature flag applied via PR #335
-(2026-06-06). Production has `TUTOR_VERBATIM_PERSIST` unset; no new
-verbatim exchanges persist. Existing rows in `tutor_interactions.message`
-and `.answer` predating PR #335 remain in the table.
+**Status:** IN PROGRESS — `tutor-runtime` Wave 2 unit, PR1 (Part A) landed.
+Stop-the-bleed feature flag was applied via PR #335 (2026-06-06). PR1 of the
+tutor-runtime unit then removed the flag and the verbatim payload entirely from
+the non-canonical `tutor_interactions` audit side-table. Remaining work (PR2/PR3)
+is the Doc 03 §14.2 retention enforcement on the **canonical** LISA store
+(`tutor_conversations`/`tutor_messages`/etc.).
+
+**Corrected scope (Karl rulings, 2026-06-06):** The original framing
+("tutor conversations non-verbatim; drop the verbatim columns") conflated two
+systems and rested on a misread of Privacy Policy §3.4. Per the locked corpus:
+- **Reading B governs `tutor_messages`:** verbatim conversation content is
+  *correct* and is retained for 7 days then deleted/pseudonymized — Doc 03 §14.2,
+  Privacy Policy §3.4/§9.7 (the GDPR export at §14.2 explicitly returns "all
+  `tutor_messages` … both student and LISA turns"). The defect is the **missing
+  retention machinery**, not verbatim storage. Coding Standards §12.2
+  "non-verbatim" applies to logs (§12.1) and the `tutor_interactions` audit table.
+- **`tutor_interactions` is NOT in Doc 03 §14.2** (a legacy, write-dormant audit
+  side-table). PR1 strips its verbatim columns; the §14.2 retention work belongs
+  to `tutor_conversations`/`tutor_messages` (PR2).
+
+**PR1 (Part A) resolution checklist:**
+- [x] Stop-the-bleed flag `TUTOR_VERBATIM_PERSIST` removed (`tutor-log.ts` deleted —
+      it was a dead write path; nothing in app code called it).
+- [x] `tutor_interactions.message` / `.answer` columns dropped
+      (`supabase/migrations/20260606_tutor_interactions_drop_verbatim.sql`).
+- [x] Backfill of historical verbatim rows (Q4=b redact-in-place: DROP COLUMN
+      removes verbatim payload, preserves rows + non-verbatim metadata).
+- [x] Mastery-bridge read repointed off the dormant table onto canonical
+      `tutor_messages` (audit-only signal per Doc 03 §15.4).
+- [ ] (PR2) Doc 03 §14.2 retention crons on the canonical LISA store
+      (7-day soft-delete + 90/180/365 archival + §9.7 pseudonymization honoring
+      §4.3 training-exclusion).
+- [ ] (PR3) Restore-test proof (Doc 06D INV-06-09) + retention-policy registry
+      seed; full RESOLVED only after the canonical store is retention-enforced.
 
 **Origin:** Codex audit 2026-06-06, F-006.
 
