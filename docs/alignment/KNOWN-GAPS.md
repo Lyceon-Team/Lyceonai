@@ -107,10 +107,10 @@ ADVISORY for the legacy tree via `ci-known-gaps`).
 
 ## TUTOR-VERBATIM-PERSIST (P0 — URGENT — BLOCKS BUNDLE PUBLICATION)
 
-**Status:** Stop-the-bleed feature flag applied via PR #__PRNUM__
+**Status:** Stop-the-bleed feature flag applied via PR #335
 (2026-06-06). Production has `TUTOR_VERBATIM_PERSIST` unset; no new
 verbatim exchanges persist. Existing rows in `tutor_interactions.message`
-and `.answer` predating PR #__PRNUM__ remain in the table.
+and `.answer` predating PR #335 remain in the table.
 
 **Origin:** Codex audit 2026-06-06, F-006.
 
@@ -341,7 +341,7 @@ broader `packages/shared` consolidation pass)
 
 ## AUDIT-PAYLOAD-CONTRACT-DRIFT (P2 — auth-entitlements fast-follow)
 
-**Status:** RESOLVED 2026-06-06 via PR #__PRNUM__ (D3). The contract test
+**Status:** RESOLVED 2026-06-06 via PR #335 (D3). The contract test
 `tests/ci/guardian-entitlement.admin-audit.contract.test.ts` now locks BOTH
 surfaces with exact-equality: payload `{ method, path, studentId }` and logger
 context `{ userId, requestId }`. PR #334's 5-key emission claim was correct in
@@ -381,7 +381,7 @@ lands in the same combined audit-response PR. Marked RESOLVED at D3.
 
 ## CI-PULLREQUEST-BRANCH-FILTER (P3 — trivial)
 
-**Status:** RESOLVED 2026-06-06 via PR #__PRNUM__ (D2 corrected the
+**Status:** RESOLVED 2026-06-06 via PR #335 (D2 corrected the
 LEDGER Wave-0 row to state `pull_request` is unscoped). PR #332 claimed
 `pull_request: [main, cleanup]`; actual config has `pull_request:`
 unscoped (triggers on PRs to any branch) — functionally broader than
@@ -398,7 +398,7 @@ claimed (more CI coverage, not less). The actual config was NOT tightened
 
 ## LEDGER-AUTH-ROW-MISSING (P3 — trivial)
 
-**Status:** RESOLVED 2026-06-06 via PR #__PRNUM__ (D2 appended the
+**Status:** RESOLVED 2026-06-06 via PR #335 (D2 appended the
 missing PR #334 row). The row was lost during the Wave 1 merge
 (append-conflict resolution between #334 and #333).
 
