@@ -217,10 +217,6 @@ vi.mock("../../server/middleware/supabase-auth.js", () => ({
   },
 }));
 
-vi.mock("../../server/middleware/csrf.js", () => ({
-  csrfGuard: () => (_req: any, _res: any, next: any) => next(),
-}));
-
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
   generateToken: () => "test-csrf-token",
