@@ -234,7 +234,7 @@ export interface GetCurrentSessionResult {
     section: string;
     question_type: "multiple_choice";
     options: QuestionOption[];
-    difficulty: QuestionDifficulty | null;
+    // Doc 04A §10.2: difficulty is NOT part of the active-section payload.
     orderIndex: number;
     moduleQuestionCount: number;
     answeredCount: number;
@@ -2231,7 +2231,6 @@ export async function getCurrentSession(
       }
 
       const submittedAnswer = responseMap.get(target.question_id);
-      const difficulty = normalizeQuestionDifficultyValue(target.question_difficulty);
 
       currentQuestion = {
         id: target.question_id,
@@ -2239,7 +2238,7 @@ export async function getCurrentSession(
         stem: safeBase.stem,
         question_type: "multiple_choice" as const,
         options: safeBase.options,
-        difficulty,
+        // Doc 04A §10.2: difficulty must not appear in the active-section payload.
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
         answeredCount: answeredQuestionIds.size,
@@ -3109,6 +3108,10 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
  * SECURITY: This is an explicit allowlist. Any field not listed here
  * will NOT be included in pre-completion review responses.
  */
+// Doc 04A §10.2: the exam pre-completion (active-section / pre-unlock) payload
+// MUST NOT carry domain, skill_code, or difficulty — they are stripped, not
+// merely omitted-by-convention. (Practice may expose difficulty per Doc 02B §20;
+// this allowlist is exam-surface-only.) Post-completion review re-adds them.
 export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
   "id",
   "canonical_id",
@@ -3117,11 +3120,8 @@ export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
   "section_code",
   "question_type",
   "options",
-  "domain",
   "skill",
   "subskill",
-  "skill_code",
-  "difficulty",
   "source_type",
   "diagram_present",
   "tags",
@@ -3298,10 +3298,14 @@ function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
 }
 
 /**
- * Apply safe projection to a question object.
- * Uses an explicit allowlist to ensure only safe fields are included.
+ * @spec [Doc 04A, §10.2 Pre-completion question payload] | @implemented 2026-06-06
+ * plain English: the exam pre-completion safe projection. correct_answer/explanation
+ * are already null via projectStudentSafeQuestion; this additionally strips
+ * domain/skill_code/difficulty (§10.2), so no exam pre-completion code path can
+ * reveal them. Post-completion review re-adds them in projectFullQuestionFields.
+ * Exported for direct anti-leak regression testing.
  */
-function projectSafeQuestionFields(
+export function projectSafeQuestionFields(
   question: Record<string, unknown>
 ): SafeQuestionPreCompletion {
   const safeBase = projectStudentSafeQuestion({
@@ -3332,11 +3336,12 @@ function projectSafeQuestionFields(
     section_code: sectionCode,
     question_type: "multiple_choice",
     options: safeBase.options,
-    domain: safeBase.domain,
+    // Doc 04A §10.2 anti-leak: exam pre-completion must NOT reveal these.
+    domain: null,
     skill: safeBase.skill,
     subskill: safeBase.subskill,
-    skill_code: safeBase.skill_code,
-    difficulty: normalizeDifficulty(safeBase.difficulty ?? question.difficulty),
+    skill_code: null,
+    difficulty: null,
     source_type: normalizeSourceType(question.source_type),
     diagram_present: (question.diagram_present as boolean | null) ?? null,
     tags: safeBase.tags ?? null,
@@ -3344,9 +3349,12 @@ function projectSafeQuestionFields(
 }
 
 /**
- * Project full question fields including answers (for completed sessions).
+ * @spec [Doc 04A §10.2; Doc 04C §2.7 review reveal] | @implemented 2026-06-06
+ * plain English: post-completion review projection. Re-adds domain/skill_code/
+ * difficulty (which the pre-completion projection strips) alongside correct_answer/
+ * explanation — the review-phase reveal. Exported for regression testing.
  */
-function projectFullQuestionFields(
+export function projectFullQuestionFields(
   question: Record<string, unknown>
 ): FullQuestionPostCompletion {
   const safeFields = projectSafeQuestionFields(question);
@@ -3357,6 +3365,10 @@ function projectFullQuestionFields(
 
   return {
     ...safeFields,
+    // Review phase (post-completion) re-adds what §10.2 strips pre-completion.
+    domain: (question.domain as string | null) ?? null,
+    skill_code: (question.skill_code as string | null) ?? null,
+    difficulty: normalizeDifficulty(question.difficulty),
     correct_answer: correctAnswer,
     answer_text: (question.answer_text as string | null) ?? null,
     explanation: (question.explanation as string | null) ?? null,

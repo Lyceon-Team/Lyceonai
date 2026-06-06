@@ -1525,14 +1525,13 @@ async function serveNextForSession(args: {
         sessionId: args.sessionId,
         sessionItemId: unresolved.id,
         ordinal: unresolved.ordinal,
-        question: {
+        // Anti-leak: consolidated onto the single canonical serializer — no second
+        // inline question shape. projectStudentSafeQuestion null-strips reveal fields.
+        question: toStudentSafeQuestionDTO({
           sessionItemId: unresolved.id,
-          stem: canonicalQuestion.stem,
-          section: canonicalQuestion.section_code,
-          questionType: "multiple_choice",
-          options: healedOptions,
-          difficulty: canonicalQuestion.difficulty ?? null,
-        },
+          question: canonicalQuestion,
+          safeOptions: healedOptions,
+        }),
         totalQuestions: await countSessionItems(args.sessionId),
         currentIndex: Math.max(0, unresolved.ordinal - 1),
         state: "active",

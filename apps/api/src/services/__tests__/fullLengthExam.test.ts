@@ -2054,10 +2054,13 @@ function buildPublishedFormFixture(formId: string) {
       // Verify safe fields ARE present
       expect(question.id).toBe('q1');
       expect(question.stem).toBe('What is 2 + 2?');
-      expect(question.section).toBe('Math');
       expect(question.question_type).toBe('multiple_choice');
       expect(question.options).toEqual([{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }]);
-      expect(question.difficulty).toBe(1);
+
+      // Doc 04A §10.2: domain/skill_code/difficulty are stripped pre-completion.
+      expect(question.difficulty).toBeNull();
+      expect(question.domain).toBeNull();
+      expect(question.skill_code).toBeNull();
 
       // Verify answer/explanation fields are NOT present (allowlist enforcement)
       const questionAsAny = question as unknown as Record<string, unknown>;
@@ -2149,9 +2152,9 @@ function buildPublishedFormFixture(formId: string) {
       // Verify safe fields ARE present
       expect(question.id).toBe('q1');
       expect(question.stem).toBe('What is 2 + 2?');
-      expect(question.section).toBe('Math');
       expect(question.question_type).toBe('multiple_choice');
       expect(question.options).toEqual([{ key: 'A', text: '3' }, { key: 'B', text: '4' }, { key: 'C', text: '5' }, { key: 'D', text: '6' }]);
+      // Post-completion review re-adds difficulty (Doc 04C §2.7 reveal).
       expect(question.difficulty).toBe(1);
 
       // Verify answer/explanation fields ARE present for completed session
@@ -2182,7 +2185,12 @@ function buildPublishedFormFixture(formId: string) {
       expect(safeFields).toContain('section');
       expect(safeFields).toContain('question_type');
       expect(safeFields).toContain('options');
-      expect(safeFields).toContain('difficulty');
+
+      // Doc 04A §10.2: the exam pre-completion payload MUST NOT carry
+      // domain / skill_code / difficulty (anti-leak projection).
+      expect(safeFields).not.toContain('domain');
+      expect(safeFields).not.toContain('skill_code');
+      expect(safeFields).not.toContain('difficulty');
     });
 
     it('should verify answer fields constant contains the right fields', () => {
@@ -2193,6 +2201,55 @@ function buildPublishedFormFixture(formId: string) {
       expect(answerFields).toContain('answer_text');
       expect(answerFields).toContain('explanation');
       expect(answerFields).toContain('option_metadata');
+    });
+
+    const rawQuestion = {
+      id: 'q1',
+      canonical_id: 'c1',
+      stem: 'S',
+      section_code: 'MATH',
+      question_type: 'multiple_choice',
+      options: [
+        { key: 'A', text: '1' },
+        { key: 'B', text: '2' },
+        { key: 'C', text: '3' },
+        { key: 'D', text: '4' },
+      ],
+      domain: 'Algebra',
+      skill: 'Linear',
+      subskill: 'Slope',
+      skill_code: 'ALG.1',
+      difficulty: 3,
+      source_type: 0,
+      diagram_present: false,
+      tags: null,
+      correct_answer: 'B',
+      answer_text: 'two',
+      explanation: 'because',
+      option_metadata: null,
+    };
+
+    it('projectSafeQuestionFields strips domain/skill_code/difficulty pre-completion (Doc 04A §10.2)', () => {
+      const safe = fullLengthExamService.projectSafeQuestionFields(rawQuestion);
+      // §10.2 forbidden fields are stripped to null pre-completion.
+      expect(safe.domain).toBeNull();
+      expect(safe.skill_code).toBeNull();
+      expect(safe.difficulty).toBeNull();
+      // Answer/explanation are not even part of the pre-completion shape.
+      expect((safe as Record<string, unknown>).correct_answer).toBeUndefined();
+      expect((safe as Record<string, unknown>).explanation).toBeUndefined();
+      // Allowed content survives.
+      expect(safe.stem).toBe('S');
+      expect(safe.options.length).toBe(4);
+    });
+
+    it('projectFullQuestionFields re-adds domain/skill_code/difficulty for post-completion review', () => {
+      const full = fullLengthExamService.projectFullQuestionFields(rawQuestion);
+      expect(full.domain).toBe('Algebra');
+      expect(full.skill_code).toBe('ALG.1');
+      expect(full.difficulty).toBe(3);
+      expect(full.correct_answer).toBe('B');
+      expect(full.explanation).toBe('because');
     });
   });
 });
