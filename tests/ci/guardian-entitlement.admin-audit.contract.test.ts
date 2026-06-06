@@ -46,12 +46,35 @@ describe("requireGuardianEntitlement — admin audit (Doc 01 V6 §543 / §1229 /
       "GUARDIAN",
       "admin_surface_access",
       expect.any(String),
-      expect.objectContaining({ studentId: "stu-9", path: "/api/guardian/summary", method: "GET" }),
-      expect.objectContaining({ userId: "admin-1" })
+      expect.any(Object),
+      expect.any(Object)
     );
-    // Privacy (§12.1): the audit payload is access-metadata only — no student content.
+
+    // Locks the audit emission contract per §1229/§272/§561 + §12.1.
+    //
+    // PAYLOAD (logger data argument): access-metadata only; no student
+    // content. Locked exact-equality on { method, path, studentId }.
+    //
+    // CONTEXT (logger structured-metadata argument): operator identity +
+    // request id. Locked exact-equality on { userId, requestId }.
+    //
+    // Both surfaces are locked because both surfaces emit; adding a field
+    // to either surface in a future change must update this test, by
+    // design.
     const dataArg = vi.mocked(logger.info).mock.calls[0][3] as Record<string, unknown>;
     expect(Object.keys(dataArg).sort()).toEqual(["method", "path", "studentId"]);
+    expect(dataArg).toEqual({
+      method: "GET",
+      path: "/api/guardian/summary",
+      studentId: "stu-9",
+    });
+
+    const contextArg = vi.mocked(logger.info).mock.calls[0][4] as Record<string, unknown>;
+    expect(Object.keys(contextArg).sort()).toEqual(["requestId", "userId"]);
+    expect(contextArg).toEqual({
+      userId: "admin-1",
+      requestId: expect.stringMatching(/^[a-zA-Z0-9-]+$/),
+    });
   });
 
   it("non-guardian non-admin: denied 403 (no pass-through)", async () => {
