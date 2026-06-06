@@ -69,8 +69,7 @@ When compacting, always preserve: the spec sections referenced this session, the
 
 ## Imports
 
-- Full coding standards: @docs/Spec/lyceon-coding-standards (1).md
-  (an `@import` fails silently if the path is wrong — set the actual filename in docs/Spec)
-  (NOTE: this filename contains a space and "(1)"; if the standards don't auto-load,
-   the `@import` parser likely choked on the space — skills cite §-sections directly regardless)
+- Full coding standards: @docs/Spec/lyceon-coding-standards.md
+  (renamed 2026-06-06 from `lyceon-coding-standards (1).md` — the space/"(1)" that
+   previously broke this `@import` parse is gone, so the standards now auto-load)
 - Domain skills load on demand once promoted into `.claude/skills/` (see SKILL-BUILD-PLAN.md): anti-leak, auth-entitlements, determinism-idempotency, stripe-billing, practice-engine, mastery-kpi, tutor-runtime, frontend, testing-audit
