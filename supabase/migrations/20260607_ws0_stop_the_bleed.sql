@@ -31,7 +31,7 @@
 --   in that state). Safe to re-run top-to-bottom.
 --
 -- SAFETY NOTE (why revokes do not break the app): service_role has
---   bypasses_rls=true (capture:8355) and KEEPS its own grants — only anon and
+--   bypasses_rls=true (capture:8357) and KEEPS its own grants — only anon and
 --   authenticated (bypasses_rls=false; capture:8335,8336) are touched. The
 --   browser has no Supabase data client (client/src/lib/supabase.ts is
 --   types-only) and every server read of these tables uses a service-role
@@ -48,7 +48,7 @@ BEGIN;
 --   answer_text (capture:591).
 -- Live SELECT policy is "questions_select_authenticated :: roles={authenticated}
 --   :: USING true" (capture:7933). The registry-named "questions_select_accessible"
---   does NOT appear in this capture; dropped with IF EXISTS for completeness.
+--   ALSO appears (capture:7930); both are dropped with IF EXISTS.
 -- Grants: anon + authenticated hold the full set incl. SELECT (capture:3235-3248).
 
 DROP POLICY IF EXISTS questions_select_authenticated ON public.questions;
