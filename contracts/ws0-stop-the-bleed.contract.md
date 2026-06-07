@@ -4,6 +4,8 @@
 **Closes (pending owner apply + probe):** GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-ID-11, GAP-TU-06, GAP-MA-09
 **Deployed-state evidence:** `docs/SpecAudit/00-supabase-live-state.csv` (capture generated 2026-06-07 03:03:35 UTC). Repo migration SQL is **not** deployed-state evidence. Every object name in the apply script is taken verbatim from this capture; citations below are `capture:<line>`.
 
+**Citation convention:** all `capture:<line>` citations (in this contract and in the migration) are **physical line numbers** per `grep -n`/`sed -n` on the raw CSV bytes — not logical CSV record numbers. The capture contains multi-line quoted cells, so the two can differ; every citation here has been re-derived and verified by printing the matched physical line.
+
 This contract enumerates **falsifiable post-conditions** that define correctness independent of implementation. Each post-condition names its proving probe. The DB post-conditions (TB-01/02/03, TU-06, MA-09) are proven by `scripts/probe/ws0-probe.ts` against production **after the owner applies** `supabase/migrations/20260607_ws0_stop_the_bleed.sql`. The ID-11 post-conditions are proven by the route tests in `tests/ci/guardian-consent.id11.contract.test.ts` (run under `pnpm test`), because the forgery vector is an app-layer flow not reachable through anonymous PostgREST.
 
 ---

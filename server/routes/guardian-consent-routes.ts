@@ -1,6 +1,7 @@
 import { Request, Response, Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
 import { getUncachableStripeClient } from "../lib/stripeClient";
 import { logger } from "../logger";
@@ -8,6 +9,14 @@ import { createGuardianLink, ensureAccountForUser } from "../lib/account";
 import { sendEmail } from "../lib/email";
 
 const router = Router();
+
+// @spec [GAP-ID-11 | docs/Spec/lyceon-coding-standards.md §12.1 (privacy/redaction)] | @implemented [2026-06-07]
+// plain English: never log a raw bearer capability (the consent requestId) or a
+// raw Stripe session id. Emit a non-reversible, truncated digest (first 8 hex of
+// sha256) for forensic correlation only.
+function digest8(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 8);
+}
 
 // @spec [GAP-ID-11 | docs/Spec/lyceon-coding-standards.md §8.3 (429), §7.1 (Zod)] | @implemented [2026-06-07]
 // plain English: the consent verify/checkout endpoints are unauthenticated by
@@ -21,11 +30,9 @@ const consentRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_req, res) => {
-    res
-      .status(429)
-      .json({
-        error: "Too many verification attempts. Please try again later.",
-      });
+    res.status(429).json({
+      error: "Too many verification attempts. Please try again later.",
+    });
   },
 });
 
@@ -95,11 +102,9 @@ router.post(
     // plain English: Zod-parse the body; only a UUID requestId is accepted.
     const parsed = createCheckoutSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({
-          error: { message: "Invalid input", details: parsed.error.flatten() },
-        });
+      return res.status(400).json({
+        error: { message: "Invalid input", details: parsed.error.flatten() },
+      });
     }
     const { requestId } = parsed.data;
     const admin = getSupabaseAdmin();
@@ -195,11 +200,9 @@ router.post(
     // binding is deferred to WS-3 (GAP-ID-11 residual note in the registry).
     const parsed = verifySessionSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({
-          error: { message: "Invalid input", details: parsed.error.flatten() },
-        });
+      return res.status(400).json({
+        error: { message: "Invalid input", details: parsed.error.flatten() },
+      });
     }
     const { sessionId, requestId: bodyRequestId } = parsed.data;
     const admin = getSupabaseAdmin();
@@ -226,7 +229,7 @@ router.post(
           "payment_not_completed",
           "Stripe session payment not completed",
           {
-            sessionId,
+            sessionIdDigest: digest8(sessionId),
             paymentStatus: session.payment_status,
             piStatus: pi?.status,
           },
@@ -245,7 +248,7 @@ router.post(
           "CONSENT",
           "metadata_unbound",
           "Stripe session is not bound to a consent request",
-          { sessionId },
+          { sessionIdDigest: digest8(sessionId) },
         );
         return res
           .status(400)
@@ -260,9 +263,9 @@ router.post(
           "request_id_mismatch",
           "Body requestId does not match Stripe session metadata",
           {
-            sessionId,
-            metadataRequestId,
-            bodyRequestId,
+            sessionIdDigest: digest8(sessionId),
+            metadataRequestIdDigest: digest8(metadataRequestId),
+            bodyRequestIdDigest: digest8(bodyRequestId),
           },
         );
         return res
@@ -292,7 +295,7 @@ router.post(
           "CONSENT",
           "request_expired",
           "Consent request has expired",
-          { requestId: metadataRequestId },
+          { requestIdDigest: digest8(metadataRequestId) },
         );
         return res.status(400).json({ error: "Consent request has expired" });
       }
@@ -305,7 +308,7 @@ router.post(
           "request_not_approvable",
           "Consent request is not in an approvable state",
           {
-            requestId: metadataRequestId,
+            requestIdDigest: digest8(metadataRequestId),
             status: request.status,
           },
         );
@@ -428,7 +431,7 @@ router.post(
         "verification_success",
         "Guardian consent verified and linked",
         {
-          requestId,
+          requestIdDigest: digest8(requestId),
           childId: request.child_id,
           guardianId,
         },

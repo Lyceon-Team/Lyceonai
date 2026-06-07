@@ -145,7 +145,7 @@ REVOKE ALL ON TABLE public.sat_sections_ref FROM anon, authenticated;
 --   (capture:8140) and the SELECT grant UNTOUCHED (out of WS-0 scope).
 -- Runtime read is service-role (server/routes/tutor-runtime.ts:1278-1284).
 DROP POLICY IF EXISTS tutor_memory_summaries_student_insert ON public.tutor_memory_summaries;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE public.tutor_memory_summaries FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.tutor_memory_summaries FROM anon, authenticated;
 
 -- -----------------------------------------------------------------------------
 -- GAP-MA-09 — constants-audit triggers fire even under replica mode
@@ -175,6 +175,8 @@ COMMIT;
 --     ON TABLE public.questions TO anon, authenticated;
 --   CREATE POLICY questions_select_authenticated ON public.questions
 --     FOR SELECT TO authenticated USING (true);
+--   CREATE POLICY questions_select_accessible ON public.questions
+--     FOR SELECT TO anon, authenticated USING (true);
 --
 --   -- GAP-TB-02 revert
 --   GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
@@ -216,7 +218,7 @@ COMMIT;
 --     TO anon, authenticated;
 --
 --   -- GAP-TU-06 revert
---   GRANT INSERT, UPDATE, DELETE, TRUNCATE
+--   GRANT INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
 --     ON TABLE public.tutor_memory_summaries TO anon, authenticated;
 --   CREATE POLICY tutor_memory_summaries_student_insert ON public.tutor_memory_summaries
 --     FOR INSERT TO authenticated WITH CHECK (student_id = auth.uid());
