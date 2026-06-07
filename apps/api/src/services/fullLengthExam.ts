@@ -234,7 +234,7 @@ export interface GetCurrentSessionResult {
     section: string;
     question_type: "multiple_choice";
     options: QuestionOption[];
-    difficulty: QuestionDifficulty | null;
+    // Doc 04A §10.2: difficulty is NOT part of the active-section payload.
     orderIndex: number;
     moduleQuestionCount: number;
     answeredCount: number;
@@ -2231,7 +2231,6 @@ export async function getCurrentSession(
       }
 
       const submittedAnswer = responseMap.get(target.question_id);
-      const difficulty = normalizeQuestionDifficultyValue(target.question_difficulty);
 
       currentQuestion = {
         id: target.question_id,
@@ -2239,7 +2238,7 @@ export async function getCurrentSession(
         stem: safeBase.stem,
         question_type: "multiple_choice" as const,
         options: safeBase.options,
-        difficulty,
+        // Doc 04A §10.2: difficulty must not appear in the active-section payload.
         orderIndex: target.order_index,
         moduleQuestionCount: moduleQuestions.length,
         answeredCount: answeredQuestionIds.size,
@@ -3089,6 +3088,9 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
     throw new Error("Session not found or access denied");
   }
 
+  // KNOWN GAP (exam-scoring unit): spec gates review unlock on a successful
+  // `score_runs` row (Doc 04C §2.5/§2.7), not status alone — see the detailed note
+  // in getExamReview and docs/alignment/KNOWN-GAPS.md. Safe today (synchronous scoring).
   if (session.status !== "completed") {
     throw new Error("Review locked until completion");
   }
@@ -3109,6 +3111,12 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
  * SECURITY: This is an explicit allowlist. Any field not listed here
  * will NOT be included in pre-completion review responses.
  */
+// Doc 04A §10.2: the exam pre-completion (active-section / pre-unlock) payload
+// MUST NOT carry domain, skill_code, or difficulty — they are stripped, not
+// merely omitted-by-convention. This allowlist is exam-surface-only. (The practice
+// surface's difficulty exposure is PRE-EXISTING behavior; Doc 02B §20 / Preamble §12
+// do not explicitly authorize it — not changed here, tracked as a separate gap.)
+// Post-completion review re-adds these fields.
 export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
   "id",
   "canonical_id",
@@ -3117,11 +3125,8 @@ export const SAFE_QUESTION_FIELDS_PRE_COMPLETION = [
   "section_code",
   "question_type",
   "options",
-  "domain",
   "skill",
   "subskill",
-  "skill_code",
-  "difficulty",
   "source_type",
   "diagram_present",
   "tags",
@@ -3191,21 +3196,28 @@ export interface SafeQuestionPreCompletion {
   section_code: CanonicalSectionCode | null;
   question_type: "multiple_choice";
   options: QuestionOption[];
-  domain: string | null;
+  // Doc 04A §10.2: stripped pre-completion. Typed as literal `null` so the unsafe
+  // (non-null) shape cannot be constructed for a pre-completion exam payload — the
+  // compiler enforces the strip, not convention.
+  domain: null;
   skill: string | null;
   subskill: string | null;
-  skill_code: string | null;
-  difficulty: QuestionDifficulty | null;
+  skill_code: null;
+  difficulty: null;
   source_type: CanonicalSourceType | null;
   diagram_present: boolean | null;
   tags: unknown;
 }
 
 /**
- * Full question type for post-completion review.
- * Includes answer and explanation fields.
+ * Full question type for post-completion review (Doc 04C §2.7).
+ * Re-widens the three §10.2-stripped fields and adds answer/explanation.
  */
-export interface FullQuestionPostCompletion extends SafeQuestionPreCompletion {
+export interface FullQuestionPostCompletion
+  extends Omit<SafeQuestionPreCompletion, "domain" | "skill_code" | "difficulty"> {
+  domain: string | null;
+  skill_code: string | null;
+  difficulty: QuestionDifficulty | null;
   correct_answer: "A" | "B" | "C" | "D" | null;
   answer_text: string | null;
   explanation: string | null;
@@ -3298,10 +3310,14 @@ function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
 }
 
 /**
- * Apply safe projection to a question object.
- * Uses an explicit allowlist to ensure only safe fields are included.
+ * @spec [Doc 04A, §10.2 Pre-completion question payload] | @implemented 2026-06-06
+ * plain English: the exam pre-completion safe projection. correct_answer/explanation
+ * are already null via projectStudentSafeQuestion; this additionally strips
+ * domain/skill_code/difficulty (§10.2), so no exam pre-completion code path can
+ * reveal them. Post-completion review re-adds them in projectFullQuestionFields.
+ * Exported for direct anti-leak regression testing.
  */
-function projectSafeQuestionFields(
+export function projectSafeQuestionFields(
   question: Record<string, unknown>
 ): SafeQuestionPreCompletion {
   const safeBase = projectStudentSafeQuestion({
@@ -3332,11 +3348,12 @@ function projectSafeQuestionFields(
     section_code: sectionCode,
     question_type: "multiple_choice",
     options: safeBase.options,
-    domain: safeBase.domain,
+    // Doc 04A §10.2 anti-leak: exam pre-completion must NOT reveal these.
+    domain: null,
     skill: safeBase.skill,
     subskill: safeBase.subskill,
-    skill_code: safeBase.skill_code,
-    difficulty: normalizeDifficulty(safeBase.difficulty ?? question.difficulty),
+    skill_code: null,
+    difficulty: null,
     source_type: normalizeSourceType(question.source_type),
     diagram_present: (question.diagram_present as boolean | null) ?? null,
     tags: safeBase.tags ?? null,
@@ -3344,9 +3361,12 @@ function projectSafeQuestionFields(
 }
 
 /**
- * Project full question fields including answers (for completed sessions).
+ * @spec [Doc 04A §10.2; Doc 04C §2.7 review reveal] | @implemented 2026-06-06
+ * plain English: post-completion review projection. Re-adds domain/skill_code/
+ * difficulty (which the pre-completion projection strips) alongside correct_answer/
+ * explanation — the review-phase reveal. Exported for regression testing.
  */
-function projectFullQuestionFields(
+export function projectFullQuestionFields(
   question: Record<string, unknown>
 ): FullQuestionPostCompletion {
   const safeFields = projectSafeQuestionFields(question);
@@ -3357,6 +3377,10 @@ function projectFullQuestionFields(
 
   return {
     ...safeFields,
+    // Review phase (post-completion) re-adds what §10.2 strips pre-completion.
+    domain: (question.domain as string | null) ?? null,
+    skill_code: (question.skill_code as string | null) ?? null,
+    difficulty: normalizeDifficulty(question.difficulty),
     correct_answer: correctAnswer,
     answer_text: (question.answer_text as string | null) ?? null,
     explanation: (question.explanation as string | null) ?? null,
@@ -3429,7 +3453,15 @@ export async function getExamReview(
     );
   }
 
-  // Determine if session is completed (needed for query projection below)
+  // KNOWN GAP — exam-scoring unit (see docs/alignment/KNOWN-GAPS.md).
+  // @gap [Doc 04C §2.5/§2.7]: per spec, review reveal MUST be gated on a successful
+  // `score_runs` row (04A completion outbox -> 04B score_runs -> 04C unlock), NOT on
+  // session completion alone. This codebase has NOT built the async 04B/`score_runs`
+  // pipeline; scoring is SYNCHRONOUS (per-response `is_correct` is written at answer
+  // time, the report is computed on demand), so a `completed` session is always fully
+  // scored and the spec's `scoring_pending` leak window cannot occur here. Gating on
+  // status is therefore safe TODAY but not spec-conformant. Replacing this with the
+  // real `score_runs` gate is owned by the exam-scoring unit (it builds 04B/04C/04D).
   const isCompleted = session.status === "completed";
 
   let questions: Record<string, unknown>[] = [];
@@ -3496,10 +3528,12 @@ export async function getExamReview(
     }
   }
 
-  // Project questions based on completion status using allowlist
-  const projectedQuestions = questions.map((q) =>
-    isCompleted ? projectFullQuestionFields(q) : projectSafeQuestionFields(q)
-  );
+  // Project questions based on completion status using allowlist. Branch outside
+  // the map so the result is a homogeneous SafeQuestionPreCompletion[] OR
+  // FullQuestionPostCompletion[] (the two are now disjoint types — §10.2 strip).
+  const projectedQuestions = isCompleted
+    ? questions.map((q) => projectFullQuestionFields(q))
+    : questions.map((q) => projectSafeQuestionFields(q));
 
   // Format modules
   const formattedModules: ExamReviewModule[] = (modules || []).map((m) => ({

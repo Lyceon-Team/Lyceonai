@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, cleanup]
 
 # CI runs without secrets by default (for forks and basic validation).
 # Secrets are only required for integration tests, which are skipped here.
@@ -29,8 +29,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -52,6 +52,17 @@ jobs:
       # so this runs green with no exclusions.
       - name: Run Tests (Deterministic CI Suite)
         run: pnpm run test:ci
+
+      # Wave 0 canonical primitives (@lyceon/shared): the new SSOT is born proven —
+      # strict typecheck, its own tests, and lint at error level all BLOCKING.
+      - name: Shared package — typecheck (blocking)
+        run: pnpm run check:shared
+
+      - name: Shared package — tests (blocking)
+        run: pnpm run test:shared
+
+      - name: Shared package — lint (blocking)
+        run: pnpm run lint:shared
 
       - name: Build
         run: pnpm run build
@@ -80,8 +91,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -111,9 +122,17 @@ jobs:
             console.log('No High/Critical vulnerabilities found.');
           "
 
+      # ADVISORY: legacy-tree lint. Graduates to fully blocking when advisory
+      # violations reach zero (ledger graduation criterion); standing rule is that
+      # every wave lint-cleans the files it touches. packages/shared lints BLOCKING
+      # in the required `ci` job.
+      - name: ESLint (legacy tree, advisory) — KNOWN GAP
+        continue-on-error: true
+        run: pnpm run lint
+
       - name: Summary
         run: |
-          echo "::notice::ci-known-gaps ran the remaining non-deletable gaps (source typecheck, security audit)."
+          echo "::notice::ci-known-gaps ran the remaining non-deletable gaps (source typecheck, security audit, legacy-tree lint)."
           echo "::notice::These are non-blocking by design. See docs/alignment/KNOWN-GAPS.md for owners and re-arm criteria."
 
   # Optional integration tests — only on push to main, when secrets exist.
@@ -132,8 +151,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" (pnpm@10.33.0) — single source of truth (Q2).
 
       - name: Setup Node
         uses: actions/setup-node@v4
