@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  fromMock,
-  applyLearningEventToMasteryMock,
-} = vi.hoisted(() => ({
+const { fromMock, applyLearningEventToMasteryMock } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   applyLearningEventToMasteryMock: vi.fn(),
 }));
@@ -121,7 +118,10 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 
       return {
         select: (columns?: string) => {
-          if (typeof columns === "string" && columns.includes("question_canonical_id")) {
+          if (
+            typeof columns === "string" &&
+            columns.includes("question_canonical_id")
+          ) {
             return buildChain(itemResult);
           }
           return buildChain(emptyResult);
@@ -150,9 +150,14 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
       };
     }
 
-    if (table === "tutor_interactions") {
+    // Tutor-assisted-retry telemetry now reads the canonical conversation store
+    // (tutor_messages.source_question_canonical_id) instead of the dormant, verbatim-free
+    // tutor_interactions side-table. Audit-only signal per Doc 03 §15.4.
+    if (table === "tutor_messages") {
       const tutorResult = {
-        data: options.hasTutorContext ? { id: "ti-1", created_at: "2026-03-10T10:05:00.000Z" } : null,
+        data: options.hasTutorContext
+          ? { id: "tm-1", created_at: "2026-03-10T10:05:00.000Z" }
+          : null,
         error: null,
       };
       return {
@@ -202,7 +207,7 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
         skill: "Linear equations",
         difficulty: 2,
         correct: true,
-      })
+      }),
     );
   });
 
@@ -231,7 +236,7 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
       expect.objectContaining({
         sourceFamily: "review",
         correct: true,
-      })
+      }),
     );
   });
 });

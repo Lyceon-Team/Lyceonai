@@ -880,7 +880,22 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     let tutorVerifiedRetry = false;
     let tutorOutcome: TutorOutcome | null = null;
-    const { data: tutorContext } = await supabaseServer.from("tutor_interactions").select("id, created_at").eq("user_id", userId).contains("canonical_ids_used", [item.question_canonical_id]).gte("created_at", item.source_attempted_at || "1970-01-01T00:00:00.000Z").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    // @spec [Doc_03_V1.1, §15.4] [Lyceon_Coding_Standards, §12.2] | @implemented [2026-06-06]
+    // plain English: detect whether the student engaged LISA on this question after
+    // the original attempt (tutor-assisted-retry telemetry; audit-only per §15.4 — the
+    // mastery event is emitted above by the review engine, not derived here). Repointed
+    // off the dormant, non-canonical tutor_interactions side-table onto the canonical
+    // conversation store tutor_messages: a scoped tutor turn carries the question's
+    // canonical id in source_question_canonical_id, so a single-column .eq (injection-safe)
+    // on (student_id, source_question_canonical_id) after the attempt is the faithful
+    // "tutor touched this question" signal — and unlike a tutor_question_links lookup it
+    // still fires when the student opened the tutor but accepted no related-question link.
+    const { data: tutorContext, error: tutorContextError } = await supabaseServer.from("tutor_messages").select("id, created_at").eq("student_id", userId).eq("source_question_canonical_id", item.question_canonical_id).gte("created_at", item.source_attempted_at || "1970-01-01T00:00:00.000Z").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (tutorContextError) {
+      // Audit-only signal; a failed lookup must not be silent (Coding Standards §13).
+      // Log metadata only — never the canonical id payload or any verbatim content (§12.1).
+      console.warn("[review] tutor audit-signal query failed (non-fatal)", { sessionId: session.id, error: tutorContextError.message });
+    }
     if (tutorContext) {
       tutorVerifiedRetry = true;
       tutorOutcome = verifiedIsCorrect ? "tutor_helped" : "tutor_fail";
