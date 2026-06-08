@@ -135,7 +135,7 @@ Execution view (workstreams, sequencing, exit criteria): `closure-plan.md` in th
 | GAP-HY-08 | MEDIUM | MISSING | Reference tables empty (`difficulty_levels_ref`, `sat_*_ref` — 0 rows) while RLS-off (TB-03) or deny-all; the implied taxonomy has no seeded source of truth | FIX-DB (seed or retire) | OPEN |
 | GAP-HY-09 | LOW | DRIFT | Overlapping CHECKs: `answer_attempts_outcome_check` + `_v2` | CLEANUP | OPEN |
 | GAP-HY-10 | LOW | DRIFT | `stripe_webhook_events` has no purge/retention policy | FIX-DB | OPEN |
-| GAP-HY-11 | LOW | UNSPECED | Repo sprawl: ~30 root-level audit artifacts, two migration systems, `deprecated/` + `attached_assets/` dumps | CLEANUP | OPEN |
+| GAP-HY-11 | LOW | UNSPECED | Repo sprawl: ~30 root-level audit artifacts, two migration systems, `deprecated/` + `attached_assets/` dumps | CLEANUP | CLOSED (PR #348: 30 root audit artifacts + `deprecated/` removed, zero-ref proven via git grep; `attached_assets/` already absent; the "two migration systems"/Drizzle-journal sub-item carried to GAP-OP-05/WS-1 — empty but still wired to drizzle.config.ts) |
 
 ---
 
