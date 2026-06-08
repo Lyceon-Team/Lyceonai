@@ -1,257 +1,261 @@
-# WS-1 — Provenance Baseline · Implementation Contract
+# WS-1 — Provenance Baseline · Implementation Contract (finalized)
 
-> **Phase:** contract-first (this doc) → CC implements → Codex audits → owner
-> applies/proves → registry closure. This contract is the reviewable artifact
-> that precedes implementation; nothing in §"Implementation deliverables" is
-> built until this contract is approved and the open decisions in §8 are resolved.
+> **Phase model:** A (finalize contract — *this doc*) → B (spec-auditor inner loop)
+> → C (owner + Codex approval gate — **STOP**) → D (implementation, only after C)
+> → E (owner-proven closure). Nothing in Phase D is built until C approves.
 
-## 0. Grounding
-
-- Code: `git rev-parse HEAD` = `34255356e0f728647b6ab224b199b3ccd96e1800` (branch `claude/sleepy-heisenberg-fKZvh`)
-- Ground truth: `docs/SpecAudit/0000-supabase-live-20260607.csv` — git blob `5bb0ffe15d52ef45a6706caaa1fd108dc5a82a2a` — **8182 LF** — 462104 bytes. Post-WS-0, pre-WS-1-drops.
-- Frozen audit evidence (NOT reconciled against, per program rule): `00-supabase-live-state.csv` — blob `21ecaf668a6d0c04f460334f13a2f9ae25892d7f` — 8404 LF.
-- Registry: `docs/SpecAudit/10-gap-registry/gap-registry.md` V1.1; closure-plan WS-1 (LF 22–29).
-
-## 1. Scope
-
-| GAP | Sev | Role in WS-1 | Closure mechanic |
-|---|---|---|---|
-| **GAP-OP-05** | HIGH | primary | Capture deployed `public` state as baseline `0000`; collapse to one pipeline (`supabase/migrations`); retire Drizzle; CI no-object-without-source gate |
-| **GAP-MA-03** | HIGH | primary | Baseline 0000 gives `apply_learning_event_to_mastery(...)` a tracked SQL definition (it is captured in full — see §6) |
-| **GAP-TU-09** | LOW | carried-in | `DROP TABLE public.tutor_interactions` (verbatim-bearing, 0 rows, dead) — **folded into the WS-1 forward migration, not separate-PR'd** |
-| **GAP-HY-02** | MEDIUM | carried-in | Drop the caller-free orphan function families — folded into the same WS-1 forward migration |
-
-Registry status flips to **CLOSED only at the closure step** (after owner applies
-+ proves). This contract PR does **not** edit registry status.
-
-## 2. Locked decision — baseline scope boundary (owner, 2026-06-08)
-
-**Option 1: `public` + documented platform-managed boundary.** Full detail in
-[`BASELINE-BOUNDARY.md`](./BASELINE-BOUNDARY.md). Summary: baseline owns all of
-`public` (tables/defaults/constraints/indexes/views/matviews, SECURITY DEFINER
-functions with pinned `search_path`, `ENABLE ALWAYS` trigger state, RLS
-enable-state + policies, grants to anon/authenticated/service_role, the
-`profile_role` enum) plus explicitly-owned cross-schema deps
-(`create extension if not exists vector`/`pgcrypto`, `auth.uid()` touchpoints).
-A committed boundary doc enumerates and excludes the 14 platform-managed schemas,
-platform extensions, and role provisioning. Exit proof: `supabase db diff`
-scoped to the owned surface returns empty on fresh-apply against a clean
-Supabase project.
-
-## 3. Implementation deliverables & gate sequence
-
-| # | Deliverable | Built by | Gate before next |
-|---|---|---|---|
-| D1 | `BASELINE-BOUNDARY.md` | CC (done, this PR) | owner/Codex review |
-| D2 | Drizzle severance (§4) | CC | **dep-removal approval (§8.1)** |
-| D3 | Baseline `0000` generation runbook + sanitization rules (§5) | CC writes runbook; **owner runs the dump** (service_role / prod — never an agent) | owner produces `0000_baseline.sql` |
-| D4 | WS-1 forward drop migration TU-09 + HY-02 (§6) + CI-test coordination (§6.3) | CC drafts SQL + test edit; **owner applies to prod** | Codex audit of diff |
-| D5 | CI gate: no-object-without-source (§7) | CC | green in CI |
-| D6 | Registry closure: OP-05/MA-03/TU-09/HY-02 → CLOSED with evidence | CC, in the closure PR, after owner proof | — |
-
-Agents never receive `service_role`; all prod dumps/migrations/diffs are
-owner-applied. CC produces SQL/tooling/runbooks; the owner executes against prod.
-
-## 4. D2 — Drizzle severance ("sever `shared/schema.ts` Drizzle wiring first")
-
-**Blast radius (verified, HEAD 3425535).** Every consumer of `@shared/schema`
-imports only the **plain TS interfaces** via `import type` — never the Drizzle
-table objects:
-
-| Importer | Symbols (all `type`-only) |
-|---|---|
-| `apps/api/src/services/fullLengthExam.ts:29` | `FullLengthExam*` types |
-| `client/src/components/progress-sidebar.tsx:7` | `ProgressStats` |
-| `client/src/components/NotificationDropdown.tsx:28` | `Notification` |
-| `client/src/hooks/use-adaptive-practice.ts:4` | `StudentQuestion` |
-| `client/src/pages/UserProfile.tsx:30` | `NotificationDigestFrequency`, `UserNotificationPreferences` |
-| `client/src/pages/flow-cards.tsx:11` | `StudentQuestion`, `StudentMcQuestion` |
-
-The Drizzle exports `users` and `questions` (`pgTable`, `shared/schema.ts:35,52`)
-and the `drizzle-orm` / `drizzle-orm/pg-core` imports (`:1–2`) have **zero
-importers anywhere** in the tree, despite the inline comments claiming "used by
-active scripts." The only `drizzle-*` references in the entire repo are
-`shared/schema.ts`, `drizzle.config.ts`, and `package.json`.
-
-**Edits:**
-
-1. `shared/schema.ts` → remove lines 1–2 (`drizzle-orm` imports) and the two
-   `pgTable` blocks (`users` :35–49, `questions` :52–74), leaving a pure-types
-   module — exactly what all six importers actually consume.
-2. Delete `drizzle.config.ts`.
-3. Remove the empty Drizzle journal: top-level `./migrations/meta/` (the
-   `out: "./migrations"` target; confirmed empty-but-wired, carried from
-   GAP-HY-11's note).
-4. `package.json` → remove the `db:push` script (`:26`) and the
-   `drizzle-orm` / `drizzle-zod` / `drizzle-kit` deps (`:89,90,159`); update
-   `pnpm-lock.yaml`. **Dependency change → owner approval required (§8.1).**
-
-**Severance regression guard:** add a CI assertion that `drizzle.config.ts` is
-absent and no `drizzle-*` appears in `package.json` dependencies (§7, lint layer),
-so the wiring cannot silently return.
-
-## 5. D3 — Baseline 0000 generation (owner-run runbook)
-
-**Method.** Owner runs, against prod, with service_role/DB creds (not an agent):
+## 0. Grounding (re-run every task; STOP on capture-hash mismatch)
 
 ```
+git rev-parse origin/cleanup = 40ced0e9bb6c26474d197833d1b4502f912c7b7e
+git rev-parse origin/main     = 34255356e0f728647b6ab224b199b3ccd96e1800   (cleanup→main merge, PR #347)
+git rev-parse HEAD            = a5d491770c1c44fc6036abf202a91aab169f42ac   (this branch; updated per commit)
+git hash-object docs/SpecAudit/0000-supabase-live-20260607.csv
+                             = 5bb0ffe15d52ef45a6706caaa1fd108dc5a82a2a   ✓ (required prefix 5bb0ffe1)
+```
+
+**Citation convention (LF-counted, pasted proof).** The capture has **no trailing
+newline**: `wc -l` = 8182 (newline count), `grep -c ''` = 8183 (lines), and
+`sed -n`/`git grep -n` LF line numbers run **1..8183** (line 8183 =
+`==== END OF REPORT ====`). All capture citations below are `sed -n` LF line
+numbers. (The continuation prompt stated 8181/8182; this byte-identical copy —
+same blob hash — measures 8182/8183, so the measured values are cited.) CR-aware
+tools (PowerShell) are prohibited for citation work. The frozen
+`00-supabase-live-state.csv` (blob `21ecaf66…`) is audit evidence only — WS-1 is
+**never** reconciled against it.
+
+## 0.1 The two invariants governing this entire workstream
+
+**I-1 — The baseline is deployed reality, NOT the spec target.** `docs/Spec/` is
+the *upgrade destination* implemented by later waves (WS-4 mastery, WS-5 scoring).
+WS-1 does **not** move the schema toward the spec. Baseline `0000` reproduces the
+**current post-WS-0 production schema exactly** — every legacy table, every
+wrong-generation function (incl. `apply_learning_event_to_mastery`, the Doc-02C
+EMA writer), every quirk in `0000-supabase-live-20260607.csv`. "Improving"
+anything toward the spec is out of scope and breaks the exit proof: the empty
+diff is only achievable if `0000` == prod. Faithfulness is the whole job.
+
+**I-2 — After WS-1 there is exactly ONE schema-change path.** Today the deployed
+DB was built through an entangled mix of ~60 never-tracked `supabase/migrations`
+files **and** externally hand-run SQL (`database/*.sql`,
+`database/supabase-vector-setup.sql`, the `scripts/apply_migrations.ts` second
+applier). These are competing, untracked sources of truth — the provenance
+defect itself (GAP-OP-05). WS-1 collapses them: `supabase/migrations` becomes the
+sole pipeline; everything else is inventoried (§4), proven redundant (its effects
+already live in `0000` because `0000` IS current prod) or dead, and archived as
+historical. After WS-1, no schema change reaches production except as a numbered
+migration through the pipeline.
+
+## 1. Scope (registry GAPs)
+
+| GAP | Sev | Role | Closure mechanic |
+|---|---|---|---|
+| **GAP-OP-05** | HIGH | primary | `0000` baseline of deployed `public` state; collapse to one pipeline; retire Drizzle + competing external SQL; CI no-object-without-source |
+| **GAP-MA-03** | HIGH | primary | `0000` gives `apply_learning_event_to_mastery(...)` a tracked definition (captured in full — §10). **Captured as-is; not fixed — that is WS-4.** |
+| **GAP-TU-09** | LOW | carried-in | `DROP TABLE public.tutor_interactions` — folded into the WS-1 forward migration |
+| **GAP-HY-02** | MEDIUM | carried-in | Drop the 14 caller-free orphan functions — folded into the same migration |
+
+Registry status flips to **CLOSED only in Phase E** (owner-proven). This contract
+phase edits no registry status.
+
+## 2. Locked scope boundary (owner, 2026-06-08)
+
+**Option 1: `public` + documented platform-managed boundary** — full detail in
+[`BASELINE-BOUNDARY.md`](./BASELINE-BOUNDARY.md). Diff scope = `--schema public`;
+owned cross-schema deps = `create extension if not exists vector`/`pgcrypto`,
+`auth.uid()` touchpoints; 14 platform-managed schemas + platform extensions +
+role provisioning excluded.
+
+## 3. §8 rulings — RESOLVED (folded in)
+
+1. **Drizzle removal — APPROVED, conditioned on Codex re-verification.** Before
+   the deps are dropped, **Codex** must independently confirm zero *runtime*
+   importers of the `drizzle-orm`/`drizzle-zod`/`pgTable` exports — not just
+   `import type`; check re-exports, dynamic `import()`, and scripts outside
+   `src`. CC's blast-radius finding (§5) is the input, not the authority. On
+   confirmation: reduce `shared/schema.ts` to pure types, delete
+   `drizzle.config.ts`, remove `migrations/meta/_journal.json`, drop the three
+   deps.
+2. **Legacy migrations — ARCHIVE, do not delete.** Move the ~60 never-tracked
+   `supabase/migrations` files out of the apply path to
+   `docs/SpecAudit/_legacy-migrations/` (unambiguously outside any CLI scan).
+   They are the only written record of historical *intent* on a platform whose
+   core defect was intent-vs-reality drift; deleting destroys provenance
+   evidence. An `_legacy-migrations/README.md` states why they are retained and
+   that none are canonical.
+3. **HY-02 function/table split — CONFIRMED.** Defer the 2 `update_ingestion_v4_*`
+   trigger functions to WS-7 (coupled to the `ingestion_v4_*` HY-01 tables). WS-1
+   drops the 14 caller-free standalone functions + `tutor_interactions`.
+4. **The 14-fn drop-set — CONFIRMED; bare `vectors` is a NO-OP.** Drop only
+   objects that (a) exist in the `0000` capture AND (b) carry a pasted `git grep`
+   zero-caller proof. The registry's bare `vectors` has **no matching object in
+   the capture** — the `vectors` *table* is **ABSENT** from prod (proof §4); only
+   the `create_vectors_table_if_not_exists` *function* (which would create it)
+   exists and is already in the 14. Record at closure: `vectors` was a registry
+   over-enumeration (a name containing "vectors", not a distinct object); **no
+   DROP authored.** Never author a DROP for an object absent from the capture.
+
+## 4. External-SQL & competing-pipeline inventory (Phase A deliverable)
+
+**Method (pasted proof).** `find . -name '*.sql'` outside `supabase/migrations`
+→ 25 files (all under `database/`). DDL-issuing non-SQL scripts via
+`grep -rIlE 'CREATE …|ALTER TABLE|DROP …'` outside tests → 2
+(`scripts/apply_migrations.ts`, `scripts/ci/check_rls_enabled.ts`). Each file's
+`CREATE`/`ALTER` targets were presence-checked against the capture (tables in A1,
+functions in B1/B2, sample policies in C1). Classification: **(a)** effect already
+in `0000` (object PRESENT in prod) → archiving loses nothing; **(b)** dead (object
+ABSENT from prod) → archiving loses nothing. **Every file resolves to ARCHIVE; no
+file is a unique source of a needed, un-baselined prod object** — because `0000`
+== prod, any in-prod object is in the baseline by definition.
+
+| Path | Key objects | Capture presence | Class | Disposition |
+|---|---|---|---|---|
+| `database/20241207_add_tutor_interactions.sql` | tbl `tutor_interactions` | PRESENT A1 L88 | a | archive (table itself dropped in D4) |
+| `database/20241207_fix_question_embeddings_vector_768.sql` | tbl `question_embeddings` + idx | PRESENT A1 L59 | a | archive |
+| `database/courses-memberships-rls-fix.sql` | policies on `courses`/`memberships` | tbls PRESENT (L22/L49); `*_v2` policies superseded | a/b | archive |
+| `database/migrations/0001_core_schema.sql` | ext pgcrypto/uuid-ossp/vector; idx on attempts/jobs/chunks/… | ext PRESENT F1; `idx_attempts_user` PRESENT, `idx_jobs_status`/`idx_chunks_course` ABSENT | mixed | archive |
+| `database/migrations/0002_rls_policies.sql` | legacy policy set | superseded generation | a/b | archive |
+| `database/migrations/0003_practice_idempotency.sql` | `idx_answer_attempts_idempotency` | ABSENT | b | archive |
+| `database/policies/{attempts,chat_messages,exam_attempts,notifications,practice_sessions,progress,users}.sql` | RLS policies on present tables | `attempts_select_own`/`chat_messages_select_own`/`users_select_self` PRESENT C1 | a | archive |
+| `database/policies/{jobs_audit,orgs_courses,questions,storage_policies}.sql` | policies on `jobs`/`batch_jobs`/`doc_chunks`/storage + superseded `questions_*` | `jobs`/`batch_jobs`/`doc_chunks` ABSENT; `questions_select_authenticated` ABSENT | b | archive |
+| `database/postgresql-rls-policies.sql` | fns `get_current_user_id`/`is_current_user_admin`/`set_current_user_id` + policies | all 3 fns ABSENT B1 | b | archive |
+| `database/profiles-rls-audit.sql` | (no DDL — audit script) | n/a | b | archive |
+| `database/profiles-rls-fix.sql` | policies `profiles_self_select`/… | `profiles_self_select` PRESENT C1 | a | archive |
+| `database/seeds/0003_seed_sat_taxonomy.sql` | tbls `difficulty_levels_ref`,`sat_*_ref` + seed rows | tbls PRESENT A1 L23/66/67/68; **rows 0** (GAP-HY-08) | a (schema); seed never applied | archive |
+| `database/supabase-auth-migration-simple.sql`, `database/supabase-auth-only.sql` | tbls `profiles`,`practice_sessions`,`answer_attempts`,`admin_audit_logs`; fns `handle_new_user`,`update_updated_at` | profiles/practice_sessions/answer_attempts PRESENT; `admin_audit_logs` ABSENT; fns PRESENT | mixed | archive |
+| `database/supabase-profiles-setup.sql` | tbl `profiles`; fns `handle_new_user`,`set_updated_at` | PRESENT | a | archive |
+| `database/supabase-vector-setup.sql` | tbls `question_embeddings`,**`vectors`**; fns `create_vectors_table_if_not_exists`,`match_questions`,`match_vectors` | `question_embeddings` PRESENT; **`vectors` ABSENT**; fns PRESENT (2 dropped in D4) | mixed | archive |
+| `scripts/apply_migrations.ts` | **competing applier** → `database/migrations` + `database/seeds`; own `_migrations` table | `_migrations` **ABSENT** (never run on prod); unwired in package.json/CI | b | **archive (neutralize 2nd pipeline, I-2)** |
+| `scripts/ci/check_rls_enabled.ts` | read-only RLS guard (`SELECT rowsecurity`; the `ALTER TABLE` is a `console.error` hint, not executed) | n/a — issues no DDL | — | **KEEP** (guard, not a source) |
+
+**Pasted proof (excerpt):**
+```
+ABSENT   table vectors                 |  ABSENT  fn get_current_user_id
+PRESENT  table tutor_interactions A1 88 |  ABSENT  fn is_current_user_admin
+PRESENT  table difficulty_levels_ref 23 |  ABSENT  fn set_current_user_id
+ABSENT   table jobs / batch_jobs / admin_audit_logs / doc_chunks
+_migrations tracking table: ABSENT → apply_migrations.ts never run against prod
+idx_attempts_user PRESENT | idx_jobs_status ABSENT | idx_answer_attempts_idempotency ABSENT
+```
+
+## 5. Drizzle severance (D1; ruling 1)
+
+**CC blast-radius finding (input to Codex re-verification).** All six
+`@shared/schema` importers are `import type` of plain interfaces only:
+`apps/api/src/services/fullLengthExam.ts:25-29` (`FullLengthExam*`),
+`client/src/components/{progress-sidebar,NotificationDropdown}.tsx`,
+`client/src/hooks/use-adaptive-practice.ts`,
+`client/src/pages/{UserProfile,flow-cards}.tsx`. The `users`/`questions`
+`pgTable` exports (`shared/schema.ts:35,52`) and the `drizzle-orm` imports
+(`:1-2`) have **zero importers** repo-wide; the only `drizzle-*` references are
+`shared/schema.ts`, `drizzle.config.ts`, `package.json`. **Codex must
+independently confirm** (re-exports, dynamic imports, non-`src` scripts) before
+deps drop. Edits then: trim `shared/schema.ts` to types; delete
+`drizzle.config.ts`; remove `migrations/meta/_journal.json`; remove `db:push` +
+the 3 deps + lockfile. Severance regression lint added in §8.
+
+## 6. Baseline 0000 generation (D3; owner-run — agents never get `service_role`)
+
+CC produces the exact command + sanitization/repair runbook; **owner executes**
+against prod and returns the dump; CC commits it as
+`supabase/migrations/00000000000000_baseline.sql` + the golden snapshot.
+
+```
+# owner runs, linked to prod:
 supabase db dump --linked --schema public -f supabase/migrations/00000000000000_baseline.sql
-# (equivalently: pg_dump --schema-only --no-owner --no-privileges=false --schema=public)
 ```
+**Sanitization:** scope to `public`; prepend owned deps
+(`create extension if not exists vector; … pgcrypto;`); emit GRANTs to
+anon/authenticated/service_role but **no** `CREATE ROLE`; keep
+`SET search_path TO 'public'` on SECURITY DEFINER fns verbatim; patch
+`pg_dump`'s origin-enabled triggers to the captured `ENABLE ALWAYS` state
+(D1, LF 7990). **Verification gate:** the committed `0000` must match the
+`0000-supabase-live-20260607.csv` capture object-for-object in `public` scope
+(I-1). **Repair:** owner runs `supabase migration repair --status applied
+00000000000000` so prod marks the genesis applied without re-running; a fresh DB
+runs it in full.
 
-**Sanitization rules (so the dump matches the locked boundary):**
+## 7. Folded drops (D4; TU-09 + HY-02) — exact SQL in Appendix A
 
-- Scope strictly to `public`. Strip any emitted `auth`/`storage`/`realtime`/…
-  objects (boundary §2).
-- Prepend owned cross-schema deps: `create extension if not exists vector;`
-  and `create extension if not exists pgcrypto;` (boundary §1). Do **not** emit
-  `CREATE ROLE` — keep `GRANT … TO {anon,authenticated,service_role}` only.
-- Preserve `SET search_path TO 'public'` on every SECURITY DEFINER function
-  exactly as captured.
-- Preserve `ALTER TABLE … ENABLE ALWAYS TRIGGER …` state for governance triggers
-  (capture D1, LF 7990) — `pg_dump` defaults to origin-enabled and must be
-  patched to match the captured `ENABLE ALWAYS` rows.
+- **TU-09:** `DROP TABLE IF EXISTS public.tutor_interactions;`. Dependents
+  verified clean — only `tutor_interactions_pkey` (A3 L1527 / A4 L1841); no
+  inbound FK, no C1 policy, no D1 trigger; A1 L88 `rls_enabled=true` + zero
+  policies ⇒ inert grants. Runtime already reads `tutor_messages`
+  (`review-session-routes.ts:893`). Full-table drop strictly supersedes the
+  never-applied column-ALTER.
+- **HY-02:** drop the 14 caller-free fns (Appendix A; signatures from B1
+  LF 4090-4148; zero repo callers verified). The 2 `update_ingestion_v4_*`
+  trigger fns are **deferred to WS-7** (ruling 3). **`vectors`: no DROP** —
+  absent from prod (ruling 4 / §4).
+- **CI-test coordination (mandatory):** rewrite assertion #3 of
+  `tests/ci/tutor-interactions.no-verbatim.contract.test.ts` (currently L77-84,
+  reads the soon-archived `20260606_tutor_interactions_drop_verbatim.sql`) to
+  target `…_ws1_provenance_drops.sql` and assert
+  `/DROP TABLE\s+(IF EXISTS\s+)?public\.tutor_interactions/i`. Assertions
+  #1/#2/#4 unchanged.
 
-**Legacy-migration disposition (the "collapse" half of OP-05).** The current
-`supabase/migrations/` holds ~60 date-named files (`20241218…` → `20260607_ws0…`)
-and **0 are recorded applied** in prod (capture H1, LF 8096–8099:
-`(0 applied migrations recorded)`). Baseline `0000` becomes the genesis; the
-pre-baseline files must leave the active pipeline so the CLI does not attempt to
-re-apply 60 overlapping, never-tracked files. **Recommendation (§8.2):**
-`git mv` them to `docs/SpecAudit/20-ws1-provenance/legacy-migrations-preBaseline/`
-(preserve as audit evidence — they include the never-applied
-`20260606_tutor_interactions_drop_verbatim.sql`, a direct OP-05 datapoint), NOT
-delete. The `20260607_ws0_stop_the_bleed.sql` migration **is applied in prod**
-(WS-0) so its effects are already folded into the live state the baseline
-captures — it moves to the archive with the rest.
+## 8. CI gate (D5) + exit proof (E)
 
-**Repair (mark baseline applied on prod without re-running):** prod already
-holds every baseline object, so the owner runs
-`supabase migration repair --status applied 00000000000000` after committing the
-baseline, recording it as the applied genesis. A fresh/clean DB instead runs the
-baseline in full. This is the standard Supabase baseline pattern.
+**CI gate (no prod creds) — schema self-consistency + lint:**
+- *Self-consistency:* fresh-apply the committed pipeline (`0000` →
+  `…_ws1_provenance_drops`) to a throwaway Postgres; `pg_dump --schema public`;
+  compare normalized to the committed golden `public-schema.expected.sql`. Drift
+  fails CI — this is the durable "no DB object without repo SQL" guard going
+  forward.
+- *Structural/severance lint:* every `supabase/migrations/*.sql` matches
+  `^[0-9]{14}_.*\.sql$` (plus the `00000000000000` genesis); no stray `.sql` in
+  the pipeline dir; `drizzle.config.ts` absent; no `drizzle-*` in `package.json`;
+  no DDL-issuing script outside the pipeline except the kept read-only guard.
 
-## 6. D4 — WS-1 forward drop migration (TU-09 + HY-02, folded)
+**Exit proof (owner-run, executable — *fresh-apply reproduces prod*, NOT
+prod-vs-prod):**
+1. Owner spins up a **fresh throwaway Supabase project**.
+2. Applies `00000000000000_baseline.sql` then `…_ws1_provenance_drops.sql`
+   through the pipeline (`supabase db push`).
+3. `supabase db diff --linked --schema public` between the throwaway project and
+   **production** → must return **empty** (modulo data). *(Prod must have had the
+   D4 drops applied first; a prod-vs-prod diff proves nothing — the proof is that
+   a from-scratch apply equals prod.)*
+4. Tears the throwaway project down. The diff output is captured and embedded in
+   the closure commit.
 
-One migration `supabase/migrations/20260608_ws1_provenance_drops.sql`, applied by
-the owner **after** the baseline. Exact SQL in **Appendix A**.
+## 9. Implementation arc (phased; each gated)
 
-### 6.1 TU-09 — drop `tutor_interactions`
+- **A — finalize contract** *(this doc; complete)*: rulings + invariants +
+  exit-proof procedure + §4 inventory.
+- **B — spec-auditor inner loop**: hand this finalized contract to the
+  `spec-auditor` subagent. Settled artifacts only.
+- **C — approval gate (STOP)**: owner + Codex review; Codex re-verifies the §5
+  drizzle blast radius (ruling 1) and the §4/Appendix-A caller-free proofs. **No
+  Phase D until both approve.**
+- **D — implementation** (post-C, dependency order, each a reviewable annotated
+  unit): D1 severance · D2 archive (legacy migrations + external SQL +
+  `apply_migrations.ts`) + `_legacy-migrations/README.md` · D3 owner-run baseline
+  `0000` + golden snapshot · D4 folded drops + CI-test rewrite · D5 CI gate.
+- **E — owner-proven closure**: owner runs §8 exit proof; CC flips
+  GAP-OP-05/MA-03/TU-09/HY-02 → CLOSED with the empty-diff output + drop proofs in
+  the commit; a fresh post-WS-1 capture becomes ground truth for WS-2/WS-3.
 
-- Capture: table at A1 LF 88 (`| tutor_interactions | table | true | false | 0 | 72 kB |`), columns `message` (col 8, NOT NULL, LF 1153) + `answer` (col 9, NOT NULL, LF 1154).
-- **Dependents (verified clean):** only `tutor_interactions_pkey` (A3 LF 1527 / A4 LF 1841). **No** inbound FK, **no** RLS policy (C1), **no** trigger (D1). A1 (LF 88) shows `rls_enabled=true` + zero C1 policies ⇒ RLS deny-all for non-bypass roles; the broad anon/auth grants (A7 LF 1923–1936) are inert under that posture and vanish with the table.
-- Runtime is already repointed: `review-session-routes.ts:893` reads canonical `tutor_messages`, not `tutor_interactions`.
-- Statement: `DROP TABLE IF EXISTS public.tutor_interactions;` (RESTRICT-safe; no `CASCADE` needed). A full-table drop strictly supersedes the never-applied column-ALTER and satisfies the no-verbatim invariant (Coding Standards §12.2) more completely.
+## 10. MA-03 closure note
 
-### 6.2 HY-02 — drop caller-free orphan functions (and the function/table split)
+`apply_learning_event_to_mastery(...)` full body is captured (B2 LF 4234 header /
+LF 4236 `CREATE OR REPLACE FUNCTION public.apply_learning_event_to_mastery`; B1
+tagline LF 4087). It enters the repo **verbatim** via `0000`. Do **not** correct
+the Doc-02C EMA formula here (I-1) — the Doc-05 rebuild is WS-4.
 
-Verified zero repo callers (grep over `*.ts|*.tsx|*.js`, HEAD 3425535; the only
-hits are the dead `database/supabase-vector-setup.sql` definitions and test
-fixtures). **Drop these 14 (signatures from capture B1, LF 4090–4148):**
-
-| Function (signature) | B1 LF |
-|---|---|
-| `create_vectors_table_if_not_exists()` | 4095 |
-| `enqueue_render_pages_if_missing(uuid, text, text, text, text, integer)` | 4097 |
-| `enqueue_render_pages_if_missing(uuid, jsonb)` | 4098 |
-| `enqueue_render_pages_if_missing(uuid, boolean, jsonb)` | 4099 |
-| `enqueue_render_pages_if_missing_v2(uuid, jsonb, boolean)` | 4100 |
-| `match_vectors(vector, double precision, integer)` | 4121 |
-| `v4_acquire_worker_lock(text, timestamptz)` | 4140 |
-| `v4_debug_queue_schema()` | 4141 |
-| `v4_increment_cluster_usage(uuid, integer)` | 4142 |
-| `v4_mark_style_pages_used(uuid[])` | 4143 |
-| `v4_queue_reset_stale_locks(integer)` | 4144 |
-| `v4_release_worker_lock(text)` | 4145 |
-| `v4_renew_worker_lock(text, timestamptz)` | 4146 |
-| `v4_set_primary_cluster(uuid, uuid, numeric)` | 4147 |
-
-**Function/table split — two functions deferred to WS-7, by design.** The
-registry's `ingestion_v4_*/v4_* (10)` = the 8 `v4_*` above **plus** the two
-**trigger** functions `update_ingestion_v4_jobs_updated_at()` and
-`update_ingestion_v4_queue_updated_at()` (B1 LF 4133–4134). Those two are **not
-caller-free** — they back `updated_at` triggers on the `ingestion_v4_jobs` /
-`ingestion_v4_queue` tables, which are **GAP-HY-01 / WS-7** legacy tables, out of
-WS-1 scope. Dropping them now would require `CASCADE` (orphaning triggers on
-surviving tables) and leave a half-dropped family. They are therefore dropped
-**with their tables in WS-7**, where the table drop removes the triggers first.
-This keeps WS-1 to genuinely caller-free, table-uncoupled objects. (Bodies of the
-14 above *reference* the dead `ingestion_v4_*` tables but Postgres does not
-hard-track plpgsql body references, so their drops do not block.)
-
-**Registry discrepancies to record (not silently resolved):**
-- The registry names a bare `vectors` function; capture B1 has only `match_vectors`
-  and `create_vectors_table_if_not_exists` — **no `vectors()` exists**. The
-  drop-set is the 14 enumerated; `vectors` is treated as a registry shorthand for
-  the `vector`-family, not a missing object.
-- `match_questions` (×3 overloads, B1 LF 4118–4120) is **kept** — it is the RAG
-  question-search path, not in HY-02's list.
-
-### 6.3 CI-test coordination (mandatory, or CI breaks)
-
-`tests/ci/tutor-interactions.no-verbatim.contract.test.ts` assertion #3 (L77–84)
-`read()`s `supabase/migrations/20260606_tutor_interactions_drop_verbatim.sql` and
-asserts the `ALTER TABLE … DROP COLUMN message/answer`. Once that file is archived
-(§5) the `read()` throws → CI fails. WS-1 **must** rewrite assertion #3 to target
-`20260608_ws1_provenance_drops.sql` and assert the full-table drop
-(`/DROP TABLE\s+(IF EXISTS\s+)?public\.tutor_interactions/i`). Assertions #1
-(flag gone), #2 (dead writer gone), #4 (bridge reads `tutor_messages`) are
-unchanged and already pass. The rewritten guard is strictly stronger (no table ⇒
-no verbatim columns).
-
-## 7. D5 — CI gate: no object without source
-
-CI **cannot** hold `service_role`/prod creds (standing rule), so it proves
-self-consistency from scratch; the prod comparison is the owner's exit proof.
-
-**Layer A — schema self-consistency (every PR, throwaway Postgres):**
-apply the full pipeline (`00000000000000_baseline.sql`, then the WS-1 drops, then
-any later) to a fresh DB; dump `public`; compare (normalized) to a committed
-golden snapshot `public-schema.expected.sql`. Drift between the applied schema
-and the committed snapshot fails CI — this is the durable
-"no DB object without repo SQL" guard going forward: any prod object added later
-without a migration cannot reproduce the snapshot.
-
-**Layer B — structural lint (every PR):** every `supabase/migrations/*.sql`
-matches `^[0-9]{14}_.*\.sql$`; no stray `.sql` in the pipeline dir; `drizzle.config.ts`
-absent; no `drizzle-*` in `package.json` deps (severance guard, §4).
-
-**Exit proof (owner-run, recorded once at apply — NOT a CI job):**
-`supabase db diff --linked --schema public` after applying the WS-1 drops to prod
-returns **empty**. Output is attached to the closure PR as evidence. This is the
-GAP-OP-05 / closure-plan WS-1 exit proof (LF 29: "between a from-scratch migration
-apply and production = empty (modulo data)").
-
-## 8. Open decisions for owner / Codex (resolve before D2–D4 land)
-
-1. **§8.1 Dependency removal approval.** Severance removes `drizzle-orm`,
-   `drizzle-zod`, `drizzle-kit` from `package.json` (+ lockfile). CLAUDE.md bars
-   dependency changes without approval. Confirm removal.
-2. **§8.2 Legacy-migration disposition.** Archive the ~60 pre-baseline files to
-   `…/legacy-migrations-preBaseline/` (recommended — audit evidence) vs delete
-   (rely on git history). Confirm.
-3. **§8.3 HY-02 function/table split.** Confirm deferring
-   `update_ingestion_v4_jobs_updated_at` / `update_ingestion_v4_queue_updated_at`
-   to WS-7 (dropped with their HY-01 tables), so WS-1 drops the 14 caller-free
-   functions only. Registry footnote to be added at closure.
-4. **§8.4 `vectors` reconciliation.** Confirm the 14-function drop-set is complete
-   and the registry's bare `vectors` is shorthand (no such object in the capture).
-
-## Appendix A — WS-1 forward drop SQL (draft, owner-applied)
+## Appendix A — WS-1 forward drop SQL (draft; owner-applied)
 
 ```sql
 -- @spec [Gap-Registry_V1.1, GAP-TU-09] [Gap-Registry_V1.1, GAP-HY-02]
 -- @implemented [2026-06-08] | plain English: fold the two proven-dead DB drops
--- carried into WS-1 onto the provenance baseline. tutor_interactions is a dead,
--- 0-row, verbatim-bearing audit side-table (runtime already reads tutor_messages);
--- the orphan v4_*/vector/enqueue functions have zero callers. Idempotent.
+-- carried into WS-1 onto the provenance baseline. Idempotent.
 
--- TU-09 — verbatim-bearing dead table (no FK/RLS/trigger dependents)
+-- TU-09 — verbatim-bearing dead table (no FK/RLS/trigger dependents; 0 rows)
 DROP TABLE IF EXISTS public.tutor_interactions;
 
--- HY-02 — caller-free orphan functions (14). The two update_ingestion_v4_* trigger
--- functions are intentionally NOT dropped here — they back triggers on the HY-01
--- ingestion_v4_* tables and are retired with those tables in WS-7.
+-- HY-02 — 14 caller-free orphan functions. The 2 update_ingestion_v4_* trigger
+-- functions are intentionally NOT dropped here (WS-7, with their HY-01 tables).
+-- No DROP for `vectors` — that object is absent from prod (registry over-enumeration).
 DROP FUNCTION IF EXISTS public.create_vectors_table_if_not_exists();
 DROP FUNCTION IF EXISTS public.enqueue_render_pages_if_missing(uuid, text, text, text, text, integer);
 DROP FUNCTION IF EXISTS public.enqueue_render_pages_if_missing(uuid, jsonb);
@@ -267,17 +271,14 @@ DROP FUNCTION IF EXISTS public.v4_release_worker_lock(text);
 DROP FUNCTION IF EXISTS public.v4_renew_worker_lock(text, timestamp with time zone);
 DROP FUNCTION IF EXISTS public.v4_set_primary_cluster(uuid, uuid, numeric);
 
--- ----------------------------------------------------------------------------
--- LYCEON-MIGRATION-REVIEWED (INV-06: every-migration-has-rollback)
--- Rollback: re-create from baseline source (the dropped objects' definitions
--- live in 00000000000000_baseline.sql history / capture B2). These are proven-dead
--- objects; rollback is provenance-restore only, not a runtime dependency.
--- ----------------------------------------------------------------------------
+-- LYCEON-MIGRATION-REVIEWED (INV-06): rollback = re-create from 0000 baseline /
+-- capture B2 history. Proven-dead objects; rollback is provenance-restore only.
 ```
 
 ## Appendix B — Key capture citations (LF + verbatim anchor)
 
-- MA-03 RPC body present: LF 4234 `### apply_learning_event_to_mastery(...)`; LF 4236 `CREATE OR REPLACE FUNCTION public.apply_learning_event_to_mastery(...)`; B1 tagline LF 4087 `Canonical DB-owned mastery/KPI/projection writer.`
-- 0 applied migrations: LF 8096–8099 `(0 applied migrations recorded)`.
+- MA-03 RPC: LF 4234 `### apply_learning_event_to_mastery(...)`; LF 4236 `CREATE OR REPLACE FUNCTION public.apply_learning_event_to_mastery(...)`; tagline LF 4087.
+- 0 applied migrations: LF 8096-8099 `(0 applied migrations recorded)`.
 - Audit scope public: LF 8163 `## I5 — Schema inventory (context only; audit scope remains public)`.
-- `vector` in public: LF 8074 `| vector | 0.8.0 | public |`.
+- `vector` ext in public: LF 8074 `| vector | 0.8.0 | public |`.
+- `vectors` table: **absent** (no `^| vectors | table |` row in A1).
