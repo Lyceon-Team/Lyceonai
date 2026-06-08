@@ -53,7 +53,7 @@ migration through the pipeline.
 | **GAP-OP-05** | HIGH | primary | `0000` baseline of deployed `public` state; collapse to one pipeline; retire Drizzle + competing external SQL; CI no-object-without-source |
 | **GAP-MA-03** | HIGH | primary | `0000` gives `apply_learning_event_to_mastery(...)` a tracked definition (captured in full — §10). **Captured as-is; not fixed — that is WS-4.** |
 | **GAP-TU-09** | LOW | carried-in | `DROP TABLE public.tutor_interactions` — folded into the WS-1 forward migration |
-| **GAP-HY-02** | MEDIUM | carried-in | Drop the 14 caller-free orphan functions — folded into the same migration |
+| **GAP-HY-02** | MEDIUM | carried-in | Drop the 16 caller-free orphan functions — folded into the same migration |
 
 Registry status flips to **CLOSED only in Phase E** (owner-proven). This contract
 phase edits no registry status.
@@ -83,15 +83,23 @@ role provisioning excluded.
    core defect was intent-vs-reality drift; deleting destroys provenance
    evidence. An `_legacy-migrations/README.md` states why they are retained and
    that none are canonical.
-3. **HY-02 function/table split — CONFIRMED.** Defer the 2 `update_ingestion_v4_*`
-   trigger functions to WS-7 (coupled to the `ingestion_v4_*` HY-01 tables). WS-1
-   drops the 14 caller-free standalone functions + `tutor_interactions`.
-4. **The 14-fn drop-set — CONFIRMED; bare `vectors` is a NO-OP.** Drop only
+3. **HY-02 function/table split — CORRECTED (owner, 2026-06-08).** The original
+   "coupled to the `ingestion_v4_*` HY-01 tables / would orphan triggers" premise
+   is refuted by ground truth: the `ingestion_v4_*` tables are **ABSENT** from prod
+   (A1), **no** D1 trigger references either `update_ingestion_v4_*` function
+   (D1 LF 7990-8048), and both have **zero** repo callers — identical orphan status
+   to the other 14. **WS-1 drops all 16 caller-free functions** (the 14 standalone +
+   the 2 `update_ingestion_v4_*` trigger fns, B1 L4133/L4134, `RETURNS trigger`,
+   no args) + `tutor_interactions`. WS-7 retains **only** the genuine
+   `ingestion_v4_*` **table** cleanup (none exist in prod today; tracked under
+   HY-01). Each of the 16 carries a pasted `git grep` zero-caller proof and must
+   exist in the `0000` capture before its DROP is authored.
+4. **The 16-fn drop-set — CONFIRMED; bare `vectors` is a NO-OP.** Drop only
    objects that (a) exist in the `0000` capture AND (b) carry a pasted `git grep`
    zero-caller proof. The registry's bare `vectors` has **no matching object in
    the capture** — the `vectors` *table* is **ABSENT** from prod (proof §4); only
    the `create_vectors_table_if_not_exists` *function* (which would create it)
-   exists and is already in the 14. Record at closure: `vectors` was a registry
+   exists and is already in the 16. Record at closure: `vectors` was a registry
    over-enumeration (a name containing "vectors", not a distinct object); **no
    DROP authored.** Never author a DROP for an object absent from the capture.
 
@@ -142,7 +150,9 @@ idx_attempts_user PRESENT | idx_jobs_status ABSENT | idx_answer_attempts_idempot
 
 **CC blast-radius finding (input to Codex re-verification).** All six
 `@shared/schema` importers are `import type` of plain interfaces only:
-`apps/api/src/services/fullLengthExam.ts:25-29` (`FullLengthExam*`),
+`apps/api/src/services/fullLengthExam.ts:24-30` (`import type { FullLengthExam* }`;
+audit guard: the `import type` opener is at :24 — grepping the closing `} from`
+line alone misreads it as a plain import),
 `client/src/components/{progress-sidebar,NotificationDropdown}.tsx`,
 `client/src/hooks/use-adaptive-practice.ts`,
 `client/src/pages/{UserProfile,flow-cards}.tsx`. The `users`/`questions`
@@ -183,10 +193,12 @@ runs it in full.
   policies ⇒ inert grants. Runtime already reads `tutor_messages`
   (`review-session-routes.ts:893`). Full-table drop strictly supersedes the
   never-applied column-ALTER.
-- **HY-02:** drop the 14 caller-free fns (Appendix A; signatures from B1
-  LF 4090-4148; zero repo callers verified). The 2 `update_ingestion_v4_*`
-  trigger fns are **deferred to WS-7** (ruling 3). **`vectors`: no DROP** —
-  absent from prod (ruling 4 / §4).
+- **HY-02:** drop the 16 caller-free fns (Appendix A; signatures from B1
+  LF 4090-4148; zero repo callers verified) — the 14 standalone + the 2
+  `update_ingestion_v4_*` trigger fns (B1 L4133/L4134, `RETURNS trigger`, no args;
+  orphaned: no `ingestion_v4_*` table in A1, no D1 trigger references them). WS-7
+  keeps only the `ingestion_v4_*` **table** cleanup (ruling 3, corrected).
+  **`vectors`: no DROP** — absent from prod (ruling 4 / §4).
 - **CI-test coordination (mandatory):** rewrite assertion #3 of
   `tests/ci/tutor-interactions.no-verbatim.contract.test.ts` (currently L77-84,
   reads the soon-archived `20260606_tutor_interactions_drop_verbatim.sql`) to
@@ -253,9 +265,10 @@ the Doc-02C EMA formula here (I-1) — the Doc-05 rebuild is WS-4.
 -- TU-09 — verbatim-bearing dead table (no FK/RLS/trigger dependents; 0 rows)
 DROP TABLE IF EXISTS public.tutor_interactions;
 
--- HY-02 — 14 caller-free orphan functions. The 2 update_ingestion_v4_* trigger
--- functions are intentionally NOT dropped here (WS-7, with their HY-01 tables).
--- No DROP for `vectors` — that object is absent from prod (registry over-enumeration).
+-- HY-02 — 16 caller-free orphan functions (14 standalone + 2 update_ingestion_v4_*
+-- trigger fns, all orphaned: no ingestion_v4_* table, no D1 trigger, zero callers).
+-- WS-7 retains only the ingestion_v4_* TABLE cleanup. No DROP for `vectors`
+-- (absent from prod — registry over-enumeration).
 DROP FUNCTION IF EXISTS public.create_vectors_table_if_not_exists();
 DROP FUNCTION IF EXISTS public.enqueue_render_pages_if_missing(uuid, text, text, text, text, integer);
 DROP FUNCTION IF EXISTS public.enqueue_render_pages_if_missing(uuid, jsonb);
@@ -270,6 +283,8 @@ DROP FUNCTION IF EXISTS public.v4_queue_reset_stale_locks(integer);
 DROP FUNCTION IF EXISTS public.v4_release_worker_lock(text);
 DROP FUNCTION IF EXISTS public.v4_renew_worker_lock(text, timestamp with time zone);
 DROP FUNCTION IF EXISTS public.v4_set_primary_cluster(uuid, uuid, numeric);
+DROP FUNCTION IF EXISTS public.update_ingestion_v4_jobs_updated_at();
+DROP FUNCTION IF EXISTS public.update_ingestion_v4_queue_updated_at();
 
 -- LYCEON-MIGRATION-REVIEWED (INV-06): rollback = re-create from 0000 baseline /
 -- capture B2 history. Proven-dead objects; rollback is provenance-restore only.
@@ -280,5 +295,5 @@ DROP FUNCTION IF EXISTS public.v4_set_primary_cluster(uuid, uuid, numeric);
 - MA-03 RPC: LF 4234 `### apply_learning_event_to_mastery(...)`; LF 4236 `CREATE OR REPLACE FUNCTION public.apply_learning_event_to_mastery(...)`; tagline LF 4087.
 - 0 applied migrations: LF 8096-8099 `(0 applied migrations recorded)`.
 - Audit scope public: LF 8163 `## I5 — Schema inventory (context only; audit scope remains public)`.
-- `vector` ext in public: LF 8074 `| vector | 0.8.0 | public |`.
+- `vector` ext in public: LF 8078 `| vector | 0.8.0 | public |`.
 - `vectors` table: **absent** (no `^| vectors | table |` row in A1).

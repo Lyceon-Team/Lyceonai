@@ -36,8 +36,8 @@ single-pipeline migrations with a tracked `CREATE`/`ALTER`:
 
 ### Owned cross-schema dependencies (declared in baseline, we depend on but do not fully own)
 
-- `create extension if not exists vector` — currently installed **in `public`** (F1, LF 8074: `vector | 0.8.0 | public`). Baseline reproduces deployed state, so it declares `vector` in `public` as-is. Relocating it out of `public` is **GAP-HY-07 / WS-7**, executed later through this same pipeline — not pre-empted here.
-- `create extension if not exists pgcrypto` — provisioned in the `extensions` schema (F1, LF 8072). Required for `gen_random_uuid()` / crypto used by `public` defaults. Declared `if not exists`; we do **not** pin or own its schema.
+- `create extension if not exists vector` — currently installed **in `public`** (F1, LF 8078: `vector | 0.8.0 | public`). Baseline reproduces deployed state, so it declares `vector` in `public` as-is. Relocating it out of `public` is **GAP-HY-07 / WS-7**, executed later through this same pipeline — not pre-empted here.
+- `create extension if not exists pgcrypto` — provisioned in the `extensions` schema (F1, LF 8074). Required for `gen_random_uuid()` / crypto used by `public` defaults. Declared `if not exists`; we do **not** pin or own its schema.
 - `auth.uid()` / `auth.jwt()` touchpoints — RLS policies and SECURITY DEFINER functions in `public` *reference* the platform `auth` schema (read-only). We depend on these symbols; we never define or migrate the `auth` schema.
 
 ---
