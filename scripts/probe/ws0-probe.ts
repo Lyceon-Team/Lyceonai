@@ -21,8 +21,16 @@
  *   supabase/migrations/20260607_ws0_stop_the_bleed.sql. This becomes a
  *   scheduled CI job in WS-1+ once a shadow project exists.
  *
+ *   # turnkey — the probe self-mints the student JWT from email/password:
+ *   SUPABASE_URL=... SUPABASE_ANON_KEY=... \
+ *   STUDENT_TEST_EMAIL=... STUDENT_TEST_PASSWORD=... \
+ *     pnpm -s exec tsx scripts/probe/ws0-probe.ts
+ *
+ *   # or pass a pre-minted JWT (skips self-mint); omit all three → anon-only:
  *   SUPABASE_URL=... SUPABASE_ANON_KEY=... [TEST_STUDENT_JWT=...] \
  *     pnpm -s exec tsx scripts/probe/ws0-probe.ts
+ *
+ *   The password and the minted token are never printed.
  *
  * SAFETY: write probes expect a permission-denied rejection (grants revoked +
  *   RLS enabled). When the migration is applied they are rejected at the
@@ -36,13 +44,46 @@
    script's output channel, not production logging (Coding Standards §16 targets
    product code). Consistent with the existing scripts/*.ts convention. */
 
+import { createClient } from "@supabase/supabase-js";
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-const TEST_STUDENT_JWT = process.env.TEST_STUDENT_JWT;
+const STUDENT_TEST_EMAIL = process.env.STUDENT_TEST_EMAIL;
+const STUDENT_TEST_PASSWORD = process.env.STUDENT_TEST_PASSWORD;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("FATAL: SUPABASE_URL and SUPABASE_ANON_KEY are required.");
   process.exit(2);
+}
+
+// Authenticated-student JWT. Resolution order:
+//   1. a pre-minted TEST_STUDENT_JWT (use as-is), else
+//   2. self-mint from STUDENT_TEST_EMAIL/STUDENT_TEST_PASSWORD via supabase-js
+//      (turnkey with just the four env vars; CI-friendly), else
+//   3. undefined → anon-only mode (authenticated assertions skipped).
+// The password and the minted token are NEVER printed.
+let studentJwt: string | undefined = process.env.TEST_STUDENT_JWT;
+
+async function resolveStudentJwt(): Promise<void> {
+  if (studentJwt) return;
+  if (!STUDENT_TEST_EMAIL || !STUDENT_TEST_PASSWORD) return;
+  const sb = createClient(SUPABASE_URL as string, SUPABASE_ANON_KEY as string, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await sb.auth.signInWithPassword({
+    email: STUDENT_TEST_EMAIL,
+    password: STUDENT_TEST_PASSWORD,
+  });
+  if (error || !data.session?.access_token) {
+    console.error(
+      `FATAL: could not mint student JWT from STUDENT_TEST_EMAIL/PASSWORD: ${error?.message ?? "no session returned"}`,
+    );
+    process.exit(2);
+  }
+  studentJwt = data.session.access_token;
+  console.log(
+    `(minted student JWT from STUDENT_TEST_EMAIL: ${studentJwt.length} chars)`,
+  );
 }
 
 type Role = "anon" | "authenticated";
@@ -54,7 +95,7 @@ let skipped = 0;
 function authHeaders(role: Role): Record<string, string> {
   const bearer =
     role === "authenticated"
-      ? (TEST_STUDENT_JWT as string)
+      ? (studentJwt as string)
       : (SUPABASE_ANON_KEY as string);
   return {
     apikey: SUPABASE_ANON_KEY as string,
@@ -141,15 +182,16 @@ const NINE_TABLES = [
 ] as const;
 
 function roles(): Role[] {
-  return TEST_STUDENT_JWT ? ["anon", "authenticated"] : ["anon"];
+  return studentJwt ? ["anon", "authenticated"] : ["anon"];
 }
 
 async function run(): Promise<void> {
   console.log("=== WS-0 PostgREST probe ===");
   console.log(`target: ${SUPABASE_URL}`);
-  if (!TEST_STUDENT_JWT) {
+  await resolveStudentJwt();
+  if (!studentJwt) {
     console.log(
-      "NOTE: TEST_STUDENT_JWT not set — authenticated-role assertions are SKIPPED.",
+      "NOTE: no TEST_STUDENT_JWT and no STUDENT_TEST_EMAIL/PASSWORD — authenticated-role assertions are SKIPPED.",
     );
     skipped += 1;
   }
