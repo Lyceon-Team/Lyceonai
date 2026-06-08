@@ -1,5 +1,10 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp, boolean, uuid } from "drizzle-orm/pg-core";
+// @spec [Lyceon_Coding_Standards, §2] [Gap-Registry_V1.1, GAP-OP-05] | @implemented [2026-06-08]
+// plain English: shared data-shape types for client + API surfaces — pure TypeScript
+// types only, no ORM runtime. WS-1/D1 severed the Drizzle wiring: the `users` and
+// `questions` pgTable objects (verified zero importers repo-wide) and the drizzle-orm
+// imports were removed so the canonical schema source of truth is supabase/migrations,
+// not a second ORM-defined schema. Edge case: all six importers consume only
+// `import type` interfaces, so removal is type-safe and build-neutral.
 
 export interface QuestionOption {
   key: "A" | "B" | "C" | "D";
@@ -30,48 +35,6 @@ export interface StudentQuestion {
 export type StudentMcQuestion = StudentQuestion & {
   question_type: "multiple_choice";
 };
-
-// Legacy migration source table kept for active script usage.
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username"),
-  password: text("password"),
-  googleId: text("google_id"),
-  email: text("email"),
-  name: text("name"),
-  avatarUrl: text("avatar_url"),
-  isAdmin: boolean("is_admin").default(false).notNull(),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  phoneNumber: text("phone_number"),
-  lastLoginAt: timestamp("last_login_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// Canonical question-bank table used by active scripts.
-export const questions = pgTable("questions", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  canonicalId: text("canonical_id").unique(),
-  status: text("status").notNull().default("draft"),
-  sectionCode: text("section_code").notNull(),
-  testCode: text("test_code").notNull().default("SAT"),
-  questionType: text("question_type").notNull().default("multiple_choice"),
-  stem: text("stem").notNull(),
-  options: jsonb("options").$type<Array<{ key: string; text: string }> | string[] | null>(),
-  correctAnswer: text("correct_answer").notNull(),
-  answerText: text("answer_text"),
-  explanation: text("explanation"),
-  difficulty: integer("difficulty"),
-  domain: text("domain"),
-  skill: text("skill"),
-  subskill: text("subskill"),
-  skillCode: text("skill_code"),
-  tags: jsonb("tags").$type<string[] | null>(),
-  sourceType: integer("source_type").default(1),
-  diagramPresent: boolean("diagram_present").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at"),
-});
 
 export type NotificationType =
   | "system_update"
