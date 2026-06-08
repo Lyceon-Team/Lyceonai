@@ -12,7 +12,7 @@ import path from "node:path";
  * side-table has been eliminated:
  *   - the `TUTOR_VERBATIM_PERSIST` stop-the-bleed flag is removed,
  *   - the dead writer `apps/api/src/lib/tutor-log.ts` is deleted,
- *   - the verbatim `message` / `answer` columns are dropped by migration,
+ *   - the `tutor_interactions` table is dropped entirely by the WS-1 provenance migration,
  *   - the review mastery-bridge read is repointed off `tutor_interactions`.
  *
  * This suite replaces the old flag-behavior contract test (which exercised a path
@@ -74,13 +74,11 @@ describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime 
     ).toBe(false);
   });
 
-  it("the migration drops the verbatim message/answer columns from tutor_interactions", () => {
-    const sql = read(
-      "supabase/migrations/20260606_tutor_interactions_drop_verbatim.sql",
+  it("the WS-1 provenance drops migration removes the tutor_interactions table entirely (supersedes the never-applied 20260606 column-ALTER)", () => {
+    const sql = read("supabase/migrations/20260608_ws1_provenance_drops.sql");
+    expect(sql).toMatch(
+      /DROP TABLE\s+(IF EXISTS\s+)?public\.tutor_interactions/i,
     );
-    expect(sql).toMatch(/ALTER TABLE\s+public\.tutor_interactions/i);
-    expect(sql).toMatch(/DROP COLUMN IF EXISTS message/i);
-    expect(sql).toMatch(/DROP COLUMN IF EXISTS answer/i);
   });
 
   it("the review mastery-bridge read no longer depends on the dormant tutor_interactions table", () => {
