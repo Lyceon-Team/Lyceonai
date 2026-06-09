@@ -7,17 +7,19 @@
 -- plain English: from-scratch foundation schema for the teardown + genesis-from-spec
 --   rebuild. Built FROM docs/Spec (NOT captured from deployed prod). Creates identity
 --   (Doc 01 V8), platform primitives (Doc 01A), and the content-core question bank
---   (Doc 02A) needed for the reseed. Order: extensions → enum (before profiles) →
---   identity (RLS on, profiles.id FK RESTRICT) → 01A primitives → config family →
---   content (questions, anti-leak shape). Idempotent where practical.
+--   (Doc 02A) needed for the reseed. Order: enum (before profiles) → identity (RLS on,
+--   profiles.id FK RESTRICT) → 01A primitives → config family → content (questions,
+--   anti-leak shape). Idempotent where practical.
 -- Governing contract: docs/SpecAudit/30-genesis-recut/RECUT-CONTRACT.md
 -- Correctness contract: contracts/ws1-genesis-foundation.contract.md
 --
 -- SCOPE (foundation only). Runtime engines (Doc 02B), mastery (Doc 05), scoring
 --   (Doc 04), LISA (Doc 03), ops (Doc 06), analytics (Doc 07) are LATER waves.
 --   Content-generation tables (questions_staging, promotion_log, question_versions)
---   are deferred to the content/generation wave — genesis creates only the canonical
---   `questions` bank + reference taxonomy required for the reseed.
+--   are deferred to the content/generation wave. `guardian_link_audit` (Doc 01 V8 §35
+--   shared append-only) is a DEFERRED identity object — its exact DDL is not pinned in
+--   the sections grounded for this pass; it lands in a precise identity follow-up
+--   (contract §F), not invented here.
 --
 -- PLATFORM ASSUMPTIONS (provided by Supabase, NOT created here):
 --   • schema `auth` + `auth.users` + `auth.uid()` pre-exist (Supabase Auth).
@@ -27,20 +29,30 @@
 -- SPEC-FIDELITY ADAPTATIONS (directional spec DDL → runnable Postgres; each flagged):
 --   A1  profiles.age_years / is_under_13: Doc 01 V8 §4 writes GENERATED ALWAYS STORED,
 --       which Postgres rejects (age() is not IMMUTABLE; a generated col cannot reference
---       another generated col). Rendered as PLAIN maintained columns — set on write and
---       reconciled by the under-13 birthday-transition job (GAP-OP-01). → candidate SP-08.
---   A2  rate_limit_check_and_increment: Doc 01A §41 body is illustrative, not compile-clean
---       plpgsql. Reimplemented faithfully to the atomic reserve-under-limit intent.
+--       another generated col). KEY: a STORED generated column is computed only at write
+--       time, so it would ALSO go stale as a student ages — the under-13 birthday
+--       transition (GAP-OP-01) is required under EITHER rendering. Rendered as plain
+--       columns MAINTAINED AT WRITE by trigger `set_profile_age_fields` (schema-layer
+--       enforcement, equivalent to GENERATED-at-write); time-passage transitions are
+--       OP-01's job. → candidate SP-08 (spec DDL clarification).
+--   A2  rate_limit_check_and_increment: rendered as the spec's single-statement atomic
+--       INSERT…ON CONFLICT DO UPDATE…WHERE (Doc 01A §41) — check+increment in one
+--       statement, no read-then-write race.
 --   A3  RLS ENABLED as target-state (Ruling 3 / RECUT decision #6) — the Doc 01 V8 §14.3
 --       Neon-pooling RLS-bypass deviation is retired (Supabase-in-place). → SP-04.
 --   A4  questions anti-leak: RLS enabled + service-role-only grants (NO anon/authenticated).
 --       Answer columns exist in the table; pre-submit unreadability is enforced by absence
 --       of grant + RLS; the app serves the §12 reveal-matrix projection (Doc 02 Preamble §12).
---   A5  account_deletion_requests.stripe_cancellation_status: from Doc 01 V8 §40.2.1 prose.
---   A6  account_deletion_requests / config-history FKs use ON DELETE behavior consistent
---       with profiles.id being RESTRICT-anchored to auth.users.
+--   A5  account_deletion_requests.stripe_cancellation_status: from Doc 01 V8 §40.2.1 prose
+--       (not the Appendix B.6 DDL block). → candidate spec amendment (escalated).
 --   A7  No closed "skills" reference table: Doc 02A §13 treats skill_codes as an open
 --       text[] (no closed taxonomy); only section/difficulty/distractor taxonomies are seeded.
+--   A8  No extensions declared in foundation 0000: `vector` is DEFERRED to the embeddings
+--       wave (no vector cols here; GAP-HY-07 closes there); `pgcrypto` is unneeded since
+--       gen_random_uuid() is core PG13+. Reconciled in contract A.3.
+--   A9  distractor_taxonomy_v1 uses a COMPOSITE PK (section, label) so the spec-exact
+--       label `partial_reasoning` (Doc 02A §18, listed under BOTH sections) is seeded
+--       verbatim in each section — no invented suffixes.
 --
 -- ROLLBACK (INV-06: every-migration-has-rollback):
 --   Genesis runs in ONE transaction (BEGIN/COMMIT). Any apply failure rolls back
@@ -58,13 +70,9 @@ BEGIN;
 
 -- ----------------------------------------------------------------------------
 -- 0. Owned extensions
---    @adaptation A8: foundation 0000 declares NO extensions.
---      • `vector` is DEFERRED to the embeddings wave (no vector columns here);
---        GAP-HY-07 (vector out of `public`) closes there.
---      • `pgcrypto` is NOT required — gen_random_uuid() is core since PG13, so `public`
---        stays clean (Supabase keeps pgcrypto in the `extensions` schema regardless).
---      Relaxes foundation-contract A.3. (Rollback unchanged — see the header
---      LYCEON-MIGRATION-REVIEWED block; this only drops unused extension declarations.)
+--    @adaptation A8: foundation 0000 declares NO extensions (vector deferred to the
+--      embeddings wave; gen_random_uuid() is core PG13+ so pgcrypto is unneeded).
+--      Reconciled in contract A.3. (Rollback: header LYCEON-MIGRATION-REVIEWED block.)
 -- ----------------------------------------------------------------------------
 
 -- ----------------------------------------------------------------------------
@@ -90,6 +98,23 @@ BEGIN
 END;
 $$;
 
+-- @spec [Doc-01_V8, §4] @adaptation A1: maintain age_years/is_under_13 from date_of_birth
+--   at write time (schema-layer COPPA derivation; GENERATED ALWAYS is not Postgres-valid
+--   for age()). Time-passage transitions are owned by GAP-OP-01.
+CREATE OR REPLACE FUNCTION public.set_profile_age_fields()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.date_of_birth IS NULL THEN
+    NEW.age_years   := NULL;
+    NEW.is_under_13 := NULL;
+  ELSE
+    NEW.age_years   := EXTRACT(YEAR FROM age(NEW.date_of_birth))::INTEGER;
+    NEW.is_under_13 := (EXTRACT(YEAR FROM age(NEW.date_of_birth))::INTEGER < 13);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
 -- ============================================================================
 -- 1. ENUMS — created BEFORE the tables that use them (SF-4 ordering constraint)
 --    @spec [Doc-01_V8, §4]  profile_role MUST precede profiles.role.
@@ -109,7 +134,7 @@ CREATE TABLE public.profiles (
   display_name          TEXT,
   role                  public.profile_role NOT NULL DEFAULT 'student',
   date_of_birth         DATE,
-  age_years             INTEGER,     -- @adaptation A1 (maintained; not GENERATED)
+  age_years             INTEGER,     -- @adaptation A1 (maintained at write by trigger; not GENERATED)
   is_under_13           BOOLEAN,     -- @adaptation A1 (COPPA gate; maintained from date_of_birth)
   country_code          TEXT,        -- ISO 3166-1 alpha-2 (billing address authoritative)
   stripe_customer_id    TEXT UNIQUE,
@@ -126,6 +151,9 @@ CREATE INDEX idx_profiles_role            ON public.profiles (role)             
 CREATE INDEX idx_profiles_stripe_customer ON public.profiles (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
 CREATE INDEX idx_profiles_deleted         ON public.profiles (deleted_at)         WHERE deleted_at IS NOT NULL;
 CREATE UNIQUE INDEX idx_profiles_email_active ON public.profiles (lower(email))   WHERE deleted_at IS NULL;
+-- @adaptation A1: derive age fields at write (schema-layer COPPA enforcement)
+CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
 
 -- @spec [Doc-01_V8, §20–§24] entitlements — student-scoped subscription state; writer: Stripe webhook handler.
 CREATE TABLE public.entitlements (
@@ -212,7 +240,7 @@ CREATE TABLE public.account_deletion_requests (
   scheduled_hard_delete_at  TIMESTAMPTZ NOT NULL,
   actor_profile_id          UUID NOT NULL REFERENCES public.profiles(id),
   status                    TEXT NOT NULL CHECK (status IN ('pending','cancelled','completed')),
-  stripe_cancellation_status TEXT NOT NULL DEFAULT 'pending'   -- @adaptation A5 (from §40.2.1 prose)
+  stripe_cancellation_status TEXT NOT NULL DEFAULT 'pending'   -- @adaptation A5 (from §40.2.1 prose; not B.6 DDL)
     CHECK (stripe_cancellation_status IN ('pending','in_progress','completed','failed_manual','cancelled_by_recovery')),
   completion_at             TIMESTAMPTZ,
   deletion_reason           TEXT,
@@ -282,7 +310,9 @@ CREATE TABLE public.rate_limit_ledger (
 );
 CREATE INDEX idx_ratelimit_window_end ON public.rate_limit_ledger (window_end);
 
--- @spec [Doc-01A_V1, §41] atomic reserve-under-limit. @adaptation A2 (runnable plpgsql of the §41 intent).
+-- @spec [Doc-01A_V1, §41] atomic reserve-under-limit. @adaptation A2: single-statement
+--   INSERT…ON CONFLICT DO UPDATE…WHERE — the check+increment is one atomic statement
+--   (no read-then-write race); the guarded DO UPDATE re-evaluates under the row lock.
 CREATE OR REPLACE FUNCTION public.rate_limit_check_and_increment(
   p_profile_id UUID, p_bucket_key TEXT, p_cost INTEGER,
   p_window_start TIMESTAMPTZ, p_window_end TIMESTAMPTZ, p_limit INTEGER
@@ -290,20 +320,19 @@ CREATE OR REPLACE FUNCTION public.rate_limit_check_and_increment(
 LANGUAGE plpgsql AS $$
 DECLARE v_used INTEGER;
 BEGIN
-  INSERT INTO public.rate_limit_ledger (profile_id, bucket_key, window_start, window_end, used_count, limit_count)
-  VALUES (p_profile_id, p_bucket_key, p_window_start, p_window_end, 0, p_limit)
-  ON CONFLICT (profile_id, bucket_key, window_start) DO NOTHING;
-
-  UPDATE public.rate_limit_ledger AS l
-     SET used_count = l.used_count + p_cost, updated_at = now()
-   WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start
-     AND l.used_count + p_cost <= p_limit
+  INSERT INTO public.rate_limit_ledger AS l
+    (profile_id, bucket_key, window_start, window_end, used_count, limit_count)
+  VALUES (p_profile_id, p_bucket_key, p_window_start, p_window_end, p_cost, p_limit)
+  ON CONFLICT (profile_id, bucket_key, window_start) DO UPDATE
+    SET used_count = l.used_count + p_cost, updated_at = now()
+    WHERE l.used_count + p_cost <= p_limit
   RETURNING l.used_count INTO v_used;
 
   IF FOUND THEN
-    allowed := TRUE;  used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
+    allowed := TRUE; used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
   END IF;
 
+  -- denied: the window row exists and adding p_cost would exceed the limit.
   SELECT l.used_count INTO v_used FROM public.rate_limit_ledger AS l
    WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start;
   allowed := FALSE; used := COALESCE(v_used, 0); remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
@@ -351,7 +380,8 @@ CREATE TABLE public.service_auth_secrets (
 );
 CREATE INDEX idx_service_auth_active ON public.service_auth_secrets (caller_service, callee_service) WHERE revoked_at IS NULL;
 
--- 3a. Primitive RLS — enabled, deny-all to anon/authenticated (service-role only; §49/§57 non-visibility)
+-- 3a. Primitive RLS — enabled, deny-all to anon/authenticated (service-role only; §49/§57 non-visibility).
+--     No anon/authenticated grants are issued for any 01A table (contract C.5).
 ALTER TABLE public.idempotency_records   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rate_limit_ledger     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.abuse_score_incidents ENABLE ROW LEVEL SECURITY;
@@ -376,7 +406,6 @@ DECLARE
   n TEXT;
 BEGIN
   FOREACH n IN ARRAY cfg_names LOOP
-    -- parent config table (§2 template)
     EXECUTE format($t$
       CREATE TABLE public.%I (
         key            TEXT PRIMARY KEY,
@@ -392,7 +421,6 @@ BEGIN
         updated_by_profile_id UUID REFERENCES public.profiles(id)
       );$t$, n);
 
-    -- history table (§5)
     EXECUTE format($t$
       CREATE TABLE public.%I (
         id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -405,17 +433,14 @@ BEGIN
         changed_at           TIMESTAMPTZ NOT NULL DEFAULT now()
       );$t$, n || '_history');
 
-    -- NOTIFY invalidation trigger on the parent (§4)
     EXECUTE format($t$
       CREATE TRIGGER %I AFTER INSERT OR UPDATE ON public.%I
         FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();$t$, n || '_notify', n);
 
-    -- append-only guard on history (§5)
     EXECUTE format($t$
       CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON public.%I
         FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();$t$, n || '_history_no_mutate', n || '_history');
 
-    -- RLS enabled (service-role only)
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', n);
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', n || '_history');
   END LOOP;
@@ -462,6 +487,9 @@ CREATE INDEX idx_questions_status  ON public.questions (status);
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 
 -- @spec [Doc-02A_V6, §14/§17/§18] reference taxonomy (closes GAP-HY-08). (A7: no closed skills table.)
+-- Grant posture: `sections`/`difficulties` are client-facing labels (anon-readable); the rest are
+-- INTERNAL — `distractor_taxonomy_v1` is anti-leak-sensitive trap metadata (Doc 02A §19: must not
+-- reach students), `source_types`/`taxonomy_versions` are ops-internal — so service-role only.
 CREATE TABLE public.sections (
   code TEXT PRIMARY KEY, label TEXT NOT NULL, description TEXT
 );
@@ -484,32 +512,32 @@ INSERT INTO public.source_types (code, label, description) VALUES
   (1, 'Source-derived', 'Derived from source materials'),
   (2, 'AI-generated',   'Generated by AI model');
 
--- @spec [Doc-02A_V6, §18] distractor taxonomy v1 (closed enum)
+-- @spec [Doc-02A_V6, §18] distractor taxonomy v1 (closed enum). @adaptation A9: composite PK
+--   (section, label) so the spec-exact label `partial_reasoning` is seeded in BOTH sections.
 CREATE TABLE public.distractor_taxonomy_v1 (
-  label       TEXT PRIMARY KEY,
   section     TEXT NOT NULL REFERENCES public.sections(code),
+  label       TEXT NOT NULL,
   description TEXT,
-  version     TEXT NOT NULL DEFAULT 'distractor_taxonomy.v1'
+  version     TEXT NOT NULL DEFAULT 'distractor_taxonomy.v1',
+  PRIMARY KEY (section, label)
 );
-INSERT INTO public.distractor_taxonomy_v1 (label, section, description) VALUES
-  ('sign_error','M','Wrong sign in calculation'),
-  ('arithmetic_slip','M','Careless arithmetic mistake'),
-  ('equation_setup_error','M','Incorrect equation setup or order of operations'),
-  ('unit_error','M','Wrong units in answer'),
-  ('graph_read_error','M','Misread graph or data visualization'),
-  ('concept_gap','M','Fundamental misunderstanding of concept'),
-  ('partial_reasoning_m','M','Incomplete reasoning (Math)'),
-  ('misread_question','M','Misread or misunderstood the stem'),
-  ('detail_misread','RW','Misread a specific detail or fact'),
-  ('inference_overreach','RW','Drew an inference beyond what text supports'),
-  ('evidence_mismatch','RW','Selected evidence that does not support the claim'),
-  ('grammar_rule_error','RW','Misapplied or confused a grammar rule'),
-  ('sentence_boundary_error','RW','Error in sentence boundaries or punctuation'),
-  ('rhetorical_purpose_error','RW','Misunderstood the rhetorical purpose'),
-  ('vocab_context_error','RW','Word choice or vocabulary-in-context error'),
-  ('partial_reasoning_rw','RW','Incomplete reasoning (Reading & Writing)');
--- NOTE: Doc 02A §18 lists 'partial_reasoning' in BOTH section sets; a single-column PK cannot
--- hold it twice, so it is section-suffixed here (partial_reasoning_m / _rw). → flagged for review.
+INSERT INTO public.distractor_taxonomy_v1 (section, label, description) VALUES
+  ('M','sign_error','Wrong sign in calculation'),
+  ('M','arithmetic_slip','Careless arithmetic mistake'),
+  ('M','equation_setup_error','Incorrect equation setup or order of operations'),
+  ('M','unit_error','Wrong units in answer'),
+  ('M','graph_read_error','Misread graph or data visualization'),
+  ('M','concept_gap','Fundamental misunderstanding of concept'),
+  ('M','partial_reasoning','Incomplete reasoning or partial application of concept'),
+  ('M','misread_question','Misread or misunderstood the stem'),
+  ('RW','detail_misread','Misread a specific detail or fact'),
+  ('RW','inference_overreach','Drew an inference beyond what text supports'),
+  ('RW','evidence_mismatch','Selected evidence that does not support the claim'),
+  ('RW','grammar_rule_error','Misapplied or confused a grammar rule'),
+  ('RW','sentence_boundary_error','Error in sentence boundaries or punctuation'),
+  ('RW','rhetorical_purpose_error','Misunderstood the rhetorical purpose'),
+  ('RW','vocab_context_error','Word choice or vocabulary-in-context error'),
+  ('RW','partial_reasoning','Incomplete reasoning or partial application of concept');
 
 CREATE TABLE public.taxonomy_versions (
   version TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -518,7 +546,7 @@ CREATE TABLE public.taxonomy_versions (
 INSERT INTO public.taxonomy_versions (version, description, is_active) VALUES
   ('distractor_taxonomy.v1', 'Starter closed enum per Doc 02A §18', TRUE);
 
--- reference tables are public-readable (non-sensitive taxonomy)
+-- reference-table RLS. sections/difficulties are client-readable; the rest service-role only.
 ALTER TABLE public.sections              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.difficulties          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.source_types          ENABLE ROW LEVEL SECURITY;
@@ -538,6 +566,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 -- student-scoped minimal reads (everything else is service-role only / RLS deny):
 GRANT SELECT ON public.profiles      TO authenticated;          -- RLS profiles_select_self limits rows
 GRANT SELECT ON public.sections, public.difficulties TO anon, authenticated;
--- questions: deliberately NO anon/authenticated grant (A4 anti-leak — app serves the §12 projection).
+-- questions + all 01A primitives: deliberately NO anon/authenticated grant
+-- (A4 anti-leak / C.5 service-internal — app serves the §12 projection).
 
 COMMIT;

@@ -81,24 +81,43 @@ CREATE FUNCTION public.rate_limit_check_and_increment(p_profile_id uuid, p_bucke
     AS $$
 DECLARE v_used INTEGER;
 BEGIN
-  INSERT INTO public.rate_limit_ledger (profile_id, bucket_key, window_start, window_end, used_count, limit_count)
-  VALUES (p_profile_id, p_bucket_key, p_window_start, p_window_end, 0, p_limit)
-  ON CONFLICT (profile_id, bucket_key, window_start) DO NOTHING;
-
-  UPDATE public.rate_limit_ledger AS l
-     SET used_count = l.used_count + p_cost, updated_at = now()
-   WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start
-     AND l.used_count + p_cost <= p_limit
+  INSERT INTO public.rate_limit_ledger AS l
+    (profile_id, bucket_key, window_start, window_end, used_count, limit_count)
+  VALUES (p_profile_id, p_bucket_key, p_window_start, p_window_end, p_cost, p_limit)
+  ON CONFLICT (profile_id, bucket_key, window_start) DO UPDATE
+    SET used_count = l.used_count + p_cost, updated_at = now()
+    WHERE l.used_count + p_cost <= p_limit
   RETURNING l.used_count INTO v_used;
 
   IF FOUND THEN
-    allowed := TRUE;  used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
+    allowed := TRUE; used := v_used; remaining := p_limit - v_used; RETURN NEXT; RETURN;
   END IF;
 
+  -- denied: the window row exists and adding p_cost would exceed the limit.
   SELECT l.used_count INTO v_used FROM public.rate_limit_ledger AS l
    WHERE l.profile_id = p_profile_id AND l.bucket_key = p_bucket_key AND l.window_start = p_window_start;
   allowed := FALSE; used := COALESCE(v_used, 0); remaining := GREATEST(p_limit - COALESCE(v_used, 0), 0);
   RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_profile_age_fields() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.date_of_birth IS NULL THEN
+    NEW.age_years   := NULL;
+    NEW.is_under_13 := NULL;
+  ELSE
+    NEW.age_years   := EXTRACT(YEAR FROM age(NEW.date_of_birth))::INTEGER;
+    NEW.is_under_13 := (EXTRACT(YEAR FROM age(NEW.date_of_birth))::INTEGER < 13);
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
@@ -414,8 +433,8 @@ CREATE TABLE public.difficulties (
 --
 
 CREATE TABLE public.distractor_taxonomy_v1 (
-    label text NOT NULL,
     section text NOT NULL,
+    label text NOT NULL,
     description text,
     version text DEFAULT 'distractor_taxonomy.v1'::text NOT NULL
 );
@@ -1011,7 +1030,7 @@ ALTER TABLE ONLY public.difficulties
 --
 
 ALTER TABLE ONLY public.distractor_taxonomy_v1
-    ADD CONSTRAINT distractor_taxonomy_v1_pkey PRIMARY KEY (label);
+    ADD CONSTRAINT distractor_taxonomy_v1_pkey PRIMARY KEY (section, label);
 
 
 --
@@ -1559,6 +1578,13 @@ CREATE TRIGGER observability_runtime_config_history_no_mutate BEFORE DELETE OR U
 --
 
 CREATE TRIGGER observability_runtime_config_notify AFTER INSERT OR UPDATE ON public.observability_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: profiles profiles_set_age; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
 
 
 --
@@ -2204,6 +2230,13 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION set_profile_age_fields(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
 
 
 --

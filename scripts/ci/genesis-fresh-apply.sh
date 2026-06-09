@@ -80,13 +80,40 @@ COLS=$(psql_db "$DB1" -tAc "select (count(*) filter (where column_name='correct_
 [ "$COLS" = "110" ] || { echo "FAIL: questions answer columns = $COLS (expected 110 = correct_answer:1 explanation:1 answer_text:0)"; exit 1; }
 echo "    OK"
 
-echo "==> D.4 ANTI-LEAK: anon/authenticated CANNOT read questions answers"
+echo "==> D.4 ANTI-LEAK: anon/authenticated CANNOT read questions answer/internal cols"
 for r in anon authenticated; do
-  if psql_db "$DB1" -tAc "set role $r; select correct_answer from public.questions limit 1;" >/dev/null 2>&1; then
-    echo "FAIL: role $r could read questions.correct_answer (anti-leak breach)"; exit 1
-  fi
+  for col in correct_answer explanation option_metadata; do
+    if psql_db "$DB1" -tAc "set role $r; select $col from public.questions limit 1;" >/dev/null 2>&1; then
+      echo "FAIL: role $r could read questions.$col (anti-leak breach)"; exit 1
+    fi
+  done
 done
 echo "    OK denied (hard gate holds)"
+
+echo "==> C.5 01A primitive tables have NO anon/authenticated grant"
+PRIM_GRANTS=$(psql_db "$DB1" -tAc "select count(*) from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated') and table_name in ('idempotency_records','rate_limit_ledger','abuse_score_incidents','abuse_scores','service_auth_secrets');")
+[ "$PRIM_GRANTS" = "0" ] || { echo "FAIL: $PRIM_GRANTS anon/auth grant(s) on 01A primitive tables"; exit 1; }
+echo "    OK service-internal"
+
+echo "==> B.2 profile_role enum members exact"
+ENUM=$(psql_db "$DB1" -tAc "select string_agg(enumlabel,',' order by enumsortorder) from pg_enum e join pg_type t on t.oid=e.enumtypid where t.typname='profile_role';")
+[ "$ENUM" = "student,guardian,admin,tutor,teacher" ] || { echo "FAIL: profile_role = '$ENUM'"; exit 1; }
+echo "    OK"
+
+echo "==> B.3 legacy split-brain tables absent"
+LEGACY=$(psql_db "$DB1" -tAc "select count(*) from information_schema.tables where table_schema='public' and table_name in ('users','accounts','account_members','lyceon_accounts','lyceon_account_members');")
+[ "$LEGACY" = "0" ] || { echo "FAIL: $LEGACY legacy table(s) present"; exit 1; }
+echo "    OK"
+
+echo "==> B.7 no dead plaintext-auth columns"
+DEADCOLS=$(psql_db "$DB1" -tAc "select count(*) from information_schema.columns where table_schema='public' and column_name in ('password','two_factor_secret','password_reset_token');")
+[ "$DEADCOLS" = "0" ] || { echo "FAIL: $DEADCOLS dead plaintext-auth column(s)"; exit 1; }
+echo "    OK"
+
+echo "==> A1 COPPA: is_under_13 is derived at write from date_of_birth (trigger)"
+COPPA=$(psql_db "$DB1" -tAc "select (count(*) filter (where tgname='profiles_set_age')) from pg_trigger where tgrelid='public.profiles'::regclass;")
+[ "$COPPA" = "1" ] || { echo "FAIL: profiles_set_age trigger missing (COPPA age fields unmaintained)"; exit 1; }
+echo "    OK derived-at-write"
 
 echo "==> cleanup"
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB1;" -c "DROP DATABASE IF EXISTS $DB2;" >/dev/null

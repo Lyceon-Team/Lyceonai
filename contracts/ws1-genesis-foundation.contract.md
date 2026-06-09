@@ -34,10 +34,14 @@ and the reseed lands with ids intact.
   `^[0-9]{14}_.*\.sql$` (plus the `0000` genesis); no `drizzle.config.ts`; no
   DDL-issuing script outside the pipeline except the kept read-only RLS guard
   (`scripts/ci/check_rls_enabled.ts`). Proof: structural lint (`STRUCT`).
-- **A.3 (owned deps declared)** `vector` and `pgcrypto` are declared
-  `create extension if not exists`; `vector` is **not** in `public`
-  (Doc 02A; closes GAP-HY-07). No `CREATE ROLE`/`ALTER ROLE` in any migration
-  (platform owns roles). Proof: `STRUCT` + grep.
+- **A.3 (owned deps)** — **amended 2026-06-09 to reconcile migration adaptation A8.**
+  Foundation `0000` declares **no extensions**: `vector` is **deferred to the
+  embeddings wave** (foundation has no vector columns; GAP-HY-07 — vector out of
+  `public` — closes there, when that wave runs `create extension vector schema
+  extensions`); `pgcrypto` is **unneeded** because `gen_random_uuid()` is core since
+  PG13 (Supabase keeps pgcrypto in the `extensions` schema regardless). No
+  `CREATE ROLE`/`ALTER ROLE` in any migration (platform owns roles). Proof: `STRUCT`
+  + grep (no `CREATE EXTENSION`/`CREATE ROLE` in the pipeline).
 - **A.4 (RLS-enabled posture)** Every user-scoped `public` table has
   `rowsecurity = true` (Doc 01 V8 target-state §4; re-cut decision #6 retires the
   §14.3 Neon bypass). Service-internal primitive tables (Doc 01A) are RLS-exempt
@@ -143,3 +147,18 @@ scoring (WS-4), Doc 03 LISA (WS-5), Doc 06 ops (WS-6), Doc 07 analytics (WS-7),
 and all app-layer **CODE** gaps (entitlement gating, serializers, service layer —
 [`GAP-WAVE-MAP.md`](../docs/SpecAudit/30-genesis-recut/GAP-WAVE-MAP.md)) are out of
 genesis `0000` scope. This contract governs the foundation only.
+
+**Explicitly deferred identity object:** `guardian_link_audit` (Doc 01 V8 §35,
+"Shared append-only" in Appendix E) — its exact column DDL is not pinned in the
+sections grounded for this pass, so genesis does **not** invent it; it lands in a
+precise identity follow-up alongside the `guardian-service.ts` writer, not the
+foundation.
+
+**Migration spec-fidelity adaptations** A1–A9 (each annotated in
+`supabase/migrations/00000000000000_genesis.sql`) are the canonical renderings of
+directional/illustrative spec DDL into runnable Postgres; the genesis fresh-apply
+gate proves them. Two carry candidate spec clarifications escalated to the owner:
+**A1/SP-08** (`GENERATED ALWAYS` not Postgres-valid for `age()`; rendered as
+write-maintained columns + trigger — note a `STORED` generated column would also be
+stale, so GAP-OP-01 is needed either way) and **A5** (`stripe_cancellation_status`
+sourced from Doc 01 V8 §40.2.1 prose, not the Appendix B.6 DDL block).
