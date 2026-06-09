@@ -105,3 +105,22 @@ source path (WS-4). B-WS3-1 builds the formula core + constants + table shells +
   reproduces B16/S4 without reverse-engineering any global ordering.
 - **SP-17 — CARRIED to Codex (unchanged).** `skill_codes[1] = primary` remains an
   ordering-guarantee to verify in the question pipeline, not an index to rubber-stamp.
+
+### Spec-auditor pass (2026-06-10) — findings closed
+- **HIGH (grant lockdown) — FIXED.** Added `REVOKE ALL ... FROM PUBLIC` on the mastery
+  tables + `mastery_constants(_history)`, and per-function `REVOKE ALL ON FUNCTION ... FROM
+  PUBLIC; GRANT EXECUTE ... TO service_role` for all five formula functions (Doc 05A
+  §5.1/§6.1/§6.3/§7.4/§9.2). Verified: `service_role` EXECUTE=true, PUBLIC EXECUTE=false;
+  authenticated table-wide SELECT=false but column read `mastery_level`/`skill`=true,
+  `mastery_score`/`acc_*`=false (anti-leak INV-05A-12 intact).
+- **SP-20 — admin_role.** §7.4 also names `admin_role`; genesis uses the Supabase 3-role
+  model (no DB `admin_role`; admin is a profile role). Implemented §7.4's intent via
+  `service_role` + REVOKE-from-PUBLIC; the `admin_role` grant is intentionally not issued.
+  Logged GAP-SP-20 for spec reconciliation.
+- **MEDIUM — FIXED.** `mastery_event_audit_log.mastery_score_before/after` → `numeric(5,4)`
+  to match `student_skill_mastery.mastery_score` (§7.1). Parity stub `canonical_mastery_events`
+  now mirrors the §6.2 10-column shape (adds `event_source_kind`, `question_id`).
+- **MEDIUM (deferral, accepted) — TODO(05B).** `recompute_skill_mastery` does not call
+  `refresh_domain_mastery` (owned by 05B, a later item). Marked a hard `TODO(05B)` in the
+  function; must be restored before `apply_mastery_event` goes live (§5.1).
+- **LOW — FIXED.** `@spec` citation now includes §8 (position assignment) and §12 (fixtures).

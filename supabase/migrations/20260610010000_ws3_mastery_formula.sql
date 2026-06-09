@@ -1,8 +1,8 @@
 -- ============================================================================
 -- B-WS3-1 — Mastery formula core (Doc 05A V1.0) — formula + constants + tables
 -- ============================================================================
--- @spec [Doc-05A_V1 §4/§5/§6/§7/§9] [Doc-05 Parent §4/§10.1] [Doc-05D §3/§4]
--- @implemented [2026-06-10]
+-- @spec [Doc-05A_V1 §4/§5/§6/§7/§8/§9/§12] [Doc-05 Parent §4/§10.1] [Doc-05D §3/§4]
+-- @implemented [2026-06-10] -- spec-auditor pass 2026-06-10; LYCEON-MIGRATION-REVIEWED
 -- plain English: the canonical mastery formula as PL/pgSQL reading every constant from
 --   mastery_constants (no literals), the formula-class constants seeded with the exact
 --   Doc 05 V1.0 values, and the mastery tables with RLS deny-all + single-writer.
@@ -274,7 +274,8 @@ CREATE TABLE public.mastery_event_audit_log (
   source_family text NOT NULL CHECK (source_family IN ('test','practice','review')),
   event_source_kind text NOT NULL CHECK (event_source_kind IN ('practice_attempt','diagnostic_attempt','review_error_attempt','full_length_answer')),
   event_id uuid NOT NULL, question_id uuid, difficulty smallint, correct boolean, occurred_at timestamptz,
-  mastery_score_before numeric(10,9), mastery_score_after numeric(10,9),
+  -- audit before/after match student_skill_mastery.mastery_score numeric(5,4) (§7.1); LYCEON-MIGRATION-REVIEWED
+  mastery_score_before numeric(5,4), mastery_score_after numeric(5,4),
   mastery_level_before smallint, mastery_level_after smallint,
   event_count_after integer NOT NULL CHECK (event_count_after >= 0),
   constants_snapshot_hash text NOT NULL, mastery_model_version text NOT NULL,
@@ -288,6 +289,17 @@ ALTER TABLE public.student_kpi_rollups_current  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_section_projections  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mastery_event_audit_log      ENABLE ROW LEVEL SECURITY;
 
+-- @spec [Doc-05A §7.4] defense-in-depth: REVOKE the implicit PUBLIC privileges first, then grant
+-- only the explicit roles. Doc 05A §7.4 also names admin_role; the genesis identity model is the
+-- Supabase 3-role set (anon/authenticated/service_role) and treats "admin" as a PROFILE role
+-- enforced in app/RLS, not a DB role — so admin/internal DB reads go via service_role (genesis
+-- convention, genesis.sql GRANT ... TO service_role). The §7.4 admin_role reference is logged as
+-- SP-20 for spec reconciliation. LYCEON-MIGRATION-REVIEWED
+REVOKE ALL ON public.student_skill_mastery, public.student_domain_mastery,
+  public.student_kpi_rollups_current, public.student_section_projections,
+  public.mastery_event_audit_log, public.mastery_constants, public.mastery_constants_history
+  FROM PUBLIC;
+
 -- @spec [Doc-05A §7.3/§7.4 INV-05A-12] student self-read; column-grant to mastery_level only; no guardian
 CREATE POLICY student_skill_mastery_student_read ON public.student_skill_mastery
   FOR SELECT TO authenticated USING (student_id = auth.uid());
@@ -295,6 +307,7 @@ GRANT SELECT (student_id, section, domain, skill, mastery_level, computed_at)
   ON public.student_skill_mastery TO authenticated;
 
 -- service_role owns all mastery writes (single-writer choke point: apply_mastery_event / recompute)
+-- and serves admin/internal reads per the 3-role model (SP-20).
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.student_skill_mastery, public.student_domain_mastery, public.student_kpi_rollups_current,
   public.student_section_projections, public.mastery_event_audit_log, public.mastery_constants
@@ -346,9 +359,27 @@ BEGIN
     WHERE student_id=p_student_id AND section=p_section AND domain=p_domain AND skill=p_skill
     RETURNING * INTO v_row;
   END IF;
-  -- refresh_domain_mastery is 05B (later item); not called here in B-WS3-1.
+  -- TODO(05B): refresh_domain_mastery(p_student_id,p_section,p_domain) is owned by 05B (a later
+  -- item) and MUST be called here once 05B lands, per Doc 05A §5.1 — else skill/domain drift.
+  -- Tracked in the B-WS3-1 contract §G as a hard sequential dependency; not in B-WS3-1 scope.
   RETURN v_row;
 END;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 7. Function lockdown (Doc 05A §5.1/§6.1/§6.3/§9.2) — PUBLIC has EXECUTE on new functions by
+--    default; revoke it. Only service_role (the RPC caller) may execute the formula functions.
+--    LYCEON-MIGRATION-REVIEWED
+-- ----------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.canonicalize_mastery_constants()                              FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.canonicalize_mastery_constants_serialized()                   FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.lookup_mastery_level(numeric, jsonb)                          FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.compute_mastery_for_entity(uuid, text, text, text, text)      FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.recompute_skill_mastery(uuid, text, text, text)              FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.canonicalize_mastery_constants()                            TO service_role;
+GRANT EXECUTE ON FUNCTION public.canonicalize_mastery_constants_serialized()                 TO service_role;
+GRANT EXECUTE ON FUNCTION public.lookup_mastery_level(numeric, jsonb)                        TO service_role;
+GRANT EXECUTE ON FUNCTION public.compute_mastery_for_entity(uuid, text, text, text, text)    TO service_role;
+GRANT EXECUTE ON FUNCTION public.recompute_skill_mastery(uuid, text, text, text)            TO service_role;
 
 COMMIT;
