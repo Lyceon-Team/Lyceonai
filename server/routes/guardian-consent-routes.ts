@@ -340,7 +340,7 @@ router.post(
 
       // 3. Find or Create Guardian User
       let guardianId: string;
-      const { data: existingGuardian, error: findError } = await admin
+      const { data: existingGuardian } = await admin
         .from("profiles")
         .select("id")
         .eq("email", request.guardian_email)
