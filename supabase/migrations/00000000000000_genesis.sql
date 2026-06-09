@@ -47,9 +47,11 @@
 --       (not the Appendix B.6 DDL block). → candidate spec amendment (escalated).
 --   A7  No closed "skills" reference table: Doc 02A §13 treats skill_codes as an open
 --       text[] (no closed taxonomy); only section/difficulty/distractor taxonomies are seeded.
---   A8  No extensions declared in foundation 0000: `vector` is DEFERRED to the embeddings
---       wave (no vector cols here; GAP-HY-07 closes there); `pgcrypto` is unneeded since
---       gen_random_uuid() is core PG13+. Reconciled in contract A.3.
+--   A8  Owned extensions vector + pgcrypto are declared into the `extensions` schema
+--       (NOT public — closes GAP-HY-07); only platform-managed extensions are excluded.
+--       vector's first consumer is the later embedding store (no questions.embedding
+--       column in Doc 02A §16); pgcrypto backs digest()/uuid. (Rollback path is unchanged;
+--       see the LYCEON-MIGRATION-REVIEWED block below.)
 --   A9  distractor_taxonomy_v1 uses a COMPOSITE PK (section, label) so the spec-exact
 --       label `partial_reasoning` (Doc 02A §18, listed under BOTH sections) is seeded
 --       verbatim in each section — no invented suffixes.
@@ -69,11 +71,18 @@
 BEGIN;
 
 -- ----------------------------------------------------------------------------
--- 0. Owned extensions
---    @adaptation A8: foundation 0000 declares NO extensions (vector deferred to the
---      embeddings wave; gen_random_uuid() is core PG13+ so pgcrypto is unneeded).
---      Reconciled in contract A.3. (Rollback: header LYCEON-MIGRATION-REVIEWED block.)
+-- 0. Owned extensions (declared into the `extensions` schema, Supabase-faithful).
+--    @adaptation A8 (revised): vector + pgcrypto are OWNED extensions and ARE declared
+--      here — placed in the `extensions` schema (NOT `public`), which closes GAP-HY-07
+--      (vector out of public). pgcrypto backs digest()/uuid; vector backs the embedding
+--      store (a LATER wave — there is no `questions.embedding` column in Doc 02A §16,
+--      where pgvector serves the generation pipeline + a separate embedding store).
+--      Only PLATFORM-managed extensions (pg_cron, pg_net, …) are excluded.
+--      (Rollback unchanged — header LYCEON-MIGRATION-REVIEWED block.)
 -- ----------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS vector   SCHEMA extensions;
 
 -- ----------------------------------------------------------------------------
 -- 0a. Shared helper functions (no table deps)

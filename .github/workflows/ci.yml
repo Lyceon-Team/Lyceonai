@@ -183,7 +183,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16   # owned `vector` extension must be installable (genesis declares it)
         env:
           POSTGRES_PASSWORD: postgres
         ports:

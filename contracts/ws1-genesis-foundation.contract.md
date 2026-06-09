@@ -34,14 +34,16 @@ and the reseed lands with ids intact.
   `^[0-9]{14}_.*\.sql$` (plus the `0000` genesis); no `drizzle.config.ts`; no
   DDL-issuing script outside the pipeline except the kept read-only RLS guard
   (`scripts/ci/check_rls_enabled.ts`). Proof: structural lint (`STRUCT`).
-- **A.3 (owned deps)** — **amended 2026-06-09 to reconcile migration adaptation A8.**
-  Foundation `0000` declares **no extensions**: `vector` is **deferred to the
-  embeddings wave** (foundation has no vector columns; GAP-HY-07 — vector out of
-  `public` — closes there, when that wave runs `create extension vector schema
-  extensions`); `pgcrypto` is **unneeded** because `gen_random_uuid()` is core since
-  PG13 (Supabase keeps pgcrypto in the `extensions` schema regardless). No
-  `CREATE ROLE`/`ALTER ROLE` in any migration (platform owns roles). Proof: `STRUCT`
-  + grep (no `CREATE EXTENSION`/`CREATE ROLE` in the pipeline).
+- **A.3 (owned deps)** — the **owned** extensions `vector` and `pgcrypto` ARE
+  declared in `0000`, placed in the **`extensions` schema** (NOT `public`, which
+  closes GAP-HY-07 — vector out of public). `pgcrypto` backs `digest()`/uuid;
+  `vector` backs the later embedding store (there is no `questions.embedding` column
+  in Doc 02A §16). Only **platform-managed** extensions (pg_cron, pg_net, …) are
+  excluded. No `CREATE ROLE`/`ALTER ROLE` in any migration (platform owns roles).
+  Proof: `STRUCT` (`pg_extension` → `extnamespace = 'extensions'`) + grep
+  (no `CREATE ROLE`). The `--schema public` SNAP is unaffected (extensions live
+  outside the public scope), so the CI Postgres service must provide pgvector
+  (`pgvector/pgvector:pg16`).
 - **A.4 (RLS-enabled posture)** Every user-scoped `public` table has
   `rowsecurity = true` (Doc 01 V8 target-state §4; re-cut decision #6 retires the
   §14.3 Neon bypass). Service-internal primitive tables (Doc 01A) are RLS-exempt
