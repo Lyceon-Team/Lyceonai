@@ -202,10 +202,17 @@ projection = `stem/passage/options/assets` only — Doc 02 Preamble §12), plus 
 
 ## 6. Reseed mapping (owner-run, after schema proven)
 
+> **Update (2026-06-09): reseed scope is PROFILES ONLY.** Content review found the 280
+> preserved `questions` are defective synthetic fixtures (duplicate options, duplicate
+> items, template clones, truncated passages, `section_code='MATH'`, …). Per owner ruling
+> they are **discarded**; genesis `public.questions` stays **empty** and the generation+QA
+> pipeline populates it later with §14-compliant promotion-time ids. The `questions` row
+> below is superseded — see [`RESEED-MAPPING.md`](./RESEED-MAPPING.md) §0.
+
 | Target | Source | Mapping rule |
 |---|---|---|
-| `questions` (280 rows) | preservation snapshot (live `public.questions`) | `canonical_id` preserved verbatim; content → `stem/passage/options/correct_answer/explanation/option_metadata`; **drop the deployed `answer_text` duplicate** (decision #7); `difficulty` clamped to 1–3 |
-| `profiles` (test accounts) | preservation snapshot + live `auth.users` | reseed keyed to **existing `auth.users.id`** (no new ids; FK RESTRICT satisfied); role/demographic columns mapped to the Doc 01 V8 §4 shape |
+| ~~`questions` (280 rows)~~ | — | **DISCARDED by design** (defective fixtures; bank starts empty — RESEED-MAPPING §0) |
+| `profiles` (62 test accounts) | preservation snapshot + live `auth.users` | reseed keyed to **existing `auth.users.id`** (no new ids; FK RESTRICT satisfied); role/demographic columns mapped to the Doc 01 V8 §4 shape (RESEED-MAPPING §2) |
 
 Anti-leak is **not** a reseed concern at the column level — both answer columns
 exist in the canonical table; the serving contract + RLS keep them off pre-submit
