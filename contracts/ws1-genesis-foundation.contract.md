@@ -44,10 +44,15 @@ and the reseed lands with ids intact.
   (no `CREATE ROLE`). The `--schema public` SNAP is unaffected (extensions live
   outside the public scope), so the CI Postgres service must provide pgvector
   (`pgvector/pgvector:pg16`).
-- **A.4 (RLS-enabled posture)** Every user-scoped `public` table has
-  `rowsecurity = true` (Doc 01 V8 target-state §4; re-cut decision #6 retires the
-  §14.3 Neon bypass). Service-internal primitive tables (Doc 01A) are RLS-exempt
-  by design and explicitly listed in §C. Proof: `STRUCT` over `pg_tables`.
+- **A.4 (RLS-enabled posture)** **Every** `public` table has `rowsecurity = true`
+  — **including the Doc 01A primitives** (they are RLS-enabled **deny-all**, NOT
+  RLS-off). The difference is policies, not RLS state: user-scoped tables carry a
+  self-row SELECT policy (e.g. `profiles_select_self`); the Doc 01A service-internal
+  tables carry **no policies and no anon/authenticated grants**, i.e. deny-all to
+  every non-service-role (service_role bypasses RLS). This is the most-locked
+  posture — Doc 00 "data protection by default", Doc 01A §49 (students don't see
+  abuse scores) / §64 (secrets never exposed). Proof: `STRUCT` over `pg_tables`
+  (all `rowsecurity=true`).
 
 ---
 
@@ -97,11 +102,17 @@ and the reseed lands with ids intact.
   exist with append-only history triggers and config-change NOTIFY (Doc 01A §2–§8;
   closes GAP-OP-02). Constants live in these tables, **not** as literals. Proof:
   `STRUCT`.
-- **C.5 (service-internal RLS exemption)** The Doc 01A primitive tables
+- **C.5 (service-internal deny-all)** The Doc 01A primitive tables
   (`idempotency_records`, `rate_limit_ledger`, `abuse_score_incidents`,
-  `abuse_scores`, `service_auth_secrets`, `*_runtime_config*`) hold **no** grants
-  to `anon`/`authenticated` (service-role only; Doc 01A ownership classes). This is
-  the explicit exemption to A.4. Proof: `STRUCT` over `information_schema.role_table_grants`.
+  `abuse_scores`, `service_auth_secrets`, `*_runtime_config*`) are **RLS-enabled
+  with no policies and no `anon`/`authenticated` grants** — deny-all to every
+  non-service-role. They are exempt from the user-scoped SELECT *policy* (no self-row
+  read like `profiles`), **NOT** from RLS itself. This satisfies Doc 01A's access
+  intent (§49 students don't see abuse scores; §64 secrets never exposed; Doc 00
+  data-protection-by-default) via the most-locked mechanism. Doc 01A expresses this
+  as ownership-class governance + non-visibility, not literal RLS DDL (0 `ENABLE ROW
+  LEVEL SECURITY` statements in Doc 01A) → tracked as **SP-10**. Proof: `STRUCT`
+  (`rowsecurity=true` **and** zero anon/auth grants).
 
 ## D — Content-core (Doc 02A) — the anti-leak gate
 
