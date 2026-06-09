@@ -98,6 +98,16 @@ created_at, updated_at`. `*age_years/is_under_13` are **trigger-derived**
 `_updated_at`(22, duplicate-artifact), `phone_number`(25), `address`(27), `time_zone`(28),
 `preferred_language`(29), `marketing_opt_in`(30), `profile_completed_at`(31).
 
+**`is_under_13` null-safety (verified 2026-06-09).** The `set_profile_age_fields` trigger
+branches on `date_of_birth IS NULL` **before** any `age()` math, so a NULL DOB →
+`age_years`/`is_under_13` = **NULL** (never `true`, never an error). Proven on a reseed-style
+batch insert: a NULL-DOB row alongside dated rows committed without aborting (`nodob`→NULL,
+`kid`→11/true, `adult`→36/false). So dropping `is_under_13` from the INSERT is safe, and a
+DOB-less test account neither gets gated nor kills the batch. **Downstream gating semantics
+(later waves, COPPA): a NULL `is_under_13` means age-unknown and MUST NOT be treated as
+under-13 — a DOB-less account is not gated** (owner ruling 2026-06-09; production signup
+enforces a DOB, so NULL is a test-data artifact).
+
 ---
 
 ## 3. PRE-FLIGHT GATES (run after §1c = 62; **HALT on any failure — do not reseed**)
