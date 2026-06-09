@@ -70,6 +70,12 @@ jobs:
       - name: Check No Test Routes in Dist
         run: node scripts/ci/check-no-test-routes-dist.mjs
 
+      - name: No hardcoded constants (Lane-A gate — DB is source of truth)
+        run: node scripts/ci/no-hardcoded-constants.mjs
+
+      - name: Tutor never writes mastery (C-7 / INV-03-01)
+        run: node scripts/ci/tutor-never-writes-mastery.mjs
+
   # ---------------------------------------------------------------------------
   # Visibility job — NOT required for merge. Steps are continue-on-error so the
   # job stays green, but their failures remain visible in the logs/annotations

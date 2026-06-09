@@ -519,6 +519,80 @@ CREATE TABLE public.entitlements (
 
 
 --
+-- Name: exam_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT exam_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT exam_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: exam_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exam_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: full_length_adaptive_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.full_length_adaptive_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT full_length_adaptive_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT full_length_adaptive_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: full_length_adaptive_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.full_length_adaptive_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: guardian_consent_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -726,6 +800,43 @@ CREATE TABLE public.observability_runtime_config_history (
 
 
 --
+-- Name: practice_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT practice_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT practice_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: practice_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -841,6 +952,43 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 
 
 --
+-- Name: review_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT review_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT review_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: review_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: sections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -886,6 +1034,43 @@ CREATE TABLE public.taxonomy_versions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     description text,
     is_active boolean DEFAULT true
+);
+
+
+--
+-- Name: tutor_context_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_context_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT tutor_context_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT tutor_context_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: tutor_context_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_context_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1074,6 +1259,38 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
+-- Name: exam_runtime_config_history exam_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_runtime_config_history
+    ADD CONSTRAINT exam_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exam_runtime_config exam_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_runtime_config
+    ADD CONSTRAINT exam_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: full_length_adaptive_config_history full_length_adaptive_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.full_length_adaptive_config_history
+    ADD CONSTRAINT full_length_adaptive_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: full_length_adaptive_config full_length_adaptive_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.full_length_adaptive_config
+    ADD CONSTRAINT full_length_adaptive_config_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: guardian_consent_requests guardian_consent_requests_consent_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1170,6 +1387,22 @@ ALTER TABLE ONLY public.observability_runtime_config
 
 
 --
+-- Name: practice_runtime_config_history practice_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_runtime_config_history
+    ADD CONSTRAINT practice_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: practice_runtime_config practice_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_runtime_config
+    ADD CONSTRAINT practice_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1218,6 +1451,22 @@ ALTER TABLE ONLY public.rate_limit_runtime_config
 
 
 --
+-- Name: review_runtime_config_history review_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_runtime_config_history
+    ADD CONSTRAINT review_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: review_runtime_config review_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_runtime_config
+    ADD CONSTRAINT review_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
 -- Name: sections sections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1255,6 +1504,22 @@ ALTER TABLE ONLY public.source_types
 
 ALTER TABLE ONLY public.taxonomy_versions
     ADD CONSTRAINT taxonomy_versions_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_runtime_config_history
+    ADD CONSTRAINT tutor_context_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_context_runtime_config tutor_context_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_runtime_config
+    ADD CONSTRAINT tutor_context_runtime_config_pkey PRIMARY KEY (key);
 
 
 --
@@ -1525,6 +1790,34 @@ CREATE TRIGGER entitlement_runtime_config_notify AFTER INSERT OR UPDATE ON publi
 
 
 --
+-- Name: exam_runtime_config_history exam_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER exam_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.exam_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: exam_runtime_config exam_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER exam_runtime_config_notify AFTER INSERT OR UPDATE ON public.exam_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: full_length_adaptive_config_history full_length_adaptive_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER full_length_adaptive_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.full_length_adaptive_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: full_length_adaptive_config full_length_adaptive_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER full_length_adaptive_config_notify AFTER INSERT OR UPDATE ON public.full_length_adaptive_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
 -- Name: idempotency_runtime_config_history idempotency_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1581,6 +1874,20 @@ CREATE TRIGGER observability_runtime_config_notify AFTER INSERT OR UPDATE ON pub
 
 
 --
+-- Name: practice_runtime_config_history practice_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER practice_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.practice_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: practice_runtime_config practice_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER practice_runtime_config_notify AFTER INSERT OR UPDATE ON public.practice_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
 -- Name: profiles profiles_set_age; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1599,6 +1906,34 @@ CREATE TRIGGER rate_limit_runtime_config_history_no_mutate BEFORE DELETE OR UPDA
 --
 
 CREATE TRIGGER rate_limit_runtime_config_notify AFTER INSERT OR UPDATE ON public.rate_limit_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: review_runtime_config_history review_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER review_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.review_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: review_runtime_config review_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.review_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_context_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.tutor_context_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: tutor_context_runtime_config tutor_context_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_context_runtime_config_notify AFTER INSERT OR UPDATE ON public.tutor_context_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
 
 
 --
@@ -1778,6 +2113,38 @@ ALTER TABLE ONLY public.entitlements
 
 
 --
+-- Name: exam_runtime_config_history exam_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_runtime_config_history
+    ADD CONSTRAINT exam_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: exam_runtime_config exam_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exam_runtime_config
+    ADD CONSTRAINT exam_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: full_length_adaptive_config_history full_length_adaptive_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.full_length_adaptive_config_history
+    ADD CONSTRAINT full_length_adaptive_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: full_length_adaptive_config full_length_adaptive_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.full_length_adaptive_config
+    ADD CONSTRAINT full_length_adaptive_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: guardian_consent_requests guardian_consent_requests_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1890,6 +2257,22 @@ ALTER TABLE ONLY public.observability_runtime_config
 
 
 --
+-- Name: practice_runtime_config_history practice_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_runtime_config_history
+    ADD CONSTRAINT practice_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: practice_runtime_config practice_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_runtime_config
+    ADD CONSTRAINT practice_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: profiles profiles_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1927,6 +2310,38 @@ ALTER TABLE ONLY public.rate_limit_runtime_config_history
 
 ALTER TABLE ONLY public.rate_limit_runtime_config
     ADD CONSTRAINT rate_limit_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: review_runtime_config_history review_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_runtime_config_history
+    ADD CONSTRAINT review_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: review_runtime_config review_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_runtime_config
+    ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_runtime_config_history
+    ADD CONSTRAINT tutor_context_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: tutor_context_runtime_config tutor_context_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_context_runtime_config
+    ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
 
 
 --
@@ -2069,6 +2484,30 @@ ALTER TABLE public.entitlement_runtime_config_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: exam_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: exam_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.exam_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: full_length_adaptive_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.full_length_adaptive_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: full_length_adaptive_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.full_length_adaptive_config_history ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2135,6 +2574,18 @@ ALTER TABLE public.observability_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.observability_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: practice_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.practice_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: practice_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.practice_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2172,6 +2623,18 @@ ALTER TABLE public.rate_limit_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rate_limit_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: review_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: sections; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2201,6 +2664,18 @@ ALTER TABLE public.source_types ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_context_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_context_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_context_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_context_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
@@ -2396,6 +2871,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.entitlements TO service_role;
 
 
 --
+-- Name: TABLE exam_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.exam_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE full_length_adaptive_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.full_length_adaptive_config TO service_role;
+
+
+--
 -- Name: TABLE guardian_consent_requests; Type: ACL; Schema: public; Owner: -
 --
 
@@ -2473,6 +2962,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.observability_runtime_config_h
 
 
 --
+-- Name: TABLE practice_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO service_role;
+
+
+--
 -- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
@@ -2509,6 +3005,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 
 
 --
+-- Name: TABLE review_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO service_role;
+
+
+--
 -- Name: TABLE sections; Type: ACL; Schema: public; Owner: -
 --
 
@@ -2536,6 +3039,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_types TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.taxonomy_versions TO service_role;
+
+
+--
+-- Name: TABLE tutor_context_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_context_runtime_config TO service_role;
 
 
 --

@@ -1,9 +1,11 @@
 # WS-2 ↔ WS-3 Mastery Seam — Validation Contract (Lane A; DRAFT for review)
 
 > The shared seam between WS-2 (Doc 02B runtime engines: practice/review) and WS-3
-> (Doc 05 family: mastery/KPI/projections). **Plan-mode draft — defines correctness
-> independently of either implementation (Doc 00 V6 §10 Phase 1). Lock this before any
-> coupled (Lane C) build.** Owner rulings on the §7 HALT items are prerequisites.
+> (Doc 05 family: mastery/KPI/projections). **FROZEN 2026-06-10** — Phase-0 plan +
+> HALT rulings owner-approved; HALT 2/6/8 resolved (§7). Defines correctness independently
+> of either implementation (Doc 00 V6 §10 Phase 1). **Lane C builds against this frozen
+> contract; B may parallelize now.** Residuals R1 (skill selection) + SP-12 (diagnostic
+> surface) tracked, non-blocking for B.
 >
 > **Grounding:** HEAD `03fe22e`. Doc 02B `f3603b5` (V4); Doc 05A `42c1ead` (V1.0 LOCKED);
 > Doc 05B/05C/05D V1.0 LOCKED; Doc 02C `f713f55` (V4, superseded for mastery by R1);
@@ -124,9 +126,34 @@ The WS-2 session/serving/SM-2 internals (Lane B), the WS-3 formula/constants/tab
 signature, the `canonical_mastery_events` read-contract, the ordering precondition, and the
 single-writer/idempotency/audit/anti-leak guards that cross the WS-2↔WS-3 boundary.
 
-## 7. HALT items (owner rulings required before Lane C) — see PHASE-0-PLAN §HALT
-H1 RPC-name/payload supersession · H2 mastery_outbox refuted (re-dispose MA-07) ·
-H3 source-weight conflict (Doc 05 wins) · H4 `test` path blocked on WS-4 ·
-H5 `projection_refresh_outbox` cross-wave (04B emit is WS-4) · H6 the `canonical_mastery_events`
-read-contract is the lock · H7 review emit on correct+incorrect / `used_tutor` non-formula ·
-H8 diagnostic surface source.
+## 7. HALT items — RESOLVED (owner-approved 2026-06-10)
+
+- **H1 RESOLVED** — canonical seam is Doc 05A `apply_mastery_event` (+ `source_family`/
+  `event_source_kind`/`correct` split); Doc 02B §25's `apply_learning_event_to_mastery`/
+  `event_type` enum is superseded → **SP-15** (reconcile Doc 02B §25).
+- **H2 RESOLVED** — **no mastery outbox**; the seam is the synchronous RPC. ADR-001 §5's
+  `mastery_outbox` is stale → **SP-16** (amend ADR-001 §5); **GAP-MA-07 re-disposed** (the
+  "outbox" it wants does not exist in the locked spec).
+- **H3 RESOLVED** — Doc 05 source weights 0.50/0.30/0.20 win (R1); seeded by B-W3-1 in
+  `mastery_constants` (formula-class).
+- **H4 RESOLVED** — `test` path re-derives from `test_session_answers` (Doc 04 finalization) →
+  **WS-4**; WS-3 builds practice+review now.
+- **H5 RESOLVED** — `projection_refresh_outbox` table+consumer are WS-3 (C-3); the **emit is
+  WS-4 (04B)**.
+- **H6 RESOLVED** — the read-contract (§2) is the lock. **`event_id` = the upstream canonical
+  answer-row PK** (`practice_session_items.id` / `review_error_attempts.id`), minted at the
+  answer insert → durable-before-call + stable across retries (spec left mint implicit; pinned
+  here). **Skill is SINGLE** (no fan-out): `student_skill_mastery` PK `(student_id,section,
+  domain,skill)`; Doc 02 denormalizes one canonical `skill` per event (Doc 05B §11.2).
+  **Residual R1:** genesis `questions.skill_codes[]` → WS-2 denormalizes `skill_codes[1]` as
+  the canonical primary (confirm; SAT items are single-skill in practice) → **SP-17**.
+- **H7 RESOLVED** — review emits on **correct AND incorrect** retries, `source_family='review'`;
+  `used_tutor` is **telemetry-only**, never formula-facing (CR-02B-16; Doc 03 INV-03-01; G2).
+- **H8 RESOLVED (deferred)** — mastery treats `diagnostic_attempt` as `practice` (Doc 05A §11.4);
+  the diagnostic **surface/session** is absent from Doc 02B → **SP-12**; do not build the
+  diagnostic path until pinned.
+
+Spec-fidelity follow-ups spawned: SP-12 (diagnostic surface), SP-13 (config doctrine: Doc 02B
+§41 `constants_audit_log` superseded by 01A per-table `_history`), SP-14 (tutor per-hour bucket
+in Doc 03B §15.2), SP-15 (Doc 02B §25 RPC reconcile), SP-16 (ADR-001 §5 mastery_outbox),
+SP-17 (questions skill_codes[] → single mastery skill rule).
