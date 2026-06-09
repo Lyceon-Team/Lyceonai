@@ -53,7 +53,6 @@ attached_assets/
 components.json
 pyproject.toml
 uv.lock
-drizzle.config.ts
 tailwind.config.ts
 postcss.config.js
 

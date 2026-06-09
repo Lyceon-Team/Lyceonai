@@ -2,57 +2,53 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-const migrationPath = path.resolve(
+/**
+ * Rate-Limit SQL contract — RE-POINTED to the genesis baseline (WS-1 genesis re-cut).
+ *
+ * The previous target `20260408_rate_limit_ledger_truth.sql` (table
+ * `usage_rate_limit_ledger`, `check_and_reserve_*` functions, 24h/7d/5min windows,
+ * app denial codes) was the Doc-02C-generation rate-limit implementation the
+ * registry flagged as wrong-generation (GAP-ID-06 practice quota 20/rolling-24h vs
+ * spec 40/calendar-day; GAP-TU-05 tutor density windows vs spec per-min/…/month).
+ * The teardown + genesis-from-spec rebuild archives it
+ * (docs/SpecAudit/_legacy-migrations/) and builds the canonical Doc 01A §41
+ * primitive in the genesis foundation. Per-surface quota sizes and denial codes are
+ * owned by later waves (runtime/entitlement) + config — NOT the foundation schema.
+ *
+ * This contract now locks the genesis rate-limit primitive (Doc 01A §41). Structural
+ * application correctness is additionally proven by scripts/ci/genesis-fresh-apply.sh.
+ */
+const genesisPath = path.resolve(
   process.cwd(),
-  "supabase/migrations/20260408_rate_limit_ledger_truth.sql",
+  "supabase/migrations/00000000000000_genesis.sql",
 );
 
-describe("Rate-Limit SQL Contract", () => {
-  it("defines canonical ledger and all required atomic functions", () => {
-    const sql = fs.readFileSync(migrationPath, "utf8");
-
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS public.usage_rate_limit_ledger");
-    expect(sql).toContain("scope IN ('practice', 'full_length', 'tutor', 'calendar')");
-    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_practice_quota");
-    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_full_length_quota");
-    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_calendar_quota");
-    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.check_and_reserve_tutor_budget");
-    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.finalize_tutor_usage");
+describe("Rate-Limit SQL Contract (genesis, Doc 01A §41)", () => {
+  it("defines the canonical rate_limit_ledger with the spec primary key", () => {
+    const sql = fs.readFileSync(genesisPath, "utf8");
+    expect(sql).toMatch(/CREATE TABLE public\.rate_limit_ledger/i);
+    expect(sql).toMatch(
+      /PRIMARY KEY \(profile_id, bucket_key, window_start\)/i,
+    );
+    // ledger FK is scoped to a profile (cascades with the profile, not auth.users)
+    expect(sql).toMatch(
+      /profile_id\s+UUID NOT NULL REFERENCES public\.profiles\(id\)/i,
+    );
   });
 
-  it("encodes rolling-window limits for practice, full-length, and tutor budget windows", () => {
-    const sql = fs.readFileSync(migrationPath, "utf8");
-
-    expect(sql).toMatch(/interval '24 hours'/i);
-    expect(sql).toMatch(/interval '7 days'/i);
-    expect(sql).toMatch(/interval '5 minutes'/i);
-  });
-
-  it("contains concurrency guards and dedupe keys for atomic protection", () => {
-    const sql = fs.readFileSync(migrationPath, "utf8");
-
-    expect(sql).toMatch(/pg_advisory_xact_lock/i);
-    expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_rate_limit_ledger_dedupe");
-    expect(sql).toMatch(/dedupe_key/i);
-  });
-
-  it("locks stable denial codes for canonical quota surfaces", () => {
-    const sql = fs.readFileSync(migrationPath, "utf8");
-
-    expect(sql).toContain("PRACTICE_FREE_DAILY_QUOTA_EXCEEDED");
-    expect(sql).toContain("FULL_LENGTH_QUOTA_EXCEEDED");
-    expect(sql).toContain("TUTOR_BUDGET_EXCEEDED");
-    expect(sql).toContain("TUTOR_COOLDOWN_ACTIVE");
-    expect(sql).toContain("TUTOR_DENSITY_LIMIT_EXCEEDED");
-    expect(sql).toContain("CALENDAR_REFRESH_QUOTA_EXCEEDED");
-  });
-
-  it("locks counted calendar events for rolling seven-day quota", () => {
-    const sql = fs.readFileSync(migrationPath, "utf8");
-
-    expect(sql).toContain("calendar_refresh_auto");
-    expect(sql).toContain("calendar_regenerate_full");
-    expect(sql).toContain("calendar_regenerate_day");
-    expect(sql).toMatch(/calendar_quota:/i);
+  it("defines the atomic reserve-under-limit RPC (Doc 01A §41 intent)", () => {
+    const sql = fs.readFileSync(genesisPath, "utf8");
+    expect(sql).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.rate_limit_check_and_increment/i,
+    );
+    // atomic: insert-or-conflict, then increment only while under the limit
+    expect(sql).toMatch(
+      /ON CONFLICT \(profile_id, bucket_key, window_start\)/i,
+    );
+    expect(sql).toMatch(/used_count \+ p_cost <= p_limit/i);
+    // returns the allowed/remaining/used triple
+    expect(sql).toMatch(
+      /RETURNS TABLE \(allowed BOOLEAN, remaining INTEGER, used INTEGER\)/i,
+    );
   });
 });

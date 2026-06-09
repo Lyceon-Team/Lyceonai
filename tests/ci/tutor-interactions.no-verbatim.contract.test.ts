@@ -74,13 +74,20 @@ describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime 
     ).toBe(false);
   });
 
-  it("the migration drops the verbatim message/answer columns from tutor_interactions", () => {
-    const sql = read(
-      "supabase/migrations/20260606_tutor_interactions_drop_verbatim.sql",
+  it("the genesis pipeline never (re)creates a tutor_interactions verbatim table", () => {
+    // RE-POINTED for the WS-1 genesis re-cut: tutor_interactions is CBC-moot — it is
+    // not part of the foundation schema, so its verbatim message/answer columns cannot
+    // exist (the table itself is never created). This is a strictly stronger guarantee
+    // than the old column-drop migration (now archived). The canonical conversation
+    // store is tutor_messages, a later wave (Doc 03 §14.2 / Privacy Policy §9.7).
+    const migDir = path.join(repoRoot, "supabase/migrations");
+    const combined = readdirSync(migDir)
+      .filter((f) => f.endsWith(".sql"))
+      .map((f) => read(path.join("supabase/migrations", f)))
+      .join("\n");
+    expect(combined).not.toMatch(
+      /CREATE TABLE\s+(IF NOT EXISTS\s+)?(public\.)?tutor_interactions\b/i,
     );
-    expect(sql).toMatch(/ALTER TABLE\s+public\.tutor_interactions/i);
-    expect(sql).toMatch(/DROP COLUMN IF EXISTS message/i);
-    expect(sql).toMatch(/DROP COLUMN IF EXISTS answer/i);
   });
 
   it("the review mastery-bridge read no longer depends on the dormant tutor_interactions table", () => {

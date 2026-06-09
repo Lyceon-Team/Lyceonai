@@ -169,3 +169,43 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+  # ---------------------------------------------------------------------------
+  # Genesis fresh-apply gate (WS-1 re-cut, Doc 00 §10 Phase 6). Proves the
+  # supabase/migrations pipeline applies from scratch deterministically, matches
+  # the committed expected schema, ships RLS enabled everywhere, keeps profiles.id
+  # FK RESTRICT, and holds the anti-leak hard gate. No prod creds — throwaway PG.
+  # ---------------------------------------------------------------------------
+  genesis-fresh-apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # owned `vector` extension must be installable (genesis declares it)
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Genesis fresh-apply + determinism + anti-leak gate
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/genesis-fresh-apply.sh

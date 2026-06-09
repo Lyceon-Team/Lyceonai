@@ -1,5 +1,16 @@
 # Lyceon Closure Plan — V1.0 (derived from Gap Registry V1.1)
 
+> ## Execution view RE-CUT (2026-06-09) — see the genesis re-cut
+> WS-0 (stop-the-bleed) **stands as closed**. The **incremental** WS-1..7 plan
+> below — which repaired the *deployed* schema in place ("the deployed runtime
+> keeps working throughout") — is **superseded for execution** by the owner's
+> **teardown + genesis-from-spec rebuild**. The active execution view is
+> [`../30-genesis-recut/RECUT-CONTRACT.md`](../30-genesis-recut/RECUT-CONTRACT.md)
+> + [`../30-genesis-recut/GAP-WAVE-MAP.md`](../30-genesis-recut/GAP-WAVE-MAP.md)
+> (all 66 gaps re-assigned to spec-domain waves WS-1..WS-8 + WS-S). **This registry
+> remains the source of truth for gaps**; only their *execution* is re-cut. The
+> WS-1..7 text below is retained for provenance.
+
 **Rule:** this plan is derived FROM the registry; the registry stays the source of truth. Every PR cites its GAP IDs and updates registry status in the same PR. Workstream exit = all listed GAPs closed (or explicitly re-dispositioned by owner) + the named proof. Spec revisions (WS-S) run through the lock-cycle, never inline.
 
 **Sequencing logic (pre-production, zero users, no date pressure):** stop the live exposures first (cheap, DB-only, independent of everything); restore schema provenance second (every later workstream ships migrations and needs a pipeline to ship them through); then the two rebuild programs (mastery, scoring) which share the outbox seam; correctness and lifecycle work runs parallel where it doesn't collide with the rebuilds; hygiene last. The deployed runtime keeps working throughout — nothing here requires a big-bang cutover.
