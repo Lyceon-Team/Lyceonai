@@ -60,12 +60,13 @@ CREATE FUNCTION public.canonical_mastery_events(
 ) RETURNS TABLE(
   event_id uuid, occurred_at timestamptz, source_family text,
   difficulty smallint, correct boolean, section text, domain text, skill text,
-  event_source_kind text, question_id uuid
+  event_source_kind text, question_id text
 ) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
   -- column shape mirrors Doc 05A §6.2 (10 cols); event_source_kind/question_id are unused by the
   -- formula but kept for contract-parity with the production canonical_mastery_events (Lane C).
+  -- question_id is TEXT (canonical SAT id) per Codex F-002 / SP-21, not uuid.
   SELECT e.event_id, e.occurred_at, e.source_family, e.difficulty, e.correct, e.section, e.domain, e.skill,
-         NULL::text AS event_source_kind, NULL::uuid AS question_id
+         NULL::text AS event_source_kind, NULL::text AS question_id
   FROM public._parity_events e
   WHERE e.student_id = p_student_id
     AND e.section = p_section AND e.domain = p_domain

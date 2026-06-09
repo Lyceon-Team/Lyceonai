@@ -1024,7 +1024,7 @@ CREATE TABLE public.mastery_event_audit_log (
     source_family text NOT NULL,
     event_source_kind text NOT NULL,
     event_id uuid NOT NULL,
-    question_id uuid,
+    question_id text,
     difficulty smallint,
     correct boolean,
     occurred_at timestamp with time zone,

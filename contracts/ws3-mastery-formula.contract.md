@@ -55,10 +55,21 @@ violation*).
   |---|---|---|
   | `student_skill_mastery` | `apply_mastery_event` + `recompute_skill_mastery` (INV-05A-11) | student self-read, **column-grant** to `(student_id,section,domain,skill,mastery_level,computed_at)` only; **no guardian** (INV-05A-12) |
   | `student_domain_mastery` | `refresh_domain_mastery` (05B) | aggregate; guardian aggregate-only |
-  | `student_cluster_mastery` | `refresh_cluster_mastery` (05B) | aggregate |
+  | ~~`student_cluster_mastery`~~ | ~~`refresh_cluster_mastery` (05B)~~ | **DEFERRED → 05B (see amendment AM-1)** |
   | `student_*_kpi` / `student_kpi_rollups_current` | `refresh_{section,domain,skill,overall}_kpi` (05B) | derived |
   | `student_section_projections` | `compute_section_projection` (05C) | derived |
   | `mastery_event_audit_log` (05D) | shared append-only; `UNIQUE(event_source_kind,event_id)` | admin |
+
+  > **Frozen-contract amendment AM-1 (2026-06-10, Codex F-003).** *What:* `student_cluster_mastery`
+  > / `refresh_cluster_mastery` are NOT created in B-WS3-1; only `student_skill_mastery` +
+  > `student_domain_mastery` (and the KPI/projection/audit shells) land here. *Why:* cluster-tier
+  > mastery is a pure 05B rollup with no B-WS3-1 dependency, and its writer (`refresh_cluster_mastery`)
+  > belongs to the same 05B wave as `refresh_domain_mastery` (the `TODO(05B)` in
+  > `recompute_skill_mastery`). Building an empty cluster shell now would add an ungoverned
+  > table ahead of its writer. *Where it lands:* the 05B domain/cluster/KPI rollup item creates
+  > `student_cluster_mastery` with the same RLS-deny-all + `REVOKE…FROM PUBLIC` + service-role
+  > posture as the other aggregate tables, and wires `refresh_cluster_mastery`. Until then the
+  > single-writer/lockdown guarantees apply only to the tables that exist.
 - **C2** `mastery_score`/`acc_*`/counters NOT exposed to `authenticated`; guardians no read
   (INV-05A-12 / Doc 02 INV-02-06). Proof: `GUARD` (column-grant/RLS test) + `STRUCT`.
 - **C3** Single-writer enforced: a CI grep-guard fails on a stray write to a mastery table outside
@@ -124,3 +135,22 @@ source path (WS-4). B-WS3-1 builds the formula core + constants + table shells +
   `refresh_domain_mastery` (owned by 05B, a later item). Marked a hard `TODO(05B)` in the
   function; must be restored before `apply_mastery_event` goes live (§5.1).
 - **LOW — FIXED.** `@spec` citation now includes §8 (position assignment) and §12 (fixtures).
+
+### Codex audit pass (2026-06-10) — REJECT → resolved
+- **F-001 (BLOCKING) — FIXED structurally.** `no-hardcoded-constants` was false-green for
+  uncovered formula constants (a planted `30.0`/`5` stayed green). Replaced the value-denylist
+  for the five formula functions with an **allowlist** that masks only the algebraic-form
+  literals (`0.5` half-life base, `1.0` accuracy ceiling, `100.0` percent scale, difficulty
+  enum `1/2/3`, level codes `0..4`, zero/identity guards) and flags **every other** numeric
+  literal — so a NEW unguarded constant fails closed. `guards-selftest.sh` now plants **all 18**
+  locked formula constants (incl. `30`, `5`, and the structural-collision values `1.0`/`2`/`4`)
+  and asserts each turns the guard red, plus a counter-proof that the structural form stays green.
+- **F-002 / SP-21 — code FIXED, spec amendment pending.** Codex ruled **TEXT authoritative**.
+  `mastery_event_audit_log.question_id` corrected `uuid → text`; parity-stub `question_id → text`.
+  `event_id` stays `uuid`. Doc 05A `apply_mastery_event(p_question_id text)` + `canonical_mastery_events`
+  amendment is owner-side (spec is read-only) — tracked in GAP-SP-21; **blocks Lane C wiring**.
+- **F-003 — FIXED by amendment.** `student_cluster_mastery`/`refresh_cluster_mastery` deferral
+  recorded as frozen-contract amendment **AM-1** (above), not silently dropped.
+- **Parity/lockdown proof.** Codex confirmed reference independence + §12 verbatim (31/31) but
+  could not run psql; the authoritative green is the PR's `mastery-parity` + `genesis-fresh-apply`
+  jobs on the GitHub runner (blocking, no continue-on-error).

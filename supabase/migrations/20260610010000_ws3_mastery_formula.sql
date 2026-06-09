@@ -273,8 +273,12 @@ CREATE TABLE public.mastery_event_audit_log (
   domain text NOT NULL, skill text NOT NULL,
   source_family text NOT NULL CHECK (source_family IN ('test','practice','review')),
   event_source_kind text NOT NULL CHECK (event_source_kind IN ('practice_attempt','diagnostic_attempt','review_error_attempt','full_length_answer')),
-  event_id uuid NOT NULL, question_id uuid, difficulty smallint, correct boolean, occurred_at timestamptz,
-  -- audit before/after match student_skill_mastery.mastery_score numeric(5,4) (§7.1); LYCEON-MIGRATION-REVIEWED
+  -- event_id (uuid) is the per-attempt idempotency key. question_id is TEXT: it carries the
+  -- canonical SAT question id (public.questions.id, '^SAT(M|RW)[12][A-Z0-9]{6}$'), NOT a uuid.
+  -- Codex F-002 ruling (SP-21): TEXT is authoritative; Doc 05A's p_question_id uuid is stale and
+  -- is amended to TEXT before Lane C wires apply_mastery_event. LYCEON-MIGRATION-REVIEWED
+  event_id uuid NOT NULL, question_id text, difficulty smallint, correct boolean, occurred_at timestamptz,
+  -- audit before/after match student_skill_mastery.mastery_score numeric(5,4) (§7.1)
   mastery_score_before numeric(5,4), mastery_score_after numeric(5,4),
   mastery_level_before smallint, mastery_level_after smallint,
   event_count_after integer NOT NULL CHECK (event_count_after >= 0),
