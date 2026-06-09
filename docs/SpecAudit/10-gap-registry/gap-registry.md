@@ -3,7 +3,7 @@
 Governance, rulings (R1: Doc 05 family controls; R2: guardian grace-period carve-out), severity scheme, status legend, dispositions: `README.md`.
 **V1.1 changes:** all six VERIFY entries finalized from the dual-agent Verification Pass (Claude Code + Codex, independent, corroborating on all items); constants dump (`mastery_constants` 25 rows, `kpi_constants` 2 rows — owner confirms these are the only constants tables) analyzed and folded in; 3 new gaps (MA-10, MA-11, ID-12); TU-08 reclassified CRITICAL→HIGH (broad claim refuted, narrow defect confirmed); ID-11 elevated HIGH→CRITICAL (consent forgery). This registry is self-contained: decisive evidence is inline; raw auditor reports are not committed to the repo.
 
-**Totals:** 66 gap entries — **7 CRITICAL, 24 HIGH, 23 MEDIUM, 12 LOW** — plus 5 spec-revision items and 9 conformant verifications. Zero entries remain in VERIFY status.
+**Totals:** 66 gap entries — **7 CRITICAL, 24 HIGH, 23 MEDIUM, 12 LOW** — plus **6** spec-revision items (SP-06 added 2026-06-09 by the genesis re-cut) and 9 conformant verifications. Zero entries remain in VERIFY status.
 
 **The 7 CRITICALs:** GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-MA-01, GAP-EX-02, GAP-TU-03, GAP-ID-11.
 
@@ -148,6 +148,7 @@ Execution view (workstreams, sequencing, exit criteria): `closure-plan.md` in th
 | GAP-SP-03 | Name the canonical route/service tree (`server/` vs `apps/api/`) and migration target | GAP-AR-04 | OPEN |
 | GAP-SP-04 | Candidate review: Doc 01 V8 §0.6 RLS-bypass-at-launch posture vs live RLS-enabled reality | CC SUMMARY | OPEN |
 | GAP-SP-05 | Lock the pending values: Doc 02B Appendix A quota/budget set (full-length/calendar limits, tutor token/cost budgets, cooldowns, TTLs) **and assign a tier to standalone RAG retrieval** (spec-silent per VP-04) | CC2-002, VP-04 | OPEN |
+| GAP-SP-06 | Doc 00 V6 §3/§11 carry a stale "Doc 01 V8 pending" note while Doc 01 V8 is CANONICAL; Doc 00 V6 §15 itself flags such pending-version notes as update-required on lock. Update Doc 00 §3/§11 to reflect V8 canonical. (Related: SP-04 — Doc 01 V8 §14.3 Neon RLS-bypass posture is resolved toward RLS-enabled by the Supabase-in-place genesis re-cut, decision #6) | Genesis re-cut (Karl, 2026-06-09) | OPEN |
 
 ---
 

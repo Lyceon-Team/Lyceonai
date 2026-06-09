@@ -1,5 +1,17 @@
 # WS-1 — Provenance Baseline · Implementation Contract (finalized)
 
+> ## ⚠️ SUPERSEDED (2026-06-09) — retained as provenance, not the active plan
+> This contract executed the **provenance-baseline** strategy (invariant **I-1**:
+> `0000` reproduces deployed prod verbatim; exit proof = fresh-apply *== prod*).
+> The owner has since directed a **clean-slate teardown + genesis-from-spec
+> rebuild**, which **reverses I-1** (`0000` is built *from `docs/Spec/`*; prod is
+> *replaced*). The active governing contract is
+> [`../30-genesis-recut/RECUT-CONTRACT.md`](../30-genesis-recut/RECUT-CONTRACT.md).
+> Delta dispositions: **D1** Drizzle-severance survives · **D2** archive survives ·
+> **D3** baseline-from-prod **replaced** · **D4** deployed-schema drops **mooted**
+> (RECUT-CONTRACT §8). This file is kept per Doc 00 V6 §15 (supersession retains the
+> prior record); do not execute it.
+
 > **Phase model:** A (finalize contract — *this doc*) → B (spec-auditor inner loop)
 > → C (owner + Codex approval gate — **STOP**) → D (implementation, only after C)
 > → E (owner-proven closure). Nothing in Phase D is built until C approves.
