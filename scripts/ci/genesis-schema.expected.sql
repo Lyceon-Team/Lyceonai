@@ -355,7 +355,9 @@ BEGIN
     WHERE student_id=p_student_id AND section=p_section AND domain=p_domain AND skill=p_skill
     RETURNING * INTO v_row;
   END IF;
-  -- refresh_domain_mastery is 05B (later item); not called here in B-WS3-1.
+  -- TODO(05B): refresh_domain_mastery(p_student_id,p_section,p_domain) is owned by 05B (a later
+  -- item) and MUST be called here once 05B lands, per Doc 05A §5.1 — else skill/domain drift.
+  -- Tracked in the B-WS3-1 contract §G as a hard sequential dependency; not in B-WS3-1 scope.
   RETURN v_row;
 END;
 $$;
@@ -1026,8 +1028,8 @@ CREATE TABLE public.mastery_event_audit_log (
     difficulty smallint,
     correct boolean,
     occurred_at timestamp with time zone,
-    mastery_score_before numeric(10,9),
-    mastery_score_after numeric(10,9),
+    mastery_score_before numeric(5,4),
+    mastery_score_after numeric(5,4),
     mastery_level_before smallint,
     mastery_level_after smallint,
     event_count_after integer NOT NULL,
@@ -1153,6 +1155,66 @@ CREATE TABLE public.practice_runtime_config_history (
 
 
 --
+-- Name: practice_session_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_session_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    question_stem text NOT NULL,
+    question_passage text,
+    question_options jsonb NOT NULL,
+    question_correct_answer text NOT NULL,
+    question_explanation text NOT NULL,
+    question_option_metadata jsonb,
+    question_domain text NOT NULL,
+    question_skill text NOT NULL,
+    question_difficulty smallint NOT NULL,
+    question_section text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    selected_answer text,
+    is_correct boolean,
+    outcome text,
+    time_spent_ms integer,
+    client_attempt_id text,
+    answered_at timestamp with time zone,
+    served_at timestamp with time zone,
+    occurred_at timestamp with time zone,
+    CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
+    CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT practice_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: practice_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.practice_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    mode text NOT NULL,
+    filters jsonb DEFAULT '{}'::jsonb NOT NULL,
+    target_count integer NOT NULL,
+    platform text NOT NULL,
+    client_instance_id text NOT NULL,
+    status text DEFAULT 'created'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
+    CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
+    CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
+    CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
+);
+
+
+--
 -- Name: profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1268,6 +1330,30 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 
 
 --
+-- Name: review_error_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_error_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_item_id uuid,
+    student_id uuid NOT NULL,
+    question_id text NOT NULL,
+    selected_answer text,
+    is_correct boolean NOT NULL,
+    seconds_spent integer,
+    client_attempt_id text,
+    used_tutor boolean DEFAULT false NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    skill text NOT NULL,
+    difficulty smallint NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
+    CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
 -- Name: review_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1301,6 +1387,75 @@ CREATE TABLE public.review_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: review_schedule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_schedule (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    question_id text NOT NULL,
+    repetition_count integer DEFAULT 0 NOT NULL,
+    interval_days integer DEFAULT 0 NOT NULL,
+    ease_factor numeric NOT NULL,
+    next_review_at timestamp with time zone,
+    status text DEFAULT 'active'::text NOT NULL,
+    first_missed_session_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT review_schedule_status_check CHECK ((status = ANY (ARRAY['active'::text, 'graduated'::text, 'retired'::text])))
+);
+
+
+--
+-- Name: review_session_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_session_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    session_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    ordinal integer NOT NULL,
+    question_id text NOT NULL,
+    question_stem text NOT NULL,
+    question_passage text,
+    question_options jsonb NOT NULL,
+    question_correct_answer text NOT NULL,
+    question_explanation text NOT NULL,
+    question_option_metadata jsonb,
+    question_domain text NOT NULL,
+    question_skill text NOT NULL,
+    question_difficulty smallint NOT NULL,
+    question_section text NOT NULL,
+    retry_mode text DEFAULT 'same_question'::text NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    served_at timestamp with time zone,
+    answered_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
+    CONSTRAINT review_session_items_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'served'::text, 'answered'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: review_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.review_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    source_origin text NOT NULL,
+    client_instance_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
+    CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
 );
 
 
@@ -1798,6 +1953,22 @@ ALTER TABLE ONLY public.practice_runtime_config
 
 
 --
+-- Name: practice_session_items practice_session_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_session_items
+    ADD CONSTRAINT practice_session_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: practice_sessions practice_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_sessions
+    ADD CONSTRAINT practice_sessions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: profiles profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1846,6 +2017,14 @@ ALTER TABLE ONLY public.rate_limit_runtime_config
 
 
 --
+-- Name: review_error_attempts review_error_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_error_attempts
+    ADD CONSTRAINT review_error_attempts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: review_runtime_config_history review_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1859,6 +2038,30 @@ ALTER TABLE ONLY public.review_runtime_config_history
 
 ALTER TABLE ONLY public.review_runtime_config
     ADD CONSTRAINT review_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: review_schedule review_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_schedule
+    ADD CONSTRAINT review_schedule_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: review_session_items review_session_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: review_sessions review_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_sessions
+    ADD CONSTRAINT review_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -1958,6 +2161,14 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
+-- Name: review_schedule uq_review_schedule_profile_question; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_schedule
+    ADD CONSTRAINT uq_review_schedule_profile_question UNIQUE (student_id, question_id);
+
+
+--
 -- Name: idx_abuse_incidents_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2049,6 +2260,34 @@ CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING bt
 
 
 --
+-- Name: idx_practice_items_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_items_session ON public.practice_session_items USING btree (session_id, ordinal);
+
+
+--
+-- Name: idx_practice_items_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_items_user ON public.practice_session_items USING btree (user_id, answered_at DESC);
+
+
+--
+-- Name: idx_practice_sessions_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_sessions_active ON public.practice_sessions USING btree (user_id) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_practice_sessions_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_practice_sessions_user ON public.practice_sessions USING btree (user_id, created_at DESC);
+
+
+--
 -- Name: idx_profiles_deleted; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2098,10 +2337,66 @@ CREATE INDEX idx_ratelimit_window_end ON public.rate_limit_ledger USING btree (w
 
 
 --
+-- Name: idx_review_attempts_item; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_attempts_item ON public.review_error_attempts USING btree (session_item_id);
+
+
+--
+-- Name: idx_review_attempts_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_attempts_student ON public.review_error_attempts USING btree (student_id, occurred_at DESC);
+
+
+--
+-- Name: idx_review_items_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_session ON public.review_session_items USING btree (session_id, ordinal);
+
+
+--
+-- Name: idx_review_items_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_items_student ON public.review_session_items USING btree (student_id);
+
+
+--
+-- Name: idx_review_schedule_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_schedule_due ON public.review_schedule USING btree (student_id, next_review_at) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_review_sessions_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_review_sessions_student ON public.review_sessions USING btree (student_id, created_at DESC);
+
+
+--
 -- Name: idx_service_auth_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_service_auth_active ON public.service_auth_secrets USING btree (caller_service, callee_service) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: uq_practice_items_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_practice_items_idem ON public.practice_session_items USING btree (user_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_review_attempts_idem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_review_attempts_idem ON public.review_error_attempts USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
 
 
 --
@@ -2723,6 +3018,38 @@ ALTER TABLE ONLY public.practice_runtime_config
 
 
 --
+-- Name: practice_session_items practice_session_items_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_session_items
+    ADD CONSTRAINT practice_session_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: practice_session_items practice_session_items_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_session_items
+    ADD CONSTRAINT practice_session_items_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.practice_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: practice_session_items practice_session_items_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_session_items
+    ADD CONSTRAINT practice_session_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: practice_sessions practice_sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.practice_sessions
+    ADD CONSTRAINT practice_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: profiles profiles_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2763,6 +3090,30 @@ ALTER TABLE ONLY public.rate_limit_runtime_config
 
 
 --
+-- Name: review_error_attempts review_error_attempts_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_error_attempts
+    ADD CONSTRAINT review_error_attempts_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: review_error_attempts review_error_attempts_session_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_error_attempts
+    ADD CONSTRAINT review_error_attempts_session_item_id_fkey FOREIGN KEY (session_item_id) REFERENCES public.review_session_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: review_error_attempts review_error_attempts_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_error_attempts
+    ADD CONSTRAINT review_error_attempts_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: review_runtime_config_history review_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2776,6 +3127,54 @@ ALTER TABLE ONLY public.review_runtime_config_history
 
 ALTER TABLE ONLY public.review_runtime_config
     ADD CONSTRAINT review_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: review_schedule review_schedule_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_schedule
+    ADD CONSTRAINT review_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: review_schedule review_schedule_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_schedule
+    ADD CONSTRAINT review_schedule_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: review_session_items review_session_items_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: review_session_items review_session_items_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.review_sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: review_session_items review_session_items_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_session_items
+    ADD CONSTRAINT review_session_items_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: review_sessions review_sessions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.review_sessions
+    ADD CONSTRAINT review_sessions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id);
 
 
 --
@@ -3054,6 +3453,32 @@ ALTER TABLE public.practice_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.practice_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: practice_session_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.practice_session_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: practice_session_items practice_session_items_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY practice_session_items_select_self ON public.practice_session_items FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+
+--
+-- Name: practice_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.practice_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: practice_sessions practice_sessions_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY practice_sessions_select_self ON public.practice_sessions FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+
+--
 -- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3091,6 +3516,19 @@ ALTER TABLE public.rate_limit_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rate_limit_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: review_error_attempts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_error_attempts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_error_attempts review_error_attempts_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY review_error_attempts_select_self ON public.review_error_attempts FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
 -- Name: review_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3101,6 +3539,45 @@ ALTER TABLE public.review_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.review_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_schedule; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_schedule ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_schedule review_schedule_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY review_schedule_select_self ON public.review_schedule FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: review_session_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_session_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_session_items review_session_items_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY review_session_items_select_self ON public.review_session_items FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
+-- Name: review_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.review_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: review_sessions review_sessions_select_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY review_sessions_select_self ON public.review_sessions FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
 
 --
 -- Name: sections; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3186,6 +3663,38 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
+-- Name: FUNCTION canonicalize_mastery_constants(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_mastery_constants() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_mastery_constants() TO service_role;
+
+
+--
+-- Name: FUNCTION canonicalize_mastery_constants_serialized(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_mastery_constants_serialized() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_mastery_constants_serialized() TO service_role;
+
+
+--
+-- Name: FUNCTION compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) TO service_role;
+
+
+--
+-- Name: FUNCTION lookup_mastery_level(p_score numeric, p_constants jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.lookup_mastery_level(p_score numeric, p_constants jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lookup_mastery_level(p_score numeric, p_constants jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION notify_config_change(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3253,6 +3762,14 @@ GRANT SELECT(mastery_level) ON TABLE public.student_skill_mastery TO authenticat
 --
 
 GRANT SELECT(computed_at) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: FUNCTION recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) TO service_role;
 
 
 --
@@ -3531,6 +4048,168 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_runtime_config TO ser
 
 
 --
+-- Name: TABLE practice_session_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_session_items TO service_role;
+
+
+--
+-- Name: COLUMN practice_session_items.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(session_id) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.user_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(user_id) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_stem; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_stem) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_passage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_passage) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_options; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_options) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_domain; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_domain) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_skill; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_skill) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_difficulty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_difficulty) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.question_section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_section) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.selected_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(selected_answer) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.is_correct; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_correct) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.outcome; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(outcome) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.time_spent_ms; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(time_spent_ms) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.client_attempt_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_attempt_id) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.answered_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(answered_at) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.served_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(served_at) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN practice_session_items.occurred_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(occurred_at) ON TABLE public.practice_session_items TO authenticated;
+
+
+--
+-- Name: TABLE practice_sessions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.practice_sessions TO service_role;
+GRANT SELECT ON TABLE public.practice_sessions TO authenticated;
+
+
+--
 -- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
 --
 
@@ -3567,10 +4246,257 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rate_limit_runtime_config_hist
 
 
 --
+-- Name: TABLE review_error_attempts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_error_attempts TO service_role;
+
+
+--
+-- Name: COLUMN review_error_attempts.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.session_item_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(session_item_id) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.selected_answer; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(selected_answer) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.is_correct; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(is_correct) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.seconds_spent; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(seconds_spent) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.client_attempt_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(client_attempt_id) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.used_tutor; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(used_tutor) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.domain; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(domain) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.skill; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(skill) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.difficulty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(difficulty) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
+-- Name: COLUMN review_error_attempts.occurred_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(occurred_at) ON TABLE public.review_error_attempts TO authenticated;
+
+
+--
 -- Name: TABLE review_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE review_schedule; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_schedule TO service_role;
+GRANT SELECT ON TABLE public.review_schedule TO authenticated;
+
+
+--
+-- Name: TABLE review_session_items; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_session_items TO service_role;
+
+
+--
+-- Name: COLUMN review_session_items.id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.session_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(session_id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.ordinal; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(ordinal) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_id) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_stem; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_stem) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_passage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_passage) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_options; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_options) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_domain; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_domain) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_skill; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_skill) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_difficulty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_difficulty) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.question_section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(question_section) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.retry_mode; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(retry_mode) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.served_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(served_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.answered_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(answered_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: COLUMN review_session_items.created_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE public.review_session_items TO authenticated;
+
+
+--
+-- Name: TABLE review_sessions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_sessions TO service_role;
+GRANT SELECT ON TABLE public.review_sessions TO authenticated;
 
 
 --
