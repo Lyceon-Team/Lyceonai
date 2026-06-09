@@ -86,3 +86,22 @@ violation*).
 `apply_mastery_event` + `canonical_mastery_events` (Lane C, needs WS-2 answer tables); the 05B
 KPI/domain refreshers and 05C projection refresher bodies (B-W3-3 / their own items); the `test`
 source path (WS-4). B-WS3-1 builds the formula core + constants + table shells + the parity gate.
+
+## H — Proof status (2026-06-10, all GREEN)
+- **D1 (PARITY) — PROVEN.** `scripts/reference/mastery_reference.py --selfcheck` ⇒ Python
+  reference == Doc 05A §12 expected for all 31 fixtures; `scripts/ci/mastery-parity.sh`
+  (PG16) ⇒ PL/pgSQL `compute_mastery_for_entity` == Python reference == §12 expected,
+  bit-exact within tolerances (acc ±1e-6, score ±1e-4, pct ±0.01, level exact). Wired
+  **blocking** as the `mastery-parity` CI job. Output: `PARITY GATE PASSED — all 31 fixtures`.
+- **B6 (recompute-equivalence, §12.5) — PROVEN.** The harness asserts
+  `recompute_skill_mastery` == `compute_mastery_for_entity` column-for-column (single-impl,
+  INV-05A-11) over every non-empty fixture.
+- **E1/E2 (guards proven by planted violations) — PROVEN.** `scripts/ci/guards-selftest.sh`
+  plants a hardcoded `0.50` in a PL/pgSQL function body ⇒ `no-hardcoded-constants` exits
+  RED; plants a tutor/LISA `apply_mastery_event` call ⇒ `tutor-never-writes-mastery` exits
+  RED; both go green once the plant is removed. Wired into the `ci` job.
+- **SP-19 — RESOLVED.** The §12 mixed-fixture "global interleaving" ambiguity dissolves
+  under the offset-invariance of `acc_source` (see gap-registry GAP-SP-19); the parity gate
+  reproduces B16/S4 without reverse-engineering any global ordering.
+- **SP-17 — CARRIED to Codex (unchanged).** `skill_codes[1] = primary` remains an
+  ordering-guarantee to verify in the question pipeline, not an index to rubber-stamp.

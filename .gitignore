@@ -33,3 +33,7 @@ test-results/
 
 # skill-creator eval artifacts (not part of the repo)
 skill-drafts/*-workspace/
+
+# Python bytecode (mastery reference + CI parity driver)
+__pycache__/
+*.pyc
