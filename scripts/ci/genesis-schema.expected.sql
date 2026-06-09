@@ -43,6 +43,180 @@ CREATE TYPE public.profile_role AS ENUM (
 
 
 --
+-- Name: canonicalize_mastery_constants(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_mastery_constants() RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT jsonb_object_agg(key, value ORDER BY key)
+  FROM public.mastery_constants
+  WHERE key IN ('POSITION_HALF_LIFE','MIN_EVENTS_FOR_MASTERY','weight_source_test',
+    'weight_source_practice','weight_source_review','difficulty_weight_easy','difficulty_weight_medium',
+    'difficulty_weight_hard','mastery_min','mastery_max','mastery_level_0_max','mastery_level_1_min',
+    'mastery_level_1_max','mastery_level_2_min','mastery_level_2_max','mastery_level_3_min',
+    'mastery_level_3_max','mastery_level_4_min','ROUND_MASTERY_SCORE_DECIMALS','ROUND_MASTERY_PCT_DECIMALS',
+    'ROUND_ACCURACY_DECIMALS','ROUND_EVIDENCE_DECIMALS','ROUNDING_MODE','mastery_model_version');
+$$;
+
+
+--
+-- Name: canonicalize_mastery_constants_serialized(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_mastery_constants_serialized() RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT string_agg(key || '=' || value::text, E'\n' ORDER BY key)
+  FROM public.mastery_constants
+  WHERE key IN ('POSITION_HALF_LIFE','MIN_EVENTS_FOR_MASTERY','weight_source_test',
+    'weight_source_practice','weight_source_review','difficulty_weight_easy','difficulty_weight_medium',
+    'difficulty_weight_hard','mastery_min','mastery_max','mastery_level_0_max','mastery_level_1_min',
+    'mastery_level_1_max','mastery_level_2_min','mastery_level_2_max','mastery_level_3_min',
+    'mastery_level_3_max','mastery_level_4_min','ROUND_MASTERY_SCORE_DECIMALS','ROUND_MASTERY_PCT_DECIMALS',
+    'ROUND_ACCURACY_DECIMALS','ROUND_EVIDENCE_DECIMALS','ROUNDING_MODE','mastery_model_version');
+$$;
+
+
+--
+-- Name: compute_mastery_for_entity(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text DEFAULT NULL::text) RETURNS TABLE(total_events integer, acc_test numeric, acc_practice numeric, acc_review numeric, mastery_score numeric, mastery_pct numeric, mastery_level smallint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_constants jsonb; v_position_half_life numeric; v_min_events integer;
+  v_w_test numeric; v_w_practice numeric; v_w_review numeric;
+  v_d_easy numeric; v_d_medium numeric; v_d_hard numeric;
+  v_mastery_min numeric; v_mastery_max numeric;
+  v_round_score_dec integer; v_round_pct_dec integer; v_round_acc_dec integer;
+  v_total integer; v_acc_test numeric; v_acc_practice numeric; v_acc_review numeric;
+  v_bad_diff integer; v_bad_src integer; v_bad_section integer;
+  v_bad_correct integer; v_bad_occurred_at integer; v_bad_event_id integer;
+  v_mastery_raw numeric; v_mastery_score numeric; v_mastery_pct numeric; v_mastery_level smallint;
+BEGIN
+  -- Step 1: read constants
+  v_constants := public.canonicalize_mastery_constants();
+  v_position_half_life := (v_constants->>'POSITION_HALF_LIFE')::numeric;
+  v_min_events         := (v_constants->>'MIN_EVENTS_FOR_MASTERY')::integer;
+  v_w_test             := (v_constants->>'weight_source_test')::numeric;
+  v_w_practice         := (v_constants->>'weight_source_practice')::numeric;
+  v_w_review           := (v_constants->>'weight_source_review')::numeric;
+  v_d_easy             := (v_constants->>'difficulty_weight_easy')::numeric;
+  v_d_medium           := (v_constants->>'difficulty_weight_medium')::numeric;
+  v_d_hard             := (v_constants->>'difficulty_weight_hard')::numeric;
+  v_mastery_min        := (v_constants->>'mastery_min')::numeric;
+  v_mastery_max        := (v_constants->>'mastery_max')::numeric;
+  v_round_score_dec    := (v_constants->>'ROUND_MASTERY_SCORE_DECIMALS')::integer;
+  v_round_pct_dec      := COALESCE((v_constants->>'ROUND_MASTERY_PCT_DECIMALS')::integer, 2);
+  v_round_acc_dec      := (v_constants->>'ROUND_ACCURACY_DECIMALS')::integer;
+  IF v_position_half_life IS NULL OR v_min_events IS NULL OR v_w_test IS NULL OR v_w_practice IS NULL
+     OR v_w_review IS NULL OR v_d_easy IS NULL OR v_d_medium IS NULL OR v_d_hard IS NULL
+     OR v_mastery_min IS NULL OR v_mastery_max IS NULL OR v_round_score_dec IS NULL OR v_round_acc_dec IS NULL THEN
+    RAISE EXCEPTION 'MASTERY_CONSTANTS_MISSING: one or more required constants are absent from mastery_constants';
+  END IF;
+
+  -- Step 2: canonical events, positions, validation, per-source accuracy
+  WITH canonical_events AS (
+    SELECT * FROM public.canonical_mastery_events(p_student_id, p_entity_type, p_section, p_domain, p_skill)
+  ),
+  positioned AS (
+    SELECT ce.*, ROW_NUMBER() OVER (ORDER BY ce.occurred_at DESC, ce.event_id DESC) AS pos
+    FROM canonical_events ce
+  ),
+  validation AS (
+    SELECT
+      COUNT(*) FILTER (WHERE difficulty IS NULL OR difficulty NOT IN (1,2,3))                          AS bad_diff,
+      COUNT(*) FILTER (WHERE source_family IS NULL OR source_family NOT IN ('test','practice','review')) AS bad_src,
+      COUNT(*) FILTER (WHERE section IS NULL OR section NOT IN ('M','RW'))                              AS bad_section,
+      COUNT(*) FILTER (WHERE correct IS NULL)                                                          AS bad_correct,
+      COUNT(*) FILTER (WHERE occurred_at IS NULL)                                                      AS bad_occurred_at,
+      COUNT(*) FILTER (WHERE event_id IS NULL)                                                         AS bad_event_id
+    FROM positioned
+  ),
+  weighted AS (
+    SELECT p.source_family, p.correct::int AS correct_int,
+      CASE p.difficulty WHEN 1 THEN v_d_easy WHEN 2 THEN v_d_medium WHEN 3 THEN v_d_hard ELSE NULL END AS d_w,
+      POWER(0.5, (p.pos - 1)::numeric / v_position_half_life) AS pos_w
+    FROM positioned p
+  ),
+  per_source AS (
+    SELECT w.source_family,
+      LEAST(1.0, SUM(w.d_w * w.pos_w * w.correct_int) / NULLIF(SUM(w.pos_w), 0)) AS acc_source
+    FROM weighted w GROUP BY w.source_family
+  )
+  SELECT
+    (SELECT COUNT(*) FROM weighted),
+    (SELECT acc_source FROM per_source WHERE source_family = 'test'),
+    (SELECT acc_source FROM per_source WHERE source_family = 'practice'),
+    (SELECT acc_source FROM per_source WHERE source_family = 'review'),
+    v.bad_diff, v.bad_src, v.bad_section, v.bad_correct, v.bad_occurred_at, v.bad_event_id
+  INTO v_total, v_acc_test, v_acc_practice, v_acc_review,
+       v_bad_diff, v_bad_src, v_bad_section, v_bad_correct, v_bad_occurred_at, v_bad_event_id
+  FROM validation v;
+
+  IF v_bad_diff > 0 OR v_bad_src > 0 OR v_bad_section > 0 OR v_bad_correct > 0
+     OR v_bad_occurred_at > 0 OR v_bad_event_id > 0 THEN
+    RAISE EXCEPTION 'MASTERY_HISTORICAL_DATA_INVALID: bad rows (diff=%, src=%, section=%, correct=%, occurred_at=%, event_id=%)',
+      v_bad_diff, v_bad_src, v_bad_section, v_bad_correct, v_bad_occurred_at, v_bad_event_id;
+  END IF;
+
+  -- Step 3: threshold / NULL gate
+  IF v_total IS NULL OR v_total < v_min_events THEN
+    total_events := COALESCE(v_total, 0);
+    acc_test := NULL; acc_practice := NULL; acc_review := NULL;
+    mastery_score := NULL; mastery_pct := NULL; mastery_level := NULL;
+    RETURN NEXT; RETURN;
+  END IF;
+
+  -- Step 4: macro-average with renormalization over present sources
+  v_mastery_raw :=
+    ( COALESCE(v_w_test*v_acc_test,0) + COALESCE(v_w_practice*v_acc_practice,0) + COALESCE(v_w_review*v_acc_review,0) )
+    / NULLIF(
+        (CASE WHEN v_acc_test IS NOT NULL THEN v_w_test ELSE 0 END)
+      + (CASE WHEN v_acc_practice IS NOT NULL THEN v_w_practice ELSE 0 END)
+      + (CASE WHEN v_acc_review IS NOT NULL THEN v_w_review ELSE 0 END), 0);
+
+  -- Step 5: clamp + round
+  v_mastery_score := ROUND(GREATEST(v_mastery_min, LEAST(v_mastery_max, v_mastery_raw))::numeric, v_round_score_dec);
+  v_mastery_pct   := ROUND(100.0 * v_mastery_score, v_round_pct_dec);
+  v_mastery_level := public.lookup_mastery_level(v_mastery_score, v_constants);
+
+  -- Step 6: round per-source accuracies
+  v_acc_test := ROUND(v_acc_test, v_round_acc_dec);
+  v_acc_practice := ROUND(v_acc_practice, v_round_acc_dec);
+  v_acc_review := ROUND(v_acc_review, v_round_acc_dec);
+
+  total_events := v_total; acc_test := v_acc_test; acc_practice := v_acc_practice; acc_review := v_acc_review;
+  mastery_score := v_mastery_score; mastery_pct := v_mastery_pct; mastery_level := v_mastery_level;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lookup_mastery_level(p_score numeric, p_constants jsonb) RETURNS smallint
+    LANGUAGE sql IMMUTABLE
+    AS $$
+  SELECT CASE
+    WHEN p_score IS NULL THEN NULL::smallint
+    WHEN p_score < (p_constants->>'mastery_level_1_min')::numeric THEN 0::smallint
+    WHEN p_score < (p_constants->>'mastery_level_2_min')::numeric THEN 1::smallint
+    WHEN p_score < (p_constants->>'mastery_level_3_min')::numeric THEN 2::smallint
+    WHEN p_score < (p_constants->>'mastery_level_4_min')::numeric THEN 3::smallint
+    ELSE 4::smallint
+  END;
+$$;
+
+
+--
 -- Name: notify_config_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -102,6 +276,91 @@ END;
 $$;
 
 
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: student_skill_mastery; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_skill_mastery (
+    student_id uuid NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    skill text NOT NULL,
+    mastery_score numeric(5,4),
+    mastery_pct numeric(5,2),
+    mastery_level smallint,
+    acc_test numeric(7,6),
+    acc_practice numeric(7,6),
+    acc_review numeric(7,6),
+    event_count_total integer DEFAULT 0 NOT NULL,
+    mastery_model_version text DEFAULT 'v1.0'::text NOT NULL,
+    constants_snapshot_hash text NOT NULL,
+    last_event_id uuid,
+    last_event_occurred_at timestamp with time zone,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT student_skill_mastery_event_count_total_check CHECK ((event_count_total >= 0)),
+    CONSTRAINT student_skill_mastery_mastery_level_check CHECK (((mastery_level IS NULL) OR ((mastery_level >= 0) AND (mastery_level <= 4)))),
+    CONSTRAINT student_skill_mastery_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
+-- Name: recompute_skill_mastery(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) RETURNS public.student_skill_mastery
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_constants jsonb; v_constants_hash text; v_active_version text;
+  v_total integer; v_acc_test numeric; v_acc_practice numeric; v_acc_review numeric;
+  v_score numeric; v_pct numeric; v_level smallint; v_row public.student_skill_mastery;
+BEGIN
+  SET LOCAL lock_timeout = '5s';
+  BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext(p_student_id::text||'|'||p_section||'|'||p_domain||'|'||p_skill));
+  EXCEPTION WHEN lock_not_available OR query_canceled THEN
+    RAISE EXCEPTION 'MASTERY_LOCK_TIMEOUT: recompute (%, %, %, %)', p_student_id, p_section, p_domain, p_skill;
+  END;
+  v_constants := public.canonicalize_mastery_constants();
+  v_constants_hash := encode(extensions.digest(public.canonicalize_mastery_constants_serialized(), 'sha256'), 'hex'); -- pgcrypto lives in extensions schema (genesis); LYCEON-MIGRATION-REVIEWED
+  v_active_version := v_constants->>'mastery_model_version';
+  SELECT total_events, acc_test, acc_practice, acc_review, mastery_score, mastery_pct, mastery_level
+    INTO v_total, v_acc_test, v_acc_practice, v_acc_review, v_score, v_pct, v_level
+  FROM public.compute_mastery_for_entity(p_student_id, 'skill', p_section, p_domain, p_skill);
+  INSERT INTO public.student_skill_mastery
+    (student_id, section, domain, skill, mastery_score, mastery_pct, mastery_level,
+     acc_test, acc_practice, acc_review, event_count_total, mastery_model_version,
+     constants_snapshot_hash, last_event_id, last_event_occurred_at, computed_at)
+  SELECT p_student_id, p_section, p_domain, p_skill, v_score, v_pct, v_level,
+     v_acc_test, v_acc_practice, v_acc_review, v_total, v_active_version, v_constants_hash,
+     ce.event_id, ce.occurred_at, now()
+  FROM public.canonical_mastery_events(p_student_id, 'skill', p_section, p_domain, p_skill) ce
+  ORDER BY ce.occurred_at DESC, ce.event_id DESC LIMIT 1
+  ON CONFLICT (student_id, section, domain, skill) DO UPDATE SET
+     mastery_score=EXCLUDED.mastery_score, mastery_pct=EXCLUDED.mastery_pct, mastery_level=EXCLUDED.mastery_level,
+     acc_test=EXCLUDED.acc_test, acc_practice=EXCLUDED.acc_practice, acc_review=EXCLUDED.acc_review,
+     event_count_total=EXCLUDED.event_count_total, mastery_model_version=EXCLUDED.mastery_model_version,
+     constants_snapshot_hash=EXCLUDED.constants_snapshot_hash, last_event_id=EXCLUDED.last_event_id,
+     last_event_occurred_at=EXCLUDED.last_event_occurred_at, computed_at=EXCLUDED.computed_at
+  RETURNING * INTO v_row;
+  IF v_row.student_id IS NULL THEN
+    UPDATE public.student_skill_mastery SET mastery_score=NULL, mastery_pct=NULL, mastery_level=NULL,
+      acc_test=NULL, acc_practice=NULL, acc_review=NULL, event_count_total=0,
+      mastery_model_version=v_active_version, constants_snapshot_hash=v_constants_hash, computed_at=now()
+    WHERE student_id=p_student_id AND section=p_section AND domain=p_domain AND skill=p_skill
+    RETURNING * INTO v_row;
+  END IF;
+  -- refresh_domain_mastery is 05B (later item); not called here in B-WS3-1.
+  RETURN v_row;
+END;
+$$;
+
+
 --
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -121,10 +380,6 @@ BEGIN
 END;
 $$;
 
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
 
 --
 -- Name: abuse_score_incidents; Type: TABLE; Schema: public; Owner: -
@@ -726,6 +981,67 @@ CREATE TABLE public.internal_service_auth_config_history (
 
 
 --
+-- Name: mastery_constants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_constants (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    description text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid
+);
+
+
+--
+-- Name: mastery_constants_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_constants_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: mastery_event_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_event_audit_log (
+    audit_row_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    skill text NOT NULL,
+    source_family text NOT NULL,
+    event_source_kind text NOT NULL,
+    event_id uuid NOT NULL,
+    question_id uuid,
+    difficulty smallint,
+    correct boolean,
+    occurred_at timestamp with time zone,
+    mastery_score_before numeric(10,9),
+    mastery_score_after numeric(10,9),
+    mastery_level_before smallint,
+    mastery_level_after smallint,
+    event_count_after integer NOT NULL,
+    constants_snapshot_hash text NOT NULL,
+    mastery_model_version text NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT mastery_event_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
+    CONSTRAINT mastery_event_audit_log_event_source_kind_check CHECK ((event_source_kind = ANY (ARRAY['practice_attempt'::text, 'diagnostic_attempt'::text, 'review_error_attempt'::text, 'full_length_answer'::text]))),
+    CONSTRAINT mastery_event_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT mastery_event_audit_log_source_family_check CHECK ((source_family = ANY (ARRAY['test'::text, 'practice'::text, 'review'::text])))
+);
+
+
+--
 -- Name: mobile_auth_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1022,6 +1338,53 @@ CREATE TABLE public.source_types (
     code integer NOT NULL,
     label text NOT NULL,
     description text
+);
+
+
+--
+-- Name: student_domain_mastery; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_domain_mastery (
+    student_id uuid NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    mastery_score numeric(5,4),
+    mastery_pct numeric(5,2),
+    mastery_level smallint,
+    event_count_total integer DEFAULT 0 NOT NULL,
+    mastery_model_version text DEFAULT 'v1.0'::text NOT NULL,
+    constants_snapshot_hash text NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT student_domain_mastery_mastery_level_check CHECK (((mastery_level IS NULL) OR ((mastery_level >= 0) AND (mastery_level <= 4)))),
+    CONSTRAINT student_domain_mastery_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
+
+
+--
+-- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_kpi_rollups_current (
+    student_id uuid NOT NULL,
+    scope text NOT NULL,
+    scope_key text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: student_section_projections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_section_projections (
+    student_id uuid NOT NULL,
+    section text NOT NULL,
+    projected_score numeric,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT student_section_projections_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
 
 
@@ -1355,6 +1718,38 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 
 --
+-- Name: mastery_constants_history mastery_constants_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants_history
+    ADD CONSTRAINT mastery_constants_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mastery_constants mastery_constants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants
+    ADD CONSTRAINT mastery_constants_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: mastery_event_audit_log mastery_event_audit_log_dedup_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_event_audit_log
+    ADD CONSTRAINT mastery_event_audit_log_dedup_uq UNIQUE (event_source_kind, event_id);
+
+
+--
+-- Name: mastery_event_audit_log mastery_event_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_event_audit_log
+    ADD CONSTRAINT mastery_event_audit_log_pkey PRIMARY KEY (audit_row_id);
+
+
+--
 -- Name: mobile_auth_config_history mobile_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1496,6 +1891,38 @@ ALTER TABLE ONLY public.service_auth_secrets
 
 ALTER TABLE ONLY public.source_types
     ADD CONSTRAINT source_types_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: student_domain_mastery student_domain_mastery_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_domain_mastery
+    ADD CONSTRAINT student_domain_mastery_pkey PRIMARY KEY (student_id, section, domain);
+
+
+--
+-- Name: student_kpi_rollups_current student_kpi_rollups_current_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_kpi_rollups_current
+    ADD CONSTRAINT student_kpi_rollups_current_pkey PRIMARY KEY (student_id, scope, scope_key);
+
+
+--
+-- Name: student_section_projections student_section_projections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_section_projections
+    ADD CONSTRAINT student_section_projections_pkey PRIMARY KEY (student_id, section);
+
+
+--
+-- Name: student_skill_mastery student_skill_mastery_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_skill_mastery
+    ADD CONSTRAINT student_skill_mastery_pkey PRIMARY KEY (student_id, section, domain, skill);
 
 
 --
@@ -1843,6 +2270,13 @@ CREATE TRIGGER internal_service_auth_config_history_no_mutate BEFORE DELETE OR U
 --
 
 CREATE TRIGGER internal_service_auth_config_notify AFTER INSERT OR UPDATE ON public.internal_service_auth_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: mastery_constants_history mastery_constants_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER mastery_constants_history_no_mutate BEFORE DELETE OR UPDATE ON public.mastery_constants_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
 
 
 --
@@ -2225,6 +2659,22 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 
 --
+-- Name: mastery_constants_history mastery_constants_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants_history
+    ADD CONSTRAINT mastery_constants_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: mastery_constants mastery_constants_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants
+    ADD CONSTRAINT mastery_constants_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
 -- Name: mobile_auth_config_history mobile_auth_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2550,6 +3000,24 @@ ALTER TABLE public.internal_service_auth_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.internal_service_auth_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mastery_constants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mastery_constants_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mastery_event_audit_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_event_audit_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mobile_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2660,6 +3128,37 @@ ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.source_types ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: student_domain_mastery; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_kpi_rollups_current; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_kpi_rollups_current ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_section_projections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_skill_mastery; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_skill_mastery ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_skill_mastery student_skill_mastery_student_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY student_skill_mastery_student_read ON public.student_skill_mastery FOR SELECT TO authenticated USING ((student_id = auth.uid()));
+
+
+--
 -- Name: taxonomy_versions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2705,6 +3204,55 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.rate_limit_check_and_increment(p_profile_id uuid, p_bucket_key text, p_cost integer, p_window_start timestamp with time zone, p_window_end timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_skill_mastery TO service_role;
+
+
+--
+-- Name: COLUMN student_skill_mastery.student_id; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(student_id) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: COLUMN student_skill_mastery.section; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(section) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: COLUMN student_skill_mastery.domain; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(domain) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: COLUMN student_skill_mastery.skill; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(skill) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: COLUMN student_skill_mastery.mastery_level; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(mastery_level) ON TABLE public.student_skill_mastery TO authenticated;
+
+
+--
+-- Name: COLUMN student_skill_mastery.computed_at; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(computed_at) ON TABLE public.student_skill_mastery TO authenticated;
 
 
 --
@@ -2934,6 +3482,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config_h
 
 
 --
+-- Name: TABLE mastery_constants; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_constants TO service_role;
+
+
+--
+-- Name: TABLE mastery_event_audit_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_event_audit_log TO service_role;
+
+
+--
 -- Name: TABLE mobile_auth_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -3032,6 +3594,27 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.service_auth_secrets TO servic
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_types TO service_role;
+
+
+--
+-- Name: TABLE student_domain_mastery; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_domain_mastery TO service_role;
+
+
+--
+-- Name: TABLE student_kpi_rollups_current; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_kpi_rollups_current TO service_role;
+
+
+--
+-- Name: TABLE student_section_projections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_section_projections TO service_role;
 
 
 --

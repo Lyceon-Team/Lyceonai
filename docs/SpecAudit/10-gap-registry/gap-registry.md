@@ -3,7 +3,7 @@
 Governance, rulings (R1: Doc 05 family controls; R2: guardian grace-period carve-out), severity scheme, status legend, dispositions: `README.md`.
 **V1.1 changes:** all six VERIFY entries finalized from the dual-agent Verification Pass (Claude Code + Codex, independent, corroborating on all items); constants dump (`mastery_constants` 25 rows, `kpi_constants` 2 rows — owner confirms these are the only constants tables) analyzed and folded in; 3 new gaps (MA-10, MA-11, ID-12); TU-08 reclassified CRITICAL→HIGH (broad claim refuted, narrow defect confirmed); ID-11 elevated HIGH→CRITICAL (consent forgery). This registry is self-contained: decisive evidence is inline; raw auditor reports are not committed to the repo.
 
-**Totals:** 66 gap entries — **7 CRITICAL, 24 HIGH, 23 MEDIUM, 12 LOW** — plus **17** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0 2026-06-10: diagnostic surface, config doctrine, tutor hourly bucket, Doc 02B §25 RPC reconcile, ADR-001 mastery_outbox, skill_codes→single-skill) and 9 conformant verifications. Zero entries remain in VERIFY status.
+**Totals:** 66 gap entries — **7 CRITICAL, 24 HIGH, 23 MEDIUM, 12 LOW** — plus **19** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0; SP-18 rounding-decimals mislabel, SP-19 §12 mixed-fixture ordering — B-WS3-1 2026-06-10) and 9 conformant verifications. Zero entries remain in VERIFY status.
 
 **The 7 CRITICALs:** GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-MA-01, GAP-EX-02, GAP-TU-03, GAP-ID-11.
 
@@ -160,6 +160,8 @@ Execution view (workstreams, sequencing, exit criteria): `closure-plan.md` in th
 | GAP-SP-15 | Doc 02B §25 documents the superseded `apply_learning_event_to_mastery` + `event_type` enum; R1 supersedes with Doc 05A `apply_mastery_event` + `(source_family,event_source_kind,correct)`. Update Doc 02B §25 to the canonical seam | WS-2/3 Phase-0 HALT-1 (2026-06-10) | OPEN |
 | GAP-SP-16 | ADR-001 §5 references a `mastery_outbox`; the locked Doc 05A/05D define **no** mastery outbox (synchronous RPC; only `projection_refresh_outbox` exists, a 04B→05C seam). Amend ADR-001 §5 to strike/clarify the mastery_outbox reference | WS-2/3 Phase-0 HALT-2 (2026-06-10) | OPEN |
 | GAP-SP-17 | `questions.skill_codes` is `text[]` but mastery is single-skill (`apply_mastery_event(p_skill text)`, PK `(…,skill)`, no fan-out). Pin the array→single-canonical-skill denormalization rule for mastery (proposed: `skill_codes[1]` primary) | WS-2/3 Phase-0 HALT-6/R1 (2026-06-10) | OPEN |
+| GAP-SP-18 | Doc 05 Parent §10.1 line 529 mislabels `ROUND_MASTERY_SCORE_DECIMALS=2` ("for mastery_pct"); the §12 fixtures (mastery_score @4dp, mastery_pct @2dp) + Doc 05A §6 require SCORE_DECIMALS=4 + PCT_DECIMALS=2. Fix the Parent §10.1 row | B-WS3-1 (2026-06-10) | OPEN |
+| GAP-SP-19 | Doc 05A §12 mixed-source fixtures (B16, S4) give the event SET + "recent-correct ordering" but not the exact GLOBAL event interleaving, which position-weighting makes the expected per-source acc sensitive to. Publish the exact ordered event sequences for §12 fixtures (parity ground-truth must be reproducible). Resolution default: reverse-engineer the sequences that reproduce the locked expected values | B-WS3-1 (2026-06-10) | OPEN |
 
 ---
 
