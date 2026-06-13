@@ -127,7 +127,7 @@ CREATE OR REPLACE FUNCTION public.apply\_mastery\_event(
     p\_correct               boolean,  
     p\_occurred\_at           timestamptz,     \-- when the answer was given  
     p\_event\_id              uuid,            \-- upstream event identifier (idempotency key)  
-    p\_question\_id           uuid,            \-- canonical question identifier  
+    p\_question\_id           text,            \-- canonical question identifier  
     p\_section\_state         text DEFAULT NULL  \-- required when p\_source\_family \= 'test'; must be 'submitted'  
 )  
 RETURNS public.student\_skill\_mastery  
@@ -943,7 +943,7 @@ RETURNS TABLE (
     difficulty         smallint,  
     correct            boolean,  
     occurred\_at        timestamptz,  
-    question\_id        uuid  
+    question\_id        text  
 )  
 LANGUAGE sql  
 STABLE  
