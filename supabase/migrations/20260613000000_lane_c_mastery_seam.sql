@@ -102,6 +102,7 @@ DECLARE
   v_score numeric; v_pct numeric; v_level smallint;
   v_result_row public.student_skill_mastery;
   v_expected_family text;
+  v_event_present integer;   -- self-enforcing seam guard (LC-D1-001); LYCEON-MIGRATION-REVIEWED
 BEGIN
   -- §4.2 Step 1: required fields
   IF p_student_id IS NULL OR p_section IS NULL OR p_domain IS NULL OR p_skill IS NULL
@@ -161,6 +162,22 @@ BEGIN
   EXCEPTION WHEN lock_not_available OR query_canceled THEN
     RAISE EXCEPTION 'MASTERY_LOCK_TIMEOUT: advisory lock (%, %, %, %)', p_student_id, p_section, p_domain, p_skill;
   END;
+
+  -- SELF-ENFORCING SEAM (LC-D1-001): the triggering event MUST be durably derived in the
+  -- production canonical_mastery_events for THIS entity before any mastery/audit write. This
+  -- makes the RPC defend the insert-then-call ordering law (Doc 05A §4.1 / RB-05A-V1-08 /
+  -- seam §3 HALT-2) at its OWN boundary — a caller that splits the transaction, never inserted
+  -- the answer, or supplies a stale/foreign event_id is REFUSED here (no torn write), regardless
+  -- of caller-transaction discipline. The spec's seam is caller-owned-insert + RPC-re-derive
+  -- (NOT a single DB-owned insert+apply), so the durable-derivation assertion is the correct
+  -- self-enforcement. exactly-once: event_id is the answer-row PK (unique per source table). LYCEON-MIGRATION-REVIEWED
+  SELECT count(*) INTO v_event_present
+  FROM public.canonical_mastery_events(p_student_id, 'skill', p_section, p_domain, p_skill) ce
+  WHERE ce.event_id = p_event_id AND ce.event_source_kind = p_event_source_kind;
+  IF v_event_present <> 1 THEN
+    RAISE EXCEPTION 'MASTERY_EVENT_NOT_DERIVED: (%, %) not derivable exactly once in canonical_mastery_events for (%, %, %, %) [found %] — answer must be durably inserted before apply_mastery_event',
+      p_event_source_kind, p_event_id, p_student_id, p_section, p_domain, p_skill, v_event_present;
+  END IF;
 
   -- §4.5 constants + snapshot hash (pgcrypto in extensions schema, genesis)
   v_constants := public.canonicalize_mastery_constants();

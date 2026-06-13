@@ -98,4 +98,20 @@ ATOMIC=$(psql_db "$DB" -tAc "
 if [ "$ATOMIC" = "0|0|0" ]; then echo "    OK rollback persisted neither answer nor mastery nor audit (no torn write)"
 else echo "  FAIL: atomicity probe left rows (items|mastery|audit) = $ATOMIC (expected 0|0|0)"; exit 1; fi
 
+echo "==> D1b: RPC SELF-ENFORCES (refuses a non-derived event with NO caller-txn protection)"
+# Plant the torn write directly: call apply_mastery_event (autocommit, no wrapping txn) for an
+# event_id that has NO answer row in canonical_mastery_events. The RPC must REFUSE
+# (MASTERY_EVENT_NOT_DERIVED) — this proves the seam, not the caller's transaction. Student A has
+# zero items (D1's insert rolled back).
+if psql -d "$DB" -c "SELECT public.apply_mastery_event(
+     '22222222-2222-2222-2222-222222222222','M','d','s',2::smallint,'practice','practice_attempt',
+      true, TIMESTAMPTZ '2026-01-01T00:00:00Z', 'dead0000-0000-0000-0000-000000000000'::uuid, 'SATM1ZZZZZZ');" >/dev/null 2>&1; then
+  echo "  FAIL: RPC accepted an event absent from canonical_mastery_events (torn write possible)"; exit 1
+else echo "    OK RPC refused the non-derived event (MASTERY_EVENT_NOT_DERIVED) — self-enforcing"; fi
+SELFENF=$(psql_db "$DB" -tAc "
+  SELECT (SELECT count(*) FROM public.student_skill_mastery WHERE student_id='22222222-2222-2222-2222-222222222222')::text
+      || '|' || (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id='22222222-2222-2222-2222-222222222222')::text;")
+if [ "$SELFENF" = "0|0" ]; then echo "    OK refused RPC wrote nothing (mastery|audit = 0|0)"
+else echo "  FAIL: refused RPC still wrote rows (mastery|audit) = $SELFENF"; exit 1; fi
+
 echo "LANE-C SEAM GATES: PASS"

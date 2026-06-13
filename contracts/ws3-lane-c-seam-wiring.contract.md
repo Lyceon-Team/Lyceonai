@@ -128,3 +128,24 @@ WS-2 anti-leak posture intact (genesis-fresh-apply). Owner-run for any live appl
   `genesis-fresh-apply` is via branch-protection required-status-checks (owner config, not in-diff); this
   build keeps the established standalone-job pattern. Flagged to owner to confirm the checks are required.
 - **F5 (MEDIUM) → SP-23**; **F6 (LOW)** = AM-3, governed (no action).
+
+### Codex audit pass (2026-06-13) — REJECT → resolved
+- **LC-D1-001 (BLOCKING) — FIXED (seam self-enforcing).** `apply_mastery_event` previously trusted
+  the caller's transaction for atomicity. It now **asserts the triggering `(event_source_kind,
+  event_id)` is derivable exactly once in the production `canonical_mastery_events` for the entity
+  before any mastery/audit write** (`MASTERY_EVENT_NOT_DERIVED` otherwise). Assessment (b): Doc 05A §4 /
+  seam §3 (HALT-2) intend caller-owned-insert + RPC-re-derive (ordered insert-then-call), NOT a single
+  DB-owned insert+apply — so the durable-derivation assertion is the correct self-enforcement (not moving
+  the answer insert into the RPC). Re-proven by **D1b**: a torn write planted WITHOUT caller-txn
+  protection is refused and writes nothing; the caller-txn **D1** stays as defense-in-depth.
+- **LC-AM3-001 (HIGH) — FIXED (honest-uncomputed).** While 05B/05C rollups are deferred (AM-3),
+  `buildScoreEstimateFromCanonical` defaulted absent Math/RW projections to 200 → a fabricated 400
+  composite served as a live estimate (minor-facing fake score). Now it returns a discriminated
+  `{status:'uncomputed', estimate:null} | {status:'computed', estimate}` — `computed` requires BOTH
+  section projections real; otherwise UNCOMPUTED. `legacy/progress.ts` returns `estimate:null` +
+  `estimateStatus:'not_yet_available'` (no 200/400 baseline). **Reader sweep:** the only score-estimate
+  reader is `buildScoreEstimateFromCanonical` (single caller `legacy/progress.ts`); `buildStudentKpiView`
+  serves observed counts (not a synthesized score); no guardian/KPI-tile reader fabricates — sweep clean.
+  **Scope call:** `legacy/progress.ts` is the **live** `/api/progress/*` runtime owner (per its header,
+  "legacy = file-location history, not deprecation") → patched, not removed. Regression test:
+  `tests/ci/score-estimate-honest-uncomputed.test.ts` (3 cases).
