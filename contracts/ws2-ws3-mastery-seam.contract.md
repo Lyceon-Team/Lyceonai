@@ -26,7 +26,7 @@ controls mastery) resolves it:
 locked spec** — the locked seam is synchronous-RPC; there is nothing to build an outbox
 for. Re-disposition GAP-MA-07 (§7 HALT-2).
 
-## 1. The entry point — `apply_mastery_event` (Doc 05A §4.1, VERBATIM)
+## 1. The entry point — `apply_mastery_event` (Doc 05A §4.1, VERBATIM except `p_question_id` — see amendment AM-2)
 
 ```sql
 public.apply_mastery_event(
@@ -39,8 +39,8 @@ public.apply_mastery_event(
   p_event_source_kind text,        -- 'practice_attempt'|'diagnostic_attempt'|'review_error_attempt'|'full_length_answer'
   p_correct           boolean,
   p_occurred_at       timestamptz,
-  p_event_id          uuid,        -- upstream event id (idempotency key)
-  p_question_id       uuid,
+  p_event_id          uuid,        -- upstream event id (idempotency key) — stays uuid
+  p_question_id       text,        -- canonical SAT id (questions.id) — TEXT per AM-2 / SP-21 (was uuid)
   p_section_state     text DEFAULT NULL  -- required 'submitted' when source_family='test'
 ) RETURNS public.student_skill_mastery  -- SECURITY DEFINER, service_role execute-only
 ```
@@ -72,8 +72,9 @@ columns the WS-3 view-function reads (Doc 05A §6.2, RB-05A-V1-04/08). For each 
 **Post-conditions:**
 - **R1 — column shape.** Each WS-2 answer table carries `(event_id uuid, section, domain,
   skill, difficulty smallint CHECK 1-3, correct boolean, occurred_at timestamptz,
-  question_id uuid)` populated at write time. Falsifier: a NULL in any of these on a
-  mastery-bearing row (Doc 05A §10.1-D `BLOCKING_DOC04_SEAM_GAP` analogue for WS-2).
+  question_id text)` populated at write time (`question_id` is **TEXT** — the canonical SAT
+  id FK to `questions.id` — per AM-2 / SP-21; `event_id` stays uuid). Falsifier: a NULL in
+  any of these on a mastery-bearing row (Doc 05A §10.1-D `BLOCKING_DOC04_SEAM_GAP` analogue for WS-2).
 - **R2 — `event_id` is the per-attempt UUID** that becomes the idempotency key; stable
   across retries of the same logical attempt (reconciles with Doc 02B's `client_attempt_id`
   idempotency — §7 HALT-1).
@@ -157,3 +158,17 @@ Spec-fidelity follow-ups spawned: SP-12 (diagnostic surface), SP-13 (config doct
 §41 `constants_audit_log` superseded by 01A per-table `_history`), SP-14 (tutor per-hour bucket
 in Doc 03B §15.2), SP-15 (Doc 02B §25 RPC reconcile), SP-16 (ADR-001 §5 mastery_outbox),
 SP-17 (questions skill_codes[] → single mastery skill rule).
+
+## 8. Frozen-contract amendments
+
+> **AM-2 (2026-06-10, Codex F-002 / F-363-001, SP-21 ruling).** *What:* `apply_mastery_event`
+> `p_question_id` and the §2 R1 answer-table `question_id` are typed **`text`**, not `uuid`
+> (§1 signature + §2 R1 above amended). *Why:* the canonical question identifier is the SAT
+> id `public.questions.id` — `TEXT` (`^SAT(M|RW)[12][A-Z0-9]{6}$`) by genesis truth; Codex
+> ruled TEXT authoritative and Doc 05A's `uuid` typing stale. The WS-2 answer tables
+> (`practice_session_items`/`review_error_attempts`/`review_schedule`), `mastery_event_audit_log`,
+> and the parity stub are already `text`. `event_id` stays `uuid` (the per-attempt idempotency
+> key, unaffected). *Where it lands:* this in-repo amendment makes the seam contract the correct
+> Lane-C implementation source now; the **locked Doc 05A** signature amendment is owner-side
+> (`docs/Spec` is read-only) and tracked in **GAP-SP-21** — that gate plus this amendment plus
+> the all-interfaces-text audit must close before Lane C wires the RPC.
