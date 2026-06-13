@@ -14,9 +14,10 @@
 --   canonical practice answer table is practice_session_items (Doc 02B §8 / frozen seam §2).
 -- @adaptation A4: the §6.2 test/full-length UNION branch (test_session_answers) is the Doc 04 seam
 --   (WS-4) — omitted by scope (those tables do not exist yet); added when WS-4 lands.
--- @adaptation AM-3/B7: Doc 05A §4.9 downstream refresh (refresh_domain_mastery 05B →
---   refresh_section_projection 05C) is DEFERRED (TODO(05B/05C)) — symmetric with the
---   Codex-accepted recompute_skill_mastery TODO(05B); skill tier + audit written live.
+-- @adaptation AM-3 RETIRED (05B/05C wave, 2026-06-13): §4.9 is now wired — apply_mastery_event
+--   PERFORMs refresh_domain_mastery (05B, +4 KPI) then bump_projection_refresh_counter (05C §8.4
+--   throttle) in this same transaction. (recompute_skill_mastery keeps its own TODO(05B) until its
+--   05B-wave restore; the event-time path is the live spine.) LYCEON-MIGRATION-REVIEWED
 --
 -- OWNER-RUN: tracked pipeline; genesis-extending; genesis-fresh-apply gate covers it.
 -- ROLLBACK (INV-06): transactional. Revert = DROP FUNCTION apply_mastery_event, canonical_mastery_events.
@@ -229,8 +230,13 @@ BEGIN
     RETURN v_result_row;
   END;
 
-  -- §4.9 downstream refresh DEFERRED — TODO(05B/05C): refresh_domain_mastery -> refresh_section_projection.
-  -- Symmetric with recompute_skill_mastery's accepted TODO(05B) (AM-3). Restored with the 05B/05C wave.
+  -- §4.9 downstream chain (AM-3 RETIRED — 05B/05C wave). In this SAME transaction: refresh domain
+  -- mastery (which fans out to the 4 KPI refreshers, Doc 05B §4.9), then run the 05C-owned
+  -- projection-refresh throttle (Doc 05C §8.4 — fires compute_section_projection on the every-Nth
+  -- event, else just increments the counter). Any failure rolls back the WHOLE event (Parent §7.8):
+  -- skill + domain + 4 KPI + (throttled) projection are one atomic unit, or none. LYCEON-MIGRATION-REVIEWED
+  PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
+  PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
 
   -- §4.10 return
   RETURN v_result_row;

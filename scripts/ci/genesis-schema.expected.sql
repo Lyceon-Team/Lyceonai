@@ -216,8 +216,13 @@ BEGIN
     RETURN v_result_row;
   END;
 
-  -- §4.9 downstream refresh DEFERRED — TODO(05B/05C): refresh_domain_mastery -> refresh_section_projection.
-  -- Symmetric with recompute_skill_mastery's accepted TODO(05B) (AM-3). Restored with the 05B/05C wave.
+  -- §4.9 downstream chain (AM-3 RETIRED — 05B/05C wave). In this SAME transaction: refresh domain
+  -- mastery (which fans out to the 4 KPI refreshers, Doc 05B §4.9), then run the 05C-owned
+  -- projection-refresh throttle (Doc 05C §8.4 — fires compute_section_projection on the every-Nth
+  -- event, else just increments the counter). Any failure rolls back the WHOLE event (Parent §7.8):
+  -- skill + domain + 4 KPI + (throttled) projection are one atomic unit, or none. LYCEON-MIGRATION-REVIEWED
+  PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
+  PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
 
   -- §4.10 return
   RETURN v_result_row;
