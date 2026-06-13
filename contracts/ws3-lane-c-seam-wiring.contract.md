@@ -149,3 +149,14 @@ WS-2 anti-leak posture intact (genesis-fresh-apply). Owner-run for any live appl
   **Scope call:** `legacy/progress.ts` is the **live** `/api/progress/*` runtime owner (per its header,
   "legacy = file-location history, not deprecation") → patched, not removed. Regression test:
   `tests/ci/score-estimate-honest-uncomputed.test.ts` (3 cases).
+- **LC-AM3-UI-001 (HIGH) — FIXED (honesty carried to the client).** The server returned `estimate:null`
+  but the client `EstimateResponse` still typed `estimate` as always `ScoreEstimate`, so `ScoreProjectionCard`
+  and `lyceon-dashboard` dereferenced `.composite`/`.range`/`.confidence` unguarded — a real uncomputed
+  response would **crash** the student surface (fake value → crash). Now `EstimateResponse` is a
+  discriminated union (`estimateStatus` + `estimate: ScoreEstimate | null`) — TS forbids dereferencing
+  without a guard. Both components render an explicit "not yet available" state before any access (and the
+  three dashboard KPI tiles use `estimate?.…` → honest empty). **Client sweep:** the only projection-estimate
+  consumers are `ScoreProjectionCard` + `lyceon-dashboard` (incl. its 3 KPI tiles); `FullLengthResultsView`
+  reads a different `estimatedScore` shape (already null-safe) — sweep clean, zero new typecheck errors.
+  Regression test: `client/src/components/progress/ScoreProjectionCard.test.tsx` (uncomputed → not-yet-available,
+  no number, no crash; computed → real composite). Honest-uncomputed now holds server → type → render.

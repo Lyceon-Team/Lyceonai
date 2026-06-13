@@ -70,7 +70,31 @@ export function ScoreProjectionCard() {
     );
   }
 
+  // LC-AM3-UI-001 honest-signal: when the estimate is uncomputed (05C projections deferred /
+  // not yet generated), render an explicit not-yet-available state — never a fake number, never a
+  // crash. The discriminated union narrows `estimate` to ScoreEstimate only past this guard.
   const { estimate, totalQuestionsAttempted } = data;
+  if (data.estimateStatus !== "computed" || !estimate) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            Score Estimate
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <AlertCircle className="h-4 w-4" />
+            <span>
+              Your score estimate isn’t available yet
+              {totalQuestionsAttempted > 0 ? " — it appears once enough scored evidence accumulates." : " — start practicing to generate it."}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   const scoreProgress = ((estimate.composite - 400) / 1200) * 100;
 
   return (
