@@ -5203,7 +5203,7 @@ CREATE POLICY projection_snapshots_guardian_read ON public.student_section_proje
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --
@@ -5340,7 +5340,7 @@ CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR 
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --
@@ -5364,7 +5364,7 @@ CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mast
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --
@@ -5394,7 +5394,7 @@ CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FO
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --
@@ -5424,7 +5424,7 @@ CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FO
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --
@@ -5454,7 +5454,7 @@ CREATE POLICY student_section_projections_guardian_read ON public.student_sectio
    FROM public.guardian_links gl
   WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
            FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = ANY (ARRAY['active'::text, 'past_due'::text])))))))));
+          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
 
 
 --

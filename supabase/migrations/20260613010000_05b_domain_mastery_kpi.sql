@@ -30,7 +30,7 @@
 -- @adaptation GUARDIAN-RLS: Doc 05B §5.3/§6.6 reference guardian_student_links(guardian_id,
 --   linked_student_id, link_active) + student_entitlements(student_id, active); the genesis
 --   identity model (Doc 01 V8) names guardian_links(guardian_profile_id, student_profile_id,
---   status='active') + entitlements(profile_id, status IN ('active','past_due')). The guardian
+--   status='active') + entitlements(profile_id, status = 'active'). NARROWED to active-only (spec §5.3 active=true; safer guardian posture; past_due grace excluded — owner may widen). LYCEON-MIGRATION-REVIEWED. The guardian
 --   read predicate is reconciled to those tables, preserving the Parent §11.1 semantics:
 --   active link AND active student entitlement. auth.uid() = the guardian profile id.
 --
@@ -109,7 +109,7 @@ CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mast
         AND  EXISTS (
           SELECT 1 FROM public.entitlements e
           WHERE  e.profile_id = gl.student_profile_id
-            AND  e.status IN ('active','past_due')
+            AND  e.status = 'active'
         )
     )
   );
@@ -250,7 +250,7 @@ CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
         AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status IN ('active','past_due'))
+                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
     )
   );
 
@@ -262,7 +262,7 @@ CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
         AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status IN ('active','past_due'))
+                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
     )
   );
 
@@ -279,7 +279,7 @@ CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
         AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status IN ('active','past_due'))
+                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
     )
   );
 

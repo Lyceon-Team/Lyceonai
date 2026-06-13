@@ -260,6 +260,14 @@ def cmd_check(psql_out: str) -> int:
                 "denom": int(denom), "flc": int(flc),
             }
 
+    # Fail-closed (no false-green): a parser that silently matched zero rows would "pass" with no
+    # comparisons. Require every fixture to have produced a PL/pgSQL row before any equality check.
+    if len(rows) != len(FIXTURES):
+        missing = sorted(set(FIXTURES) - set(rows))
+        print(f"PROJECTION PARITY: FAIL — parsed {len(rows)}/{len(FIXTURES)} PARITY rows from PL/pgSQL "
+              f"output (missing {missing}); refusing to pass without all comparisons", file=sys.stderr)
+        return 1
+
     ok = True
     for fid, fx in FIXTURES.items():
         if fid not in rows:

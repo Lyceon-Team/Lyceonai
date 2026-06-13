@@ -36,7 +36,7 @@
 -- @adaptation GUARDIAN-RLS: Doc 05C §7.4 references guardian_student_links(guardian_id,
 --   linked_student_id, link_active) + student_entitlements(student_id, active); the genesis
 --   identity model (Doc 01 V8) names guardian_links(guardian_profile_id, student_profile_id,
---   status='active') + entitlements(profile_id, status IN ('active','past_due')). The guardian
+--   status='active') + entitlements(profile_id, status = 'active'). NARROWED to active-only (spec §5.3 active=true; safer guardian posture; past_due grace excluded — owner may widen). LYCEON-MIGRATION-REVIEWED. The guardian
 --   read predicate is reconciled to those tables BYTE-IDENTICALLY to 05B's
 --   student_domain_mastery_guardian_read (20260613010000), preserving Parent §11.1 semantics:
 --   active link AND active student entitlement. auth.uid() = the guardian profile id. This is the
@@ -478,7 +478,7 @@ CREATE POLICY student_section_projections_student_read
 
 -- §7.4 current projection: guardian read (active link AND active entitlement, §11.1).
 -- BYTE-IDENTICAL in shape to 05B's student_domain_mastery_guardian_read (genesis guardian_links +
--- entitlements; "active" = status IN ('active','past_due')). One guardian-gate pattern, §7.4.
+-- entitlements; "active" = status = 'active' (narrowed, spec §5.3). One guardian-gate pattern, §7.4. LYCEON-MIGRATION-REVIEWED
 CREATE POLICY student_section_projections_guardian_read
   ON public.student_section_projections
   FOR SELECT TO authenticated
@@ -491,7 +491,7 @@ CREATE POLICY student_section_projections_guardian_read
         AND  EXISTS (
           SELECT 1 FROM public.entitlements e
           WHERE  e.profile_id = gl.student_profile_id
-            AND  e.status IN ('active','past_due')
+            AND  e.status = 'active'
         )
     )
   );
@@ -515,7 +515,7 @@ CREATE POLICY projection_snapshots_guardian_read
         AND  EXISTS (
           SELECT 1 FROM public.entitlements e
           WHERE  e.profile_id = gl.student_profile_id
-            AND  e.status IN ('active','past_due')
+            AND  e.status = 'active'
         )
     )
   );
