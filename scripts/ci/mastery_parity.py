@@ -55,6 +55,11 @@ CREATE TABLE _parity_events (
   section text NOT NULL, domain text NOT NULL, skill text NOT NULL
 );""")
     out.append("""
+-- The Lane-C migration now ships the PRODUCTION canonical_mastery_events; the isolation harness
+-- overrides it with this fixture-backed stand-in (DROP first — RETURNS TABLE shape differs, so
+-- CREATE OR REPLACE cannot swap it). This keeps the 31-fixture isolation proof (incl. the
+-- test-bearing fixtures that have no production source until WS-4).
+DROP FUNCTION IF EXISTS public.canonical_mastery_events(uuid, text, text, text, text);
 CREATE FUNCTION public.canonical_mastery_events(
   p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text DEFAULT NULL
 ) RETURNS TABLE(
