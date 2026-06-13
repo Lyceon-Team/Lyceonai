@@ -195,14 +195,17 @@ BEGIN
 
   -- §4.8 audit insert; unique_violation -> race-completed idempotent re-entry (§4.11 / RB-05A-V1-01)
   BEGIN
+    -- applied_at listed explicitly with now() per §4.8 verbatim (not relying on the DEFAULT). LYCEON-MIGRATION-REVIEWED
     INSERT INTO public.mastery_event_audit_log
       (student_id, section, domain, skill, source_family, event_source_kind, event_id, question_id,
        difficulty, correct, occurred_at, mastery_score_before, mastery_score_after,
-       mastery_level_before, mastery_level_after, event_count_after, constants_snapshot_hash, mastery_model_version)
+       mastery_level_before, mastery_level_after, event_count_after, constants_snapshot_hash, mastery_model_version,
+       applied_at)
     VALUES
       (p_student_id, p_section, p_domain, p_skill, p_source_family, p_event_source_kind, p_event_id, p_question_id,
        p_difficulty, p_correct, p_occurred_at, v_before_score, v_score,
-       v_before_level, v_level, v_total, v_constants_hash, v_active_version);
+       v_before_level, v_level, v_total, v_constants_hash, v_active_version,
+       now());
   EXCEPTION WHEN unique_violation THEN
     SELECT * INTO v_result_row FROM public.student_skill_mastery
     WHERE student_id = p_student_id AND section = p_section AND domain = p_domain AND skill = p_skill;

@@ -63,15 +63,14 @@ DROP FUNCTION IF EXISTS public.canonical_mastery_events(uuid, text, text, text, 
 CREATE FUNCTION public.canonical_mastery_events(
   p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text DEFAULT NULL
 ) RETURNS TABLE(
-  event_id uuid, occurred_at timestamptz, source_family text,
-  difficulty smallint, correct boolean, section text, domain text, skill text,
-  event_source_kind text, question_id text
+  event_id uuid, event_source_kind text, source_family text, section text, domain text, skill text,
+  difficulty smallint, correct boolean, occurred_at timestamptz, question_id text
 ) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
-  -- column shape mirrors Doc 05A §6.2 (10 cols); event_source_kind/question_id are unused by the
-  -- formula but kept for contract-parity with the production canonical_mastery_events (Lane C).
-  -- question_id is TEXT (canonical SAT id) per Codex F-002 / SP-21, not uuid.
-  SELECT e.event_id, e.occurred_at, e.source_family, e.difficulty, e.correct, e.section, e.domain, e.skill,
-         NULL::text AS event_source_kind, NULL::text AS question_id
+  -- column order mirrors Doc 05A §6.2 EXACTLY (matches the production canonical_mastery_events), so
+  -- the DROP+CREATE override is positionally identical. event_source_kind/question_id are unused by
+  -- the formula but kept for shape parity. question_id is TEXT (SAT id) per SP-21, not uuid.
+  SELECT e.event_id, NULL::text AS event_source_kind, e.source_family, e.section, e.domain, e.skill,
+         e.difficulty, e.correct, e.occurred_at, NULL::text AS question_id
   FROM public._parity_events e
   WHERE e.student_id = p_student_id
     AND e.section = p_section AND e.domain = p_domain

@@ -112,3 +112,19 @@ WS-2 anti-leak posture intact (genesis-fresh-apply). Owner-run for any live appl
 - **SP-22 (new).** Doc 05A §6.2's example reads the Wave-1 fossil `practice_attempts_v0`; canonical truth is
   `practice_session_items` (Doc 02B §8 / frozen seam §2). Code reads the canonical table; reconcile the §6.2
   example to `practice_session_items` (owner-side, `docs/Spec` read-only).
+- **SP-23 (new).** Doc 05A §4.3 idempotency-lookup pseudocode selects `skill_mastery_row_id`; the audit table's
+  PK is `audit_row_id` (no such column). Code selects `audit_row_id` for the existence check. Reconcile §4.3
+  pseudocode owner-side.
+
+### Spec-auditor pass (2026-06-13) — findings closed
+- **F1 (spec-edit REJECT) — NOT this build.** The flagged `docs/Spec/Doc 05A` edit (`f6a8348`, "Change
+  question_id type from uuid to text") is the **owner's** authorized amendment (author kingk237 = Karl; the
+  gate-2 `uuid→text` closure the owner confirmed). It rode into the auditor's `8fc6499..HEAD` range via the
+  rebase. This Lane-C commit touches **zero** `docs/Spec` files. Not reverted (owner-authorized).
+- **F2 (HIGH) — FIXED.** §4.8 audit INSERT now lists `applied_at` explicitly with `now()` (verbatim §4.8).
+- **F3 (MEDIUM) — FIXED.** The isolation stand-in `canonical_mastery_events` `RETURNS TABLE` order now
+  mirrors §6.2 exactly (matches the production function), removing positional-access risk.
+- **F4 (MEDIUM) — owner-side.** Merge-blocking enforcement of `lane-c-seam-gates`/`mastery-parity`/
+  `genesis-fresh-apply` is via branch-protection required-status-checks (owner config, not in-diff); this
+  build keeps the established standalone-job pattern. Flagged to owner to confirm the checks are required.
+- **F5 (MEDIUM) → SP-23**; **F6 (LOW)** = AM-3, governed (no action).
