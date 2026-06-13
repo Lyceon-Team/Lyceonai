@@ -73,7 +73,10 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
     const totalQuestions = scoreProjection.totalQuestionsAttempted;
 
-    if (totalQuestions === 0) {
+    // LC-AM3-001 honest-signal: when the score estimate is UNCOMPUTED (05C projections deferred
+    // (AM-3) or not yet generated), return an explicit not-yet-available status with NO fabricated
+    // score — never a 200/400 baseline. The UI hides or labels the surface.
+    if (scoreProjection.status === "uncomputed") {
       return res.json({
         modelVersion: "kpi_truth_v1",
         measurementModel: {
@@ -81,27 +84,22 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
           diagnostic: ["mastery_evidence_count"],
         },
-        estimate: {
-          composite: 400,
-          math: 200,
-          rw: 200,
-          range: { low: 400, high: 400 },
-          confidence: 0,
-          breakdown: { math: [], rw: [] },
-        },
+        estimate: null,
+        estimateStatus: "not_yet_available",
         explanations: {
-          estimated_scaled_total: estimateExplanation(
-            "Estimated scaled total",
-            "No mastery evidence is available yet, so the estimate remains at the minimum baseline."
-          ),
+          estimated_scaled_total: {
+            whatThisMeans: "Your weighted score estimate isn't available yet — not a score of zero or a baseline.",
+            whyThisChanged: "It computes once mastery rollups (section projections) are generated from your scored practice evidence.",
+            whatToDoNext: "Keep practicing; the estimate appears once enough scored evidence accumulates.",
+          },
           official_sat_score: {
             whatThisMeans: "Official SAT scores only come from College Board score releases.",
             whyThisChanged: "Practice estimates never replace official reporting.",
-            whatToDoNext: "Use this baseline to set your first target and collect practice evidence.",
+            whatToDoNext: "Set your first target now; the estimate fills in as evidence accumulates.",
           },
         },
-        totalQuestionsAttempted: 0,
-        lastUpdated: new Date().toISOString(),
+        totalQuestionsAttempted: totalQuestions,
+        lastUpdated: scoreProjection.lastUpdated,
         officialScore: null,
         requestId: req.requestId,
       });
@@ -122,6 +120,7 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         confidence: scoreProjection.estimate.confidence,
         breakdown: scoreProjection.estimate.breakdown,
       },
+      estimateStatus: "computed",
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
