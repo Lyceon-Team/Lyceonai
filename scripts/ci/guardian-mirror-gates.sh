@@ -82,6 +82,24 @@ ZERO=$(psql_db "$DB" -tAc "
 [ "$ZERO" = "0" ] || { echo "  FAIL: an unlinked guardian saw $ZERO rows (expected 0)"; exit 1; }
 echo "    OK unlinked guardian sees 0 rows"
 
+echo "==> PR370-GUARDIAN-001 (two-sided): the entitlement oracle is reachable ONLY via the link gate"
+# (a) authenticated must NOT be able to call entitlement_active directly (no raw entitlement probe).
+if psql_db "$DB" -tAc "SET ROLE authenticated; SELECT public.entitlement_active('6e000000-0000-0000-0000-000000000011');" >/dev/null 2>&1; then
+  echo "  FAIL: authenticated executed entitlement_active directly — entitlement-state oracle leak"; exit 1
+else echo "    OK (a) authenticated is denied direct EXECUTE on entitlement_active"; fi
+# (b) guardian_can_view_student must STILL work after the revoke — proven by the AIRTIGHT LINK test
+# above (it runs as authenticated and exercises guardian_can_view_student -> entitlement_active, which
+# resolves because guardian_can_view_student is SECURITY DEFINER and calls it as the owner). A revoke
+# that broke the guardian gate would have failed VIS above. Belt-and-suspenders: confirm the linked
+# guardian still resolves via the public (authenticated) gate fn directly.
+GCV=$(psql_db "$DB" -tAc "
+  SET test.guardian_uid = '6e000000-0000-0000-0000-000000000001';
+  SET ROLE authenticated;
+  SELECT public.guardian_can_view_student('6e000000-0000-0000-0000-000000000011')::text
+   || '|' || public.guardian_can_view_student('6e000000-0000-0000-0000-000000000022')::text;" | tail -1)
+if [ "$GCV" = "true|false" ]; then echo "    OK (b) guardian_can_view_student still resolves after the revoke (linked S1=true, unlinked S2=false)"
+else echo "  FAIL: guardian_can_view_student post-revoke = $GCV (expected true|false — revoke broke the gate)"; exit 1; fi
+
 echo "==> the same gate governs every mirror surface (one predicate, no parallel logic)"
 POLS=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM pg_policies

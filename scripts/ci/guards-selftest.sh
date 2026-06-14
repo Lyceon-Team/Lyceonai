@@ -66,6 +66,37 @@ rm -f "$ROOT/$PLANT_SQL"
 [ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" = "0" ] || { echo "  FAIL: guard still red after removing the plant (signal not the plant)"; fails=1; }
 echo "    OK structural form stays green; signal is the plant"
 
+# --- E1b: PROVEN COVERAGE of the 05C projection scoring body in a $func$-delimited function
+#          (PR370-CONSTANTS-001 — the delimiter-agnostic + fail-closed rewrite). Each projection
+#          constant planted in a $func$ compute_section_projection body must turn the guard RED. ---
+echo "==> E1b: no-hardcoded-constants must turn RED on each 05C projection constant in a \$func\$ body"
+plant_scoring_func_body() {  # $1 = literal to plant inside a $func$-delimited scoring function body
+  cat > "$ROOT/$PLANT_SQL" <<SQL
+-- TRANSIENT guard self-test artifact (never committed; trap-removed). LYCEON-MIGRATION-REVIEWED
+CREATE OR REPLACE FUNCTION public.compute_section_projection(
+  p_student_id uuid, p_section text, p_now timestamptz
+) RETURNS numeric LANGUAGE plpgsql AS \$func\$
+BEGIN
+  RETURN $1;   -- planted hardcode in a \$func\$ body: must be read from read_projection_constants()
+END;
+\$func\$;
+SQL
+}
+for c in 200 600 800 10 25 100 75 500 40 24; do
+  plant_scoring_func_body "$c"
+  if [ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" != "0" ]; then echo "    OK $c → RED (\$func\$ body scanned)"
+  else echo "  FAIL: 05C projection constant $c stayed GREEN in a \$func\$ body (delimiter blind spot)"; fails=1; fi
+  rm -f "$ROOT/$PLANT_SQL"
+done
+# Fail-closed discovery: a GUARDED function whose body can't be parsed must turn the guard RED, never
+# silently skip to PASS (inverts the discovery failure mode, like F-001 inverted the literal one).
+printf 'CREATE OR REPLACE FUNCTION public.compute_section_projection(p_student_id uuid) RETURNS int LANGUAGE sql AS $weird$ SELECT 1 ;\n' > "$ROOT/$PLANT_SQL"
+if [ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" != "0" ]; then echo "    OK unparseable guarded body → RED (fail closed)"
+else echo "  FAIL: an unparseable guarded function body stayed GREEN (silent skip)"; fails=1; fi
+rm -f "$ROOT/$PLANT_SQL"
+[ "$(run_guard scripts/ci/no-hardcoded-constants.mjs)" = "0" ] || { echo "  FAIL: guard still red after removing the plant"; fails=1; }
+echo "    OK fail-closed on novel delimiter; green once removed"
+
 # --- E2: plant a tutor/LISA path that writes mastery ---
 echo "==> E2: tutor-never-writes-mastery must turn RED on a planted tutor mastery write"
 cat > "$ROOT/$PLANT_TUTOR" <<'TS'
