@@ -127,6 +127,7 @@ export async function revokeGuardianLink(
 }
 import { supabaseServer } from '../../apps/api/src/lib/supabase-server';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { EntitlementService } from '../services/entitlement-service';
 
 /**
  * Ensures a user has an associated lyceon_account and membership.
@@ -199,11 +200,16 @@ export async function getAllAccountsForUser(userId: string): Promise<Array<{ acc
 
 interface Entitlement {
   account_id: string;
+  // Legacy in-app storage field (HALT-1 storage drift: genesis uses `tier`, not `plan`).
   plan: 'free' | 'paid';
   status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'inactive';
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   current_period_end: string | null;
+  // STRIPE-001: genesis-aligned authoritative fields persisted verbatim from Stripe by the writer.
+  tier?: EntitlementTier;
+  current_period_start?: string | null;
+  cancel_at_period_end?: boolean;
 }
 
 export type PairPremiumSource = 'student' | 'guardian' | 'both' | 'none';
@@ -224,14 +230,15 @@ export interface LinkedPairPremiumAccess {
   guardianEntitlementExpired: boolean;
 }
 
-export function isEntitlementActive(entitlement: Entitlement | null): boolean {
-  if (!entitlement) return false;
-  if (entitlement.plan !== 'paid') return false;
-  if (entitlement.status !== 'active' && entitlement.status !== 'trialing') return false;
-  if (!entitlement.current_period_end) return true;
-  return new Date(entitlement.current_period_end) > new Date();
-}
-
+/**
+ * @spec [SP25-001 | Doc-05B §5.3 canonical predicate] @implemented 2026-06-14
+ * plain English: the divergent TS entitlement predicate `isEntitlementActive` was deleted.
+ * There is exactly ONE entitlement evaluator now — `EntitlementService.isEntitlementActiveForProfile`
+ * (server/services/entitlement-service.ts), which delegates to the single SQL predicate
+ * `public.entitlement_active(p_profile_id)`. All route-facing active/inactive decisions key on the
+ * profile id (= user.id) and flow through that one oracle. Diagnostic fields below (status/expired)
+ * are presentation-only metadata, NOT a second gate.
+ */
 function isEntitlementExpired(entitlement: Entitlement | null): boolean {
   if (!entitlement?.current_period_end) return false;
   return new Date(entitlement.current_period_end) <= new Date();
@@ -431,14 +438,12 @@ export async function checkUsageLimit(
   type: 'practice' | 'ai_chat',
   options?: { premiumOverride?: boolean }
 ): Promise<{ allowed: boolean; current: number; limit: number; resetAt: string }> {
+  // SP25-001: entitlement is evaluated by the SINGLE canonical evaluator at the call site
+  // (createUsageLimitMiddleware resolves premiumOverride via resolveLinkedPairPremiumAccess*,
+  // which delegates to EntitlementService -> entitlement_active RPC). checkUsageLimit must NOT
+  // re-evaluate entitlement itself — that would reintroduce a second evaluator. It only enforces
+  // the free-tier daily quota when the caller reports no premium access.
   if (options?.premiumOverride) {
-    return { allowed: true, current: 0, limit: Infinity, resetAt: '' };
-  }
-
-  const entitlement = await getEntitlement(accountId);
-  const isPaid = isEntitlementActive(entitlement);
-
-  if (isPaid) {
     return { allowed: true, current: 0, limit: Infinity, resetAt: '' };
   }
 
@@ -563,7 +568,10 @@ export async function resolveLinkedPairPremiumAccessForStudent(studentUserId: st
   const guardianAccountId = guardianUserId ? await getAccountIdForUser(guardianUserId) : null;
   const guardianEntitlement = guardianAccountId ? await getEntitlement(guardianAccountId) : null;
 
-  const studentActive = isEntitlementActive(studentEntitlement);
+  // SP25-001: single evaluator — the active/inactive gate keys on the student's profile id
+  // (= studentUserId) and flows through the one canonical RPC. Diagnostic fields below are
+  // presentation-only and read from getEntitlement; they are NOT a second gate.
+  const studentActive = await EntitlementService.isEntitlementActiveForProfile(studentUserId);
   const hasActiveLink = !!guardianLink;
   const hasPremiumAccess = studentActive;
 
@@ -620,7 +628,10 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   const studentAccountId = link.account_id ?? await ensureAccountForUser(supabaseServer, link.student_user_id, 'student');
   const studentEntitlement = studentAccountId ? await getEntitlement(studentAccountId) : null;
 
-  const studentActive = isEntitlementActive(studentEntitlement);
+  // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
+  // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
+  // visibility requires active link (resolved above) AND active student entitlement (here).
+  const studentActive = await EntitlementService.isEntitlementActiveForProfile(link.student_user_id);
   const hasPremiumAccess = studentActive;
 
   return {
@@ -642,24 +653,59 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
   };
 }
 
+/**
+ * Canonical genesis entitlement status enum
+ * (supabase/migrations/00000000000000_genesis.sql:172 CHECK constraint).
+ */
+export type EntitlementStatus =
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'unpaid'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'trialing';
+
+/**
+ * Canonical genesis entitlement tier enum
+ * (supabase/migrations/00000000000000_genesis.sql:171 CHECK constraint).
+ */
+export type EntitlementTier = 'free' | 'premium';
+
+const STRIPE_STATUS_TO_GENESIS: Record<string, EntitlementStatus> = {
+  active: 'active',
+  past_due: 'past_due',
+  canceled: 'canceled',
+  unpaid: 'unpaid',
+  incomplete: 'incomplete',
+  incomplete_expired: 'incomplete_expired',
+  trialing: 'trialing',
+};
+
+/**
+ * @spec [Doc-01_V8 §20–§24 entitlements; genesis.sql:171–172 | STRIPE-001] @implemented 2026-06-14
+ * plain English: pure, authoritative Stripe-status -> genesis-entitlement mapping. The writer is a thin
+ * idempotent receiver: it accepts the status Stripe reports and persists it verbatim into the canonical
+ * genesis `entitlements.status` enum. NO transition graph, NO trial-ending computation, NO
+ * canceled-at-request-time / temporal logic, NO grace derivation — `status` is authoritative as Stripe
+ * reports it, and period fields are passed through unchanged.
+ * tier is a static lookup (entitled statuses -> premium; terminal/none statuses -> free), not temporal.
+ * expected outcome: returns the exact genesis status + tier for the given Stripe subscription status.
+ * edge cases: an unrecognized Stripe status maps to a terminal { tier:'free', status:'canceled' } rather
+ * than inventing a non-genesis value; recognized statuses are an exact 1:1 passthrough.
+ */
 export function mapStripeStatusToEntitlement(stripeStatus: string): {
-  plan: 'free' | 'paid';
-  status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'inactive';
+  tier: EntitlementTier;
+  status: EntitlementStatus;
 } {
-  switch (stripeStatus) {
-    case 'active':
-      return { plan: 'paid', status: 'active' };
-    case 'trialing':
-      return { plan: 'paid', status: 'trialing' };
-    case 'past_due':
-      return { plan: 'paid', status: 'past_due' };
-    case 'canceled':
-    case 'unpaid':
-    case 'incomplete_expired':
-      return { plan: 'free', status: 'canceled' };
-    default:
-      return { plan: 'free', status: 'inactive' };
-  }
+  const status = STRIPE_STATUS_TO_GENESIS[stripeStatus] ?? 'canceled';
+  // Entitled (paid/grace) statuses confer premium tier; everything else is free.
+  // This is a static membership lookup, not a temporal/transition decision.
+  const tier: EntitlementTier =
+    status === 'active' || status === 'trialing' || status === 'past_due'
+      ? 'premium'
+      : 'free';
+  return { tier, status };
 }
 
 export { FREE_TIER_LIMITS };

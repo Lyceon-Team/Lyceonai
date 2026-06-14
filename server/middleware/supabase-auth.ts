@@ -335,8 +335,25 @@ const supabaseAnon = new Proxy({} as SupabaseClient, {
 });
 
 /**
- * Middleware to extract and validate Supabase Auth JWT
- * Attaches user profile from Supabase to req.user
+ * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 server-authoritative auth | AUTH-001]
+ * @implemented 2026-06-14
+ * Middleware to extract and validate the Supabase session, attach req.user from the canonical profile,
+ * and attach a request-scoped, RLS-bound Supabase client carrying the validated user token.
+ *
+ * NATIVE VALIDATION SEAM (the part that must never regress): the session token is validated SERVER-SIDE
+ * via supabaseAnon.auth.getUser(token) — never by trusting a decoded JWT or any client claim. The
+ * per-request req.supabase client is built from that validated token (Authorization: Bearer <token>) so
+ * every downstream Supabase query runs under the user's identity (RLS-bound), and it is recreated per
+ * request (request-scoped — never shared across requests).
+ *
+ * AUTH-001 HALT (owner approval required): the *fully* cookie-native pattern replaces the hand-rolled
+ * cookie read (resolveTokenFromRequest) and the custom /api/auth/refresh endpoint with
+ * `@supabase/ssr` createServerClient + its cookie adapter (which validates via getUser AND auto-refreshes
+ * the session through cookies, with no custom refresh endpoint). `@supabase/ssr` is NOT a current
+ * dependency, so that conversion is blocked on a dependency approval. Until then we keep the maximal
+ * native-with-existing-deps shape: getUser() validation + request-scoped RLS-bound client (here). The
+ * raw cookie read and /refresh endpoint are retained ONLY because removing them without the cookie
+ * adapter would break CSRF token binding and leave clients with no session-refresh path.
  */
 export async function supabaseAuthMiddleware(
   req: Request,
@@ -344,7 +361,8 @@ export async function supabaseAuthMiddleware(
   next: NextFunction
 ) {
   try {
-    // Use shared helper for robust token extraction
+    // Read the session access token from the httpOnly cookie. With @supabase/ssr this read would be
+    // owned by the SDK cookie adapter; AUTH-001 HALT tracks that conversion.
     const tokenResult = resolveTokenFromRequest(req);
     const token = tokenResult.token;
 
