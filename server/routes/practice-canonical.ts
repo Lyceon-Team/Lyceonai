@@ -16,10 +16,15 @@ import {
   buildStudentSafeOptionTokens,
   buildStudentSafeOptionsFromStoredMap,
   type CanonicalMcOption,
-  isCanonicalRuntimeMcQuestion,
+  type CanonicalItemType,
+  type CanonicalQuestionRowLike,
+  isCanonicalRuntimeQuestion,
   isValidCanonicalId,
+  mapGenesisQuestionRow,
   normalizeClientInstanceId,
   normalizeAnswerKey,
+  normalizeItemType,
+  parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
   resolveClientInstanceBinding,
@@ -39,21 +44,32 @@ type PracticeLifecycleState = "created" | "active" | "completed" | "abandoned";
 
 type McOption = CanonicalMcOption;
 
+// @spec [Doc 02B §14/§20 Serving Questions; grid-in-extension.sql; Doc 02 Preamble §12 INV-02-08]
+// Pre-submit student DTO. The only reveal-keyed fields are correct_answer/explanation, both
+// hard-typed `null`; correct_variants is answer-bearing and is intentionally ABSENT from this
+// type — it can never be assigned here. For grid_in, options is [] and inputMode signals a
+// numeric-entry surface (the student produces the answer; no A–D choices exist).
 type StudentSafeQuestionDTO = {
   sessionItemId: string;
   stem: string;
   section: string;
-  questionType: "multiple_choice";
+  questionType: "multiple_choice" | "grid_in";
+  itemType: CanonicalItemType;
+  inputMode: "choice" | "numeric_entry";
   options: StudentSafeOption[];
   difficulty: string | number | null;
   correct_answer: null;
   explanation: null;
 };
 
+// Server-side serving record. correct_answer / explanation / correct_variants live here for
+// grading ONLY and are never projected to the student DTO. For grid_in, options is [] and the
+// accepted-answer set rides in correct_variants; for mcq, correct_variants is null.
 type CanonicalQuestionForServing = {
   id: string;
   canonical_id: string;
   section_code: string;
+  item_type: CanonicalItemType;
   stem: string;
   options: McOption[];
   difficulty: string | number | null;
@@ -64,6 +80,7 @@ type CanonicalQuestionForServing = {
   structure_cluster_id?: string | null;
   correct_answer: string | null;
   explanation: string | null;
+  correct_variants: string[] | null;
 };
 
 type SessionRow = {
@@ -83,6 +100,10 @@ type SessionItemRow = {
   question_id: string;
   question_canonical_id?: string | null;
   question_section?: string | null;
+  // Genesis snapshot is MCQ-only today; these are forward-compat for the grid-in snapshot
+  // DB lane (see HALT in PR notes). Absent columns simply read as undefined → mcq default.
+  question_item_type?: string | null;
+  question_correct_variants?: unknown;
   question_stem?: string | null;
   question_options?: unknown;
   question_difficulty?: string | number | null;
@@ -382,41 +403,93 @@ function buildServedOptions(options: McOption[]): {
   return { optionOrder, optionTokenMap, safeOptions };
 }
 
+// @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
+// Builds the server-side serving record from a genesis-reconciled `questions` row.
+// item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
+// no variant set; grid_in → student-produced value in correct_answer, no options, the
+// accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
 function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
-  const correctAnswer = normalizeAnswerKey(q.correct_answer);
+  const itemType: CanonicalItemType = normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
+  const isGridIn = itemType === "grid_in";
+  const correctVariants = isGridIn ? parseCorrectVariants(q.correct_variants) : null;
+  // For mcq the correct answer is an A–D key; for grid_in it is the canonical value string.
+  const correctAnswer = isGridIn
+    ? (typeof q.correct_answer === "string" && q.correct_answer.trim().length > 0 ? q.correct_answer.trim() : null)
+    : (normalizeAnswerKey(q.correct_answer) ?? null);
   return {
     id: String(q.id),
-    canonical_id: String(q.canonical_id),
-    section_code: String(q.section_code ?? ""),
+    canonical_id: String(q.canonical_id ?? q.id ?? ""),
+    section_code: String(q.section_code ?? q.section ?? ""),
+    item_type: itemType,
     stem: String(q.stem ?? ""),
-    options: safeParseOptions(q.options),
+    options: isGridIn ? [] : safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
     domain: typeof q.domain === "string" ? q.domain : null,
     skill: typeof q.skill === "string" ? q.skill : null,
     subskill: typeof q.subskill === "string" ? q.subskill : null,
     exam: typeof q.exam === "string" ? q.exam : null,
     structure_cluster_id: typeof q.structure_cluster_id === "string" ? q.structure_cluster_id : null,
-    correct_answer: correctAnswer ?? null,
+    correct_answer: correctAnswer,
     explanation: typeof q.explanation === "string" && q.explanation.trim().length > 0
       ? q.explanation
       : null,
+    correct_variants: correctVariants && correctVariants.length > 0 ? correctVariants : null,
   };
 }
 
+// @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
+// Reconstructs the server-side serving record from a persisted practice_session_items
+// snapshot. The genesis snapshot is currently MCQ-shaped (no question_item_type /
+// question_correct_variants columns yet — that is a downstream DB lane, see HALT below),
+// so item_type defaults to 'mcq' and MCQ shape is still enforced. If/when the snapshot
+// gains grid-in fields, this reads them and validates the grid-in shape instead.
 function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQuestionForServing | null {
   const canonicalId = String(item.question_canonical_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
   const section = String(item.question_section ?? "").trim();
-  const options = safeParseOptions(item.question_options);
 
   if (!isValidCanonicalId(canonicalId)) return null;
   if (!stem || !section) return null;
+
+  const itemType: CanonicalItemType = normalizeItemType(item.question_item_type ?? null) ?? "mcq";
+  const isGridIn = itemType === "grid_in";
+
+  if (isGridIn) {
+    const variants = parseCorrectVariants(item.question_correct_variants);
+    if (variants.length < 1) return null;
+    const correctAnswer =
+      typeof item.question_correct_answer === "string" && item.question_correct_answer.trim().length > 0
+        ? item.question_correct_answer.trim()
+        : null;
+    return {
+      id: String(item.question_id ?? "").trim(),
+      canonical_id: canonicalId,
+      section_code: section,
+      item_type: "grid_in",
+      stem,
+      options: [],
+      difficulty: item.question_difficulty ?? null,
+      domain: item.question_domain ?? null,
+      skill: item.question_skill ?? null,
+      subskill: item.question_subskill ?? null,
+      exam: item.question_exam ?? null,
+      structure_cluster_id: item.question_structure_cluster_id ?? null,
+      correct_answer: correctAnswer,
+      explanation: typeof item.question_explanation === "string" && item.question_explanation.trim().length > 0
+        ? item.question_explanation
+        : null,
+      correct_variants: variants,
+    };
+  }
+
+  const options = safeParseOptions(item.question_options);
   if (!hasCanonicalOptionSet(options)) return null;
 
   return {
     id: String(item.question_id ?? "").trim(),
     canonical_id: canonicalId,
     section_code: section,
+    item_type: "mcq",
     stem,
     options,
     difficulty: item.question_difficulty ?? null,
@@ -429,6 +502,7 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
     explanation: typeof item.question_explanation === "string" && item.question_explanation.trim().length > 0
       ? item.question_explanation
       : null,
+    correct_variants: null,
   };
 }
 
@@ -437,16 +511,23 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
   return null;
 }
 
+// @spec [Doc 02B §14/§20 Serving Questions; Doc 02 Preamble §12 INV-02-08] | @implemented 2026-06-14
+// Single canonical serializer — no second inline question shape. We pass item_type through
+// so projectStudentSafeQuestion produces the correct grid-in vs MCQ surface, and we NEVER
+// hand it correct_variants (it has no such field; the answer set stays server-side). The
+// serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
+// inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
 function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
   safeOptions: StudentSafeOption[];
 }): StudentSafeQuestionDTO {
+  const isGridIn = args.question.item_type === "grid_in";
   const safe = projectStudentSafeQuestion({
     id: args.question.id,
     canonical_id: args.question.canonical_id,
     section_code: args.question.section_code ?? null,
-    question_type: "multiple_choice",
+    item_type: args.question.item_type,
     stem: args.question.stem,
     options: args.question.options,
     difficulty: args.question.difficulty ?? null,
@@ -463,8 +544,11 @@ function toStudentSafeQuestionDTO(args: {
     sessionItemId: args.sessionItemId,
     section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
-    questionType: "multiple_choice",
-    options: args.safeOptions,
+    questionType: safe.question_type,
+    itemType: safe.item_type,
+    inputMode: safe.inputMode,
+    // Grid-ins have no choices: emit []. MCQs carry the per-session tokenized options.
+    options: isGridIn ? [] : args.safeOptions,
     difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
@@ -641,24 +725,26 @@ async function listExactFilteredQuestionPool(spec: {
   difficulties: Array<"easy" | "medium" | "hard">;
   excludeIds?: string[];
 }): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  const buildBaseQuery = (selectColumns: string) => {
-    let q = supabaseServer
-      .from("questions")
-      .select(selectColumns)
-      .eq("question_type", "multiple_choice");
+  // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
+  // Genesis-native, SERVER-SIDE select. correct_answer/explanation/correct_variants are
+  // selected for grading ONLY; they never reach a student DTO (the projection null-strips
+  // them and never reads correct_variants). item_type discriminates mcq vs grid_in.
+  let query = supabaseServer
+    .from("questions")
+    .select(
+      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants"
+    )
+    .in("item_type", ["mcq", "grid_in"]);
 
-    if (spec.excludeIds && spec.excludeIds.length > 0) {
-      q = q.not("id", "in", `(${spec.excludeIds.join(",")})`);
-    }
+  if (spec.excludeIds && spec.excludeIds.length > 0) {
+    query = query.not("id", "in", `(${spec.excludeIds.join(",")})`);
+  }
 
-    return q.limit(1000);
-  };
-
-  let query = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
+  query = query.limit(1000);
 
   const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
   if (allowedSectionCodes.length > 0) {
-    query = query.in("section_code", allowedSectionCodes);
+    query = query.in("section", allowedSectionCodes);
   }
 
   const { data, error } = await query;
@@ -666,27 +752,12 @@ async function listExactFilteredQuestionPool(spec: {
     return { error: `questions_query_failed: ${error.message}` };
   }
 
-  let normalizedRows = (data ?? []).map((row: any) => ({
-    ...row,
-    correct_answer: normalizeAnswerKey(row.correct_answer ?? row.answer_choice ?? row.answer),
-  }));
-  let validPool = normalizedRows.filter((row: any) => isCanonicalRuntimeMcQuestion(row as any));
-
-  if (validPool.length === 0) {
-    let legacyQuery = buildBaseQuery("id, canonical_id, section_code, stem, question_type, options, difficulty, correct_answer, explanation, domain, skill, subskill, test_code, source_type, tags, diagram_present");
-    if (allowedSectionCodes.length > 0) {
-      legacyQuery = legacyQuery.in("section_code", allowedSectionCodes);
-    }
-
-    const legacyResult = await legacyQuery;
-    if (!legacyResult.error) {
-      normalizedRows = (legacyResult.data ?? []).map((row: any) => ({
-        ...row,
-        correct_answer: normalizeAnswerKey(row.correct_answer ?? row.answer_choice ?? row.answer),
-      }));
-      validPool = normalizedRows.filter((row: any) => isCanonicalRuntimeMcQuestion(row as any));
-    }
-  }
+  // Reconcile genesis → contract (id→canonical_id, section→section_code, item_type→question_type).
+  // Per-item validation accepts BOTH mcq and grid_in shapes. We do NOT blanket-normalize
+  // correct_answer to an A–D key here: that would corrupt grid-in values (handled per shape
+  // downstream in toCanonicalQuestionForServing).
+  const mappedRows = (data ?? []).map((row) => mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike));
+  const validPool = mappedRows.filter((row) => isCanonicalRuntimeQuestion(row));
 
   const exactPool = filterPoolBySessionSpec(validPool, {
     domains: spec.domains,
@@ -1264,14 +1335,23 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
+  // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
+  // Denormalized snapshot. correct_answer/explanation/correct_variants are persisted for
+  // SERVER-SIDE grading only and are never projected to the student (the serving path
+  // returns toStudentSafeQuestionDTO, which null-strips them). question_item_type +
+  // question_correct_variants carry the grid-in discriminator + accepted-answer set so a
+  // grid-in can be reconstructed and graded. NOTE: the genesis practice_session_items table
+  // does not yet have these two columns — see HALT in the PR notes (DB-lane dependency).
   const insertRows = selection.selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
     question_id: question.id,
     question_canonical_id: question.canonical_id,
     question_section: question.section_code,
+    question_item_type: question.item_type,
     question_stem: question.stem,
     question_options: question.options,
+    question_correct_variants: question.correct_variants ?? null,
     question_difficulty: question.difficulty ?? null,
     question_domain: question.domain ?? null,
     question_skill: question.skill ?? null,

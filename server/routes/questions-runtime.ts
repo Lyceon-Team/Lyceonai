@@ -2,7 +2,8 @@ import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { type AuthenticatedRequest, requireRequestUser } from "../middleware/supabase-auth";
 import {
-  isCanonicalRuntimeMcQuestion,
+  isCanonicalRuntimeQuestion,
+  mapGenesisQuestionRow,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
@@ -10,34 +11,43 @@ import {
 import { buildReviewQueueForStudent, type ReviewQueueMode } from "../services/review-queue";
 import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
 
+// @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
+// Genesis-native, student-safe column set. NO answer-bearing fields (correct_answer,
+// explanation, option_metadata, correct_variants) are selected here — the row never
+// carries them, so the student projection cannot leak. item_type is the genesis grid-in
+// discriminator; skill_codes is the genesis open taxonomy (mapped → skill best-effort).
 const QUESTION_SAFE_SELECT = [
   "id",
-  "canonical_id",
-  "section_code",
-  "question_type",
+  "section",
+  "item_type",
   "stem",
   "options",
   "difficulty",
   "domain",
-  "skill",
-  "subskill",
-  "skill_code",
-  "tags",
+  "skill_codes",
   "created_at",
 ].join(",");
+
+const ALLOWED_ITEM_TYPES = ["mcq", "grid_in"] as const;
 
 function isTestEnv(): boolean {
   return process.env.VITEST === "true" || process.env.NODE_ENV === "test";
 }
 
+// @spec [Doc 02B §14/§20 Serving Questions; grid-in-extension.sql] | @implemented 2026-06-14
+// Reconcile the genesis row onto the contract before projecting. questionType/type are
+// derived from the (item_type-aware) student-safe projection — no hardcoded MC. For a
+// grid-in the projection carries empty options + inputMode 'numeric_entry'; no answer or
+// variant set is ever present on `safe` (the serializer null-strips reveal fields).
 function mapQuestionForStudent(row: CanonicalQuestionRowLike) {
-  const safe = projectStudentSafeQuestion(row);
+  const safe = projectStudentSafeQuestion(mapGenesisQuestionRow(row));
+  const isGridIn = safe.item_type === "grid_in";
   return {
     ...safe,
     canonicalId: safe.canonical_id,
     sectionCode: safe.section_code,
-    questionType: "multiple_choice" as const,
-    type: "mc" as const,
+    questionType: safe.question_type,
+    type: isGridIn ? ("grid_in" as const) : ("mc" as const),
   };
 }
 
@@ -46,7 +56,9 @@ function applySectionFilter<TQuery extends { in: (column: string, values: string
   if (!filters || filters.length === 0) {
     return query;
   }
-  return query.in("section_code", filters);
+  // Genesis section codes are 'M' | 'RW'; resolveSectionFilterValues may include the
+  // legacy 'MATH' alias which is harmless against a genesis bank that only stores 'M'.
+  return query.in("section", filters);
 }
 
 async function fetchPublishedQuestions(params: {
@@ -58,7 +70,7 @@ async function fetchPublishedQuestions(params: {
   let query = supabaseServer
     .from("questions")
     .select(QUESTION_SAFE_SELECT)
-    .eq("question_type", "multiple_choice")
+    .in("item_type", [...ALLOWED_ITEM_TYPES])
     .order("created_at", { ascending: false });
 
   query = applySectionFilter(query, params.section);
@@ -78,8 +90,9 @@ async function fetchPublishedQuestions(params: {
     return { data: null, error };
   }
 
-  const rows = (data ?? []) as unknown as CanonicalQuestionRowLike[];
-  const validRows = rows.filter((row) => isCanonicalRuntimeMcQuestion(row));
+  // Reconcile genesis → contract, then validate each row for ITS shape (mcq | grid_in).
+  const rows = (data ?? []).map((row) => mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike));
+  const validRows = rows.filter((row) => isCanonicalRuntimeQuestion(row));
   return { data: validRows, error: null };
 }
 
@@ -167,7 +180,7 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
     const { count, error } = await supabaseServer
       .from("questions")
       .select("id", { count: "exact", head: true })
-      .eq("question_type", "multiple_choice");
+      .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
     if (error) {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
@@ -184,14 +197,14 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabaseServer
       .from("questions")
-      .select("section_code, difficulty")
-      .eq("question_type", "multiple_choice");
+      .select("section, difficulty")
+      .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
     if (error) {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = (data ?? []) as Array<{ section_code?: string | null; difficulty?: unknown }>;
+    const rows = (data ?? []) as Array<{ section?: string | null; difficulty?: unknown }>;
 
     let math = 0;
     let readingWriting = 0;
@@ -200,7 +213,7 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
     let hard = 0;
 
     for (const row of rows) {
-      const sectionCode = String(row.section_code ?? "").toUpperCase();
+      const sectionCode = String(row.section ?? "").toUpperCase();
       if (sectionCode === "M" || sectionCode === "MATH") {
         math += 1;
       } else if (sectionCode === "RW") {
@@ -272,15 +285,15 @@ export const getQuestionById = async (req: Request, res: Response) => {
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
       .eq("id", id)
-      .eq("question_type", "multiple_choice")
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
       .single();
 
     if (error || !data) {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    const row = data as unknown as CanonicalQuestionRowLike;
-    if (!isCanonicalRuntimeMcQuestion(row)) {
+    const row = mapGenesisQuestionRow(data as unknown as CanonicalQuestionRowLike);
+    if (!isCanonicalRuntimeQuestion(row)) {
       return res.status(404).json({ error: "Question not found" });
     }
 
@@ -446,8 +459,8 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("question_type", "multiple_choice")
-      .eq("skill", unitTag)
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
+      .contains("skill_codes", [unitTag])
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -455,7 +468,9 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[])
+      .map((row) => mapGenesisQuestionRow(row))
+      .filter((row) => isCanonicalRuntimeQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
@@ -479,7 +494,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("question_type", "multiple_choice")
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
       .eq("difficulty", difficultyLevel)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -488,7 +503,9 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
       return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[])
+      .map((row) => mapGenesisQuestionRow(row))
+      .filter((row) => isCanonicalRuntimeQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
