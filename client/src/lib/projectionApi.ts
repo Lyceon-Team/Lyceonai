@@ -23,11 +23,20 @@ export interface ScoreEstimate {
   };
 }
 
-export interface EstimateResponse {
-  estimate: ScoreEstimate;
+// LC-AM3-UI-001 honest-signal: mirror the server's discriminated response. The weighted score
+// estimate is UNCOMPUTED while 05C projections are deferred/not-yet-generated — `estimate` is null
+// then, so consumers MUST narrow on estimateStatus/estimate before dereferencing. Once `estimate`
+// can be null, TS forbids .composite/.range/.confidence without a guard — render honest-uncomputed.
+export type EstimateStatus = "computed" | "not_yet_available";
+
+interface EstimateResponseBase {
   totalQuestionsAttempted: number;
   lastUpdated: string;
 }
+
+export type EstimateResponse =
+  | (EstimateResponseBase & { estimateStatus: "computed"; estimate: ScoreEstimate })
+  | (EstimateResponseBase & { estimateStatus: "not_yet_available"; estimate: null });
 
 export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   const response = await apiRequest("/api/progress/projection");

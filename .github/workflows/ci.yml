@@ -262,3 +262,111 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/mastery-parity.sh
+
+  # ---------------------------------------------------------------------------
+  # Lane-C seam gates (Doc 05A §4) — HARD GATE. Proves the live event→mastery seam:
+  # production-derivation parity (compute over the REAL canonical_mastery_events ==
+  # Python reference == §12), idempotency replay, and transaction atomicity.
+  # ---------------------------------------------------------------------------
+  lane-c-seam-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Lane-C seam gates (production parity + idempotency replay + txn atomicity + F1/F2/F3 §4.9 re-proof)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/lane-c-seam-gates.sh
+
+  # ---------------------------------------------------------------------------
+  # 05B/05C rollup gates (Doc 05B §4-§10, Doc 05C §4-§8) — HARD GATES. Domain-mastery
+  # parity (event-aggregation at domain grain, INV-05B-13) + KPI struct; State-A section
+  # projection parity vs Doc 05C §6 worked examples (Q4 honest-gate + determinism).
+  # ---------------------------------------------------------------------------
+  rollup-05b-05c-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: 05B domain mastery + KPI gates (domain-grain parity + INV-05B-13 + KPI struct)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/05b-domain-kpi-gates.sh
+
+      - name: 05C section projection gates (State-A projection parity vs Doc 05C §6 + Q4 gate)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/05c-projection-gates.sh
+
+      - name: Guardian-mirror gates (airtight link + entitlement + view-only + carve-outs)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-mirror-gates.sh

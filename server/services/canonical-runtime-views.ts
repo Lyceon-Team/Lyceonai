@@ -459,11 +459,18 @@ function toDomainBreakdown(rows: DomainMasteryRow[], section: "math" | "rw"): Do
   });
 }
 
-export async function buildScoreEstimateFromCanonical(userId: string): Promise<{
-  estimate: ScoreEstimate;
-  totalQuestionsAttempted: number;
-  lastUpdated: string;
-}> {
+/**
+ * Honest-signal contract (LC-AM3-001 / mastery-from-observed-events-only):
+ * the weighted score estimate is derived from 05C section projections. While those rollups are
+ * deferred (Lane C AM-3) — or simply not yet computed for a student — the estimate MUST read as
+ * UNCOMPUTED, never as a fabricated baseline (200/400). A `computed` result only exists when BOTH
+ * section projections (math AND rw) are present; otherwise the composite would be invented.
+ */
+export type CanonicalScoreEstimate =
+  | { status: "uncomputed"; estimate: null; totalQuestionsAttempted: number; lastUpdated: string }
+  | { status: "computed"; estimate: ScoreEstimate; totalQuestionsAttempted: number; lastUpdated: string };
+
+export async function buildScoreEstimateFromCanonical(userId: string): Promise<CanonicalScoreEstimate> {
   const [{ data: projections, error: projectionError }, { data: domains, error: domainError }, { data: rollups, error: rollupError }] = await Promise.all([
     supabaseServer
       .from("student_section_projections")
@@ -505,12 +512,27 @@ export async function buildScoreEstimateFromCanonical(userId: string): Promise<{
 
   const math = sectionMap.get("math");
   const rw = sectionMap.get("rw");
-  const mathMid = typeof math?.projected_score_mid === "number" ? math.projected_score_mid : 200;
-  const rwMid = typeof rw?.projected_score_mid === "number" ? rw.projected_score_mid : 200;
-  const mathLow = typeof math?.projected_score_low === "number" ? math.projected_score_low : 200;
-  const rwLow = typeof rw?.projected_score_low === "number" ? rw.projected_score_low : 200;
-  const mathHigh = typeof math?.projected_score_high === "number" ? math.projected_score_high : 200;
-  const rwHigh = typeof rw?.projected_score_high === "number" ? rw.projected_score_high : 200;
+
+  // LC-AM3-001 honest-signal: a composite needs BOTH section projections to be real. While 05C
+  // projections are deferred (AM-3) or not yet computed, one or both rows are absent — return
+  // UNCOMPUTED (no fabricated baseline). The route/UI labels "not yet available".
+  const mathMid = math?.projected_score_mid;
+  const rwMid = rw?.projected_score_mid;
+  if (typeof mathMid !== "number" || typeof rwMid !== "number") {
+    return {
+      status: "uncomputed",
+      estimate: null,
+      totalQuestionsAttempted,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  // Both projections present: compute from REAL values only (no defaults). Missing low/high
+  // bound falls back to the present mid (a real value), never to a 200 floor.
+  const mathLow = typeof math?.projected_score_low === "number" ? math.projected_score_low : mathMid;
+  const rwLow = typeof rw?.projected_score_low === "number" ? rw.projected_score_low : rwMid;
+  const mathHigh = typeof math?.projected_score_high === "number" ? math.projected_score_high : mathMid;
+  const rwHigh = typeof rw?.projected_score_high === "number" ? rw.projected_score_high : rwMid;
   const relevantCount = (math?.relevant_question_count ?? 0) + (rw?.relevant_question_count ?? 0);
 
   const estimate: ScoreEstimate = {
@@ -529,6 +551,7 @@ export async function buildScoreEstimateFromCanonical(userId: string): Promise<{
   };
 
   return {
+    status: "computed",
     estimate,
     totalQuestionsAttempted,
     lastUpdated: new Date().toISOString(),

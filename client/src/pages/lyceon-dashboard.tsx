@@ -301,7 +301,7 @@ export default function LyceonDashboard() {
                   actionLabel="View plans"
                   onAction={handleUpgradeToPremium}
                 />
-              ) : estimateData ? (
+              ) : estimateData && estimateData.estimateStatus === "computed" && estimateData.estimate ? (
                 <div className="space-y-4">
                   <p className="text-5xl font-semibold leading-none tracking-tight">
                     {estimateData.estimate.range.low}-{estimateData.estimate.range.high}
@@ -312,6 +312,20 @@ export default function LyceonDashboard() {
                   <p className="text-xs text-primary-foreground/80">
                     Based on {estimateData.totalQuestionsAttempted} attempted questions.
                   </p>
+                </div>
+              ) : estimateData ? (
+                // LC-AM3-UI-001: estimate uncomputed (05C projections deferred / not yet generated) —
+                // honest not-yet-available, never a fabricated number or an unguarded dereference.
+                <div className="space-y-4">
+                  <p className="text-2xl font-semibold leading-tight tracking-tight">Not yet available</p>
+                  <p className="text-sm text-primary-foreground/80">
+                    {estimateData.totalQuestionsAttempted > 0
+                      ? "Your score estimate appears once enough scored evidence accumulates."
+                      : "Start practicing to generate a score estimate."}
+                  </p>
+                  <Button asChild variant="secondary" className="w-fit">
+                    <Link href="/practice">Start Practice</Link>
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -416,17 +430,17 @@ export default function LyceonDashboard() {
                 <div className="space-y-4">
                   <ScoreSnapshotRow
                     label="Composite"
-                    value={estimateData?.estimate.composite ?? null}
+                    value={estimateData?.estimate?.composite ?? null}
                     max={1600}
                   />
                   <ScoreSnapshotRow
                     label="Reading & Writing"
-                    value={estimateData?.estimate.rw ?? null}
+                    value={estimateData?.estimate?.rw ?? null}
                     max={800}
                   />
                   <ScoreSnapshotRow
                     label="Math"
-                    value={estimateData?.estimate.math ?? null}
+                    value={estimateData?.estimate?.math ?? null}
                     max={800}
                   />
                 </div>

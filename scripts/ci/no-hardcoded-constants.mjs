@@ -66,6 +66,22 @@ const LOCKED_FORMULA_CONSTANTS = [
   "0.19", "0.39", "0.40", "0.59", "0.60", "0.80", "0.0", "4", "2", "6",
 ];
 
+// ── (1b) SCORING functions: the 05C projection formula + its throttle. They MUST read every
+// projection constant from mastery_constants via read_projection_constants() (INV-05C-16), so NONE
+// of the projection-constant VALUES may appear as a literal in these bodies. (The mastery formula
+// uses the stricter structural allowlist above; the projection bodies have different structural forms
+// — bare 0/1 — so they get a targeted value denylist instead, which is precise and false-positive-free
+// for those bodies.) New 05C/05B scoring/formula functions MUST be added here or to FORMULA_FUNCTIONS.
+const SCORING_FUNCTIONS = new Set([
+  "compute_section_projection",
+  "bump_projection_refresh_counter",
+]);
+const PROJECTION_DENY = [
+  ["200","SECTION_MIN_SCORE"],["800","SECTION_MAX_SCORE"],["600","section-score span (MAX-MIN)"],
+  ["10","ROUND_TO step"],["25","MIN_DELTA"],["100","MAX_DELTA"],["75","delta span (MAX-MIN_DELTA)"],
+  ["500","TARGET_QUESTION_COUNT"],["40","REFRESH_EVENT_THRESHOLD"],["24","REFRESH_TIME_HOURS"],
+];
+
 // ── (2) Non-formula SQL bodies: value denylist (operational + formula) ──
 const SQL_DENY = [
   ["0.50","src weight test"],["0.30","src weight practice"],["0.20","src weight review / L1"],
@@ -105,7 +121,11 @@ function stripNonCode(body) {
     .replace(/E?'(?:''|[^'])*'/g, " ");    // string / escape-string literals
 }
 
-// Pull every CREATE FUNCTION name + its first $$...$$ body, in file order.
+// Pull every CREATE FUNCTION name + its body, DELIMITER-AGNOSTIC (PR370-CONSTANTS-001 / F-001 class):
+// PostgreSQL dollar-quoting allows any tag — $$, $func$, $body$, $anything$. The old parser only
+// matched $$...$$, so a $func$ body silently skipped to PASS (a coverage hole). We now extract the
+// `AS $tag$ … $tag$` body for ANY tag, and return body=null when we cannot — so the caller can FAIL
+// CLOSED on a guarded (formula/scoring) function we couldn't parse, rather than silently skip it.
 function namedFunctionBodies(sql) {
   const out = [];
   const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.(\w+)\s*\(/gi;
@@ -114,8 +134,14 @@ function namedFunctionBodies(sql) {
   while ((m = re.exec(sql))) marks.push({ name: m[1], idx: m.index });
   for (let i = 0; i < marks.length; i++) {
     const seg = sql.slice(marks[i].idx, i + 1 < marks.length ? marks[i + 1].idx : sql.length);
-    const body = seg.match(/\$\$([\s\S]*?)\$\$/);
-    if (body) out.push({ name: marks[i].name, body: body[1] });
+    const open = seg.match(/\bAS\s+\$(\w*)\$/i);     // body opener: AS $tag$ (tag may be empty or named)
+    if (open) {
+      const close = `$${open[1]}$`;
+      const start = open.index + open[0].length;
+      const end = seg.indexOf(close, start);
+      if (end !== -1) { out.push({ name: marks[i].name, body: seg.slice(start, end) }); continue; }
+    }
+    out.push({ name: marks[i].name, body: null });   // unparseable -> caller fails closed if guarded
   }
   return out;
 }
@@ -132,11 +158,26 @@ for (const rel of walk("supabase/migrations")) {
   if (/_ws2_config_constants\.sql$|mastery_constants|kpi_constants/.test(rel)) continue; // seeds
   const src = readFileSync(path.join(ROOT, rel), "utf8");
   for (const { name, body } of namedFunctionBodies(src)) {
+    const guarded = FORMULA_FUNCTIONS.has(name) || SCORING_FUNCTIONS.has(name);
+    if (body === null) {
+      // FAIL CLOSED: a guarded (formula/scoring) function whose body we could not parse (novel
+      // dollar-quote delimiter, etc.) turns the guard RED — "found something I must scan but couldn't",
+      // never a silent skip-to-PASS (PR370-CONSTANTS-001 inverts the discovery failure mode).
+      if (guarded) violations.push(`${rel} [${name}]: guarded function body could not be parsed (unrecognized dollar-quote delimiter?) — fail closed, it must be scannable`);
+      continue;
+    }
     if (FORMULA_FUNCTIONS.has(name)) {
       // (1) strict allowlist — fail closed on any non-structural literal.
       const residual = formulaResidual(body);
       if (residual.length)
         violations.push(`${rel} [formula ${name}]: non-structural literal(s) ${[...new Set(residual)].join(", ")} — read from mastery_constants (allowlist: structural form only)`);
+    } else if (SCORING_FUNCTIONS.has(name)) {
+      // (1b) projection scoring body — none of the projection-constant VALUES may be a literal.
+      const code = stripNonCode(body);
+      for (const [val, label] of PROJECTION_DENY) {
+        const re = new RegExp(`(?<![\\d.])${val.replace(".", "\\.")}(?![\\d])`);
+        if (re.test(code)) violations.push(`${rel} [scoring ${name}]: hardcoded ${val} (${label}) — read from read_projection_constants()`);
+      }
     } else {
       // (2) value denylist on non-formula bodies.
       const code = stripNonCode(body);
@@ -161,4 +202,4 @@ if (violations.length) {
   for (const v of [...new Set(violations)]) console.error("  " + v);
   process.exit(1);
 }
-console.log(`NO-HARDCODED-CONSTANTS: PASS (formula allowlist over ${FORMULA_FUNCTIONS.size} functions; ${LOCKED_FORMULA_CONSTANTS.length} locked constants self-tested)`);
+console.log(`NO-HARDCODED-CONSTANTS: PASS (delimiter-agnostic, fail-closed; strict allowlist over ${FORMULA_FUNCTIONS.size} formula + ${SCORING_FUNCTIONS.size} scoring functions; ${LOCKED_FORMULA_CONSTANTS.length} formula + ${PROJECTION_DENY.length} projection constants self-tested)`);
