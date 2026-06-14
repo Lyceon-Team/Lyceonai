@@ -57,6 +57,14 @@ State-vocabulary mapping (Doc 01 V8 §22 → genesis `(tier,status)`): `premium_
 `(premium, trialing)`; `premium` = `(premium, active)`; grace = `(*, past_due)`; `free` =
 `(free, *)` / `canceled` / `unpaid` / `incomplete*`. "Entitled" = `status ∈ {active,past_due,trialing}`.
 
+> **Open — HALT-10 (`canceled`-at-period-end), spec-auditor finding.** Doc 01 V8 §21 / Appendix C
+> `isStatusActive` treat `canceled` + `cancel_at_period_end` + `current_period_end > now()` as still
+> entitled. Under the Stripe-native model (HALT-7) that window keeps Stripe `status='active'`, so
+> `{active,past_due,trialing}` is complete and a `canceled` row correctly means access-ended — the
+> §21/Appendix C temporal arm is a non-Stripe-native artifact (reconcile owner-side). **This set is
+> provisional on the owner's HALT-10 ruling** (plan §11). If `status='canceled'` is instead set at
+> cancel-*request* time, `entitlement_active` needs a temporal arm and E3 below cannot hold.
+
 ## 2. The TS consumer — one definition, asserted identical
 
 The TS route layer MUST NOT re-derive entitlement. It resolves entitlement through the **one**
@@ -71,13 +79,21 @@ isEntitlementActive` is **deleted**, not re-pointed (HALT-7). All route gates
 (`requireGuardianEntitlement`, the ad-hoc `kpi-access` helper, the GAP-ID-09 ungated premium routes)
 resolve entitlement through this single definition + `canAccessFeature` over `entitlement_features`.
 
+**Canonical consumer module (platform-native, not a per-handler call).** The RPC / shared predicate is
+the *evaluator*; the canonical *consumer* is the `EntitlementService` module (Doc 01 V8 §25–§33) — "the
+single authoritative source … No feature defines its own entitlement cache, webhook handler, or check
+logic" (§25.1). Route gates call `EntitlementService`, not a raw per-request DB call. Its §25.2
+in-process cache (60s TTL) + LISTEN/NOTIFY invalidation (on Stripe webhook + profile / guardian-link
+change) is built with the transition writer (build steps 2/3) — **forward-ref**, not this contract;
+SP-25 pins only the single entitled definition that module evaluates.
+
 ## 3. Guardian mirror — unchanged by construction, honors trial by source
 
 `guardian_can_view_student(p_student_id)` already = `(active link) AND entitlement_active(student)`
 (`…_05b…sql:129–139`). Because it calls `entitlement_active`, the guardian mirror honors
 `{active,past_due,trialing}` **automatically** — no separate status set in the guardian path. A
 guardian of a `trialing` linked student sees the mirror; a guardian of a `canceled` student does not.
-This is HALT-1 + HALT-9 (intended). The six guardian-mirror RLS policies (05B/05C) are untouched.
+This is HALT-1 + HALT-9 (confirmed 2026-06-14). The six guardian-mirror RLS policies (05B/05C) are untouched.
 
 ## 4. Post-conditions (falsifiable)
 

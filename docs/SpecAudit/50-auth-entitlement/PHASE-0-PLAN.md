@@ -96,6 +96,11 @@ primitive) · **UNBUILT** (genesis-aligned flow that does not yet exist).
 - **The four-persona end-to-end RLS proof** as one gate (§2).
 - **`canAccessFeature` consuming `entitlement_features` + `entitlement_active`** as the single route
   gate (§6, closes SP-25 + GAP-ID-09 app-layer).
+- **`guardian_link_audit` table (Doc 01 V8 §35) + the `entitlement_invalidate` NOTIFY on
+  `guardian_links` status changes (§36.5)** — both spec-required and **deferred in genesis**
+  (`genesis.sql:19–21`: "`guardian_link_audit` … is a DEFERRED identity object"). The step-5 linking
+  slice must land them (every status change writes the audit row + emits NOTIFY); step-5 dependency
+  under HALT-8 (§10).
 
 ---
 
@@ -155,8 +160,9 @@ wave's machine acceptance — same "airtight proof, not asserted" bar as the gua
 
 ## 3. Google OAuth via Supabase — wiring plan
 
-Identity provider is Supabase Auth (Doc 01 V8 §6.1/§10: "OAuth: Google" is a launch method). The
-genesis identity model is canonical (`profiles.id = auth.users.id`).
+Identity provider is Supabase Auth (Doc 01 V8 §9.2 names OAuth among login methods; Google OAuth is
+live in `server/routes/google-oauth-routes.ts` + `vercel.json:11–14` — not a §6.1, which does not
+exist). The genesis identity model is canonical (`profiles.id = auth.users.id`).
 
 **Redirect flow (consume the existing shape, re-point at genesis):**
 1. `GET /api/auth/google/start` — require explicit legal consent (terms+privacy) **before** redirect
@@ -168,7 +174,8 @@ genesis identity model is canonical (`profiles.id = auth.users.id`).
 
 **Profile-on-first-login mapping:**
 - On first OAuth login Supabase creates the `auth.users` row; the server creates the **`profiles`**
-  row keyed by `auth.users.id` (Doc 01 V8 §9 step 4) — exactly one profile per human (§2 invariant).
+  row keyed by `auth.users.id` (Doc 01 V8 §9.2 OAuth login; profile bootstrap follows the §9.1
+  `profile-service.ts` mechanism) — exactly one profile per human (§2 invariant).
 - **Role is server-authoritative** = `student` on self-serve signup; never trust client/OAuth claims
   (`supabase-auth-setup.md`: "Signup and fallback profile bootstrap never assign admin").
 - Writing `profiles.date_of_birth` fires `set_profile_age_fields` → derives `age_years`/`is_under_13`.
@@ -209,10 +216,10 @@ Google console `https://<domain>/auth/google/callback`; Supabase provider callba
 - A negative CI guard: assert `SUPABASE_SERVICE_ROLE_KEY` (and any `*_SECRET`) never appears in
   `dist/public/**` (the client output dir, `vercel.json:5`).
 
-**Doc 01A Part VII (internal service auth) — consume, don't restate.** Part VII (§61–§71) is
+**Doc 01A Part VII (internal service auth) — consume, don't restate.** Part VII (§61–§70) is
 **service-to-service** HMAC (`X-Lyceon-Service-Id` / `-Timestamp` / `-Signature-V1`, timing-safe,
 `/api/internal/*`, not public) and is explicitly **"Not applicable: user-facing API requests"**
-(§68). User-facing auth here uses Supabase user auth, so Part VII is a forward-ref — it becomes
+(trailing note in §68). User-facing auth here uses Supabase user auth, so Part VII is a forward-ref — it becomes
 relevant **only if** the entitlement-transition writer (§5) is later exposed as an internal endpoint
 that the billing service calls; if so, it lives under `/api/internal/*` with Part VII HMAC. Flagged
 in HALT-5.
@@ -273,7 +280,9 @@ the same definition to fully close TS↔SQL drift."*
 
 Result: **one entitlement definition across SQL and TS**, consumed by both the guardian-mirror RLS
 and the route gate — the SP-25 close the task calls for. (SQL spec wording in Doc 05B §5.3/§6.6 stays
-owner-side WS-S; `docs/Spec` is read-only.)
+owner-side in the WS-S spec-revision lock-cycle — tracked via `gap-registry.md` GAP-SP-25 +
+`closure-plan.md`; **not** a blocking prerequisite for the SP-25 migration to apply. `docs/Spec` is
+read-only.)
 
 ---
 
@@ -341,7 +350,7 @@ owner-side WS-S; `docs/Spec` is read-only.)
 | **5 — Part VII** | **Confirmed.** Writer stays service-role-internal; Part VII HMAC wired with the billing webhook. | No `/api/internal/*` stub this wave. |
 | **6 — guardian linking** | **IN SCOPE (owner-designed).** Bidirectional, two paths: **(a) email-link** — a party enters the other's email in settings → connection link emailed → recipient clicks to connect; **(b) 6-digit code** — student portal shows a code → guardian enters it to connect. Both resolve to a `guardian_links` row transition. Treat code **and** email token as **security-sensitive credentials**: 6-digit code short-lived + single-use + rate-limited/attempt-capped (1M combos = brute-forceable); email token single-use + expiring (GAP-ID-11 precedent). Both verify link direction (guardian-is-guardian; reject self/reversed beyond `guardian_not_self`). Standard invite-flow patterns; no custom logic. | **New build slice** (credential store + flow + proof). Raises **HALT-8** (§10). |
 | **7 — topology** | **Confirmed, aggressive.** Build `server/**` to the genesis spec and **delete dead/legacy code** — replace custom forks with the standard pattern consuming the canonical primitive (Supabase-Auth-native, standard OAuth, Stripe-native entitlement; no custom workflows). The `isEntitlementActive` fork, the split-brain account model, the ad-hoc helpers: **deleted and replaced, not re-pointed.** | Deletions sequenced so consumers repoint first → CI green throughout. |
-| **8 — guardian-link credential store** | **Approved as proposed; params locked.** One `guardian_link_invites` table; secret **stored hashed, never plaintext**. **Consume the existing `usage_rate_limit_ledger`** — no forked rate-limiter. **6-digit code:** 10-min TTL, **hard 5-attempt lockout** (code invalidated after 5 fails — enforced server-side, a real lockout, **not** a soft throttle), single-use. **Email token:** 256-bit, 24h TTL, single-use. **v1 restricted to two existing registered accounts**; invite-to-unregistered deferred to a later slice. | Locks the step-5 credential store + rate-limit reuse + the linking-flow proof params. |
+| **8 — guardian-link credential store** | **Approved as proposed; params locked.** One `guardian_link_invites` table; secret **stored hashed, never plaintext**. **Consume the existing canonical `rate_limit_ledger`** (genesis.sql:310; Doc 01A §41) — no forked rate-limiter. **6-digit code:** 10-min TTL, **hard 5-attempt lockout** (code invalidated after 5 fails — enforced server-side, a real lockout, **not** a soft throttle), single-use. **Email token:** 256-bit, 24h TTL, single-use. **v1 restricted to two existing registered accounts**; invite-to-unregistered deferred to a later slice. | Locks the step-5 credential store + rate-limit reuse + the linking-flow proof params. |
 | **9 — `trialing` on guardian mirror** | **Confirmed.** `trialing` flows to the guardian mirror via single-source `entitlement_active` — automatic, no exclusion. | Guardian of a `trialing` linked student sees the mirror; asserted by the `trialing` persona in the §2 proof. |
 
 **Branch policy (owner, 2026-06-14):** feature branches cut from **`cleanup`**; PRs target **`cleanup`**, not `main`. (This Phase-0 doc already landed in both via #373/#374.)
@@ -389,13 +398,20 @@ Owner runs all live apply (migration, Vercel env, OAuth redirect URIs).
      **`secret_hash`** (hash of the code/token — **stored hashed, never plaintext**; GAP-ID-11
      bearer-credential precedent), `expires_at`, `consumed_at`, `attempt_count`, `max_attempts`,
      `created_at`.
-   - **Rate limiting:** **consume the existing `usage_rate_limit_ledger`** — **no forked
-     rate-limiter.**
+   - **Rate limiting:** **consume the existing canonical `rate_limit_ledger`** (genesis.sql:310;
+     Doc 01A §41, via the `RateLimitLedger` service §39–§47) — **no forked rate-limiter.**
+     *(Corrected 2026-06-14 from the proposed `usage_rate_limit_ledger`, a pre-recut legacy artifact
+     genesis did not recreate; the ruling's intent — "consume the existing ledger, no fork" — is
+     preserved by pointing at the canonical genesis table.)*
    - **6-digit code:** **10-min TTL; hard 5-attempt lockout** — the code is **invalidated after 5
      failed attempts**, enforced **server-side as a real lockout, not a soft throttle**; **single-use.**
    - **Email token:** **256-bit; 24h TTL; single-use.**
    - **v1 scope:** **two existing registered accounts only**; invite-to-unregistered **deferred to a
      later slice.**
+   - **Dependency (spec-auditor):** the slice also lands `guardian_link_audit` (Doc 01 V8 §35) + the
+     §36.5 `entitlement_invalidate` NOTIFY on `guardian_links` status changes — both **deferred in
+     genesis** (`genesis.sql:19–21`); the linking-flow proof asserts the audit row + NOTIFY on each
+     transition.
    - Both paths verify link **direction** (guardian-is-guardian; reject self/reversed beyond
      `guardian_not_self`). These params are the step-5 build spec and the linking-flow proof asserts
      them (TTL expiry, the 5-fail lockout invalidating the code, single-use, reversed/self rejection).
@@ -405,3 +421,23 @@ Owner runs all live apply (migration, Vercel env, OAuth redirect URIs).
    guardian gate calls the same fn). Step 1 edits the landed, owner-ruled canonical primitive and
    re-runs the guardian proof with a `trialing` persona (guardian of a trialing linked student →
    visible; guardian of a canceled student → empty).
+
+## 11. HALT surfaced by the pre-build spec-auditor pass (OPEN — needs ruling before SP-25 builds)
+
+10. **HALT-10 — `canceled`-at-period-end entitlement.** Doc 01 V8 §21 + Appendix C `isStatusActive`
+    treat a `canceled` subscription with `cancel_at_period_end = true` AND `current_period_end > now()`
+    as **still entitled** until the period ends. The canonical set `{active,past_due,trialing}` is a
+    pure `status IN (…)` filter and **cannot** express that temporal case; adding it would force a
+    temporal arm (`OR status='canceled' AND cancel_at_period_end AND current_period_end > now()`),
+    which breaks the clean status-set predicate **and** makes post-condition **E3 (index ≡ predicate)
+    impossible** — a partial index cannot reference `now()`.
+    **Analysis (Stripe-native, HALT-7):** a cancel-at-period-end subscription keeps Stripe
+    `status='active'` (with `cancel_at_period_end=true`) until the period actually ends, when
+    `customer.subscription.deleted` fires and status flips to `canceled`. So the paid-but-canceling
+    window is already `active` (entitled), and a `canceled` row only exists once access should end
+    (not entitled) — the §21/Appendix C temporal arm describes a **non-Stripe-native** model and is
+    moot here. **Lean:** keep `{active,past_due,trialing}`; rely on Stripe-native keeping status
+    `active` through the paid period; reconcile Doc 01 V8 §21 / Appendix C `isStatusActive` owner-side
+    (WS-S, `docs/Spec` read-only). **Object only if** Lyceon sets `status='canceled'` at
+    cancel-*request* time rather than at period end — then `entitlement_active` needs the temporal arm
+    and E3 must be relaxed to a non-index-backed predicate.
