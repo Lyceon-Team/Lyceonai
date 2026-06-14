@@ -330,11 +330,76 @@ owner-side WS-S; `docs/Spec` is read-only.)
 
 ---
 
-## Build order (only after plan approval + HALT rulings)
+## 8. HALT rulings (owner, 2026-06-14) — all 7 ruled; scope expanded
 
-1. Lock HALT-1 (entitled set) → 2. SP-25 single definition + parity CI (§6) → 3. transition writer
-   + RLS consumption (§5) → 4. re-point `server/**` auth/entitlement onto genesis (§1b) →
-   5. OAuth + DOB-enforcement onboarding (§3) → 6. the four-persona end-to-end proof, both suites
-   (§2) → 7. `/grill-me` + `spec-auditor` before declaring complete. Each step: contract-first →
-   implement → spec-auditor grill → tests → CI; `pnpm -s run build && pnpm test`; genesis-fresh-apply
-   for any genesis-extending migration. Owner runs live apply (migration, Vercel env, redirect URIs).
+| HALT | Ruling | Scope effect |
+|---|---|---|
+| **1 — entitled set** | **`{active, past_due, trialing}`.** Launch ships a 7-day **Stripe-native** trial (no custom trial logic). This wave makes `trialing` a first-class entitled state (writer accepts it; RLS + route gates honor it). | Edits the landed canonical `entitlement_active` + `idx_entitlements_active` to add `trialing`; guardian-mirror then honors `trialing` by construction; re-proof with a trialing persona. Trial *mechanics* (`trial_period_days`, `trial_will_end`, trial→active/canceled) = **FWD-AE-01** (billing). |
+| **2 — student-self layer** | **Confirmed.** RLS identity-only for student-self; the route layer owns the entitlement gate. | No change to genesis student-self RLS; §2 proof asserts both layers. |
+| **3 — DOB point** | **Confirmed, soft-gate.** Signup surfaces DOB; **server-side** blocks feature access until DOB persisted; under-13 → consent before access. The 3-dial picker is a frontend slice consuming the gate; default = `current_date − 13 years` computed **dynamically** (never hardcoded — it drifts). | OAuth-complete-but-no-DOB → blocked persona stands. Birthday-recompute scheduler → WS-6. |
+| **4 — lifecycle split** | **Confirmed.** State + writer + RLS now; Stripe emit (incl. trial-start) → billing. | As §5 / FWD-AE-01. |
+| **5 — Part VII** | **Confirmed.** Writer stays service-role-internal; Part VII HMAC wired with the billing webhook. | No `/api/internal/*` stub this wave. |
+| **6 — guardian linking** | **IN SCOPE (owner-designed).** Bidirectional, two paths: **(a) email-link** — a party enters the other's email in settings → connection link emailed → recipient clicks to connect; **(b) 6-digit code** — student portal shows a code → guardian enters it to connect. Both resolve to a `guardian_links` row transition. Treat code **and** email token as **security-sensitive credentials**: 6-digit code short-lived + single-use + rate-limited/attempt-capped (1M combos = brute-forceable); email token single-use + expiring (GAP-ID-11 precedent). Both verify link direction (guardian-is-guardian; reject self/reversed beyond `guardian_not_self`). Standard invite-flow patterns; no custom logic. | **New build slice** (credential store + flow + proof). Raises **HALT-8** (§10). |
+| **7 — topology** | **Confirmed, aggressive.** Build `server/**` to the genesis spec and **delete dead/legacy code** — replace custom forks with the standard pattern consuming the canonical primitive (Supabase-Auth-native, standard OAuth, Stripe-native entitlement; no custom workflows). The `isEntitlementActive` fork, the split-brain account model, the ad-hoc helpers: **deleted and replaced, not re-pointed.** | Deletions sequenced so consumers repoint first → CI green throughout. |
+
+**Branch policy (owner, 2026-06-14):** feature branches cut from **`cleanup`**; PRs target **`cleanup`**, not `main`. (This Phase-0 doc already landed in both via #373/#374.)
+
+## 9. Re-confirmed build order (expanded scope — guardian-linking is now a real slice)
+
+Each step: **contract-first → implement → spec-auditor → Codex → tests → CI**;
+`pnpm -s run build && pnpm test`; genesis-fresh-apply for any genesis-extending migration.
+Owner runs all live apply (migration, Vercel env, OAuth redirect URIs).
+
+0. **✅ HALT rulings locked (§8).**
+1. **SP-25 — single entitlement definition (LEADS; unblocks every gate).** Canonical set
+   `{active, past_due, trialing}`: `CREATE OR REPLACE entitlement_active` + rebuild
+   `idx_entitlements_active` (new migration; both byte-identical sets); TS consumes the one
+   definition (RPC / shared predicate + parity gate); **delete** `isEntitlementActive` + the
+   `entitlement.plan` reads; re-run the guardian gate proof with a `trialing` persona.
+   → contract: `contracts/auth-entitlement-sp25.contract.md` (this PR).
+2. **Entitlement transition writer + RLS consumption.** Service-role-internal, idempotent:
+   create → `trialing` → `active` → `past_due`/grace → `canceled`. Settable directly so the proof
+   can plant entitlement state without Stripe. Stripe emit = FWD-AE-01.
+3. **Re-point + delete legacy `server/**`** auth/entitlement onto genesis (Supabase-Auth-native;
+   delete split-brain account model + ad-hoc premium helpers + dead bearer/csrf). Deletions only
+   after consumers repoint (CI green throughout).
+4. **OAuth + DOB soft-gate onboarding.** Server-side gate (OAuth-complete-but-no-DOB → blocked;
+   under-13 → consent). Frontend 3-dial picker (default `current_date − 13y`, dynamic).
+   Birthday recompute → WS-6.
+5. **Guardian-linking slice (NEW).** Both paths (email-link + 6-digit code) → `guardian_links`
+   transition; credential store + single-use/expiry/rate-limit/attempt-cap; direction +
+   self/reverse rejection. Depends on HALT-8 ruling.
+6. **The two load-bearing proofs (acceptance):**
+   (a) **four-persona end-to-end RLS proof** — both suites, airtight-plant (§2), incl. the
+   `trialing` persona; (b) **guardian-linking flow proof** — both paths create a valid
+   `guardian_links` row; the code is rate-limited/single-use; reversed/self links rejected.
+7. **`/grill-me` + `spec-auditor` + Codex** before declaring complete.
+
+## 10. New HALTs surfaced by the expanded scope
+
+8. **HALT-8 — guardian-link credential store + rate-limit primitive (NEW; blocks step 5).** Genesis
+   has **no** store for the 6-digit code or the email connection token (`student_link_code` was a
+   dropped legacy column, `RESEED-MAPPING.md:97`); `guardian_links` is the *result* state machine,
+   not the credential store. Need a canonical invite/credential table feeding the `guardian_links`
+   transition. **Proposed `guardian_link_invites`:** `id`, `direction`
+   (`guardian_invites_student` | `student_invites_guardian`), `initiator_profile_id`, `channel`
+   (`email_token` | `code`), `target_email` (email path), **`secret_hash`** (hash of the code/token —
+   **never store plaintext**; GAP-ID-11 bearer-credential precedent), `expires_at`, `consumed_at`,
+   `attempt_count`, `max_attempts`, `created_at`. **Rule:** (a) table shape / one table for both
+   channels vs two; (b) **which rate-limit primitive to consume** — the existing
+   `usage_rate_limit_ledger` / `rate-limit-sql` substrate (consume, don't fork) vs a dedicated
+   counter; (c) parameters — proposed **6-digit code, 10-min TTL, 5-attempt cap, single-use**; email
+   token **256-bit, 24h TTL, single-use**; (d) **email-to-unregistered-address** behaviour — does an
+   email-link to a not-yet-registered person create a pending invite (in scope), or is linking
+   restricted to two existing accounts (defer cross-signup invite)? **Lean:** one
+   `guardian_link_invites` table (both channels, hashed secret); consume the existing rate-limit
+   ledger; the proposed TTL/attempt parameters; restrict v1 to two existing accounts (defer
+   invite-to-unregistered to a later slice).
+
+9. **HALT-9 — `trialing` consequence on the landed guardian-mirror (CONFIRM; low ambiguity).** Adding
+   `trialing` to `entitlement_active` necessarily makes a **guardian see a `trialing` linked
+   student's mirror** (single source — the guardian gate calls the same fn). HALT-1's "RLS/route
+   gates honor it" already implies this; flagging only because step 1 **edits a landed,
+   owner-ruled (2026-06-14 grace-inclusive) canonical primitive** and re-runs the guardian proof with
+   a trialing persona. **Lean:** intended — proceed; object only if the guardian mirror should
+   exclude trial students.
