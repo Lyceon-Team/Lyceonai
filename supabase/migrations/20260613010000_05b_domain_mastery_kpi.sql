@@ -114,19 +114,33 @@ $$;
 REVOKE ALL ON FUNCTION public.entitlement_active(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.entitlement_active(uuid) TO authenticated, service_role;
 
+-- @spec [Doc-01 guardian trust §35 / Doc-05B §5.3 / Parent §11.1] THE ONE guardian-mirror gate. A
+-- guardian may read a student's mirror surface ONLY when BOTH hold (CLAUDE.md non-negotiable guardian
+-- model): (a) the requesting user IS the guardian linked to THIS student via the server-side
+-- guardian_links record (status='active') — the load-bearing security boundary, resolved from the link
+-- record alone, NEVER from a client-asserted id; AND (b) entitlement_active(p_student_id) (grace-inclusive).
+-- Every guardian-mirror policy (here + 05C + the future calendar surface) consumes this single boolean
+-- oracle — no parallel guardian logic, ever. STABLE SECURITY DEFINER (cross-row link/entitlement check
+-- without a broad read grant); returns only a boolean. LYCEON-MIGRATION-REVIEWED
+CREATE OR REPLACE FUNCTION public.guardian_can_view_student(p_student_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.guardian_links gl
+    WHERE gl.guardian_profile_id = auth.uid()        -- the requesting user is the guardian on the link
+      AND gl.student_profile_id  = p_student_id       -- linked to THIS specific student (server-side record)
+      AND gl.status              = 'active'           -- active link (Doc 01 guardian trust; not pending/revoked)
+  ) AND public.entitlement_active(p_student_id);       -- AND the student's entitlement is active (grace-inclusive)
+$$;
+REVOKE ALL ON FUNCTION public.guardian_can_view_student(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.guardian_can_view_student(uuid) TO authenticated, service_role;
+
 -- student_domain_mastery is the GUARDIAN-readable domain mastery surface (the critical
 -- difference from 05A's student_skill_mastery, which has NO guardian policy).
 CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery
   FOR SELECT TO authenticated USING (student_id = auth.uid());
 CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery
   FOR SELECT TO authenticated USING (
-    student_id IN (
-      SELECT gl.student_profile_id
-      FROM   public.guardian_links gl
-      WHERE  gl.guardian_profile_id = auth.uid()
-        AND  gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 -- §5.2/§5.4 column GRANTs: mastery_level + identity + computed_at to student & guardian
@@ -261,22 +275,14 @@ CREATE POLICY student_section_kpi_student_read ON public.student_section_kpi
   FOR SELECT TO authenticated USING (student_id = auth.uid());
 CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi
   FOR SELECT TO authenticated USING (
-    student_id IN (
-      SELECT gl.student_profile_id FROM public.guardian_links gl
-      WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 CREATE POLICY student_domain_kpi_student_read ON public.student_domain_kpi
   FOR SELECT TO authenticated USING (student_id = auth.uid());
 CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi
   FOR SELECT TO authenticated USING (
-    student_id IN (
-      SELECT gl.student_profile_id FROM public.guardian_links gl
-      WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 -- student_skill_kpi: STUDENT-SELF ONLY — NO guardian policy (§2.4; denial by absence,
@@ -288,11 +294,7 @@ CREATE POLICY student_overall_kpi_student_read ON public.student_overall_kpi
   FOR SELECT TO authenticated USING (student_id = auth.uid());
 CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi
   FOR SELECT TO authenticated USING (
-    student_id IN (
-      SELECT gl.student_profile_id FROM public.guardian_links gl
-      WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 -- §6.7 column GRANTs to authenticated (engagement metrics only; audit cols admin/service only).

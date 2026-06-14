@@ -483,13 +483,7 @@ CREATE POLICY student_section_projections_guardian_read
   ON public.student_section_projections
   FOR SELECT TO authenticated
   USING (
-    student_id IN (
-      SELECT gl.student_profile_id
-      FROM   public.guardian_links gl
-      WHERE  gl.guardian_profile_id = auth.uid()
-        AND  gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 -- §7.4 snapshots: student self-read.
@@ -503,13 +497,7 @@ CREATE POLICY projection_snapshots_guardian_read
   ON public.student_section_projection_snapshots
   FOR SELECT TO authenticated
   USING (
-    student_id IN (
-      SELECT gl.student_profile_id
-      FROM   public.guardian_links gl
-      WHERE  gl.guardian_profile_id = auth.uid()
-        AND  gl.status = 'active'
-        AND  public.entitlement_active(gl.student_profile_id)
-    )
+    public.guardian_can_view_student(student_id)
   );
 
 -- §7.4 WRITE: no INSERT/UPDATE/DELETE policy for authenticated on either projection table —

@@ -360,3 +360,13 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
+
+      - name: Guardian-mirror gates (airtight link + entitlement + view-only + carve-outs)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/guardian-mirror-gates.sh

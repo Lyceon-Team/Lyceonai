@@ -951,6 +951,23 @@ $$;
 
 
 --
+-- Name: guardian_can_view_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_can_view_student(p_student_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.guardian_links gl
+    WHERE gl.guardian_profile_id = auth.uid()        -- the requesting user is the guardian on the link
+      AND gl.student_profile_id  = p_student_id       -- linked to THIS specific student (server-side record)
+      AND gl.status              = 'active'           -- active link (Doc 01 guardian trust; not pending/revoked)
+  ) AND public.entitlement_active(p_student_id);       -- AND the student's entitlement is active (grace-inclusive)
+$$;
+
+
+--
 -- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5214,9 +5231,7 @@ ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 -- Name: student_section_projection_snapshots projection_snapshots_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5349,9 +5364,7 @@ ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
 -- Name: student_domain_kpi student_domain_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5371,9 +5384,7 @@ ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
 -- Name: student_domain_mastery student_domain_mastery_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5399,9 +5410,7 @@ ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 -- Name: student_overall_kpi student_overall_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5427,9 +5436,7 @@ ALTER TABLE public.student_section_kpi ENABLE ROW LEVEL SECURITY;
 -- Name: student_section_kpi student_section_kpi_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5455,9 +5462,7 @@ ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
 -- Name: student_section_projections student_section_projections_guardian_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
-   FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
+CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING (public.guardian_can_view_student(student_id));
 
 
 --
@@ -5719,6 +5724,15 @@ GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section te
 REVOKE ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_can_view_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.guardian_can_view_student(p_student_id uuid) TO service_role;
 
 
 --
