@@ -30,7 +30,7 @@
 -- @adaptation GUARDIAN-RLS: Doc 05B §5.3/§6.6 reference guardian_student_links(guardian_id,
 --   linked_student_id, link_active) + student_entitlements(student_id, active); the genesis
 --   identity model (Doc 01 V8) names guardian_links(guardian_profile_id, student_profile_id,
---   status='active') + entitlements(profile_id, status = 'active'). NARROWED to active-only (spec §5.3 active=true; safer guardian posture; past_due grace excluded — owner may widen). LYCEON-MIGRATION-REVIEWED. The guardian
+--   status='active') + entitlements(profile_id, status IN ('active','past_due') via the canonical public.entitlement_active() fn). GRACE-INCLUSIVE per owner ruling 2026-06-14 — the guardian view is an exact view-only mirror, so it shares the student's entitlement-active gate (single source, can't drift; SP-25 literal-vs-intent). LYCEON-MIGRATION-REVIEWED. The guardian
 --   read predicate is reconciled to those tables, preserving the Parent §11.1 semantics:
 --   active link AND active student entitlement. auth.uid() = the guardian profile id.
 --
@@ -95,6 +95,25 @@ CREATE INDEX IF NOT EXISTS idx_student_domain_mastery_computed_at
 -- §5.3 RLS — student-self read + guardian read (active link AND active entitlement, §11.1).
 -- (RLS already enabled in 20260610010000; the shell had no read policies. Single writer is
 --  refresh_domain_mastery via service_role, which bypasses RLS — no write policy by design.)
+-- @spec [Doc-05B §5.3 / Parent §11.1] CANONICAL "student entitlement active" predicate — the SINGLE
+-- source every guardian-mirror RLS policy (here + 05C + any future calendar mirror) consumes, so the
+-- guardian gate cannot drift into a different definition than the one that gates the student's own
+-- access. Owner ruling 2026-06-14: GRACE-INCLUSIVE — the guardian view is an exact view-only mirror of
+-- the student, so it uses the same entitlement-active definition the student does (active OR past_due,
+-- matching genesis idx_entitlements_active). SP-25: Doc 05B §5.3's literal "active = true" is the
+-- entitled/grace-inclusive INTENT (literal-vs-intent reconciliation flagged for the owner spec pass).
+-- SECURITY DEFINER so a guardian can test a LINKED student's entitlement (cross-row) without a broad
+-- entitlements read grant; returns only a boolean. LYCEON-MIGRATION-REVIEWED
+CREATE OR REPLACE FUNCTION public.entitlement_active(p_profile_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.entitlements e
+    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due')
+  );
+$$;
+REVOKE ALL ON FUNCTION public.entitlement_active(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.entitlement_active(uuid) TO authenticated, service_role;
+
 -- student_domain_mastery is the GUARDIAN-readable domain mastery surface (the critical
 -- difference from 05A's student_skill_mastery, which has NO guardian policy).
 CREATE POLICY student_domain_mastery_student_read ON public.student_domain_mastery
@@ -106,11 +125,7 @@ CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mast
       FROM   public.guardian_links gl
       WHERE  gl.guardian_profile_id = auth.uid()
         AND  gl.status = 'active'
-        AND  EXISTS (
-          SELECT 1 FROM public.entitlements e
-          WHERE  e.profile_id = gl.student_profile_id
-            AND  e.status = 'active'
-        )
+        AND  public.entitlement_active(gl.student_profile_id)
     )
   );
 
@@ -249,8 +264,7 @@ CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi
     student_id IN (
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
+        AND  public.entitlement_active(gl.student_profile_id)
     )
   );
 
@@ -261,8 +275,7 @@ CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi
     student_id IN (
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
+        AND  public.entitlement_active(gl.student_profile_id)
     )
   );
 
@@ -278,8 +291,7 @@ CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi
     student_id IN (
       SELECT gl.student_profile_id FROM public.guardian_links gl
       WHERE gl.guardian_profile_id = auth.uid() AND gl.status = 'active'
-        AND EXISTS (SELECT 1 FROM public.entitlements e
-                    WHERE e.profile_id = gl.student_profile_id AND e.status = 'active')
+        AND  public.entitlement_active(gl.student_profile_id)
     )
   );
 

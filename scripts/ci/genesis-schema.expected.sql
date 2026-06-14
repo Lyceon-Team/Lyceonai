@@ -936,6 +936,21 @@ $$;
 
 
 --
+-- Name: entitlement_active(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.entitlement_active(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.entitlements e
+    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due')
+  );
+$$;
+
+
+--
 -- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5201,9 +5216,7 @@ ALTER TABLE public.projection_refresh_outbox ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY projection_snapshots_guardian_read ON public.student_section_projection_snapshots FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5338,9 +5351,7 @@ ALTER TABLE public.student_domain_kpi ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_domain_kpi_guardian_read ON public.student_domain_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5362,9 +5373,7 @@ ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_domain_mastery_guardian_read ON public.student_domain_mastery FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5392,9 +5401,7 @@ ALTER TABLE public.student_overall_kpi ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_overall_kpi_guardian_read ON public.student_overall_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5422,9 +5429,7 @@ ALTER TABLE public.student_section_kpi ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_section_kpi_guardian_read ON public.student_section_kpi FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5452,9 +5457,7 @@ ALTER TABLE public.student_section_projections ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY student_section_projections_guardian_read ON public.student_section_projections FOR SELECT TO authenticated USING ((student_id IN ( SELECT gl.student_profile_id
    FROM public.guardian_links gl
-  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND (EXISTS ( SELECT 1
-           FROM public.entitlements e
-          WHERE ((e.profile_id = gl.student_profile_id) AND (e.status = 'active'::text))))))));
+  WHERE ((gl.guardian_profile_id = auth.uid()) AND (gl.status = 'active'::text) AND public.entitlement_active(gl.student_profile_id)))));
 
 
 --
@@ -5707,6 +5710,15 @@ GRANT ALL ON FUNCTION public.compute_section_projection(p_student_id uuid, p_sec
 
 REVOKE ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION entitlement_active(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_role;
 
 
 --
