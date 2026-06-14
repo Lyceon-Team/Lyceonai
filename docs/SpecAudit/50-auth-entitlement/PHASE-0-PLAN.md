@@ -339,7 +339,7 @@ read-only.)
 
 ---
 
-## 8. HALT rulings (owner, 2026-06-14) — all 9 ruled; scope expanded
+## 8. HALT rulings (owner, 2026-06-14) — all 10 ruled; scope expanded
 
 | HALT | Ruling | Scope effect |
 |---|---|---|
@@ -352,6 +352,7 @@ read-only.)
 | **7 — topology** | **Confirmed, aggressive.** Build `server/**` to the genesis spec and **delete dead/legacy code** — replace custom forks with the standard pattern consuming the canonical primitive (Supabase-Auth-native, standard OAuth, Stripe-native entitlement; no custom workflows). The `isEntitlementActive` fork, the split-brain account model, the ad-hoc helpers: **deleted and replaced, not re-pointed.** | Deletions sequenced so consumers repoint first → CI green throughout. |
 | **8 — guardian-link credential store** | **Approved as proposed; params locked.** One `guardian_link_invites` table; secret **stored hashed, never plaintext**. **Consume the existing canonical `rate_limit_ledger`** (genesis.sql:310; Doc 01A §41) — no forked rate-limiter. **6-digit code:** 10-min TTL, **hard 5-attempt lockout** (code invalidated after 5 fails — enforced server-side, a real lockout, **not** a soft throttle), single-use. **Email token:** 256-bit, 24h TTL, single-use. **v1 restricted to two existing registered accounts**; invite-to-unregistered deferred to a later slice. | Locks the step-5 credential store + rate-limit reuse + the linking-flow proof params. |
 | **9 — `trialing` on guardian mirror** | **Confirmed.** `trialing` flows to the guardian mirror via single-source `entitlement_active` — automatic, no exclusion. | Guardian of a `trialing` linked student sees the mirror; asserted by the `trialing` persona in the §2 proof. |
+| **10 — `canceled`-at-period-end** | **Confirmed — Stripe-native; set complete, no temporal arm.** A cancel-at-period-end subscription stays `status='active'` until the period genuinely ends; `canceled` appears only once access should end. `{active,past_due,trialing}` is the complete entitled set; **E3's partial index stands.** Doc 01 V8 §21 / Appendix C `isStatusActive` temporal logic is a spec artifact reconciled owner-side (WS-S), not a code change. | Closes HALT-10; **entitlement set fully locked.** Detail in §11. |
 
 **Branch policy (owner, 2026-06-14):** feature branches cut from **`cleanup`**; PRs target **`cleanup`**, not `main`. (This Phase-0 doc already landed in both via #373/#374.)
 
@@ -422,7 +423,7 @@ Owner runs all live apply (migration, Vercel env, OAuth redirect URIs).
    re-runs the guardian proof with a `trialing` persona (guardian of a trialing linked student →
    visible; guardian of a canceled student → empty).
 
-## 11. HALT surfaced by the pre-build spec-auditor pass (OPEN — needs ruling before SP-25 builds)
+## 11. HALT surfaced by the pre-build spec-auditor pass — RESOLVED (owner, 2026-06-14)
 
 10. **HALT-10 — `canceled`-at-period-end entitlement.** Doc 01 V8 §21 + Appendix C `isStatusActive`
     treat a `canceled` subscription with `cancel_at_period_end = true` AND `current_period_end > now()`
@@ -436,8 +437,9 @@ Owner runs all live apply (migration, Vercel env, OAuth redirect URIs).
     `customer.subscription.deleted` fires and status flips to `canceled`. So the paid-but-canceling
     window is already `active` (entitled), and a `canceled` row only exists once access should end
     (not entitled) — the §21/Appendix C temporal arm describes a **non-Stripe-native** model and is
-    moot here. **Lean:** keep `{active,past_due,trialing}`; rely on Stripe-native keeping status
-    `active` through the paid period; reconcile Doc 01 V8 §21 / Appendix C `isStatusActive` owner-side
-    (WS-S, `docs/Spec` read-only). **Object only if** Lyceon sets `status='canceled'` at
-    cancel-*request* time rather than at period end — then `entitlement_active` needs the temporal arm
-    and E3 must be relaxed to a non-index-backed predicate.
+    moot here. **RULED (2026-06-14): confirmed Stripe-native.** A cancel-at-period-end subscription
+    stays `status='active'` until the period genuinely ends; `canceled` appears only once access
+    should end. `{active,past_due,trialing}` is the **complete** entitled set — **no temporal arm;
+    E3's partial index stands.** Doc 01 V8 §21 / Appendix C `isStatusActive` temporal logic is a spec
+    artifact reconciled owner-side (WS-S, `docs/Spec` read-only), not a code change. **HALT-10 CLOSED —
+    the entitled set is fully locked.**

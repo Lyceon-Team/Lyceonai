@@ -57,13 +57,12 @@ State-vocabulary mapping (Doc 01 V8 §22 → genesis `(tier,status)`): `premium_
 `(premium, trialing)`; `premium` = `(premium, active)`; grace = `(*, past_due)`; `free` =
 `(free, *)` / `canceled` / `unpaid` / `incomplete*`. "Entitled" = `status ∈ {active,past_due,trialing}`.
 
-> **Open — HALT-10 (`canceled`-at-period-end), spec-auditor finding.** Doc 01 V8 §21 / Appendix C
+> **HALT-10 (`canceled`-at-period-end) — RESOLVED 2026-06-14.** Doc 01 V8 §21 / Appendix C
 > `isStatusActive` treat `canceled` + `cancel_at_period_end` + `current_period_end > now()` as still
-> entitled. Under the Stripe-native model (HALT-7) that window keeps Stripe `status='active'`, so
-> `{active,past_due,trialing}` is complete and a `canceled` row correctly means access-ended — the
-> §21/Appendix C temporal arm is a non-Stripe-native artifact (reconcile owner-side). **This set is
-> provisional on the owner's HALT-10 ruling** (plan §11). If `status='canceled'` is instead set at
-> cancel-*request* time, `entitlement_active` needs a temporal arm and E3 below cannot hold.
+> entitled. **Owner ruling: confirmed Stripe-native** — that window keeps Stripe `status='active'`, so
+> `{active,past_due,trialing}` is the **complete** entitled set and a `canceled` row correctly means
+> access-ended. **No temporal arm; E3 stands.** The §21/Appendix C temporal logic is a spec artifact
+> reconciled owner-side (WS-S, `docs/Spec` read-only). The entitled set is now fully locked.
 
 ## 2. The TS consumer — one definition, asserted identical
 
