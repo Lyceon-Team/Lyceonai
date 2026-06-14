@@ -7,6 +7,7 @@
 > question `.sql` produced, no inserts here.**
 >
 > HEAD on `cleanup`. Companion artifacts in this folder:
+>
 > - `../50-questions-ingestion/grid-in-extension.sql` — the genesis-extending migration (written, not applied)
 > - `../../../shared/question-ingestion-qa.ts` — the pure QA validator (the moat)
 > - `../../../tests/question-ingestion-qa.contract.test.ts` — its contract tests
@@ -51,7 +52,8 @@ either (the filename "Math-39" index repeats across cells), confirming the legac
 a key.
 
 **Filename encoding — the §10 contract holds, with a real Math/RW asymmetry:**
-- RW: `<Difficulty> - <Skill> - <Domain> - Reading and Writing - <idx>.pdf` (5 ` - ` fields).
+
+- RW: `<Difficulty> - <Skill> - <Domain> - Reading and Writing - <idx>.pdf` (5 `-` fields).
 - Math: `<Difficulty> - <Skill> - <Domain> - Math[-<idx>].pdf` (section+idx fused as
   `Math-28`, sometimes bare `Math`). The parser must special-case the Math tail; non-matching
   names route to manual review (per §10).
@@ -63,6 +65,7 @@ a key.
 
 **File type & extractability — heterogeneous, the hard surprise.** All PDFs, but content is
 largely **rendered as images**, not text:
+
 - The algebra file has **178 embedded images** for 59 questions; `pdftotext` on its first
   question returns only `Question ID fa80893a` + the metadata-table labels — **the stem,
   options, and math are NOT in the text layer.** Naive text extraction loses the question.
@@ -84,8 +87,8 @@ x, not 3x+8."). So `explanation NOT NULL` is satisfiable from source — **HALT-
 **Grid-ins: PRESENT, intermixed, and the equivalence set is IN-SOURCE.** Within the single
 Linear-equations file, MCQ items (`Correct Answer: C`) sit next to grid-ins
 (`Correct Answer: 17` / `130` / `40`). Multi-form grid-ins carry the accepted set verbatim:
-CB item `2f0a43b2` → `Correct Answer: .2, 1/5` with rationale *"Note that 1/5 and .2 are
-examples of ways to enter a correct answer."* We therefore **do not invent** grid-in
+CB item `2f0a43b2` → `Correct Answer: .2, 1/5` with rationale _"Note that 1/5 and .2 are
+examples of ways to enter a correct answer."_ We therefore **do not invent** grid-in
 equivalence — we match CB's, and the source even hands us the variant list (§3).
 
 **5 grounded sample shapes** (CB ids, from the Linear-equations file):
@@ -106,27 +109,27 @@ the §3 extension. Real names: `id` (minted), `section` (M/RW), `skill_codes TEX
 `item_type` (new), `correct_variants` (new). The candidate shape the QA validator parses is
 `ingestionCandidateSchema` in `shared/question-ingestion-qa.ts`.
 
-| genesis column | from the source | rule |
-|---|---|---|
-| `id` | — | **minted at promotion** (§14), `'SAT'‖section‖source_type‖6×[A-Z0-9]`, collision-checked. CB id never lands here. |
-| `item_type` | observed shape | options+A–D key ⇒ `mcq`; no options + numeric/multi-form answer ⇒ `grid_in` |
-| `section` | filename `Math`/`Reading and Writing` | `→ M / RW` (canonical normalizer) |
-| `source_type` | fixed | **`1`** (official CB) for this whole wave |
-| `domain` | filename `<Domain>` | map synonyms → canonical domain |
-| `skill_codes` | filename `<Skill>` | map CB skill name → Lyceon skill code; wrap as 1-elem array |
-| `difficulty` | filename `<Difficulty>` | `Easy/Medium/Hard → 1/2/3` |
-| `stem` | extracted (OCR/vision for Math) | math as inline `$…$` LaTeX (§4) |
-| `passage` | RW passage/table text | NULL for Math; required+integrity-checked for RW (§5) |
-| `options` | A–D options (mcq only) | `[{key,text}]`; **NULL for grid_in** |
-| `correct_answer` | CB "Correct Answer" | mcq: the `A–D` key; grid_in: the canonical value (e.g. `0.2`) |
-| `correct_variants` | CB variant list / single value | grid_in only; the accepted set incl. `correct_answer` (§3) |
-| `explanation` | CB **Rationale** | present in-source; ≥20 chars (§5) |
-| `option_metadata` | per-distractor rationales | OPTIONAL for source-derived; prose, not §18 error_taxonomy (CB carries no taxonomy labels) — leave null or owner-derive |
-| `assets` | embedded figures (geometry/data) | typed JSON array (§4); NULL when no figure |
-| `source_lineage` | **CB id + file** | `{provenance:'College Board official', cb_question_id, source_filename, source_page, extracted_at, extractor_version}` — the moat's provenance |
-| `generation_attribution` | — | NULL (this is the AI-gen field; N/A for source_type=1) |
-| `estimated_time_seconds` | not in source | per-(section,difficulty) default or owner-set (HALT-6 ruling: defaults) |
-| `status` | lifecycle | insert `qa` → owner promotes `published` |
+| genesis column           | from the source                       | rule                                                                                                                                           |
+| ------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                     | —                                     | **minted at promotion** (§14), `'SAT'‖section‖source_type‖6×[A-Z0-9]`, collision-checked. CB id never lands here.                              |
+| `item_type`              | observed shape                        | options+A–D key ⇒ `mcq`; no options + numeric/multi-form answer ⇒ `grid_in`                                                                    |
+| `section`                | filename `Math`/`Reading and Writing` | `→ M / RW` (canonical normalizer)                                                                                                              |
+| `source_type`            | fixed                                 | **`1`** (official CB) for this whole wave                                                                                                      |
+| `domain`                 | filename `<Domain>`                   | map synonyms → canonical domain                                                                                                                |
+| `skill_codes`            | filename `<Skill>`                    | map CB skill name → Lyceon skill code; wrap as 1-elem array                                                                                    |
+| `difficulty`             | filename `<Difficulty>`               | `Easy/Medium/Hard → 1/2/3`                                                                                                                     |
+| `stem`                   | extracted (OCR/vision for Math)       | math as inline `$…$` LaTeX (§4)                                                                                                                |
+| `passage`                | RW passage/table text                 | NULL for Math; required+integrity-checked for RW (§5)                                                                                          |
+| `options`                | A–D options (mcq only)                | `[{key,text}]`; **NULL for grid_in**                                                                                                           |
+| `correct_answer`         | CB "Correct Answer"                   | mcq: the `A–D` key; grid_in: the canonical value (e.g. `0.2`)                                                                                  |
+| `correct_variants`       | CB variant list / single value        | grid_in only; the accepted set incl. `correct_answer` (§3)                                                                                     |
+| `explanation`            | CB **Rationale**                      | present in-source; ≥20 chars (§5)                                                                                                              |
+| `option_metadata`        | per-distractor rationales             | OPTIONAL for source-derived; prose, not §18 error_taxonomy (CB carries no taxonomy labels) — leave null or owner-derive                        |
+| `assets`                 | embedded figures (geometry/data)      | typed JSON array (§4); NULL when no figure                                                                                                     |
+| `source_lineage`         | **CB id + file**                      | `{provenance:'College Board official', cb_question_id, source_filename, source_page, extracted_at, extractor_version}` — the moat's provenance |
+| `generation_attribution` | —                                     | NULL (this is the AI-gen field; N/A for source_type=1)                                                                                         |
+| `estimated_time_seconds` | not in source                         | per-(section,difficulty) default or owner-set (HALT-6 ruling: defaults)                                                                        |
+| `status`                 | lifecycle                             | insert `qa` → owner promotes `published`                                                                                                       |
 
 **Not in the source / derived:** `id` (minted), canonical `domain`/`skill_codes` maps,
 `option_metadata` taxonomy, `assets` JSON, `estimated_time_seconds`. All other student-facing
@@ -143,18 +146,19 @@ the empty bank. `correct_variants` is **answer-bearing** → added to the never-
 set (§6).
 
 **Normalizer (`shared/question-ingestion-qa.ts`, the most-scrutinized code):**
+
 - `parseGridInValue(s)` → exact reduced **rational** (`bigint` num/den). Accepts integers,
   signed decimals (incl. `.2`, `0.20`), and fractions `a/b`. Rejects mixed numbers (`3 1/2`),
   percents, thousands separators, divide-by-zero, blanks — i.e. exactly the non-grid entries.
 - `gridInEquivalent(a,b)` / `normalizeGridInKey(set)` → equality by rational, so `1/5 = .2 =
-  0.2 = 0.20`, and an **inconsistent** key set (`0.2` vs `1/4`) is rejected as a real defect.
+0.2 = 0.20`, and an **inconsistent** key set (`0.2` vs `1/4`) is rejected as a real defect.
 - **Grounding, not invention:** the rule is College Board's published SPR rule, reflected
   verbatim in the source rationale ("1/5 and .2 are examples of ways to enter a correct
   answer"). Proven (exact shipped algorithm, run 2026-06-14): `1/5==.2`, `0.2==0.20`,
   `1/5==0.20`, `-7/4` parses, `2/4→1/2`, and the four reject cases — **all pass**.
 - **Boundary (flagged):** repeating-decimal grid-fill tolerance (`2/3 → .666 / .667`) is a
   **runtime** student-vs-key concern owned by Doc 04B scoring, which already matches against a
-  `correct_variants` array — this ingestion step *produces* that array + the exact rational so
+  `correct_variants` array — this ingestion step _produces_ that array + the exact rational so
   04B never re-parses. Ingestion does exact-rational key validation only.
 
 ---
@@ -166,26 +170,44 @@ set (§6).
 `scripts/check-no-cdn-katex.js`) that renders `$…$` / `$$…$$` / `\(…\)` / `\[…\]`. So the
 representation is **inline `$…$` LaTeX in `stem`/`passage`/`options.text`** — the exact
 convention already in production. The **WS-1 math deferral is closed.**
+
 - **Fail-closed gate:** the runtime renderer is deliberately lenient (`strict:'warn',
-  throwOnError:false` → falls back to raw text). The **ingestion gate is strict**: every `$…$`
-  span must parse under the *same* `katex` with `strict:true, throwOnError:true`, else the item
+throwOnError:false` → falls back to raw text). The **ingestion gate is strict**: every `$…$`
+  span must parse under the _same_ `katex` with `strict:true, throwOnError:true`, else the item
   is **rejected, not shipped** (`QA-MATH-RENDER`, run as the IO probe folded into the
   validator). The pure validator also rejects unbalanced `$` delimiters intrinsically.
 
-**Diagrams — typed, fail-closed, with an IP flag for the owner.** `assets JSONB` exists but its
-shape was undefined. Lock it as a typed array (Zod `assetSchema` in the validator):
-`{ id, kind: image|svg|table, uri, alt, sha256, width?, height? }`, referenced from text as
-`{{asset:id}}`. Rules:
+**Diagrams — HALT-2 ruled: regenerate as owner-authored SVG (path a), never capture (path b).**
+A diagram is _geometry, not text_ — OCR can read a figure's labels but cannot "rerender" a
+triangle or scatterplot. "Rerender via OCR" therefore forks, and only one branch clears the IP:
+
+- **Path (a) — IP-clean (the ruling):** a vision model reads the original CB figure's content
+  ("right triangle, legs 3 and 4, right angle at B, hypotenuse labeled x") and the owner
+  **regenerates it as a fresh SVG** (or an owner-authored data `table`). The output is the
+  owner's artwork; CB's raster never ships.
+- **Path (b) — the trap, banned:** crop CB's raster and OCR-index it. The OCR costume does **not**
+  clear the IP — it still ships CB's actual artwork. CC must build (a) explicitly, because the
+  easy implementation is (b).
+
+Lock `assets JSONB` as a typed array (Zod `assetSchema`) that makes (b) **structurally
+unrepresentable**: `{ id, kind: svg|table, provenance: owner-regenerated-svg|owner-authored-table,
+source_ref, faithfulness_verified, uri, alt, sha256, width?, height? }`, referenced as
+`{{asset:id}}`. There is intentionally **no `image`/raster kind** — a captured CB figure cannot
+even be expressed (proven: `QA-SCHEMA` reject test). Rules:
+
 - **URIs only, never inline base64** (`QA-ASSET-REF` rejects `data:`).
-- **Resolve + integrity gate:** every `{{asset:id}}` must resolve to an `assets[]` entry
-  (intrinsic), and every `assets[].uri` must HEAD-200 with a matching `sha256` (IO probe →
-  `QA-ASSET-RESOLVE`). A dangling/broken/zero-byte asset = **reject** (§23 "no broken assets").
-  A figure-bearing question that can't faithfully resolve its figure is not promotable.
-- **HALT-2 owner ruling still needed — redraw vs capture (IP):** the geometry/data figures are
-  embedded raster images in CB PDFs. Capturing them verbatim raises a College Board IP
-  question; redrawing license-clean SVGs is the safe path but is owner-funded work. **Owner
-  must rule** before any figure-bearing item is promoted. Until then, figure-bearing items
-  stage but do not promote.
+- **`QA-ASSET-IP`:** `kind` ↔ `provenance` must agree (owner-authored only); any other pairing
+  is rejected.
+- **`QA-ASSET-FAITHFUL` (non-skippable owner-eye):** vision-extraction of a diagram is the
+  **highest-error-risk step in the whole pipeline** — a misread angle or transposed coordinate
+  is a figure that _looks right but is wrong_, and a wrong figure is a wrong question. The
+  machine verifies the SVG **renders + resolves** (`QA-ASSET-RESOLVE`: every `{{asset:id}}`
+  resolves; every `uri` HEAD-200 + `sha256` match; dangling/broken/zero-byte = reject, §23);
+  only the **owner-eye verifies faithfulness** vs `source_ref`. Until `faithfulness_verified`,
+  the item is **`flag` (route to owner), never auto-promoted** — it stages but does not promote.
+- **Fallback (quality is the moat):** if vision-extraction proves too unreliable for a figure,
+  it falls back to **manual redraw**, or the question **stays unpromoted**. Better an unpromoted
+  question than a wrong one.
 
 ---
 
@@ -196,27 +218,29 @@ advisory_flags[], fingerprint }`. Pure: verdict is a deterministic function of t
 injected IO-probe results; an un-run IO probe becomes an **advisory, never a silent pass**.
 Each machine gate maps 1:1 to a §23 gate and/or a 280-discard defect:
 
-| validator code | asserts | §23 / 280 source |
-|---|---|---|
-| `QA-SCHEMA` | candidate parses the Zod shape | §23 schema validity |
-| `QA-SOURCE` | `source_type === 1` (official) | 280 #7 (SYNTH-as-1) |
-| `QA-SECTION` | section ∈ {M,RW} | 280 #6 (`section='MATH'`) |
-| `QA-DIFF` | difficulty ∈ {1,2,3} | §23 difficulty range |
-| `QA-OPT-COUNT` | mcq: 4 options A–D, non-empty | §23 four-options |
-| `QA-OPT-DUP` | mcq: 4 distinct option texts | 280 #1 (dup options) |
-| `QA-KEY` | mcq: key ∈ option keys | §23 answer-key integrity |
-| `QA-ONE-CORRECT` | mcq: ≤1 `role:correct` if metadata present | §23 one-correct |
-| `QA-GRID-SHAPE` | grid_in: no options, value (not A–D) key | HALT-5 shape |
-| `QA-GRID-VARIANTS` | grid_in: variant set non-empty, consistent, ∋ key | §3 / 280 (garbage key) |
-| `QA-RW-PASSAGE` | RW: passage present, ≥ floor (truncation→advisory) | 280 #5 (truncated/missing) |
-| `QA-EXPL-LEN` | explanation ≥ 20 chars | §23 explanation present |
-| `QA-MATH-RENDER` | `$…$` balanced (intrinsic) + KaTeX-strict (IO) | §23 "no malformed formulas" |
-| `QA-ASSET-REF` / `QA-ASSET-RESOLVE` | refs resolve; uri HEAD-200 + sha256 (IO) | §23 "no broken assets" |
-| `QA-DUP-EXACT` | fingerprint not in live/staging (IO) | 280 #3 (clones); §23 |
-| `QA-DUP-NEAR` | embedding sim < 0.95 (IO) → **flag**, route to dedup | 280 #4; §23/§24 |
+| validator code                      | asserts                                                          | §23 / 280 source             |
+| ----------------------------------- | ---------------------------------------------------------------- | ---------------------------- |
+| `QA-SCHEMA`                         | candidate parses the Zod shape                                   | §23 schema validity          |
+| `QA-SOURCE`                         | `source_type === 1` (official)                                   | 280 #7 (SYNTH-as-1)          |
+| `QA-SECTION`                        | section ∈ {M,RW}                                                 | 280 #6 (`section='MATH'`)    |
+| `QA-DIFF`                           | difficulty ∈ {1,2,3}                                             | §23 difficulty range         |
+| `QA-OPT-COUNT`                      | mcq: 4 options A–D, non-empty                                    | §23 four-options             |
+| `QA-OPT-DUP`                        | mcq: 4 distinct option texts                                     | 280 #1 (dup options)         |
+| `QA-KEY`                            | mcq: key ∈ option keys                                           | §23 answer-key integrity     |
+| `QA-ONE-CORRECT`                    | mcq: ≤1 `role:correct` if metadata present                       | §23 one-correct              |
+| `QA-GRID-SHAPE`                     | grid_in: no options, value (not A–D) key                         | HALT-5 shape                 |
+| `QA-GRID-VARIANTS`                  | grid_in: variant set non-empty, consistent, ∋ key                | §3 / 280 (garbage key)       |
+| `QA-RW-PASSAGE`                     | RW: passage present, ≥ floor (truncation→advisory)               | 280 #5 (truncated/missing)   |
+| `QA-EXPL-LEN`                       | explanation ≥ 20 chars                                           | §23 explanation present      |
+| `QA-MATH-RENDER`                    | `$…$` balanced (intrinsic) + KaTeX-strict (IO)                   | §23 "no malformed formulas"  |
+| `QA-ASSET-REF` / `QA-ASSET-RESOLVE` | refs resolve; uri HEAD-200 + sha256 (IO)                         | §23 "no broken assets"       |
+| `QA-ASSET-IP`                       | figure is owner-authored (kind ↔ provenance); no CB raster       | HALT-2 path (a)              |
+| `QA-ASSET-FAITHFUL`                 | figure pending owner-eye faithfulness → **flag**, route to owner | HALT-2 (riskiest extraction) |
+| `QA-DUP-EXACT`                      | fingerprint not in live/staging (IO)                             | 280 #3 (clones); §23         |
+| `QA-DUP-NEAR`                       | embedding sim < 0.95 (IO) → **flag**, route to dedup             | 280 #4; §23/§24              |
 
-**Owner-eye (machine checks consistency; owner checks correctness):** answer-key *correctness*
-(the machine proves the key is consistent, never that it is *right*), explanation *truth*,
+**Owner-eye (machine checks consistency; owner checks correctness):** answer-key _correctness_
+(the machine proves the key is consistent, never that it is _right_), explanation _truth_,
 distractor plausibility, figure faithfulness, difficulty plausibility, realism. SAT-grade is
 the bar; quality is the moat. Proven by `tests/question-ingestion-qa.contract.test.ts`
 (typechecks clean under repo `tsc`; runs in CI — the grid-in core ran green here).
@@ -231,14 +255,14 @@ genesis is **`id` / `section`**, and now **`item_type`**. Left unreconciled, the
 projection nulls genesis rows and the deferred serving probe is meaningless. Mapping to wire
 before serving ingested questions (or fold into the contract):
 
-| contract field (legacy) | genesis source |
-|---|---|
-| `canonical_id` | `id` |
-| `section_code` | `section` |
-| `question_type` | `item_type` (`mcq` → `multiple_choice`; add `grid_in`) |
-| `correct_answer` (pre-submit) | **null** (unchanged) |
-| `explanation` (pre-submit) | **null** (unchanged) |
-| `correct_variants` (pre-submit) | **null — NEW answer-bearing field, MUST be nulled** |
+| contract field (legacy)         | genesis source                                         |
+| ------------------------------- | ------------------------------------------------------ |
+| `canonical_id`                  | `id`                                                   |
+| `section_code`                  | `section`                                              |
+| `question_type`                 | `item_type` (`mcq` → `multiple_choice`; add `grid_in`) |
+| `correct_answer` (pre-submit)   | **null** (unchanged)                                   |
+| `explanation` (pre-submit)      | **null** (unchanged)                                   |
+| `correct_variants` (pre-submit) | **null — NEW answer-bearing field, MUST be nulled**    |
 
 **Anti-leak addition (load-bearing):** `correct_variants` joins `{correct_answer, explanation,
 option_metadata}` in the never-serve-pre-submit set (Doc 02 Preamble §12 INV-02-08). The
@@ -265,7 +289,7 @@ failure; transactional; exit-proof; reversible.** Runbook shape (not executed):
    `QA-EXPL-LEN`, `QA-RW-PASSAGE`, `QA-GRID-*`, `QA-DUP-EXACT` (vs live), `QA-ASSET-RESOLVE`.
    Mirror the reseed's "MUST be 0 / MUST return no rows" shape; never coalesce a violation away.
 5. **Mint ids (§14, product-side, at promotion):** `id = 'SAT'‖section‖source_type‖
-   <6×[A-Z0-9] crypto-random>`, collision-checked against `public.questions.id` (retry on the
+<6×[A-Z0-9] crypto-random>`, collision-checked against `public.questions.id` (retry on the
    ~1-in-2-billion clash). Never reuse, never content-derive.
 6. **Promote in one transaction (batch all-or-none):** INSERT into `public.questions` at
    `status='qa'` with `source_type=1`, `item_type`, `correct_variants` (grid_in), `assets`,
@@ -286,15 +310,17 @@ step "logic approved" happens in this wave.
 
 ## 8. HALT status after this wave
 
-| HALT | Phase-0 status | now |
-|---|---|---|
-| HALT-1 source absent | blocking | **resolved** — committed at `docs/SAT Qeustions S.D/` |
-| HALT-2 diagram repr | unsolved | **proposed + gated**; one open owner ruling: **redraw vs capture (IP)** |
-| HALT-3 math repr | unsolved | **resolved** — `$…$` LaTeX + shipped KaTeX + strict ingestion gate |
-| HALT-4 explanation NOT NULL | risk | **resolved** — rationales present in-source |
-| HALT-5 grid-ins | blocking | **resolved** — `grid-in-extension.sql` + normalizer (this wave) |
-| HALT-6 estimated_time | open | ruling = per-(section,difficulty) defaults |
-| HALT-7 difficulty scale | open | **resolved** — 3-level Easy/Medium/Hard |
-| HALT-8 contract legacy names | precondition | **mapping specified (§6)**; wire before serving |
+| HALT                         | Phase-0 status | now                                                                                                                                                                                    |
+| ---------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HALT-1 source absent         | blocking       | **resolved** — committed at `docs/SAT Qeustions S.D/`                                                                                                                                  |
+| HALT-2 diagram repr          | unsolved       | **ruled (path a)** — vision-extract → owner-regenerated SVG → owner-eye faithfulness; path (b) raster capture structurally unrepresentable; fallback = manual redraw / stay unpromoted |
+| HALT-3 math repr             | unsolved       | **resolved** — `$…$` LaTeX + shipped KaTeX + strict ingestion gate                                                                                                                     |
+| HALT-4 explanation NOT NULL  | risk           | **resolved** — rationales present in-source                                                                                                                                            |
+| HALT-5 grid-ins              | blocking       | **resolved** — `grid-in-extension.sql` + normalizer (this wave)                                                                                                                        |
+| HALT-6 estimated_time        | open           | ruling = per-(section,difficulty) defaults                                                                                                                                             |
+| HALT-7 difficulty scale      | open           | **resolved** — 3-level Easy/Medium/Hard                                                                                                                                                |
+| HALT-8 contract legacy names | precondition   | **mapping specified (§6)**; wire before serving                                                                                                                                        |
 
-Remaining owner ruling before figure-bearing promotion: **HALT-2 redraw-vs-capture (IP)**.
+No open HALT rulings remain. The one recurring gate before each figure-bearing promotion is the
+**per-figure owner-eye faithfulness check** (HALT-2 path a): the machine renders/resolves the
+regenerated SVG; only the owner confirms it faithfully matches the original CB figure.

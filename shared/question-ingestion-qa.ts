@@ -50,6 +50,8 @@ export type QaReasonCode =
   | "QA-RW-PASSAGE"
   | "QA-MATH-RENDER"
   | "QA-ASSET-REF"
+  | "QA-ASSET-IP"
+  | "QA-ASSET-FAITHFUL"
   | "QA-ASSET-RESOLVE"
   | "QA-DUP-EXACT"
   | "QA-DUP-NEAR";
@@ -100,11 +102,32 @@ export type IngestionQaContext = {
 // Grounded in the real CB source: stem/options/answer-key/rationale + provenance.
 // ---------------------------------------------------------------------------
 
-const ASSET_KINDS = ["image", "svg", "table"] as const;
+// Figures resolve as OWNER-AUTHORED artwork only (HALT-2 ruling = path (a)).
+// A figure is geometry, not text: a vision model reads the original CB figure's
+// content and the owner REGENERATES it as a fresh SVG (or an owner-authored data
+// table). The regenerated artwork is the owner's IP; CB's raster never ships.
+//   - Path (a) — owner-regenerated SVG / owner-authored table → IP-clean, promotable.
+//   - Path (b) — crop CB's raster + OCR-index it → still ships CB artwork; the OCR
+//     costume does NOT clear the IP. There is intentionally NO asset kind for a
+//     captured raster, so (b) is structurally unrepresentable here.
+const ASSET_KINDS = ["svg", "table"] as const;
+const ASSET_PROVENANCE = [
+  "owner-regenerated-svg",
+  "owner-authored-table",
+] as const;
 
 const assetSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(ASSET_KINDS),
+  provenance: z.enum(ASSET_PROVENANCE),
+  // The CB figure this was regenerated from — the reference the owner-eye compares
+  // the regenerated SVG against. Provenance + source_ref make faithfulness auditable.
+  source_ref: z.string().min(1),
+  // Owner-eye sign-off that the regenerated figure FAITHFULLY matches the original.
+  // The machine verifies render + resolve; only the owner verifies faithfulness, and
+  // a figure cannot promote until this is true (vision-extraction is the highest-error
+  // step in the pipeline — a misread coordinate is a wrong figure that looks right).
+  faithfulness_verified: z.boolean(),
   uri: z.string().min(1),
   alt: z.string(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -361,8 +384,13 @@ export function evaluateIngestionCandidate(
   }
   const c = parsed.data;
   const fingerprint = fingerprintCandidate(c);
+  const flags: QaReason[] = [];
   const reject = (code: QaReasonCode, message: string): void => {
     reasons.push({ code, message });
+  };
+  // route-to-owner (not a defect): needs a human step before promotion.
+  const flag = (code: QaReasonCode, message: string): void => {
+    flags.push({ code, message });
   };
 
   // --- shared gates (both item types) ---
@@ -513,6 +541,23 @@ export function evaluateIngestionCandidate(
         "QA-ASSET-REF",
         `asset ${a.id} uses inline base64; storage URI required`,
       );
+    // QA-ASSET-IP: kind ↔ provenance must agree (HALT-2 path (a)). A captured CB
+    // raster has no representable kind; an inconsistent pair is rejected.
+    const ipOk =
+      (a.kind === "svg" && a.provenance === "owner-regenerated-svg") ||
+      (a.kind === "table" && a.provenance === "owner-authored-table");
+    if (!ipOk)
+      reject(
+        "QA-ASSET-IP",
+        `asset ${a.id}: kind '${a.kind}' / provenance '${a.provenance}' is not an owner-authored figure (no CB raster capture)`,
+      );
+    // QA-ASSET-FAITHFUL: owner-eye faithfulness is non-skippable; until verified the
+    // item is routed to the owner (flag), never auto-promoted.
+    if (!a.faithfulness_verified)
+      flag(
+        "QA-ASSET-FAITHFUL",
+        `asset ${a.id}: regenerated figure pending owner-eye faithfulness verification vs ${a.source_ref}`,
+      );
   }
   if (context.assetResolution) {
     for (const r of context.assetResolution) {
@@ -538,21 +583,21 @@ export function evaluateIngestionCandidate(
     );
   if (context.nearDuplicateOf) {
     // near-dup is a route-to-review, not a hard reject (§23 → dedup queue).
+    flag(
+      "QA-DUP-NEAR",
+      `near-duplicate of ${context.nearDuplicateOf} (≥0.95) — route to dedup`,
+    );
+  }
+
+  // Verdict precedence: a defect (reject) outranks a route-to-owner (flag).
+  if (reasons.length > 0)
+    return { status: "reject", reasons, advisory_flags: advisory, fingerprint };
+  if (flags.length > 0)
     return {
       status: "flag",
-      reasons: [
-        {
-          code: "QA-DUP-NEAR",
-          message: `near-duplicate of ${context.nearDuplicateOf} (≥0.95) — route to dedup`,
-        },
-        ...reasons,
-      ],
+      reasons: flags,
       advisory_flags: advisory,
       fingerprint,
     };
-  }
-
-  if (reasons.length > 0)
-    return { status: "reject", reasons, advisory_flags: advisory, fingerprint };
   return { status: "pass", reasons: [], advisory_flags: advisory, fingerprint };
 }

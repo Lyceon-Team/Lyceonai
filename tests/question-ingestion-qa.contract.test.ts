@@ -197,9 +197,12 @@ describe("ingestion QA verdict", () => {
         assets: [
           {
             id: "fig1",
-            kind: "image",
-            uri: "https://storage.example/fig1.png",
-            alt: "a figure",
+            kind: "svg",
+            provenance: "owner-regenerated-svg",
+            source_ref: "Math-10 p.1 right-triangle figure",
+            faithfulness_verified: true,
+            uri: "https://storage.example/fig1.svg",
+            alt: "a regenerated right triangle",
             sha256: "a".repeat(64),
           },
         ],
@@ -209,5 +212,48 @@ describe("ingestion QA verdict", () => {
     expect(r.advisory_flags.join(" ")).toMatch(
       /QA-ASSET-RESOLVE|QA-MATH-RENDER/,
     );
+  });
+
+  // HALT-2: figures are owner-regenerated SVGs (path a), owner-eye-verified.
+  it("flags a figure-bearing item pending owner-eye faithfulness (HALT-2)", () => {
+    const r = evaluateIngestionCandidate(
+      mcq({
+        stem: "Using {{asset:fig1}}, find $x$.",
+        assets: [
+          {
+            id: "fig1",
+            kind: "svg",
+            provenance: "owner-regenerated-svg",
+            source_ref: "Math-10 p.1 right-triangle figure",
+            faithfulness_verified: false,
+            uri: "https://storage.example/fig1.svg",
+            alt: "a regenerated right triangle",
+            sha256: "a".repeat(64),
+          },
+        ],
+      }),
+    );
+    expect(r.status).toBe("flag");
+    expect(r.reasons.map((x) => x.code)).toContain("QA-ASSET-FAITHFUL");
+  });
+
+  it("rejects a captured CB raster — path (b) is structurally unrepresentable (HALT-2)", () => {
+    // kind 'image' has no schema; capturing CB artwork cannot even be expressed.
+    const badRaster = {
+      ...mcq(),
+      stem: "Using {{asset:fig1}}, find $x$.",
+      assets: [
+        {
+          id: "fig1",
+          kind: "image",
+          uri: "https://storage.example/cb-crop.png",
+          alt: "a cropped CB figure",
+          sha256: "a".repeat(64),
+        },
+      ],
+    };
+    const r = evaluateIngestionCandidate(badRaster);
+    expect(r.status).toBe("reject");
+    expect(r.reasons.map((x) => x.code)).toContain("QA-SCHEMA");
   });
 });
