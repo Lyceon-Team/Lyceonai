@@ -5722,7 +5722,6 @@ GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section te
 --
 
 REVOKE ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_role;
 
 

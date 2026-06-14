@@ -112,7 +112,11 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, p
   );
 $$;
 REVOKE ALL ON FUNCTION public.entitlement_active(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.entitlement_active(uuid) TO authenticated, service_role;
+-- PR370-GUARDIAN-001: NOT granted to authenticated — it is an entitlement oracle and must be reachable
+-- ONLY through guardian_can_view_student (the link-gated boolean), which is SECURITY DEFINER and so
+-- calls it as the owner. A raw authenticated grant would let any user probe any profile's entitlement
+-- status outside the link gate (a boolean privacy leak on arbitrary minor accounts). LYCEON-MIGRATION-REVIEWED
+GRANT EXECUTE ON FUNCTION public.entitlement_active(uuid) TO service_role;
 
 -- @spec [Doc-01 guardian trust §35 / Doc-05B §5.3 / Parent §11.1] THE ONE guardian-mirror gate. A
 -- guardian may read a student's mirror surface ONLY when BOTH hold (CLAUDE.md non-negotiable guardian
