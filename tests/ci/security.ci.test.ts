@@ -45,21 +45,20 @@ describe("CI Security Tests - CSRF", () => {
       expect(res.body).toHaveProperty("requestId");
     });
 
-    it("should block /api/auth/refresh without CSRF token (403)", async () => {
+    it("should return 404 for removed /api/auth/refresh endpoint (AUTH-001 native refresh)", async () => {
+      // AUTH-001: the custom /api/auth/refresh endpoint was removed. Session refresh is now native
+      // (the @supabase/ssr middleware auto-refreshes and rotates the session cookie). With no route
+      // mounted, the request falls through to the API catch-all 404.
       const res = await request(app).post("/api/auth/refresh");
 
-      expect(res.status).toBe(403);
-      expect(res.body).toHaveProperty("error.code", "csrf_blocked");
-      expect(res.body).toHaveProperty("requestId");
+      expect(res.status).toBe(404);
     });
 
     it("should return 404 for deprecated exchange-session endpoint", async () => {
-      const res = await request(app)
-        .post("/api/auth/exchange-session")
-        .send({
-          access_token: "test-token",
-          refresh_token: "test-refresh",
-        });
+      const res = await request(app).post("/api/auth/exchange-session").send({
+        access_token: "test-token",
+        refresh_token: "test-refresh",
+      });
 
       expect(res.status).toBe(404);
     });
