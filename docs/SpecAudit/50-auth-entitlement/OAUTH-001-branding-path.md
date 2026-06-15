@@ -1,9 +1,31 @@
-# OAUTH-001 — Google consent-screen branding ("Lyceon.ai") path
+# OAUTH-001 — Google consent-screen branding path + native OAuth conversion
 
-> Audience: owner decision. Status: **HALT — owner ruling required** (which branding tier; and approval
-> to convert the OAuth flow to the native Supabase path). No code converted in this lane; see "What this
-> lane changed" at the bottom.
-> Grounded in the live code at HEAD `76831d1` and the cited Google/Supabase facts.
+> Audience: owner decision (now resolved). Status: **CONVERTED** — owner approved the native Supabase
+> OAuth path and verified the dashboard config (see §0). The custom flow has been removed and replaced
+> with native `signInWithOAuth` + `exchangeCodeForSession`; the Google client secret no longer lives in
+> app code. Remaining items are owner dashboard actions + a tracked pre-launch verification task (§6).
+> Original branding analysis (§1–§4) retained for history; §0 + §5 + §6 reflect the shipped state.
+
+---
+
+## 0. Owner-verified configuration (2026-06-15) — wired into code, do NOT re-do
+
+- **Supabase project ref:** `hncolwkccbbjkfithhlo`.
+- **Supabase OAuth callback (Supabase-owned):** `https://hncolwkccbbjkfithhlo.supabase.co/auth/v1/callback`
+  — registered in the Google Console. This is the Google-facing redirect URI on the native path.
+- **App post-login landing route (app-owned):** `PUBLIC_SITE_URL/auth/callback` — passed as `redirectTo`
+  to `signInWithOAuth`. This is NOT a Google-facing callback; Supabase owns the OAuth callback above.
+  This URL must be on the Supabase **redirect allow-list** (Authentication → URL Configuration →
+  Redirect URLs). **Owner action if not already present:** add `https://lyceon.ai/auth/callback` (and any
+  preview/dev origins, e.g. `http://localhost:5173/auth/callback`) to that allow-list.
+- **Google provider:** ENABLED in Supabase with Client ID + secret (matching the Google client). The
+  Supabase-configured **Client ID matches the Google client ID** (owner-confirmed, dashboard-side).
+- **Google client secret:** lives ONLY in the Supabase dashboard (Authentication → Providers → Google).
+  Removed from app code / Vercel env (HALT-3). App never calls Google's token endpoint directly.
+- **Consent screen:** verified; **App name = "LYCEON"** (owner's deliberate choice — intentionally NOT
+  "Lyceon.ai"); logo + links present. Branding is set in the Google Console, free.
+- **Publishing status:** Google app is in **"Testing"** (production verification is a later pre-launch
+  task — see §6). Branding-verified ≠ app-published.
 
 ---
 
@@ -14,10 +36,10 @@ of a raw Supabase project domain or a bare OAuth client name.
 
 There are two distinct things a user sees on that screen, and they are billed differently:
 
-| Element on the Google screen | What controls it | Cost |
-|---|---|---|
-| **App name + logo** (the prominent "Choose an account to continue to **Lyceon.ai**" title + icon) | Google Cloud Console → OAuth consent screen (App name, logo, support email) | **FREE** |
-| **The "to continue to `<domain>`" / callback authority line** | The domain Google redirects the OAuth handshake through. On the native Supabase path this is the **Supabase project domain** (`<ref>.supabase.co`). | Changing it to `auth.lyceon.ai` needs a Supabase **custom domain** add-on = **$10/mo** (paid plan, not spend-capped); OR a free **vanity subdomain** (`brand.supabase.co`) which still needs a paid plan (Pro+), is experimental/CLI-only, and is mutually exclusive with custom domains. |
+| Element on the Google screen                                                                      | What controls it                                                                                                                                    | Cost                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **App name + logo** (the prominent "Choose an account to continue to **Lyceon.ai**" title + icon) | Google Cloud Console → OAuth consent screen (App name, logo, support email)                                                                         | **FREE**                                                                                                                                                                                                                                                                                  |
+| **The "to continue to `<domain>`" / callback authority line**                                     | The domain Google redirects the OAuth handshake through. On the native Supabase path this is the **Supabase project domain** (`<ref>.supabase.co`). | Changing it to `auth.lyceon.ai` needs a Supabase **custom domain** add-on = **$10/mo** (paid plan, not spend-capped); OR a free **vanity subdomain** (`brand.supabase.co`) which still needs a paid plan (Pro+), is experimental/CLI-only, and is mutually exclusive with custom domains. |
 
 **Net:** the prominent "Lyceon.ai" branding (app name + logo) is **FREE** and is set in the Google Console,
 not in code. Only the secondary callback-authority line costs money to rebrand.
@@ -90,7 +112,7 @@ the secret/env surface is owner-controlled and out of this lane's seam.)
 ```ts
 // start: PKCE, secret lives in the Supabase dashboard, not app code
 await supabase.auth.signInWithOAuth({
-  provider: 'google',
+  provider: "google",
   options: { redirectTo: `${PUBLIC_SITE_URL}/auth/google/callback` },
 });
 // callback:
@@ -114,13 +136,50 @@ rewired. **Verdict: flagged, not converted.**
 
 ---
 
-## 5. What this lane changed
+## 5. What this lane changed (2026-06-15 — native conversion shipped)
 
-Nothing in the OAuth code path. This lane:
+Owner approved (C). The native conversion + HALT-3 secret removal + AUTH-001 are implemented in code:
 
-- Did **not** edit `server/routes/google-oauth-routes.ts` or any OAuth runtime (no in-lane code change to
-  the non-native flow — the conversion is the §4 HALT).
-- Produced this findings doc for the owner decision (§3) and flagged the `next.config.js` secret exposure.
+- **`@supabase/ssr` added** (root `package.json`, alongside `@supabase/supabase-js`; `pnpm install` clean).
+- **HALT-3 — secret removed from client-reachable config:** the `env` block in `apps/api/next.config.js`
+  (which inlined `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` into the client bundle) is **deleted**. A
+  postbuild + CI guard `scripts/check-no-secrets-in-bundle.js` (mirrors `check-no-cdn-katex.js`) scans
+  built output (`dist/`, `dist/public/`, `client/dist/`, `public/`, and any Next `.next` output) for any
+  `*_SECRET` token and fails the build if found. Wired into `package.json` `postbuild`.
+- **Custom flow removed:** `server/routes/google-oauth-routes.ts` (manual Google consent URL, direct
+  token-endpoint exchange with the app-held secret, state cookie) is **deleted**. Its mounts in
+  `server/index.ts` (`/api/auth/google`, `/auth/google/callback`, `/api/auth/google/callback`) are gone.
+  **Confirmed: nothing else in the repo routes to `/auth/google/callback` or `/api/auth/google/*`** after
+  this change — so the owner can safely delete the custom `lyceon.ai/auth/google/callback` redirect URI
+  from the Google Console **after** native login is verified end-to-end.
+- **Native flow:** client `signInWithGoogle` now calls `supabase.auth.signInWithOAuth({ provider: 'google',
+options: { redirectTo: <origin>/auth/callback } })` via an `@supabase/ssr` `createBrowserClient`
+  (`client/src/lib/supabase.ts`). The server landing route `GET /auth/callback`
+  (`server/routes/oauth-callback-routes.ts`) calls `exchangeCodeForSession(code)` on a request-scoped
+  `createServerClient` (`server/lib/supabase-ssr.ts`), which reads the PKCE verifier cookie and writes the
+  session cookie back. `vercel.json` rewrite repointed `^/auth/callback$` → `/api/index`.
+- **AUTH-001:** `supabaseAuthMiddleware` now validates + auto-refreshes via the `@supabase/ssr` server
+  client's `getUser()` (request-scoped, RLS-bound = `req.supabase`). The custom `POST /api/auth/refresh`
+  endpoint and the client calls to it are removed (refresh is native). signin/signup/signout persist/clear
+  the session through the SSR client. Middleware contract preserved: `requireSupabaseAuth`,
+  `requireRequestUser`, `requireStudentOrAdmin`, `requireConsentCompliance`, `AuthenticatedRequest`, and the
+  global `supabaseAuthMiddleware` keep the same exported signatures. A legacy `sb-access-token` cookie is
+  still honored as a validation fallback so existing sessions are not force-logged-out.
 
-Reconciliation note: the conversion in §4 and the secret-env removal should be picked up as a follow-up
-once the owner approves (C), because they require dashboard/secret actions.
+Note on app name: §1–§3 above were written assuming "Lyceon.ai" as the app name. The owner deliberately
+chose **"LYCEON"** instead (see §0). The branding tier decision (§3 A vs B — the `*.supabase.co` callback
+authority line vs a $10/mo custom domain) is unaffected by the native conversion and remains the owner's
+call; default remains (A), free.
+
+## 6. Pre-launch (lead-time) item — Google app publishing/verification
+
+- The Google OAuth app is currently in **"Testing"** publishing status. This is fine for development and
+  for the owner's own test users, but it caps the user pool and shows the "unverified app" interstitial.
+- **Going to production requires publishing the app + OAuth verification.** Because the consent screen has a
+  **logo** and uses **sensitive/identity scopes**, Google triggers **full app verification**, which is
+  **multi-day to multi-week** lead time. This is a **pre-launch lead-time task, NOT a now-blocker** — start
+  it well before launch.
+- **Branding-verified ≠ app-published.** The app name/logo being approved on the consent screen does not
+  mean the app is published for general users; that is a separate Google review.
+- Owner-confirmed (dashboard-side): the Supabase-configured Google **Client ID matches** the Google client
+  ID. No code dependency — recorded here for the audit trail.

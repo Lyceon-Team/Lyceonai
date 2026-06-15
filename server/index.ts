@@ -36,7 +36,12 @@ import {
   getReviewErrors,
   submitQuestionFeedback,
 } from "./routes/questions-runtime";
-import { startReviewErrorSession, getReviewErrorSessionState, submitReviewSessionAnswer, getRecentReviewSessions } from "./routes/review-session-routes";
+import {
+  startReviewErrorSession,
+  getReviewErrorSessionState,
+  submitReviewSessionAnswer,
+  getRecentReviewSessions,
+} from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -47,8 +52,13 @@ import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
 import supabaseAuthRoutes from "./routes/supabase-auth-routes";
 import notificationRoutes from "./routes/notification-routes";
-import googleOAuthRoutes, { googleCallbackHandler } from "./routes/google-oauth-routes";
-import { doubleCsrfProtection, generateToken } from "./middleware/csrf-double-submit";
+import oauthCallbackRoutes, {
+  nativeOAuthCallbackHandler,
+} from "./routes/oauth-callback-routes";
+import {
+  doubleCsrfProtection,
+  generateToken,
+} from "./middleware/csrf-double-submit";
 import { weaknessRouter } from "./routes/legacy/weakness";
 import { masteryRouter } from "./routes/legacy/mastery";
 import { calendarRouter } from "./routes/legacy/calendar";
@@ -62,12 +72,14 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
-import { getPracticeTopics, getPracticeQuestions } from "./routes/practice-topics-routes";
+import {
+  getPracticeTopics,
+  getPracticeQuestions,
+} from "./routes/practice-topics-routes";
 import guardianConsentRoutes from "./routes/guardian-consent-routes";
 // ...existing code...
 import { WebhookHandlers } from "./lib/webhookHandlers";
 import { logger } from "./logger";
-
 
 const app = express();
 app.disable("x-powered-by");
@@ -96,28 +108,50 @@ app.post(
 
     if (!signature) {
       console.error("[WEBHOOK] Missing stripe-signature header", { requestId });
-      return res.status(400).json({ error: "Missing stripe-signature", requestId });
+      return res
+        .status(400)
+        .json({ error: "Missing stripe-signature", requestId });
     }
 
     try {
       const sig = Array.isArray(signature) ? signature[0] : signature;
 
       if (!Buffer.isBuffer(req.body)) {
-        console.error("[WEBHOOK] req.body is not a Buffer - check middleware order", { requestId });
-        return res.status(500).json({ error: "Webhook body not a Buffer", requestId });
+        console.error(
+          "[WEBHOOK] req.body is not a Buffer - check middleware order",
+          { requestId },
+        );
+        return res
+          .status(500)
+          .json({ error: "Webhook body not a Buffer", requestId });
       }
 
-      const result = await WebhookHandlers.processWebhook(req.body as Buffer, sig, requestId);
-      res.status(200).json({ received: true, eventId: result.eventId, status: result.status, requestId });
+      const result = await WebhookHandlers.processWebhook(
+        req.body as Buffer,
+        sig,
+        requestId,
+      );
+      res
+        .status(200)
+        .json({
+          received: true,
+          eventId: result.eventId,
+          status: result.status,
+          requestId,
+        });
     } catch (error: any) {
-      console.error("[WEBHOOK] Processing error:", error.message, { requestId });
+      console.error("[WEBHOOK] Processing error:", error.message, {
+        requestId,
+      });
       res.status(400).json({
         error: "Webhook processing error",
-        message: error.message?.includes("signature") ? "Signature verification failed" : "Processing failed",
+        message: error.message?.includes("signature")
+          ? "Signature verification failed"
+          : "Processing failed",
         requestId,
       });
     }
-  }
+  },
 );
 
 app.use(express.json({ limit: "1mb" }));
@@ -126,7 +160,10 @@ app.use((err: any, _req: Request, res: Response, next: any) => {
   if (err?.type === "entity.too.large") {
     return res.status(413).json({ error: "Payload too large" });
   }
-  if (err?.type === "entity.parse.failed" || (err instanceof SyntaxError && (err as any).status === 400)) {
+  if (
+    err?.type === "entity.parse.failed" ||
+    (err instanceof SyntaxError && (err as any).status === 400)
+  ) {
     return res.status(400).json({ error: "Invalid JSON payload" });
   }
   return next(err);
@@ -170,31 +207,40 @@ function injectMeta(
     description: string;
     canonical: string;
     ogImage?: string;
-  }
+  },
 ): string {
   let result = html;
 
   // Replace <title>...</title>
-  result = result.replace(/<title>[^<]*<\/title>/, `<title>${meta.title}</title>`);
+  result = result.replace(
+    /<title>[^<]*<\/title>/,
+    `<title>${meta.title}</title>`,
+  );
 
   // Replace or insert meta description
   if (result.includes('name="description"')) {
     result = result.replace(
       /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
-      `<meta name="description" content="${meta.description}">`
+      `<meta name="description" content="${meta.description}">`,
     );
   } else {
-    result = result.replace("</head>", `<meta name="description" content="${meta.description}">\n</head>`);
+    result = result.replace(
+      "</head>",
+      `<meta name="description" content="${meta.description}">\n</head>`,
+    );
   }
 
   // Insert canonical link
   if (result.includes('rel="canonical"')) {
     result = result.replace(
       /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i,
-      `<link rel="canonical" href="${meta.canonical}">`
+      `<link rel="canonical" href="${meta.canonical}">`,
     );
   } else {
-    result = result.replace("</head>", `<link rel="canonical" href="${meta.canonical}">\n</head>`);
+    result = result.replace(
+      "</head>",
+      `<link rel="canonical" href="${meta.canonical}">\n</head>`,
+    );
   }
 
   // Insert/replace OpenGraph tags
@@ -216,22 +262,28 @@ function injectMeta(
   // Remove existing OG/Twitter tags and add new ones
   result = result.replace(
     /<meta\s+property="og:(title|description|url|type|image|image:alt|image:width|image:height|site_name)"\s+content="[^"]*"\s*\/?>/gi,
-    ""
+    "",
   );
-  result = result.replace(/<meta\s+name="twitter:(card|title|description|image)"\s+content="[^"]*"\s*\/?>/gi, "");
+  result = result.replace(
+    /<meta\s+name="twitter:(card|title|description|image)"\s+content="[^"]*"\s*\/?>/gi,
+    "",
+  );
   result = result.replace("</head>", `${ogTags}</head>`);
 
   return result;
 }
 
-function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefined): string {
+function injectJsonLd(
+  html: string,
+  jsonLd: Record<string, unknown>[] | undefined,
+): string {
   if (!jsonLd || jsonLd.length === 0) {
     let previousHtml: string;
     do {
       previousHtml = html;
       html = html.replace(
         /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
-        ""
+        "",
       );
     } while (html !== previousHtml);
     return html;
@@ -242,13 +294,16 @@ function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefine
     previousHtml = html;
     html = html.replace(
       /<script\s+type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/gi,
-      ""
+      "",
     );
   } while (html !== previousHtml);
 
   let result = html;
   const jsonLdScripts = jsonLd
-    .map((data) => `<script type="application/ld+json">${JSON.stringify(data)}</script>`)
+    .map(
+      (data) =>
+        `<script type="application/ld+json">${JSON.stringify(data)}</script>`,
+    )
     .join("\n");
   result = result.replace("</head>", `${jsonLdScripts}\n</head>`);
   return result;
@@ -258,7 +313,10 @@ function injectJsonLd(html: string, jsonLd: Record<string, unknown>[] | undefine
 function injectBodyContent(html: string, content: string): string {
   // Replace empty <div id="root"></div> with content inside
   // Content will be replaced by React hydration
-  return html.replace(/<div\s+id="root">\s*<\/div>/i, `<div id="root">${content}</div>`);
+  return html.replace(
+    /<div\s+id="root">\s*<\/div>/i,
+    `<div id="root">${content}</div>`,
+  );
 }
 
 // SEO 301 redirects for legacy URLs (GET + HEAD)
@@ -290,7 +348,7 @@ app.use(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  ragV2Router
+  ragV2Router,
 );
 
 // Canonical tutor runtime endpoints:
@@ -305,16 +363,19 @@ app.use(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  tutorRuntimeRouter
+  tutorRuntimeRouter,
 );
 
-// Google OAuth Routes (direct OAuth flow)
-app.use("/api/auth/google", googleOAuthRoutes);
-
-// Google OAuth Callback (PUBLIC_SITE_URL/auth/google/callback)
-app.get("/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
-// Vercel callback alias when `/auth/google/callback` is rewritten into `/api/*`.
-app.get("/api/auth/google/callback", googleOAuthCallbackLimiter, googleCallbackHandler);
+// Native Supabase OAuth landing route (PKCE).
+// Supabase owns the Google OAuth callback at <ref>.supabase.co/auth/v1/callback; the browser is
+// redirected back to PUBLIC_SITE_URL/auth/callback, where we exchange the PKCE code for a session.
+app.use("/auth", googleOAuthCallbackLimiter, oauthCallbackRoutes);
+// Vercel alias when `/auth/callback` is rewritten into `/api/*`.
+app.get(
+  "/api/auth/callback",
+  googleOAuthCallbackLimiter,
+  nativeOAuthCallbackHandler,
+);
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
@@ -325,87 +386,171 @@ app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);
 // Profile endpoints - requires authentication
 // GET /api/profile - canonical hydration route
 // PATCH /api/profile - profile completion/update route
-app.use("/api/profile", requireSupabaseAuth, doubleCsrfProtection, profileRoutes);
+app.use(
+  "/api/profile",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  profileRoutes,
+);
 
 // Notifications Routes
-app.use("/api/notifications", requireSupabaseAuth, doubleCsrfProtection, notificationRoutes);
+app.use(
+  "/api/notifications",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  notificationRoutes,
+);
 
 // Weakness & Mastery Routes (student weakness tracking)
-app.use("/api/me/weakness", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, weaknessRouter);
+app.use(
+  "/api/me/weakness",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  weaknessRouter,
+);
 // Diagnostic runtime removed: keep the path terminally unavailable (404) before mastery auth mount.
-app.use("/api/me/mastery/diagnostic", (_req, res) => res.status(404).json({ error: "Not found" }));
-app.use("/api/me/mastery", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, masteryRouter);
-app.use("/api/calendar", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, calendarRouter);
+app.use("/api/me/mastery/diagnostic", (_req, res) =>
+  res.status(404).json({ error: "Not found" }),
+);
+app.use(
+  "/api/me/mastery",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  masteryRouter,
+);
+app.use(
+  "/api/calendar",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  calendarRouter,
+);
 
 // Score Projection endpoint (College Board weighted algorithm)
-app.get("/api/progress/projection", requireSupabaseAuth, requireStudentOrAdmin, getScoreEstimate);
+app.get(
+  "/api/progress/projection",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getScoreEstimate,
+);
 
 // Recency KPIs endpoint (last 200 attempts stats)
-app.get("/api/progress/kpis", requireSupabaseAuth, requireStudentOrAdmin, getRecencyKpis);
+app.get(
+  "/api/progress/kpis",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getRecencyKpis,
+);
 // Minimal guarded admin auth contract for regression invariants.
-app.get("/api/admin/db-health", requireSupabaseAuth, requireSupabaseAdmin, async (_req: Request, res: Response) => {
-  return res.json({
-    ok: true,
-    status: "healthy",
-    service: "database",
-  });
-});
+app.get(
+  "/api/admin/db-health",
+  requireSupabaseAuth,
+  requireSupabaseAdmin,
+  async (_req: Request, res: Response) => {
+    return res.json({
+      ok: true,
+      status: "healthy",
+      service: "database",
+    });
+  },
+);
 // Questions API Routes (Supabase-authenticated, student/admin only)
 // Wrap getQuestions to match frontend format expectations
-app.get("/api/questions", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
-  const originalJson = res.json.bind(res);
-  res.json = function (data: any) {
-    if (Array.isArray(data)) {
-      return originalJson.call(res, { questions: data, meta: { total: data.length } });
-    }
-    return originalJson.call(res, data);
-  };
-  return getQuestions(req, res);
-});
+app.get(
+  "/api/questions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  async (req, res) => {
+    const originalJson = res.json.bind(res);
+    res.json = function (data: any) {
+      if (Array.isArray(data)) {
+        return originalJson.call(res, {
+          questions: data,
+          meta: { total: data.length },
+        });
+      }
+      return originalJson.call(res, data);
+    };
+    return getQuestions(req, res);
+  },
+);
 
 app.get("/api/questions/recent", async (req, res) => {
   // Allow anonymous access to recent questions for public preview
   const originalJson = res.json.bind(res);
   res.json = function (data: any) {
     if (Array.isArray(data)) {
-      return originalJson.call(res, { questions: data, meta: { total: data.length } });
+      return originalJson.call(res, {
+        questions: data,
+        meta: { total: data.length },
+      });
     }
     return originalJson.call(res, data);
   };
   return getRecentQuestions(req, res);
 });
 
-app.get("/api/questions/random", requireSupabaseAuth, requireStudentOrAdmin, async (req, res) => {
-  const originalJson = res.json.bind(res);
-  res.json = function (data: any) {
-    if (Array.isArray(data)) {
-      return originalJson.call(res, { questions: data, meta: { total: data.length } });
-    }
-    return originalJson.call(res, data);
-  };
-  return getRandomQuestions(req, res);
-});
+app.get(
+  "/api/questions/random",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  async (req, res) => {
+    const originalJson = res.json.bind(res);
+    res.json = function (data: any) {
+      if (Array.isArray(data)) {
+        return originalJson.call(res, {
+          questions: data,
+          meta: { total: data.length },
+        });
+      }
+      return originalJson.call(res, data);
+    };
+    return getRandomQuestions(req, res);
+  },
+);
 
-app.get("/api/questions/count", requireSupabaseAuth, requireStudentOrAdmin, getQuestionCount);
-app.get("/api/questions/stats", requireSupabaseAuth, requireStudentOrAdmin, getQuestionStats);
-app.get("/api/questions/feed", requireSupabaseAuth, requireStudentOrAdmin, getQuestionsFeed);
+app.get(
+  "/api/questions/count",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getQuestionCount,
+);
+app.get(
+  "/api/questions/stats",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getQuestionStats,
+);
+app.get(
+  "/api/questions/feed",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getQuestionsFeed,
+);
 
 // SECURE: Single question endpoint - never leaks answers
-app.get("/api/questions/:id", requireSupabaseAuth, requireStudentOrAdmin, getQuestionById);
+app.get(
+  "/api/questions/:id",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getQuestionById,
+);
 
 // Review errors endpoint - authenticated students can review their failed attempts
 app.get(
   "/api/review-errors",
   requireSupabaseAuth,
   requireStudentOrAdmin,
-  getReviewErrors
+  getReviewErrors,
 );
 
 app.get(
   "/api/review-errors/recent-sessions",
   requireSupabaseAuth,
   requireStudentOrAdmin,
-  getRecentReviewSessions
+  getRecentReviewSessions,
 );
 
 // Review errors attempt endpoint - records student attempts during error review
@@ -414,29 +559,40 @@ app.post(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  startReviewErrorSession
+  startReviewErrorSession,
 );
 app.get(
   "/api/review-errors/sessions/:sessionId/state",
   requireSupabaseAuth,
   requireStudentOrAdmin,
-  getReviewErrorSessionState
+  getReviewErrorSessionState,
 );
 app.post(
   "/api/review-errors/attempt",
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  submitReviewSessionAnswer
+  submitReviewSessionAnswer,
 );
 
 // Answer validation endpoint (questionId passed in request body for flexibility)
 
 // Question feedback endpoint (thumbs up/down)
-app.post("/api/questions/feedback", requireSupabaseAuth, requireStudentOrAdmin, doubleCsrfProtection, submitQuestionFeedback);
+app.post(
+  "/api/questions/feedback",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  doubleCsrfProtection,
+  submitQuestionFeedback,
+);
 
 // Guardian Routes (requires Supabase auth + guardian role)
-app.use("/api/guardian", requireSupabaseAuth, doubleCsrfProtection, guardianRoutes);
+app.use(
+  "/api/guardian",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  guardianRoutes,
+);
 
 // Billing Routes (for parent subscription payments)
 app.use("/api/billing", billingRoutes);
@@ -449,8 +605,18 @@ app.use("/api/account", accountDeletionRoutes);
 app.use("/api/health", healthRoutes);
 
 // Practice reference routes (bootstrap/filtering only; not runtime delivery)
-app.get("/api/practice/topics", requireSupabaseAuth, requireStudentOrAdmin, getPracticeTopics);
-app.get("/api/practice/reference/questions", requireSupabaseAuth, requireStudentOrAdmin, getPracticeQuestions);
+app.get(
+  "/api/practice/topics",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getPracticeTopics,
+);
+app.get(
+  "/api/practice/reference/questions",
+  requireSupabaseAuth,
+  requireStudentOrAdmin,
+  getPracticeQuestions,
+);
 
 // Practice Canonical Routes (unified practice API)
 // CSRF protection is applied at the mount (GET/HEAD/OPTIONS are ignored by middleware).
@@ -460,7 +626,7 @@ app.use(
   requireSupabaseAuth,
   requireStudentOrAdmin,
   doubleCsrfProtection,
-  practiceCanonicalRouter
+  practiceCanonicalRouter,
 );
 
 // Full-Length Exam Routes (Bluebook-style SAT exams)
@@ -469,7 +635,7 @@ app.use(
   "/api/full-length",
   requireSupabaseAuth,
   requireStudentOrAdmin,
-  fullLengthExamRouter
+  fullLengthExamRouter,
 );
 
 // Debug route to identify server version and routes in prod
@@ -502,10 +668,12 @@ function getIndexHtml(): string {
         indexHtmlCache = fs.readFileSync(filePath, "utf-8");
       } else {
         // Fallback for development before build
-        indexHtmlCache = '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
+        indexHtmlCache =
+          '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
       }
     } catch {
-      indexHtmlCache = '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
+      indexHtmlCache =
+        '<!DOCTYPE html><html lang="en"><head><title>Lyceon</title></head><body><div id="root"></div></body></html>';
     }
   }
   return indexHtmlCache;
@@ -537,7 +705,6 @@ for (const routePath of Object.keys(PUBLIC_SSR_ROUTES)) {
     servePublicSsr(routePath, res);
   });
 }
-
 
 // SSR metadata fallback for public legal docs not explicitly listed in PUBLIC_SSR_ROUTES.
 // Keeps sitemap legal slugs indexable with canonical title/description metadata.
@@ -585,7 +752,6 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(staticPath, "index.html"));
 });
 
-
 // Final error boundary for uncaught route errors
 app.use((err: any, req: Request, res: Response, next: any) => {
   const requestId = (req as any).requestId || logger.generateRequestId();
@@ -593,7 +759,8 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   const csrfError =
     err?.code === "EBADCSRFTOKEN" ||
     err?.name === "CSRFError" ||
-    (typeof err?.message === "string" && err.message.toLowerCase().includes("csrf"));
+    (typeof err?.message === "string" &&
+      err.message.toLowerCase().includes("csrf"));
 
   if (csrfError) {
     return res.status(403).json({
@@ -606,8 +773,8 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   }
 
   logger.error(
-    'HTTP',
-    'unhandled_error',
+    "HTTP",
+    "unhandled_error",
     `Unhandled error in ${req.method} ${req.path}`,
     err,
     {
@@ -622,7 +789,7 @@ app.use((err: any, req: Request, res: Response, next: any) => {
       requestId,
       userId: req.user?.id,
       ip: req.ip,
-    }
+    },
   );
 
   if (res.headersSent) {
@@ -630,7 +797,7 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   }
 
   return res.status(err?.status || 500).json({
-    error: 'Internal server error',
+    error: "Internal server error",
     requestId,
   });
 });
@@ -647,7 +814,9 @@ if (process.env.NODE_ENV === "production") {
 
   const missingVars = criticalEnvVars.filter((k) => !(env as any)[k]);
   if (missingVars.length > 0) {
-    console.error(`[WARN] Missing env vars: ${missingVars.join(", ")} - some features may not work`);
+    console.error(
+      `[WARN] Missing env vars: ${missingVars.join(", ")} - some features may not work`,
+    );
   }
 }
 
@@ -676,11 +845,19 @@ if (isMainModule) {
   // Global error handlers to prevent crashes before port binding
   // NOTE: These are only set up when running as main module, not during tests
   process.on("uncaughtException", (err) => {
-    logger.error("PROCESS", "uncaught_exception", "Uncaught exception", err, { fatal: true });
+    logger.error("PROCESS", "uncaught_exception", "Uncaught exception", err, {
+      fatal: true,
+    });
     process.exit(1);
   });
   process.on("unhandledRejection", (reason) => {
-    logger.error("PROCESS", "unhandled_rejection", "Unhandled promise rejection", reason, { fatal: false });
+    logger.error(
+      "PROCESS",
+      "unhandled_rejection",
+      "Unhandled promise rejection",
+      reason,
+      { fatal: false },
+    );
   });
 
   // Validate environment variables on startup
@@ -693,18 +870,26 @@ if (isMainModule) {
 
     if (!publicSiteUrl) {
       if (isProduction) {
-        console.error("❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.");
-        console.error("   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.");
+        console.error(
+          "❌ [FATAL] PUBLIC_SITE_URL is not set. OAuth will fail in production.",
+        );
+        console.error(
+          "   Set PUBLIC_SITE_URL=https://lyceon.ai in your environment.",
+        );
         process.exit(1);
       } else {
         console.warn("⚠️ [WARN] PUBLIC_SITE_URL is not set. OAuth may fail.");
-        console.warn("   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.");
+        console.warn(
+          "   For development, set PUBLIC_SITE_URL or use REPLIT_DEV_DOMAIN fallback.",
+        );
       }
       return;
     }
 
     if (publicSiteUrl.endsWith("/")) {
-      console.warn("⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.");
+      console.warn(
+        "⚠️ [WARN] PUBLIC_SITE_URL has trailing slash, this may cause redirect issues.",
+      );
     }
 
     if (!publicSiteUrl.startsWith("https://") && isProduction) {
@@ -714,11 +899,15 @@ if (isMainModule) {
 
     const normalizedUrl = publicSiteUrl.replace(/\/$/, "").toLowerCase();
     if (isProduction && !normalizedUrl.includes("lyceon.ai")) {
-      console.warn("⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.");
+      console.warn(
+        "⚠️ [WARN] PUBLIC_SITE_URL does not contain lyceon.ai - verify this is intentional.",
+      );
     }
 
     console.log(`✅ [AUTH] PUBLIC_SITE_URL: ${publicSiteUrl}`);
-    console.log(`✅ [AUTH] OAuth callback: ${publicSiteUrl.replace(/\/$/, "")}/auth/google/callback`);
+    console.log(
+      `✅ [AUTH] Native OAuth landing: ${publicSiteUrl.replace(/\/$/, "")}/auth/callback`,
+    );
   }
 
   validateSiteUrl();
@@ -738,9 +927,13 @@ if (isMainModule) {
     console.log(`  POST   /api/rag/v2 (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/conversations (requires Supabase auth)`);
     console.log(`  POST   /api/tutor/messages (requires Supabase auth)`);
-    console.log(`  GET    /api/tutor/conversations/:conversationId (requires Supabase auth)`);
+    console.log(
+      `  GET    /api/tutor/conversations/:conversationId (requires Supabase auth)`,
+    );
     console.log(`  GET    /api/tutor/conversations (requires Supabase auth)`);
-    console.log(`  POST   /api/tutor/conversations/:conversationId/close (requires Supabase auth)`);
+    console.log(
+      `  POST   /api/tutor/conversations/:conversationId/close (requires Supabase auth)`,
+    );
     console.log(`\n🔐 Supabase Authentication (Google OAuth via Supabase):`);
     console.log(`  POST   /api/auth/signup`);
     console.log(`  POST   /api/auth/signin`);
