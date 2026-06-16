@@ -2236,6 +2236,10 @@ export async function getCurrentSession(
         id: target.question_id,
         canonicalId: safeBase.canonical_id,
         stem: safeBase.stem,
+        // GetCurrentSessionResult.currentQuestion declares `section: string` (the §10.2
+        // active-section payload carries section, mirroring projectSafeQuestionFields). Source it
+        // from the anti-leak-projected snapshot so the declared contract is actually populated.
+        section: safeBase.section_code ?? "",
         question_type: "multiple_choice" as const,
         options: safeBase.options,
         // Doc 04A §10.2: difficulty must not appear in the active-section payload.

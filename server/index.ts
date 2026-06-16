@@ -94,6 +94,15 @@ app.use(securityHeadersMiddleware());
 
 // Core middleware
 app.use(corsAllowlist());
+// codeql[js/missing-token-validation]: false positive. CSRF *is* enforced — via the custom
+// double-submit middleware `doubleCsrfProtection` (csrf-csrf + Origin allowlist, see
+// ./middleware/csrf-double-submit), which CodeQL's default model does not recognize (it matches
+// only app-level `csurf`). Every browser-facing mutating route applies it: app-level POSTs each
+// pair with doubleCsrfProtection (grep `doubleCsrfProtection` in this file), every mutating
+// router is mounted with it (or applies it per-route, e.g. /api/auth, /api/billing, /api/account),
+// and there are zero app-level PUT/PATCH/DELETE handlers. The only CSRF-less mutating route is the
+// Stripe webhook (above), which is Stripe-signature-verified (CSRF_EXEMPT_REASON). Default-setup
+// CodeQL does not honor inline suppressions — dismiss this alert in the GitHub Security UI.
 app.use(cookieParser());
 
 // Stripe webhook route MUST be registered BEFORE express.json()
