@@ -82,7 +82,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
 
     const user = data.user;
 
-    let redirectPath = "/profile/complete";
+    let redirectPath: string;
     try {
       const admin = getSupabaseAdmin();
       const profile = await ensureProfileForAuthUser(admin, user, {
