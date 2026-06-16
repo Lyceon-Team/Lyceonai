@@ -111,7 +111,8 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
   }
 
   // Accept the legacy 'sb-access-token' cookie (still written by some flows / tests)
-  const accessToken = cookies["sb-access-token"];
+  const accessTokenCookieName = ALLOWED_AUTH_COOKIES[0];
+  const accessToken = cookies[accessTokenCookieName];
   if (typeof accessToken === "string" && accessToken.length >= 20) {
     result.token = accessToken;
     result.tokenSource = "cookie:sb-access-token";
