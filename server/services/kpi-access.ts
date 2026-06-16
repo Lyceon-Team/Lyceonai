@@ -1,10 +1,15 @@
-import { getEntitlement, resolveLinkedPairPremiumAccessForStudent } from "../lib/account";
+import {
+  getEntitlement,
+  resolveLinkedPairPremiumAccessForStudent,
+  type EntitlementStatus,
+} from "../lib/account";
 
 export interface KpiEntitlementAccess {
   hasPaidAccess: boolean;
   accountId: string | null;
   plan: "free" | "paid";
-  status: "active" | "trialing" | "past_due" | "canceled" | "inactive";
+  // genesis entitlement status, or the 'inactive' sentinel for "no entitlement row".
+  status: EntitlementStatus | "inactive";
   currentPeriodEnd: string | null;
   reason: string;
 }
@@ -20,11 +25,14 @@ function baseFree(reason: string): KpiEntitlementAccess {
   };
 }
 
-export async function resolvePaidKpiAccessForStudent(studentUserId: string): Promise<KpiEntitlementAccess> {
+export async function resolvePaidKpiAccessForStudent(
+  studentUserId: string,
+): Promise<KpiEntitlementAccess> {
   try {
-    const access = await resolveLinkedPairPremiumAccessForStudent(studentUserId);
+    const access =
+      await resolveLinkedPairPremiumAccessForStudent(studentUserId);
 
-    let status: KpiEntitlementAccess['status'] = 'inactive';
+    let status: KpiEntitlementAccess["status"] = "inactive";
     let currentPeriodEnd: string | null = null;
     const sourceAccountId = access.studentAccountId;
 
@@ -39,8 +47,8 @@ export async function resolvePaidKpiAccessForStudent(studentUserId: string): Pro
     return {
       hasPaidAccess: access.hasPremiumAccess,
       accountId: sourceAccountId,
-      plan: access.hasPremiumAccess ? 'paid' : 'free',
-      status: access.hasPremiumAccess ? status : 'inactive',
+      plan: access.hasPremiumAccess ? "paid" : "free",
+      status: access.hasPremiumAccess ? status : "inactive",
       currentPeriodEnd: access.hasPremiumAccess ? currentPeriodEnd : null,
       reason: access.reason,
     };
@@ -49,7 +57,10 @@ export async function resolvePaidKpiAccessForStudent(studentUserId: string): Pro
   }
 }
 
-export async function resolvePaidKpiAccessForUser(userId: string, role: "student" | "guardian" | "admin"): Promise<KpiEntitlementAccess> {
+export async function resolvePaidKpiAccessForUser(
+  userId: string,
+  role: "student" | "guardian" | "admin",
+): Promise<KpiEntitlementAccess> {
   if (role === "admin") {
     return {
       hasPaidAccess: true,
@@ -65,6 +76,7 @@ export async function resolvePaidKpiAccessForUser(userId: string, role: "student
     return resolvePaidKpiAccessForStudent(userId);
   }
 
-  return baseFree("Guardian access is resolved via linked student entitlement middleware.");
+  return baseFree(
+    "Guardian access is resolved via linked student entitlement middleware.",
+  );
 }
-

@@ -717,7 +717,6 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
                   id: currentQuestion.id,
                   stem: currentQuestion.stem,
                   question_type: "multiple_choice",
-                  section: currentQuestion.section,
                   options: currentQuestion.options,
                 }}
                 selectedAnswer={selectedAnswer}

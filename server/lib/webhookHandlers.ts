@@ -65,32 +65,42 @@ async function handleSubscriptionEvent(
     throw err;
   }
 
-  // Handle out-of-order events: always fetch the latest subscription state from Stripe
+  // STRIPE-001: thin idempotent receiver. Always re-fetch the latest subscription state from Stripe
+  // so out-of-order webhook deliveries converge on Stripe's authoritative truth — then persist that
+  // truth VERBATIM. No transition graph, no trial-ending computation, no canceled-at-request-time or
+  // temporal/grace derivation: `status` is whatever Stripe reports, period fields are passed through.
   const stripe = await getUncachableStripeClient();
   const subscription = await stripe.subscriptions.retrieve(subscriptionPayload.id);
 
-  const { plan, status } = mapStripeStatusToEntitlement(subscription.status);
-  const periodEnd = (subscription as any).current_period_end;
-  const currentPeriodEnd = periodEnd
-    ? new Date(periodEnd * 1000).toISOString()
-    : null;
+  const { tier, status } = mapStripeStatusToEntitlement(subscription.status);
+
+  const toIso = (epochSeconds: unknown): string | null =>
+    typeof epochSeconds === 'number' ? new Date(epochSeconds * 1000).toISOString() : null;
+
+  const currentPeriodStart = toIso((subscription as { current_period_start?: unknown }).current_period_start);
+  const currentPeriodEnd = toIso((subscription as { current_period_end?: unknown }).current_period_end);
+  const cancelAtPeriodEnd = subscription.cancel_at_period_end === true;
 
   await upsertEntitlement(accountId, {
-    plan,
+    tier,
     status,
     stripe_customer_id: typeof subscription.customer === 'string'
       ? subscription.customer
       : subscription.customer.id,
     stripe_subscription_id: subscription.id,
+    current_period_start: currentPeriodStart,
     current_period_end: currentPeriodEnd,
+    cancel_at_period_end: cancelAtPeriodEnd,
   });
 
   logger.info('WEBHOOK', eventType, 'Updated entitlement', {
     accountId,
-    plan,
+    tier,
     status,
     subscriptionId: subscription.id,
+    currentPeriodStart,
     currentPeriodEnd,
+    cancelAtPeriodEnd,
     eventId,
   });
 }

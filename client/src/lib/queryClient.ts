@@ -1,10 +1,13 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { clearCsrfToken, csrfFetch } from "./csrf";
+import { csrfFetch } from "./csrf";
 import { parseApiErrorFromResponse } from "./api-error";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    throw await parseApiErrorFromResponse(res, res.statusText || "Request failed");
+    throw await parseApiErrorFromResponse(
+      res,
+      res.statusText || "Request failed",
+    );
   }
 }
 
@@ -21,7 +24,8 @@ function normalizeApiRequestUrl(rawUrl: string): string {
 
   try {
     const parsed = new URL(url, window.location.origin);
-    const isApiPath = parsed.pathname === "/api" || parsed.pathname.startsWith("/api/");
+    const isApiPath =
+      parsed.pathname === "/api" || parsed.pathname.startsWith("/api/");
 
     // For app API calls, always use a same-origin path to avoid apex/www drift.
     if (isApiPath) {
@@ -34,38 +38,21 @@ function normalizeApiRequestUrl(rawUrl: string): string {
   return url;
 }
 
+// AUTH-001: session refresh is now native. The server's @supabase/ssr middleware transparently
+// refreshes the Supabase session (rotating the httpOnly session cookie) on every authenticated
+// request, so there is no client-callable /api/auth/refresh endpoint and no retry-on-401 dance.
+// A persistent 401/403 means the session is genuinely invalid and the caller should treat the user
+// as signed out. The function name/signature is preserved so existing call sites stay unchanged.
 async function fetchWithSessionRefresh(
   url: string,
-  init?: RequestInit
+  init?: RequestInit,
 ): Promise<Response> {
   const requestUrl = normalizeApiRequestUrl(url);
 
-  const doFetch = () => csrfFetch(requestUrl, {
+  return csrfFetch(requestUrl, {
     ...init,
     credentials: "include",
   });
-
-  let res = await doFetch();
-
-  const isAuthEndpoint = requestUrl.startsWith("/api/auth/");
-  const shouldAttemptRefresh = !isAuthEndpoint && (res.status === 401 || res.status === 403);
-
-  if (shouldAttemptRefresh) {
-    const refreshRes = await csrfFetch("/api/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({}),
-    });
-
-    if (refreshRes.ok) {
-      // Refresh changes session identity cookies, so force a fresh CSRF token next mutation.
-      clearCsrfToken();
-      res = await doFetch();
-    }
-  }
-
-  return res;
 }
 
 type ApiRequestOptions = {
@@ -76,13 +63,13 @@ type ApiRequestOptions = {
 
 export async function apiRequestRaw(
   url: string,
-  options?: ApiRequestOptions
+  options?: ApiRequestOptions,
 ): Promise<Response> {
-  const { method = 'GET', headers = {}, body } = options || {};
-  
+  const { method = "GET", headers = {}, body } = options || {};
+
   // For FormData, let the browser set Content-Type automatically with boundary
   const isFormData = body instanceof FormData;
-  
+
   const res = await fetchWithSessionRefresh(url, {
     method,
     headers: {
@@ -97,7 +84,7 @@ export async function apiRequestRaw(
 
 export async function apiRequest(
   url: string,
-  options?: ApiRequestOptions
+  options?: ApiRequestOptions,
 ): Promise<Response> {
   const res = await apiRequestRaw(url, options);
   await throwIfResNotOk(res);
@@ -119,13 +106,19 @@ export const getQueryFn: <T>(options: {
 
     await throwIfResNotOk(res);
     const data = await res.json();
-    
+
     // Handle wrapped question responses: { questions: [], meta: {} }
     // Extract the array for question endpoints
-    if (url.includes('/api/questions') && data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.questions)) {
+    if (
+      url.includes("/api/questions") &&
+      data &&
+      typeof data === "object" &&
+      !Array.isArray(data) &&
+      Array.isArray(data.questions)
+    ) {
       return data.questions;
     }
-    
+
     return data;
   };
 

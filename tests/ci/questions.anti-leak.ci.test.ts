@@ -14,9 +14,17 @@
  * 7. Tests are tolerant to empty data environments
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import request from 'supertest';
-import type { Express } from 'express';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
+import request from "supertest";
+import type { Express } from "express";
 
 type MockQuestionRow = {
   id: string;
@@ -24,6 +32,9 @@ type MockQuestionRow = {
   status: string;
   section: string;
   section_code: string;
+  // Genesis-native item discriminator. The questions-runtime layer now filters and reconciles
+  // on item_type ('mcq' | 'grid_in') rather than the legacy question_type column.
+  item_type: string;
   question_type: string;
   stem: string;
   options: Array<{ key: string; text: string }>;
@@ -43,17 +54,17 @@ const { mockQuestionRows } = vi.hoisted(() => ({
   mockQuestionRows: [] as MockQuestionRow[],
 }));
 
-vi.mock('../../server/middleware/supabase-auth', async () => {
-  const actual = await vi.importActual<typeof import('../../server/middleware/supabase-auth')>(
-    '../../server/middleware/supabase-auth'
-  );
+vi.mock("../../server/middleware/supabase-auth", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../server/middleware/supabase-auth")
+  >("../../server/middleware/supabase-auth");
 
   return {
     ...actual,
     supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
       req.user = {
-        id: 'anti-leak-student',
-        role: 'student',
+        id: "anti-leak-student",
+        role: "student",
         isGuardian: false,
         isAdmin: false,
       };
@@ -61,8 +72,8 @@ vi.mock('../../server/middleware/supabase-auth', async () => {
     },
     requireSupabaseAuth: (req: any, _res: any, next: any) => {
       req.user = {
-        id: 'anti-leak-student',
-        role: 'student',
+        id: "anti-leak-student",
+        role: "student",
         isGuardian: false,
         isAdmin: false,
       };
@@ -75,12 +86,27 @@ vi.mock('../../server/middleware/supabase-auth', async () => {
 
 class QuestionQueryBuilder {
   private filters: Array<(row: MockQuestionRow) => boolean> = [];
-  private sorter: ((a: MockQuestionRow, b: MockQuestionRow) => number) | null = null;
+  private sorter: ((a: MockQuestionRow, b: MockQuestionRow) => number) | null =
+    null;
   private rangeStart: number | null = null;
   private rangeEnd: number | null = null;
   private limitCount: number | null = null;
+  // QUESTIONS-TEST-001: honor the selected column list so the mock models production —
+  // PostgREST returns ONLY the selected columns. A fixture that returns answer-bearing
+  // columns the route never selected proves nothing (it lets a drop-all-rows serving bug
+  // pass). null = SELECT * (no projection).
+  private selectedColumns: string[] | null = null;
 
-  select(_columns?: string) {
+  select(columns?: string) {
+    if (typeof columns === "string") {
+      const trimmed = columns.trim();
+      if (trimmed && trimmed !== "*") {
+        this.selectedColumns = trimmed
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+      }
+    }
     return this;
   }
 
@@ -97,7 +123,7 @@ class QuestionQueryBuilder {
   lt(column: keyof MockQuestionRow, value: any) {
     this.filters.push((row) => {
       const raw = (row as any)[column];
-      if (typeof raw === 'string' || typeof raw === 'number') {
+      if (typeof raw === "string" || typeof raw === "number") {
         return raw < value;
       }
       return false;
@@ -113,7 +139,9 @@ class QuestionQueryBuilder {
       if (av === bv) return 0;
       if (av == null) return asc ? -1 : 1;
       if (bv == null) return asc ? 1 : -1;
-      return asc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+      return asc
+        ? String(av).localeCompare(String(bv))
+        : String(bv).localeCompare(String(av));
     };
     return this;
   }
@@ -146,14 +174,26 @@ class QuestionQueryBuilder {
     } else if (this.limitCount != null) {
       rows = rows.slice(0, this.limitCount);
     }
-    return { data: rows, error: null };
+    // Project to ONLY the selected columns, exactly as PostgREST does (QUESTIONS-TEST-001).
+    const data = this.selectedColumns
+      ? rows.map((row) => {
+          const projected: Record<string, unknown> = {};
+          for (const col of this.selectedColumns as string[]) {
+            if (Object.prototype.hasOwnProperty.call(row, col)) {
+              projected[col] = (row as Record<string, unknown>)[col];
+            }
+          }
+          return projected;
+        })
+      : rows;
+    return { data, error: null };
   }
 }
 
-vi.mock('../../apps/api/src/lib/supabase-server', () => ({
+vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: vi.fn((table: string) => {
-      if (table !== 'questions') {
+      if (table !== "questions") {
         throw new Error(`Unexpected table access in anti-leak test: ${table}`);
       }
       return new QuestionQueryBuilder();
@@ -167,7 +207,7 @@ vi.mock('../../apps/api/src/lib/supabase-server', () => ({
  */
 function extractQuestions(body: unknown): unknown[] {
   if (Array.isArray(body)) return body;
-  if (body && typeof body === 'object') {
+  if (body && typeof body === "object") {
     const obj = body as Record<string, unknown>;
     if (Array.isArray(obj.questions)) return obj.questions;
   }
@@ -175,54 +215,63 @@ function extractQuestions(body: unknown): unknown[] {
 }
 
 function assertNoAnswerLeak(question: any) {
-  expect(question).not.toHaveProperty('correct_answer');
-  expect(question).not.toHaveProperty('answer_text');
-  expect(question).not.toHaveProperty('answer');
-  expect(question).not.toHaveProperty('correctAnswerKey');
+  // Reveal matrix (INV-02-08 / coding-standards §5.2): a pre-submit question serves
+  // correct_answer as null (present-as-null IS the documented shape) — it must NEVER be a
+  // real value. The other answer-bearing fields must be entirely absent (including the
+  // grid-in accepted-answer set correct_variants, which is type-absent from the projection).
+  if (Object.prototype.hasOwnProperty.call(question, "correct_answer")) {
+    expect(question.correct_answer).toBeNull();
+  }
+  expect(question).not.toHaveProperty("answer_text");
+  expect(question).not.toHaveProperty("answer");
+  expect(question).not.toHaveProperty("correctAnswerKey");
+  expect(question).not.toHaveProperty("correct_variants");
+  expect(question).not.toHaveProperty("option_metadata");
 }
 
 function assertExplanationNull(question: any) {
   // Some code paths may include explanation: null explicitly (preferred).
   // If explanation is present, it must be null.
-  if (Object.prototype.hasOwnProperty.call(question, 'explanation')) {
+  if (Object.prototype.hasOwnProperty.call(question, "explanation")) {
     expect(question.explanation).toBeNull();
   }
 }
 
-describe('CI Security Tests - Question Anti-Leak', () => {
+describe("CI Security Tests - Question Anti-Leak", () => {
   let app: Express;
   const fixtureQuestion: MockQuestionRow = {
-    id: '00000000-0000-0000-0000-000000000123',
-    canonical_id: 'SATM1ABC123',
-    status: 'published',
-    section: 'Math',
-    section_code: 'M',
-    question_type: 'multiple_choice',
-    stem: 'What is 3 + 2?',
+    id: "00000000-0000-0000-0000-000000000123",
+    canonical_id: "SATM1ABC123",
+    status: "published",
+    section: "M",
+    section_code: "M",
+    item_type: "mcq",
+    question_type: "multiple_choice",
+    stem: "What is 3 + 2?",
     options: [
-      { key: 'A', text: '4' },
-      { key: 'B', text: '5' },
-      { key: 'C', text: '6' },
-      { key: 'D', text: '7' },
+      { key: "A", text: "4" },
+      { key: "B", text: "5" },
+      { key: "C", text: "6" },
+      { key: "D", text: "7" },
     ],
-    difficulty: 'easy',
-    domain: 'Algebra',
-    skill: 'Addition',
+    difficulty: "easy",
+    domain: "Algebra",
+    skill: "Addition",
     subskill: null,
-    skill_code: 'MATH.ALG.ADD',
+    skill_code: "MATH.ALG.ADD",
     tags: null,
     competencies: null,
-    created_at: '2026-03-16T00:00:00.000Z',
-    correct_answer: 'B',
-    explanation: '3 + 2 = 5.',
+    created_at: "2026-03-16T00:00:00.000Z",
+    correct_answer: "B",
+    explanation: "3 + 2 = 5.",
   };
 
   beforeAll(async () => {
-    process.env.VITEST = 'true';
-    process.env.NODE_ENV = 'test';
+    process.env.VITEST = "true";
+    process.env.NODE_ENV = "test";
 
     // Import app
-    const serverModule = await import('../../server/index');
+    const serverModule = await import("../../server/index");
     app = serverModule.default;
 
     // ------------------------------------------------------------------
@@ -230,9 +279,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     // ------------------------------------------------------------------
     // These routes bypass auth so CI can exercise handlers directly.
     // They should not be used by production clients.
-    const { getRandomQuestions, getQuestions } = await import(
-      '../../server/routes/questions-runtime'
-    );
+    const { getRandomQuestions, getQuestions } =
+      await import("../../server/routes/questions-runtime");
 
     const registerNoAuthGet = (path: string, handler: any) => {
       app.get(path, async (req, res) => {
@@ -240,7 +288,10 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         const originalJson = res.json.bind(res);
         res.json = function (data: any) {
           if (Array.isArray(data)) {
-            return originalJson.call(res, { questions: data, meta: { total: data.length } });
+            return originalJson.call(res, {
+              questions: data,
+              meta: { total: data.length },
+            });
           }
           return originalJson.call(res, data);
         };
@@ -249,8 +300,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       });
     };
 
-    registerNoAuthGet('/__test/questions/random', getRandomQuestions);
-    registerNoAuthGet('/__test/questions', getQuestions);
+    registerNoAuthGet("/__test/questions/random", getRandomQuestions);
+    registerNoAuthGet("/__test/questions", getQuestions);
   });
 
   afterAll(() => {
@@ -261,9 +312,9 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     mockQuestionRows.splice(0, mockQuestionRows.length);
   });
 
-  describe('GET /api/questions/recent - Anti-Leak Protection', () => {
-    it('should never leak explanation field to students (must be null)', async () => {
-      const res = await request(app).get('/api/questions/recent?limit=5');
+  describe("GET /api/questions/recent - Anti-Leak Protection", () => {
+    it("should never leak explanation field to students (must be null)", async () => {
+      const res = await request(app).get("/api/questions/recent?limit=5");
       expect(res.status).toBe(200);
 
       const questions = extractQuestions(res.body);
@@ -274,8 +325,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       });
     });
 
-    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
-      const res = await request(app).get('/api/questions/recent?limit=5');
+    it("should never leak correct answer fields (correct_answer, answer_text, answer)", async () => {
+      const res = await request(app).get("/api/questions/recent?limit=5");
       expect(res.status).toBe(200);
 
       const questions = extractQuestions(res.body);
@@ -286,8 +337,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       });
     });
 
-    it('should handle empty results gracefully (no crash on 0 questions)', async () => {
-      const res = await request(app).get('/api/questions/recent?limit=5');
+    it("should handle empty results gracefully (no crash on 0 questions)", async () => {
+      const res = await request(app).get("/api/questions/recent?limit=5");
       expect(res.status).toBe(200);
 
       const questions = extractQuestions(res.body);
@@ -295,12 +346,31 @@ describe('CI Security Tests - Question Anti-Leak', () => {
 
       // No assertion on length - could be 0 or more
     });
+
+    it("serves a valid published question through the safe-select path (QUESTIONS-SERVING-001 regression)", async () => {
+      // Seed one valid published MCQ. The route SELECTs QUESTION_SAFE_SELECT (no
+      // correct_answer / correct_variants); now that the mock honors the column list, the
+      // row reaches the handler answer-stripped exactly like production. The serving
+      // validator must NOT drop it for lacking those columns — if it does (the original
+      // bug), this assertion fails because the response comes back EMPTY.
+      mockQuestionRows.push({ ...fixtureQuestion });
+
+      const res = await request(app).get("/api/questions/recent?limit=5");
+      expect(res.status).toBe(200);
+
+      const questions = extractQuestions(res.body);
+      expect(questions.length).toBeGreaterThanOrEqual(1);
+      questions.forEach((q: any) => {
+        assertNoAnswerLeak(q);
+        assertExplanationNull(q);
+      });
+    });
   });
 
-  describe('GET /api/questions/random - Anti-Leak Protection', () => {
-    it('should never leak explanation field to students (must be null)', async () => {
+  describe("GET /api/questions/random - Anti-Leak Protection", () => {
+    it("should never leak explanation field to students (must be null)", async () => {
       // Use test-only bypass route to exercise handler without auth
-      const res = await request(app).get('/__test/questions/random?limit=5');
+      const res = await request(app).get("/__test/questions/random?limit=5");
       expect([200, 401, 403, 404]).toContain(res.status);
 
       if (res.status === 200) {
@@ -312,15 +382,15 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         });
       } else {
         // If not reachable, ensure error payload doesn't leak
-        expect(res.body).not.toHaveProperty('explanation');
-        expect(res.body).not.toHaveProperty('correct_answer');
-        expect(res.body).not.toHaveProperty('answer_text');
-        expect(res.body).not.toHaveProperty('answer');
+        expect(res.body).not.toHaveProperty("explanation");
+        expect(res.body).not.toHaveProperty("correct_answer");
+        expect(res.body).not.toHaveProperty("answer_text");
+        expect(res.body).not.toHaveProperty("answer");
       }
     });
 
-    it('should never leak correct answer fields (correct_answer, answer_text, answer)', async () => {
-      const res = await request(app).get('/__test/questions/random?limit=5');
+    it("should never leak correct answer fields (correct_answer, answer_text, answer)", async () => {
+      const res = await request(app).get("/__test/questions/random?limit=5");
       expect([200, 401, 403, 404]).toContain(res.status);
 
       if (res.status === 200) {
@@ -332,24 +402,24 @@ describe('CI Security Tests - Question Anti-Leak', () => {
         });
       } else {
         // If not reachable, ensure error payload doesn't leak
-        expect(res.body).not.toHaveProperty('explanation');
-        expect(res.body).not.toHaveProperty('correct_answer');
-        expect(res.body).not.toHaveProperty('answer_text');
-        expect(res.body).not.toHaveProperty('answer');
+        expect(res.body).not.toHaveProperty("explanation");
+        expect(res.body).not.toHaveProperty("correct_answer");
+        expect(res.body).not.toHaveProperty("answer_text");
+        expect(res.body).not.toHaveProperty("answer");
       }
     });
   });
 
-  describe('GET /api/questions - Anti-Leak Protection', () => {
-    it('returns non-empty mounted /api/questions rows with null answer and explanation pre-submit', async () => {
+  describe("GET /api/questions - Anti-Leak Protection", () => {
+    it("returns non-empty mounted /api/questions rows with null answer and explanation pre-submit", async () => {
       const prevNodeEnv = process.env.NODE_ENV;
       const prevVitest = process.env.VITEST;
-      process.env.NODE_ENV = 'development';
+      process.env.NODE_ENV = "development";
       delete process.env.VITEST;
       mockQuestionRows.splice(0, mockQuestionRows.length, fixtureQuestion);
 
       try {
-        const res = await request(app).get('/api/questions?limit=5');
+        const res = await request(app).get("/api/questions?limit=5");
         expect(res.status).toBe(200);
 
         const questions = extractQuestions(res.body);
@@ -373,9 +443,9 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       }
     });
 
-    it('should never leak explanation field to students (must be null)', async () => {
+    it("should never leak explanation field to students (must be null)", async () => {
       // Use test-only bypass route to exercise handler without auth
-      const res = await request(app).get('/__test/questions?limit=5');
+      const res = await request(app).get("/__test/questions?limit=5");
       expect([200, 401, 403, 404]).toContain(res.status);
 
       if (res.status === 200) {
@@ -388,8 +458,8 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       }
     });
 
-    it('should never leak correct answer fields', async () => {
-      const res = await request(app).get('/__test/questions?limit=5');
+    it("should never leak correct answer fields", async () => {
+      const res = await request(app).get("/__test/questions?limit=5");
       expect([200, 401, 403, 404]).toContain(res.status);
 
       if (res.status === 200) {
@@ -402,6 +472,4 @@ describe('CI Security Tests - Question Anti-Leak', () => {
       }
     });
   });
-
 });
-

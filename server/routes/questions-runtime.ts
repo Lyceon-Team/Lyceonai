@@ -1,52 +1,75 @@
 import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { type AuthenticatedRequest, requireRequestUser } from "../middleware/supabase-auth";
 import {
-  isCanonicalRuntimeMcQuestion,
+  type AuthenticatedRequest,
+  requireRequestUser,
+} from "../middleware/supabase-auth";
+import {
+  isStudentSafeRuntimeQuestion,
+  mapGenesisQuestionRow,
   projectStudentSafeQuestion,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
-import { buildReviewQueueForStudent, type ReviewQueueMode } from "../services/review-queue";
-import { getReviewRuntimeAvailability, sendReviewRuntimeUnavailable } from "../lib/review-runtime-gate";
+import {
+  buildReviewQueueForStudent,
+  type ReviewQueueMode,
+} from "../services/review-queue";
+import {
+  getReviewRuntimeAvailability,
+  sendReviewRuntimeUnavailable,
+} from "../lib/review-runtime-gate";
 
+// @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
+// Genesis-native, student-safe column set. NO answer-bearing fields (correct_answer,
+// explanation, option_metadata, correct_variants) are selected here — the row never
+// carries them, so the student projection cannot leak. item_type is the genesis grid-in
+// discriminator; skill_codes is the genesis open taxonomy (mapped → skill best-effort).
 const QUESTION_SAFE_SELECT = [
   "id",
-  "canonical_id",
-  "section_code",
-  "question_type",
+  "section",
+  "item_type",
   "stem",
   "options",
   "difficulty",
   "domain",
-  "skill",
-  "subskill",
-  "skill_code",
-  "tags",
+  "skill_codes",
   "created_at",
 ].join(",");
+
+const ALLOWED_ITEM_TYPES = ["mcq", "grid_in"] as const;
 
 function isTestEnv(): boolean {
   return process.env.VITEST === "true" || process.env.NODE_ENV === "test";
 }
 
+// @spec [Doc 02B §14/§20 Serving Questions; grid-in-extension.sql] | @implemented 2026-06-14
+// Reconcile the genesis row onto the contract before projecting. questionType/type are
+// derived from the (item_type-aware) student-safe projection — no hardcoded MC. For a
+// grid-in the projection carries empty options + inputMode 'numeric_entry'; no answer or
+// variant set is ever present on `safe` (the serializer null-strips reveal fields).
 function mapQuestionForStudent(row: CanonicalQuestionRowLike) {
-  const safe = projectStudentSafeQuestion(row);
+  const safe = projectStudentSafeQuestion(mapGenesisQuestionRow(row));
+  const isGridIn = safe.item_type === "grid_in";
   return {
     ...safe,
     canonicalId: safe.canonical_id,
     sectionCode: safe.section_code,
-    questionType: "multiple_choice" as const,
-    type: "mc" as const,
+    questionType: safe.question_type,
+    type: isGridIn ? ("grid_in" as const) : ("mc" as const),
   };
 }
 
-function applySectionFilter<TQuery extends { in: (column: string, values: string[]) => TQuery }>(query: TQuery, section: unknown): TQuery {
+function applySectionFilter<
+  TQuery extends { in: (column: string, values: string[]) => TQuery },
+>(query: TQuery, section: unknown): TQuery {
   const filters = resolveSectionFilterValues(section);
   if (!filters || filters.length === 0) {
     return query;
   }
-  return query.in("section_code", filters);
+  // Genesis section codes are 'M' | 'RW'; resolveSectionFilterValues may include the
+  // legacy 'MATH' alias which is harmless against a genesis bank that only stores 'M'.
+  return query.in("section", filters);
 }
 
 async function fetchPublishedQuestions(params: {
@@ -58,7 +81,7 @@ async function fetchPublishedQuestions(params: {
   let query = supabaseServer
     .from("questions")
     .select(QUESTION_SAFE_SELECT)
-    .eq("question_type", "multiple_choice")
+    .in("item_type", [...ALLOWED_ITEM_TYPES])
     .order("created_at", { ascending: false });
 
   query = applySectionFilter(query, params.section);
@@ -78,8 +101,15 @@ async function fetchPublishedQuestions(params: {
     return { data: null, error };
   }
 
-  const rows = (data ?? []) as unknown as CanonicalQuestionRowLike[];
-  const validRows = rows.filter((row) => isCanonicalRuntimeMcQuestion(row));
+  // Reconcile genesis → contract, then validate each row for RENDERABILITY only. The query
+  // selects QUESTION_SAFE_SELECT (no answer-bearing columns), so we must NOT validate with
+  // isCanonicalRuntimeQuestion (it requires correct_answer/correct_variants and would drop
+  // every row — QUESTIONS-SERVING-001). Answer correctness is enforced at ingestion + the DB
+  // CHECK; the student-safe runtime validator checks only the renderable shape per item_type.
+  const rows = (data ?? []).map((row) =>
+    mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike),
+  );
+  const validRows = rows.filter((row) => isStudentSafeRuntimeQuestion(row));
   return { data: validRows, error: null };
 }
 
@@ -90,8 +120,14 @@ export const getQuestions = async (req: Request, res: Response) => {
   }
 
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "20"), 10) || 20,
+      100,
+    );
+    const offset = Math.max(
+      parseInt(String(req.query.offset ?? "0"), 10) || 0,
+      0,
+    );
 
     const { data, error } = await fetchPublishedQuestions({
       section: req.query.section,
@@ -100,19 +136,29 @@ export const getQuestions = async (req: Request, res: Response) => {
     });
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
     return res.json((data ?? []).map(mapQuestionForStudent));
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
 // GET /api/questions/recent - public-safe preview list (published MC only)
 export const getRecentQuestions = async (req: Request, res: Response) => {
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "10"), 10) || 10, 20);
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "10"), 10) || 10,
+      20,
+    );
 
     const { data, error } = await fetchPublishedQuestions({
       section: req.query.section,
@@ -123,7 +169,9 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
       if (isTestEnv()) {
         return res.json([]);
       }
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
     return res.json((data ?? []).map(mapQuestionForStudent));
@@ -131,18 +179,29 @@ export const getRecentQuestions = async (req: Request, res: Response) => {
     if (isTestEnv()) {
       return res.json([]);
     }
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
 // GET /api/questions/random - random published MC questions
-export const getRandomQuestions = async (req: AuthenticatedRequest, res: Response) => {
+export const getRandomQuestions = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
   if (isTestEnv()) {
     return res.json([]);
   }
 
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 50);
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "20"), 10) || 20,
+      50,
+    );
     const section = req.query.section;
 
     const { data, error } = await fetchPublishedQuestions({
@@ -151,13 +210,22 @@ export const getRandomQuestions = async (req: AuthenticatedRequest, res: Respons
     });
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const shuffled = [...(data ?? [])].sort(() => Math.random() - 0.5).slice(0, limit);
+    const shuffled = [...(data ?? [])]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, limit);
     return res.json(shuffled.map(mapQuestionForStudent));
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
@@ -167,15 +235,22 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
     const { count, error } = await supabaseServer
       .from("questions")
       .select("id", { count: "exact", head: true })
-      .eq("question_type", "multiple_choice");
+      .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
     return res.json({ count: count ?? 0 });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
@@ -184,14 +259,19 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabaseServer
       .from("questions")
-      .select("section_code, difficulty")
-      .eq("question_type", "multiple_choice");
+      .select("section, difficulty")
+      .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = (data ?? []) as Array<{ section_code?: string | null; difficulty?: unknown }>;
+    const rows = (data ?? []) as Array<{
+      section?: string | null;
+      difficulty?: unknown;
+    }>;
 
     let math = 0;
     let readingWriting = 0;
@@ -200,7 +280,7 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
     let hard = 0;
 
     for (const row of rows) {
-      const sectionCode = String(row.section_code ?? "").toUpperCase();
+      const sectionCode = String(row.section ?? "").toUpperCase();
       if (sectionCode === "M" || sectionCode === "MATH") {
         math += 1;
       } else if (sectionCode === "RW") {
@@ -225,15 +305,24 @@ export const getQuestionStats = async (_req: Request, res: Response) => {
       recentlyAdded: 0,
     });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
 // GET /api/questions/feed - cursor feed over published MC questions
 export const getQuestionsFeed = async (req: Request, res: Response) => {
   try {
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 50);
-    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "20"), 10) || 20,
+      50,
+    );
+    const cursor =
+      typeof req.query.cursor === "string" ? req.query.cursor : undefined;
 
     const { data, error } = await fetchPublishedQuestions({
       section: req.query.section,
@@ -242,13 +331,17 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
     });
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
     const result = data ?? [];
     const hasMore = result.length > limit;
     const rows = hasMore ? result.slice(0, -1) : result;
-    const nextCursor = hasMore ? (result[result.length - 2] as any)?.created_at ?? null : null;
+    const nextCursor = hasMore
+      ? ((result[result.length - 2] as any)?.created_at ?? null)
+      : null;
 
     return res.json({
       questions: rows.map(mapQuestionForStudent),
@@ -256,7 +349,12 @@ export const getQuestionsFeed = async (req: Request, res: Response) => {
       hasMore,
     });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
@@ -272,30 +370,44 @@ export const getQuestionById = async (req: Request, res: Response) => {
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
       .eq("id", id)
-      .eq("question_type", "multiple_choice")
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
       .single();
 
     if (error || !data) {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    const row = data as unknown as CanonicalQuestionRowLike;
-    if (!isCanonicalRuntimeMcQuestion(row)) {
+    const row = mapGenesisQuestionRow(
+      data as unknown as CanonicalQuestionRowLike,
+    );
+    if (!isStudentSafeRuntimeQuestion(row)) {
       return res.status(404).json({ error: "Question not found" });
     }
 
     return res.json(mapQuestionForStudent(row));
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch question", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch question",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
 // GET /api/review-errors - canonical review queue builder
-export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) => {
+export const getReviewErrors = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
   try {
     const availability = await getReviewRuntimeAvailability();
     if (!availability.available) {
-      return sendReviewRuntimeUnavailable(res, req.requestId, availability.missingTable);
+      return sendReviewRuntimeUnavailable(
+        res,
+        req.requestId,
+        availability.missingTable,
+      );
     }
 
     const user = requireRequestUser(req, res);
@@ -313,7 +425,11 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       });
     }
     const normalizedMode = rawMode;
-    const allowedModes: ReviewQueueMode[] = ["all_past_mistakes", "by_practice_session", "by_full_length_session"];
+    const allowedModes: ReviewQueueMode[] = [
+      "all_past_mistakes",
+      "by_practice_session",
+      "by_full_length_session",
+    ];
     if (!allowedModes.includes(normalizedMode as ReviewQueueMode)) {
       return res.status(400).json({
         error: "Invalid review mode",
@@ -323,12 +439,19 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
     }
 
     const mode = normalizedMode as ReviewQueueMode;
-    const practiceSessionId = typeof query.practice_session_id === "string" ? query.practice_session_id.trim() : "";
-    const fullLengthSessionId = typeof query.full_length_session_id === "string" ? query.full_length_session_id.trim() : "";
+    const practiceSessionId =
+      typeof query.practice_session_id === "string"
+        ? query.practice_session_id.trim()
+        : "";
+    const fullLengthSessionId =
+      typeof query.full_length_session_id === "string"
+        ? query.full_length_session_id.trim()
+        : "";
 
     if (mode === "by_practice_session" && !practiceSessionId) {
       return res.status(400).json({
-        error: "practice_session_id is required for by_practice_session review mode",
+        error:
+          "practice_session_id is required for by_practice_session review mode",
         code: "REVIEW_MODE_MISSING_PRACTICE_SESSION_ID",
         requestId: req.requestId,
       });
@@ -336,15 +459,20 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
 
     if (mode === "by_full_length_session" && !fullLengthSessionId) {
       return res.status(400).json({
-        error: "full_length_session_id is required for by_full_length_session review mode",
+        error:
+          "full_length_session_id is required for by_full_length_session review mode",
         code: "REVIEW_MODE_MISSING_FULL_LENGTH_SESSION_ID",
         requestId: req.requestId,
       });
     }
 
-    if (mode === "all_past_mistakes" && (practiceSessionId || fullLengthSessionId)) {
+    if (
+      mode === "all_past_mistakes" &&
+      (practiceSessionId || fullLengthSessionId)
+    ) {
       return res.status(400).json({
-        error: "session-specific filters require by_practice_session or by_full_length_session mode",
+        error:
+          "session-specific filters require by_practice_session or by_full_length_session mode",
         code: "REVIEW_MODE_CONFLICT",
         requestId: req.requestId,
       });
@@ -363,16 +491,27 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
         skippedAttempts: [],
         reviewQueue: [],
         summary: {
-          sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
+          sessionId:
+            mode === "by_practice_session"
+              ? practiceSessionId
+              : mode === "by_full_length_session"
+                ? fullLengthSessionId
+                : null,
           sessionStartedAt: null,
           sessionMode: mode,
-          sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
+          sessionSection:
+            mode === "by_practice_session"
+              ? "practice"
+              : mode === "by_full_length_session"
+                ? "full_length"
+                : "mixed",
           correctCount: 0,
           incorrectCount: 0,
           skippedCount: 0,
           totalCount: 0,
         },
-        message: "No review-eligible misses found yet. Keep practicing to build your recovery queue.",
+        message:
+          "No review-eligible misses found yet. Keep practicing to build your recovery queue.",
       });
     }
 
@@ -386,12 +525,17 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       isCorrect: snapshot.isCorrect,
       outcome: snapshot.outcome,
       attemptedAt: snapshot.attemptedAt,
-      documentName: snapshot.source === "full_test" ? "SAT Full-Length" : "SAT Practice",
+      documentName:
+        snapshot.source === "full_test" ? "SAT Full-Length" : "SAT Practice",
       source: snapshot.source,
     });
 
-    const incorrectAttempts = queue.unresolvedQueue.filter((snapshot) => snapshot.outcome === "incorrect").map(formatAttempt);
-    const skippedAttempts = queue.unresolvedQueue.filter((snapshot) => snapshot.outcome === "skipped").map(formatAttempt);
+    const incorrectAttempts = queue.unresolvedQueue
+      .filter((snapshot) => snapshot.outcome === "incorrect")
+      .map(formatAttempt);
+    const skippedAttempts = queue.unresolvedQueue
+      .filter((snapshot) => snapshot.outcome === "skipped")
+      .map(formatAttempt);
 
     const reviewQueue = queue.unresolvedQueue.map((snapshot) => ({
       questionId: snapshot.questionId,
@@ -414,21 +558,37 @@ export const getReviewErrors = async (req: AuthenticatedRequest, res: Response) 
       skippedAttempts,
       reviewQueue,
       summary: {
-        sessionId: mode === "by_practice_session" ? practiceSessionId : mode === "by_full_length_session" ? fullLengthSessionId : null,
+        sessionId:
+          mode === "by_practice_session"
+            ? practiceSessionId
+            : mode === "by_full_length_session"
+              ? fullLengthSessionId
+              : null,
         sessionStartedAt: queue.latestAttemptAt,
         sessionMode: mode,
-        sessionSection: mode === "by_practice_session" ? "practice" : mode === "by_full_length_session" ? "full_length" : "mixed",
+        sessionSection:
+          mode === "by_practice_session"
+            ? "practice"
+            : mode === "by_full_length_session"
+              ? "full_length"
+              : "mixed",
         correctCount: queue.correctCount,
         incorrectCount: queue.incorrectCount,
         skippedCount: queue.skippedCount,
         totalCount: queue.latestSnapshots.length,
       },
-      message: reviewQueue.length === 0
-        ? "No unresolved review items right now. Great recovery streak."
-        : undefined,
+      message:
+        reviewQueue.length === 0
+          ? "No unresolved review items right now. Great recovery streak."
+          : undefined,
     });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch failed attempts", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch failed attempts",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
@@ -437,69 +597,109 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
   try {
     const unitTag = req.query.unitTag as string;
     if (!unitTag) {
-      return res.status(400).json({ error: "unitTag query parameter is required" });
+      return res
+        .status(400)
+        .json({ error: "unitTag query parameter is required" });
     }
 
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "20"), 10) || 20,
+      100,
+    );
+    const offset = Math.max(
+      parseInt(String(req.query.offset ?? "0"), 10) || 0,
+      0,
+    );
 
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("question_type", "multiple_choice")
-      .eq("skill", unitTag)
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
+      .contains("skill_codes", [unitTag])
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[])
+      .map((row) => mapGenesisQuestionRow(row))
+      .filter((row) => isStudentSafeRuntimeQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
       unitTag,
     });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
 export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
   try {
-    const difficultyLevel = parseInt(String(req.query.difficultyLevel ?? ""), 10);
+    const difficultyLevel = parseInt(
+      String(req.query.difficultyLevel ?? ""),
+      10,
+    );
     if (!difficultyLevel || difficultyLevel < 1 || difficultyLevel > 5) {
-      return res.status(400).json({ error: "difficultyLevel must be between 1 and 5" });
+      return res
+        .status(400)
+        .json({ error: "difficultyLevel must be between 1 and 5" });
     }
 
-    const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-    const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+    const limit = Math.min(
+      parseInt(String(req.query.limit ?? "20"), 10) || 20,
+      100,
+    );
+    const offset = Math.max(
+      parseInt(String(req.query.offset ?? "0"), 10) || 0,
+      0,
+    );
 
     const { data, error } = await supabaseServer
       .from("questions")
       .select(QUESTION_SAFE_SELECT)
-      .eq("question_type", "multiple_choice")
+      .in("item_type", [...ALLOWED_ITEM_TYPES])
       .eq("difficulty", difficultyLevel)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return res.status(500).json({ error: "Failed to fetch questions", detail: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch questions", detail: error.message });
     }
 
-    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[]).filter((row) => isCanonicalRuntimeMcQuestion(row));
+    const rows = ((data ?? []) as unknown as CanonicalQuestionRowLike[])
+      .map((row) => mapGenesisQuestionRow(row))
+      .filter((row) => isStudentSafeRuntimeQuestion(row));
     return res.json({
       questions: rows.map(mapQuestionForStudent),
       total: rows.length,
       difficultyLevel,
     });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to fetch questions", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to fetch questions",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
 
-export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Response) => {
+export const submitQuestionFeedback = async (
+  req: AuthenticatedRequest,
+  res: Response,
+) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
@@ -520,7 +720,9 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
     }
 
     if (!normalizedSentiment || !["up", "down"].includes(normalizedSentiment)) {
-      return res.status(400).json({ error: 'sentiment must be "up" or "down"' });
+      return res
+        .status(400)
+        .json({ error: 'sentiment must be "up" or "down"' });
     }
 
     const { data: question, error: questionError } = await supabaseServer
@@ -543,7 +745,7 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
           comment: comment || null,
           created_at: new Date().toISOString(),
         },
-        { onConflict: "question_id,user_id" }
+        { onConflict: "question_id,user_id" },
       );
 
     if (insertError) {
@@ -552,8 +754,11 @@ export const submitQuestionFeedback = async (req: AuthenticatedRequest, res: Res
 
     return res.json({ success: true, message: "Feedback submitted" });
   } catch (error: any) {
-    return res.status(500).json({ error: "Failed to submit feedback", detail: error?.message ?? "Unknown error" });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to submit feedback",
+        detail: error?.message ?? "Unknown error",
+      });
   }
 };
-
-

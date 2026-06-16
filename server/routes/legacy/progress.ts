@@ -9,9 +9,15 @@ import {
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
 } from "../../services/canonical-runtime-views";
-import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
+import {
+  resolvePaidKpiAccessForUser,
+  type KpiEntitlementAccess,
+} from "../../services/kpi-access";
 
-function estimateExplanation(label: string, detail: string): {
+function estimateExplanation(
+  label: string,
+  detail: string,
+): {
   whatThisMeans: string;
   whyThisChanged: string;
   whatToDoNext: string;
@@ -19,7 +25,8 @@ function estimateExplanation(label: string, detail: string): {
   return {
     whatThisMeans: `${label} is a weighted estimate from stored mastery evidence, not an official score.`,
     whyThisChanged: detail,
-    whatToDoNext: "Use the lower section estimate to prioritize your next focused practice block.",
+    whatToDoNext:
+      "Use the lower section estimate to prioritize your next focused practice block.",
   };
 }
 
@@ -30,7 +37,7 @@ function premiumKpiRequired(
   entitlement: {
     reason: string;
     plan: "free" | "paid";
-    status: "active" | "trialing" | "past_due" | "canceled" | "inactive";
+    status: KpiEntitlementAccess["status"];
     currentPeriodEnd: string | null;
   },
 ) {
@@ -81,21 +88,31 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         modelVersion: "kpi_truth_v1",
         measurementModel: {
           official: ["official_sat_score"],
-          weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
+          weighted: [
+            "estimated_scaled_total",
+            "estimated_scaled_math",
+            "estimated_scaled_rw",
+          ],
           diagnostic: ["mastery_evidence_count"],
         },
         estimate: null,
         estimateStatus: "not_yet_available",
         explanations: {
           estimated_scaled_total: {
-            whatThisMeans: "Your weighted score estimate isn't available yet — not a score of zero or a baseline.",
-            whyThisChanged: "It computes once mastery rollups (section projections) are generated from your scored practice evidence.",
-            whatToDoNext: "Keep practicing; the estimate appears once enough scored evidence accumulates.",
+            whatThisMeans:
+              "Your weighted score estimate isn't available yet — not a score of zero or a baseline.",
+            whyThisChanged:
+              "It computes once mastery rollups (section projections) are generated from your scored practice evidence.",
+            whatToDoNext:
+              "Keep practicing; the estimate appears once enough scored evidence accumulates.",
           },
           official_sat_score: {
-            whatThisMeans: "Official SAT scores only come from College Board score releases.",
-            whyThisChanged: "Practice estimates never replace official reporting.",
-            whatToDoNext: "Set your first target now; the estimate fills in as evidence accumulates.",
+            whatThisMeans:
+              "Official SAT scores only come from College Board score releases.",
+            whyThisChanged:
+              "Practice estimates never replace official reporting.",
+            whatToDoNext:
+              "Set your first target now; the estimate fills in as evidence accumulates.",
           },
         },
         totalQuestionsAttempted: totalQuestions,
@@ -109,7 +126,11 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       modelVersion: "kpi_truth_v1",
       measurementModel: {
         official: ["official_sat_score"],
-        weighted: ["estimated_scaled_total", "estimated_scaled_math", "estimated_scaled_rw"],
+        weighted: [
+          "estimated_scaled_total",
+          "estimated_scaled_math",
+          "estimated_scaled_rw",
+        ],
         diagnostic: ["mastery_evidence_count"],
       },
       estimate: {
@@ -124,20 +145,23 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
-          "Estimate updates when mastery rollups change from new attempts or decayed evidence weight."
+          "Estimate updates when mastery rollups change from new attempts or decayed evidence weight.",
         ),
         estimated_scaled_math: estimateExplanation(
           "Estimated scaled Math",
-          "Math estimate moves based on weighted mastery evidence across Math domains."
+          "Math estimate moves based on weighted mastery evidence across Math domains.",
         ),
         estimated_scaled_rw: estimateExplanation(
           "Estimated scaled Reading & Writing",
-          "RW estimate moves based on weighted mastery evidence across RW domains."
+          "RW estimate moves based on weighted mastery evidence across RW domains.",
         ),
         official_sat_score: {
-          whatThisMeans: "Official SAT scores only come from College Board score releases.",
-          whyThisChanged: "This route intentionally separates official and diagnostic values to avoid conflation.",
-          whatToDoNext: "Treat this as planning input and verify with your next proctored benchmark.",
+          whatThisMeans:
+            "Official SAT scores only come from College Board score releases.",
+          whyThisChanged:
+            "This route intentionally separates official and diagnostic values to avoid conflation.",
+          whatToDoNext:
+            "Treat this as planning input and verify with your next proctored benchmark.",
         },
       },
       totalQuestionsAttempted: totalQuestions,
@@ -146,7 +170,12 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to calculate score estimate", requestId: req.requestId });
+    return res
+      .status(500)
+      .json({
+        error: "Failed to calculate score estimate",
+        requestId: req.requestId,
+      });
   }
 };
 
@@ -162,9 +191,13 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
     }
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    const includeHistoricalTrends = user.role === "admin" ? true : access.hasPaidAccess;
+    const includeHistoricalTrends =
+      user.role === "admin" ? true : access.hasPaidAccess;
 
-    const view = await buildStudentKpiViewFromCanonical(user.id, includeHistoricalTrends);
+    const view = await buildStudentKpiViewFromCanonical(
+      user.id,
+      includeHistoricalTrends,
+    );
 
     return res.json({
       modelVersion: view.modelVersion,
@@ -183,6 +216,8 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Failed to calculate KPIs", requestId: req.requestId });
+    return res
+      .status(500)
+      .json({ error: "Failed to calculate KPIs", requestId: req.requestId });
   }
 };

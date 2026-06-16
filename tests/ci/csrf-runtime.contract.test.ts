@@ -1,9 +1,17 @@
-import express, { type Express } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import request, { type SuperAgentTest } from "supertest";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import cookieParser from "cookie-parser";
 
-async function getCsrfToken(agent: SuperAgentTest, path = "/api/csrf-token"): Promise<string> {
+async function getCsrfToken(
+  agent: SuperAgentTest,
+  path = "/api/csrf-token",
+): Promise<string> {
   const res = await agent.get(path);
   expect(res.status).toBe(200);
   expect(res.body).toHaveProperty("csrfToken");
@@ -73,24 +81,31 @@ describe("CSRF runtime contract - production origin rules", () => {
     process.env.NODE_ENV = "production";
     process.env.CSRF_SECRET = "prod-test-csrf-secret";
     process.env.CORS_ORIGINS = "https://lyceon.ai,https://www.lyceon.ai";
-    process.env.CSRF_ALLOWED_ORIGINS = "https://lyceon.ai,https://www.lyceon.ai";
+    process.env.CSRF_ALLOWED_ORIGINS =
+      "https://lyceon.ai,https://www.lyceon.ai";
     process.env.CSRF_COOKIE_SECURE = "false";
 
-    const { doubleCsrfProtection, generateToken } = await import("../../server/middleware/csrf-double-submit");
+    const { doubleCsrfProtection, generateToken } =
+      await import("../../server/middleware/csrf-double-submit");
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+    app.use((req: Request, _res: Response, next: NextFunction) => {
       req.requestId = "req-csrf-runtime-contract";
       next();
     });
 
-    app.get("/api/csrf-token", (req: any, res) => {
+    app.get("/api/csrf-token", (req: Request, res: Response) => {
       req.cookies ??= {};
       const token = generateToken(req, res);
       res.json({ csrfToken: token });
     });
 
     const protectedRouter = express.Router();
+    // codeql[js/missing-token-validation]: NOT missing — doubleCsrfProtection is applied on the
+    // very next line, and this suite's assertions prove it blocks missing/disallowed Origin and
+    // allows the canonical origin. CodeQL's default model recognizes only app-level `csurf`, not
+    // the csrf-csrf double-submit middleware, so it misreads cookieParser here as unprotected.
+    // Default-setup CodeQL does not honor this comment — dismiss the alert in the Security UI.
     protectedRouter.use(cookieParser());
     protectedRouter.use(doubleCsrfProtection);
     protectedRouter.post("/protected", (_req, res) => {
@@ -106,7 +121,10 @@ describe("CSRF runtime contract - production origin rules", () => {
     const agent = request.agent(app);
     const token = await getCsrfToken(agent);
 
-    const res = await agent.post("/api/protected").set("x-csrf-token", token).send({});
+    const res = await agent
+      .post("/api/protected")
+      .set("x-csrf-token", token)
+      .send({});
     expect(res.status).toBe(403);
     expect(res.body).toHaveProperty("error.code", "csrf_blocked");
     expect(res.body).toHaveProperty("reason", "missing_origin");
