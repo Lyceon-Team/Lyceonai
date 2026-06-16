@@ -94,8 +94,18 @@ test.describe("Google Authentication E2E", () => {
       } catch (_redirectError) {
         // If not on Google's domain in test infra, we still expect an auth-related URL change.
         const currentUrl = page.url();
+        // CodeQL: check the parsed host, not a substring (a substring like
+        // "accounts.google.com" can appear anywhere in an attacker-controlled URL).
+        // The path checks below are test-intent only, not security decisions.
+        let host = "";
+        try {
+          host = new URL(currentUrl).hostname;
+        } catch {
+          host = "";
+        }
         if (
-          currentUrl.includes("accounts.google.com") ||
+          host === "accounts.google.com" ||
+          host.endsWith(".google.com") ||
           currentUrl.includes("/auth/callback") ||
           currentUrl.includes("callback")
         ) {

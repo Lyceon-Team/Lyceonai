@@ -1,25 +1,28 @@
 /**
  * HALT-3 guard (AUTH-001 / OAUTH-001): fail the build if any *_SECRET token leaks into built,
- * client-reachable output. Mirrors the postbuild pattern of scripts/check-no-cdn-katex.js.
+ * CLIENT-REACHABLE output. Mirrors the postbuild pattern of scripts/check-no-cdn-katex.js.
  *
  * Rationale: the previous apps/api/next.config.js `env` block inlined GOOGLE_CLIENT_SECRET into the
  * client bundle. With native Supabase OAuth the secret lives ONLY in the Supabase dashboard. This
- * guard scans built output for any `*_SECRET` identifier (and the specific GOOGLE_CLIENT_SECRET) and
- * exits non-zero if found, so a regression can never ship a secret to the browser.
+ * guard scans CLIENT-reachable build output for any `*_SECRET` identifier and exits non-zero if
+ * found, so a regression can never ship a secret to the browser.
  *
- * It scans common build roots plus any Next.js build output if present.
+ * Scope (owner's HALT-3: "no *_SECRET in dist/public/**"): only client-served roots. The SERVER
+ * bundle `dist/index.js` is INTENTIONALLY NOT scanned — server code legitimately references
+ * `process.env.CSRF_SECRET` / Stripe / Supabase env vars (the env-var NAME, not a value), and the
+ * server bundle is never sent to a browser. Likewise we scan `.next/static` (client chunks), not
+ * `.next/server`.
  */
 import fs from "fs";
 import path from "path";
 
 const ROOTS = [
-  "dist",
-  "dist/public",
+  "dist/public", // Vite client build output (the browser bundle)
   "client/dist",
   "public",
-  // Next.js build output (this repo's app is Vite+Express, but guard the Next output too if it exists).
-  ".next",
-  "apps/api/.next",
+  // Next.js CLIENT chunks only — NOT .next/server (server-rendered code is not client-reachable).
+  ".next/static",
+  "apps/api/.next/static",
 ];
 
 // Only scan text assets that can end up in a client bundle.
