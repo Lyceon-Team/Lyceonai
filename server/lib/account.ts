@@ -281,10 +281,40 @@ interface UsageDaily {
   ai_messages_used: number;
 }
 
+// FREEMIUM-QUOTA-001: the free-tier PRACTICE quota is NOT hardcoded — it is the canonical
+// config constant practice_runtime_config.daily_quota_free (Doc 02B §41; seeded = 40), read at
+// request time. Only ai_chat remains a local constant (no config row exists for it yet).
 const FREE_TIER_LIMITS = {
-  practice: 10,
   ai_chat: 5,
 };
+
+/**
+ * Canonical read of the free-tier daily PRACTICE quota from practice_runtime_config (the
+ * seeded WS-2 config-constants table; key 'daily_quota_free'). No hardcoded quota — the value
+ * lives only in the DB (the single source of truth). Throws if the config row is missing/invalid
+ * (a seed/ops error) so the usage-limit caller surfaces it rather than silently enforcing a
+ * wrong default.
+ */
+export async function getPracticeDailyFreeQuota(): Promise<number> {
+  const { data, error } = await supabaseServer
+    .from("practice_runtime_config")
+    .select("value")
+    .eq("key", "daily_quota_free")
+    .single();
+  if (error || !data) {
+    throw new Error(
+      "practice_runtime_config.daily_quota_free is not configured",
+    );
+  }
+  const raw = (data as { value: unknown }).value;
+  const parsed = Number.parseInt(String(raw), 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(
+      `practice_runtime_config.daily_quota_free is invalid: ${String(raw)}`,
+    );
+  }
+  return parsed;
+}
 
 /**
  * Get or create entitlement by account_id
@@ -475,7 +505,7 @@ export async function incrementUsage(
 
 /**
  * Check usage limit by account_id
- * Free limits: practice 10/day, ai_chat 5/day
+ * Free limits: practice = practice_runtime_config.daily_quota_free (config, seeded 40); ai_chat 5/day
  */
 export async function checkUsageLimit(
   accountId: string,
@@ -501,7 +531,11 @@ export async function checkUsageLimit(
     type === "practice"
       ? usage.practice_questions_used
       : usage.ai_messages_used;
-  const limit = FREE_TIER_LIMITS[type];
+  // FREEMIUM-QUOTA-001: practice quota comes from the canonical config table, not a hardcode.
+  const limit =
+    type === "practice"
+      ? await getPracticeDailyFreeQuota()
+      : FREE_TIER_LIMITS.ai_chat;
 
   const tomorrow = new Date();
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);

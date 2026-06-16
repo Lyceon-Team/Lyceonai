@@ -945,7 +945,7 @@ CREATE FUNCTION public.entitlement_active(p_profile_id uuid) RETURNS boolean
     AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.entitlements e
-    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due')
+    WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due','trialing')
   );
 $$;
 
@@ -3861,7 +3861,7 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 -- Name: idx_entitlements_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile_id) WHERE ((status = 'active'::text) OR (status = 'past_due'::text));
+CREATE INDEX idx_entitlements_active ON public.entitlements USING btree (profile_id) WHERE ((status = 'active'::text) OR (status = 'past_due'::text) OR (status = 'trialing'::text));
 
 
 --

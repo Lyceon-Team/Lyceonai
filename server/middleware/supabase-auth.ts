@@ -449,26 +449,14 @@ export async function supabaseAuthMiddleware(
     const ssrClient = createSupabaseServerClient(req, res);
 
     // SERVER-SIDE validation via the SSR client. This contacts the Auth server (never trusts a decoded
-    // JWT) and performs transparent refresh, persisting new cookies through the adapter.
-    let {
+    // JWT) and performs transparent refresh, persisting new cookies through the adapter. AUTH-NATIVE-001:
+    // native @supabase/ssr getUser() is the ONLY user-auth path — there is NO legacy-token fallback that
+    // validates a custom cookie and mints an authorized client. (resolveTokenFromRequest survives for
+    // inspect-only CSRF binding / diagnostics; it never authorizes a request here.)
+    const {
       data: { user },
       error: authError,
     } = await ssrClient.auth.getUser();
-
-    // Fallback: honor a legacy 'sb-access-token' cookie from older sessions / tests that predate the
-    // native SSR cookie. This never weakens validation — it still calls getUser() server-side.
-    let validatedToken: string | null = null;
-    if (authError || !user) {
-      const legacyToken = resolveTokenFromRequest(req).token;
-      if (legacyToken) {
-        const legacyResult = await supabaseAnon.auth.getUser(legacyToken);
-        if (!legacyResult.error && legacyResult.data.user) {
-          user = legacyResult.data.user;
-          authError = null;
-          validatedToken = legacyToken;
-        }
-      }
-    }
 
     if (authError || !user) {
       if (authError) {
@@ -523,29 +511,16 @@ export async function supabaseAuthMiddleware(
       is_under_13: profile.is_under_13,
       guardian_consent: profile.guardian_consent,
       profile_completed_at: profile.profile_completed_at ?? null,
-      ...(validatedToken ? { jwt: validatedToken } : {}), // Raw JWT for RLS context (legacy path only)
       student_link_code: profile.student_link_code,
       // Legacy fields for backward compatibility with old auth
       username: profile.email.split("@")[0], // Use email prefix as username
       name: profile.display_name || profile.email.split("@")[0],
     };
 
-    // Attach the request-scoped RLS-bound Supabase client. Prefer the SSR client (cookie-native,
-    // carries the validated session). For the legacy fallback path, build an explicitly token-bound
-    // client so downstream queries still run under the user's identity.
-    req.supabase = validatedToken
-      ? createClient(
-          process.env.SUPABASE_URL!,
-          process.env.SUPABASE_ANON_KEY!,
-          {
-            global: {
-              headers: {
-                Authorization: `Bearer ${validatedToken}`,
-              },
-            },
-          },
-        )
-      : ssrClient;
+    // Attach the request-scoped RLS-bound Supabase client. AUTH-NATIVE-001: this is ALWAYS the
+    // native @supabase/ssr client (cookie-native, carries the getUser()-validated session). No
+    // authorized client is ever minted from a legacy bearer token.
+    req.supabase = ssrClient;
 
     // NOTE: PostgreSQL RLS via session GUCs (set_current_user_id) does NOT work with Neon
     // because Neon uses stateless connection pooling that doesn't preserve session variables.
