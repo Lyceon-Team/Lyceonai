@@ -2,6 +2,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { doubleCsrfProtection } from "../../server/middleware/csrf-double-submit.js";
 
 const signUpMock = vi.hoisted(() => vi.fn());
 const upsertMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
@@ -102,6 +103,7 @@ async function loadAuthApp() {
   const app = express();
   app.use(cookieParser());
   app.use(express.json());
+  app.use(doubleCsrfProtection);
   app.use("/api/auth", authRoutes);
   return app;
 }
