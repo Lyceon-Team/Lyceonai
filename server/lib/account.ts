@@ -649,16 +649,6 @@ export async function getLinkedGuardianForStudent(
   };
 }
 
-function resolvePremiumSource(
-  studentActive: boolean,
-  guardianActive: boolean,
-): PairPremiumSource {
-  if (studentActive && guardianActive) return "both";
-  if (studentActive) return "student";
-  if (guardianActive) return "guardian";
-  return "none";
-}
-
 export async function resolveLinkedPairPremiumAccessForStudent(
   studentUserId: string,
 ): Promise<LinkedPairPremiumAccess> {
