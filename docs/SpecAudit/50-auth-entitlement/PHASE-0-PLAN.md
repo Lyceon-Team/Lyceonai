@@ -2,7 +2,7 @@
 
 > Grounded verbatim in the locked corpus (Doc 01 V8 "Identity, Access, Billing & Guardian Trust";
 > Doc 01A "Platform Primitives" Part VII) and the already-built genesis primitives, **not** summaries.
-> HEAD `4601ab0`. Precedent format: [`../40-ws2-ws3/PHASE-0-PLAN.md`](../40-ws2-ws3/PHASE-0-PLAN.md).
+> HEAD `bec9df5`. Precedent format: [`../40-ws2-ws3/PHASE-0-PLAN.md`](../40-ws2-ws3/PHASE-0-PLAN.md).
 > **Plan only.** No migration, no code, no live apply until the owner approves this plan and rules the
 > HALTs. Off cleanup; PRs to cleanup; owner runs any live apply (migrations, secrets, Vercel env).
 

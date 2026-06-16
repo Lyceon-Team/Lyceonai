@@ -4,11 +4,13 @@ export const CANONICAL_ID_PATTERN = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
 export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
 export const QUESTION_LIFECYCLE = ["draft", "qa", "published"] as const;
 export const LEGACY_QUESTION_LIFECYCLE = ["reviewed"] as const;
+export const CANONICAL_ITEM_TYPES = ["mcq", "grid_in"] as const;
 
 export type CanonicalOptionKey = (typeof MC_OPTION_KEYS)[number];
 export type CanonicalSectionCode = "M" | "RW";
 export type CanonicalSourceType = 1 | 2;
 export type QuestionLifecycle = (typeof QUESTION_LIFECYCLE)[number];
+export type CanonicalItemType = (typeof CANONICAL_ITEM_TYPES)[number];
 
 export interface CanonicalMcOption {
   key: CanonicalOptionKey;
@@ -19,11 +21,18 @@ export interface CanonicalQuestionRowLike {
   id: string;
   canonical_id?: string | null;
   section_code?: string | null;
+  // @spec [Doc-02A_V6 §16; genesis questions DDL] genesis-native section discriminator ('M'|'RW').
+  section?: string | null;
   test_code?: string | null;
   question_type?: string | null;
+  // @spec [grid-in-extension.sql; Doc-02A_V6 §16] genesis-native item discriminator ('mcq'|'grid_in').
+  item_type?: string | null;
   options?: unknown;
   correct_answer?: string | null;
   explanation?: string | null;
+  // @spec [grid-in-extension.sql; Doc 02 Preamble V3 §12 INV-02-08] grid-in accepted-answer set.
+  // INTERNAL + ANSWER-BEARING: never serialized to any student-facing surface pre-submit.
+  correct_variants?: unknown;
   status?: string | null;
   stem?: string | null;
   difficulty?: unknown;
@@ -31,6 +40,8 @@ export interface CanonicalQuestionRowLike {
   skill?: string | null;
   subskill?: string | null;
   skill_code?: string | null;
+  // @spec [Doc-02A_V6 §13; genesis questions DDL] genesis-native open skill taxonomy (text[]).
+  skill_codes?: unknown;
   source_type?: unknown;
   tags?: unknown;
   answer_text?: string | null;
@@ -56,6 +67,21 @@ export function normalizeSectionCode(value: unknown): CanonicalSectionCode | nul
   if (normalized === "M" || normalized === "MATH") return "M";
   if (normalized === "RW" || normalized === "R" || normalized === "W") return "RW";
   if (normalized === "READING" || normalized === "WRITING" || normalized === "READING_WRITING") return "RW";
+  return null;
+}
+
+/**
+ * @spec [grid-in-extension.sql item_type CHECK; Doc-02A_V6 §16] | @implemented 2026-06-14
+ * plain English: maps the genesis item_type discriminator ('mcq'|'grid_in') onto the
+ * runtime question_type vocabulary ('multiple_choice'|'grid_in'). 'mcq' → 'multiple_choice'
+ * keeps back-compat with the legacy question_type column; 'grid_in' stays 'grid_in'.
+ * Returns null for unrecognized values so callers can drop them rather than guess.
+ */
+export function normalizeItemType(value: unknown): CanonicalItemType | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "mcq" || normalized === "multiple_choice") return "mcq";
+  if (normalized === "grid_in" || normalized === "grid-in" || normalized === "spr") return "grid_in";
   return null;
 }
 
@@ -165,12 +191,150 @@ export function isCanonicalRuntimeMcQuestion(row: CanonicalQuestionRowLike): boo
   return true;
 }
 
+/**
+ * @spec [grid-in-extension.sql correct_variants; Doc-04B V4.3 variant match] | @implemented 2026-06-14
+ * plain English: parses a grid-in accepted-answer set into a clean, deduped string[].
+ * Accepts a TEXT[] (genesis), a JSON-encoded array string, or a Postgres array literal
+ * ('{0.2,1/5}'). Returns [] on anything else. This is ANSWER-BEARING content — callers
+ * must never project it to a student surface (Doc 02 Preamble §12 INV-02-08).
+ */
+export function parseCorrectVariants(raw: unknown): string[] {
+  let value: unknown = raw;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("{") && trimmed.endsWith("}") && !trimmed.startsWith('{"')) {
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner) return [];
+      value = inner.split(",").map((part) => part.trim().replace(/^"(.*)"$/, "$1"));
+    } else {
+      try {
+        value = JSON.parse(trimmed);
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  if (!Array.isArray(value)) return [];
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const normalized = item.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
+export function hasCanonicalGridInVariantSet(raw: unknown): boolean {
+  return parseCorrectVariants(raw).length >= 1;
+}
+
+/**
+ * @spec [grid-in-extension.sql questions_item_type_shape CHECK] | @implemented 2026-06-14
+ * plain English: runtime-safe grid-in validation (no questions.status dependency).
+ * A grid-in is valid when it has a valid canonical id, a normalizable section, a stem,
+ * a non-empty accepted-answer (correct_variants) set, and NO A–D option set (grid-ins
+ * carry no options). Mirrors the DB discriminated shape CHECK.
+ */
+export function isCanonicalRuntimeGridInQuestion(row: CanonicalQuestionRowLike): boolean {
+  const itemType = normalizeItemType(row.item_type ?? row.question_type ?? null);
+  if (itemType !== "grid_in") return false;
+  if (!isValidCanonicalId(row.canonical_id ?? null)) return false;
+  if (!normalizeSectionCode(row.section_code ?? null)) return false;
+  if (hasCanonicalOptionSet(row.options ?? null)) return false;
+  if (!hasCanonicalGridInVariantSet(row.correct_variants ?? null)) return false;
+  if (!normalizeText(row.stem)) return false;
+  return true;
+}
+
+/**
+ * @spec [Doc 02B §14 Serving Questions; grid-in-extension.sql] | @implemented 2026-06-14
+ * plain English: accepts BOTH runtime item shapes so grid-ins are not silently dropped:
+ * an mcq (4 A–D options + single A–D key) OR a grid_in (no options + a non-empty
+ * accepted-answer variant set), each validated for its own shape. Use this at runtime
+ * delivery anywhere isCanonicalRuntimeMcQuestion previously gated the pool, after rows
+ * have been reconciled via mapGenesisQuestionRow.
+ */
+export function isCanonicalRuntimeQuestion(row: CanonicalQuestionRowLike): boolean {
+  const itemType = normalizeItemType(row.item_type ?? row.question_type ?? null);
+  if (itemType === "grid_in") return isCanonicalRuntimeGridInQuestion(row);
+  return isCanonicalRuntimeMcQuestion(row);
+}
+
+/**
+ * @spec [genesis questions DDL; grid-in-extension.sql; Doc-02A_V6 §13/§16] | @implemented 2026-06-14
+ * plain English: reconciles a genesis questions row onto the contract's legacy field names
+ * so the single canonical serializer/validators keep working. Maps id→canonical_id,
+ * section→section_code, item_type→question_type ('mcq'→'multiple_choice', 'grid_in' stays
+ * 'grid_in'), skill_codes[0]→skill (best-effort). Prefers genesis-native fields when
+ * present and falls back to legacy fields otherwise (back-compat with pre-genesis rows).
+ * Anti-leak: correct_answer/explanation/correct_variants are carried for SERVER-SIDE use
+ * only (validation/grading); the student-safe projection null-strips them.
+ */
+export function mapGenesisQuestionRow(row: CanonicalQuestionRowLike): CanonicalQuestionRowLike {
+  const canonicalId =
+    typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0
+      ? row.canonical_id
+      : String(row.id ?? "");
+
+  const sectionCode =
+    typeof row.section === "string" && row.section.trim().length > 0
+      ? row.section
+      : (row.section_code ?? null);
+
+  const itemType = normalizeItemType(row.item_type ?? row.question_type ?? null);
+  const questionType =
+    itemType === "grid_in" ? "grid_in" : itemType === "mcq" ? "multiple_choice" : (row.question_type ?? null);
+
+  let skill: string | null = typeof row.skill === "string" && row.skill.trim().length > 0 ? row.skill : null;
+  if (!skill) {
+    const skillCodes = Array.isArray(row.skill_codes)
+      ? row.skill_codes
+      : typeof row.skill_codes === "string"
+        ? parseCorrectVariants(row.skill_codes)
+        : [];
+    const first = skillCodes.find((code): code is string => typeof code === "string" && code.trim().length > 0);
+    skill = first ? first.trim() : null;
+  }
+
+  return {
+    ...row,
+    canonical_id: canonicalId,
+    section_code: sectionCode,
+    question_type: questionType,
+    item_type: itemType ?? (typeof row.item_type === "string" ? row.item_type : null),
+    skill,
+  };
+}
+
+/**
+ * The single canonical student-safe question shape. ONE serializer owns it
+ * (projectStudentSafeQuestion) — never reconstruct a second inline question shape.
+ *
+ * Anti-leak (Doc 02 Preamble V3 §12 INV-02-08; Doc 02B §20): the only answer-keyed
+ * fields are correct_answer/explanation, both hard-typed `null`. correct_variants is
+ * answer-bearing and is intentionally ABSENT from this type — adding it is a type error.
+ *
+ * @spec [Doc 02B §14/§20 Serving Questions; grid-in-extension.sql] | @implemented 2026-06-14
+ * plain English: question_type now spans both runtime item shapes. For 'grid_in',
+ * `options` is [] (no A–D choices) and `inputMode` is 'numeric_entry' so the surface
+ * renders a numeric-entry input; for 'multiple_choice', `inputMode` is 'choice'. Either
+ * way no answer/variant ever appears.
+ */
 export interface StudentSafeQuestionProjection {
   id: string;
   canonical_id: string | null;
   section_code: CanonicalSectionCode | null;
   test_code: string | null;
-  question_type: "multiple_choice";
+  question_type: "multiple_choice" | "grid_in";
+  item_type: CanonicalItemType;
+  inputMode: "choice" | "numeric_entry";
   stem: string;
   options: CanonicalMcOption[];
   difficulty: string | number | null;
@@ -193,7 +357,7 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     typeof row.difficulty === "string" || typeof row.difficulty === "number"
       ? row.difficulty
       : null;
-  const sectionCode = normalizeSectionCode(row.section_code ?? null);
+  const sectionCode = normalizeSectionCode(row.section_code ?? row.section ?? null);
 
   let tags: string[] | null = null;
   if (Array.isArray(row.tags)) {
@@ -207,14 +371,21 @@ export function projectStudentSafeQuestion(row: CanonicalQuestionRowLike): Stude
     }
   }
 
+  const itemType: CanonicalItemType = normalizeItemType(row.item_type ?? row.question_type ?? null) ?? "mcq";
+  const isGridIn = itemType === "grid_in";
+
   return {
     id: String(row.id),
     canonical_id: typeof row.canonical_id === "string" ? row.canonical_id : null,
     section_code: sectionCode,
     test_code: typeof row.test_code === "string" ? row.test_code : "SAT",
-    question_type: "multiple_choice",
+    question_type: isGridIn ? "grid_in" : "multiple_choice",
+    item_type: itemType,
+    inputMode: isGridIn ? "numeric_entry" : "choice",
     stem: normalizeText(row.stem),
-    options: parseCanonicalMcOptions(row.options ?? null),
+    // Anti-leak + shape: grid-ins carry NO options (the answer is student-produced);
+    // MCQs carry the 4 A–D choices. correct_variants is never read here.
+    options: isGridIn ? [] : parseCanonicalMcOptions(row.options ?? null),
     difficulty,
     domain: typeof row.domain === "string" ? row.domain : null,
     skill: typeof row.skill === "string" ? row.skill : null,

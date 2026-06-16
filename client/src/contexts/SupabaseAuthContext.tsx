@@ -1,11 +1,18 @@
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
-import { SupabaseProfile } from '@/lib/supabase';
-import { useQueryClient } from '@tanstack/react-query';
-import { clearCsrfToken, csrfFetch, getCsrfToken } from '@/lib/csrf';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useRef,
+  ReactNode,
+} from "react";
+import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
+import { useQueryClient } from "@tanstack/react-query";
+import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 // CSRF handshake utilities
-import type { ConsentSource } from '@shared/legal-consent';
+import type { ConsentSource } from "@shared/legal-consent";
 
-export type SignupOutcome = 'authenticated' | 'verification_required';
+export type SignupOutcome = "authenticated" | "verification_required";
 
 export interface SignupResult {
   outcome: SignupOutcome;
@@ -30,7 +37,12 @@ interface SupabaseAuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isGuardian: boolean;
-  signUp: (email: string, password: string, legalConsent: SignupLegalConsent, displayName?: string) => Promise<SignupResult>;
+  signUp: (
+    email: string,
+    password: string,
+    legalConsent: SignupLegalConsent,
+    displayName?: string,
+  ) => Promise<SignupResult>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: (legalConsent: SignupLegalConsent) => Promise<void>;
   signOut: () => Promise<void>;
@@ -39,7 +51,9 @@ interface SupabaseAuthContextType {
   refreshUser: () => Promise<void>;
 }
 
-const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(undefined);
+const SupabaseAuthContext = createContext<SupabaseAuthContextType | undefined>(
+  undefined,
+);
 
 export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SupabaseProfile | null>(null);
@@ -55,38 +69,22 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const fetchUserFromBackend = async (): Promise<SupabaseProfile | null> => {
     try {
       const tryFetchUserProfile = async (): Promise<Response> => {
-        return csrfFetch('/api/profile', { credentials: 'include' });
+        return csrfFetch("/api/profile", { credentials: "include" });
       };
 
-      let response = await tryFetchUserProfile();
+      const response = await tryFetchUserProfile();
 
-      // If access token expired, attempt one server-side refresh using httpOnly cookie
-      if (response.status === 401 || response.status === 403) {
-        console.log('[AUTH] Access token expired, attempting server-side refresh');
-        const refreshResp = await csrfFetch('/api/auth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({}), // server will fall back to cookie
-        });
-
-        if (refreshResp.ok) {
-          clearCsrfToken();
-          console.log('[AUTH] Token refreshed, retrying user fetch');
-          response = await tryFetchUserProfile();
-        } else {
-          clearAuthState();
-          return null;
-        }
-      }
-
+      // AUTH-001: there is no longer a custom /api/auth/refresh path. Session refresh is native —
+      // the server's @supabase/ssr middleware transparently refreshes the session (and rotates the
+      // httpOnly session cookie) on every authenticated request. A 401/403 here therefore means the
+      // session is genuinely absent/expired, so we clear local state and treat the user as signed out.
       if (response.status === 401 || response.status === 403) {
         clearAuthState();
         return null;
       }
 
       if (!response.ok) {
-        console.error('[AUTH] Server error fetching user:', response.status);
+        console.error("[AUTH] Server error fetching user:", response.status);
         return null;
       }
 
@@ -113,7 +111,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         guardianConsentRequired: backendUser.guardianConsentRequired,
       };
     } catch (error) {
-      console.error('[AUTH] Network error fetching user from backend:', error);
+      console.error("[AUTH] Network error fetching user from backend:", error);
       return null;
     }
   };
@@ -125,15 +123,18 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const initializeAuth = async () => {
-      console.log('[AUTH] Starting initialization');
+      console.log("[AUTH] Starting initialization");
 
       try {
         // Pre-fetch CSRF token to "warm up" the handshake and detect connectivity issues early.
         // This avoids a race condition where the first mutating request (login) hangs on the handshake.
-        console.log('[AUTH] Pre-fetching CSRF token...');
-        await getCsrfToken().catch(err => {
+        console.log("[AUTH] Pre-fetching CSRF token...");
+        await getCsrfToken().catch((err) => {
           if (!abortController.signal.aborted) {
-            console.warn('[AUTH] CSRF pre-fetch failed, will retry on first mutation:', err);
+            console.warn(
+              "[AUTH] CSRF pre-fetch failed, will retry on first mutation:",
+              err,
+            );
           }
         });
 
@@ -144,12 +145,17 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         const profileFetchPromise = fetchUserFromBackend();
         const timeoutPromise = new Promise<null>((resolve) => {
           timeoutId = setTimeout(() => {
-            console.warn('[AUTH] Profile fetch timed out, proceeding as unauthenticated');
+            console.warn(
+              "[AUTH] Profile fetch timed out, proceeding as unauthenticated",
+            );
             resolve(null);
           }, 8000);
         });
 
-        const backendUser = await Promise.race([profileFetchPromise, timeoutPromise]);
+        const backendUser = await Promise.race([
+          profileFetchPromise,
+          timeoutPromise,
+        ]);
 
         // Clear the timeout so it doesn't fire after the race has resolved
         if (timeoutId !== null) {
@@ -161,21 +167,21 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         if (!mounted || abortController.signal.aborted) return;
 
         if (backendUser) {
-          console.log('[AUTH] Found user from backend cookies');
+          console.log("[AUTH] Found user from backend cookies");
           setUser(backendUser);
         } else {
-          console.log('[AUTH] No existing session found or fetch timed out');
+          console.log("[AUTH] No existing session found or fetch timed out");
           clearAuthState();
         }
       } catch (error) {
         if (!abortController.signal.aborted) {
-          console.error('[AUTH] Initialization failed:', error);
+          console.error("[AUTH] Initialization failed:", error);
         }
       } finally {
         if (mounted && !abortController.signal.aborted) {
           setAuthLoading(false);
           isInitializing.current = false;
-          console.log('[AUTH] Initialization complete');
+          console.log("[AUTH] Initialization complete");
         }
       }
     };
@@ -199,10 +205,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   ): Promise<SignupResult> => {
     setAuthLoading(true);
     try {
-      const response = await csrfFetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const response = await csrfFetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           email,
           password,
@@ -210,7 +216,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           legalConsent: {
             studentTermsAccepted: legalConsent.studentTermsAccepted,
             privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
-            consentSource: legalConsent.consentSource ?? 'email_signup_form',
+            consentSource: legalConsent.consentSource ?? "email_signup_form",
           },
         }),
       });
@@ -218,16 +224,16 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error('[AUTH] Sign up failed:', data.error);
-        throw new Error(data.error || 'Failed to sign up');
+        console.error("[AUTH] Sign up failed:", data.error);
+        throw new Error(data.error || "Failed to sign up");
       }
 
       const outcome = data?.outcome as SignupOutcome | undefined;
-      if (outcome === 'verification_required') {
+      if (outcome === "verification_required") {
         setUser(null);
         return {
-          outcome: 'verification_required',
-          message: data?.message || 'Please verify your email to continue.',
+          outcome: "verification_required",
+          message: data?.message || "Please verify your email to continue.",
           user: data?.user,
         };
       }
@@ -236,19 +242,19 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const backendUser = await fetchUserFromBackend();
       if (!backendUser) {
         setUser(null);
-        throw new Error('Failed to load user profile after signup');
+        throw new Error("Failed to load user profile after signup");
       }
 
       setUser(backendUser);
       return {
-        outcome: 'authenticated',
+        outcome: "authenticated",
         message: data?.message,
         nextPath: data?.nextPath,
         user: data?.user,
       };
     } catch (error: any) {
-      console.error('[AUTH] Sign up error:', error);
-      throw new Error(error.message || 'Failed to sign up');
+      console.error("[AUTH] Sign up error:", error);
+      throw new Error(error.message || "Failed to sign up");
     } finally {
       setAuthLoading(false);
     }
@@ -257,18 +263,18 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     setAuthLoading(true);
     try {
-      const response = await csrfFetch('/api/auth/signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const response = await csrfFetch("/api/auth/signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        console.error('[AUTH] Server sign in failed:', data?.error || data);
-        throw new Error(data?.error || 'Invalid email or password');
+        console.error("[AUTH] Server sign in failed:", data?.error || data);
+        throw new Error(data?.error || "Invalid email or password");
       }
 
       clearCsrfToken();
@@ -278,42 +284,60 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         setUser(backendUser);
       } else {
         clearAuthState();
-        throw new Error('Failed to load user profile after sign-in');
+        throw new Error("Failed to load user profile after sign-in");
       }
 
-      console.log('[AUTH] Server sign in successful');
+      console.log("[AUTH] Server sign in successful");
     } finally {
       setAuthLoading(false);
     }
   };
 
   const signInWithGoogle = async (legalConsent: SignupLegalConsent) => {
-    if (!legalConsent.studentTermsAccepted || !legalConsent.privacyPolicyAccepted) {
-      throw new Error('You must accept Terms and Privacy before continuing with Google');
+    if (
+      !legalConsent.studentTermsAccepted ||
+      !legalConsent.privacyPolicyAccepted
+    ) {
+      throw new Error(
+        "You must accept Terms and Privacy before continuing with Google",
+      );
     }
 
     setAuthLoading(true);
     try {
-      const params = new URLSearchParams({
-        termsAccepted: 'true',
-        privacyAccepted: 'true',
-        consentSource: legalConsent.consentSource ?? 'google_continue_pre_oauth',
+      // Native Supabase OAuth (PKCE). Supabase owns the Google OAuth callback at
+      // <ref>.supabase.co/auth/v1/callback; redirectTo is OUR post-login landing route, where the
+      // server exchanges the PKCE code for a session. The Google client secret lives only in the
+      // Supabase dashboard — never in app code (HALT-3).
+      const consentSource =
+        legalConsent.consentSource ?? "google_continue_pre_oauth";
+      const callbackParams = new URLSearchParams({ consentSource });
+      const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
+
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
       });
-      console.log('[AUTH] Redirecting to Google OAuth');
-      window.location.href = `/api/auth/google/start?${params.toString()}`;
+
+      if (error) {
+        throw new Error(error.message || "Failed to start Google sign-in");
+      }
+      // On success the browser is redirected to Google; no further client work here.
+      console.log("[AUTH] Redirecting to Google OAuth (native)");
     } catch (error: any) {
-      console.error('[AUTH] Google sign in error:', error);
+      console.error("[AUTH] Google sign in error:", error);
       setAuthLoading(false);
-      throw new Error(error.message || 'Failed to sign in with Google');
+      throw new Error(error.message || "Failed to sign in with Google");
     }
   };
 
   const signOut = async () => {
     setAuthLoading(true);
     try {
-      const response = await csrfFetch('/api/auth/signout', {
-        method: 'POST',
-        credentials: 'include',
+      const response = await csrfFetch("/api/auth/signout", {
+        method: "POST",
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -323,8 +347,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       clearAuthState();
       queryClient.invalidateQueries();
     } catch (error: any) {
-      console.error('[AUTH] Sign out error:', error);
-      throw new Error(error.message || 'Failed to sign out');
+      console.error("[AUTH] Sign out error:", error);
+      throw new Error(error.message || "Failed to sign out");
     } finally {
       setAuthLoading(false);
     }
@@ -333,20 +357,20 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const resetPassword = async (email: string) => {
     setAuthLoading(true);
     try {
-      const response = await csrfFetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const response = await csrfFetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email }),
       });
 
       if (!response.ok) {
-        let errorMsg = 'Failed to send reset email';
+        let errorMsg = "Failed to send reset email";
         try {
           const data = await response.json();
           errorMsg = data.error || errorMsg;
         } catch (e) {
-          errorMsg = `Server error (${response.status}): ${response.statusText || 'No response body'}`;
+          errorMsg = `Server error (${response.status}): ${response.statusText || "No response body"}`;
         }
         throw new Error(errorMsg);
       }
@@ -354,8 +378,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // Successful response should be JSON, but let's be safe
       return await response.json().catch(() => ({ success: true }));
     } catch (error: any) {
-      console.error('[AUTH] Reset password error:', error);
-      throw new Error(error.message || 'Failed to send reset email');
+      console.error("[AUTH] Reset password error:", error);
+      throw new Error(error.message || "Failed to send reset email");
     } finally {
       setAuthLoading(false);
     }
@@ -364,28 +388,28 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = async (password: string) => {
     setAuthLoading(true);
     try {
-      const response = await csrfFetch('/api/auth/update-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const response = await csrfFetch("/api/auth/update-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ password }),
       });
 
       if (!response.ok) {
-        let errorMsg = 'Failed to update password';
+        let errorMsg = "Failed to update password";
         try {
           const data = await response.json();
           errorMsg = data.error || errorMsg;
         } catch (e) {
-          errorMsg = `Server error (${response.status}): ${response.statusText || 'No response body'}`;
+          errorMsg = `Server error (${response.status}): ${response.statusText || "No response body"}`;
         }
         throw new Error(errorMsg);
       }
 
       return await response.json().catch(() => ({ success: true }));
     } catch (error: any) {
-      console.error('[AUTH] Update password error:', error);
-      throw new Error(error.message || 'Failed to update password');
+      console.error("[AUTH] Update password error:", error);
+      throw new Error(error.message || "Failed to update password");
     } finally {
       setAuthLoading(false);
     }
@@ -401,8 +425,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     isLoading: authLoading,
     authLoading,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
-    isGuardian: user?.role === 'guardian',
+    isAdmin: user?.role === "admin",
+    isGuardian: user?.role === "guardian",
     signUp,
     signIn,
     signInWithGoogle,
@@ -422,7 +446,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 export function useSupabaseAuth() {
   const context = useContext(SupabaseAuthContext);
   if (context === undefined) {
-    throw new Error('useSupabaseAuth must be used within a SupabaseAuthProvider');
+    throw new Error(
+      "useSupabaseAuth must be used within a SupabaseAuthProvider",
+    );
   }
   return context;
 }

@@ -145,21 +145,23 @@ relaxes `options NOT NULL`, and adds the discriminated `questions_item_type_shap
 the empty bank. `correct_variants` is **answer-bearing** → added to the never-serve-pre-submit
 set (§6).
 
-**Normalizer (`shared/question-ingestion-qa.ts`, the most-scrutinized code):**
+**Normalizer (`shared/question-ingestion-qa.ts`, the most-scrutinized code — QI-BLOCK-002):**
 
-- `parseGridInValue(s)` → exact reduced **rational** (`bigint` num/den). Accepts integers,
-  signed decimals (incl. `.2`, `0.20`), and fractions `a/b`. Rejects mixed numbers (`3 1/2`),
-  percents, thousands separators, divide-by-zero, blanks — i.e. exactly the non-grid entries.
-- `gridInEquivalent(a,b)` / `normalizeGridInKey(set)` → equality by rational, so `1/5 = .2 =
-0.2 = 0.20`, and an **inconsistent** key set (`0.2` vs `1/4`) is rejected as a real defect.
-- **Grounding, not invention:** the rule is College Board's published SPR rule, reflected
-  verbatim in the source rationale ("1/5 and .2 are examples of ways to enter a correct
-  answer"). Proven (exact shipped algorithm, run 2026-06-14): `1/5==.2`, `0.2==0.20`,
-  `1/5==0.20`, `-7/4` parses, `2/4→1/2`, and the four reject cases — **all pass**.
-- **Boundary (flagged):** repeating-decimal grid-fill tolerance (`2/3 → .666 / .667`) is a
-  **runtime** student-vs-key concern owned by Doc 04B scoring, which already matches against a
-  `correct_variants` array — this ingestion step _produces_ that array + the exact rational so
-  04B never re-parses. Ingestion does exact-rational key validation only.
+- `parseGridInValue(s)` → exact reduced **rational** (`bigint`). Accepts integers, signed
+  decimals (incl. `.2`, `0.20`), fractions `a/b`; rejects mixed numbers (`3 1/2`), percents,
+  separators, divide-by-zero, blanks — exactly the non-grid entries.
+- `gridInAcceptedForms(value)` → the **EXHAUSTIVE** set of CB-accepted surface forms, generated
+  from the exact value per the published Digital SAT rules: field budget **5 chars (6 for a
+  negative, sign included)**; fraction form; the exact decimal when it terminates and fits;
+  otherwise the 4th-digit **TRUNCATED and ROUNDED** decimals (both leading-zero spellings). So
+  `2/3 → {2/3, .666, 0.666, .667, 0.667}` — the rounded AND truncated forms CB's own directions
+  enumerate ("0.6666666 could be entered as 0.666 (truncated) or 0.667 (rounded)"). Not invented,
+  not partial. **Proven (exact shipped algorithm, run 2026-06-14):** 2/3, 1/3 (truncate==round,
+  no spurious `.334`), 1/5, 1/2, 1/16 (`.0625` exact, fits), 17, −2/3 — all match CB exactly.
+- `normalizeGridInKey(exactAnswer, storedVariants)` → generates the exhaustive set and **requires
+  the stored `correct_variants` to BE that set** — a partial set is rejected, never shipped
+  (QI-BLOCK-002 fail-closed). `gridInResponseMatches(response, value)` is the Doc 04B runtime
+  matcher (accepts the 4th-digit forms + value-equality for zero-padding).
 
 ---
 
@@ -215,29 +217,34 @@ even be expressed (proven: `QA-SCHEMA` reject test). Rules:
 
 `evaluateIngestionCandidate(candidate, context)` → `{ pass | reject | flag, reasons[],
 advisory_flags[], fingerprint }`. Pure: verdict is a deterministic function of the candidate +
-injected IO-probe results; an un-run IO probe becomes an **advisory, never a silent pass**.
-Each machine gate maps 1:1 to a §23 gate and/or a 280-discard defect:
+injected IO-probe results. **FAIL-CLOSED (QI-BLOCK-001):** a required probe (dedup, KaTeX-strict,
+asset resolve+media) that did not run, or whose results don't cover every target the candidate
+carries, is a **REJECT** — "couldn't verify" is never a pass. Each machine gate maps 1:1 to a
+§23 gate and/or a 280-discard defect:
 
-| validator code                      | asserts                                                          | §23 / 280 source             |
-| ----------------------------------- | ---------------------------------------------------------------- | ---------------------------- |
-| `QA-SCHEMA`                         | candidate parses the Zod shape                                   | §23 schema validity          |
-| `QA-SOURCE`                         | `source_type === 1` (official)                                   | 280 #7 (SYNTH-as-1)          |
-| `QA-SECTION`                        | section ∈ {M,RW}                                                 | 280 #6 (`section='MATH'`)    |
-| `QA-DIFF`                           | difficulty ∈ {1,2,3}                                             | §23 difficulty range         |
-| `QA-OPT-COUNT`                      | mcq: 4 options A–D, non-empty                                    | §23 four-options             |
-| `QA-OPT-DUP`                        | mcq: 4 distinct option texts                                     | 280 #1 (dup options)         |
-| `QA-KEY`                            | mcq: key ∈ option keys                                           | §23 answer-key integrity     |
-| `QA-ONE-CORRECT`                    | mcq: ≤1 `role:correct` if metadata present                       | §23 one-correct              |
-| `QA-GRID-SHAPE`                     | grid_in: no options, value (not A–D) key                         | HALT-5 shape                 |
-| `QA-GRID-VARIANTS`                  | grid_in: variant set non-empty, consistent, ∋ key                | §3 / 280 (garbage key)       |
-| `QA-RW-PASSAGE`                     | RW: passage present, ≥ floor (truncation→advisory)               | 280 #5 (truncated/missing)   |
-| `QA-EXPL-LEN`                       | explanation ≥ 20 chars                                           | §23 explanation present      |
-| `QA-MATH-RENDER`                    | `$…$` balanced (intrinsic) + KaTeX-strict (IO)                   | §23 "no malformed formulas"  |
-| `QA-ASSET-REF` / `QA-ASSET-RESOLVE` | refs resolve; uri HEAD-200 + sha256 (IO)                         | §23 "no broken assets"       |
-| `QA-ASSET-IP`                       | figure is owner-authored (kind ↔ provenance); no CB raster       | HALT-2 path (a)              |
-| `QA-ASSET-FAITHFUL`                 | figure pending owner-eye faithfulness → **flag**, route to owner | HALT-2 (riskiest extraction) |
-| `QA-DUP-EXACT`                      | fingerprint not in live/staging (IO)                             | 280 #3 (clones); §23         |
-| `QA-DUP-NEAR`                       | embedding sim < 0.95 (IO) → **flag**, route to dedup             | 280 #4; §23/§24              |
+| validator code      | asserts                                                              | §23 / 280 source             |
+| ------------------- | -------------------------------------------------------------------- | ---------------------------- |
+| `QA-SCHEMA`         | candidate parses the Zod shape                                       | §23 schema validity          |
+| `QA-SOURCE`         | `source_type === 1` (official)                                       | 280 #7 (SYNTH-as-1)          |
+| `QA-SECTION`        | section ∈ {M,RW}                                                     | 280 #6 (`section='MATH'`)    |
+| `QA-DIFF`           | difficulty ∈ {1,2,3}                                                 | §23 difficulty range         |
+| `QA-OPT-COUNT`      | mcq: 4 options A–D, non-empty                                        | §23 four-options             |
+| `QA-OPT-DUP`        | mcq: 4 distinct option texts                                         | 280 #1 (dup options)         |
+| `QA-KEY`            | mcq: key ∈ option keys                                               | §23 answer-key integrity     |
+| `QA-ONE-CORRECT`    | mcq: ≤1 `role:correct` if metadata present                           | §23 one-correct              |
+| `QA-GRID-SHAPE`     | grid_in: no options, value (not A–D) key                             | HALT-5 shape                 |
+| `QA-GRID-VARIANTS`  | grid_in: stored set IS the exhaustive CB set (not partial)           | QI-BLOCK-002; §3             |
+| `QA-TAXONOMY`       | option_metadata distractor labels ∈ §18 enum; correct's is null      | QI-BLOCK-006; §18/§23        |
+| `QA-RW-PASSAGE`     | RW: passage present, ≥ floor; **truncation → reject** (not advisory) | QI-BLOCK-006; 280 #5         |
+| `QA-EXPL-LEN`       | explanation ≥ 20 chars                                               | §23 explanation present      |
+| `QA-MATH-RENDER`    | `$…$` balanced + KaTeX-strict; **missing probe ⇒ reject**            | QI-BLOCK-001; §23            |
+| `QA-ASSET-REF`      | `{{asset:id}}` resolves; no inline base64                            | §23 "no broken assets"       |
+| `QA-ASSET-RESOLVE`  | uri HEAD-200 + sha256; **missing probe ⇒ reject**                    | QI-BLOCK-001; §23            |
+| `QA-ASSET-MEDIA`    | **SNIFFED** media type matches kind (raster-as-svg → reject)         | QI-BLOCK-005                 |
+| `QA-ASSET-IP`       | figure is owner-authored (kind ↔ provenance); no CB raster           | HALT-2 path (a)              |
+| `QA-ASSET-FAITHFUL` | figure pending owner-eye faithfulness → **flag**, route to owner     | HALT-2 (riskiest extraction) |
+| `QA-DUP-EXACT`      | dedup ran AND no live/staging hit; **missing probe ⇒ reject**        | QI-BLOCK-001; 280 #3         |
+| `QA-DUP-NEAR`       | embedding sim < 0.95 → **flag**, route to dedup                      | 280 #4; §23/§24              |
 
 **Owner-eye (machine checks consistency; owner checks correctness):** answer-key _correctness_
 (the machine proves the key is consistent, never that it is _right_), explanation _truth_,

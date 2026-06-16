@@ -24,6 +24,9 @@ type MockQuestionRow = {
   status: string;
   section: string;
   section_code: string;
+  // Genesis-native item discriminator. The questions-runtime layer now filters and reconciles
+  // on item_type ('mcq' | 'grid_in') rather than the legacy question_type column.
+  item_type: string;
   question_type: string;
   stem: string;
   options: Array<{ key: string; text: string }>;
@@ -195,8 +198,9 @@ describe('CI Security Tests - Question Anti-Leak', () => {
     id: '00000000-0000-0000-0000-000000000123',
     canonical_id: 'SATM1ABC123',
     status: 'published',
-    section: 'Math',
+    section: 'M',
     section_code: 'M',
+    item_type: 'mcq',
     question_type: 'multiple_choice',
     stem: 'What is 3 + 2?',
     options: [

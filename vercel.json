@@ -9,7 +9,7 @@
       "dest": "/api/index"
     },
     {
-      "src": "^/auth/google/callback$",
+      "src": "^/auth/callback$",
       "dest": "/api/index"
     },
     {

@@ -2,11 +2,14 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { doubleCsrfProtection } from "../../server/middleware/csrf-double-submit.js";
 
 const signUpMock = vi.hoisted(() => vi.fn());
 const upsertMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 const profileEqMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
-const profileUpdateMock = vi.hoisted(() => vi.fn(() => ({ eq: profileEqMock })));
+const profileUpdateMock = vi.hoisted(() =>
+  vi.fn(() => ({ eq: profileEqMock })),
+);
 const profileFromMock = vi.hoisted(() =>
   vi.fn((table: string) => {
     if (table === "profiles") {
@@ -60,6 +63,27 @@ vi.mock("@supabase/supabase-js", () => ({
   })),
 }));
 
+// AUTH-001: signup now persists the session via @supabase/ssr createServerClient.setSession, which
+// writes the native session cookie through the cookie adapter's setAll. Mock it to exercise that path.
+vi.mock("@supabase/ssr", () => ({
+  createServerClient: vi.fn((_url: string, _key: string, options: any) => ({
+    auth: {
+      setSession: vi.fn(async () => {
+        // Emulate the SSR client writing the native session cookie through the adapter.
+        options.cookies.setAll([
+          {
+            name: "sb-lyceon-prod-auth-token",
+            value: "base64-" + Buffer.from("{}").toString("base64"),
+            options: {},
+          },
+        ]);
+        return { data: { session: null, user: null }, error: null };
+      }),
+      signOut: vi.fn(async () => ({ error: null })),
+    },
+  })),
+}));
+
 const baselineEnv = {
   NODE_ENV: process.env.NODE_ENV,
   VITEST: process.env.VITEST,
@@ -74,10 +98,12 @@ async function loadAuthApp() {
   process.env.SUPABASE_URL = "https://lyceon-prod.supabase.co";
   process.env.SUPABASE_ANON_KEY = "anon-key";
 
-  const { default: authRoutes } = await import("../../server/routes/supabase-auth-routes");
+  const { default: authRoutes } =
+    await import("../../server/routes/supabase-auth-routes");
   const app = express();
   app.use(cookieParser());
   app.use(express.json());
+  app.use(doubleCsrfProtection);
   app.use("/api/auth", authRoutes);
   return app;
 }
@@ -90,12 +116,10 @@ describe("Auth Signup Contract", () => {
   it("rejects signup payloads that omit canonical legal consent", async () => {
     const app = await loadAuthApp();
 
-    const res = await request(app)
-      .post("/api/auth/signup")
-      .send({
-        email: "student@example.com",
-        password: "Password123!",
-      });
+    const res = await request(app).post("/api/auth/signup").send({
+      email: "student@example.com",
+      password: "Password123!",
+    });
 
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
@@ -136,10 +160,14 @@ describe("Auth Signup Contract", () => {
     });
     expect(upsertMock).toHaveBeenCalledTimes(1);
 
-    const upsertRows = upsertMock.mock.calls[0]?.[0] as Array<Record<string, unknown>>;
+    const upsertRows = upsertMock.mock.calls[0]?.[0] as Array<
+      Record<string, unknown>
+    >;
     expect(Array.isArray(upsertRows)).toBe(true);
     expect(upsertRows).toHaveLength(2);
-    expect(upsertRows.every((row) => row.consent_source === "email_signup_form")).toBe(true);
+    expect(
+      upsertRows.every((row) => row.consent_source === "email_signup_form"),
+    ).toBe(true);
   });
 
   it("returns authenticated outcome and canonical cookies when session is present", async () => {
@@ -185,9 +213,11 @@ describe("Auth Signup Contract", () => {
       nextPath: "/profile/complete",
     });
 
+    // AUTH-001: native @supabase/ssr session cookie (sb-<ref>-auth-token), not the legacy pair.
     const setCookies = res.headers["set-cookie"] ?? [];
-    expect(setCookies.some((cookie: string) => cookie.startsWith("sb-access-token="))).toBe(true);
-    expect(setCookies.some((cookie: string) => cookie.startsWith("sb-refresh-token="))).toBe(true);
+    expect(
+      setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
+    ).toBe(true);
   });
 });
 

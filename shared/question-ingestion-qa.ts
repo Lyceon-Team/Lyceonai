@@ -25,6 +25,7 @@ import {
   normalizeAnswerKey,
   parseCanonicalMcOptions,
   type CanonicalOptionKey,
+  type CanonicalSectionCode,
 } from "./question-bank-contract";
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,7 @@ export type QaReasonCode =
   | "QA-ASSET-REF"
   | "QA-ASSET-IP"
   | "QA-ASSET-FAITHFUL"
+  | "QA-ASSET-MEDIA"
   | "QA-ASSET-RESOLVE"
   | "QA-DUP-EXACT"
   | "QA-DUP-NEAR";
@@ -80,20 +82,25 @@ export type IngestionQaResult =
 
 /**
  * Results of the IO-bound probes the pipeline runs around this pure function.
- * Absent fields mean "probe not yet run" → emitted as advisory, never a silent pass.
+ * FAIL-CLOSED (QI-BLOCK-001): a required probe that did not run, or whose results
+ * do not cover every target the candidate carries, is a REJECT — "couldn't verify"
+ * is never a pass. The verdict stays a pure function of (candidate, context).
  */
 export type IngestionQaContext = {
-  /** exact-duplicate hit against live bank or current staging batch (§23, 280 #3). */
-  exactDuplicateOf?: string | null;
-  /** near-duplicate hit (embedding similarity ≥ 0.95) → route to dedup (§23/§24, 280 #4). */
-  nearDuplicateOf?: string | null;
-  /** per-span KaTeX-strict parse results for the math spans this candidate carries. */
+  /** Dedup is REQUIRED for every candidate; omit ⇒ reject (uniqueness unverified). */
+  dedup?: {
+    exactDuplicateOf: string | null;
+    nearDuplicateOf: string | null;
+  };
+  /** KaTeX-strict parse results; REQUIRED to cover every math span the candidate has. */
   mathRender?: ReadonlyArray<{ span: string; ok: boolean }>;
-  /** per-asset resolve (HEAD 200) + sha256 match results (§23 "no broken assets"). */
+  /** Per-asset probe; REQUIRED to cover every asset. `mediaTypeOk` is the SNIFFED
+   *  media type vs the declared kind (QI-BLOCK-005): a raster labeled svg ⇒ false. */
   assetResolution?: ReadonlyArray<{
     id: string;
     resolved: boolean;
     sha256Match: boolean;
+    mediaTypeOk: boolean;
   }>;
 };
 
@@ -174,7 +181,33 @@ export type IngestionCandidate = z.infer<typeof ingestionCandidateSchema>;
 // Wave constant: this ingestion wave is official CB content only.
 const WAVE_SOURCE_TYPE = 1;
 const MIN_EXPLANATION_CHARS = 20; // §23 "Explanation present"
-const MIN_RW_PASSAGE_CHARS = 40; // floor; truncation heuristic below is advisory
+const MIN_RW_PASSAGE_CHARS = 40; // floor; truncation below is a hard reject
+
+// §18 distractor taxonomy v1 (closed enum), per section — seeded in genesis
+// public.distractor_taxonomy_v1. QI-BLOCK-006: validate enum membership, not just
+// the correct-count. `partial_reasoning` is intentionally in BOTH sections.
+const DISTRACTOR_TAXONOMY: Record<CanonicalSectionCode, ReadonlySet<string>> = {
+  M: new Set([
+    "sign_error",
+    "arithmetic_slip",
+    "equation_setup_error",
+    "unit_error",
+    "graph_read_error",
+    "concept_gap",
+    "partial_reasoning",
+    "misread_question",
+  ]),
+  RW: new Set([
+    "detail_misread",
+    "inference_overreach",
+    "evidence_mismatch",
+    "grammar_rule_error",
+    "sentence_boundary_error",
+    "rhetorical_purpose_error",
+    "vocab_context_error",
+    "partial_reasoning",
+  ]),
+};
 
 // ---------------------------------------------------------------------------
 // Grid-in response normalizer (HALT-5). The most-scrutinized piece.
@@ -256,46 +289,158 @@ export function gridInEquivalent(a: string, b: string): boolean {
   return ra.num === rb.num && ra.den === rb.den;
 }
 
+// CB grid-in field budget (verbatim from the Digital SAT directions): "You can
+// enter up to 5 characters for a positive answer and up to 6 characters
+// (including the negative sign) for a negative answer." The decimal point and the
+// fraction '/' each count as a character.
+const GRID_BUDGET_POS = 5;
+const GRID_BUDGET_NEG = 6;
+// CB grid-fill: "If your answer is a decimal that doesn't fit in the provided
+// space, enter it by truncating or rounding at the fourth digit." CB counts a
+// leading 0 as a digit (worked example: "0.6666666 could be entered as 0.666
+// (truncated at the fourth digit) or as 0.667 (rounded at the fourth digit)") —
+// so a sub-1 value keeps 3 fractional places.
+const GRID_TOTAL_DIGITS = 4;
+
+/** Exact fractional-digit expansion of (p mod q)/q, or null if it does not
+ *  terminate within `cap` digits (a repeating decimal). p>=0 magnitude, q>0. */
+function exactDecimalDigits(p: bigint, q: bigint, cap = 12): string | null {
+  let rem = ((p % q) + q) % q;
+  let digits = "";
+  for (let i = 0; i < cap; i++) {
+    rem *= 10n;
+    digits += (rem / q).toString();
+    rem %= q;
+    if (rem === 0n) return digits;
+  }
+  return null;
+}
+
+/**
+ * Generate the EXHAUSTIVE set of College-Board-accepted surface forms for an exact
+ * rational, per the published Digital SAT SPR rules: the reduced fraction; the exact
+ * decimal when it terminates AND fits the field; otherwise the 4th-digit TRUNCATED
+ * and ROUNDED decimals — both leading-zero spellings — all char-budget filtered.
+ * Matches CB exactly (2/3 → {2/3, .666, 0.666, .667, 0.667}); does not invent forms.
+ * Empty result ⇒ the value cannot be represented in the field ⇒ caller rejects
+ * (QI-BLOCK-002: "an accepted set that can't be made exhaustive is rejected").
+ */
+export function gridInAcceptedForms(v: Rational): string[] {
+  const neg = v.num < 0n;
+  const p = neg ? -v.num : v.num; // magnitude numerator
+  const q = v.den; // > 0
+  const sign = neg ? "-" : "";
+  const budget = neg ? GRID_BUDGET_NEG : GRID_BUDGET_POS;
+  const out = new Set<string>();
+  const add = (s: string): void => {
+    if (s.length <= budget) out.add(s);
+  };
+
+  if (q === 1n) {
+    add(`${sign}${p}`); // integer: the only canonical form
+    return [...out];
+  }
+
+  add(`${sign}${p}/${q}`); // reduced fraction (mixed numbers are never emitted)
+
+  const intPart = p / q;
+  const intStr = intPart.toString();
+
+  // Exact terminating decimal — preferred when it fits (no rounding/truncation).
+  const exact = exactDecimalDigits(p % q, q);
+  let exactFits = false;
+  if (exact !== null) {
+    const withInt = `${sign}${intStr}.${exact}`;
+    const noZero = `${sign}.${exact}`;
+    if (withInt.length <= budget) {
+      out.add(withInt);
+      exactFits = true;
+    }
+    if (intPart === 0n && noZero.length <= budget) {
+      out.add(noZero);
+      exactFits = true;
+    }
+  }
+
+  // Grid-fill (truncate + round at the 4th digit) ONLY when the exact decimal does
+  // not fit — CB applies it to repeating / over-long decimals.
+  if (!exactFits) {
+    const fracPlaces = Math.max(1, GRID_TOTAL_DIGITS - intStr.length);
+    const scale = 10n ** BigInt(fracPlaces);
+    const truncated = (scale * p) / q; // floor(value * 10^k)
+    const rounded = (2n * scale * p + q) / (2n * q); // round half up
+    for (const scaled of new Set([truncated, rounded])) {
+      const ip = scaled / scale;
+      const fp = (scaled % scale).toString().padStart(fracPlaces, "0");
+      add(`${sign}${ip}.${fp}`);
+      if (ip === 0n) add(`${sign}.${fp}`);
+    }
+  }
+  return [...out];
+}
+
 export type GridInKey =
-  | { ok: true; rationalNum: string; rationalDen: string; variants: string[] }
+  | {
+      ok: true;
+      rationalNum: string;
+      rationalDen: string;
+      acceptedForms: string[];
+    }
   | { ok: false; error: string };
 
 /**
- * Validate + canonicalize a source grid-in answer key. The source stores the
- * accepted forms as a list (e.g. "0.2, 1/5" → ["0.2","1/5"]); every form must
- * parse and all must be the SAME rational, else the key is internally inconsistent
- * (a real 280-class defect) and the item is rejected.
- *
- * Runtime equivalence-checking of a STUDENT response against this key (including
- * repeating-decimal grid-fill rounding/truncation) is owned by Doc 04B scoring,
- * which already matches against a `correct_variants` array — this function produces
- * exactly that array plus the exact rational so 04B never has to re-parse.
+ * From the EXACT grid-in answer (the candidate's `correct_answer`, given in exact
+ * form — a fraction for a non-terminating value), generate the exhaustive CB set and
+ * verify the candidate's stored `correct_variants` IS that exact set: no partial set,
+ * no invented forms (QI-BLOCK-002, fail-closed). Doc 04B variant-match consumes the
+ * stored set; `gridInResponseMatches` re-derives grid-fill + value-equality at runtime.
  */
-export function normalizeGridInKey(rawVariants: readonly string[]): GridInKey {
-  const variants = rawVariants.map((v) => v.trim()).filter((v) => v.length > 0);
-  if (variants.length === 0)
-    return { ok: false, error: "grid-in key has no accepted forms" };
+export function normalizeGridInKey(
+  exactAnswer: string,
+  storedVariants: readonly string[],
+): GridInKey {
+  const v = parseGridInValue(exactAnswer);
+  if (!v)
+    return {
+      ok: false,
+      error: `grid-in correct_answer is not an exact value: ${exactAnswer}`,
+    };
+  const accepted = gridInAcceptedForms(v);
+  if (accepted.length === 0)
+    return {
+      ok: false,
+      error: `grid-in value does not fit the CB field: ${exactAnswer}`,
+    };
 
-  const first = parseGridInValue(variants[0]);
-  if (!first)
-    return { ok: false, error: `unparseable grid-in form: ${variants[0]}` };
-
-  for (const v of variants) {
-    const r = parseGridInValue(v);
-    if (!r) return { ok: false, error: `unparseable grid-in form: ${v}` };
-    if (r.num !== first.num || r.den !== first.den) {
-      return {
-        ok: false,
-        error: `inconsistent grid-in forms: ${variants.join(", ")}`,
-      };
-    }
+  const want = new Set(accepted);
+  const got = new Set(
+    storedVariants.map((s) => s.trim()).filter((s) => s.length > 0),
+  );
+  if (got.size !== want.size || [...want].some((f) => !got.has(f))) {
+    return {
+      ok: false,
+      error: `correct_variants is not the exhaustive CB-accepted set; expected {${accepted.join(", ")}}`,
+    };
   }
   return {
     ok: true,
-    rationalNum: first.num.toString(),
-    rationalDen: first.den.toString(),
-    variants,
+    rationalNum: v.num.toString(),
+    rationalDen: v.den.toString(),
+    acceptedForms: accepted,
   };
+}
+
+/** Runtime match (Doc 04B): a student response is correct iff it is a CB-accepted
+ *  surface form of the exact value (incl. the 4th-digit truncated/rounded forms),
+ *  OR equals the exact value by rational (covers trailing/leading-zero spellings). */
+export function gridInResponseMatches(
+  response: string,
+  exactValue: Rational,
+): boolean {
+  const r = response.trim();
+  if (gridInAcceptedForms(exactValue).includes(r)) return true;
+  const rv = parseGridInValue(r);
+  return !!rv && rv.num === exactValue.num && rv.den === exactValue.den;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,20 +587,43 @@ export function evaluateIngestionCandidate(
       reject("QA-KEY", `correct_answer '${key}' is not among the option keys`);
     if (c.correct_variants && c.correct_variants.length > 0)
       reject("QA-GRID-SHAPE", "mcq must not carry correct_variants");
-    // option_metadata is optional for source-derived content; if present, it must be consistent.
+    // option_metadata is optional for source-derived content; if present, validate
+    // the §18 distractor taxonomy enum, not just the correct-count (QI-BLOCK-006).
     const meta = c.option_metadata;
-    if (meta && typeof meta === "object") {
-      const roles = Object.values(meta as Record<string, unknown>).filter(
-        (v): v is { role?: unknown } => !!v && typeof v === "object",
+    if (meta && typeof meta === "object" && !Array.isArray(meta)) {
+      const entries = Object.values(meta as Record<string, unknown>).filter(
+        (v): v is Record<string, unknown> => !!v && typeof v === "object",
       );
-      const corrects = roles.filter(
-        (r) => (r as { role?: unknown }).role === "correct",
-      );
-      if (roles.length > 0 && corrects.length !== 1)
-        reject(
-          "QA-ONE-CORRECT",
-          "option_metadata, when present, must mark exactly one role:correct",
-        );
+      if (entries.length > 0) {
+        const corrects = entries.filter((e) => e.role === "correct");
+        if (corrects.length !== 1)
+          reject(
+            "QA-ONE-CORRECT",
+            "option_metadata, when present, must mark exactly one role:correct",
+          );
+        const taxonomy = section ? DISTRACTOR_TAXONOMY[section] : null;
+        for (const e of entries) {
+          const tax = e.error_taxonomy;
+          if (e.role === "correct") {
+            if (tax !== null && tax !== undefined)
+              reject(
+                "QA-TAXONOMY",
+                "the correct option's error_taxonomy must be null",
+              );
+          } else if (e.role === "distractor") {
+            if (typeof tax !== "string" || !taxonomy || !taxonomy.has(tax))
+              reject(
+                "QA-TAXONOMY",
+                `distractor error_taxonomy '${String(tax)}' is not in the §18 ${section ?? "?"} enum`,
+              );
+          } else {
+            reject(
+              "QA-TAXONOMY",
+              `option role must be 'correct' or 'distractor'; got '${String(e.role)}'`,
+            );
+          }
+        }
+      }
     }
   } else {
     // grid_in. genesis `correct_answer` is NOT NULL, so it holds the canonical
@@ -486,9 +654,9 @@ export function evaluateIngestionCandidate(
           "QA-GRID-VARIANTS",
           "correct_answer must be one of correct_variants",
         );
-      const key = normalizeGridInKey(
-        primary ? [primary, ...c.correct_variants] : c.correct_variants,
-      );
+      // The stored set MUST be the exhaustive CB-accepted set generated from the
+      // exact value — not partial, not invented (QI-BLOCK-002, fail-closed).
+      const key = normalizeGridInKey(primary, c.correct_variants);
       if (!key.ok) reject("QA-GRID-VARIANTS", key.error);
     }
   }
@@ -504,26 +672,38 @@ export function evaluateIngestionCandidate(
         `RW passage below floor (${MIN_RW_PASSAGE_CHARS} chars)`,
       );
     } else if (!/[.!?"'’”)\]]$/.test(passage)) {
-      // heuristic: a passage that does not end on terminal punctuation may be truncated.
-      advisory.push(
-        "QA-RW-PASSAGE: passage does not end on terminal punctuation (possible truncation — owner-eye)",
+      // QI-BLOCK-006: machine-detected truncation is a REJECT, not an advisory — a
+      // passage not ending on terminal punctuation is cut off (280 #5).
+      reject(
+        "QA-RW-PASSAGE",
+        "machine-detected truncation: passage does not end on terminal punctuation",
       );
     }
   }
 
-  // --- math render (KaTeX strict). Intrinsic: delimiters balanced. IO: parse ok. ---
+  // --- math render: KaTeX-strict, FAIL-CLOSED (QI-BLOCK-001). ---
+  // Intrinsic: '$' delimiters balanced across every text field.
+  const allText = [
+    c.stem,
+    c.passage ?? "",
+    ...parseCanonicalMcOptions(c.options ?? null).map((o) => o.text),
+  ].join("\n");
+  if ((allText.match(/\$/g) ?? []).length % 2 !== 0)
+    reject("QA-MATH-RENDER", "unbalanced '$' math delimiters");
   const spans = extractMathSpans(c);
-  const dollarCount = (c.stem.match(/\$/g) ?? []).length;
-  if (dollarCount % 2 !== 0)
-    reject("QA-MATH-RENDER", "unbalanced '$' math delimiters in stem");
-  if (context.mathRender) {
-    for (const r of context.mathRender)
-      if (!r.ok)
-        reject("QA-MATH-RENDER", `math span fails KaTeX-strict: ${r.span}`);
-  } else if (spans.length > 0) {
-    advisory.push(
-      `QA-MATH-RENDER: ${spans.length} math span(s) pending KaTeX-strict render probe`,
+  if (spans.length > 0) {
+    const rendered = new Map(
+      (context.mathRender ?? []).map((r) => [r.span, r.ok]),
     );
+    for (const s of spans) {
+      if (!rendered.has(s))
+        reject(
+          "QA-MATH-RENDER",
+          `KaTeX-strict probe did not run for span: ${s} (couldn't verify ⇒ reject)`,
+        );
+      else if (!rendered.get(s))
+        reject("QA-MATH-RENDER", `math span fails KaTeX-strict: ${s}`);
+    }
   }
 
   // --- asset references (intrinsic dangling) + resolution (IO) ---
@@ -559,34 +739,56 @@ export function evaluateIngestionCandidate(
         `asset ${a.id}: regenerated figure pending owner-eye faithfulness verification vs ${a.source_ref}`,
       );
   }
-  if (context.assetResolution) {
-    for (const r of context.assetResolution) {
+  // Resolution + media-sniff: FAIL-CLOSED (QI-BLOCK-001/005). Every asset must
+  // have a probe result; a missing one is "couldn't verify" ⇒ reject.
+  if ((c.assets ?? []).length > 0) {
+    const res = new Map(
+      (context.assetResolution ?? []).map((r) => [r.id, r] as const),
+    );
+    for (const a of c.assets ?? []) {
+      const r = res.get(a.id);
+      if (!r) {
+        reject(
+          "QA-ASSET-RESOLVE",
+          `asset ${a.id}: resolve+media probe did not run (couldn't verify ⇒ reject)`,
+        );
+        continue;
+      }
       if (!r.resolved)
         reject(
           "QA-ASSET-RESOLVE",
-          `asset ${r.id} did not resolve (HEAD != 200)`,
+          `asset ${a.id} did not resolve (HEAD != 200)`,
         );
-      else if (!r.sha256Match)
-        reject("QA-ASSET-RESOLVE", `asset ${r.id} sha256 mismatch`);
+      if (!r.sha256Match)
+        reject("QA-ASSET-RESOLVE", `asset ${a.id} sha256 mismatch`);
+      // QI-BLOCK-005: trust the SNIFFED media type, not the self-reported kind —
+      // a raster labeled svg is rejected; CB's raster structurally cannot ship.
+      if (!r.mediaTypeOk)
+        reject(
+          "QA-ASSET-MEDIA",
+          `asset ${a.id}: sniffed media type does not match declared kind '${a.kind}' (no raster-as-svg)`,
+        );
     }
-  } else if ((c.assets ?? []).length > 0) {
-    advisory.push(
-      `QA-ASSET-RESOLVE: ${(c.assets ?? []).length} asset(s) pending resolve+sha256 probe`,
-    );
   }
 
-  // --- duplicate detection (IO, folded in) ---
-  if (context.exactDuplicateOf)
+  // --- duplicate detection: REQUIRED probe, FAIL-CLOSED (QI-BLOCK-001). ---
+  if (!context.dedup) {
     reject(
       "QA-DUP-EXACT",
-      `exact duplicate of ${context.exactDuplicateOf} (280 #3)`,
+      "dedup probe did not run — uniqueness unverified (couldn't verify ⇒ reject)",
     );
-  if (context.nearDuplicateOf) {
-    // near-dup is a route-to-review, not a hard reject (§23 → dedup queue).
-    flag(
-      "QA-DUP-NEAR",
-      `near-duplicate of ${context.nearDuplicateOf} (≥0.95) — route to dedup`,
-    );
+  } else {
+    if (context.dedup.exactDuplicateOf)
+      reject(
+        "QA-DUP-EXACT",
+        `exact duplicate of ${context.dedup.exactDuplicateOf} (280 #3)`,
+      );
+    if (context.dedup.nearDuplicateOf)
+      // near-dup is a route-to-review, not a hard reject (§23 → dedup queue).
+      flag(
+        "QA-DUP-NEAR",
+        `near-duplicate of ${context.dedup.nearDuplicateOf} (≥0.95) — route to dedup`,
+      );
   }
 
   // Verdict precedence: a defect (reject) outranks a route-to-owner (flag).

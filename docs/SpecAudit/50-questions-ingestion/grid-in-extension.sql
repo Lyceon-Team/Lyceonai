@@ -53,10 +53,12 @@ ALTER TABLE public.questions
     OR (
       item_type = 'grid_in'
       AND options IS NULL
+      AND correct_answer IS NOT NULL              -- QI-BLOCK-004: explicit, even though the column is NOT NULL
       AND correct_answer !~ '^[A-D]$'
       AND correct_variants IS NOT NULL
       AND array_length(correct_variants, 1) >= 1
-      AND correct_answer = ANY (correct_variants)
+      AND array_position(correct_variants, NULL) IS NULL  -- QI-BLOCK-004: no NULL array elements
+      AND correct_answer = ANY (correct_variants)         -- QI-BLOCK-004: strict membership
     )
   );
 
