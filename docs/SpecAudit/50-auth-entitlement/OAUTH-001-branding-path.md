@@ -183,3 +183,39 @@ call; default remains (A), free.
   mean the app is published for general users; that is a separate Google review.
 - Owner-confirmed (dashboard-side): the Supabase-configured Google **Client ID matches** the Google client
   ID. No code dependency — recorded here for the audit trail.
+
+---
+
+## 7. Identity linking — same email, two providers (AL-7; profile-per-human)
+
+> Governs `contracts/auth-login-e2e.contract.md` AL-7 + Doc-01 §7 (one profile per human). Captures the
+> required dashboard setting so the cross-provider behavior is **deliberate, not accidental**.
+
+**The footgun.** A user signs up with email/password, then later clicks "Sign in with Google" with the
+**same email** (or the reverse). Whether Supabase treats this as **one** human (one `auth.users` row →
+one profile) or **two** depends on a project setting, not on app code.
+
+**Required owner setting (Supabase → Authentication → Providers / Settings):**
+
+- **Enable "Link accounts with the same email"** (automatic identity linking for **verified** emails). With
+  it on, the second provider attaches a new identity to the **existing** `auth.users.id`, so
+  `ensureProfileForAuthUser` resolves the existing profile (keyed on `id`) and **no** second profile is
+  created. This is the intended state.
+- Linking only fires for a **verified** email on the existing identity (Supabase will not auto-merge an
+  unverified one — anti-takeover). Email/password signups must therefore confirm their email (AL-3) for the
+  later Google sign-in to merge rather than collide.
+
+**Code is config-agnostic (holds even if the toggle is wrong).** Independent of the dashboard state, the
+app never forks one human into two profiles:
+
+- Hard DB backstop: genesis `idx_profiles_email_active` — `UNIQUE (lower(email)) WHERE deleted_at IS NULL`
+  — makes a second profile for the same email impossible at the database layer.
+- Clean surface over it: `ensureProfileForAuthUser` (`server/lib/profile-bootstrap.ts`) pre-checks the email
+  under a different auth id and translates the index's `23505` race into a typed
+  `AccountEmailConflictError` → the OAuth callback redirects to `/login?error=account_exists` and the auth
+  middleware returns `409 ACCOUNT_EMAIL_CONFLICT` ("sign in with your original method"), never a 500 and
+  never a duplicate. Proven in `tests/ci/account-linking.contract.test.ts`.
+
+**Net:** turn the toggle on for the seamless one-profile experience; the code guarantees profile-per-human
+regardless. If the toggle is off, a same-email second provider is a deliberate, explained conflict, not a
+silent duplicate.

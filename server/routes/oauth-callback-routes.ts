@@ -18,7 +18,10 @@ import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
-import { ensureProfileForAuthUser } from "../lib/profile-bootstrap.js";
+import {
+  ensureProfileForAuthUser,
+  AccountEmailConflictError,
+} from "../lib/profile-bootstrap.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { recordLegalAcceptances } from "../lib/legal-acceptance.js";
 
@@ -36,6 +39,25 @@ function parseConsentSource(req: Request): ConsentSource | null {
   return null;
 }
 
+// AL-3: the native email-confirmation / recovery handoff arrives as `token_hash` + `type` (the OTP
+// variant of the same SSR session establishment as the OAuth `code` path). Narrow `type` at the
+// boundary to Supabase's EmailOtpType set — never trust the raw query value.
+const EMAIL_OTP_TYPES = [
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+] as const;
+type EmailOtpType = (typeof EMAIL_OTP_TYPES)[number];
+function isEmailOtpType(value: unknown): value is EmailOtpType {
+  return (
+    typeof value === "string" &&
+    (EMAIL_OTP_TYPES as readonly string[]).includes(value)
+  );
+}
+
 /**
  * GET /auth/callback?code=...
  * Native Supabase PKCE landing route.
@@ -50,7 +72,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       .send("Server configuration error: PUBLIC_SITE_URL is missing");
   }
 
-  const { code, error: providerError } = req.query;
+  const { code, token_hash: tokenHash, type, error: providerError } = req.query;
 
   if (providerError) {
     logger.warn("OAUTH", "provider_error", "OAuth provider returned an error", {
@@ -59,28 +81,54 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
     return res.redirect(`${siteUrl}/login?error=google_oauth_failed`);
   }
 
-  if (!code || typeof code !== "string") {
-    logger.warn("OAUTH", "no_code", "No authorization code on native callback");
+  const hasCode = typeof code === "string" && code.length > 0;
+  // AL-3: the native email-confirmation / recovery handoff arrives as token_hash + type. Narrowed
+  // here at the boundary so the verifyOtp params are typed without casts.
+  const otp =
+    typeof tokenHash === "string" &&
+    tokenHash.length > 0 &&
+    isEmailOtpType(type)
+      ? { token_hash: tokenHash, type }
+      : null;
+
+  if (!hasCode && otp === null) {
+    logger.warn(
+      "OAUTH",
+      "no_credential",
+      "No authorization code or email-confirmation token on callback",
+    );
     return res.redirect(`${siteUrl}/login?error=google_oauth_failed`);
   }
 
   try {
-    // The SSR server client reads the PKCE code-verifier cookie and, on success, writes the
-    // session cookie back onto the response through the cookie adapter.
+    // The SSR server client writes the native session cookie back through the cookie adapter on
+    // success. PKCE OAuth uses exchangeCodeForSession (reads the code-verifier cookie); the native
+    // email-confirmation / recovery handoff uses verifyOtp(token_hash,type). Both yield the SAME
+    // @supabase/ssr session — one session model, no custom token parsing.
     const supabase = createSupabaseServerClient(req, res);
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    const result =
+      otp !== null
+        ? await supabase.auth.verifyOtp(otp)
+        : typeof code === "string"
+          ? await supabase.auth.exchangeCodeForSession(code)
+          : null;
 
-    if (error || !data.session || !data.user) {
+    if (
+      result === null ||
+      result.error ||
+      !result.data.session ||
+      !result.data.user
+    ) {
       logger.error(
         "OAUTH",
         "exchange_failed",
-        "Failed to exchange code for session",
-        { error: error?.message },
+        "Failed to establish a session from the callback",
+        { error: result?.error?.message },
       );
       return res.redirect(`${siteUrl}/login?error=supabase_exchange`);
     }
 
-    const user = data.user;
+    const user = result.data.user;
 
     let redirectPath: string;
     try {
@@ -127,6 +175,31 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         redirectPath = "/dashboard";
       }
     } catch (finalizeErr) {
+      // AL-7 (profile-per-human): same email already owned by another identity (a second provider
+      // not merged by Supabase identity-linking). Deliberate conflict — do not fork the human.
+      if (finalizeErr instanceof AccountEmailConflictError) {
+        logger.warn(
+          "OAUTH",
+          "account_email_conflict",
+          "Blocked second-provider sign-in for an email owned by another identity",
+          { requestId: req.requestId },
+        );
+        await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+          logger.warn(
+            "OAUTH",
+            "signout_cleanup_failed",
+            "Best-effort local signOut during callback cleanup failed",
+            {
+              requestId: req.requestId,
+              error:
+                signOutErr instanceof Error
+                  ? signOutErr.message
+                  : String(signOutErr),
+            },
+          ),
+        );
+        return res.redirect(`${siteUrl}/login?error=account_exists`);
+      }
       logger.error(
         "OAUTH",
         "post_auth_finalize_failed",
@@ -141,7 +214,20 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         },
       );
       // Sign the half-finished session out so we never strand a partially-bootstrapped user.
-      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+      await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+        logger.warn(
+          "OAUTH",
+          "signout_cleanup_failed",
+          "Best-effort local signOut during callback cleanup failed",
+          {
+            requestId: req.requestId,
+            error:
+              signOutErr instanceof Error
+                ? signOutErr.message
+                : String(signOutErr),
+          },
+        ),
+      );
       return res.redirect(`${siteUrl}/login?error=post_auth_finalize`);
     }
 

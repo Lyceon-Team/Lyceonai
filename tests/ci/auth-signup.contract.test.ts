@@ -109,6 +109,7 @@ const baselineEnv = {
   VITEST: process.env.VITEST,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  PUBLIC_SITE_URL: process.env.PUBLIC_SITE_URL,
 };
 
 async function loadAuthApp() {
@@ -117,6 +118,7 @@ async function loadAuthApp() {
   process.env.VITEST = "";
   process.env.SUPABASE_URL = "https://lyceon-prod.supabase.co";
   process.env.SUPABASE_ANON_KEY = "anon-key";
+  process.env.PUBLIC_SITE_URL = "https://app.lyceon.ai";
   process.env.CSRF_SECRET = "auth-signup-contract-csrf-secret";
 
   const { default: authRoutes } =
@@ -195,6 +197,39 @@ describe("Auth Signup Contract", () => {
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty("error");
     expect(signUpMock).not.toHaveBeenCalled();
+  });
+
+  it("AL-3: invokes native signUp with emailRedirectTo pointing at /auth/callback", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-confirm", email: "confirm@example.com" },
+        session: null,
+      },
+      error: null,
+    });
+
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "confirm@example.com",
+      password: "Password123!",
+      displayName: "Confirm User",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(202);
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    const signUpArg = signUpMock.mock.calls[0]?.[0] as {
+      options?: { emailRedirectTo?: string };
+    };
+    // The native email-confirmation handoff must land on our SSR callback — no custom token flow.
+    expect(signUpArg.options?.emailRedirectTo).toBe(
+      "https://app.lyceon.ai/auth/callback",
+    );
   });
 
   it("returns verification_required when Supabase signup has no session", async () => {
@@ -293,4 +328,5 @@ afterEach(() => {
   process.env.VITEST = baselineEnv.VITEST;
   process.env.SUPABASE_URL = baselineEnv.SUPABASE_URL;
   process.env.SUPABASE_ANON_KEY = baselineEnv.SUPABASE_ANON_KEY;
+  process.env.PUBLIC_SITE_URL = baselineEnv.PUBLIC_SITE_URL;
 });
