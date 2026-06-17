@@ -195,7 +195,7 @@ describe("Mutation Ownership Contract", () => {
       accountMocks.revokeGuardianLink.mockResolvedValue(undefined);
       accountMocks.getAllGuardianStudentLinks.mockResolvedValue([]);
 
-      const res = await request(app)
+      await request(app)
         .delete("/api/guardian/link/student-1")
         .set("Origin", "http://localhost:5000");
       // If it hits the service call, the ownership is correct.

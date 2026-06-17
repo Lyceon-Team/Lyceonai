@@ -725,40 +725,6 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
   };
 }
 
-function normalizeStoredSessionSpec(
-  raw: unknown,
-): Partial<CanonicalSessionSpec> | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const record = raw as Record<string, unknown>;
-
-  const sections = normalizeSectionList(record.sections);
-  const domains = normalizeStringList(record.domains, 128);
-  const difficulties = normalizeDifficulties(record.difficulties);
-  const mode =
-    typeof record.mode === "string" && record.mode.trim().length > 0
-      ? record.mode.trim()
-      : undefined;
-
-  const targetMinutes =
-    typeof record.target_minutes === "number" &&
-    Number.isFinite(record.target_minutes)
-      ? Math.floor(record.target_minutes)
-      : null;
-
-  const targetQuestionCount = coerceTargetQuestionCount(
-    record.target_question_count,
-  );
-
-  return {
-    sections,
-    domains,
-    difficulties,
-    target_minutes: targetMinutes,
-    target_question_count: targetQuestionCount,
-    mode,
-  };
-}
-
 function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   const codes = new Set<string>();
   for (const section of sections) {
