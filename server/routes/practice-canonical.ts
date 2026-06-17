@@ -793,7 +793,17 @@ async function listExactFilteredQuestionPool(spec: {
     .in("item_type", ["mcq", "grid_in"]);
 
   if (spec.excludeIds && spec.excludeIds.length > 0) {
-    query = query.not("id", "in", `(${spec.excludeIds.join(",")})`);
+    // @spec [Coding Standards §5.1, §7.1] | @implemented [2026-06-17] | plain English:
+    // Canonical question ids are opaque UUIDs. Allow-list each id through zod's strict
+    // UUID validator before it is interpolated into the PostgREST `not in (...)` filter,
+    // so no caller-supplied string can ever reach the raw filter expression. Behaviour is
+    // unchanged for legitimate question ids; non-UUID values are dropped, not interpolated.
+    const safeExcludeIds = spec.excludeIds.filter(
+      (id) => z.string().uuid().safeParse(id).success,
+    );
+    if (safeExcludeIds.length > 0) {
+      query = query.not("id", "in", `(${safeExcludeIds.join(",")})`);
+    }
   }
 
   query = query.limit(1000);
