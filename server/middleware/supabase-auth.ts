@@ -688,6 +688,43 @@ export function requireConsentCompliance(
 }
 
 /**
+ * Middleware to require completed onboarding profile before feature access.
+ * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
+ * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+ * @spec [Doc-01_V6 §9.2 HALT-3] server-side DOB soft-gate
+ */
+export function requireProfileComplete(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return sendUnauthenticated(res, req.requestId);
+  }
+
+  if (!req.user.profile_completed_at) {
+    logger.warn(
+      "AUTH",
+      "profile_incomplete",
+      "Feature access attempted before profile completion",
+      {
+        userId: req.user.id,
+        path: req.path,
+        requestId: req.requestId,
+      },
+    );
+    return sendForbidden(res, {
+      error: "Profile incomplete",
+      message: "Please complete your profile before accessing this feature.",
+      requestId: req.requestId,
+      extra: { code: "PROFILE_INCOMPLETE" },
+    });
+  }
+
+  return next();
+}
+
+/**
  * Middleware to require student or admin role (blocks guardians)
  * Returns 403 if user is a guardian
  */

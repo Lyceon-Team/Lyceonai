@@ -23,6 +23,11 @@ package-lock.json
 audit-output.json
 test-results/
 
+# Playwright e2e harness outputs (browsers install to /opt/pw-browsers, outside the repo)
+playwright-report/
+blob-report/
+.playwright/
+
 # Local secrets
 .env.local
 .env

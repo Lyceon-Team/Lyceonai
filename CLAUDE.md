@@ -31,6 +31,7 @@ Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads 
 4. **Route handler** — thin, fixed order: auth → entitlement → Zod parse → domain → serialize.
 5. **Tests** — anti-leak, idempotency, and denial tests for the new behavior.
 6. **Observability** — structured, redacted logs (no content leakage).
+7. **Notification emission** — emit to `notification_outbox` if this feature produces a notifiable event: same transaction as the state change, deterministic `event_id` (insert-once), `recipient_kind` per the guardian-trust model. Emission only — the dispatcher/delivery/UI/preferences are end-stage. See `contracts/notification-outbox.contract.md` + `docs/SpecAudit/notification-triggers.md`.
 
 Annotate every implementation:
 `@spec [Doc-ID_version, §section] | @implemented [YYYY-MM-DD] | plain English: what it does, expected outcome, trade-offs, edge cases`

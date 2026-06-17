@@ -1,17 +1,17 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 /**
  * Common environment variables for security tests
  */
 export const SECURITY_TEST_ENV = {
-  SUPABASE_URL: 'http://localhost:54321',
-  SUPABASE_SERVICE_ROLE_KEY: 'test-key',
-  SUPABASE_ANON_KEY: 'test-key',
-  GEMINI_API_KEY: 'test-key',
-  INGEST_ADMIN_TOKEN: 'test-token',
-  API_USER_TOKEN: 'test-token',
-  PUBLIC_SITE_URL: 'http://localhost:5000',
-  CSRF_SECRET: 'test-csrf-secret',
+  SUPABASE_URL: "http://localhost:54321",
+  SUPABASE_SERVICE_ROLE_KEY: "test-key",
+  SUPABASE_ANON_KEY: "test-key",
+  GEMINI_API_KEY: "test-key",
+  INGEST_ADMIN_TOKEN: "test-token",
+  API_USER_TOKEN: "test-token",
+  PUBLIC_SITE_URL: "http://localhost:5000",
+  CSRF_SECRET: "test-csrf-secret",
 };
 
 /**
@@ -28,37 +28,37 @@ Object.entries(SECURITY_TEST_ENV).forEach(([key, value]) => {
  * Use this BEFORE dynamically importing the app.
  */
 export function setupSecurityMocks() {
-  vi.doMock('../../server/middleware/csrf-double-submit', () => ({
+  vi.doMock("../../server/middleware/csrf-double-submit", () => ({
     doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
-    generateToken: () => 'test-csrf-token',
+    generateToken: () => "test-csrf-token",
   }));
 
-  vi.doMock('../../server/middleware/supabase-auth', () => ({
+  vi.doMock("../../server/middleware/supabase-auth", () => ({
     supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
       req.user = {
-        id: 'test-user',
-        role: 'student',
+        id: "test-user",
+        role: "student",
         isGuardian: false,
         isAdmin: false,
       };
-      req.requestId ??= 'req-security-test';
+      req.requestId ??= "req-security-test";
       next();
     },
     requireSupabaseAuth: (req: any, _res: any, next: any) => {
       req.user = {
-        id: 'test-user',
-        role: 'student',
+        id: "test-user",
+        role: "student",
         isGuardian: false,
         isAdmin: false,
       };
-      req.requestId ??= 'req-security-test';
+      req.requestId ??= "req-security-test";
       next();
     },
     requireRequestUser: (req: any, res: any) => {
       if (!req.user?.id) {
         res.status(401).json({
-          error: 'Authentication required',
-          message: 'You must be signed in to access this resource',
+          error: "Authentication required",
+          message: "You must be signed in to access this resource",
           requestId: req.requestId,
         });
         return null;
@@ -68,8 +68,8 @@ export function setupSecurityMocks() {
     requireRequestAuthContext: (req: any, res: any) => {
       if (!req.user?.id) {
         res.status(401).json({
-          error: 'Authentication required',
-          message: 'You must be signed in to access this resource',
+          error: "Authentication required",
+          message: "You must be signed in to access this resource",
           requestId: req.requestId,
         });
         return null;
@@ -78,6 +78,8 @@ export function setupSecurityMocks() {
     },
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
+    requireProfileComplete: (_req: any, _res: any, next: any) => next(),
+    requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
     getSupabaseAdmin: () => ({
       rpc: vi.fn(async () => ({ data: "acc-test", error: null })),
     }),
@@ -91,17 +93,16 @@ export function setupSecurityMocks() {
     }),
   }));
 
-  vi.doMock('../../server/middleware/usage-limits', () => ({
+  vi.doMock("../../server/middleware/usage-limits", () => ({
     checkAiChatLimit: () => (req: any, res: any, next: any) => next(),
     checkPracticeLimit: () => (req: any, res: any, next: any) => next(),
   }));
 
-  vi.doMock('../../logger.js', () => ({
+  vi.doMock("../../logger.js", () => ({
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-    }
+    },
   }));
 }
-
