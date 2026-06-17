@@ -1,15 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
-const {
-  callTutorOrchestratorMock,
-  callLlmMock,
-  handleRagQueryMock,
-} = vi.hoisted(() => ({
-  callTutorOrchestratorMock: vi.fn(),
-  callLlmMock: vi.fn(),
-  handleRagQueryMock: vi.fn(),
-}));
+const { callTutorOrchestratorMock, callLlmMock, handleRagQueryMock } =
+  vi.hoisted(() => ({
+    callTutorOrchestratorMock: vi.fn(),
+    callLlmMock: vi.fn(),
+    handleRagQueryMock: vi.fn(),
+  }));
 
 type Role = "student" | "guardian" | "admin";
 
@@ -178,10 +175,17 @@ const state = vi.hoisted(() => ({
     { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", canonical_id: "q2" },
   ] as QuestionRow[],
   practiceSessions: [
-    { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", user_id: "11111111-1111-4111-8111-111111111111" },
+    {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      user_id: "11111111-1111-4111-8111-111111111111",
+    },
   ] as PracticeSessionRow[],
   practiceItems: [
-    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: "11111111-1111-4111-8111-111111111111", status: "in_progress" },
+    {
+      id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      user_id: "11111111-1111-4111-8111-111111111111",
+      status: "in_progress",
+    },
   ] as PracticeItemRow[],
   fullLengthSessions: [] as FullLengthSessionRow[],
   failStudentMessageInsert: false,
@@ -227,20 +231,32 @@ function getCurrentUser() {
 
 type AnyRow = Record<string, unknown>;
 
-function matchFilters<T extends AnyRow>(rows: T[], filters: Array<{ op: string; column: string; value: any }>): T[] {
+function matchFilters<T extends AnyRow>(
+  rows: T[],
+  filters: Array<{ op: string; column: string; value: any }>,
+): T[] {
   return rows.filter((row) => {
     for (const filter of filters) {
       const current = row[filter.column];
       if (filter.op === "eq" && current !== filter.value) return false;
-      if (filter.op === "lt" && !(String(current) < String(filter.value))) return false;
-      if (filter.op === "gte" && !(String(current) >= String(filter.value))) return false;
-      if (filter.op === "in" && (!Array.isArray(filter.value) || !filter.value.includes(current))) return false;
+      if (filter.op === "lt" && !(String(current) < String(filter.value)))
+        return false;
+      if (filter.op === "gte" && !(String(current) >= String(filter.value)))
+        return false;
+      if (
+        filter.op === "in" &&
+        (!Array.isArray(filter.value) || !filter.value.includes(current))
+      )
+        return false;
     }
     return true;
   });
 }
 
-function orderRows<T extends AnyRow>(rows: T[], orderBy: { column: string; ascending: boolean } | null): T[] {
+function orderRows<T extends AnyRow>(
+  rows: T[],
+  orderBy: { column: string; ascending: boolean } | null,
+): T[] {
   if (!orderBy) return rows;
   const out = [...rows];
   out.sort((a, b) => {
@@ -253,9 +269,16 @@ function orderRows<T extends AnyRow>(rows: T[], orderBy: { column: string; ascen
   return out;
 }
 
-function selectColumns<T extends AnyRow>(row: T, selectSpec: string | null): AnyRow {
-  if (!selectSpec || selectSpec.trim() === "*" || selectSpec.trim() === "") return { ...row };
-  const columns = selectSpec.split(",").map((c) => c.trim()).filter(Boolean);
+function selectColumns<T extends AnyRow>(
+  row: T,
+  selectSpec: string | null,
+): AnyRow {
+  if (!selectSpec || selectSpec.trim() === "*" || selectSpec.trim() === "")
+    return { ...row };
+  const columns = selectSpec
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
   const out: AnyRow = {};
   for (const column of columns) out[column] = row[column];
   return out;
@@ -311,48 +334,88 @@ function createBuilder(table: string) {
 
   const execMutation = () => {
     if (pendingInsert) {
-      if (table === "tutor_messages" && pendingInsert[0]?.role === "student" && state.failStudentMessageInsert) {
+      if (
+        table === "tutor_messages" &&
+        pendingInsert[0]?.role === "student" &&
+        state.failStudentMessageInsert
+      ) {
         pendingInsert = null;
-        return { data: null, error: { code: "insert_failed", message: "student insert failed" } };
+        return {
+          data: null,
+          error: { code: "insert_failed", message: "student insert failed" },
+        };
       }
-      if (table === "tutor_messages" && pendingInsert[0]?.role === "tutor" && state.failTutorMessageInsert) {
+      if (
+        table === "tutor_messages" &&
+        pendingInsert[0]?.role === "tutor" &&
+        state.failTutorMessageInsert
+      ) {
         pendingInsert = null;
-        return { data: null, error: { code: "insert_failed", message: "tutor insert failed" } };
+        return {
+          data: null,
+          error: { code: "insert_failed", message: "tutor insert failed" },
+        };
       }
-      if (table === "tutor_instruction_assignments" && state.failAssignmentInsert) {
+      if (
+        table === "tutor_instruction_assignments" &&
+        state.failAssignmentInsert
+      ) {
         pendingInsert = null;
-        return { data: null, error: { code: "insert_failed", message: "assignment insert failed" } };
+        return {
+          data: null,
+          error: { code: "insert_failed", message: "assignment insert failed" },
+        };
       }
       if (table === "tutor_question_links" && state.failQuestionLinkInsert) {
         pendingInsert = null;
-        return { data: null, error: { code: "insert_failed", message: "question link insert failed" } };
+        return {
+          data: null,
+          error: {
+            code: "insert_failed",
+            message: "question link insert failed",
+          },
+        };
       }
       if (table === "tutor_instruction_exposures" && state.failExposureInsert) {
         pendingInsert = null;
-        return { data: null, error: { code: "insert_failed", message: "exposure insert failed" } };
+        return {
+          data: null,
+          error: { code: "insert_failed", message: "exposure insert failed" },
+        };
       }
 
       const inserted = pendingInsert.map((row) => {
         const withDefaults: AnyRow = { ...row };
         if (!withDefaults.id) withDefaults.id = nextId("dddddddd");
         if (!withDefaults.created_at) withDefaults.created_at = nextIso();
-        if (table === "tutor_conversations" && !withDefaults.updated_at) withDefaults.updated_at = withDefaults.created_at;
+        if (table === "tutor_conversations" && !withDefaults.updated_at)
+          withDefaults.updated_at = withDefaults.created_at;
         return withDefaults;
       });
       tableStore(table).push(...inserted);
       pendingInsert = null;
-      return { data: inserted.map((row) => selectColumns(row, selectSpec)), error: null };
+      return {
+        data: inserted.map((row) => selectColumns(row, selectSpec)),
+        error: null,
+      };
     }
 
     if (pendingUpdate) {
       const rows = tableStore(table);
       const filtered = matchFilters(rows, filters);
-      if (filtered.length === 0) return { data: null, error: { code: "not_found", message: "no rows updated" } };
+      if (filtered.length === 0)
+        return {
+          data: null,
+          error: { code: "not_found", message: "no rows updated" },
+        };
       for (const target of filtered) {
         Object.assign(target, pendingUpdate);
       }
       pendingUpdate = null;
-      return { data: filtered.map((row) => selectColumns(row, selectSpec)), error: null };
+      return {
+        data: filtered.map((row) => selectColumns(row, selectSpec)),
+        error: null,
+      };
     }
 
     return execSelect();
@@ -407,7 +470,8 @@ function createBuilder(table: string) {
     async single() {
       const { data, error } = execMutation();
       if (error) return { data: null, error };
-      if (!Array.isArray(data) || !data[0]) return { data: null, error: { code: "not_found", message: "no row" } };
+      if (!Array.isArray(data) || !data[0])
+        return { data: null, error: { code: "not_found", message: "no row" } };
       return { data: data[0], error: null };
     },
     then(resolve: (value: any) => unknown, reject?: (reason: any) => unknown) {
@@ -453,7 +517,8 @@ vi.mock("../apps/api/src/lib/rate-limit-ledger", () => ({
     remaining: 99,
     resetAt: "2099-01-01T00:00:00.000Z",
     cooldownUntil: null,
-    reservationId: args?.role === "admin" ? null : "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    reservationId:
+      args?.role === "admin" ? null : "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     duplicate: false,
   })),
   finalizeTutorUsage: vi.fn(async () => ({
@@ -466,8 +531,10 @@ vi.mock("../apps/api/src/lib/rate-limit-ledger", () => ({
     finalOutputTokens: 100,
     finalCostMicros: 100,
   })),
-  estimateTokenCount: (input: string | null | undefined) => Math.max(1, Math.ceil((input ?? "").length / 4)),
-  estimateTutorCostMicros: (input: number, output: number) => Math.max(0, input + output),
+  estimateTokenCount: (input: string | null | undefined) =>
+    Math.max(1, Math.ceil((input ?? "").length / 4)),
+  estimateTutorCostMicros: (input: number, output: number) =>
+    Math.max(0, input + output),
 }));
 
 vi.mock("../server/services/kpi-access", () => ({
@@ -490,19 +557,29 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   requireSupabaseAuth: (req: any, res: any, next: any) => {
     req.requestId ??= "req-tutor-runtime";
     const user = getCurrentUser();
-    if (!user?.id) return res.status(401).json({ error: "Authentication required" });
+    if (!user?.id)
+      return res.status(401).json({ error: "Authentication required" });
     req.user = user;
     return next();
   },
   requireStudentOrAdmin: (req: any, res: any, next: any) => {
     const user = req.user ?? getCurrentUser();
-    if (!user) return res.status(401).json({ error: "Authentication required" });
+    if (!user)
+      return res.status(401).json({ error: "Authentication required" });
     if (user.role === "guardian" && !user.isAdmin) {
-      return res.status(403).json({ error: "Student access required", message: "Guardian access is denied." });
+      return res
+        .status(403)
+        .json({
+          error: "Student access required",
+          message: "Guardian access is denied.",
+        });
     }
     return next();
   },
-  requireSupabaseAdmin: (_req: any, res: any) => res.status(403).json({ error: "Admin access required" }),
+  requireSupabaseAdmin: (_req: any, res: any) =>
+    res.status(403).json({ error: "Admin access required" }),
+  requireProfileComplete: (_req: any, _res: any, next: any) => next(),
+  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
   resolveTokenFromRequest: vi.fn((req: any) => {
     const token = req.cookies?.["sb-access-token"] ?? null;
 
@@ -517,13 +594,20 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   }),
   requireRequestUser: (req: any, res: any) => {
     if (!req.user?.id) {
-      res.status(401).json({ error: "Authentication required", message: "You must be signed in to access this resource" });
+      res
+        .status(401)
+        .json({
+          error: "Authentication required",
+          message: "You must be signed in to access this resource",
+        });
       return null;
     }
     return req.user;
   },
   sendForbidden: (res: any, body: any) => res.status(403).json(body),
-  getSupabaseAdmin: () => ({ rpc: vi.fn(async () => ({ data: null, error: null })) }),
+  getSupabaseAdmin: () => ({
+    rpc: vi.fn(async () => ({ data: null, error: null })),
+  }),
 }));
 
 vi.mock("../server/middleware/csrf-double-submit", () => ({
@@ -533,7 +617,10 @@ vi.mock("../server/middleware/csrf-double-submit", () => ({
 
 let app: any;
 
-async function createConversation(agent: request.SuperAgentTest, payload?: Record<string, unknown>) {
+async function createConversation(
+  agent: request.SuperAgentTest,
+  payload?: Record<string, unknown>,
+) {
   const res = await agent.post("/api/tutor/conversations").send({
     entry_mode: "scoped_question",
     source_surface: "practice",
@@ -601,13 +688,22 @@ describe("Tutor Runtime Contract Cutover", () => {
     state.failExposureInsert = false;
     state.nowCursor = 0;
     state.practiceItems = [
-      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
+      {
+        id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        user_id: state.currentUserId,
+        status: "in_progress",
+      },
     ];
     state.practiceSessions = [
-      { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", user_id: state.currentUserId },
+      {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        user_id: state.currentUserId,
+      },
     ];
     callTutorOrchestratorMock.mockReset();
-    callTutorOrchestratorMock.mockImplementation(async () => state.orchestratorResult);
+    callTutorOrchestratorMock.mockImplementation(
+      async () => state.orchestratorResult,
+    );
     callLlmMock.mockReset();
     callLlmMock.mockResolvedValue("legacy fallback should not run");
     handleRagQueryMock.mockReset();
@@ -644,12 +740,16 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(turn.status).toBe(200);
     expect(turn.body.data.conversation_id).toBe(conversationId);
     expect(turn.body.data.response.content).toContain("step-by-step");
-    expect(turn.body.data.response.ui_hints).toEqual(state.orchestratorResult.response.ui_hints);
+    expect(turn.body.data.response.ui_hints).toEqual(
+      state.orchestratorResult.response.ui_hints,
+    );
     expect(state.messages.filter((m) => m.role === "student")).toHaveLength(1);
     expect(state.assignments).toHaveLength(1);
     expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(1);
     const tutorMessage = state.messages.find((m) => m.role === "tutor");
-    expect(tutorMessage?.content_json?.orchestration_meta).toEqual(state.orchestratorResult.orchestration_meta);
+    expect(tutorMessage?.content_json?.orchestration_meta).toEqual(
+      state.orchestratorResult.orchestration_meta,
+    );
     expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
     expect(callLlmMock).not.toHaveBeenCalled();
     expect(handleRagQueryMock).not.toHaveBeenCalled();
@@ -695,14 +795,19 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(turn.status).toBe(200);
     const studentMessage = state.messages.find((m) => m.role === "student");
     expect(studentMessage?.source_question_canonical_id).toBe("q1");
-    expect(studentMessage?.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    expect(studentMessage?.source_question_row_id).toBe(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    );
   });
 
   it("reuses recent valid conversation scope when stored scoped question becomes stale", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
-    const conversation = state.conversations.find((row) => row.id === conversationId)!;
-    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    const conversation = state.conversations.find(
+      (row) => row.id === conversationId,
+    )!;
+    conversation.source_question_row_id =
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
     conversation.source_question_canonical_id = "q_missing";
     state.messages.push({
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
@@ -729,21 +834,34 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
 
     expect(turn.status).toBe(200);
-    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "f9999999-9999-4999-8999-999999999992");
-    expect(newStudentMessage?.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
+    const newStudentMessage = state.messages.find(
+      (m) => m.client_turn_id === "f9999999-9999-4999-8999-999999999992",
+    );
+    expect(newStudentMessage?.source_question_row_id).toBe(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+    );
     expect(newStudentMessage?.source_question_canonical_id).toBe("q2");
-    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("reused_recent_conversation_scope");
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe(
+      "reused_recent_conversation_scope",
+    );
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
-    expect(payload.resolved_scope.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2");
+    expect(payload.resolved_scope.source_question_row_id).toBe(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+    );
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q2");
-    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("reused_recent_conversation_scope");
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe(
+      "reused_recent_conversation_scope",
+    );
   });
 
   it("degrades stale scoped question to scoped_session when session remains valid", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
-    const conversation = state.conversations.find((row) => row.id === conversationId)!;
-    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    const conversation = state.conversations.find(
+      (row) => row.id === conversationId,
+    )!;
+    conversation.source_question_row_id =
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
     conversation.source_question_canonical_id = "q_missing";
 
     const turn = await agent.post("/api/tutor/messages").send({
@@ -754,12 +872,20 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
 
     expect(turn.status).toBe(200);
-    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "fa999999-9999-4999-8999-999999999991");
-    expect(newStudentMessage?.source_session_id).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1");
-    expect(newStudentMessage?.source_session_item_id).toBe("cccccccc-cccc-4ccc-8ccc-ccccccccccc1");
+    const newStudentMessage = state.messages.find(
+      (m) => m.client_turn_id === "fa999999-9999-4999-8999-999999999991",
+    );
+    expect(newStudentMessage?.source_session_id).toBe(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    );
+    expect(newStudentMessage?.source_session_item_id).toBe(
+      "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    );
     expect(newStudentMessage?.source_question_row_id).toBeNull();
     expect(newStudentMessage?.source_question_canonical_id).toBeNull();
-    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("degraded_to_scoped_session");
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe(
+      "degraded_to_scoped_session",
+    );
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
     expect(payload.resolved_scope).toMatchObject({
       source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
@@ -767,16 +893,22 @@ describe("Tutor Runtime Contract Cutover", () => {
       source_question_row_id: null,
       source_question_canonical_id: null,
     });
-    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("degraded_to_scoped_session");
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe(
+      "degraded_to_scoped_session",
+    );
   });
 
   it("degrades stale scoped references to general when no valid scoped session exists (no fail-open)", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
-    const conversation = state.conversations.find((row) => row.id === conversationId)!;
+    const conversation = state.conversations.find(
+      (row) => row.id === conversationId,
+    )!;
     conversation.source_session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb9";
-    conversation.source_session_item_id = "cccccccc-cccc-4ccc-8ccc-ccccccccccc9";
-    conversation.source_question_row_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
+    conversation.source_session_item_id =
+      "cccccccc-cccc-4ccc-8ccc-ccccccccccc9";
+    conversation.source_question_row_id =
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9";
     conversation.source_question_canonical_id = "q_missing";
 
     const turn = await agent.post("/api/tutor/messages").send({
@@ -787,14 +919,18 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
 
     expect(turn.status).toBe(200);
-    const newStudentMessage = state.messages.find((m) => m.client_turn_id === "fb999999-9999-4999-8999-999999999991");
+    const newStudentMessage = state.messages.find(
+      (m) => m.client_turn_id === "fb999999-9999-4999-8999-999999999991",
+    );
     expect(newStudentMessage).toMatchObject({
       source_session_id: null,
       source_session_item_id: null,
       source_question_row_id: null,
       source_question_canonical_id: null,
     });
-    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe("degraded_to_general");
+    expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe(
+      "degraded_to_general",
+    );
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
     expect(payload.resolved_scope).toEqual({
       source_session_id: null,
@@ -802,7 +938,9 @@ describe("Tutor Runtime Contract Cutover", () => {
       source_question_row_id: null,
       source_question_canonical_id: null,
     });
-    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe("degraded_to_general");
+    expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe(
+      "degraded_to_general",
+    );
   });
 
   it("is idempotent on duplicate client_turn_id and does not duplicate student rows", async () => {
@@ -820,7 +958,12 @@ describe("Tutor Runtime Contract Cutover", () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(state.messages.filter((m) => m.role === "student" && m.client_turn_id === payload.client_turn_id)).toHaveLength(1);
+    expect(
+      state.messages.filter(
+        (m) =>
+          m.role === "student" && m.client_turn_id === payload.client_turn_id,
+      ),
+    ).toHaveLength(1);
   });
 
   it("replay uses stored suggested_action and ui_hints from persisted tutor content_json", async () => {
@@ -986,7 +1129,10 @@ describe("Tutor Runtime Contract Cutover", () => {
         source_window_end: "2026-04-10T00:00:00.000Z",
       },
     ]);
-    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+    expect(
+      payload.policy_assignment.reason_snapshot.policy_inputs
+        .memory_summary_counts,
+    ).toEqual({
       accepted: 1,
       rejected: 0,
     });
@@ -1040,12 +1186,17 @@ describe("Tutor Runtime Contract Cutover", () => {
       summary_version: "1",
       content_json: { confidence: "medium" },
     });
-    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+    expect(
+      payload.policy_assignment.reason_snapshot.policy_inputs
+        .memory_summary_counts,
+    ).toEqual({
       accepted: 1,
       rejected: 2,
     });
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q1");
-    expect(payload.resolved_scope.source_question_row_id).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1");
+    expect(payload.resolved_scope.source_question_row_id).toBe(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    );
     expect(callLlmMock).not.toHaveBeenCalled();
     expect(handleRagQueryMock).not.toHaveBeenCalled();
   });
@@ -1084,7 +1235,10 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(turn.status).toBe(200);
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
     expect(payload.memory_summaries).toEqual([]);
-    expect(payload.policy_assignment.reason_snapshot.policy_inputs.memory_summary_counts).toEqual({
+    expect(
+      payload.policy_assignment.reason_snapshot.policy_inputs
+        .memory_summary_counts,
+    ).toEqual({
       accepted: 0,
       rejected: 2,
     });
@@ -1115,7 +1269,9 @@ describe("Tutor Runtime Contract Cutover", () => {
   it("returns recoverable retry when orchestrator call throws", async () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
-    callTutorOrchestratorMock.mockRejectedValueOnce(new Error("orchestrator unavailable"));
+    callTutorOrchestratorMock.mockRejectedValueOnce(
+      new Error("orchestrator unavailable"),
+    );
 
     const turn = await agent.post("/api/tutor/messages").send({
       conversation_id: conversationId,
@@ -1167,35 +1323,42 @@ describe("Tutor Runtime Contract Cutover", () => {
     "Choose option C.",
     "Option B is correct.",
     "Eliminate all but option D.",
-  ])("blocks anti-leak answer reveal in pre-submit practice for '%s'", async (content) => {
-    const start = await createConversation(agent);
-    const conversationId = start.body.data.conversation_id;
-    state.orchestratorResult = {
-      ...state.orchestratorResult,
-      response: {
-        ...state.orchestratorResult.response,
-        content,
-      },
-    };
-    state.practiceItems = [
-      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
-    ];
+  ])(
+    "blocks anti-leak answer reveal in pre-submit practice for '%s'",
+    async (content) => {
+      const start = await createConversation(agent);
+      const conversationId = start.body.data.conversation_id;
+      state.orchestratorResult = {
+        ...state.orchestratorResult,
+        response: {
+          ...state.orchestratorResult.response,
+          content,
+        },
+      };
+      state.practiceItems = [
+        {
+          id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+          user_id: state.currentUserId,
+          status: "in_progress",
+        },
+      ];
 
-    const turn = await agent.post("/api/tutor/messages").send({
-      conversation_id: conversationId,
-      message: "Just tell me the answer",
-      content_kind: "message",
-      client_turn_id: "f6666666-6666-4666-8666-666666666666",
-    });
+      const turn = await agent.post("/api/tutor/messages").send({
+        conversation_id: conversationId,
+        message: "Just tell me the answer",
+        content_kind: "message",
+        client_turn_id: "f6666666-6666-4666-8666-666666666666",
+      });
 
-    expect(turn.status).toBe(422);
-    expect(turn.body.error.code).toBe("TUTOR_ANTI_LEAK_BLOCKED");
-    expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
-    expect(state.assignments).toHaveLength(1);
-    expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(0);
-    expect(state.questionLinks).toHaveLength(0);
-    expect(state.exposures).toHaveLength(0);
-  });
+      expect(turn.status).toBe(422);
+      expect(turn.body.error.code).toBe("TUTOR_ANTI_LEAK_BLOCKED");
+      expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
+      expect(state.assignments).toHaveLength(1);
+      expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(0);
+      expect(state.questionLinks).toHaveLength(0);
+      expect(state.exposures).toHaveLength(0);
+    },
+  );
 
   it("allows direct-answer explanation content after submit in practice", async () => {
     const start = await createConversation(agent);
@@ -1204,11 +1367,16 @@ describe("Tutor Runtime Contract Cutover", () => {
       ...state.orchestratorResult,
       response: {
         ...state.orchestratorResult.response,
-        content: "The correct answer is A because the slope is positive across the interval.",
+        content:
+          "The correct answer is A because the slope is positive across the interval.",
       },
     };
     state.practiceItems = [
-      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "answered" },
+      {
+        id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        user_id: state.currentUserId,
+        status: "answered",
+      },
     ];
 
     const turn = await agent.post("/api/tutor/messages").send({
@@ -1229,11 +1397,16 @@ describe("Tutor Runtime Contract Cutover", () => {
       ...state.orchestratorResult,
       response: {
         ...state.orchestratorResult.response,
-        content: "Try eliminating choices that violate the units before solving exactly.",
+        content:
+          "Try eliminating choices that violate the units before solving exactly.",
       },
     };
     state.practiceItems = [
-      { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", user_id: state.currentUserId, status: "in_progress" },
+      {
+        id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        user_id: state.currentUserId,
+        status: "in_progress",
+      },
     ];
 
     const turn = await agent.post("/api/tutor/messages").send({
@@ -1251,7 +1424,11 @@ describe("Tutor Runtime Contract Cutover", () => {
     const start = await createConversation(agent);
     const conversationId = start.body.data.conversation_id;
     state.fullLengthSessions = [
-      { id: "ffffffff-ffff-4fff-8fff-ffffffffffff", user_id: state.currentUserId, status: "in_progress" },
+      {
+        id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        user_id: state.currentUserId,
+        status: "in_progress",
+      },
     ];
 
     const turn = await agent.post("/api/tutor/messages").send({
@@ -1284,13 +1461,25 @@ describe("Tutor Runtime Contract Cutover", () => {
       status: "active" as const,
     };
     state.conversations.push(
-      { id: "99999999-9999-4999-8999-999999999991", ...envelope, created_at: isoAt(1), updated_at: isoAt(2) },
-      { id: "99999999-9999-4999-8999-999999999992", ...envelope, created_at: isoAt(3), updated_at: isoAt(4) },
+      {
+        id: "99999999-9999-4999-8999-999999999991",
+        ...envelope,
+        created_at: isoAt(1),
+        updated_at: isoAt(2),
+      },
+      {
+        id: "99999999-9999-4999-8999-999999999992",
+        ...envelope,
+        created_at: isoAt(3),
+        updated_at: isoAt(4),
+      },
     );
 
     const start = await createConversation(agent);
     expect(start.status).toBe(200);
-    expect(start.body.data.conversation_id).toBe("99999999-9999-4999-8999-999999999992");
+    expect(start.body.data.conversation_id).toBe(
+      "99999999-9999-4999-8999-999999999992",
+    );
   });
 
   it("persists similar-question links with row+canonical ids and difficulty delta", async () => {
@@ -1350,7 +1539,9 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
 
     expect(turn.status).toBe(200);
-    expect(turn.body.data.response.suggested_action.type).toBe("offer_similar_question");
+    expect(turn.body.data.response.suggested_action.type).toBe(
+      "offer_similar_question",
+    );
     expect(state.questionLinks).toHaveLength(1);
     expect(state.questionLinks[0]).toMatchObject({
       source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",

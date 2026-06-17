@@ -1,14 +1,32 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Loader2, ShieldAlert, UserRound } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  ShieldAlert,
+  UserRound,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { csrfFetch } from "@/lib/csrf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -46,7 +64,10 @@ function calculateAge(dateOfBirth: string): number | null {
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
     age -= 1;
   }
   return age;
@@ -77,7 +98,9 @@ export default function ProfileComplete() {
     queryKey: ["/api/profile"],
     retry: false,
     queryFn: async () => {
-      const response = await csrfFetch("/api/profile", { credentials: "include" });
+      const response = await csrfFetch("/api/profile", {
+        credentials: "include",
+      });
 
       if (response.status === 401 || response.status === 403) {
         return { authenticated: false, user: null };
@@ -101,6 +124,14 @@ export default function ProfileComplete() {
 
     setDisplayName(profile.display_name ?? "");
     setRole(profile.role === "guardian" ? "guardian" : "student");
+
+    // @spec [Doc-01_V6 §9.2 HALT-3] | @implemented [2026-06-17] | plain English: DOB picker
+    // defaults to current_date − 13y (dynamically computed at render time, never hardcoded —
+    // the threshold drifts with calendar time per the owner ruling).
+    const defaultDob = new Date();
+    defaultDob.setFullYear(defaultDob.getFullYear() - 13);
+    setDateOfBirth(defaultDob.toISOString().split("T")[0]);
+
     setIsInitialized(true);
   }, [profile, isInitialized]);
 
@@ -115,7 +146,8 @@ export default function ProfileComplete() {
           displayName: displayName.trim(),
           role,
           dateOfBirth: role === "student" ? dateOfBirth : null,
-          guardianEmail: role === "student" ? guardianEmail.trim() || null : null,
+          guardianEmail:
+            role === "student" ? guardianEmail.trim() || null : null,
           marketingOptIn,
         }),
       });
@@ -129,7 +161,8 @@ export default function ProfileComplete() {
       if (result.guardianConsentRequired) {
         toast({
           title: "Guardian verification sent",
-          description: "A verification email was sent to the guardian address. We will unlock access after verification.",
+          description:
+            "A verification email was sent to the guardian address. We will unlock access after verification.",
         });
         return;
       }
@@ -192,14 +225,17 @@ export default function ProfileComplete() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-sm text-muted-foreground">Loading profile completion...</p>
+          <p className="text-sm text-muted-foreground">
+            Loading profile completion...
+          </p>
         </div>
       </div>
     );
   }
 
   if (error) {
-    const message = error instanceof Error ? error.message : "Failed to load profile";
+    const message =
+      error instanceof Error ? error.message : "Failed to load profile";
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
@@ -214,7 +250,11 @@ export default function ProfileComplete() {
             <Button className="w-full" onClick={() => refetch()}>
               Retry
             </Button>
-            <Button className="w-full" variant="outline" onClick={() => navigate("/login")}>
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => navigate("/login")}
+            >
               Back To Login
             </Button>
           </CardContent>
@@ -240,15 +280,22 @@ export default function ProfileComplete() {
             <Alert data-testid="alert-guardian-consent-pending">
               <ShieldAlert className="h-4 w-4" />
               <AlertDescription>
-                Guardian verification is still required for this account. Submitting this form again will resend a verification request if needed.
+                Guardian verification is still required for this account.
+                Submitting this form again will resend a verification request if
+                needed.
               </AlertDescription>
             </Alert>
           )}
 
           {errorMessage && (
-            <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+            <Alert
+              className="border-amber-200 bg-amber-50"
+              data-testid="alert-error"
+            >
               <AlertCircle className="h-4 w-4 text-amber-700" />
-              <AlertDescription className="text-amber-800">{errorMessage}</AlertDescription>
+              <AlertDescription className="text-amber-800">
+                {errorMessage}
+              </AlertDescription>
             </Alert>
           )}
 
@@ -268,7 +315,12 @@ export default function ProfileComplete() {
 
             <div className="space-y-2">
               <Label htmlFor="role-select">Role</Label>
-              <Select value={role} onValueChange={(value) => setRole(value as "student" | "guardian")}>
+              <Select
+                value={role}
+                onValueChange={(value) =>
+                  setRole(value as "student" | "guardian")
+                }
+              >
                 <SelectTrigger id="role-select" data-testid="select-role">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -311,7 +363,8 @@ export default function ProfileComplete() {
                       required
                     />
                     <p className="text-xs text-muted-foreground">
-                      We only mark guardian consent after verified guardian flow completion.
+                      We only mark guardian consent after verified guardian flow
+                      completion.
                     </p>
                   </div>
                 )}
@@ -323,9 +376,14 @@ export default function ProfileComplete() {
                 id="marketing-opt-in"
                 data-testid="checkbox-marketing-opt-in"
                 checked={marketingOptIn}
-                onCheckedChange={(checked) => setMarketingOptIn(Boolean(checked))}
+                onCheckedChange={(checked) =>
+                  setMarketingOptIn(Boolean(checked))
+                }
               />
-              <Label htmlFor="marketing-opt-in" className="text-sm font-normal leading-5">
+              <Label
+                htmlFor="marketing-opt-in"
+                className="text-sm font-normal leading-5"
+              >
                 Send me optional product updates and study news.
               </Label>
             </div>

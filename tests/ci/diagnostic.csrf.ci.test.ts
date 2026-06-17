@@ -16,8 +16,13 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   requireSupabaseAuth: (_req: any, _res: any, next: any) => next(),
   requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
   requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
+  requireProfileComplete: (_req: any, _res: any, next: any) => next(),
+  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
   requireRequestUser: (req: any) => req.user,
-  requireRequestAuthContext: (req: any) => ({ user: req.user, supabase: req.supabase }),
+  requireRequestAuthContext: (req: any) => ({
+    user: req.user,
+    supabase: req.supabase,
+  }),
   getSupabaseAdmin: () => ({ from: () => ({}) }),
   resolveTokenFromRequest: () => ({
     token: null,
@@ -29,7 +34,12 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   }),
   resolveUserIdFromToken: async () => null,
   sendUnauthenticated: (res: any, requestId?: string) =>
-    res.status(401).json({ error: "Authentication required", requestId: requestId ?? "req-diagnostic-disabled" }),
+    res
+      .status(401)
+      .json({
+        error: "Authentication required",
+        requestId: requestId ?? "req-diagnostic-disabled",
+      }),
   sendForbidden: (res: any, payload: any) =>
     res.status(403).json({
       error: payload?.error ?? "Forbidden",
@@ -42,7 +52,9 @@ const { default: app } = await import("../../server/index");
 
 describe("Diagnostic Runtime Removal", () => {
   it("diagnostic mutation returns 404 without origin", async () => {
-    const res = await request(app).post("/api/me/mastery/diagnostic/start").send({});
+    const res = await request(app)
+      .post("/api/me/mastery/diagnostic/start")
+      .send({});
     expect(res.status).toBe(404);
   });
 

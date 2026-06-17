@@ -3,10 +3,12 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import { requireSupabaseAuth } from "../middleware/supabase-auth.js";
 import {
-  applyLearningEventToMastery,
-} from "../../apps/api/src/services/studentMastery";
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+} from "../middleware/supabase-auth.js";
+import { applyLearningEventToMastery } from "../../apps/api/src/services/studentMastery";
 import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
@@ -159,7 +161,8 @@ const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const DEFAULT_TARGET_QUESTION_COUNT = 20;
 const TARGET_SECONDS_PER_QUESTION = 90;
-const SESSION_ITEM_SELECT = "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
+const SESSION_ITEM_SELECT =
+  "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
 
 const practiceAnswerRateLimiter = rateLimit({
   windowMs: 60_000,
@@ -183,7 +186,13 @@ const StartSessionBodySchema = z.object({
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
   target_minutes: z.number().int().positive().max(300).optional().nullable(),
-  target_question_count: z.number().int().positive().max(200).optional().nullable(),
+  target_question_count: z
+    .number()
+    .int()
+    .positive()
+    .max(200)
+    .optional()
+    .nullable(),
 });
 
 const AnswerBodySchema = z.object({
@@ -218,7 +227,9 @@ type NormalizedAnswerPayload = {
   clientInstanceId: string | null;
 };
 
-function normalizeAnswerPayload(input: z.infer<typeof AnswerBodySchema>): NormalizedAnswerPayload {
+function normalizeAnswerPayload(
+  input: z.infer<typeof AnswerBodySchema>,
+): NormalizedAnswerPayload {
   const selectedAnswerRaw =
     typeof input.selectedAnswer === "string"
       ? input.selectedAnswer
@@ -234,12 +245,14 @@ function normalizeAnswerPayload(input: z.infer<typeof AnswerBodySchema>): Normal
       : null;
 
   const clientAttemptId =
-    typeof input.clientAttemptId === "string" && input.clientAttemptId.trim().length > 0
+    typeof input.clientAttemptId === "string" &&
+    input.clientAttemptId.trim().length > 0
       ? input.clientAttemptId.trim()
       : null;
 
   const clientInstanceId =
-    typeof input.client_instance_id === "string" && input.client_instance_id.trim().length > 0
+    typeof input.client_instance_id === "string" &&
+    input.client_instance_id.trim().length > 0
       ? input.client_instance_id.trim()
       : null;
 
@@ -261,14 +274,19 @@ type SkipPayload = {
   clientInstanceId: string | null;
 };
 
-function normalizeSkipPayload(sessionId: string, input: z.infer<typeof SkipBodySchema>): SkipPayload {
+function normalizeSkipPayload(
+  sessionId: string,
+  input: z.infer<typeof SkipBodySchema>,
+): SkipPayload {
   const clientAttemptId =
-    typeof input.clientAttemptId === "string" && input.clientAttemptId.trim().length > 0
+    typeof input.clientAttemptId === "string" &&
+    input.clientAttemptId.trim().length > 0
       ? input.clientAttemptId.trim()
       : null;
 
   const clientInstanceId =
-    typeof input.client_instance_id === "string" && input.client_instance_id.trim().length > 0
+    typeof input.client_instance_id === "string" &&
+    input.client_instance_id.trim().length > 0
       ? input.client_instance_id.trim()
       : null;
 
@@ -284,8 +302,10 @@ function normalizeSkipPayload(sessionId: string, input: z.infer<typeof SkipBodyS
 function hasLegacyFreeResponseKeys(body: unknown): boolean {
   if (!body || typeof body !== "object" || Array.isArray(body)) return false;
   const record = body as Record<string, unknown>;
-  return Object.prototype.hasOwnProperty.call(record, "freeResponseAnswer")
-    || Object.prototype.hasOwnProperty.call(record, "free_response_answer");
+  return (
+    Object.prototype.hasOwnProperty.call(record, "freeResponseAnswer") ||
+    Object.prototype.hasOwnProperty.call(record, "free_response_answer")
+  );
 }
 
 function asSessionMetadata(metadata: unknown): SessionMetadata {
@@ -293,9 +313,17 @@ function asSessionMetadata(metadata: unknown): SessionMetadata {
   return metadata as SessionMetadata;
 }
 
-function normalizeSessionState(status: string, metadata: SessionMetadata): PracticeLifecycleState {
+function normalizeSessionState(
+  status: string,
+  metadata: SessionMetadata,
+): PracticeLifecycleState {
   const lifecycle = metadata.lifecycle_state;
-  if (lifecycle === "created" || lifecycle === "active" || lifecycle === "completed" || lifecycle === "abandoned") {
+  if (
+    lifecycle === "created" ||
+    lifecycle === "active" ||
+    lifecycle === "completed" ||
+    lifecycle === "abandoned"
+  ) {
     return lifecycle;
   }
   if (status === "completed") return "completed";
@@ -304,11 +332,19 @@ function normalizeSessionState(status: string, metadata: SessionMetadata): Pract
   return "active";
 }
 
-function normalizeSectionParam(section?: string | null): "Math" | "RW" | "Random" {
+function normalizeSectionParam(
+  section?: string | null,
+): "Math" | "RW" | "Random" {
   if (!section) return "Random";
   const s = section.trim().toLowerCase();
   if (s === "math") return "Math";
-  if (s === "rw" || s === "reading_writing" || s === "reading" || s === "writing") return "RW";
+  if (
+    s === "rw" ||
+    s === "reading_writing" ||
+    s === "reading" ||
+    s === "writing"
+  )
+    return "RW";
   if (s === "random") return "Random";
   return "Random";
 }
@@ -342,7 +378,9 @@ function normalizeStringList(raw: unknown, maxLen: number): string[] {
   return Array.from(deduped).sort((a, b) => a.localeCompare(b));
 }
 
-function normalizeDifficulties(raw: unknown): Array<"easy" | "medium" | "hard"> {
+function normalizeDifficulties(
+  raw: unknown,
+): Array<"easy" | "medium" | "hard"> {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<"easy" | "medium" | "hard">();
   for (const item of raw) {
@@ -352,7 +390,9 @@ function normalizeDifficulties(raw: unknown): Array<"easy" | "medium" | "hard"> 
     else if (s === "medium" || s === "2") seen.add("medium");
     else if (s === "hard" || s === "3") seen.add("hard");
   }
-  return ["easy", "medium", "hard"].filter((value) => seen.has(value as "easy" | "medium" | "hard")) as Array<"easy" | "medium" | "hard">;
+  return ["easy", "medium", "hard"].filter((value) =>
+    seen.has(value as "easy" | "medium" | "hard"),
+  ) as Array<"easy" | "medium" | "hard">;
 }
 
 function safeParseOptions(raw: unknown): McOption[] {
@@ -371,8 +411,10 @@ function safeParseOptions(raw: unknown): McOption[] {
   const options: McOption[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const key = typeof (item as any).key === "string" ? (item as any).key.trim() : "";
-    const text = typeof (item as any).text === "string" ? (item as any).text : "";
+    const key =
+      typeof (item as any).key === "string" ? (item as any).key.trim() : "";
+    const text =
+      typeof (item as any).text === "string" ? (item as any).text : "";
     if (!key || !text) continue;
     const normalized = normalizeAnswerKey(key);
     if (!normalized) continue;
@@ -398,7 +440,10 @@ function buildServedOptions(options: McOption[]): {
 } {
   const shuffled = fisherYates(options);
   const optionOrder = shuffled.map((o) => o.key);
-  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(shuffled, optionOrder);
+  const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
+    shuffled,
+    optionOrder,
+  );
 
   return { optionOrder, optionTokenMap, safeOptions };
 }
@@ -409,12 +454,17 @@ function buildServedOptions(options: McOption[]): {
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
 function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
-  const itemType: CanonicalItemType = normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
+  const itemType: CanonicalItemType =
+    normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
   const isGridIn = itemType === "grid_in";
-  const correctVariants = isGridIn ? parseCorrectVariants(q.correct_variants) : null;
+  const correctVariants = isGridIn
+    ? parseCorrectVariants(q.correct_variants)
+    : null;
   // For mcq the correct answer is an A–D key; for grid_in it is the canonical value string.
   const correctAnswer = isGridIn
-    ? (typeof q.correct_answer === "string" && q.correct_answer.trim().length > 0 ? q.correct_answer.trim() : null)
+    ? typeof q.correct_answer === "string" && q.correct_answer.trim().length > 0
+      ? q.correct_answer.trim()
+      : null
     : (normalizeAnswerKey(q.correct_answer) ?? null);
   return {
     id: String(q.id),
@@ -428,12 +478,17 @@ function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
     skill: typeof q.skill === "string" ? q.skill : null,
     subskill: typeof q.subskill === "string" ? q.subskill : null,
     exam: typeof q.exam === "string" ? q.exam : null,
-    structure_cluster_id: typeof q.structure_cluster_id === "string" ? q.structure_cluster_id : null,
+    structure_cluster_id:
+      typeof q.structure_cluster_id === "string"
+        ? q.structure_cluster_id
+        : null,
     correct_answer: correctAnswer,
-    explanation: typeof q.explanation === "string" && q.explanation.trim().length > 0
-      ? q.explanation
-      : null,
-    correct_variants: correctVariants && correctVariants.length > 0 ? correctVariants : null,
+    explanation:
+      typeof q.explanation === "string" && q.explanation.trim().length > 0
+        ? q.explanation
+        : null,
+    correct_variants:
+      correctVariants && correctVariants.length > 0 ? correctVariants : null,
   };
 }
 
@@ -443,7 +498,9 @@ function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
 // question_correct_variants columns yet — that is a downstream DB lane, see HALT below),
 // so item_type defaults to 'mcq' and MCQ shape is still enforced. If/when the snapshot
 // gains grid-in fields, this reads them and validates the grid-in shape instead.
-function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQuestionForServing | null {
+function toCanonicalQuestionFromSessionItem(
+  item: SessionItemRow,
+): CanonicalQuestionForServing | null {
   const canonicalId = String(item.question_canonical_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
   const section = String(item.question_section ?? "").trim();
@@ -451,14 +508,16 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
   if (!isValidCanonicalId(canonicalId)) return null;
   if (!stem || !section) return null;
 
-  const itemType: CanonicalItemType = normalizeItemType(item.question_item_type ?? null) ?? "mcq";
+  const itemType: CanonicalItemType =
+    normalizeItemType(item.question_item_type ?? null) ?? "mcq";
   const isGridIn = itemType === "grid_in";
 
   if (isGridIn) {
     const variants = parseCorrectVariants(item.question_correct_variants);
     if (variants.length < 1) return null;
     const correctAnswer =
-      typeof item.question_correct_answer === "string" && item.question_correct_answer.trim().length > 0
+      typeof item.question_correct_answer === "string" &&
+      item.question_correct_answer.trim().length > 0
         ? item.question_correct_answer.trim()
         : null;
     return {
@@ -475,9 +534,11 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
       exam: item.question_exam ?? null,
       structure_cluster_id: item.question_structure_cluster_id ?? null,
       correct_answer: correctAnswer,
-      explanation: typeof item.question_explanation === "string" && item.question_explanation.trim().length > 0
-        ? item.question_explanation
-        : null,
+      explanation:
+        typeof item.question_explanation === "string" &&
+        item.question_explanation.trim().length > 0
+          ? item.question_explanation
+          : null,
       correct_variants: variants,
     };
   }
@@ -499,9 +560,11 @@ function toCanonicalQuestionFromSessionItem(item: SessionItemRow): CanonicalQues
     exam: item.question_exam ?? null,
     structure_cluster_id: item.question_structure_cluster_id ?? null,
     correct_answer: normalizeAnswerKey(item.question_correct_answer),
-    explanation: typeof item.question_explanation === "string" && item.question_explanation.trim().length > 0
-      ? item.question_explanation
-      : null,
+    explanation:
+      typeof item.question_explanation === "string" &&
+      item.question_explanation.trim().length > 0
+        ? item.question_explanation
+        : null,
     correct_variants: null,
   };
 }
@@ -559,7 +622,7 @@ function simpleHash(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const ch = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + ch;
+    hash = (hash << 5) - hash + ch;
     hash |= 0;
   }
   return Math.abs(hash);
@@ -587,7 +650,8 @@ function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
     if (normalized === "medium" || normalized === "2") return 2;
     if (normalized === "hard" || normalized === "3") return 3;
     const parsed = Number.parseInt(normalized, 10);
-    if (parsed === 1 || parsed === 2 || parsed === 3) return parsed as 1 | 2 | 3;
+    if (parsed === 1 || parsed === 2 || parsed === 3)
+      return parsed as 1 | 2 | 3;
   }
   return null;
 }
@@ -601,11 +665,16 @@ function coerceTargetQuestionCount(raw: unknown): number {
 }
 
 function deriveTargetQuestionCountFromMinutes(targetMinutes: number): number {
-  const derived = Math.round((targetMinutes * 60) / TARGET_SECONDS_PER_QUESTION);
+  const derived = Math.round(
+    (targetMinutes * 60) / TARGET_SECONDS_PER_QUESTION,
+  );
   return coerceTargetQuestionCount(derived);
 }
 
-function resolveSectionForSession(specSections: Array<"Math" | "RW">, legacySection: "Math" | "RW" | "Random"): "Math" | "RW" | "Random" {
+function resolveSectionForSession(
+  specSections: Array<"Math" | "RW">,
+  legacySection: "Math" | "RW" | "Random",
+): "Math" | "RW" | "Random" {
   if (specSections.length === 1) return specSections[0];
   if (specSections.length > 1) return "Random";
   return legacySection;
@@ -627,12 +696,20 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
   sectionValues.sort((a, b) => a.localeCompare(b));
 
   const mode = String(input.mode ?? "balanced").trim() || "balanced";
-  const targetMinutes = typeof input.target_minutes === "number" ? Math.floor(input.target_minutes) : null;
-  const explicitTargetCount = coerceTargetQuestionCount(input.target_question_count);
-  const hasExplicitTargetCount = typeof input.target_question_count === "number" && Number.isFinite(input.target_question_count);
-  const effectiveTargetCount = targetMinutes && !hasExplicitTargetCount
-    ? deriveTargetQuestionCountFromMinutes(targetMinutes)
-    : explicitTargetCount;
+  const targetMinutes =
+    typeof input.target_minutes === "number"
+      ? Math.floor(input.target_minutes)
+      : null;
+  const explicitTargetCount = coerceTargetQuestionCount(
+    input.target_question_count,
+  );
+  const hasExplicitTargetCount =
+    typeof input.target_question_count === "number" &&
+    Number.isFinite(input.target_question_count);
+  const effectiveTargetCount =
+    targetMinutes && !hasExplicitTargetCount
+      ? deriveTargetQuestionCountFromMinutes(targetMinutes)
+      : explicitTargetCount;
 
   return {
     section: resolveSectionForSession(sectionValues, legacySection),
@@ -648,22 +725,29 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
   };
 }
 
-function normalizeStoredSessionSpec(raw: unknown): Partial<CanonicalSessionSpec> | null {
+function normalizeStoredSessionSpec(
+  raw: unknown,
+): Partial<CanonicalSessionSpec> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
 
   const sections = normalizeSectionList(record.sections);
   const domains = normalizeStringList(record.domains, 128);
   const difficulties = normalizeDifficulties(record.difficulties);
-  const mode = typeof record.mode === "string" && record.mode.trim().length > 0
-    ? record.mode.trim()
-    : undefined;
+  const mode =
+    typeof record.mode === "string" && record.mode.trim().length > 0
+      ? record.mode.trim()
+      : undefined;
 
-  const targetMinutes = typeof record.target_minutes === "number" && Number.isFinite(record.target_minutes)
-    ? Math.floor(record.target_minutes)
-    : null;
+  const targetMinutes =
+    typeof record.target_minutes === "number" &&
+    Number.isFinite(record.target_minutes)
+      ? Math.floor(record.target_minutes)
+      : null;
 
-  const targetQuestionCount = coerceTargetQuestionCount(record.target_question_count);
+  const targetQuestionCount = coerceTargetQuestionCount(
+    record.target_question_count,
+  );
 
   return {
     sections,
@@ -701,7 +785,9 @@ function filterPoolBySessionSpec(
   if (spec.domains.length > 0) {
     const allowedDomains = new Set(spec.domains.map((v) => v.toLowerCase()));
     filtered = filtered.filter((row) => {
-      const domain = String((row as any).domain ?? "").trim().toLowerCase();
+      const domain = String((row as any).domain ?? "")
+        .trim()
+        .toLowerCase();
       return domain.length > 0 && allowedDomains.has(domain);
     });
   }
@@ -713,7 +799,11 @@ function filterPoolBySessionSpec(
       if (difficulty === "medium") allowedDifficultyCodes.add(2);
       if (difficulty === "hard") allowedDifficultyCodes.add(3);
     }
-    filtered = filtered.filter((row) => allowedDifficultyCodes.has(coerceQuestionDifficulty((row as any).difficulty)));
+    filtered = filtered.filter((row) =>
+      allowedDifficultyCodes.has(
+        coerceQuestionDifficulty((row as any).difficulty),
+      ),
+    );
   }
 
   return filtered;
@@ -732,7 +822,7 @@ async function listExactFilteredQuestionPool(spec: {
   let query = supabaseServer
     .from("questions")
     .select(
-      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants"
+      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants",
     )
     .in("item_type", ["mcq", "grid_in"]);
 
@@ -756,7 +846,9 @@ async function listExactFilteredQuestionPool(spec: {
   // Per-item validation accepts BOTH mcq and grid_in shapes. We do NOT blanket-normalize
   // correct_answer to an A–D key here: that would corrupt grid-in values (handled per shape
   // downstream in toCanonicalQuestionForServing).
-  const mappedRows = (data ?? []).map((row) => mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike));
+  const mappedRows = (data ?? []).map((row) =>
+    mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike),
+  );
   const validPool = mappedRows.filter((row) => isCanonicalRuntimeQuestion(row));
 
   const exactPool = filterPoolBySessionSpec(validPool, {
@@ -767,14 +859,18 @@ async function listExactFilteredQuestionPool(spec: {
   const ordered = exactPool
     .map((row: any) => toCanonicalQuestionForServing(row))
     .sort((a, b) => {
-      if (a.canonical_id !== b.canonical_id) return a.canonical_id.localeCompare(b.canonical_id);
+      if (a.canonical_id !== b.canonical_id)
+        return a.canonical_id.localeCompare(b.canonical_id);
       return a.id.localeCompare(b.id);
     });
 
   return { pool: ordered };
 }
 
-function buildDeterministicPrebuiltSet(pool: CanonicalQuestionForServing[], targetCount: number): {
+function buildDeterministicPrebuiltSet(
+  pool: CanonicalQuestionForServing[],
+  targetCount: number,
+): {
   selected: CanonicalQuestionForServing[];
   selectionMode: "exact" | "exact_reuse";
   sourcePoolCount: number;
@@ -806,13 +902,17 @@ async function countSessionItems(sessionId: string): Promise<number> {
     .eq("session_id", sessionId);
 
   if (error) {
-    throw new Error(`practice_session_items_count_all_failed: ${error.message}`);
+    throw new Error(
+      `practice_session_items_count_all_failed: ${error.message}`,
+    );
   }
 
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
-async function hydrateSessionItemOptionTokens(sessionId: string): Promise<void> {
+async function hydrateSessionItemOptionTokens(
+  sessionId: string,
+): Promise<void> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select("id, question_options, option_order, option_token_map")
@@ -820,7 +920,9 @@ async function hydrateSessionItemOptionTokens(sessionId: string): Promise<void> 
     .order("ordinal", { ascending: true });
 
   if (error) {
-    throw new Error(`practice_session_items_option_fetch_failed: ${error.message}`);
+    throw new Error(
+      `practice_session_items_option_fetch_failed: ${error.message}`,
+    );
   }
 
   for (const row of (data ?? []) as any[]) {
@@ -838,12 +940,16 @@ async function hydrateSessionItemOptionTokens(sessionId: string): Promise<void> 
       .eq("id", row.id);
 
     if (updateError) {
-      throw new Error(`practice_session_items_option_update_failed: ${updateError.message}`);
+      throw new Error(
+        `practice_session_items_option_update_failed: ${updateError.message}`,
+      );
     }
   }
 }
 
-async function cleanupFailedSessionMaterialization(sessionId: string): Promise<void> {
+async function cleanupFailedSessionMaterialization(
+  sessionId: string,
+): Promise<void> {
   try {
     await supabaseServer
       .from("practice_session_items")
@@ -854,10 +960,7 @@ async function cleanupFailedSessionMaterialization(sessionId: string): Promise<v
   }
 
   try {
-    await supabaseServer
-      .from("practice_sessions")
-      .delete()
-      .eq("id", sessionId);
+    await supabaseServer.from("practice_sessions").delete().eq("id", sessionId);
   } catch {
     // best effort cleanup
   }
@@ -867,7 +970,11 @@ function isDuplicateConflict(message: string | undefined): boolean {
   return /duplicate|unique/i.test(String(message || ""));
 }
 
-function sendClientConflict(res: Response, requestId: string | undefined, clientInstanceId: string | null) {
+function sendClientConflict(
+  res: Response,
+  requestId: string | undefined,
+  clientInstanceId: string | null,
+) {
   return res.status(409).json({
     error: "client_instance_conflict",
     code: "CLIENT_INSTANCE_CONFLICT",
@@ -883,7 +990,9 @@ async function reservePracticeQuestionQuota(args: {
   sessionId: string;
   sessionItemId: string;
   requestId?: string;
-}): Promise<{ ok: true } | { ok: false; status: 402 | 503; body: Record<string, unknown> }> {
+}): Promise<
+  { ok: true } | { ok: false; status: 402 | 503; body: Record<string, unknown> }
+> {
   if (args.role === "admin") {
     return { ok: true };
   }
@@ -913,20 +1022,26 @@ async function reservePracticeQuestionQuota(args: {
         limit: decision.limit,
         remaining: decision.remaining,
         resetAt: decision.resetAt,
-        message: decision.message || "You've reached your daily practice question limit. Upgrade to unlock unlimited access.",
+        message:
+          decision.message ||
+          "You've reached your daily practice question limit. Upgrade to unlock unlimited access.",
         requestId: args.requestId,
       },
     };
   } catch (error: unknown) {
     const code = (error as any)?.code;
-    if (error instanceof RateLimitUnavailableError || code === "RATE_LIMIT_DB_UNAVAILABLE") {
+    if (
+      error instanceof RateLimitUnavailableError ||
+      code === "RATE_LIMIT_DB_UNAVAILABLE"
+    ) {
       return {
         ok: false,
         status: 503,
         body: {
           error: "Usage check unavailable",
           code: "RATE_LIMIT_DB_UNAVAILABLE",
-          message: "Unable to verify practice quota at this time. Please retry shortly.",
+          message:
+            "Unable to verify practice quota at this time. Please retry shortly.",
           requestId: args.requestId,
         },
       };
@@ -935,7 +1050,10 @@ async function reservePracticeQuestionQuota(args: {
   }
 }
 
-async function getSessionStats(sessionId: string, userId: string): Promise<{
+async function getSessionStats(
+  sessionId: string,
+  userId: string,
+): Promise<{
   correct: number;
   incorrect: number;
   skipped: number;
@@ -955,7 +1073,9 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{
   }
 
   const attempts = data ?? [];
-  const correct = attempts.filter((a: any) => a.is_correct === true && a.outcome !== "skipped").length;
+  const correct = attempts.filter(
+    (a: any) => a.is_correct === true && a.outcome !== "skipped",
+  ).length;
   const skipped = attempts.filter((a: any) => a.outcome === "skipped").length;
   const total = attempts.length;
   const incorrect = Math.max(0, total - correct - skipped);
@@ -973,7 +1093,9 @@ async function getSessionStats(sessionId: string, userId: string): Promise<{
   return { correct, incorrect, skipped, total, streak };
 }
 
-async function getCurrentUnansweredItem(sessionId: string): Promise<SessionItemRow | null> {
+async function getCurrentUnansweredItem(
+  sessionId: string,
+): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
@@ -984,13 +1106,17 @@ async function getCurrentUnansweredItem(sessionId: string): Promise<SessionItemR
     .maybeSingle();
 
   if (error) {
-    throw new Error(`practice_session_items_unanswered_failed: ${error.message}`);
+    throw new Error(
+      `practice_session_items_unanswered_failed: ${error.message}`,
+    );
   }
 
   return (data as SessionItemRow | null) ?? null;
 }
 
-async function getLatestSessionItem(sessionId: string): Promise<SessionItemRow | null> {
+async function getLatestSessionItem(
+  sessionId: string,
+): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
@@ -1037,7 +1163,9 @@ async function getSessionProgressCounts(sessionId: string): Promise<{
 
   const attempts = data ?? [];
   const completedCount = attempts.length;
-  const skippedCount = attempts.filter((row: any) => row?.outcome === "skipped").length;
+  const skippedCount = attempts.filter(
+    (row: any) => row?.outcome === "skipped",
+  ).length;
   const answeredCount = Math.max(0, completedCount - skippedCount);
 
   return {
@@ -1047,7 +1175,11 @@ async function getSessionProgressCounts(sessionId: string): Promise<{
   };
 }
 
-async function updateSessionLifecycle(sessionId: string, metadata: SessionMetadata, patch?: Record<string, unknown>) {
+async function updateSessionLifecycle(
+  sessionId: string,
+  metadata: SessionMetadata,
+  patch?: Record<string, unknown>,
+) {
   const nextUpdate: Record<string, unknown> = {
     metadata,
     updated_at: new Date().toISOString(),
@@ -1075,16 +1207,16 @@ async function startOrReplaySession(args: {
   sessionSpec: CanonicalSessionSpec;
 }): Promise<
   | {
-    ok: true;
-    session: SessionRow;
-    metadata: SessionMetadata;
-    replayed: boolean;
-  }
+      ok: true;
+      session: SessionRow;
+      metadata: SessionMetadata;
+      replayed: boolean;
+    }
   | {
-    ok: false;
-    status: number;
-    body: Record<string, unknown>;
-  }
+      ok: false;
+      status: number;
+      body: Record<string, unknown>;
+    }
 > {
   // 1) Fetch all open sessions for this user to check global limit and idempotency
   const { data: openSessions, error: openErr } = await supabaseServer
@@ -1110,10 +1242,11 @@ async function startOrReplaySession(args: {
 
   // 2) Idempotency check: if we have a key, we MUST return that specific session
   if (args.idempotencyKey) {
-    replay = sessions.find((candidate) => {
-      const metadata = asSessionMetadata(candidate.metadata);
-      return metadata.session_start_idempotency_key === args.idempotencyKey;
-    }) ?? null;
+    replay =
+      sessions.find((candidate) => {
+        const metadata = asSessionMetadata(candidate.metadata);
+        return metadata.session_start_idempotency_key === args.idempotencyKey;
+      }) ?? null;
   }
 
   // 3) Enforce global limit for NEW sessions (unless replaying)
@@ -1153,7 +1286,9 @@ async function startOrReplaySession(args: {
     if (binding.action === "bind") {
       replayMeta.client_instance_id = binding.requestedClientInstanceId;
     }
-    replayMeta.target_question_count = coerceTargetQuestionCount(replayMeta.target_question_count ?? args.targetQuestionCount);
+    replayMeta.target_question_count = coerceTargetQuestionCount(
+      replayMeta.target_question_count ?? args.targetQuestionCount,
+    );
     replayMeta.session_spec = replayMeta.session_spec ?? args.sessionSpec;
 
     if (args.idempotencyKey) {
@@ -1163,11 +1298,16 @@ async function startOrReplaySession(args: {
     const existingItemCount = await countSessionItems(replay.id);
     if (existingItemCount > 0) {
       replayMeta.prebuilt = true;
-      replayMeta.requested_count = coerceTargetQuestionCount(replayMeta.target_question_count);
-      replayMeta.source_pool_count = Number.isFinite(replayMeta.source_pool_count as number)
+      replayMeta.requested_count = coerceTargetQuestionCount(
+        replayMeta.target_question_count,
+      );
+      replayMeta.source_pool_count = Number.isFinite(
+        replayMeta.source_pool_count as number,
+      )
         ? Number(replayMeta.source_pool_count)
         : existingItemCount;
-      replayMeta.selection_mode = replayMeta.selection_mode === "exact_reuse" ? "exact_reuse" : "exact";
+      replayMeta.selection_mode =
+        replayMeta.selection_mode === "exact_reuse" ? "exact_reuse" : "exact";
     }
 
     await updateSessionLifecycle(replay.id, replayMeta, {
@@ -1264,7 +1404,10 @@ async function startOrReplaySession(args: {
   );
 
   const neverSeen: CanonicalQuestionForServing[] = [];
-  const previouslySeen: Array<{ question: CanonicalQuestionForServing; lastSeen: string }> = [];
+  const previouslySeen: Array<{
+    question: CanonicalQuestionForServing;
+    lastSeen: string;
+  }> = [];
 
   for (const question of poolAfterExclusion) {
     const lastSeen = lastSeenMap.get(question.id);
@@ -1284,7 +1427,10 @@ async function startOrReplaySession(args: {
 
   // Combine: fresh first, then stale, then select
   const prioritizedPool = [...shuffledFresh, ...staleOrdered];
-  const selection = buildDeterministicPrebuiltSet(prioritizedPool, requestedCount);
+  const selection = buildDeterministicPrebuiltSet(
+    prioritizedPool,
+    requestedCount,
+  );
 
   const startedAt = new Date().toISOString();
   const insertMetadata: SessionMetadata = {
@@ -1297,19 +1443,20 @@ async function startOrReplaySession(args: {
     last_served_ordinal: 1,
   };
 
-  const { data: createdSession, error: sessionInsertError } = await supabaseServer
-    .from("practice_sessions")
-    .insert({
-      user_id: args.userId,
-      section: args.section,
-      mode: args.mode,
-      status: "in_progress",
-      completed: false,
-      started_at: startedAt,
-      metadata: insertMetadata,
-    })
-    .select("id, user_id, section, mode, status, completed, metadata")
-    .single();
+  const { data: createdSession, error: sessionInsertError } =
+    await supabaseServer
+      .from("practice_sessions")
+      .insert({
+        user_id: args.userId,
+        section: args.section,
+        mode: args.mode,
+        status: "in_progress",
+        completed: false,
+        started_at: startedAt,
+        metadata: insertMetadata,
+      })
+      .select("id, user_id, section, mode, status, completed, metadata")
+      .single();
 
   if (sessionInsertError || !createdSession) {
     return {
@@ -1317,7 +1464,8 @@ async function startOrReplaySession(args: {
       status: 500,
       body: {
         error: "session_create_failed",
-        message: sessionInsertError?.message ?? "Unable to create practice session",
+        message:
+          sessionInsertError?.message ?? "Unable to create practice session",
       },
     };
   }
@@ -1402,7 +1550,8 @@ async function startOrReplaySession(args: {
       status: 500,
       body: {
         error: "session_create_failed",
-        message: hydrateError?.message ?? "Unable to hydrate session item tokens",
+        message:
+          hydrateError?.message ?? "Unable to hydrate session item tokens",
       },
     };
   }
@@ -1419,7 +1568,9 @@ async function startOrReplaySession(args: {
   newMetadata.session_spec = args.sessionSpec;
   newMetadata.lifecycle_state = "active";
   newMetadata.client_instance_id = args.clientInstanceId;
-  newMetadata.active_session_item_id = firstInsertedItem ? String((firstInsertedItem as any).id) : null;
+  newMetadata.active_session_item_id = firstInsertedItem
+    ? String((firstInsertedItem as any).id)
+    : null;
   newMetadata.last_served_ordinal = 1;
 
   await updateSessionLifecycle(sessionId, newMetadata, {
@@ -1457,7 +1608,9 @@ async function loadOwnedSession(
   return { forbidden: false, session: data as SessionRow };
 }
 
-async function getNextPrebuiltQueuedItem(sessionId: string): Promise<SessionItemRow | null> {
+async function getNextPrebuiltQueuedItem(
+  sessionId: string,
+): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
@@ -1469,13 +1622,18 @@ async function getNextPrebuiltQueuedItem(sessionId: string): Promise<SessionItem
     .maybeSingle();
 
   if (error) {
-    throw new Error(`practice_session_items_next_prebuilt_failed: ${error.message}`);
+    throw new Error(
+      `practice_session_items_next_prebuilt_failed: ${error.message}`,
+    );
   }
 
   return (data as SessionItemRow | null) ?? null;
 }
 
-async function findSessionItemById(sessionId: string, sessionItemId: string): Promise<SessionItemRow | null> {
+async function findSessionItemById(
+  sessionId: string,
+  sessionItemId: string,
+): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
@@ -1490,7 +1648,10 @@ async function findSessionItemById(sessionId: string, sessionItemId: string): Pr
   return (data as SessionItemRow | null) ?? null;
 }
 
-async function findSessionItemByClientAttemptId(userId: string, clientAttemptId: string): Promise<SessionItemRow | null> {
+async function findSessionItemByClientAttemptId(
+  userId: string,
+  clientAttemptId: string,
+): Promise<SessionItemRow | null> {
   const { data, error } = await supabaseServer
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
@@ -1515,7 +1676,9 @@ async function serveNextForSession(args: {
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
 
-  const owned = await loadOwnedSession(args.sessionId, args.userId, { hideForbidden: true });
+  const owned = await loadOwnedSession(args.sessionId, args.userId, {
+    hideForbidden: true,
+  });
   if (!owned) {
     return args.res.status(404).json({
       error: "session_not_found",
@@ -1527,7 +1690,11 @@ async function serveNextForSession(args: {
 
   const metadata = asSessionMetadata(session.metadata);
   const sessionState = normalizeSessionState(session.status, metadata);
-  if (sessionState === "completed" || sessionState === "abandoned" || TERMINAL_DB_STATUSES.includes(session.status as any)) {
+  if (
+    sessionState === "completed" ||
+    sessionState === "abandoned" ||
+    TERMINAL_DB_STATUSES.includes(session.status as any)
+  ) {
     return args.res.status(409).json({
       error: "session_closed",
       message: "Practice session is read-only",
@@ -1540,7 +1707,11 @@ async function serveNextForSession(args: {
     requestedClientInstanceId: args.clientInstanceId,
   });
   if (binding.action === "conflict") {
-    return sendClientConflict(args.res, requestId, binding.boundClientInstanceId);
+    return sendClientConflict(
+      args.res,
+      requestId,
+      binding.boundClientInstanceId,
+    );
   }
   if (binding.action === "bind") {
     metadata.client_instance_id = binding.requestedClientInstanceId;
@@ -1552,12 +1723,17 @@ async function serveNextForSession(args: {
     if (!canonicalQuestion) {
       return args.res.status(422).json({
         error: "invalid_question_data",
-        message: "Unable to resume the current question due to invalid persisted session item data.",
+        message:
+          "Unable to resume the current question due to invalid persisted session item data.",
         requestId,
       });
     }
 
-    const safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, unresolved.option_order, unresolved.option_token_map);
+    const safeOptions = buildStudentSafeOptionsFromStoredMap(
+      canonicalQuestion.options,
+      unresolved.option_order,
+      unresolved.option_token_map,
+    );
     if (!safeOptions) {
       const rebuilt = buildServedOptions(canonicalQuestion.options);
       const rebuildPatch = {
@@ -1583,12 +1759,13 @@ async function serveNextForSession(args: {
       const healedOptions = buildStudentSafeOptionsFromStoredMap(
         canonicalQuestion.options,
         rebuilt.optionOrder,
-        rebuilt.optionTokenMap
+        rebuilt.optionTokenMap,
       );
       if (!healedOptions) {
         return args.res.status(409).json({
           error: "session_item_mapping_missing",
-          message: "Persisted option mapping is missing for the current session item.",
+          message:
+            "Persisted option mapping is missing for the current session item.",
           requestId,
         });
       }
@@ -1596,7 +1773,8 @@ async function serveNextForSession(args: {
       metadata.lifecycle_state = "active";
       metadata.active_session_item_id = unresolved.id;
       metadata.prebuilt = true;
-      metadata.target_question_count = metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT;
+      metadata.target_question_count =
+        metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT;
       await updateSessionLifecycle(args.sessionId, metadata, {
         status: "in_progress",
       });
@@ -1649,7 +1827,8 @@ async function serveNextForSession(args: {
     return args.res.status(409).json({
       error: "session_materialization_incomplete",
       code: "PRACTICE_SESSION_ITEMS_NOT_MATERIALIZED",
-      message: "Practice session items were not materialized at creation. Runtime fallback generation is disabled by contract.",
+      message:
+        "Practice session items were not materialized at creation. Runtime fallback generation is disabled by contract.",
       requestId,
     });
   }
@@ -1661,7 +1840,8 @@ async function serveNextForSession(args: {
       return args.res.status(409).json({
         error: "session_materialization_missing",
         code: "PRACTICE_SESSION_ITEMS_MISSING",
-        message: "Practice runtime cannot continue because persisted session items are missing. Runtime fallback generation is disabled by contract.",
+        message:
+          "Practice runtime cannot continue because persisted session items are missing. Runtime fallback generation is disabled by contract.",
         requestId,
       });
     }
@@ -1687,7 +1867,8 @@ async function serveNextForSession(args: {
   if (!canonicalQuestion) {
     return args.res.status(422).json({
       error: "invalid_question_data",
-      message: "Unable to load next prebuilt question due to invalid persisted session item data.",
+      message:
+        "Unable to load next prebuilt question due to invalid persisted session item data.",
       requestId,
     });
   }
@@ -1737,11 +1918,16 @@ async function serveNextForSession(args: {
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
 
-  const safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, promoted.option_order, promoted.option_token_map);
+  const safeOptions = buildStudentSafeOptionsFromStoredMap(
+    canonicalQuestion.options,
+    promoted.option_order,
+    promoted.option_token_map,
+  );
   if (!safeOptions) {
     return args.res.status(409).json({
       error: "session_item_mapping_missing",
-      message: "Persisted option mapping is missing for next prebuilt session item.",
+      message:
+        "Persisted option mapping is missing for next prebuilt session item.",
       requestId,
     });
   }
@@ -1754,19 +1940,17 @@ async function serveNextForSession(args: {
   });
 
   try {
-    await supabaseServer
-      .from("practice_events")
-      .insert({
-        user_id: args.userId,
-        session_id: args.sessionId,
-        question_id: promoted.question_id,
-        event_type: "served",
-        created_at: now,
-        payload: {
-          session_item_id: promoted.id,
-          ordinal: promoted.ordinal,
-        },
-      });
+    await supabaseServer.from("practice_events").insert({
+      user_id: args.userId,
+      session_id: args.sessionId,
+      question_id: promoted.question_id,
+      event_type: "served",
+      created_at: now,
+      payload: {
+        session_item_id: promoted.id,
+        ordinal: promoted.ordinal,
+      },
+    });
   } catch {
     // non-blocking
   }
@@ -1790,440 +1974,537 @@ async function serveNextForSession(args: {
 /**
  * Returns a list of uncompleted practice sessions for the current user.
  */
-router.get("/sessions/open", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
+router.get(
+  "/sessions/open",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
 
-  const { data: sessions, error } = await supabaseServer
-    .from("practice_sessions")
-    .select("id, section, mode, status, started_at, metadata")
-    .eq("user_id", userId)
-    .in("status", [...ACTIVE_DB_STATUSES])
-    .order("started_at", { ascending: false });
+    const { data: sessions, error } = await supabaseServer
+      .from("practice_sessions")
+      .select("id, section, mode, status, started_at, metadata")
+      .eq("user_id", userId)
+      .in("status", [...ACTIVE_DB_STATUSES])
+      .order("started_at", { ascending: false });
 
-  if (error) {
-    return res.status(500).json({ error: "failed_to_fetch_open_sessions", message: error.message, requestId });
-  }
+    if (error) {
+      return res.status(500).json({
+        error: "failed_to_fetch_open_sessions",
+        message: error.message,
+        requestId,
+      });
+    }
 
-  // Enhance sessions with progress info
-  const enhancedSessions = await Promise.all((sessions || []).map(async (s) => {
-    const { count } = await supabaseServer
-      .from("practice_session_items")
-      .select("*", { count: "exact", head: true })
-      .eq("session_id", s.id);
+    // Enhance sessions with progress info
+    const enhancedSessions = await Promise.all(
+      (sessions || []).map(async (s) => {
+        const { count } = await supabaseServer
+          .from("practice_session_items")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", s.id);
 
-    const { count: answered } = await supabaseServer
-      .from("practice_session_items")
-      .select("*", { count: "exact", head: true })
-      .eq("session_id", s.id)
-      .in("status", ["answered", "skipped"]);
+        const { count: answered } = await supabaseServer
+          .from("practice_session_items")
+          .select("*", { count: "exact", head: true })
+          .eq("session_id", s.id)
+          .in("status", ["answered", "skipped"]);
 
-    const metadata = asSessionMetadata(s.metadata);
-    return {
-      id: s.id,
-      section: s.section,
-      mode: s.mode,
-      status: s.status,
-      started_at: s.started_at,
-      target_question_count: metadata.target_question_count || 0,
-      total_items: count || 0,
-      answered_items: answered || 0,
-    };
-  }));
+        const metadata = asSessionMetadata(s.metadata);
+        return {
+          id: s.id,
+          section: s.section,
+          mode: s.mode,
+          status: s.status,
+          started_at: s.started_at,
+          target_question_count: metadata.target_question_count || 0,
+          total_items: count || 0,
+          answered_items: answered || 0,
+        };
+      }),
+    );
 
-  return res.json({ sessions: enhancedSessions, requestId });
-});
+    return res.json({ sessions: enhancedSessions, requestId });
+  },
+);
 
 /**
  * Explicitly resumes an existing session, handling client instance binding and force takeover.
  */
-router.post("/sessions/:sessionId/resume", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-  const sessionId = req.params.sessionId;
-  const { client_instance_id, force_takeover } = req.body || {};
+router.post(
+  "/sessions/:sessionId/resume",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
+    const sessionId = req.params.sessionId;
+    const { client_instance_id, force_takeover } = req.body || {};
 
-  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
-  if (!owned) {
-    return res.status(404).json({ error: "session_not_found", message: "Practice session not found", requestId });
-  }
-
-  const { session } = owned;
-  const metadata = asSessionMetadata(session.metadata);
-
-  // Check for client instance conflict
-  const binding = resolveClientInstanceBinding({
-    boundClientInstanceId: metadata.client_instance_id,
-    requestedClientInstanceId: client_instance_id,
-  });
-
-  if (binding.action === "conflict" && !force_takeover) {
-    return res.status(409).json({
-      error: "client_instance_conflict",
-      code: "CLIENT_INSTANCE_CONFLICT",
-      message: "Session client instance conflict",
-      client_instance_id: binding.boundClientInstanceId ?? null,
-      requestId,
+    const owned = await loadOwnedSession(sessionId, userId, {
+      hideForbidden: true,
     });
-  }
+    if (!owned) {
+      return res.status(404).json({
+        error: "session_not_found",
+        message: "Practice session not found",
+        requestId,
+      });
+    }
 
-  // Update binding if it's a bind action or a forced takeover
-  if (binding.action === "bind" || (binding.action === "conflict" && force_takeover)) {
-    metadata.client_instance_id = client_instance_id;
-    await updateSessionLifecycle(sessionId, metadata, {
-      updated_at: new Date().toISOString(),
+    const { session } = owned;
+    const metadata = asSessionMetadata(session.metadata);
+
+    // Check for client instance conflict
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: metadata.client_instance_id,
+      requestedClientInstanceId: client_instance_id,
     });
-  }
 
-  const state = await getCurrentUnansweredItem(sessionId);
-  if (!state) {
-    // If no active or queued items, the session is likely complete
+    if (binding.action === "conflict" && !force_takeover) {
+      return res.status(409).json({
+        error: "client_instance_conflict",
+        code: "CLIENT_INSTANCE_CONFLICT",
+        message: "Session client instance conflict",
+        client_instance_id: binding.boundClientInstanceId ?? null,
+        requestId,
+      });
+    }
+
+    // Update binding if it's a bind action or a forced takeover
+    if (
+      binding.action === "bind" ||
+      (binding.action === "conflict" && force_takeover)
+    ) {
+      metadata.client_instance_id = client_instance_id;
+      await updateSessionLifecycle(sessionId, metadata, {
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    const state = await getCurrentUnansweredItem(sessionId);
+    if (!state) {
+      // If no active or queued items, the session is likely complete
+      return res.json({
+        sessionId: session.id,
+        state: normalizeSessionState(session.status, metadata),
+        stats: await getSessionStats(sessionId, userId),
+        requestId,
+      });
+    }
+
+    const canonicalQuestion = toCanonicalQuestionFromSessionItem(state);
+    if (!canonicalQuestion) {
+      return res.status(500).json({
+        error: "question_load_failed",
+        message: "Failed to load question content from session snapshot",
+        requestId,
+      });
+    }
+
+    let safeOptions = buildStudentSafeOptionsFromStoredMap(
+      canonicalQuestion.options,
+      state.option_order,
+      state.option_token_map,
+    );
+    if (!safeOptions) {
+      const rebuilt = buildServedOptions(canonicalQuestion.options);
+      await supabaseServer
+        .from("practice_session_items")
+        .update({
+          option_order: rebuilt.optionOrder,
+          option_token_map: rebuilt.optionTokenMap,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", state.id);
+      safeOptions = buildStudentSafeOptionsFromStoredMap(
+        canonicalQuestion.options,
+        rebuilt.optionOrder,
+        rebuilt.optionTokenMap,
+      );
+    }
+
     return res.json({
       sessionId: session.id,
+      sessionItemId: state.id,
+      ordinal: state.ordinal,
       state: normalizeSessionState(session.status, metadata),
+      calculatorState: metadata.calculator_state ?? null,
+      question: toStudentSafeQuestionDTO({
+        sessionItemId: state.id,
+        question: canonicalQuestion,
+        safeOptions: safeOptions!,
+      }),
       stats: await getSessionStats(sessionId, userId),
       requestId,
     });
-  }
+  },
+);
 
-  const canonicalQuestion = toCanonicalQuestionFromSessionItem(state);
-  if (!canonicalQuestion) {
-    return res.status(500).json({ error: "question_load_failed", message: "Failed to load question content from session snapshot", requestId });
-  }
+router.post(
+  "/sessions",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
 
-  let safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, state.option_order, state.option_token_map);
-  if (!safeOptions) {
-    const rebuilt = buildServedOptions(canonicalQuestion.options);
-    await supabaseServer
-      .from("practice_session_items")
-      .update({ option_order: rebuilt.optionOrder, option_token_map: rebuilt.optionTokenMap, updated_at: new Date().toISOString() })
-      .eq("id", state.id);
-    safeOptions = buildStudentSafeOptionsFromStoredMap(canonicalQuestion.options, rebuilt.optionOrder, rebuilt.optionTokenMap);
-  }
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
 
-  return res.json({
-    sessionId: session.id,
-    sessionItemId: state.id,
-    ordinal: state.ordinal,
-    state: normalizeSessionState(session.status, metadata),
-    calculatorState: metadata.calculator_state ?? null,
-    question: toStudentSafeQuestionDTO({
-      sessionItemId: state.id,
-      question: canonicalQuestion,
-      safeOptions: safeOptions!,
-    }),
-    stats: await getSessionStats(sessionId, userId),
-    requestId,
-  });
-});
+    const parsed = StartSessionBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        issues: parsed.error.issues,
+        requestId,
+      });
+    }
 
-router.post("/sessions", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
+    const normalizedSpec = normalizeSessionSpec(parsed.data);
+    const section = normalizedSpec.section;
+    const mode = normalizedSpec.sessionSpec.mode;
+    const idempotencyKey = parsed.data.idempotency_key?.trim() || null;
+    const targetQuestionCount = normalizedSpec.targetQuestionCount;
+    const clientInstanceId =
+      parsed.data.client_instance_id?.trim() || `server-${crypto.randomUUID()}`;
 
-  if (!userId) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
-      requestId,
+    const sessionResult = await startOrReplaySession({
+      userId,
+      role: user?.role,
+      section,
+      mode,
+      clientInstanceId,
+      idempotencyKey,
+      targetQuestionCount,
+      sessionSpec: normalizedSpec.sessionSpec,
     });
-  }
 
-  const parsed = StartSessionBodySchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "invalid_payload",
-      issues: parsed.error.issues,
-      requestId,
+    if (sessionResult.ok === false) {
+      return res.status(sessionResult.status).json({
+        ...sessionResult.body,
+        requestId,
+      });
+    }
+
+    const state = normalizeSessionState(
+      sessionResult.session.status,
+      sessionResult.metadata,
+    );
+
+    return res.json({
+      id: sessionResult.session.id,
+      sessionId: sessionResult.session.id,
+      userId,
+      section: sessionResult.session.section,
+      mode: sessionResult.session.mode,
+      state,
+      replayed: sessionResult.replayed,
+      clientInstanceId,
+      targetQuestionCount: coerceTargetQuestionCount(
+        sessionResult.metadata.target_question_count,
+      ),
+      calculatorState: sessionResult.metadata.calculator_state ?? null,
     });
-  }
+  },
+);
 
-  const normalizedSpec = normalizeSessionSpec(parsed.data);
-  const section = normalizedSpec.section;
-  const mode = normalizedSpec.sessionSpec.mode;
-  const idempotencyKey = parsed.data.idempotency_key?.trim() || null;
-  const targetQuestionCount = normalizedSpec.targetQuestionCount;
-  const clientInstanceId = parsed.data.client_instance_id?.trim() || `server-${crypto.randomUUID()}`;
+router.post(
+  "/sessions/:sessionId/terminate",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
 
-  const sessionResult = await startOrReplaySession({
-    userId,
-    role: user?.role,
-    section,
-    mode,
-    clientInstanceId,
-    idempotencyKey,
-    targetQuestionCount,
-    sessionSpec: normalizedSpec.sessionSpec,
-  });
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
 
-  if (sessionResult.ok === false) {
-    return res.status(sessionResult.status).json({
-      ...sessionResult.body,
-      requestId,
+    const sessionId = String(req.params.sessionId || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({
+        error: "invalid_session_id",
+        message: "sessionId is required",
+        requestId,
+      });
+    }
+
+    const owned = await loadOwnedSession(sessionId, userId, {
+      hideForbidden: true,
     });
-  }
+    if (!owned) {
+      return res.status(404).json({
+        error: "session_not_found",
+        message: "Practice session not found",
+        requestId,
+      });
+    }
 
-  const state = normalizeSessionState(sessionResult.session.status, sessionResult.metadata);
+    const metadata = asSessionMetadata(owned.session.metadata);
+    metadata.lifecycle_state = "abandoned";
+    metadata.active_session_item_id = null;
+    metadata.client_instance_id = null;
+    metadata.calculator_state = null;
 
-  return res.json({
-    id: sessionResult.session.id,
-    sessionId: sessionResult.session.id,
-    userId,
-    section: sessionResult.session.section,
-    mode: sessionResult.session.mode,
-    state,
-    replayed: sessionResult.replayed,
-    clientInstanceId,
-    targetQuestionCount: coerceTargetQuestionCount(sessionResult.metadata.target_question_count),
-    calculatorState: sessionResult.metadata.calculator_state ?? null,
-  });
-});
-
-router.post("/sessions/:sessionId/terminate", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-
-  if (!userId) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
-      requestId,
+    await updateSessionLifecycle(sessionId, metadata, {
+      status: "abandoned",
+      completed: true,
+      finished_at: new Date().toISOString(),
     });
-  }
 
-  const sessionId = String(req.params.sessionId || "").trim();
-  if (!sessionId) {
-    return res.status(400).json({
-      error: "invalid_session_id",
-      message: "sessionId is required",
-      requestId,
+    return res.json({
+      sessionId,
+      state: "abandoned",
+      readOnly: true,
     });
-  }
+  },
+);
 
-  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
-  if (!owned) {
-    return res.status(404).json({
-      error: "session_not_found",
-      message: "Practice session not found",
-      requestId,
+router.post(
+  "/sessions/:sessionId/calculator-state",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const sessionId = String(req.params.sessionId || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({
+        error: "invalid_session_id",
+        message: "sessionId is required",
+        requestId,
+      });
+    }
+
+    const parsed = CalculatorStateBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        issues: parsed.error.issues,
+        requestId,
+      });
+    }
+
+    const owned = await loadOwnedSession(sessionId, userId, {
+      hideForbidden: true,
     });
-  }
+    if (!owned) {
+      return res.status(404).json({
+        error: "session_not_found",
+        message: "Practice session not found",
+        requestId,
+      });
+    }
 
-  const metadata = asSessionMetadata(owned.session.metadata);
-  metadata.lifecycle_state = "abandoned";
-  metadata.active_session_item_id = null;
-  metadata.client_instance_id = null;
-  metadata.calculator_state = null;
+    const metadata = asSessionMetadata(owned.session.metadata);
+    const sessionState = normalizeSessionState(owned.session.status, metadata);
 
-  await updateSessionLifecycle(sessionId, metadata, {
-    status: "abandoned",
-    completed: true,
-    finished_at: new Date().toISOString(),
-  });
+    if (
+      sessionState === "completed" ||
+      sessionState === "abandoned" ||
+      TERMINAL_DB_STATUSES.includes(owned.session.status as any)
+    ) {
+      return res.status(409).json({
+        error: "session_closed",
+        message: "Practice session is read-only",
+        requestId,
+      });
+    }
 
-  return res.json({
-    sessionId,
-    state: "abandoned",
-    readOnly: true,
-  });
-});
-
-router.post("/sessions/:sessionId/calculator-state", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-
-  if (!userId) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
-      requestId,
+    const queryClientInstanceId = normalizeClientInstanceId(
+      parsed.data.client_instance_id,
+    );
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: metadata.client_instance_id,
+      requestedClientInstanceId: queryClientInstanceId,
     });
-  }
+    if (binding.action === "conflict") {
+      return sendClientConflict(res, requestId, binding.boundClientInstanceId);
+    }
+    if (binding.action === "bind") {
+      metadata.client_instance_id = binding.requestedClientInstanceId;
+    }
 
-  const sessionId = String(req.params.sessionId || "").trim();
-  if (!sessionId) {
-    return res.status(400).json({
-      error: "invalid_session_id",
-      message: "sessionId is required",
-      requestId,
+    metadata.calculator_state = parsed.data.calculator_state ?? null;
+
+    await updateSessionLifecycle(sessionId, metadata);
+
+    return res.json({
+      sessionId,
+      calculatorState: metadata.calculator_state ?? null,
     });
-  }
+  },
+);
 
-  const parsed = CalculatorStateBodySchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({
-      error: "invalid_payload",
-      issues: parsed.error.issues,
-      requestId,
+router.get(
+  "/sessions/:sessionId/next",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const sessionId = String(req.params.sessionId || "").trim();
+    const clientInstanceId = normalizeClientInstanceId(
+      req.query.client_instance_id,
+    );
+
+    if (!sessionId) {
+      return res.status(400).json({
+        error: "invalid_session_id",
+        message: "sessionId is required",
+        requestId,
+      });
+    }
+
+    if (!clientInstanceId) {
+      return res.status(400).json({
+        error: "missing_client_instance_id",
+        message: "client_instance_id is required",
+        requestId,
+      });
+    }
+
+    return serveNextForSession({
+      req,
+      res,
+      userId,
+      role: user?.role,
+      sessionId,
+      clientInstanceId,
     });
-  }
+  },
+);
 
-  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
-  if (!owned) {
-    return res.status(404).json({
-      error: "session_not_found",
-      message: "Practice session not found",
-      requestId,
+router.get(
+  "/sessions/:sessionId/state",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  async (req, res) => {
+    const requestId = (req as any).requestId;
+    const user = (req as any).user;
+    const userId = user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in",
+        requestId,
+      });
+    }
+
+    const sessionId = String(req.params.sessionId || "").trim();
+    if (!sessionId) {
+      return res.status(400).json({
+        error: "invalid_session_id",
+        message: "sessionId is required",
+        requestId,
+      });
+    }
+
+    const owned = await loadOwnedSession(sessionId, userId, {
+      hideForbidden: true,
     });
-  }
+    if (!owned) {
+      return res.status(404).json({
+        error: "session_not_found",
+        message: "Practice session not found",
+        requestId,
+      });
+    }
+    const session = owned.session;
 
-  const metadata = asSessionMetadata(owned.session.metadata);
-  const sessionState = normalizeSessionState(owned.session.status, metadata);
-
-  if (sessionState === "completed" || sessionState === "abandoned" || TERMINAL_DB_STATUSES.includes(owned.session.status as any)) {
-    return res.status(409).json({
-      error: "session_closed",
-      message: "Practice session is read-only",
-      requestId,
+    const metadata = asSessionMetadata(session.metadata);
+    const queryClientInstanceId = normalizeClientInstanceId(
+      req.query.client_instance_id,
+    );
+    const binding = resolveClientInstanceBinding({
+      boundClientInstanceId: metadata.client_instance_id,
+      requestedClientInstanceId: queryClientInstanceId,
     });
-  }
+    const boundClient = binding.boundClientInstanceId;
 
-  const queryClientInstanceId = normalizeClientInstanceId(parsed.data.client_instance_id);
-  const binding = resolveClientInstanceBinding({
-    boundClientInstanceId: metadata.client_instance_id,
-    requestedClientInstanceId: queryClientInstanceId,
-  });
-  if (binding.action === "conflict") {
-    return sendClientConflict(res, requestId, binding.boundClientInstanceId);
-  }
-  if (binding.action === "bind") {
-    metadata.client_instance_id = binding.requestedClientInstanceId;
-  }
+    if (binding.action === "conflict") {
+      return sendClientConflict(res, requestId, binding.boundClientInstanceId);
+    }
 
-  metadata.calculator_state = parsed.data.calculator_state ?? null;
+    const latestItem = await getLatestSessionItem(sessionId);
+    const unresolved = await getCurrentUnansweredItem(sessionId);
+    const progressCounts = await getSessionProgressCounts(sessionId);
+    const targetQuestionCount = coerceTargetQuestionCount(
+      metadata.target_question_count,
+    );
+    const state = normalizeSessionState(session.status, metadata);
 
-  await updateSessionLifecycle(sessionId, metadata);
-
-  return res.json({
-    sessionId,
-    calculatorState: metadata.calculator_state ?? null,
-  });
-});
-
-router.get("/sessions/:sessionId/next", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-
-  if (!userId) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
-      requestId,
+    return res.json({
+      sessionId: session.id,
+      section: session.section,
+      state,
+      currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
+      answeredCount: progressCounts.answeredCount,
+      skippedCount: progressCounts.skippedCount,
+      completedCount: progressCounts.completedCount,
+      targetQuestionCount,
+      calculatorState: metadata.calculator_state ?? null,
+      lastServedUnansweredItem: unresolved
+        ? {
+            sessionItemId: unresolved.id,
+            ordinal: unresolved.ordinal,
+          }
+        : null,
+      clientInstanceId: boundClient ?? null,
+      readOnly: state === "completed" || state === "abandoned",
     });
-  }
-
-  const sessionId = String(req.params.sessionId || "").trim();
-  const clientInstanceId = normalizeClientInstanceId(req.query.client_instance_id);
-
-  if (!sessionId) {
-    return res.status(400).json({
-      error: "invalid_session_id",
-      message: "sessionId is required",
-      requestId,
-    });
-  }
-
-  if (!clientInstanceId) {
-    return res.status(400).json({
-      error: "missing_client_instance_id",
-      message: "client_instance_id is required",
-      requestId,
-    });
-  }
-
-  return serveNextForSession({
-    req,
-    res,
-    userId,
-    role: user?.role,
-    sessionId,
-    clientInstanceId,
-  });
-});
-
-router.get("/sessions/:sessionId/state", requireSupabaseAuth, async (req, res) => {
-  const requestId = (req as any).requestId;
-  const user = (req as any).user;
-  const userId = user?.id;
-
-  if (!userId) {
-    return res.status(401).json({
-      error: "Authentication required",
-      message: "You must be signed in",
-      requestId,
-    });
-  }
-
-  const sessionId = String(req.params.sessionId || "").trim();
-  if (!sessionId) {
-    return res.status(400).json({
-      error: "invalid_session_id",
-      message: "sessionId is required",
-      requestId,
-    });
-  }
-
-  const owned = await loadOwnedSession(sessionId, userId, { hideForbidden: true });
-  if (!owned) {
-    return res.status(404).json({
-      error: "session_not_found",
-      message: "Practice session not found",
-      requestId,
-    });
-  }
-  const session = owned.session;
-
-  const metadata = asSessionMetadata(session.metadata);
-  const queryClientInstanceId = normalizeClientInstanceId(req.query.client_instance_id);
-  const binding = resolveClientInstanceBinding({
-    boundClientInstanceId: metadata.client_instance_id,
-    requestedClientInstanceId: queryClientInstanceId,
-  });
-  const boundClient = binding.boundClientInstanceId;
-
-  if (binding.action === "conflict") {
-    return sendClientConflict(res, requestId, binding.boundClientInstanceId);
-  }
-
-  const latestItem = await getLatestSessionItem(sessionId);
-  const unresolved = await getCurrentUnansweredItem(sessionId);
-  const progressCounts = await getSessionProgressCounts(sessionId);
-  const targetQuestionCount = coerceTargetQuestionCount(metadata.target_question_count);
-  const state = normalizeSessionState(session.status, metadata);
-
-  return res.json({
-    sessionId: session.id,
-    section: session.section,
-    state,
-    currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
-    answeredCount: progressCounts.answeredCount,
-    skippedCount: progressCounts.skippedCount,
-    completedCount: progressCounts.completedCount,
-    targetQuestionCount,
-    calculatorState: metadata.calculator_state ?? null,
-    lastServedUnansweredItem: unresolved
-      ? {
-        sessionItemId: unresolved.id,
-        ordinal: unresolved.ordinal,
-      }
-      : null,
-    clientInstanceId: boundClient ?? null,
-    readOnly: state === "completed" || state === "abandoned",
-  });
-});
+  },
+);
 
 async function findSessionItemForSubmission(
   sessionId: string,
   args: {
     sessionItemId?: string;
     questionId?: string;
-  }
+  },
 ) {
   let query = supabaseServer
     .from("practice_session_items")
@@ -2235,7 +2516,10 @@ async function findSessionItemForSubmission(
   } else if (args.questionId) {
     query = query.eq("question_id", args.questionId);
   } else {
-    query = query.eq("status", "served").order("ordinal", { ascending: false }).limit(1);
+    query = query
+      .eq("status", "served")
+      .order("ordinal", { ascending: false })
+      .limit(1);
   }
 
   const { data, error } = await query;
@@ -2264,7 +2548,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     return res.status(400).json({
       error: "invalid_request",
       code: "MC_OPTION_REQUIRED",
-      message: "free-response answers are not supported on canonical multiple-choice practice submit.",
+      message:
+        "free-response answers are not supported on canonical multiple-choice practice submit.",
       requestId,
     });
   }
@@ -2332,7 +2617,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const sessionMeta = asSessionMetadata(session.metadata);
   const sessionState = normalizeSessionState(session.status, sessionMeta);
 
-  if (sessionState === "completed" || sessionState === "abandoned" || TERMINAL_DB_STATUSES.includes(session.status as any)) {
+  if (
+    sessionState === "completed" ||
+    sessionState === "abandoned" ||
+    TERMINAL_DB_STATUSES.includes(session.status as any)
+  ) {
     return res.status(409).json({
       error: "session_closed",
       message: "Practice session is read-only",
@@ -2343,12 +2632,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (!canonicalQuestion) {
     return res.status(422).json({
       error: "invalid_question_data",
-      message: "Persisted session item question snapshot is invalid for grading.",
+      message:
+        "Persisted session item question snapshot is invalid for grading.",
       requestId,
     });
   }
 
-  const optionTokenMap = parseStudentSafeOptionTokenMap(sessionItem.option_token_map);
+  const optionTokenMap = parseStudentSafeOptionTokenMap(
+    sessionItem.option_token_map,
+  );
   if (!optionTokenMap) {
     return res.status(409).json({
       error: "session_item_mapping_missing",
@@ -2369,12 +2661,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const correctOptionId = Object.entries(optionTokenMap).find((entry) => entry[1] === correctAnswerKey)?.[0] ?? null;
+  const correctOptionId =
+    Object.entries(optionTokenMap).find(
+      (entry) => entry[1] === correctAnswerKey,
+    )?.[0] ?? null;
 
   if (sessionItem.status !== "served") {
-    const resolvedAttemptKey = typeof sessionItem.client_attempt_id === "string" ? sessionItem.client_attempt_id.trim() : "";
+    const resolvedAttemptKey =
+      typeof sessionItem.client_attempt_id === "string"
+        ? sessionItem.client_attempt_id.trim()
+        : "";
     const replayAttemptKey = payload.clientAttemptId?.trim() ?? "";
-    if (sessionItem.outcome && resolvedAttemptKey && replayAttemptKey === resolvedAttemptKey) {
+    if (
+      sessionItem.outcome &&
+      resolvedAttemptKey &&
+      replayAttemptKey === resolvedAttemptKey
+    ) {
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
@@ -2382,7 +2684,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: sessionItem.is_correct ? "Correct" : sessionItem.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: sessionItem.is_correct
+          ? "Correct"
+          : sessionItem.outcome === "skipped"
+            ? "Skipped"
+            : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
@@ -2396,13 +2702,17 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   const selectedTokenOrKey = payload.selectedAnswer;
-  const mappedKeyFromToken = selectedTokenOrKey ? optionTokenMap[selectedTokenOrKey] : null;
-  const selectedCanonicalKey = mappedKeyFromToken ?? normalizeAnswerKey(selectedTokenOrKey ?? null);
+  const mappedKeyFromToken = selectedTokenOrKey
+    ? optionTokenMap[selectedTokenOrKey]
+    : null;
+  const selectedCanonicalKey =
+    mappedKeyFromToken ?? normalizeAnswerKey(selectedTokenOrKey ?? null);
 
   if (!selectedCanonicalKey) {
     return res.status(400).json({
       error: "invalid_answer",
-      message: "selectedAnswer must match a served option token or canonical option key.",
+      message:
+        "selectedAnswer must match a served option token or canonical option key.",
       requestId,
     });
   }
@@ -2415,12 +2725,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const now = new Date().toISOString();
 
   if (payload.clientAttemptId) {
-    const existingByKey = await findSessionItemByClientAttemptId(userId, payload.clientAttemptId);
+    const existingByKey = await findSessionItemByClientAttemptId(
+      userId,
+      payload.clientAttemptId,
+    );
     if (existingByKey) {
       if (existingByKey.id !== sessionItem.id) {
         return res.status(409).json({
           error: "idempotency_key_reuse",
-          message: "The provided clientAttemptId is already bound to a different session item.",
+          message:
+            "The provided clientAttemptId is already bound to a different session item.",
           requestId,
         });
       }
@@ -2432,7 +2746,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: existingByKey.is_correct ? "Correct" : existingByKey.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: existingByKey.is_correct
+          ? "Correct"
+          : existingByKey.outcome === "skipped"
+            ? "Skipped"
+            : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
@@ -2440,9 +2758,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   if (sessionItem.status !== "served") {
-    const resolvedAttemptKey = typeof sessionItem.client_attempt_id === "string" ? sessionItem.client_attempt_id.trim() : "";
+    const resolvedAttemptKey =
+      typeof sessionItem.client_attempt_id === "string"
+        ? sessionItem.client_attempt_id.trim()
+        : "";
     const replayAttemptKey = payload.clientAttemptId?.trim() ?? "";
-    if (sessionItem.outcome && resolvedAttemptKey && replayAttemptKey === resolvedAttemptKey) {
+    if (
+      sessionItem.outcome &&
+      resolvedAttemptKey &&
+      replayAttemptKey === resolvedAttemptKey
+    ) {
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
@@ -2450,7 +2775,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: sessionItem.is_correct ? "Correct" : sessionItem.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: sessionItem.is_correct
+          ? "Correct"
+          : sessionItem.outcome === "skipped"
+            ? "Skipped"
+            : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
@@ -2484,7 +2813,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     if (isDuplicateConflict(updateItemErr.message)) {
       return res.status(409).json({
         error: "idempotency_key_reuse",
-        message: "The provided clientAttemptId is already bound to a different session item.",
+        message:
+          "The provided clientAttemptId is already bound to a different session item.",
         requestId,
       });
     }
@@ -2505,7 +2835,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         mode: "multiple_choice",
         correctOptionId,
         explanation,
-        feedback: raced.is_correct ? "Correct" : raced.outcome === "skipped" ? "Skipped" : "Incorrect",
+        feedback: raced.is_correct
+          ? "Correct"
+          : raced.outcome === "skipped"
+            ? "Skipped"
+            : "Incorrect",
         stats: await getSessionStats(payload.sessionId, userId),
         idempotentRetried: true,
       });
@@ -2519,30 +2853,42 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   try {
-    await supabaseServer
-      .from("practice_events")
-      .insert({
-        user_id: userId,
-        session_id: payload.sessionId,
-        question_id: questionId,
-        event_type: "answered",
-        created_at: now,
-        payload: {
-          session_item_id: sessionItem.id,
-          outcome,
-          isCorrect,
-        },
-      });
+    await supabaseServer.from("practice_events").insert({
+      user_id: userId,
+      session_id: payload.sessionId,
+      question_id: questionId,
+      event_type: "answered",
+      created_at: now,
+      payload: {
+        session_item_id: sessionItem.id,
+        outcome,
+        isCorrect,
+      },
+    });
   } catch {
     // non-blocking
   }
 
   try {
-    const canonicalId = typeof sessionItem.question_canonical_id === "string" ? sessionItem.question_canonical_id : null;
-    const section = typeof sessionItem.question_section === "string" ? sessionItem.question_section.trim() : "";
-    const domain = typeof sessionItem.question_domain === "string" ? sessionItem.question_domain.trim() : "";
-    const skill = typeof sessionItem.question_skill === "string" ? sessionItem.question_skill.trim() : "";
-    const difficultyBucket = resolveDifficultyBucketStrict(sessionItem.question_difficulty ?? null);
+    const canonicalId =
+      typeof sessionItem.question_canonical_id === "string"
+        ? sessionItem.question_canonical_id
+        : null;
+    const section =
+      typeof sessionItem.question_section === "string"
+        ? sessionItem.question_section.trim()
+        : "";
+    const domain =
+      typeof sessionItem.question_domain === "string"
+        ? sessionItem.question_domain.trim()
+        : "";
+    const skill =
+      typeof sessionItem.question_skill === "string"
+        ? sessionItem.question_skill.trim()
+        : "";
+    const difficultyBucket = resolveDifficultyBucketStrict(
+      sessionItem.question_difficulty ?? null,
+    );
     if (canonicalId && difficultyBucket && section && domain && skill) {
       await applyLearningEventToMastery({
         studentId: userId,
@@ -2555,7 +2901,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         latencyMs: clampedTimeSpentMs,
         occurredAt: now,
       });
-    } else if (canonicalId && difficultyBucket && (!section || !domain || !skill)) {
+    } else if (
+      canonicalId &&
+      difficultyBucket &&
+      (!section || !domain || !skill)
+    ) {
       console.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
         sessionId: payload.sessionId,
@@ -2566,13 +2916,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
-      console.warn("[practice] mastery emission skipped (invalid difficulty bucket)", {
-        requestId,
-        sessionId: payload.sessionId,
-        questionCanonicalId: canonicalId,
-        sourceFamily: "practice",
-        rawDifficulty: sessionItem.question_difficulty ?? null,
-      });
+      console.warn(
+        "[practice] mastery emission skipped (invalid difficulty bucket)",
+        {
+          requestId,
+          sessionId: payload.sessionId,
+          questionCanonicalId: canonicalId,
+          sourceFamily: "practice",
+          rawDifficulty: sessionItem.question_difficulty ?? null,
+        },
+      );
     }
   } catch (masteryErr: any) {
     console.warn("[practice] mastery logging failed", {
@@ -2585,7 +2938,9 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(payload.sessionId);
-  const targetQuestionCount = coerceTargetQuestionCount(refreshedMeta.target_question_count);
+  const targetQuestionCount = coerceTargetQuestionCount(
+    refreshedMeta.target_question_count,
+  );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
@@ -2670,7 +3025,11 @@ async function submitPracticeSkip(req: Request, res: Response) {
   const sessionMeta = asSessionMetadata(session.metadata);
   const sessionState = normalizeSessionState(session.status, sessionMeta);
 
-  if (sessionState === "completed" || sessionState === "abandoned" || TERMINAL_DB_STATUSES.includes(session.status as any)) {
+  if (
+    sessionState === "completed" ||
+    sessionState === "abandoned" ||
+    TERMINAL_DB_STATUSES.includes(session.status as any)
+  ) {
     return res.status(409).json({
       error: "session_closed",
       message: "Practice session is read-only",
@@ -2710,12 +3069,16 @@ async function submitPracticeSkip(req: Request, res: Response) {
 
   const questionId = String(sessionItem.question_id);
   if (payload.clientAttemptId) {
-    const existingByKey = await findSessionItemByClientAttemptId(userId, payload.clientAttemptId);
+    const existingByKey = await findSessionItemByClientAttemptId(
+      userId,
+      payload.clientAttemptId,
+    );
     if (existingByKey) {
       if (existingByKey.id !== sessionItem.id) {
         return res.status(409).json({
           error: "idempotency_key_reuse",
-          message: "The provided clientAttemptId is already bound to a different session item.",
+          message:
+            "The provided clientAttemptId is already bound to a different session item.",
           requestId,
         });
       }
@@ -2778,7 +3141,8 @@ async function submitPracticeSkip(req: Request, res: Response) {
     if (isDuplicateConflict(updateItemErr.message)) {
       return res.status(409).json({
         error: "idempotency_key_reuse",
-        message: "The provided clientAttemptId is already bound to a different session item.",
+        message:
+          "The provided clientAttemptId is already bound to a different session item.",
         requestId,
       });
     }
@@ -2800,7 +3164,10 @@ async function submitPracticeSkip(req: Request, res: Response) {
         mode: "multiple_choice",
         feedback: raced.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: raceStats,
-        state: normalizeSessionState(session.status, asSessionMetadata(session.metadata)),
+        state: normalizeSessionState(
+          session.status,
+          asSessionMetadata(session.metadata),
+        ),
         idempotentRetried: true,
       });
     }
@@ -2813,20 +3180,18 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   try {
-    await supabaseServer
-      .from("practice_events")
-      .insert({
-        user_id: userId,
-        session_id: sessionId,
-        question_id: questionId,
-        event_type: "skipped",
-        created_at: now,
-        payload: {
-          session_item_id: sessionItem.id,
-          outcome: "skipped",
-          isCorrect: false,
-        },
-      });
+    await supabaseServer.from("practice_events").insert({
+      user_id: userId,
+      session_id: sessionId,
+      question_id: questionId,
+      event_type: "skipped",
+      created_at: now,
+      payload: {
+        session_item_id: sessionItem.id,
+        outcome: "skipped",
+        isCorrect: false,
+      },
+    });
   } catch {
     // non-blocking
   }
@@ -2835,7 +3200,9 @@ async function submitPracticeSkip(req: Request, res: Response) {
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(sessionId);
-  const targetQuestionCount = coerceTargetQuestionCount(refreshedMeta.target_question_count);
+  const targetQuestionCount = coerceTargetQuestionCount(
+    refreshedMeta.target_question_count,
+  );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
@@ -2863,10 +3230,21 @@ async function submitPracticeSkip(req: Request, res: Response) {
     state: shouldComplete ? "completed" : "active",
   });
 }
-router.post("/answer", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeAnswer);
-router.post("/sessions/:sessionId/skip", requireSupabaseAuth, practiceAnswerRateLimiter, submitPracticeSkip);
+router.post(
+  "/answer",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  practiceAnswerRateLimiter,
+  submitPracticeAnswer,
+);
+router.post(
+  "/sessions/:sessionId/skip",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireConsentCompliance,
+  practiceAnswerRateLimiter,
+  submitPracticeSkip,
+);
 
 export default router;
-
-
-
