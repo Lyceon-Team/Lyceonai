@@ -705,8 +705,18 @@ router.post(
       if (runningAgainstPlaceholder()) return res.json({ success: true });
 
       const admin = getSupabaseAdmin();
-      const siteUrl =
-        process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get("host")}`;
+      // Trusted origin only — never the request Host header. The recovery URL goes into an email;
+      // a spoofed Host would produce a phishing link to an attacker origin (Host-header injection).
+      const siteUrl = (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
+      if (!siteUrl) {
+        logger.error(
+          "AUTH",
+          "reset_password_config",
+          "PUBLIC_SITE_URL is missing; cannot build a trusted recovery link",
+          { requestId: req.requestId },
+        );
+        return res.status(500).json({ error: "Failed to send reset email" });
+      }
 
       // AS-5: native recovery token via Supabase generateLink — we take the token_hash and build our
       // OWN link to /auth/callback so the SERVER completes verifyOtp(type=recovery) and establishes

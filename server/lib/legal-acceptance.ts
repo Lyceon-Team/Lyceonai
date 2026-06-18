@@ -177,14 +177,30 @@ export async function drainLegalAcceptanceOutbox(
           .eq("id", rowId);
       } catch (applyErr) {
         const attempts = typeof row.attempts === "number" ? row.attempts : 0;
-        await supabaseAdmin
-          .from(OUTBOX_TABLE)
-          .update({
-            attempts: attempts + 1,
-            last_error:
-              applyErr instanceof Error ? applyErr.message : String(applyErr),
-          })
-          .eq("id", rowId);
+        // Bookkeeping only — guarded so a failed attempt-increment can't abort the rest of the batch.
+        try {
+          await supabaseAdmin
+            .from(OUTBOX_TABLE)
+            .update({
+              attempts: attempts + 1,
+              last_error:
+                applyErr instanceof Error ? applyErr.message : String(applyErr),
+            })
+            .eq("id", rowId);
+        } catch (bookkeepErr) {
+          logger.warn(
+            "AUTH",
+            "legal_acceptance_attempt_update_failed",
+            "Could not update outbox attempt counter (row will be retried next hydration)",
+            {
+              rowId,
+              error:
+                bookkeepErr instanceof Error
+                  ? bookkeepErr.message
+                  : String(bookkeepErr),
+            },
+          );
+        }
       }
     }
   } catch (drainErr) {
