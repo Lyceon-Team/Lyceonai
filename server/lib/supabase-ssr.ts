@@ -23,16 +23,33 @@ const isProduction = process.env.NODE_ENV === "production";
 
 /**
  * Cookie options applied to every auth cookie the SSR client writes.
- * Mirrors the prior `auth-cookies.ts` posture: httpOnly, lax, path '/', and the
- * apex domain in production so cookies are shared across www/apex.
+ * httpOnly, lax, path '/'. The apex domain is applied ONLY when actually served under lyceon.ai so
+ * cookies are shared across www/apex in prod — but NEVER on other hosts (Vercel preview
+ * *.vercel.app, localhost), where a `Domain=.lyceon.ai` cookie is rejected by the browser and the
+ * session silently fails to persist. On those hosts the cookie is host-scoped (no domain) so it is
+ * accepted and the SSR session round-trips correctly.
  */
-function baseCookieOptions(): CookieOptions {
+export function cookieDomainForHost(
+  host: string | undefined,
+): string | undefined {
+  if (!host) return undefined;
+  const hostname = host.split(":")[0].toLowerCase();
+  if (hostname === "lyceon.ai" || hostname.endsWith(".lyceon.ai")) {
+    return ".lyceon.ai";
+  }
+  return undefined;
+}
+
+function baseCookieOptions(req: Request): CookieOptions {
+  const domain = isProduction
+    ? cookieDomainForHost(req.headers.host)
+    : undefined;
   return {
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax",
     path: "/",
-    ...(isProduction ? { domain: ".lyceon.ai" } : {}),
+    ...(domain ? { domain } : {}),
   };
 }
 
@@ -75,7 +92,7 @@ export function createSupabaseServerClient(
       },
       setAll(cookiesToSet) {
         for (const { name, value, options } of cookiesToSet) {
-          const merged = { ...baseCookieOptions(), ...options };
+          const merged = { ...baseCookieOptions(req), ...options };
           if (value === "") {
             res.clearCookie(name, merged);
           } else {
