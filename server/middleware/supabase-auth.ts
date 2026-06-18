@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
 import { ensureAccountForUser } from "../lib/account.js";
-import { ensureProfileForAuthUser } from "../lib/profile-bootstrap.js";
+import {
+  ensureProfileForAuthUser,
+  AccountEmailConflictError,
+} from "../lib/profile-bootstrap.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
 /**
@@ -471,10 +474,23 @@ export async function supabaseAuthMiddleware(
       return next(); // Continue without user (public routes)
     }
 
+    let emailConflict = false;
     const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
       source: "supabase_auth_middleware",
       requestId: req.requestId,
     }).catch((profileError) => {
+      // AL-7 (profile-per-human): this email is already owned by another identity. Fail closed with a
+      // deliberate 409, never a 500 and never a forked profile.
+      if (profileError instanceof AccountEmailConflictError) {
+        emailConflict = true;
+        logger.warn(
+          "AUTH",
+          "account_email_conflict",
+          "Blocked second-provider session for an email owned by another identity",
+          { userId: user.id, requestId: req.requestId },
+        );
+        return null;
+      }
       logger.error(
         "AUTH",
         "profile_load_failed",
@@ -490,6 +506,16 @@ export async function supabaseAuthMiddleware(
       );
       return null;
     });
+
+    if (emailConflict) {
+      return res.status(409).json({
+        error: {
+          message:
+            "An account already exists for this email. Sign in with your original method.",
+          code: "ACCOUNT_EMAIL_CONFLICT",
+        },
+      });
+    }
 
     if (!profile) {
       logger.error(

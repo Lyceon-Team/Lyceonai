@@ -137,12 +137,20 @@ router.post(
       // Create anon client for signup
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+      // AL-3: when email confirmation is enabled, the confirmation link must land on our native
+      // callback (/auth/callback), which completes it via verifyOtp/exchangeCodeForSession and
+      // establishes the SAME @supabase/ssr session as every other entry method — no custom token
+      // handling. Omitted (not set to undefined) when PUBLIC_SITE_URL is absent.
+      const siteUrl = (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
+      const emailRedirectTo = siteUrl ? `${siteUrl}/auth/callback` : null;
+
       // Sign up user with Supabase Auth
       const { data: authData, error: signupError } = await supabase.auth.signUp(
         {
           email,
           password,
           options: {
+            ...(emailRedirectTo ? { emailRedirectTo } : {}),
             data: {
               display_name: displayName || email.split("@")[0],
               // Safe temporary backend role until profile-complete finalization.

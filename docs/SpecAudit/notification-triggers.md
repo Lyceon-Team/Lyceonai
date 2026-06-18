@@ -26,29 +26,39 @@ the catalog is the durable capture; the wiring follows the table.
 
 ## Catalog
 
-| # | Moment | `event_type` | `recipient_kind` | Emit point (file:line) | Layer | Subject (`recipient_profile_id`) |
-|---|---|---|---|---|---|---|
-| 1 | Guardian link becomes active | `guardian_linked` | `both` | `server/lib/account.ts` — `createGuardianLink`, the `guardian_links` upsert with `status:'active'` (~L102–L116) | TS (server) | student |
-| 2 | Freemium daily practice quota exhausted | `quota_reached` | `student` | `server/routes/practice-canonical.ts` — `reservePracticeQuestionQuota`, the quota-denied branch (402) when `entitlement_active=false` and the `daily_quota_free` cap is hit (~L901–L918) | TS (server) | student |
-| 3 | Trial ending | `trial_ending` | `guardian` | `server/lib/webhookHandlers.ts` — `handleSubscriptionEvent`, the `upsertEntitlement` write when the persisted Stripe status reflects a trial nearing/ending its period (~L84–L94) | TS (server) | student (billing subject) |
-| 4 | Payment failed | `payment_failed` | `guardian` | `server/lib/webhookHandlers.ts` — `handleSubscriptionEvent`, the `upsertEntitlement` write when status persists as `past_due`/`unpaid` (~L84–L94) | TS (server) | student (billing subject) |
-| 5 | Mastery milestone crossed | `mastery_milestone` | `student` | `supabase/migrations/20260613000000_lane_c_mastery_seam.sql` — `apply_mastery_event`, the `student_skill_mastery` upsert where `mastery_level` crosses a threshold (~L198–L212) | SQL (RPC) | student |
-| 6 | Section score projection updated | `score_projection_updated` | `student` | `supabase/migrations/20260613020000_05c_section_projection.sql` — `compute_section_projection`, the `student_section_projections` upsert (~L741–L773), reached via `bump_projection_refresh_counter` on threshold cross | SQL (RPC) | student |
+| #   | Moment                                  | `event_type`               | `recipient_kind` | Emit point (file:line)                                                                                                                                                                                                  | Layer       | Subject (`recipient_profile_id`) |
+| --- | --------------------------------------- | -------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------- |
+| 1   | Guardian link becomes active            | `guardian_linked`          | `both`           | `server/lib/account.ts` — `createGuardianLink`, the `guardian_links` upsert with `status:'active'` (~L102–L116)                                                                                                         | TS (server) | student                          |
+| 2   | Freemium daily practice quota exhausted | `quota_reached`            | `student`        | `server/routes/practice-canonical.ts` — `reservePracticeQuestionQuota`, the quota-denied branch (402) when `entitlement_active=false` and the `daily_quota_free` cap is hit (~L901–L918)                                | TS (server) | student                          |
+| 3   | Trial ending                            | `trial_ending`             | `guardian`       | `server/lib/webhookHandlers.ts` — `handleSubscriptionEvent`, the `upsertEntitlement` write when the persisted Stripe status reflects a trial nearing/ending its period (~L84–L94)                                       | TS (server) | student (billing subject)        |
+| 4   | Payment failed                          | `payment_failed`           | `guardian`       | `server/lib/webhookHandlers.ts` — `handleSubscriptionEvent`, the `upsertEntitlement` write when status persists as `past_due`/`unpaid` (~L84–L94)                                                                       | TS (server) | student (billing subject)        |
+| 5   | Mastery milestone crossed               | `mastery_milestone`        | `student`        | `supabase/migrations/20260613000000_lane_c_mastery_seam.sql` — `apply_mastery_event`, the `student_skill_mastery` upsert where `mastery_level` crosses a threshold (~L198–L212)                                         | SQL (RPC)   | student                          |
+| 6   | Section score projection updated        | `score_projection_updated` | `student`        | `supabase/migrations/20260613020000_05c_section_projection.sql` — `compute_section_projection`, the `student_section_projections` upsert (~L741–L773), reached via `bump_projection_refresh_counter` on threshold cross | SQL (RPC)   | student                          |
 
 ---
 
 ## Per-item notes (emit point, type, recipient)
 
 ### 1. `guardian_linked` — recipient `both`
+
 - **Emit point:** `createGuardianLink` (`server/lib/account.ts`), at the `guardian_links` upsert that
   sets `status:'active'`. The link going active is the moment.
 - **Why `both`:** the link is meaningful to **both** parties — the student gains a supervising
   guardian; the guardian gains (view-only) visibility, gated on link-active **and** student
   entitlement-active (Doc-01 §15/§16). Subject (`recipient_profile_id`) = the student.
-- **Cheap-now vs tracked:** **tracked** (table pending). One-line emit in the same Supabase write
-  path/transaction as the upsert. `payload`: `{ guardian_profile_id, link_id }` (ids only, §12).
+- **Cheap-now vs tracked:** **emit artifact SHIPPED, wiring deferred to cleanup.** The table is now
+  applied, and the genesis-correct, idempotent emit is delivered as `public.emit_guardian_linked(uuid)`
+  in `supabase/migrations-pending/20260617130000_guardian_linked_emit.sql` (keyed to canonical
+  `student_profile_id`; deterministic v5-style `event_id` over the link id; `recipient_kind='both'`;
+  `payload` = `{ guardian_profile_id, link_id }`, ids only, §12). It is **not yet wired** because the
+  live writer `account.ts::createGuardianLink` is on the wrong schema generation (writes dead columns —
+  GAP-ID-13). When the cleanup lane re-points that writer onto genesis, it composes the emit into the
+  status→active transaction with a single line: `PERFORM public.emit_guardian_linked(v_link_id);`. The
+  function deliberately does NOT assume create→active — it emits only for a row already `status='active'`,
+  so it works with either immediate-active creation or the pending\_\*→active accept transition.
 
 ### 2. `quota_reached` — recipient `student`
+
 - **Emit point:** `reservePracticeQuestionQuota` (`server/routes/practice-canonical.ts`), the
   quota-denied (402) branch — unentitled user who has spent the `daily_quota_free` cap
   (`freemium-practice-quota.contract.md`).
@@ -59,6 +69,7 @@ the catalog is the durable capture; the wiring follows the table.
   today's limit" event per day, not one per blocked tap. **tracked.**
 
 ### 3 & 4. `trial_ending` / `payment_failed` — recipient `guardian`
+
 - **Emit point:** `handleSubscriptionEvent` (`server/lib/webhookHandlers.ts`), at the
   `upsertEntitlement` write (the single entitlement writer). The Stripe handler is a **thin idempotent
   receiver** that persists Stripe's status verbatim — the emit derives `event_type` from the persisted
@@ -71,9 +82,10 @@ the catalog is the durable capture; the wiring follows the table.
   double-emit. **tracked.**
 
 ### 5. `mastery_milestone` — recipient `student`
+
 - **Emit point:** `apply_mastery_event` (`…lane_c_mastery_seam.sql`), at the `student_skill_mastery`
   upsert where `mastery_level` increases (milestone). **SQL-layer** emit — a `INSERT INTO
-  notification_outbox … ON CONFLICT DO NOTHING` inside the function, in the same transaction as the
+notification_outbox … ON CONFLICT DO NOTHING` inside the function, in the same transaction as the
   mastery write (the outbox pattern, native to the existing `apply_mastery_event` transaction).
 - **Earned-only:** mastery is from **observed events only** (coding-standards §10) — emit only on a
   real level crossing, never on inferred/estimated movement. Subject = student; `payload`:
@@ -81,6 +93,7 @@ the catalog is the durable capture; the wiring follows the table.
   `(event_id-of-the-mastery-event + 'milestone')`. **tracked.**
 
 ### 6. `score_projection_updated` — recipient `student`
+
 - **Emit point:** `compute_section_projection` (`…05c_section_projection.sql`), at the
   `student_section_projections` upsert (reached when `bump_projection_refresh_counter` crosses
   `PROJECTION_REFRESH_EVENT_THRESHOLD`). **SQL-layer** emit, same transaction as the projection upsert.
