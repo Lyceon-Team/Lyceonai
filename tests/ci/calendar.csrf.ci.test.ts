@@ -35,6 +35,8 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   },
   requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
   requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
+  requireProfileComplete: (_req: any, _res: any, next: any) => next(),
+  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
   requireRequestUser: requireUser,
   requireRequestAuthContext: (req: any, res: any) => {
     const user = requireUser(req, res);
@@ -44,7 +46,10 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   getSupabaseAdmin: () => ({
     auth: {
       admin: {
-        getUserById: async () => ({ data: { user: { id: testUser.id } }, error: null }),
+        getUserById: async () => ({
+          data: { user: { id: testUser.id } },
+          error: null,
+        }),
       },
     },
     rpc: async () => ({ data: null, error: null }),
@@ -70,7 +75,12 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   }),
   resolveUserIdFromToken: async () => null,
   sendUnauthenticated: (res: any, requestId?: string) =>
-    res.status(401).json({ error: "Authentication required", requestId: requestId ?? "req-calendar-csrf" }),
+    res
+      .status(401)
+      .json({
+        error: "Authentication required",
+        requestId: requestId ?? "req-calendar-csrf",
+      }),
   sendForbidden: (res: any, payload: any) =>
     res.status(403).json({
       error: payload?.error ?? "Forbidden",
@@ -113,7 +123,9 @@ describe("Calendar CSRF CI", () => {
   });
 
   it("calendar_get_routes_not_csrf_blocked", async () => {
-    const res = await request(app).get("/api/calendar/month?start=2026-03-01&end=2026-03-07");
+    const res = await request(app).get(
+      "/api/calendar/month?start=2026-03-01&end=2026-03-07",
+    );
     expect(isCsrfBlocked(res)).toBe(false);
   });
 });

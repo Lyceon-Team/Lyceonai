@@ -2582,6 +2582,25 @@ CREATE TABLE public.mobile_auth_config_history (
 
 
 --
+-- Name: notification_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_outbox (
+    event_id uuid NOT NULL,
+    event_type text NOT NULL,
+    recipient_kind text NOT NULL,
+    recipient_profile_id uuid NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone,
+    channel_hint text,
+    CONSTRAINT notification_outbox_channel_hint_check CHECK (((channel_hint IS NULL) OR (channel_hint = ANY (ARRAY['in_app'::text, 'email'::text, 'push'::text])))),
+    CONSTRAINT notification_outbox_event_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'quota_reached'::text, 'trial_ending'::text, 'payment_failed'::text, 'score_projection_updated'::text, 'mastery_milestone'::text]))),
+    CONSTRAINT notification_outbox_recipient_kind_check CHECK ((recipient_kind = ANY (ARRAY['student'::text, 'guardian'::text, 'both'::text])))
+);
+
+
+--
 -- Name: observability_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3505,6 +3524,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_outbox notification_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_outbox
+    ADD CONSTRAINT notification_outbox_pkey PRIMARY KEY (event_id);
+
+
+--
 -- Name: observability_runtime_config_history observability_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3904,6 +3931,20 @@ CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING bt
 --
 
 CREATE INDEX idx_mastery_domain_refresh_audit_student ON public.mastery_domain_refresh_audit_log USING btree (student_id, section, domain, applied_at DESC);
+
+
+--
+-- Name: idx_notification_outbox_recipient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notification_outbox_recipient ON public.notification_outbox USING btree (recipient_profile_id, created_at DESC);
+
+
+--
+-- Name: idx_notification_outbox_unprocessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_notification_outbox_unprocessed ON public.notification_outbox USING btree (created_at) WHERE (processed_at IS NULL);
 
 
 --
@@ -4710,6 +4751,14 @@ ALTER TABLE ONLY public.mobile_auth_config
 
 
 --
+-- Name: notification_outbox notification_outbox_recipient_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_outbox
+    ADD CONSTRAINT notification_outbox_recipient_profile_id_fkey FOREIGN KEY (recipient_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: observability_runtime_config_history observability_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5157,6 +5206,12 @@ ALTER TABLE public.mobile_auth_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.mobile_auth_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_outbox; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_outbox ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: observability_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -6390,6 +6445,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config TO service_
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mobile_auth_config_history TO service_role;
+
+
+--
+-- Name: TABLE notification_outbox; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.notification_outbox TO service_role;
 
 
 --

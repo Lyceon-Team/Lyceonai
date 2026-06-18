@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
 import { ensureAccountForUser } from "../lib/account.js";
-import { ensureProfileForAuthUser } from "../lib/profile-bootstrap.js";
+import {
+  ensureProfileForAuthUser,
+  AccountEmailConflictError,
+} from "../lib/profile-bootstrap.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
 /**
@@ -471,10 +474,23 @@ export async function supabaseAuthMiddleware(
       return next(); // Continue without user (public routes)
     }
 
+    let emailConflict = false;
     const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
       source: "supabase_auth_middleware",
       requestId: req.requestId,
     }).catch((profileError) => {
+      // AL-7 (profile-per-human): this email is already owned by another identity. Fail closed with a
+      // deliberate 409, never a 500 and never a forked profile.
+      if (profileError instanceof AccountEmailConflictError) {
+        emailConflict = true;
+        logger.warn(
+          "AUTH",
+          "account_email_conflict",
+          "Blocked second-provider session for an email owned by another identity",
+          { userId: user.id, requestId: req.requestId },
+        );
+        return null;
+      }
       logger.error(
         "AUTH",
         "profile_load_failed",
@@ -490,6 +506,16 @@ export async function supabaseAuthMiddleware(
       );
       return null;
     });
+
+    if (emailConflict) {
+      return res.status(409).json({
+        error: {
+          message:
+            "An account already exists for this email. Sign in with your original method.",
+          code: "ACCOUNT_EMAIL_CONFLICT",
+        },
+      });
+    }
 
     if (!profile) {
       logger.error(
@@ -681,6 +707,43 @@ export function requireConsentCompliance(
       message: "Users under 13 require guardian consent to use this service",
       requestId: req.requestId,
       extra: { consentRequired: true },
+    });
+  }
+
+  return next();
+}
+
+/**
+ * Middleware to require completed onboarding profile before feature access.
+ * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
+ * "under-13 awaiting guardian consent" at a single server-side enforcement point.
+ * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
+ */
+export function requireProfileComplete(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return sendUnauthenticated(res, req.requestId);
+  }
+
+  if (!req.user.profile_completed_at) {
+    logger.warn(
+      "AUTH",
+      "profile_incomplete",
+      "Feature access attempted before profile completion",
+      {
+        userId: req.user.id,
+        path: req.path,
+        requestId: req.requestId,
+      },
+    );
+    return sendForbidden(res, {
+      error: "Profile incomplete",
+      message: "Please complete your profile before accessing this feature.",
+      requestId: req.requestId,
+      extra: { code: "PROFILE_INCOMPLETE" },
     });
   }
 
