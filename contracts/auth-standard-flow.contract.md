@@ -143,6 +143,7 @@ reset instructions."`) whether or not the email maps to an account; provider err
   server-side only. True config failures (missing `PUBLIC_SITE_URL`) remain a 500. Non-enumerable.
 - **AS-1 drain liveness (AS1-DRAIN-LIVENESS-001, was HIGH).** A durable outbox needs a _guaranteed_
   drain, not only the opportunistic `/api/profile` one. Added `drainAllPendingLegalAcceptances` + a
-  CRON_SECRET-gated endpoint `GET /api/internal/legal-acceptance-drain` + an hourly Vercel cron
-  (`vercel.json`). The `/api/profile` drain remains the fast path; the cron guarantees eventual
-  recording for a user who never returns. (CRON_SECRET is owner-config; unset ⇒ endpoint 404s.)
+  CRON_SECRET-gated endpoint `GET /api/internal/legal-acceptance-drain` + a daily Vercel cron
+  (`vercel.json`, `0 3 * * *` — daily is the Hobby-plan cron limit; the `/api/profile` drain is the
+  immediate fast path so a daily backstop suffices). The cron guarantees eventual recording for a
+  user who never returns. (CRON_SECRET is owner-config; unset ⇒ endpoint 404s.)
