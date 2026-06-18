@@ -124,3 +124,26 @@ authenticated hydration (`GET /api/profile`) so it completes without a cron. Own
 
 Visual/layout redesign; new auth methods (magic-link UI, MFA); changing email delivery infra;
 `docs/Spec/**`; the guardian-consent (under-13) flow internals (separate lane).
+
+## 6. Revisions — Codex pass (2026-06-18)
+
+Three findings from the post-merge Codex audit of #390, all legitimate, are folded in:
+
+- **AS-1 both-fail (AS1-OUTBOX-DROP-001, was BLOCKING).** The decoupling must not become a _silent
+  compliance-loss_ path. `captureLegalAcceptances` now returns `{durable:boolean}`: `true` when consent
+  is recorded **or** durably queued (single-store failure → session survives, unchanged); `false` ONLY
+  when **both** stores fail. On `durable:false` the callers **fail closed BEFORE granting a session**
+  (OAuth → `signOut` + `?error=consent_capture_failed`; signup → `503` before `persistSession`) — a
+  recoverable error, never a silent drop. This is distinct from the original outage, which tore down an
+  _already-valid_ session on the _common_ missing-table case; the outbox now absorbs that. The contract
+  test that asserted silent-drop is acceptable is **inverted** to assert `durable:false`.
+- **AS-3/AS-5 reset enumeration (AS3-AS5-RESET-ENUM-001, was BLOCKING).** `POST /api/auth/reset-password`
+  returns the **same** generic response (`"If an account exists for that email, we've sent password
+reset instructions."`) whether or not the email maps to an account; provider errors are logged
+  server-side only. True config failures (missing `PUBLIC_SITE_URL`) remain a 500. Non-enumerable.
+- **AS-1 drain liveness (AS1-DRAIN-LIVENESS-001, was HIGH).** A durable outbox needs a _guaranteed_
+  drain, not only the opportunistic `/api/profile` one. Added `drainAllPendingLegalAcceptances` + a
+  CRON_SECRET-gated endpoint `GET /api/internal/legal-acceptance-drain` + a daily Vercel cron
+  (`vercel.json`, `0 3 * * *` — daily is the Hobby-plan cron limit; the `/api/profile` drain is the
+  immediate fast path so a daily backstop suffices). The cron guarantees eventual recording for a
+  user who never returns. (CRON_SECRET is owner-config; unset ⇒ endpoint 404s.)

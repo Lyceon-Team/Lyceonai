@@ -13,6 +13,8 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
     "An account already exists for this email. Please sign in with the method you used originally.",
   post_auth_finalize:
     "We couldn't finish signing you in. Please try again — if it keeps happening, contact support.",
+  consent_capture_failed:
+    "We couldn't complete your sign-in just now. Please try again in a moment.",
 };
 
 const GENERIC_AUTH_ERROR =

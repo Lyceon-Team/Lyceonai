@@ -72,6 +72,7 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import practiceCanonicalRouter from "./routes/practice-canonical";
 import profileRoutes from "./routes/profile-routes";
+import internalCronRoutes from "./routes/internal-cron-routes";
 import {
   getPracticeTopics,
   getPracticeQuestions,
@@ -140,14 +141,12 @@ app.post(
         sig,
         requestId,
       );
-      res
-        .status(200)
-        .json({
-          received: true,
-          eventId: result.eventId,
-          status: result.status,
-          requestId,
-        });
+      res.status(200).json({
+        received: true,
+        eventId: result.eventId,
+        status: result.status,
+        requestId,
+      });
     } catch (error: any) {
       console.error("[WEBHOOK] Processing error:", error.message, {
         requestId,
@@ -388,6 +387,9 @@ app.get(
 
 // Supabase Authentication Routes
 app.use("/api/auth", supabaseAuthRoutes);
+
+// Internal cron-only endpoints (CRON_SECRET-gated; e.g. scheduled legal-acceptance outbox drain).
+app.use("/api/internal", internalCronRoutes);
 
 // Guardian Consent Routes (Publicly accessible for verification)
 app.use("/api/consent", doubleCsrfProtection, guardianConsentRoutes);

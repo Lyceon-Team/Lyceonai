@@ -150,9 +150,12 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       const consentSource = parseConsentSource(req);
       if (consentSource) {
         const minor = !!profile.is_under_13;
-        // AS-1: durable + non-throwing. A consent-recording failure must NOT signOut the user or
-        // turn a successful OAuth into ?error=post_auth_finalize — the session is kept regardless.
-        await captureLegalAcceptances(admin, {
+        // AS-1: durable + non-throwing. A SINGLE-store recording failure keeps the session (the
+        // outbox absorbs it, drained later). Only when consent can't be captured ANYWHERE (both the
+        // direct write AND the durable outbox fail — a rare infra outage) do we fail closed: consent
+        // is a precondition for a valid session, so we sign out and surface a recoverable error
+        // rather than silently dropping it (AS1-OUTBOX-DROP-001).
+        const capture = await captureLegalAcceptances(admin, {
           userId: user.id,
           consentSource,
           userAgent: req.get("user-agent") ?? null,
@@ -172,6 +175,30 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
             },
           ],
         });
+
+        if (!capture.durable) {
+          logger.error(
+            "OAUTH",
+            "consent_capture_failed",
+            "Could not durably capture consent (both stores failed); failing closed",
+            { userId: user.id, requestId: req.requestId },
+          );
+          await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+            logger.warn(
+              "OAUTH",
+              "signout_cleanup_failed",
+              "Best-effort signOut after consent-capture failure failed",
+              {
+                requestId: req.requestId,
+                error:
+                  signOutErr instanceof Error
+                    ? signOutErr.message
+                    : String(signOutErr),
+              },
+            ),
+          );
+          return res.redirect(`${siteUrl}/login?error=consent_capture_failed`);
+        }
       }
 
       const profileNeedsCompletion =

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   captureLegalAcceptances,
   drainLegalAcceptanceOutbox,
+  drainAllPendingLegalAcceptances,
 } from "../../server/lib/legal-acceptance";
 
 /**
@@ -13,7 +14,12 @@ import {
 
 type Result = { error: { message: string } | null };
 
-type OutboxRow = { id: string; payload: unknown; attempts: number };
+type OutboxRow = {
+  id: string;
+  user_id?: string;
+  payload: unknown;
+  attempts: number;
+};
 
 type AdminOpts = {
   legalUpsert?: () => Result;
@@ -41,17 +47,17 @@ function makeAdmin(opts: AdminOpts) {
           outboxInsertSpy(row);
           return Promise.resolve(opts.outboxInsert?.() ?? { error: null });
         },
-        select: () => ({
-          eq: () => ({
-            is: () => ({
-              limit: () =>
-                Promise.resolve({
-                  data: opts.outboxRows ?? [],
-                  error: null,
-                }),
-            }),
-          }),
-        }),
+        select: () => {
+          // Supports both per-user (.eq().is().limit()) and drain-all (.is().limit()) shapes.
+          const terminal = {
+            limit: () =>
+              Promise.resolve({ data: opts.outboxRows ?? [], error: null }),
+          };
+          return {
+            eq: () => ({ is: () => terminal }),
+            is: () => terminal,
+          };
+        },
         update: (patch: unknown) => ({
           eq: (_col: string, id: string) => {
             outboxUpdateSpy(patch, id);
@@ -92,7 +98,9 @@ describe("Legal-acceptance decoupling (AS-1)", () => {
       legalUpsert: () => ({ error: null }),
     });
 
-    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toBeUndefined();
+    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toEqual({
+      durable: true,
+    });
 
     expect(legalUpsertSpy).toHaveBeenCalledTimes(1);
     expect(outboxInsertSpy).not.toHaveBeenCalled();
@@ -103,8 +111,10 @@ describe("Legal-acceptance decoupling (AS-1)", () => {
       legalUpsert: () => ({ error: { message: "relation does not exist" } }),
     });
 
-    // The core invariant: this must resolve, never reject — auth must not depend on it.
-    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toBeUndefined();
+    // Single-store failure: recorded nowhere directly but DURABLY queued — the session may proceed.
+    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toEqual({
+      durable: true,
+    });
 
     expect(outboxInsertSpy).toHaveBeenCalledTimes(1);
     const enqueued = outboxInsertSpy.mock.calls[0]?.[0] as {
@@ -115,13 +125,17 @@ describe("Legal-acceptance decoupling (AS-1)", () => {
     expect(enqueued.payload.consentSource).toBe("email_signup_form");
   });
 
-  it("never throws even when BOTH the direct write and the enqueue fail", async () => {
+  it("returns durable:false when BOTH stores fail — no silent drop (caller must fail closed)", async () => {
     const { admin } = makeAdmin({
       legalUpsert: () => ({ error: { message: "down" } }),
       outboxInsert: () => ({ error: { message: "outbox down too" } }),
     });
 
-    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toBeUndefined();
+    // Must NOT throw, but MUST signal not-durable so the auth path fails closed rather than
+    // silently dropping the consent (AS1-OUTBOX-DROP-001).
+    await expect(captureLegalAcceptances(admin, ARGS)).resolves.toEqual({
+      durable: false,
+    });
   });
 
   it("drains a pending intent to legal_acceptances and marks it processed (idempotent)", async () => {
@@ -162,5 +176,30 @@ describe("Legal-acceptance decoupling (AS-1)", () => {
 
     expect(legalUpsertSpy).not.toHaveBeenCalled();
     expect(outboxUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  it("drainAllPendingLegalAcceptances drains every distinct pending user (scheduled job, AS1-DRAIN-LIVENESS-001)", async () => {
+    const { admin, legalUpsertSpy, outboxUpdateSpy } = makeAdmin({
+      legalUpsert: () => ({ error: null }),
+      outboxRows: [
+        {
+          id: "outbox-1",
+          user_id: "user-1",
+          attempts: 0,
+          payload: {
+            acceptances: ARGS.acceptances,
+            consentSource: ARGS.consentSource,
+            userAgent: null,
+            ipAddress: null,
+          },
+        },
+      ],
+    });
+
+    const usersDrained = await drainAllPendingLegalAcceptances(admin);
+
+    expect(usersDrained).toBe(1);
+    expect(legalUpsertSpy).toHaveBeenCalled();
+    expect(outboxUpdateSpy).toHaveBeenCalled(); // marked processed
   });
 });

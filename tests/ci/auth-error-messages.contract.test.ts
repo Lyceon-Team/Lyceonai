@@ -11,6 +11,7 @@ const CODES = [
   "supabase_exchange",
   "google_oauth_failed",
   "account_exists",
+  "consent_capture_failed",
 ];
 
 describe("humanAuthError (AS-3 standard error UX)", () => {
