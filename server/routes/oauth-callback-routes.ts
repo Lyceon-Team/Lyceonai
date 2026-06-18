@@ -23,7 +23,7 @@ import {
   AccountEmailConflictError,
 } from "../lib/profile-bootstrap.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
-import { recordLegalAcceptances } from "../lib/legal-acceptance.js";
+import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 
 const router = Router();
 
@@ -58,6 +58,14 @@ function isEmailOtpType(value: unknown): value is EmailOtpType {
   );
 }
 
+// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect. The
+// only producer is the native password-recovery link (→ the set-new-password page).
+const SAFE_NEXT_PATHS = new Set<string>(["/update-password"]);
+function parseSafeNext(req: Request): string | null {
+  const next = req.query.next;
+  return typeof next === "string" && SAFE_NEXT_PATHS.has(next) ? next : null;
+}
+
 /**
  * GET /auth/callback?code=...
  * Native Supabase PKCE landing route.
@@ -73,6 +81,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
   }
 
   const { code, token_hash: tokenHash, type, error: providerError } = req.query;
+  const safeNext = parseSafeNext(req);
 
   if (providerError) {
     logger.warn("OAUTH", "provider_error", "OAuth provider returned an error", {
@@ -141,7 +150,9 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       const consentSource = parseConsentSource(req);
       if (consentSource) {
         const minor = !!profile.is_under_13;
-        await recordLegalAcceptances(admin, {
+        // AS-1: durable + non-throwing. A consent-recording failure must NOT signOut the user or
+        // turn a successful OAuth into ?error=post_auth_finalize — the session is kept regardless.
+        await captureLegalAcceptances(admin, {
           userId: user.id,
           consentSource,
           userAgent: req.get("user-agent") ?? null,
@@ -169,6 +180,10 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
 
       if (profileNeedsCompletion) {
         redirectPath = "/profile/complete";
+      } else if (safeNext) {
+        // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
+        // onboarding gate — e.g. recovery → /update-password to set a new password.
+        redirectPath = safeNext;
       } else if (profile.role === "guardian") {
         redirectPath = "/guardian";
       } else {

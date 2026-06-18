@@ -152,6 +152,69 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/guardian");
   });
 
+  // AS-1 (decoupling) — a legal-acceptance recording failure must NOT signOut or error a successful
+  // auth. consentSource is present so captureLegalAcceptances runs; the mocked admin ({}) makes the
+  // legal write fail internally, but it must be swallowed: session kept, normal landing, no signOut.
+  it("keeps the session and lands normally when legal-acceptance recording fails (AS-1)", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&consentSource=google_continue_click",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
+    expect(res.headers.location).not.toContain("error=");
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  // AS-5 — password recovery: token_hash+type=recovery establishes a session via verifyOtp, then
+  // routes to the set-new-password page (NOT /dashboard) so the user can complete the reset.
+  it("recovery (token_hash + next) establishes a session and routes to /update-password", async () => {
+    verifyOtpMock.mockResolvedValueOnce({
+      data: { session: SESSION, user: USER },
+      error: null,
+    });
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?token_hash=rec123&type=recovery&next=%2Fupdate-password",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/update-password");
+    expect(verifyOtpMock).toHaveBeenCalledWith({
+      token_hash: "rec123",
+      type: "recovery",
+    });
+  });
+
+  // AS-5 — open-redirect guard: a `next` not on the allowlist is ignored; default landing is used.
+  it("ignores an unsafe next and uses the default landing (open-redirect guard)", async () => {
+    okExchange();
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&next=https://evil.example.com",
+    );
+
+    expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
+  });
+
   // AL-3 — native email-confirmation handoff completes via verifyOtp, same DOB gate, no code path.
   it("completes the email-confirmation handoff via verifyOtp and DOB-gates incomplete profiles", async () => {
     verifyOtpMock.mockResolvedValueOnce({

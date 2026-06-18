@@ -16,7 +16,7 @@ import { z } from "zod";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
 import { sendEmail } from "../lib/email.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
-import { recordLegalAcceptances } from "../lib/legal-acceptance.js";
+import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 
 const router = Router();
 
@@ -198,7 +198,8 @@ router.post(
         // Don't fail the signup - profile exists
       }
 
-      await recordLegalAcceptances(admin, {
+      // AS-1: durable + non-throwing — a consent-recording failure must not 500 the signup.
+      await captureLegalAcceptances(admin, {
         userId: authData.user.id,
         consentSource,
         userAgent: req.get("user-agent") ?? null,
@@ -707,12 +708,16 @@ router.post(
       const siteUrl =
         process.env.PUBLIC_SITE_URL || `${req.protocol}://${req.get("host")}`;
 
-      // Generate recovery link
+      // AS-5: native recovery token via Supabase generateLink — we take the token_hash and build our
+      // OWN link to /auth/callback so the SERVER completes verifyOtp(type=recovery) and establishes
+      // the SSR session, then routes to the set-new-password page. (The raw action_link returns
+      // tokens in the URL *hash*, which a server route can't read — that stranded users on a
+      // RequireRole page with no session.)
       const { data, error } = await admin.auth.admin.generateLink({
         type: "recovery",
         email: email,
         options: {
-          redirectTo: `${siteUrl}/update-password`,
+          redirectTo: `${siteUrl}/auth/callback`,
         },
       });
 
@@ -726,15 +731,18 @@ router.post(
         return res.status(400).json({ error: error.message });
       }
 
-      if (data?.properties?.action_link) {
+      const tokenHash = data?.properties?.hashed_token;
+      if (tokenHash) {
+        const recoveryUrl =
+          `${siteUrl}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}` +
+          `&type=recovery&next=${encodeURIComponent("/update-password")}`;
         await sendEmail({
           to: email,
           subject: "Reset your Lyceon password",
           html: `
           <h1>Password Reset Request</h1>
-          <p>We received a request to reset your password. Please click the link below to set a new one:</p>
-          <p><a href="${data.properties.action_link}">Reset Password</a></p>
-          <p>This link will take you to your dashboard where you can update your password.</p>
+          <p>We received a request to reset your password. Click the link below to set a new one:</p>
+          <p><a href="${recoveryUrl}">Reset Password</a></p>
           <p>If you did not request this, you can safely ignore this email.</p>
         `,
         });
