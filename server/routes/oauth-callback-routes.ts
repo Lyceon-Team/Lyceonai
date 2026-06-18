@@ -23,7 +23,7 @@ import {
   AccountEmailConflictError,
 } from "../lib/profile-bootstrap.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
-import { recordLegalAcceptances } from "../lib/legal-acceptance.js";
+import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 
 const router = Router();
 
@@ -58,6 +58,14 @@ function isEmailOtpType(value: unknown): value is EmailOtpType {
   );
 }
 
+// AS-5: post-auth `next` is an ALLOWLIST, not a free relative path — closes any open-redirect. The
+// only producer is the native password-recovery link (→ the set-new-password page).
+const SAFE_NEXT_PATHS = new Set<string>(["/update-password"]);
+function parseSafeNext(req: Request): string | null {
+  const next = req.query.next;
+  return typeof next === "string" && SAFE_NEXT_PATHS.has(next) ? next : null;
+}
+
 /**
  * GET /auth/callback?code=...
  * Native Supabase PKCE landing route.
@@ -73,6 +81,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
   }
 
   const { code, token_hash: tokenHash, type, error: providerError } = req.query;
+  const safeNext = parseSafeNext(req);
 
   if (providerError) {
     logger.warn("OAUTH", "provider_error", "OAuth provider returned an error", {
@@ -141,7 +150,12 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       const consentSource = parseConsentSource(req);
       if (consentSource) {
         const minor = !!profile.is_under_13;
-        await recordLegalAcceptances(admin, {
+        // AS-1: durable + non-throwing. A SINGLE-store recording failure keeps the session (the
+        // outbox absorbs it, drained later). Only when consent can't be captured ANYWHERE (both the
+        // direct write AND the durable outbox fail — a rare infra outage) do we fail closed: consent
+        // is a precondition for a valid session, so we sign out and surface a recoverable error
+        // rather than silently dropping it (AS1-OUTBOX-DROP-001).
+        const capture = await captureLegalAcceptances(admin, {
           userId: user.id,
           consentSource,
           userAgent: req.get("user-agent") ?? null,
@@ -161,6 +175,30 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
             },
           ],
         });
+
+        if (!capture.durable) {
+          logger.error(
+            "OAUTH",
+            "consent_capture_failed",
+            "Could not durably capture consent (both stores failed); failing closed",
+            { userId: user.id, requestId: req.requestId },
+          );
+          await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+            logger.warn(
+              "OAUTH",
+              "signout_cleanup_failed",
+              "Best-effort signOut after consent-capture failure failed",
+              {
+                requestId: req.requestId,
+                error:
+                  signOutErr instanceof Error
+                    ? signOutErr.message
+                    : String(signOutErr),
+              },
+            ),
+          );
+          return res.redirect(`${siteUrl}/login?error=consent_capture_failed`);
+        }
       }
 
       const profileNeedsCompletion =
@@ -169,6 +207,10 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
 
       if (profileNeedsCompletion) {
         redirectPath = "/profile/complete";
+      } else if (safeNext) {
+        // AS-5: password-recovery (and any future allow-listed handoff) routes here AFTER the
+        // onboarding gate — e.g. recovery → /update-password to set a new password.
+        redirectPath = safeNext;
       } else if (profile.role === "guardian") {
         redirectPath = "/guardian";
       } else {
