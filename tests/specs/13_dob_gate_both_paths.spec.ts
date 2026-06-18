@@ -1,17 +1,17 @@
 import { test, expect, request as pwRequest } from "@playwright/test";
 
 /**
- * @spec [contracts/auth-login-e2e.contract.md AL-4 | Doc-01_V6 §17 Under-13 / DOB soft-gate]
+ * @spec [contracts/auth-login-e2e.contract.md AL-4 | Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 / DOB soft-gate]
  *
  * Proves the crux seam: a freshly-created human is forced to the DOB soft-gate (/profile/complete)
  * before any study/feature access — on BOTH signup paths, which converge on the single
  * RequireRole.needsOnboarding guard fed by server /api/profile hydration.
  *
  * - Email/password: driven end-to-end here (signup via the native route, then a protected nav).
- * - Google OAuth: cannot complete real Google headlessly; we assert the shared structural seam (the
- *   button initiates native OAuth, and the post-login routing that BOTH paths share lands incomplete
- *   profiles at /profile/complete). The Google-side server redirect is covered by the
- *   oauth-callback contract; here we prove the destination both paths funnel into.
+ * - Google OAuth: cannot complete real Google headlessly, so this spec only asserts the button
+ *   initiates native OAuth. The OAuth DOB-gating logic itself (callback → incomplete profile →
+ *   /profile/complete) is proven deterministically in tests/ci/oauth-callback.contract.test.ts,
+ *   which drives nativeOAuthCallbackHandler with a mocked session — the assertion this spec can't make.
  *
  * Env-tolerant: skips if no backend is reachable so CI without a live Supabase stays green; runs
  * fully against localhost / a preview deployment (BASE_URL), drivable by an in-app browser.

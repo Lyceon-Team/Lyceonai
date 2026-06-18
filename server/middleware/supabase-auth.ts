@@ -717,7 +717,7 @@ export function requireConsentCompliance(
  * Middleware to require completed onboarding profile before feature access.
  * Blocks when profile_completed_at is null — covers both "DOB not yet set" and
  * "under-13 awaiting guardian consent" at a single server-side enforcement point.
- * @spec [Doc-01_V6 §9.2 HALT-3] server-side DOB soft-gate
+ * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
  */
 export function requireProfileComplete(
   req: Request,

@@ -138,7 +138,7 @@ describe("Auth Surface Contract", () => {
   });
 });
 
-// @spec [Doc-01_V6 §9.2 HALT-3] | @implemented [2026-06-17] | plain English: server-side DOB
+// @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] | @implemented [2026-06-17] | plain English: server-side DOB
 // soft-gate — feature routes block until profile_completed_at is set (covers both "DOB not yet
 // submitted" and "under-13 awaiting guardian consent"). Both signup paths (Google OAuth and
 // email/password) produce profile_completed_at=null until /profile/complete is submitted.
