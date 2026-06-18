@@ -321,6 +321,48 @@ describe("Auth Signup Contract", () => {
       setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
     ).toBe(true);
   });
+
+  it("AS1-OUTBOX-DROP-001: fails closed (503, no session cookie) when consent can't be durably captured", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-503", email: "fail@example.com" },
+        session: {
+          access_token: "a".repeat(48),
+          refresh_token: "r".repeat(48),
+          expires_in: 3600,
+          token_type: "bearer",
+          user: { id: "user-503", email: "fail@example.com" },
+        },
+      },
+      error: null,
+    });
+    // Direct legal_acceptances write fails AND the outbox table is unmapped in this harness
+    // (profileFromMock throws for it) → captureLegalAcceptances returns {durable:false} → the signup
+    // must fail closed BEFORE persisting a session (consent is a precondition, never silently dropped).
+    upsertMock.mockResolvedValueOnce({
+      error: { message: "legal_acceptances unavailable" },
+    });
+
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "fail@example.com",
+      password: "Password123!",
+      displayName: "Fail Closed",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(503);
+    // No session may be granted when consent could not be captured.
+    const setCookies = res.headers["set-cookie"] ?? [];
+    expect(
+      setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
+    ).toBe(false);
+  });
 });
 
 afterEach(() => {

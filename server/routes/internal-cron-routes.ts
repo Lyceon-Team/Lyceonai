@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
@@ -16,7 +17,14 @@ const router = Router();
 function cronAuthorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return (req.get("authorization") ?? "") === `Bearer ${secret}`;
+  // Timing-safe comparison (Doc-01A §63/§67) — constant-time so the secret can't be brute-forced
+  // via response-time side-channel.
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const actual = Buffer.from(req.get("authorization") ?? "");
+  return (
+    expected.length === actual.length &&
+    crypto.timingSafeEqual(expected, actual)
+  );
 }
 
 router.get(
