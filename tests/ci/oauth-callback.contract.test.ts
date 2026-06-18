@@ -22,6 +22,7 @@ const exchangeCodeForSessionMock = vi.hoisted(() => vi.fn());
 const verifyOtpMock = vi.hoisted(() => vi.fn());
 const signOutMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 const ensureProfileMock = vi.hoisted(() => vi.fn());
+const captureLegalMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../server/lib/supabase-ssr.js", () => ({
   createSupabaseServerClient: () => ({
@@ -49,6 +50,12 @@ vi.mock("../../server/lib/profile-bootstrap.js", async (importOriginal) => {
     ensureProfileForAuthUser: ensureProfileMock,
   };
 });
+
+// captureLegalAcceptances is mocked so we can drive durable:true (single-store failure absorbed →
+// session survives) vs durable:false (both stores down → fail closed) at the finalize seam.
+vi.mock("../../server/lib/legal-acceptance.js", () => ({
+  captureLegalAcceptances: captureLegalMock,
+}));
 
 import oauthRouter from "../../server/routes/oauth-callback-routes";
 import { AccountEmailConflictError } from "../../server/lib/profile-bootstrap.js";
@@ -86,6 +93,8 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.PUBLIC_SITE_URL = "https://lyceon.ai";
+    // Default: consent durably captured. Tests that exercise the both-store-down path override this.
+    captureLegalMock.mockResolvedValue({ durable: true });
   });
 
   afterEach(() => {
@@ -152,11 +161,11 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/guardian");
   });
 
-  // AS-1 (decoupling) — a legal-acceptance recording failure must NOT signOut or error a successful
-  // auth. consentSource is present so captureLegalAcceptances runs; the mocked admin ({}) makes the
-  // legal write fail internally, but it must be swallowed: session kept, normal landing, no signOut.
-  it("keeps the session and lands normally when legal-acceptance recording fails (AS-1)", async () => {
+  // AS-1 (decoupling) — when consent is durably captured (even via the outbox after a direct-write
+  // failure), the session is kept and the user lands normally. No signOut, no error.
+  it("keeps the session and lands normally when consent is durably captured (AS-1)", async () => {
     okExchange();
+    captureLegalMock.mockResolvedValueOnce({ durable: true });
     ensureProfileMock.mockResolvedValueOnce({
       profile_completed_at: "2026-06-17T00:00:00Z",
       is_under_13: false,
@@ -171,6 +180,28 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/dashboard");
     expect(res.headers.location).not.toContain("error=");
     expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  // AS1-OUTBOX-DROP-001 — when consent cannot be durably captured ANYWHERE (both stores down), do NOT
+  // silently proceed: fail closed (signOut) with a recoverable error rather than dropping compliance.
+  it("fails closed when consent cannot be durably captured (AS1-OUTBOX-DROP-001)", async () => {
+    okExchange();
+    captureLegalMock.mockResolvedValueOnce({ durable: false });
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: false,
+      guardian_consent: false,
+      role: "student",
+    } satisfies ProfileShape);
+
+    const res = await request(makeApp()).get(
+      "/auth/callback?code=valid-code&consentSource=google_continue_click",
+    );
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=consent_capture_failed",
+    );
+    expect(signOutMock).toHaveBeenCalled();
   });
 
   // AS-5 — password recovery: token_hash+type=recovery establishes a session via verifyOtp, then

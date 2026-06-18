@@ -67,22 +67,26 @@ const outboxPayloadSchema = z.object({
   ipAddress: z.string().nullable(),
 });
 
+export type LegalCaptureResult = { durable: boolean };
+
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1 | Doc-01_V8 §5/§9] | @implemented 2026-06-18
- * plain English: decouples consent recording from session survival. Records legal acceptances
- * best-effort and, on ANY failure, enqueues the intent to the durable outbox for later retry —
- * NEVER throwing into the auth path. A successful authentication keeps its session regardless of
- * whether this write succeeds. expected outcome: auth never fails because consent recording failed;
- * the intent is not lost (queued + drained). edge case: even an outbox-insert failure is swallowed
- * (logged), never thrown — auth availability must not depend on this bookkeeping.
+ * plain English: captures consent durably WITHOUT coupling an already-valid session to the recording.
+ * Records directly; on failure, enqueues the intent to the durable outbox for retry. Returns
+ * `{durable:true}` when the consent is safely captured (recorded OR queued) and `{durable:false}` ONLY
+ * when BOTH stores failed (a rare infra outage). Never throws. Callers keep the session when durable;
+ * when NOT durable they must fail closed BEFORE granting a session — consent is a precondition for a
+ * valid session, and we must not silently drop it (AS1-OUTBOX-DROP-001). This is distinct from the
+ * original outage, which tore down an ALREADY-valid session on the common missing-table case — the
+ * outbox now absorbs that, so single-store failure keeps the session.
  */
 export async function captureLegalAcceptances(
   supabaseAdmin: SupabaseClient,
   args: RecordLegalAcceptancesArgs,
-): Promise<void> {
+): Promise<LegalCaptureResult> {
   try {
     await recordLegalAcceptances(supabaseAdmin, args);
-    return;
+    return { durable: true };
   } catch (directErr) {
     logger.warn(
       "AUTH",
@@ -96,7 +100,8 @@ export async function captureLegalAcceptances(
     );
   }
 
-  // Durable capture. Even if THIS fails we must not throw into the auth path.
+  // Durable capture via the outbox. If THIS also fails, the consent is captured nowhere — signal
+  // not-durable so the caller fails closed (never throw into the auth path).
   try {
     const { error } = await supabaseAdmin.from(OUTBOX_TABLE).insert({
       user_id: args.userId,
@@ -110,17 +115,19 @@ export async function captureLegalAcceptances(
     if (error) {
       throw new Error(error.message);
     }
+    return { durable: true };
   } catch (enqueueErr) {
     logger.error(
       "AUTH",
       "legal_acceptance_enqueue_failed",
-      "Failed to enqueue legal acceptance to outbox; consent not yet recorded",
+      "Could not record OR durably queue consent — caller must fail closed (no silent drop)",
       {
         userId: args.userId,
         error:
           enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
       },
     );
+    return { durable: false };
   }
 }
 
@@ -213,5 +220,44 @@ export async function drainLegalAcceptanceOutbox(
         error: drainErr instanceof Error ? drainErr.message : String(drainErr),
       },
     );
+  }
+}
+
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
+ * plain English: scheduled (service-role) drain over ALL pending legal-acceptance intents, independent
+ * of user navigation — the guaranteed-eventual-recording path. The /api/profile drain is the fast
+ * path; this guarantees a user who never returns still gets their queued consent recorded. Selects the
+ * distinct users with unprocessed rows (capped) and reuses the idempotent per-user drain. Returns the
+ * number of users drained. Never throws (a job failure is logged and retried on the next schedule).
+ */
+export async function drainAllPendingLegalAcceptances(
+  supabaseAdmin: SupabaseClient,
+  limit = 500,
+): Promise<number> {
+  try {
+    const { data: rows, error } = await supabaseAdmin
+      .from(OUTBOX_TABLE)
+      .select("user_id")
+      .is("processed_at", null)
+      .limit(limit);
+
+    if (error || !rows || rows.length === 0) {
+      return 0;
+    }
+
+    const userIds = [...new Set(rows.map((row) => String(row.user_id)))];
+    for (const userId of userIds) {
+      await drainLegalAcceptanceOutbox(supabaseAdmin, userId);
+    }
+    return userIds.length;
+  } catch (jobErr) {
+    logger.error(
+      "AUTH",
+      "legal_acceptance_drain_job_failed",
+      "Scheduled legal-acceptance drain failed (will retry next schedule)",
+      { error: jobErr instanceof Error ? jobErr.message : String(jobErr) },
+    );
+    return 0;
   }
 }

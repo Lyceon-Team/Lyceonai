@@ -198,8 +198,11 @@ router.post(
         // Don't fail the signup - profile exists
       }
 
-      // AS-1: durable + non-throwing — a consent-recording failure must not 500 the signup.
-      await captureLegalAcceptances(admin, {
+      // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
+      // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed BEFORE
+      // establishing the session — consent is a precondition, never silently dropped
+      // (AS1-OUTBOX-DROP-001). Runs before persistSession, so no session is granted on failure.
+      const capture = await captureLegalAcceptances(admin, {
         userId: authData.user.id,
         consentSource,
         userAgent: req.get("user-agent") ?? null,
@@ -219,6 +222,19 @@ router.post(
           },
         ],
       });
+
+      if (!capture.durable) {
+        logger.error(
+          "AUTH",
+          "consent_capture_failed",
+          "Could not durably capture consent during signup (both stores failed); failing closed",
+          { userId: authData.user.id, requestId: req.requestId },
+        );
+        return res.status(503).json({
+          error:
+            "We couldn't complete your sign-up just now. Please try again.",
+        });
+      }
 
       const hasCanonicalSession = !!authData.session;
 
@@ -731,34 +747,41 @@ router.post(
         },
       });
 
+      // Non-enumeration (AS3-AS5-RESET-ENUM-001): the user-facing response is the SAME generic
+      // message whether or not the email maps to an account. A provider error (e.g. unknown email)
+      // is logged server-side ONLY — never returned — so this surface cannot enumerate accounts.
+      // (True config failures like a missing PUBLIC_SITE_URL are handled above as a 500.)
       if (error) {
-        logger.error(
+        logger.warn(
           "AUTH",
-          "reset_password_error",
-          "Supabase generateLink failed",
-          { error },
+          "reset_password_provider_error",
+          "generateLink failed; returning generic response (anti-enumeration)",
+          { requestId: req.requestId, error: error.message },
         );
-        return res.status(400).json({ error: error.message });
-      }
-
-      const tokenHash = data?.properties?.hashed_token;
-      if (tokenHash) {
-        const recoveryUrl =
-          `${siteUrl}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}` +
-          `&type=recovery&next=${encodeURIComponent("/update-password")}`;
-        await sendEmail({
-          to: email,
-          subject: "Reset your Lyceon password",
-          html: `
+      } else {
+        const tokenHash = data?.properties?.hashed_token;
+        if (tokenHash) {
+          const recoveryUrl =
+            `${siteUrl}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}` +
+            `&type=recovery&next=${encodeURIComponent("/update-password")}`;
+          await sendEmail({
+            to: email,
+            subject: "Reset your Lyceon password",
+            html: `
           <h1>Password Reset Request</h1>
           <p>We received a request to reset your password. Click the link below to set a new one:</p>
           <p><a href="${recoveryUrl}">Reset Password</a></p>
           <p>If you did not request this, you can safely ignore this email.</p>
         `,
-        });
+          });
+        }
       }
 
-      res.json({ success: true, message: "Password reset instructions sent." });
+      res.json({
+        success: true,
+        message:
+          "If an account exists for that email, we've sent password reset instructions.",
+      });
     } catch (error: any) {
       logger.error(
         "AUTH",
