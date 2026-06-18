@@ -6,7 +6,7 @@ import {
 } from "../../server/lib/profile-bootstrap";
 
 /**
- * @spec [contracts/auth-login-e2e.contract.md AL-7 | Doc-01_V6 §7 Identity / profile-per-human]
+ * @spec [contracts/auth-login-e2e.contract.md AL-7 | Doc-01_V8 Part I — Identity Model (profile-per-human)]
  * Proof that one human resolves to exactly one profile across providers (same email, second
  * provider) regardless of the Supabase identity-linking dashboard toggle — the config-agnostic
  * guard. Never asserts on dashboard state; exercises the bootstrap directly with a mocked admin

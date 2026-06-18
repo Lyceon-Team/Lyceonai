@@ -92,10 +92,16 @@ paths converge on the **single** server-authoritative seam:
 - enforced for every protected route by `RequireRole.needsOnboarding` (`RequireRole.tsx:81-95`), whose
   inputs (`profileCompletedAt`, `requiredConsentsComplete`, `guardianConsentRequired`) come from the
   server `/api/profile` hydration (`profile-routes.ts:78-80`), never client state.
-  **Proof (both, explicitly):** an e2e spec drives a Google-shaped first login → lands `/profile/complete`;
-  an email signup → first protected nav lands `/profile/complete`. A server contract test asserts
-  `needsOnboarding`-equivalent gating is keyed off server hydration for both. DOB default = dynamic
-  `today − 13y` (`profile-complete.tsx:131`), never hardcoded.
+  **Proof (both paths, each by the test that can actually reach it):**
+  - **OAuth path** — `tests/ci/oauth-callback.contract.test.ts` drives `nativeOAuthCallbackHandler` with a
+    mocked Supabase session + a bootstrapped profile and asserts an **incomplete** profile (incl. under-13
+    awaiting consent) is redirected to `/profile/complete`, while completed student/guardian route to
+    `/dashboard`/`/guardian`. This exercises the COPPA-load-bearing gating logic Playwright cannot reach
+    (real Google can't complete headlessly) — it would fail if OAuth DOB-gating regressed.
+  - **Email path** — `tests/specs/13_dob_gate_both_paths.spec.ts` (env-tolerant e2e) drives a real signup
+    and asserts the first protected surface lands on `/profile/complete`.
+  - Both converge on the same server-authoritative seam; DOB default = dynamic `today − 13y`
+    (`profile-complete.tsx`), never hardcoded.
 
 ### AL-5 — Entitlement renders post-login, both methods (Point 4; VERIFY/CLOSE)
 
