@@ -968,6 +968,33 @@ $$;
 
 
 --
+-- Name: handle_new_user(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_new_user() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, display_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(
+      NEW.raw_user_meta_data->>'display_name',
+      NEW.raw_user_meta_data->>'full_name',  -- Google OAuth sets full_name / name, not display_name
+      NEW.raw_user_meta_data->>'name',
+      split_part(NEW.email, '@', 1)
+    ),
+    CASE WHEN NEW.raw_user_meta_data->>'role' = 'guardian' THEN 'guardian' ELSE 'student' END::public.profile_role
+  )
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: lookup_mastery_level(numeric, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2461,6 +2488,49 @@ CREATE TABLE public.internal_service_auth_config_history (
 
 
 --
+-- Name: legal_acceptance_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.legal_acceptance_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    payload jsonb NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone
+);
+
+
+--
+-- Name: COLUMN legal_acceptance_outbox.user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.legal_acceptance_outbox.user_id IS 'Auth user id (no FK). Independent durable key so consent intent survives even when the profiles row is not yet present; the drain resolves it into legal_acceptances (which keeps its profiles FK).';
+
+
+--
+-- Name: legal_acceptances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.legal_acceptances (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    doc_key text NOT NULL,
+    doc_version text NOT NULL,
+    actor_type text NOT NULL,
+    minor boolean DEFAULT false NOT NULL,
+    consent_source text NOT NULL,
+    user_agent text,
+    ip_address text,
+    accepted_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text])))
+);
+
+
+--
 -- Name: mastery_constants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2756,7 +2826,10 @@ CREATE TABLE public.profiles (
     last_login_at timestamp with time zone,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    student_link_code text,
+    profile_completed_at timestamp with time zone,
+    marketing_opt_in boolean DEFAULT false NOT NULL
 );
 
 
@@ -3468,6 +3541,30 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 
 --
+-- Name: legal_acceptance_outbox legal_acceptance_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.legal_acceptance_outbox
+    ADD CONSTRAINT legal_acceptance_outbox_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: legal_acceptances legal_acceptances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.legal_acceptances
+    ADD CONSTRAINT legal_acceptances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: legal_acceptances legal_acceptances_unique_doc; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.legal_acceptances
+    ADD CONSTRAINT legal_acceptances_unique_doc UNIQUE (user_id, doc_key, doc_version, actor_type);
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3927,6 +4024,20 @@ CREATE INDEX idx_idempotency_scope_status ON public.idempotency_records USING bt
 
 
 --
+-- Name: idx_legal_acceptance_outbox_unprocessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_legal_acceptance_outbox_unprocessed ON public.legal_acceptance_outbox USING btree (user_id) WHERE (processed_at IS NULL);
+
+
+--
+-- Name: idx_legal_acceptances_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_legal_acceptances_user ON public.legal_acceptances USING btree (user_id);
+
+
+--
 -- Name: idx_mastery_domain_refresh_audit_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3973,6 +4084,13 @@ CREATE INDEX idx_practice_sessions_active ON public.practice_sessions USING btre
 --
 
 CREATE INDEX idx_practice_sessions_user ON public.practice_sessions USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_profiles_completed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_profiles_completed_at ON public.profiles USING btree (profile_completed_at);
 
 
 --
@@ -4148,6 +4266,13 @@ CREATE INDEX idx_student_skill_kpi_student ON public.student_skill_kpi USING btr
 --
 
 CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skill_kpi USING btree (student_id, section, domain);
+
+
+--
+-- Name: profiles_student_link_code_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btree (student_link_code) WHERE (student_link_code IS NOT NULL);
 
 
 --
@@ -4719,6 +4844,14 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 
 --
+-- Name: legal_acceptances legal_acceptances_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.legal_acceptances
+    ADD CONSTRAINT legal_acceptances_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5170,6 +5303,18 @@ ALTER TABLE public.internal_service_auth_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.internal_service_auth_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: legal_acceptance_outbox; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.legal_acceptance_outbox ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: legal_acceptances; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: mastery_constants; Type: ROW SECURITY; Schema: public; Owner: -
@@ -6410,6 +6555,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config T
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config_history TO service_role;
+
+
+--
+-- Name: TABLE legal_acceptance_outbox; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.legal_acceptance_outbox TO service_role;
+
+
+--
+-- Name: TABLE legal_acceptances; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.legal_acceptances TO service_role;
 
 
 --
