@@ -53,6 +53,39 @@ describe("Auth Surface Contract", () => {
     expect(result.token).toBeNull();
   });
 
+  it("no longer accepts the legacy sb-access-token cookie (G8 — single SSR cookie mechanism)", () => {
+    // The legacy fallback was removed: a lone sb-access-token resolves NO token. The only session
+    // store is the native sb-<ref>-auth-token cookie.
+    const req = {
+      headers: {},
+      cookies: { "sb-access-token": "x".repeat(64) },
+      get: () => undefined,
+    } as unknown as Request;
+
+    const result = resolveTokenFromRequest(req);
+
+    expect(result.token).toBeNull();
+    expect(result.tokenSource).toBeNull();
+  });
+
+  it("resolves only the native @supabase/ssr session cookie (sb-<ref>-auth-token)", () => {
+    const ssrPayload =
+      "base64-" +
+      Buffer.from(JSON.stringify({ access_token: "t".repeat(40) })).toString(
+        "base64",
+      );
+    const req = {
+      headers: {},
+      cookies: { "sb-lyceon-prod-auth-token": ssrPayload },
+      get: () => undefined,
+    } as unknown as Request;
+
+    const result = resolveTokenFromRequest(req);
+
+    expect(result.token).toBe("t".repeat(40));
+    expect(result.tokenSource).toBe("cookie:sb-ssr-auth-token");
+  });
+
   it("returns the canonical 401 contract when auth is missing", () => {
     const req = {
       requestId: "req-auth-1",

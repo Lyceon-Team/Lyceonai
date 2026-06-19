@@ -1,56 +1,67 @@
 import type { Response } from "express";
 
-export function setAuthCookies(
-  res: Response,
-  session: { access_token: string; refresh_token: string; expires_in?: number },
-  isProd: boolean
-): void {
-  clearAuthCookies(res, isProd);
-  
-  // Use actual token lifetime for access token (default 1 hour if not provided)
-  const accessMaxAgeMs = typeof session.expires_in === 'number'
-    ? session.expires_in * 1000
-    : 60 * 60 * 1000; // 1 hour fallback
-  
-  const base = {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
-    path: '/', // CRITICAL - ensures cookies sent to all routes
-    ...(isProd && { domain: '.lyceon.ai' })
-  };
+type ClearCookieOptions = {
+  httpOnly: boolean;
+  sameSite: "lax";
+  path: string;
+  secure: boolean;
+  domain?: string;
+};
 
-  res.cookie('sb-access-token', session.access_token, {
-    ...base,
-    maxAge: accessMaxAgeMs
-  });
-
-  res.cookie('sb-refresh-token', session.refresh_token, {
-    ...base,
-    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-  });
-}
-
-export function clearAuthCookies(res: Response | any, isProd: boolean) {
-  const names = ['sb-access-token', 'sb-refresh-token'] as const;
-  const paths = ['/', '/api'] as const;
+/**
+ * @spec [AUTH-001 / G8 — single @supabase/ssr cookie session]
+ * Clears the LEGACY `sb-access-token` / `sb-refresh-token` cookies on signout.
+ *
+ * Status: TRANSITIONAL HYGIENE — NOT session-load-bearing. After G8 the auth middleware no longer reads
+ * or trusts these legacy cookies; the only session store is the native `sb-<ref>-auth-token` cookie,
+ * which signout already clears via the SSR client. A stale legacy cookie is therefore INERT — it cannot
+ * keep a user signed in. This cleanup exists only so a user who still holds a pre-G8 legacy cookie gets
+ * it removed from their browser on signout rather than letting it linger until expiry (≤30 days). Safe
+ * to delete once legacy cookies have aged out after the G8 deploy. The exhaustive path/secure/domain
+ * matrix mirrors every option set the old writer could have used, so the clear actually matches them.
+ *
+ * (The legacy WRITER `setAuthCookies` was removed in Stage 2 — nothing writes these cookies anymore.)
+ */
+export function clearAuthCookies(res: Response, isProd: boolean): void {
+  const names = ["sb-access-token", "sb-refresh-token"] as const;
+  const paths = ["/", "/api"] as const;
 
   const baseCommon = {
     httpOnly: true,
-    sameSite: 'lax' as const,
+    sameSite: "lax" as const,
   };
 
-  const optionSets: any[] = [];
+  const optionSets: ClearCookieOptions[] = [];
 
   for (const path of paths) {
     optionSets.push({ ...baseCommon, path, secure: false });
     optionSets.push({ ...baseCommon, path, secure: true });
 
     if (isProd) {
-      optionSets.push({ ...baseCommon, path, secure: true, domain: '.lyceon.ai' });
-      optionSets.push({ ...baseCommon, path, secure: true, domain: 'lyceon.ai' });
-      optionSets.push({ ...baseCommon, path, secure: false, domain: '.lyceon.ai' });
-      optionSets.push({ ...baseCommon, path, secure: false, domain: 'lyceon.ai' });
+      optionSets.push({
+        ...baseCommon,
+        path,
+        secure: true,
+        domain: ".lyceon.ai",
+      });
+      optionSets.push({
+        ...baseCommon,
+        path,
+        secure: true,
+        domain: "lyceon.ai",
+      });
+      optionSets.push({
+        ...baseCommon,
+        path,
+        secure: false,
+        domain: ".lyceon.ai",
+      });
+      optionSets.push({
+        ...baseCommon,
+        path,
+        secure: false,
+        domain: "lyceon.ai",
+      });
     }
   }
 

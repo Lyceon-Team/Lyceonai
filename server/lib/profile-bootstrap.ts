@@ -4,12 +4,15 @@ import { normalizeRuntimeRole, type RuntimeRole } from "./auth-role.js";
 
 /**
  * @spec [Doc-01_V8 Part I — Identity Model (one profiles row per authenticated user) | contracts/auth-login-e2e.contract.md AL-7]
- * Thrown when a profile bootstrap would create a SECOND profile for an email already anchored by a
- * DIFFERENT auth identity — i.e. the same human authenticating via a second provider on the same
- * email when Supabase identity-linking is not merging them. Callers translate this to a deliberate,
- * server-authoritative "sign in with your original method" outcome instead of forking one human into
- * two profiles. The genesis unique index idx_profiles_email_active is the hard DB backstop; this is
- * the clean, typed surface over it. Config-agnostic: correct whether or not the dashboard toggle is set.
+ * Thrown when an authenticated user has NO profile but their email already anchors a profile under a
+ * DIFFERENT auth identity — i.e. the same human authenticating via a second provider on the same email
+ * while Supabase identity-linking is OFF (so the handle_new_user trigger correctly skipped creating a
+ * duplicate). Callers translate this to a deliberate, server-authoritative "sign in with your original
+ * method" outcome instead of forking one human into two profiles.
+ *
+ * TRANSITIONAL (Option A): active WHILE identity-linking is OFF. At launch, when linking is turned ON,
+ * a second verified-email identity maps to the SAME auth id (this case becomes unreachable) and this
+ * guard is retired — closing G10. The genesis idx_profiles_email_active unique index stays the DB backstop.
  */
 export class AccountEmailConflictError extends Error {
   readonly code = "ACCOUNT_EMAIL_CONFLICT" as const;
@@ -42,25 +45,20 @@ type EnsureProfileContext = {
   requestId?: string;
 };
 
-function resolveBootstrapRoleFromMetadata(user: User): "student" | "guardian" {
-  const metadataRole = user.user_metadata?.role;
-
-  if (metadataRole === "admin") {
-    logger.warn(
-      "AUTH",
-      "admin_role_blocked",
-      "Blocked attempt to bootstrap admin role from user metadata",
-      {
-        userId: user.id,
-        email: user.email,
-      },
-    );
-    return "student";
-  }
-
-  return metadataRole === "guardian" ? "guardian" : "student";
-}
-
+/**
+ * @spec [contracts/auth-login-e2e.contract.md AL-4/AL-7 | docs/SpecAudit/50-auth-entitlement/auth-ssr-gap-analysis.md G1]
+ * @implemented [2026-06-19]
+ * plain English: READ-AND-RECONCILE the profile of an already-authenticated user. The SINGLE profile
+ * creator is the handle_new_user trigger (migration 20260619000000), which inserts exactly one row in
+ * the SAME transaction as the auth.users insert — so by the time any authenticated request or the OAuth
+ * callback runs, the row exists. This function therefore NEVER creates a profile. It reads the row the
+ * trigger made, normalizes a legacy/missing role if needed, and reconciles the only two ways the row can
+ * legitimately be absent: (1) a same-email second identity under linking-OFF (owned by another auth id)
+ * → AL-7 conflict; (2) genuinely absent + unowned → trigger anomaly, hard error (never silently create).
+ * Expected outcome: existing users read fast; the duplicate-identity edge is refused cleanly; a missing
+ * profile fails loud instead of being papered over by a second writer. Trade-off: a profile deleted out
+ * from under a live auth user surfaces as an error rather than self-healing — intentional (fail loud).
+ */
 export async function ensureProfileForAuthUser(
   supabaseAdmin: SupabaseClient,
   user: User,
@@ -124,13 +122,15 @@ export async function ensureProfileForAuthUser(
     };
   }
 
-  const bootstrapRole = resolveBootstrapRoleFromMetadata(user);
+  // ---- Profile absent. The trigger is the single creator, so we NEVER create here — we reconcile the
+  // ---- only two legitimate non-create edges.
 
-  // AL-7 (profile-per-human, config-agnostic): never fork one human into two profiles. If this email
-  // already anchors a profile under a DIFFERENT auth id (same human via a second provider when
-  // identity-linking did not merge them), surface a deliberate conflict instead of attempting a
-  // duplicate. The genesis idx_profiles_email_active unique index is the hard backstop; the 23505
-  // translation below covers casing/race edges this exact pre-check can miss. @spec Doc-01_V8 Part I.
+  // AL-7 transitional conflict guard (ACTIVE WHILE IDENTITY-LINKING IS OFF — Option A; retire at launch
+  // when linking is ON → closes G10). The one way the profile can legitimately be absent is a same-email
+  // SECOND identity under linking-OFF: GoTrue minted a NEW auth id for an email that already anchors a
+  // profile, so the catch-all handle_new_user trigger skipped the duplicate (idx_profiles_email_active).
+  // Surface the deliberate "use your original method" conflict; the OAuth callback signs the refused
+  // duplicate identity out and redirects ?error=account_exists. @spec Doc-01_V8 Part I | AL-7.
   const email = user.email ?? "";
   if (email) {
     const { data: emailOwner, error: emailOwnerError } = await supabaseAdmin
@@ -150,7 +150,7 @@ export async function ensureProfileForAuthUser(
       logger.warn(
         "AUTH",
         "account_email_conflict",
-        "Blocked duplicate profile for an email already owned by another identity",
+        "Same-email second identity (linking OFF): email owned by another auth id; refusing the duplicate",
         {
           attemptedUserId: user.id,
           existingProfileId: emailOwner.id,
@@ -162,58 +162,20 @@ export async function ensureProfileForAuthUser(
     }
   }
 
-  const { data: newProfile, error: createError } = await supabaseAdmin
-    .from("profiles")
-    .insert({
-      id: user.id,
-      email: user.email || "",
-      display_name:
-        user.user_metadata?.display_name ||
-        user.user_metadata?.full_name ||
-        null,
-      role: bootstrapRole,
-      is_under_13: user.user_metadata?.is_under_13 || false,
-      guardian_consent: user.user_metadata?.guardian_consent || false,
-      guardian_email: user.user_metadata?.guardian_email || null,
-    })
-    .select(PROFILE_SELECT)
-    .single();
-
-  if (createError || !newProfile) {
-    // Race/casing backstop: the genesis idx_profiles_email_active unique index rejects a second
-    // profile for the same email (lower(email)). Translate that to the same deliberate conflict.
-    if (createError?.code === "23505") {
-      logger.warn(
-        "AUTH",
-        "account_email_conflict",
-        "Duplicate profile insert rejected by unique index",
-        {
-          attemptedUserId: user.id,
-          source: context.source,
-          requestId: context.requestId,
-        },
-      );
-      throw new AccountEmailConflictError(ACCOUNT_EMAIL_CONFLICT_MESSAGE);
-    }
-    throw new Error(
-      `Failed to auto-create profile: ${createError?.message || "profile insert returned null"}`,
-    );
-  }
-
-  logger.info(
+  // Profile absent AND email unowned: handle_new_user should have created it in-txn — an environment/
+  // trigger anomaly. Never create here (single creator = the trigger); fail loud so it is caught, not
+  // silently papered over by a second writer.
+  logger.error(
     "AUTH",
-    "profile_auto_created",
-    "Profile auto-created with canonical bootstrap role",
+    "profile_missing_after_trigger",
+    "Authenticated user has no profile and no conflicting email owner — handle_new_user trigger anomaly",
     {
-      userId: newProfile.id,
-      role: bootstrapRole,
+      userId: user.id,
       source: context.source,
       requestId: context.requestId,
     },
   );
-
-  return {
-    ...(newProfile as Omit<ProfileRow, "role">),
-    role: bootstrapRole,
-  };
+  throw new Error(
+    `Profile missing for auth user ${user.id} and not owned by another identity; handle_new_user trigger did not create it`,
+  );
 }

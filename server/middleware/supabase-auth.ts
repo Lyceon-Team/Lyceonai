@@ -66,12 +66,6 @@ export interface TokenResolutionResult {
 }
 
 /**
- * ALLOWED AUTH COOKIES - Only these exact cookie names are accepted for auth
- * All other cookies with auth-like names are treated as legacy and ignored
- */
-const ALLOWED_AUTH_COOKIES = ["sb-access-token", "sb-refresh-token"] as const;
-
-/**
  * SHARED AUTH HELPER: Extract access token from request
  * Used by practice endpoints, auth debug, and health check
  *
@@ -113,18 +107,9 @@ export function resolveTokenFromRequest(req: Request): TokenResolutionResult {
     }
   }
 
-  // Accept the legacy 'sb-access-token' cookie (still written by some flows / tests)
-  const accessTokenCookieName = ALLOWED_AUTH_COOKIES[0];
-  const accessToken = cookies[accessTokenCookieName];
-  if (typeof accessToken === "string" && accessToken.length >= 20) {
-    result.token = accessToken;
-    result.tokenSource = "cookie:sb-access-token";
-    result.tokenLength = accessToken.length;
-    return result;
-  }
-
-  // AUTH-001: fall back to the @supabase/ssr session cookie (sb-<ref>-auth-token). This is the
-  // canonical session store after the native conversion. Used for CSRF binding / diagnostics only.
+  // G8: the @supabase/ssr session cookie (sb-<ref>-auth-token) is the SINGLE session store. The legacy
+  // sb-access-token cookie fallback was removed — one cookie mechanism end-to-end. This token is read
+  // for CSRF binding / diagnostics only; authorization always runs through the SSR getUser() validation.
   const ssrToken = extractSsrAccessToken(req);
   if (ssrToken) {
     result.token = ssrToken;
