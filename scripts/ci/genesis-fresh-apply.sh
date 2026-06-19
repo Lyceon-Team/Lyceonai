@@ -33,7 +33,7 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role')  THEN CREATE ROLE service_role NOLOGIN; END IF;
 END $$;
 CREATE SCHEMA IF NOT EXISTS auth;
-CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text);
+CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
 SQL
 }
@@ -114,6 +114,34 @@ echo "==> A1 COPPA: is_under_13 is derived at write from date_of_birth (trigger)
 COPPA=$(psql_db "$DB1" -tAc "select (count(*) filter (where tgname='profiles_set_age')) from pg_trigger where tgrelid='public.profiles'::regclass;")
 [ "$COPPA" = "1" ] || { echo "FAIL: profiles_set_age trigger missing (COPPA age fields unmaintained)"; exit 1; }
 echo "    OK derived-at-write"
+
+# These mutate DATA only (after the schema-only dumps above), so they do not affect the snapshot.
+echo "==> A.2 handle_new_user: an auth.users INSERT auto-creates exactly one profiles row (G1)"
+psql_db "$DB1" -q -c "insert into auth.users (id, email, raw_user_meta_data) values ('00000000-0000-0000-0000-0000000000a1','trigger-probe@example.com','{\"display_name\":\"Probe\",\"role\":\"student\"}'::jsonb);" >/dev/null
+TRIG=$(psql_db "$DB1" -tAc "select count(*) from public.profiles where id='00000000-0000-0000-0000-0000000000a1' and role='student' and display_name='Probe';")
+[ "$TRIG" = "1" ] || { echo "FAIL: handle_new_user did not auto-create the profiles row (got '$TRIG')"; exit 1; }
+echo "    OK profile auto-created"
+
+echo "==> A.3 handle_new_user: role is CLAMPED — only 'guardian' honored; admin/tutor/teacher -> student"
+i=2
+for badrole in admin tutor teacher; do
+  uid="00000000-0000-0000-0000-0000000000a$i"
+  psql_db "$DB1" -q -c "insert into auth.users (id, email, raw_user_meta_data) values ('$uid','clamp-$badrole@example.com','{\"role\":\"$badrole\"}'::jsonb);" >/dev/null
+  GOT=$(psql_db "$DB1" -tAc "select role::text from public.profiles where id='$uid';")
+  [ "$GOT" = "student" ] || { echo "FAIL: metadata role=$badrole produced role='$GOT' (expected clamped 'student')"; exit 1; }
+  i=$((i+1))
+done
+echo "    OK elevated roles clamped to student (guardian still honored elsewhere)"
+
+echo "==> A.5 handle_new_user: same-email second identity (linking OFF) does NOT abort the auth insert"
+# First identity for the shared email -> profile created.
+psql_db "$DB1" -q -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b1','collide@example.com');" >/dev/null
+# Second auth user, SAME email, DIFFERENT id. With catch-all ON CONFLICT this must NOT raise 23505
+# on idx_profiles_email_active (a non-catch-all ON CONFLICT (id) would, aborting GoTrue createUser).
+psql_db "$DB1" -q -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b2','collide@example.com');" >/dev/null
+COLLIDE=$(psql_db "$DB1" -tAc "select (select count(*) from auth.users where email='collide@example.com')::text || '/' || (select count(*) from public.profiles where lower(email)='collide@example.com')::text;")
+[ "$COLLIDE" = "2/1" ] || { echo "FAIL: same-email collision expected 2 auth users / 1 profile, got $COLLIDE"; exit 1; }
+echo "    OK no abort; exactly one profile for the shared email (no 23505, no duplicate)"
 
 echo "==> cleanup"
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB1;" -c "DROP DATABASE IF EXISTS $DB2;" >/dev/null
