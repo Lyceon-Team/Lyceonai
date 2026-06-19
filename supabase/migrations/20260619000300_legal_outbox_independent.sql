@@ -16,7 +16,7 @@
 -- ORDER: applies after the legal_acceptance_outbox table is created (20260618010000, brought under
 -- governance in this same change). Fresh-apply creates-with-FK then drops here; prod applies the drop.
 --
--- ROLLBACK (reversible): DOWN re-adds the FK (only valid once every outbox user_id has a profiles row).
+-- ROLLBACK (reversible — only if every outbox.user_id already has a matching profiles row):
 --   LYCEON-MIGRATION-REVIEWED
 -- ============================================================================
 
@@ -32,8 +32,10 @@ COMMENT ON COLUMN public.legal_acceptance_outbox.user_id IS
 COMMIT;
 
 -- ============================================================================
--- DOWN (reversible — only if every outbox.user_id already has a matching profiles row)
--- ============================================================================
+-- DOWN (reversible). PRE-CHECK FIRST — re-adding the FK errors if any outbox row is orphaned:
+--   SELECT count(*) FROM public.legal_acceptance_outbox o
+--     WHERE NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = o.user_id);  -- must return 0
+-- Then:
 -- BEGIN;
 --   ALTER TABLE public.legal_acceptance_outbox
 --     ADD CONSTRAINT legal_acceptance_outbox_user_id_fkey

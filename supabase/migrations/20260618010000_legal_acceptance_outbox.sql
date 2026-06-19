@@ -5,7 +5,11 @@
 -- @implemented [2026-06-18]
 --
 -- *** ALREADY APPLIED TO PRODUCTION (project hncolwkccbbjkfithhlo) on 2026-06-18 via Supabase
---     apply_migration `create_legal_acceptance_outbox`. This file is the repo governance record. ***
+--     apply_migration `create_legal_acceptance_outbox`. This file is the repo governance record,
+--     wrapped in an explicit transaction for fresh-apply atomicity (functionally identical to the
+--     prod-applied DDL; all statements are IF-NOT-EXISTS-guarded). NOTE: the user_id FK to
+--     public.profiles created here is DROPPED by 20260619000300_legal_outbox_independent.sql (G3) so
+--     the outbox becomes an independent durable fallback — see that migration. ***
 --
 -- plain English: decouples legal-acceptance recording from session survival. When the direct write
 -- to public.legal_acceptances fails, the auth finalize enqueues the consent intent here (NEVER
@@ -18,6 +22,8 @@
 --   scripts/ci/genesis-schema.expected.sql from the fresh-apply harness. Prod already has it.
 --   LYCEON-MIGRATION-REVIEWED
 -- ============================================================================
+
+BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.legal_acceptance_outbox (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,6 +42,8 @@ CREATE INDEX IF NOT EXISTS idx_legal_acceptance_outbox_unprocessed
 ALTER TABLE public.legal_acceptance_outbox ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.legal_acceptance_outbox FROM PUBLIC;
 GRANT ALL ON public.legal_acceptance_outbox TO service_role;  -- no anon/authenticated policy = deny
+
+COMMIT;
 
 -- ============================================================================
 -- DOWN (reversible)

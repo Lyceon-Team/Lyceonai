@@ -2,7 +2,7 @@
 -- handle_new_user — canonical @supabase/ssr profile-creation trigger (G1)
 -- ============================================================================
 -- @spec [contracts/auth-login-e2e.contract.md AL-2/AL-4 | Doc-01_V8 Part I Identity Model
---   (one profiles row per authenticated user) |
+--   (one profiles row per authenticated user) | Doc-01_V8 §3 profiles write protocol (deviation below) |
 --   docs/SpecAudit/50-auth-entitlement/auth-ssr-gap-analysis.md G1]
 -- @implemented [2026-06-19]
 --
@@ -20,9 +20,9 @@
 --   * display_name falls back display_name -> full_name -> name -> email-localpart so Google OAuth
 --     identities (which carry full_name/name, not display_name) keep a sensible name — matches the
 --     old ensureProfileForAuthUser fallback the trigger now replaces.
---   * role is CLAMPED: a self-asserted 'admin' in user_metadata can NEVER mint an admin profile
---     (server-authoritative role rule). Only 'guardian' is honored from metadata; everything else
---     becomes 'student'. profile-complete finalization sets the durable role later.
+--   * role is CLAMPED: a self-asserted 'admin'/'tutor'/'teacher' in user_metadata can NEVER mint an
+--     elevated profile (server-authoritative role rule). Only 'guardian' is honored from metadata;
+--     everything else becomes 'student'. profile-complete finalization sets the durable role later.
 --   * ON CONFLICT (id) DO NOTHING: idempotent (resume / replay safe).
 --   * Same-email-second-identity is prevented upstream by Supabase native identity-linking
 --     (dashboard "link identities" ON, Karl-2), so the genesis idx_profiles_email_active unique
@@ -30,6 +30,17 @@
 --     raise 23505 here and abort the auth.users insert; linking is the documented precondition.
 --   * age_years / is_under_13 stay NULL at creation (no date_of_birth yet) and are maintained by the
 --     existing profiles_set_age trigger when DOB is set at profile-complete.
+--
+-- DEVIATION (tracked) — Doc 01 V8 §3 (single-writer + audit-emit on profiles writes):
+--   §3 names profile-service.ts as the single canonical profiles writer and asks every profiles write
+--   to emit an audit_logs event. This trigger is a second writer and emits no audit row. Both are
+--   deliberate under the §3 "current-state deviation" (multiple writers acknowledged as debt):
+--     - Per the approved rebuild (Q1=a) the trigger is THE profile creator; ensureProfileForAuthUser
+--       is reduced to read/verify, so total writer count goes DOWN, not up.
+--     - Audit is intentionally NOT coupled into the GoTrue auth.users transaction: a failing audit
+--       insert here would abort user creation — exactly the fragile coupling this rebuild removes.
+--       Profile creation stays observable (auth.users.created_at + profiles.created_at); durable
+--       audit/notification emission is the single-writer-consolidation wave's concern, tracked there.
 --
 -- ROLLBACK (reversible): DOWN block drops the trigger then the function. No data destroyed.
 --   LYCEON-MIGRATION-REVIEWED

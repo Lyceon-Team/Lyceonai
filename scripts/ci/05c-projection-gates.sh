@@ -37,6 +37,10 @@ CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
 SQL
 for f in "$ROOT"/supabase/migrations/*.sql; do psql_db "$DB" -q -f "$f" >/dev/null; done
+# This gate seeds auth.users directly to satisfy the profiles FK; it does NOT test auth profile
+# creation (that is genesis-fresh-apply A.2/A.3). Drop the handle_new_user trigger so the seed's
+# explicit profiles rows are authoritative and not pre-empted by the trigger's default insert.
+psql_db "$DB" -q -c "DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;" >/dev/null
 
 echo "==> G3: projection parity (State A == Python reference == Doc 05C §6 worked examples)"
 python3 "$ROOT/scripts/ci/projection_parity.py" gen | psql_db "$DB" -q -tA -f - > "$PSQL_OUT"
