@@ -988,7 +988,7 @@ BEGIN
     ),
     CASE WHEN NEW.raw_user_meta_data->>'role' = 'guardian' THEN 'guardian' ELSE 'student' END::public.profile_role
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT DO NOTHING;  -- catch-all: tolerates id PK AND lower(email) arbiters; never aborts the auth insert
   RETURN NEW;
 END;
 $$;

@@ -6,8 +6,7 @@
 --
 -- *** ALREADY APPLIED TO PRODUCTION (project hncolwkccbbjkfithhlo) on 2026-06-18 as an outage
 --     hotfix via Supabase apply_migration `create_legal_acceptances_table`. This file is the repo
---     governance record of that DDL, wrapped in an explicit transaction for fresh-apply atomicity
---     (functionally identical to the prod-applied DDL; all statements are IF-NOT-EXISTS-guarded). ***
+--     governance record of that DDL. ***
 --
 -- plain English: server/lib/legal-acceptance.ts (recordLegalAcceptances), server/routes/profile-routes.ts
 -- and server/routes/legal-routes.ts WRITE and READ public.legal_acceptances, but the table was never
@@ -31,8 +30,6 @@
 --   so activation only aligns the committed genesis snapshot with production. LYCEON-MIGRATION-REVIEWED
 -- ============================================================================
 
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS public.legal_acceptances (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -53,8 +50,6 @@ CREATE INDEX IF NOT EXISTS idx_legal_acceptances_user ON public.legal_acceptance
 ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.legal_acceptances FROM PUBLIC;
 GRANT ALL ON public.legal_acceptances TO service_role;  -- no anon/authenticated policy = deny by default
-
-COMMIT;
 
 -- ============================================================================
 -- DOWN (reversible)

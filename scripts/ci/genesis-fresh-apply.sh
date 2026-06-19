@@ -133,6 +133,16 @@ for badrole in admin tutor teacher; do
 done
 echo "    OK elevated roles clamped to student (guardian still honored elsewhere)"
 
+echo "==> A.5 handle_new_user: same-email second identity (linking OFF) does NOT abort the auth insert"
+# First identity for the shared email -> profile created.
+psql_db "$DB1" -q -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b1','collide@example.com');" >/dev/null
+# Second auth user, SAME email, DIFFERENT id. With catch-all ON CONFLICT this must NOT raise 23505
+# on idx_profiles_email_active (a non-catch-all ON CONFLICT (id) would, aborting GoTrue createUser).
+psql_db "$DB1" -q -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b2','collide@example.com');" >/dev/null
+COLLIDE=$(psql_db "$DB1" -tAc "select (select count(*) from auth.users where email='collide@example.com')::text || '/' || (select count(*) from public.profiles where lower(email)='collide@example.com')::text;")
+[ "$COLLIDE" = "2/1" ] || { echo "FAIL: same-email collision expected 2 auth users / 1 profile, got $COLLIDE"; exit 1; }
+echo "    OK no abort; exactly one profile for the shared email (no 23505, no duplicate)"
+
 echo "==> cleanup"
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB1;" -c "DROP DATABASE IF EXISTS $DB2;" >/dev/null
 echo "GENESIS FRESH-APPLY GATE: PASS"

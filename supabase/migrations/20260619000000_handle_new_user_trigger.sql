@@ -23,11 +23,18 @@
 --   * role is CLAMPED: a self-asserted 'admin'/'tutor'/'teacher' in user_metadata can NEVER mint an
 --     elevated profile (server-authoritative role rule). Only 'guardian' is honored from metadata;
 --     everything else becomes 'student'. profile-complete finalization sets the durable role later.
---   * ON CONFLICT (id) DO NOTHING: idempotent (resume / replay safe).
---   * Same-email-second-identity is prevented upstream by Supabase native identity-linking
---     (dashboard "link identities" ON, Karl-2), so the genesis idx_profiles_email_active unique
---     index is never hit by this trigger. If linking were OFF a 2nd identity on the same email would
---     raise 23505 here and abort the auth.users insert; linking is the documented precondition.
+--   * ON CONFLICT DO NOTHING (no target — catch-all): idempotent AND collision-robust. The catch-all
+--     absorbs BOTH unique arbiters this insert can hit — the id primary key (same human re-inserted /
+--     resume / replay) AND the partial unique idx_profiles_email_active on lower(email) (a second auth
+--     identity on an already-registered email). Because it is target-less, a same-email-second-identity
+--     insert can NEVER raise 23505, so it can NEVER abort the GoTrue auth.users insert: the new auth
+--     user is simply left without a duplicate profile rather than failing user creation outright.
+--   * Launch vs. test posture: with native identity-linking ON (Karl-2) a verified-email second
+--     identity maps to the SAME auth id, so the email arbiter is unreachable and only the id path is
+--     exercised. Linking + confirm-email stay OFF for the autoconfirm test phase, where the email path
+--     IS reachable — which is exactly why the arbiter is catch-all. The rare linking-OFF email
+--     collision yields an auth user with no profile; profile-bootstrap (Stage 2, read-only) surfaces
+--     that as a logged, recoverable state — never a silent 500. Proven by genesis-fresh-apply A.5.
 --   * age_years / is_under_13 stay NULL at creation (no date_of_birth yet) and are maintained by the
 --     existing profiles_set_age trigger when DOB is set at profile-complete.
 --
@@ -67,7 +74,7 @@ BEGIN
     ),
     CASE WHEN NEW.raw_user_meta_data->>'role' = 'guardian' THEN 'guardian' ELSE 'student' END::public.profile_role
   )
-  ON CONFLICT (id) DO NOTHING;
+  ON CONFLICT DO NOTHING;  -- catch-all: tolerates id PK AND lower(email) arbiters; never aborts the auth insert
   RETURN NEW;
 END;
 $$;
