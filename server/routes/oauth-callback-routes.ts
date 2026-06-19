@@ -255,21 +255,12 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
           requestId: req.requestId,
         },
       );
-      // Sign the half-finished session out so we never strand a partially-bootstrapped user.
-      await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
-        logger.warn(
-          "OAUTH",
-          "signout_cleanup_failed",
-          "Best-effort local signOut during callback cleanup failed",
-          {
-            requestId: req.requestId,
-            error:
-              signOutErr instanceof Error
-                ? signOutErr.message
-                : String(signOutErr),
-          },
-        ),
-      );
+      // DO NOT sign out here. The session from exchangeCodeForSession/verifyOtp is a LEGITIMATE
+      // first-identity login; a finalize-time side-effect failure (transient profile read, role
+      // normalize, etc.) must NEVER tear it down — that coupling is the exact outage this rebuild
+      // removed. The session is preserved; we surface a human, recoverable error and the auth
+      // middleware re-reconciles the profile on the next request. (A refused DUPLICATE identity is a
+      // different branch above — that one IS signed out, deliberately.) @spec auth-standard-flow AS-1.
       return res.redirect(`${siteUrl}/login?error=post_auth_finalize`);
     }
 

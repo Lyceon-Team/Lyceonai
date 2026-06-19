@@ -286,6 +286,26 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(signOutMock).toHaveBeenCalled();
   });
 
+  // 259-removal (the heart of Stage 2): a GENERIC finalize error (non-conflict — e.g. a transient
+  // profile read or the handle_new_user trigger anomaly) must NEVER tear down the LEGITIMATE session.
+  // That coupling was the original outage. The session is preserved (no signOut); we surface a
+  // recoverable error. Distinct from the AL-7 duplicate refusal above, which DOES sign out the refused
+  // identity. Together these three prove the discipline: (a) duplicate refused → signOut; (b) this:
+  // generic failure → session survives; (c) durable-consent kept → session survives.
+  it("preserves the session on a generic finalize error (no signOut), surfacing a recoverable error", async () => {
+    okExchange();
+    ensureProfileMock.mockRejectedValueOnce(
+      new Error("transient profile read failure"),
+    );
+
+    const res = await request(makeApp()).get("/auth/callback?code=valid-code");
+
+    expect(res.headers.location).toBe(
+      "https://lyceon.ai/login?error=post_auth_finalize",
+    );
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
   it("redirects a failed session establishment to /login?error=supabase_exchange", async () => {
     exchangeCodeForSessionMock.mockResolvedValueOnce({
       data: { session: null, user: null },

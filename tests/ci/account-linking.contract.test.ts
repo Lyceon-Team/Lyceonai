@@ -140,28 +140,13 @@ describe("Account linking — profile-per-human (AL-7)", () => {
     expect(insertSpy).not.toHaveBeenCalled();
   });
 
-  it("translates the unique-index 23505 race into the same deliberate conflict (DB backstop)", async () => {
-    const admin = makeAdmin({
-      existingById: null,
-      existingByEmail: null, // pre-check passes; the index catches the race
-      insertResult: {
-        data: null,
-        error: { code: "23505", message: "duplicate key value" },
-      },
-    });
-
-    await expect(
-      ensureProfileForAuthUser(admin, makeUser("user-3", "a@example.com"), ctx),
-    ).rejects.toBeInstanceOf(AccountEmailConflictError);
-
-    expect(insertSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("creates a new profile when the email is free", async () => {
-    const created: ProfileRow = {
-      id: "user-4",
-      email: "fresh@example.com",
-      display_name: null,
+  it("NEVER creates a profile — the handle_new_user trigger is the single creator (reads, no insert)", async () => {
+    // The trigger inserts the profile in-txn with the auth.users insert, so the normal path is a pure
+    // read. ensureProfileForAuthUser must never be a second profiles writer.
+    const existing: ProfileRow = {
+      id: "user-3",
+      email: "trig@example.com",
+      display_name: "Trig",
       role: "student",
       is_under_13: false,
       guardian_consent: false,
@@ -169,19 +154,30 @@ describe("Account linking — profile-per-human (AL-7)", () => {
       student_link_code: null,
       profile_completed_at: null,
     };
-    const admin = makeAdmin({
-      existingById: null,
-      existingByEmail: null,
-      insertResult: { data: created, error: null },
-    });
+    const admin = makeAdmin({ existingById: existing });
 
-    const result = await ensureProfileForAuthUser(
+    await ensureProfileForAuthUser(
       admin,
-      makeUser("user-4", "fresh@example.com"),
+      makeUser("user-3", "trig@example.com"),
       ctx,
     );
 
-    expect(result.id).toBe("user-4");
-    expect(insertSpy).toHaveBeenCalledTimes(1);
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+
+  it("absent profile + unowned email → fails loud as a trigger anomaly, still never inserts", async () => {
+    // An absent profile whose email is owned by NOBODY means the trigger did not run — an anomaly. We
+    // fail loud rather than self-heal by creating (which would re-introduce a second writer).
+    const admin = makeAdmin({ existingById: null, existingByEmail: null });
+
+    await expect(
+      ensureProfileForAuthUser(
+        admin,
+        makeUser("user-4", "fresh@example.com"),
+        ctx,
+      ),
+    ).rejects.toThrow(/trigger did not create it/);
+
+    expect(insertSpy).not.toHaveBeenCalled();
   });
 });
