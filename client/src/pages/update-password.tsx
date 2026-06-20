@@ -1,19 +1,32 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-3, AS-5] | @implemented 2026-06-20
+ * plain English: set-new-password page for the recovery flow (session from the recovery cookie). The
+ * error catch routes through resolveAuthErrorMessage (human, recoverable, never a raw string); on
+ * success it lands by role. Client-side validation (length, match) is shown directly.
+ */
 export default function UpdatePassword() {
   const [, setLocation] = useLocation();
   const { updatePassword, isLoading, isGuardian } = useSupabaseAuth();
   const { toast } = useToast();
-  
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -39,8 +52,8 @@ export default function UpdatePassword() {
         description: "Your password has been successfully changed.",
       });
       setLocation(isGuardian ? "/guardian" : "/dashboard");
-    } catch (err: any) {
-      setError(err.message || "Failed to update password");
+    } catch (err) {
+      setError(resolveAuthErrorMessage(err));
     }
   };
 
@@ -70,7 +83,7 @@ export default function UpdatePassword() {
                 minLength={6}
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="confirm-password">Confirm Password</Label>
               <Input
@@ -87,7 +100,9 @@ export default function UpdatePassword() {
             {error && (
               <Alert className="border-amber-200 bg-amber-50">
                 <AlertCircle className="h-4 w-4 text-amber-700" />
-                <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                <AlertDescription className="text-amber-800">
+                  {error}
+                </AlertDescription>
               </Alert>
             )}
 

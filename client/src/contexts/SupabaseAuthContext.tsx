@@ -7,6 +7,7 @@ import {
   ReactNode,
 } from "react";
 import { SupabaseProfile, getSupabaseBrowserClient } from "@/lib/supabase";
+import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 // CSRF handshake utilities
@@ -197,6 +198,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [queryClient]);
 
+  // @spec [contracts/auth-standard-flow.contract.md AS-3, AS1-OUTBOX-DROP-001] | @implemented 2026-06-20
+  // plain English: the email/password + Google auth mutations. On a handled failure they throw a CODED
+  // error (authError(code) — code specific for logging, status-derived) instead of the raw server
+  // string; the display layer maps it via resolveAuthErrorMessage, so the UI is always human,
+  // recoverable, and non-enumerable.
   const signUp = async (
     email: string,
     password: string,
@@ -224,8 +230,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("[AUTH] Sign up failed:", data.error);
-        throw new Error(data.error || "Failed to sign up");
+        // code is specific for logging; the displayed copy is generic + non-enumerable.
+        console.error("[AUTH] Sign up failed", { status: response.status });
+        throw authError(
+          response.status === 503 ? "signup_consent_failed" : "signup_failed",
+        );
       }
 
       const outcome = data?.outcome as SignupOutcome | undefined;
@@ -252,9 +261,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         nextPath: data?.nextPath,
         user: data?.user,
       };
-    } catch (error: any) {
-      console.error("[AUTH] Sign up error:", error);
-      throw new Error(error.message || "Failed to sign up");
+    } catch (error) {
+      console.error("[AUTH] Sign up error", error);
+      throw error instanceof Error ? error : authError("signup_failed");
     } finally {
       setAuthLoading(false);
     }
@@ -270,11 +279,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        console.error("[AUTH] Server sign in failed:", data?.error || data);
-        throw new Error(data?.error || "Invalid email or password");
+        console.error("[AUTH] Server sign in failed", {
+          status: response.status,
+        });
+        throw authError(response.status === 401 ? "signin_failed" : undefined);
       }
 
       clearCsrfToken();
@@ -321,14 +330,14 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        throw new Error(error.message || "Failed to start Google sign-in");
+        throw authError("google_oauth_failed");
       }
       // On success the browser is redirected to Google; no further client work here.
       console.log("[AUTH] Redirecting to Google OAuth (native)");
-    } catch (error: any) {
-      console.error("[AUTH] Google sign in error:", error);
+    } catch (error) {
+      console.error("[AUTH] Google sign in error", error);
       setAuthLoading(false);
-      throw new Error(error.message || "Failed to sign in with Google");
+      throw error instanceof Error ? error : authError("google_oauth_failed");
     }
   };
 
@@ -365,21 +374,17 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        let errorMsg = "Failed to send reset email";
-        try {
-          const data = await response.json();
-          errorMsg = data.error || errorMsg;
-        } catch (e) {
-          errorMsg = `Server error (${response.status}): ${response.statusText || "No response body"}`;
-        }
-        throw new Error(errorMsg);
+        console.error("[AUTH] Reset password failed", {
+          status: response.status,
+        });
+        throw authError("reset_password_failed");
       }
 
       // Successful response should be JSON, but let's be safe
       return await response.json().catch(() => ({ success: true }));
-    } catch (error: any) {
-      console.error("[AUTH] Reset password error:", error);
-      throw new Error(error.message || "Failed to send reset email");
+    } catch (error) {
+      console.error("[AUTH] Reset password error", error);
+      throw error instanceof Error ? error : authError("reset_password_failed");
     } finally {
       setAuthLoading(false);
     }
@@ -396,20 +401,18 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        let errorMsg = "Failed to update password";
-        try {
-          const data = await response.json();
-          errorMsg = data.error || errorMsg;
-        } catch (e) {
-          errorMsg = `Server error (${response.status}): ${response.statusText || "No response body"}`;
-        }
-        throw new Error(errorMsg);
+        console.error("[AUTH] Update password failed", {
+          status: response.status,
+        });
+        throw authError("update_password_failed");
       }
 
       return await response.json().catch(() => ({ success: true }));
-    } catch (error: any) {
-      console.error("[AUTH] Update password error:", error);
-      throw new Error(error.message || "Failed to update password");
+    } catch (error) {
+      console.error("[AUTH] Update password error", error);
+      throw error instanceof Error
+        ? error
+        : authError("update_password_failed");
     } finally {
       setAuthLoading(false);
     }
