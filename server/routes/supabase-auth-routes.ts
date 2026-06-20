@@ -31,27 +31,6 @@ const authRateLimiter = rateLimit({
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
-/**
- * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 | AUTH-001]
- * @implemented 2026-06-15
- * plain English: Persist a freshly-issued Supabase session into the response using the @supabase/ssr
- * server client. setSession writes the native session cookie (`sb-<ref>-auth-token`) through the
- * cookie adapter, so the auth middleware's SSR getUser() can read AND auto-refresh it on later
- * requests — no custom /refresh endpoint. Replaces the legacy two-cookie setAuthCookies writer.
- * expected outcome: cookie-native session after signin/signup. edge case: never logs the tokens.
- */
-async function persistSession(
-  req: Request,
-  res: Response,
-  session: { access_token: string; refresh_token: string },
-): Promise<void> {
-  const ssrClient = createSupabaseServerClient(req, res);
-  await ssrClient.auth.setSession({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-  });
-}
-
 const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -132,8 +111,11 @@ router.post(
           .json({ error: "Email and password are required" });
       }
 
-      // Create anon client for signup
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      // G7/G8: mint the signup session on the per-request @supabase/ssr server client — exactly like
+      // sign-in. Under autoconfirm signUp returns a session and the setAll adapter writes the native
+      // sb-<ref>-auth-token cookie automatically; under confirm-email-ON it returns no session (202).
+      // One session mechanism for both entry points — no ad-hoc anon client, no manual persistSession.
+      const supabase = createSupabaseServerClient(req, res);
 
       // AL-3: when email confirmation is enabled, the confirmation link must land on our native
       // callback (/auth/callback), which completes it via verifyOtp/exchangeCodeForSession and
@@ -185,9 +167,10 @@ router.post(
       const admin = getSupabaseAdmin();
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
-      // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed BEFORE
-      // establishing the session — consent is a precondition, never silently dropped
-      // (AS1-OUTBOX-DROP-001). Runs before persistSession, so no session is granted on failure.
+      // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed — consent is
+      // a precondition, never silently dropped (AS1-OUTBOX-DROP-001). signUp on the SSR client already
+      // wrote the session cookie eagerly, so the fail-closed branch below signs out to clear it: no
+      // session may survive a consent-capture failure.
       const capture = await captureLegalAcceptances(admin, {
         userId: authData.user.id,
         consentSource,
@@ -216,6 +199,23 @@ router.post(
           "Could not durably capture consent during signup (both stores failed); failing closed",
           { userId: authData.user.id, requestId: req.requestId },
         );
+        // AS1-OUTBOX-DROP-001: signUp wrote the session cookie EAGERLY (autoconfirm) before this gate,
+        // so clear it — no session may survive a consent-capture failure. Same discipline as the OAuth
+        // callback's durable:false → signOut. No-op when confirm-email-ON returned no session.
+        await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+          logger.warn(
+            "AUTH",
+            "signout_cleanup_failed",
+            "Best-effort signOut clearing the eager signup cookie after consent failure failed",
+            {
+              requestId: req.requestId,
+              error:
+                signOutErr instanceof Error
+                  ? signOutErr.message
+                  : String(signOutErr),
+            },
+          ),
+        );
         return res.status(503).json({
           error:
             "We couldn't complete your sign-up just now. Please try again.",
@@ -223,11 +223,7 @@ router.post(
       }
 
       const hasCanonicalSession = !!authData.session;
-
-      // Persist the session natively via @supabase/ssr (writes the sb-<ref>-auth-token cookie).
-      if (hasCanonicalSession && authData.session) {
-        await persistSession(req, res, authData.session);
-      }
+      // No manual persistSession: signUp on the SSR client already wrote the cookie via the adapter.
 
       logger.info("AUTH", "signup_success", "User signed up successfully", {
         userId: authData.user.id,
