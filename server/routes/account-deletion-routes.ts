@@ -35,7 +35,7 @@ router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Re
         const { data: existing, error: findError } = await admin
             .from('account_deletion_requests')
             .select('id, requested_at, status')
-            .eq('user_id', userId)
+            .eq('profile_id', userId)
             .eq('status', 'pending')
             .maybeSingle();
 
@@ -52,10 +52,15 @@ router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Re
             });
         }
 
-        // Insert new deletion request
+        // Insert new deletion request.
+        // NOTE (GAP-HY-13): the canonical genesis table also requires `scheduled_hard_delete_at`
+        // and `actor_profile_id` (both NOT NULL, no default). This insert predates that shape and
+        // still omits them, so /delete writes fail at-rest beyond this column rename — tracked as a
+        // separate structural-drift follow-up (needs owner decision on the hard-delete window per
+        // Doc-01 §40 / Doc-06D). The legacy-name rename below is the in-scope outage-class fix.
         const { data, error } = await admin
             .from('account_deletion_requests')
-            .insert({ user_id: userId, status: 'pending' })
+            .insert({ profile_id: userId, status: 'pending' })
             .select('requested_at')
             .single();
 
@@ -93,7 +98,7 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
         const { data: pending, error: pendingError } = await admin
             .from('account_deletion_requests')
             .select('id, requested_at')
-            .eq('user_id', userId)
+            .eq('profile_id', userId)
             .eq('status', 'pending')
             .maybeSingle();
 
@@ -151,7 +156,7 @@ router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, asy
 
         const { data: pendingRequests, error: fetchError } = await admin
             .from('account_deletion_requests')
-            .select('id, user_id')
+            .select('id, profile_id')
             .eq('status', 'pending')
             .lt('requested_at', past24Hours);
 
@@ -169,17 +174,17 @@ router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, asy
 
         // Execute de-identification logic via stored procedure per user
         for (const pending of pendingRequests) {
-            const deletionEmail = buildDeletedEmail(pending.user_id);
+            const deletionEmail = buildDeletedEmail(pending.profile_id);
 
-            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.user_id, deleted_email: deletionEmail });
+            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.profile_id, deleted_email: deletionEmail });
 
             if (rpcError) {
-                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.user_id, error: rpcError.message, requestId });
+                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.profile_id, error: rpcError.message, requestId });
                 failureCount++;
                 continue;
             }
 
-            const { error: authError } = await admin.auth.admin.updateUserById(pending.user_id, {
+            const { error: authError } = await admin.auth.admin.updateUserById(pending.profile_id, {
                 email: deletionEmail,
                 ban_duration: DELETION_BAN_DURATION,
                 user_metadata: {
@@ -190,7 +195,7 @@ router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, asy
 
             if (authError) {
                 logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
-                    userId: pending.user_id,
+                    userId: pending.profile_id,
                     error: authError.message,
                     requestId,
                 });
@@ -201,7 +206,7 @@ router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, asy
             // Mark as completed
             await admin
                 .from('account_deletion_requests')
-                .update({ status: 'completed', executed_at: new Date().toISOString() })
+                .update({ status: 'completed', completion_at: new Date().toISOString() })
                 .eq('id', pending.id);
 
             successCount++;
