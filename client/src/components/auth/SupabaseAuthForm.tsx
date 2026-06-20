@@ -20,6 +20,12 @@ import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 
 type AuthMode = "signin" | "signup" | "reset";
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+ * plain English: the email/password + Google auth form. Every error catch routes through
+ * resolveAuthErrorMessage so the UI shows a human, recoverable, NON-ENUMERABLE message — never a raw
+ * server/exception string. Client-side validation (accept-terms, enter-email) is shown directly.
+ */
 export function SupabaseAuthForm() {
   const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } =
     useSupabaseAuth();

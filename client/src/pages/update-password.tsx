@@ -16,6 +16,12 @@ import { AlertCircle, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-3, AS-5] | @implemented 2026-06-20
+ * plain English: set-new-password page for the recovery flow (session from the recovery cookie). The
+ * error catch routes through resolveAuthErrorMessage (human, recoverable, never a raw string); on
+ * success it lands by role. Client-side validation (length, match) is shown directly.
+ */
 export default function UpdatePassword() {
   const [, setLocation] = useLocation();
   const { updatePassword, isLoading, isGuardian } = useSupabaseAuth();

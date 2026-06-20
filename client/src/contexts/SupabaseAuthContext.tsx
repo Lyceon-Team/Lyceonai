@@ -198,6 +198,11 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [queryClient]);
 
+  // @spec [contracts/auth-standard-flow.contract.md AS-3, AS1-OUTBOX-DROP-001] | @implemented 2026-06-20
+  // plain English: the email/password + Google auth mutations. On a handled failure they throw a CODED
+  // error (authError(code) — code specific for logging, status-derived) instead of the raw server
+  // string; the display layer maps it via resolveAuthErrorMessage, so the UI is always human,
+  // recoverable, and non-enumerable.
   const signUp = async (
     email: string,
     password: string,
