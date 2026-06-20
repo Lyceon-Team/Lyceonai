@@ -284,8 +284,8 @@ async function defaultSupabaseDeletionResolver(args: {
     const admin = getSupabaseAdmin();
     const { data, error } = await admin
       .from("account_deletion_requests")
-      .select("status, executed_at")
-      .eq("user_id", args.userId)
+      .select("status, completion_at")
+      .eq("profile_id", args.userId)
       .eq("status", "completed")
       .maybeSingle();
 
@@ -304,7 +304,8 @@ async function defaultSupabaseDeletionResolver(args: {
     }
 
     if (data?.status === "completed") {
-      return { status: "deleted", executedAt: data.executed_at ?? null };
+      // Canonical column is `completion_at` (genesis); the internal result field stays `executedAt`.
+      return { status: "deleted", executedAt: data.completion_at ?? null };
     }
 
     return { status: "active", executedAt: null };
