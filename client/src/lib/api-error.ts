@@ -228,9 +228,9 @@ export function toUserFacingMessage(error: unknown): UserFacingErrorMessage {
 }
 
 /**
- * @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+ * @spec [contracts/auth-standard-flow.contract.md AS-2, AS-3 / §0] | @implemented 2026-06-20
  * plain English: the display chokepoint for the profile-completion (onboarding) surface — the
- * COPPA/DOB gate. `PATCH /api/profile` returns `{ error: "<string>" }` with NO code, so
+ * COPPA/DOB gate (AS-2 required-gate; AS-3 / §0 never-raw error UX). `PATCH /api/profile` returns `{ error: "<string>" }` with NO code, so
  * `HttpApiError.message` carries a raw server string; this mapper NEVER renders it. It maps the
  * server's own deterministic 400/403 validation conditions (matched by safe substring) to curated,
  * actionable copy, and falls back to a generic recoverable message (keyed by load/save) for every

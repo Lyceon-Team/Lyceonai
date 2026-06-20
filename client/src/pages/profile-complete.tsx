@@ -175,7 +175,7 @@ export default function ProfileComplete() {
       navigate(resolvePostCompletionPath(result.profile.role));
     },
     onError: (error: unknown) => {
-      // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+      // @spec [contracts/auth-standard-flow.contract.md AS-2, AS-3 / §0] | @implemented 2026-06-20
       // plain English: completion errors route through the onboarding chokepoint — server 400/403
       // validation conditions map to curated, actionable copy; everything else (5xx, leaky, unknown)
       // falls back to a generic recoverable message. The raw HttpApiError.message is never shown.
