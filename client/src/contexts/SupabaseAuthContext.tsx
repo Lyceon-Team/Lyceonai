@@ -355,9 +355,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
       clearAuthState();
       queryClient.invalidateQueries();
-    } catch (error: any) {
+    } catch (error) {
       console.error("[AUTH] Sign out error:", error);
-      throw new Error(error.message || "Failed to sign out");
+      throw authError("signout_failed");
     } finally {
       setAuthLoading(false);
     }

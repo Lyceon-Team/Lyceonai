@@ -13,10 +13,11 @@ import {
   Sparkles,
   ChevronDown,
   LogOut,
-  LayoutDashboard
+  LayoutDashboard,
 } from "lucide-react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { Container, Card, Section } from "@/components/layout/primitives";
 
@@ -32,17 +33,20 @@ export default function HomePage() {
   const [, navigate] = useLocation();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
+  // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+  // plain English: sign-out failures route through resolveAuthErrorMessage (the auth display
+  // chokepoint) so the toast shows a human, recoverable message — never the raw error string.
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
       await signOut();
       toast({ title: "Signed out successfully" });
-      navigate('/login');
-    } catch (error: any) {
-      console.error('Sign out failed:', error);
+      navigate("/login");
+    } catch (error) {
+      console.error("Sign out failed:", error);
       toast({
         title: "Sign out failed",
-        description: error.message || "Please try again",
+        description: resolveAuthErrorMessage(error),
       });
     } finally {
       setIsSigningOut(false);
@@ -96,13 +100,16 @@ export default function HomePage() {
                     Study Smarter, Score Higher
                   </span>
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    Digital SAT prep built for <span className="text-foreground">real progress</span>
+                    Digital SAT prep built for{" "}
+                    <span className="text-foreground">real progress</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Practice SAT-style questions, review step-by-step explanations, and track progress over time.
+                    Practice SAT-style questions, review step-by-step
+                    explanations, and track progress over time.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Use quick daily sessions, full-length exams, and tutor guidance in one place.
+                    Use quick daily sessions, full-length exams, and tutor
+                    guidance in one place.
                   </p>
                 </>
               ) : (
@@ -111,13 +118,16 @@ export default function HomePage() {
                     Study Smarter, Score Higher
                   </span>
                   <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
-                    Study Smarter, Score Higher on the <span className="text-foreground">Digital SAT</span>
+                    Study Smarter, Score Higher on the{" "}
+                    <span className="text-foreground">Digital SAT</span>
                   </h1>
                   <p className="text-lg mb-4">
-                    Build consistency with adaptive practice, full-length tests, and focused review.
+                    Build consistency with adaptive practice, full-length tests,
+                    and focused review.
                   </p>
                   <p className="text-muted-foreground mb-8">
-                    Students track growth. Guardians can monitor linked progress and planning.
+                    Students track growth. Guardians can monitor linked progress
+                    and planning.
                   </p>
                 </>
               )}
@@ -127,9 +137,17 @@ export default function HomePage() {
                   <a
                     className="px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
                     data-testid="button-start-demo"
-                    onClick={() => trackCtaClick(variant === "A" ? "Start free practice" : "See how Lyceon works")}
+                    onClick={() =>
+                      trackCtaClick(
+                        variant === "A"
+                          ? "Start free practice"
+                          : "See how Lyceon works",
+                      )
+                    }
                   >
-                    {variant === "A" ? "Start free practice" : "See how Lyceon works"}
+                    {variant === "A"
+                      ? "Start free practice"
+                      : "See how Lyceon works"}
                   </a>
                 </Link>
                 {isAuthenticated ? (
@@ -169,15 +187,21 @@ export default function HomePage() {
               <div className="grid grid-cols-3 gap-4 pt-6 border-t border-border">
                 <div>
                   <div className="text-2xl font-bold">Adaptive practice</div>
-                  <div className="text-sm text-muted-foreground">Question difficulty adjusts as you improve</div>
+                  <div className="text-sm text-muted-foreground">
+                    Question difficulty adjusts as you improve
+                  </div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold">Full-length exams</div>
-                  <div className="text-sm text-muted-foreground">Timed 98-question SAT simulation</div>
+                  <div className="text-sm text-muted-foreground">
+                    Timed 98-question SAT simulation
+                  </div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold">Progress tracking</div>
-                  <div className="text-sm text-muted-foreground">Topic and skill-level progress visibility</div>
+                  <div className="text-sm text-muted-foreground">
+                    Topic and skill-level progress visibility
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -229,15 +253,23 @@ export default function HomePage() {
                         <ol className="space-y-2">
                           <li className="flex gap-2">
                             <span className="font-medium">1.</span>
-                            <span>Identify what the question asks about passage structure.</span>
+                            <span>
+                              Identify what the question asks about passage
+                              structure.
+                            </span>
                           </li>
                           <li className="flex gap-2">
                             <span className="font-medium">2.</span>
-                            <span>Find transition language that signals contrast.</span>
+                            <span>
+                              Find transition language that signals contrast.
+                            </span>
                           </li>
                           <li className="flex gap-2">
                             <span className="font-medium">3.</span>
-                            <span>Choose the option that matches that shift in logic.</span>
+                            <span>
+                              Choose the option that matches that shift in
+                              logic.
+                            </span>
                           </li>
                         </ol>
                       </div>
@@ -273,7 +305,9 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-6 text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start gap-3">
               <Shield className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">Grounded in SAT-style practice content</span>
+              <span className="text-sm">
+                Grounded in SAT-style practice content
+              </span>
             </div>
             <div className="flex items-center justify-center md:justify-start gap-3">
               <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
@@ -281,7 +315,9 @@ export default function HomePage() {
             </div>
             <div className="flex items-center justify-center md:justify-start gap-3">
               <Brain className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">Tutor chat with step-by-step SAT-focused explanations</span>
+              <span className="text-sm">
+                Tutor chat with step-by-step SAT-focused explanations
+              </span>
             </div>
           </div>
         </Container>
@@ -290,7 +326,9 @@ export default function HomePage() {
       <Container size="wide">
         <Section id="how-it-works" className="py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">How it works</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              How it works
+            </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Three simple steps to smarter SAT prep
             </p>
@@ -302,7 +340,9 @@ export default function HomePage() {
                 1
               </div>
               <Target className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">Diagnose in minutes</h3>
+              <h3 className="text-xl font-semibold mb-3">
+                Diagnose in minutes
+              </h3>
               <p className="text-muted-foreground">
                 Take a quick diagnostic to identify strengths and weak spots.
               </p>
@@ -313,9 +353,12 @@ export default function HomePage() {
                 2
               </div>
               <MessageSquare className="w-10 h-10 mb-4 mt-2" />
-              <h3 className="text-xl font-semibold mb-3">Practice and review</h3>
+              <h3 className="text-xl font-semibold mb-3">
+                Practice and review
+              </h3>
               <p className="text-muted-foreground">
-                Use adaptive question flow and tutor guidance to understand mistakes and next steps.
+                Use adaptive question flow and tutor guidance to understand
+                mistakes and next steps.
               </p>
             </Card>
 
@@ -326,7 +369,8 @@ export default function HomePage() {
               <TrendingUp className="w-10 h-10 mb-4 mt-2" />
               <h3 className="text-xl font-semibold mb-3">Track and improve</h3>
               <p className="text-muted-foreground">
-                Monitor progress and validate readiness with full-length SAT exam sessions.
+                Monitor progress and validate readiness with full-length SAT
+                exam sessions.
               </p>
             </Card>
           </div>
@@ -347,9 +391,12 @@ export default function HomePage() {
           <div className="grid md:grid-cols-3 gap-8">
             <Card>
               <MessageSquare className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Tutor guidance, grounded in context</h3>
+              <h3 className="text-xl font-semibold mb-3">
+                Tutor guidance, grounded in context
+              </h3>
               <p className="text-muted-foreground mb-4">
-                Explanations stay focused on SAT-style question patterns and reasoning.
+                Explanations stay focused on SAT-style question patterns and
+                reasoning.
               </p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
@@ -369,7 +416,9 @@ export default function HomePage() {
 
             <Card>
               <Clock className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Practice sessions that fit life</h3>
+              <h3 className="text-xl font-semibold mb-3">
+                Practice sessions that fit life
+              </h3>
               <p className="text-muted-foreground mb-4">
                 15-60 minute sessions that adapt to your schedule.
               </p>
@@ -391,9 +440,12 @@ export default function HomePage() {
 
             <Card>
               <BarChart3 className="w-10 h-10 mb-4" />
-              <h3 className="text-xl font-semibold mb-3">Progress visibility for families</h3>
+              <h3 className="text-xl font-semibold mb-3">
+                Progress visibility for families
+              </h3>
               <p className="text-muted-foreground mb-4">
-                Clear progress snapshots and next-step priorities without overwhelming dashboards.
+                Clear progress snapshots and next-step priorities without
+                overwhelming dashboards.
               </p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
@@ -418,21 +470,32 @@ export default function HomePage() {
         <Section className="py-16">
           <div className="grid lg:grid-cols-2 gap-12">
             <div>
-              <h2 className="text-3xl font-bold mb-8">What you can track today</h2>
+              <h2 className="text-3xl font-bold mb-8">
+                What you can track today
+              </h2>
               <div className="space-y-6">
                 <Card className="bg-secondary">
                   <div className="font-medium mb-1">Practice consistency</div>
-                  <div className="text-sm text-muted-foreground">Session count, time spent, and recent accuracy trends.</div>
+                  <div className="text-sm text-muted-foreground">
+                    Session count, time spent, and recent accuracy trends.
+                  </div>
                 </Card>
 
                 <Card className="bg-secondary">
                   <div className="font-medium mb-1">Progress snapshot</div>
-                  <div className="text-sm text-muted-foreground">Skill and domain status across Math and Reading & Writing.</div>
+                  <div className="text-sm text-muted-foreground">
+                    Skill and domain status across Math and Reading & Writing.
+                  </div>
                 </Card>
 
                 <Card className="bg-secondary">
-                  <div className="font-medium mb-1">Full-length exam outcomes</div>
-                  <div className="text-sm text-muted-foreground">Module-level results and score estimate data after completion.</div>
+                  <div className="font-medium mb-1">
+                    Full-length exam outcomes
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Module-level results and score estimate data after
+                    completion.
+                  </div>
                 </Card>
               </div>
             </div>
@@ -443,14 +506,16 @@ export default function HomePage() {
                 <Card className="bg-secondary">
                   <div className="font-semibold mb-2">Students</div>
                   <p>
-                    Build a daily SAT routine with adaptive question flow, tutor chat, review cycles, and full-length test readiness.
+                    Build a daily SAT routine with adaptive question flow, tutor
+                    chat, review cycles, and full-length test readiness.
                   </p>
                 </Card>
 
                 <Card className="bg-secondary">
                   <div className="font-semibold mb-2">Guardians</div>
                   <p>
-                    Link student accounts to monitor progress summaries and planning signals, with expanded visibility on paid plans.
+                    Link student accounts to monitor progress summaries and
+                    planning signals, with expanded visibility on paid plans.
                   </p>
                 </Card>
               </div>
@@ -462,7 +527,9 @@ export default function HomePage() {
       <section id="pricing" className="bg-secondary py-16">
         <Container>
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Start for free. Upgrade when ready.</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              Start for free. Upgrade when ready.
+            </h2>
             <p className="text-muted-foreground">
               No credit card required to get started
             </p>
@@ -472,8 +539,13 @@ export default function HomePage() {
             <Card>
               <div className="mb-6">
                 <h3 className="text-xl font-semibold mb-2">Free</h3>
-                <div className="text-4xl font-bold mb-1">$0<span className="text-lg text-muted-foreground">/month</span></div>
-                <p className="text-sm text-muted-foreground">Perfect to get started</p>
+                <div className="text-4xl font-bold mb-1">
+                  $0
+                  <span className="text-lg text-muted-foreground">/month</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Perfect to get started
+                </p>
               </div>
 
               <ul className="space-y-3 mb-8">
@@ -496,7 +568,10 @@ export default function HomePage() {
               </ul>
 
               <Link href="/login">
-                <a className="block w-full px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center" data-testid="button-get-started-free">
+                <a
+                  className="block w-full px-6 py-3 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center"
+                  data-testid="button-get-started-free"
+                >
                   Get started free
                 </a>
               </Link>
@@ -508,7 +583,9 @@ export default function HomePage() {
               </div>
 
               <div className="mb-6">
-                <h3 className="text-xl font-semibold mb-2">Pro · for serious prep</h3>
+                <h3 className="text-xl font-semibold mb-2">
+                  Pro · for serious prep
+                </h3>
                 <div className="text-4xl font-bold mb-1">TBD</div>
                 <p className="text-sm opacity-70">Unlock everything</p>
               </div>
@@ -516,11 +593,15 @@ export default function HomePage() {
               <ul className="space-y-3 mb-8 opacity-90">
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span><strong>Unlimited</strong> practice questions</span>
+                  <span>
+                    <strong>Unlimited</strong> practice questions
+                  </span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
-                  <span><strong>Unlimited</strong> tutor chat messages</span>
+                  <span>
+                    <strong>Unlimited</strong> tutor chat messages
+                  </span>
                 </li>
                 <li className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 flex-shrink-0 opacity-70" />
@@ -547,7 +628,9 @@ export default function HomePage() {
       <Container size="narrow">
         <Section id="faq" className="py-16">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Frequently asked questions</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4">
+              Frequently asked questions
+            </h2>
           </div>
 
           <div className="space-y-4">
@@ -558,10 +641,12 @@ export default function HomePage() {
               </summary>
               <div className="mt-4 text-muted-foreground space-y-2">
                 <p>
-                  Tutor chat is built around SAT-style practice context, not open-ended generic chat.
+                  Tutor chat is built around SAT-style practice context, not
+                  open-ended generic chat.
                 </p>
                 <p>
-                  Explanations focus on reasoning steps, common errors, and what to do next.
+                  Explanations focus on reasoning steps, common errors, and what
+                  to do next.
                 </p>
               </div>
             </details>
@@ -585,8 +670,9 @@ export default function HomePage() {
               </summary>
               <div className="mt-4 text-muted-foreground">
                 <p>
-                  Guardians can link student accounts and view progress summaries.
-                  Student summary and calendar views are entitlement-gated for paid guardian access.
+                  Guardians can link student accounts and view progress
+                  summaries. Student summary and calendar views are
+                  entitlement-gated for paid guardian access.
                 </p>
               </div>
             </details>
@@ -598,10 +684,12 @@ export default function HomePage() {
               </summary>
               <div className="mt-4 text-muted-foreground">
                 <p>
-                  Yes. Lyceon supports both: daily adaptive practice and full-length timed SAT exams.
+                  Yes. Lyceon supports both: daily adaptive practice and
+                  full-length timed SAT exams.
                 </p>
                 <p className="mt-2">
-                  Use daily sessions to improve weak areas, then validate progress with full-length exam runs.
+                  Use daily sessions to improve weak areas, then validate
+                  progress with full-length exam runs.
                 </p>
               </div>
             </details>
@@ -616,19 +704,26 @@ export default function HomePage() {
               Study Smarter, Score Higher
             </h2>
             <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Build momentum with adaptive practice, tutor chat, and full-length SAT simulations.
+              Build momentum with adaptive practice, tutor chat, and full-length
+              SAT simulations.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/practice">
-                <a className="px-8 py-4 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center text-lg" data-testid="button-footer-start">
+                <a
+                  className="px-8 py-4 bg-foreground text-background rounded-lg font-medium hover:opacity-90 transition-opacity text-center text-lg"
+                  data-testid="button-footer-start"
+                >
                   Start a free SAT session
                 </a>
               </Link>
               {isAuthenticated ? (
                 <>
                   <Link href="/dashboard">
-                    <a className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2" data-testid="button-footer-dashboard">
+                    <a
+                      className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg flex items-center justify-center gap-2"
+                      data-testid="button-footer-dashboard"
+                    >
                       <LayoutDashboard className="w-5 h-5" />
                       Go to dashboard
                     </a>
@@ -645,7 +740,10 @@ export default function HomePage() {
                 </>
               ) : (
                 <Link href="/login">
-                  <a className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg" data-testid="button-footer-signin">
+                  <a
+                    className="px-8 py-4 bg-card border border-border rounded-lg font-medium hover:bg-secondary transition-colors text-center text-lg"
+                    data-testid="button-footer-signin"
+                  >
                     Sign in to your dashboard
                   </a>
                 </Link>

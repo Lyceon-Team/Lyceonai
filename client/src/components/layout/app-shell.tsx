@@ -4,7 +4,19 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Link, useLocation } from "wouter";
-import { UserCircle, Menu, GraduationCap, LayoutDashboard, BookOpen, MessageSquare, CreditCard, Settings, LogOut, Zap, Calendar } from "lucide-react";
+import {
+  UserCircle,
+  Menu,
+  GraduationCap,
+  LayoutDashboard,
+  BookOpen,
+  MessageSquare,
+  CreditCard,
+  Settings,
+  LogOut,
+  Zap,
+  Calendar,
+} from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import {
@@ -17,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 import Footer from "./Footer";
 
 export function AppShell({
@@ -47,23 +60,27 @@ function AppHeader() {
   const { toast } = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  
+
   // Get display name with fallbacks
-  const displayName = user?.display_name || user?.email?.split('@')[0] || 'Student';
+  const displayName =
+    user?.display_name || user?.email?.split("@")[0] || "Student";
   const isLoadingAuth = authLoading;
 
+  // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+  // plain English: sign-out failures route through resolveAuthErrorMessage (the auth display
+  // chokepoint) so the toast shows a human, recoverable message — never the raw error string.
   // Use the context signOut which clears Supabase session, backend cookies, and React Query cache
   const handleSignOut = async () => {
     setIsSigningOut(true);
     try {
       await signOut();
       toast({ title: "Signed out successfully" });
-      navigate('/login');
-    } catch (error: any) {
-      console.error('[NAV] Sign out failed:', error);
+      navigate("/login");
+    } catch (error) {
+      console.error("[NAV] Sign out failed:", error);
       toast({
         title: "Sign out failed",
-        description: error.message || "Please try again",
+        description: resolveAuthErrorMessage(error),
       });
     } finally {
       setIsSigningOut(false);
@@ -71,16 +88,27 @@ function AppHeader() {
   };
 
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/calendar', label: 'Calendar', icon: Calendar },
-    { href: '/flow-cards', label: 'FlowCards', icon: Zap },
-    { href: '/practice', label: 'Practice', icon: BookOpen },
-    { href: '/full-test', label: 'Full Tests', icon: CreditCard },
-    { href: '/chat', label: 'Lisa', icon: MessageSquare },
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/calendar", label: "Calendar", icon: Calendar },
+    { href: "/flow-cards", label: "FlowCards", icon: Zap },
+    { href: "/practice", label: "Practice", icon: BookOpen },
+    { href: "/full-test", label: "Full Tests", icon: CreditCard },
+    { href: "/chat", label: "Lisa", icon: MessageSquare },
   ];
 
-  const NavLink = ({ href, label, icon: Icon, mobile = false }: { href: string; label: string; icon: any; mobile?: boolean }) => {
-    const isActive = location === href || (href !== '/dashboard' && location.startsWith(href));
+  const NavLink = ({
+    href,
+    label,
+    icon: Icon,
+    mobile = false,
+  }: {
+    href: string;
+    label: string;
+    icon: any;
+    mobile?: boolean;
+  }) => {
+    const isActive =
+      location === href || (href !== "/dashboard" && location.startsWith(href));
     const baseClasses = mobile
       ? "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors w-full"
       : "px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2";
@@ -92,9 +120,9 @@ function AppHeader() {
 
     return (
       <Link href={href}>
-        <a 
+        <a
           className={`${baseClasses} ${activeClasses}`}
-          data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+          data-testid={`nav-${label.toLowerCase().replace(/\s+/g, "-")}`}
           onClick={() => mobile && setMobileMenuOpen(false)}
         >
           <Icon className={mobile ? "h-5 w-5" : "h-4 w-4"} />
@@ -111,7 +139,10 @@ function AppHeader() {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <Link href="/dashboard">
-            <a className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity" data-testid="logo-link">
+            <a
+              className="flex items-center gap-2 text-foreground hover:opacity-80 transition-opacity"
+              data-testid="logo-link"
+            >
               <GraduationCap className="h-6 w-6 text-foreground" />
               <span className="font-bold text-lg hidden sm:inline">Lyceon</span>
             </a>
@@ -128,34 +159,41 @@ function AppHeader() {
           <div className="flex items-center gap-2">
             {/* Notifications Bell */}
             {user && <NotificationDropdown />}
-            
+
             {/* Mobile Menu Button */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild className="md:hidden">
-                <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-testid="button-mobile-menu"
+                >
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-64 bg-background border-border">
+              <SheetContent
+                side="left"
+                className="w-64 bg-background border-border"
+              >
                 <div className="flex flex-col gap-4 mt-8">
                   {navItems.map((item) => (
                     <NavLink key={item.href} {...item} mobile />
                   ))}
                   <Separator />
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full justify-start gap-3"
                     onClick={() => {
                       setMobileMenuOpen(false);
-                      navigate('/profile');
+                      navigate("/profile");
                     }}
                     data-testid="button-profile-mobile"
                   >
                     <Settings className="h-5 w-5" />
                     Settings
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full justify-start gap-3"
                     disabled={isSigningOut}
                     onClick={async () => {
@@ -165,7 +203,7 @@ function AppHeader() {
                     data-testid="button-signout-mobile"
                   >
                     <LogOut className="h-5 w-5" />
-                    {isSigningOut ? 'Signing out...' : 'Sign Out'}
+                    {isSigningOut ? "Signing out..." : "Sign Out"}
                   </Button>
                 </div>
               </SheetContent>
@@ -175,36 +213,56 @@ function AppHeader() {
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full" data-testid="button-user-menu">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    data-testid="button-user-menu"
+                  >
                     <UserCircle className="h-5 w-5" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56 bg-background border-border">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-56 bg-background border-border"
+                >
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
                       {isLoadingAuth ? (
-                        <p className="text-sm font-medium leading-none text-muted-foreground opacity-70">Loading...</p>
+                        <p className="text-sm font-medium leading-none text-muted-foreground opacity-70">
+                          Loading...
+                        </p>
                       ) : (
                         <>
-                          <p className="text-sm font-medium leading-none text-foreground" data-testid="text-user-name">{displayName}</p>
-                          <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                          <p
+                            className="text-sm font-medium leading-none text-foreground"
+                            data-testid="text-user-name"
+                          >
+                            {displayName}
+                          </p>
+                          <p className="text-xs leading-none text-muted-foreground">
+                            {user?.email}
+                          </p>
                         </>
                       )}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/profile')} data-testid="menu-profile">
+                  <DropdownMenuItem
+                    onClick={() => navigate("/profile")}
+                    data-testid="menu-profile"
+                  >
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    onClick={handleSignOut} 
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
                     disabled={isSigningOut}
                     data-testid="menu-logout"
                   >
                     <LogOut className="mr-2 h-4 w-4" />
-                    {isSigningOut ? 'Signing out...' : 'Sign Out'}
+                    {isSigningOut ? "Signing out..." : "Sign Out"}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -215,4 +273,3 @@ function AppHeader() {
     </header>
   );
 }
-
