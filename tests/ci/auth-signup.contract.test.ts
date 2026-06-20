@@ -226,6 +226,13 @@ async function postWithCsrf(
   return agent.post(path).set("x-csrf-token", csrfToken).send(body);
 }
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-1, AS1-OUTBOX-DROP-001 |
+ *   contracts/auth-login-e2e.contract.md AL-2/AL-3 | Coding Standards §14]
+ * Proves signup SSR session minting (G7/G8), the fail-closed consent gate (AS1-OUTBOX-DROP-001 — the
+ * eager cookie is cleared, no session survives a consent failure), the toggle-robust 201/202 branches,
+ * and that no manual persistSession (setSession) hand-off survives.
+ */
 describe("Auth Signup Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();

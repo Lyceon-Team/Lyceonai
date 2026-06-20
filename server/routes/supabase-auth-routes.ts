@@ -65,7 +65,15 @@ function runningAgainstPlaceholder(): boolean {
 
 /**
  * POST /api/auth/signup
- * Sign up with email and password
+ * @spec [contracts/auth-standard-flow.contract.md AS-1, AS1-OUTBOX-DROP-001 |
+ *   contracts/auth-login-e2e.contract.md AL-2/AL-3 | Doc-01_V8 §9 | Coding Standards §6.1 | G7/G8]
+ * @implemented [2026-06-20]
+ * plain English: sign up with email + password, minting the session on the per-request @supabase/ssr
+ * server client (G7/G8 — one session mechanism for both entry points). Under autoconfirm signUp returns
+ * a session and the setAll adapter writes the native cookie eagerly → 201; on both-store consent failure
+ * the eager cookie is cleared via signOut BEFORE the 503 (AS1-OUTBOX-DROP-001 — consent is a precondition,
+ * never silently dropped); under confirm-email-ON no session exists so signOut is a no-op → 202. The
+ * handle_new_user trigger owns profile creation; this handler never writes profiles.
  */
 router.post(
   "/signup",
