@@ -4,7 +4,15 @@ import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { logger } from '../logger';
 
 const router = Router();
-const DELETION_GRACE_HOURS = 24;
+// @spec [Doc-01 §40 Account deletion lifecycle] | @implemented 2026-06-20
+// plain English: account deletion follows the locked 7-day soft-delete → hard-delete window
+// (§40 "Account deletion follows a 7-day soft-delete → hard-delete pattern"; §40.2 schedules
+// scheduled_hard_delete_at = now() + 7 days; §40.5 the cron hard-deletes WHERE
+// scheduled_hard_delete_at <= now()). The prior deployed code used a 24h grace that both
+// contradicted the spec window AND never inserted (it omitted the NOT-NULL schedule/actor columns,
+// so the right-to-erasure path never worked in prod — GAP-HY-13).
+export const DELETION_GRACE_DAYS = 7;
+const DELETION_GRACE_MS = DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
 const DELETION_BAN_DURATION = '876000h'; // 100 years
 
 export function buildDeletedEmail(userId: string): string {
@@ -16,13 +24,30 @@ export function isGraceWindowExpired(requestedAt: string, now: Date = new Date()
     if (Number.isNaN(requestedAtMs)) {
         return true;
     }
-    const graceMs = DELETION_GRACE_HOURS * 60 * 60 * 1000;
-    return now.getTime() > requestedAtMs + graceMs;
+    return now.getTime() > requestedAtMs + DELETION_GRACE_MS;
+}
+
+// @spec [Doc-01 §40.2 / §40.2.1 + §5] self-serve deletion-request row. actor_profile_id = the
+// requesting user (§5: actor "may be the profile itself for self-service"); scheduled_hard_delete_at
+// = requested_at + 7 days (§40.2); stripe_cancellation_status starts 'pending' (§40.2.1). The two
+// NOT-NULL columns (scheduled_hard_delete_at, actor_profile_id) the old insert omitted are required.
+export function scheduledHardDeleteAt(requestedAt: Date = new Date()): string {
+    return new Date(requestedAt.getTime() + DELETION_GRACE_MS).toISOString();
+}
+
+export function buildDeletionRequestInsert(profileId: string, now: Date = new Date()) {
+    return {
+        profile_id: profileId,
+        actor_profile_id: profileId,
+        scheduled_hard_delete_at: scheduledHardDeleteAt(now),
+        status: 'pending' as const,
+        stripe_cancellation_status: 'pending' as const,
+    };
 }
 
 /**
  * POST /api/account/delete
- * Request account deletion. Sets a 24-hour grace window before execution.
+ * Request account deletion. Schedules the hard delete 7 days out per Doc-01 §40.
  */
 router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Request, res: Response) => {
     const requestId = req.requestId;
@@ -52,16 +77,12 @@ router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Re
             });
         }
 
-        // Insert new deletion request.
-        // NOTE (GAP-HY-13): the canonical genesis table also requires `scheduled_hard_delete_at`
-        // and `actor_profile_id` (both NOT NULL, no default). This insert predates that shape and
-        // still omits them, so /delete writes fail at-rest beyond this column rename — tracked as a
-        // separate structural-drift follow-up (needs owner decision on the hard-delete window per
-        // Doc-01 §40 / Doc-06D). The legacy-name rename below is the in-scope outage-class fix.
+        // Insert new deletion request with the canonical schedule + actor (Doc-01 §40.2):
+        // scheduled_hard_delete_at = now() + 7 days, actor_profile_id = the requesting user.
         const { data, error } = await admin
             .from('account_deletion_requests')
-            .insert({ profile_id: userId, status: 'pending' })
-            .select('requested_at')
+            .insert(buildDeletionRequestInsert(userId))
+            .select('requested_at, scheduled_hard_delete_at')
             .single();
 
         if (error) {
@@ -73,8 +94,9 @@ router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Re
 
         res.json({
             ok: true,
-            graceWindowHours: DELETION_GRACE_HOURS,
+            graceWindowDays: DELETION_GRACE_DAYS,
             requestedAt: data.requested_at,
+            scheduledHardDeleteAt: data.scheduled_hard_delete_at,
             requestId
         });
 
@@ -116,7 +138,7 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
                 error: 'Deletion grace window has expired',
                 code: 'GRACE_WINDOW_EXPIRED',
                 requestedAt: pending.requested_at,
-                graceWindowHours: DELETION_GRACE_HOURS,
+                graceWindowDays: DELETION_GRACE_DAYS,
                 requestId
             });
         }
@@ -143,7 +165,8 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
 
 /**
  * POST /api/account/execute-deletions
- * Admin-only / system endpoint to execute pending deletions that have passed the 24h window
+ * Admin-only / system endpoint to hard-delete pending requests whose scheduled 7-day
+ * hard-delete time has arrived (Doc-01 §40.5).
  */
 // CSRF_EXEMPT_REASON: Non-browser admin/system operation with server-side auth gating.
 router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, async (req: Request, res: Response) => {
@@ -151,14 +174,14 @@ router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, asy
 
     try {
         const admin = getSupabaseAdmin();
-        // Use the database to compute the threshold: NOW() - 24 hours
-        const past24Hours = new Date(Date.now() - DELETION_GRACE_HOURS * 60 * 60 * 1000).toISOString();
+        // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
+        const nowIso = new Date().toISOString();
 
         const { data: pendingRequests, error: fetchError } = await admin
             .from('account_deletion_requests')
             .select('id, profile_id')
             .eq('status', 'pending')
-            .lt('requested_at', past24Hours);
+            .lte('scheduled_hard_delete_at', nowIso);
 
         if (fetchError) {
             logger.error('DELETION', 'fetch_pending_error', 'Failed to fetch pending deletions', { error: fetchError.message, requestId });
