@@ -30,6 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { csrfFetch } from "@/lib/csrf";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { resolveOnboardingErrorMessage } from "@/lib/api-error";
 
 type ProfileRole = "student" | "guardian" | "admin";
 
@@ -174,10 +175,11 @@ export default function ProfileComplete() {
       navigate(resolvePostCompletionPath(result.profile.role));
     },
     onError: (error: unknown) => {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "We could not complete your profile. Please try again.";
+      // @spec [contracts/auth-standard-flow.contract.md AS-3] | @implemented 2026-06-20
+      // plain English: completion errors route through the onboarding chokepoint — server 400/403
+      // validation conditions map to curated, actionable copy; everything else (5xx, leaky, unknown)
+      // falls back to a generic recoverable message. The raw HttpApiError.message is never shown.
+      const message = resolveOnboardingErrorMessage(error, "save");
       setErrorMessage(message);
       toast({
         title: "Profile completion failed",
@@ -234,8 +236,9 @@ export default function ProfileComplete() {
   }
 
   if (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to load profile";
+    // Profile-load failures route through the same onboarding chokepoint (load variant) — the raw
+    // server/exception string is never rendered in the CardDescription.
+    const message = resolveOnboardingErrorMessage(error, "load");
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">

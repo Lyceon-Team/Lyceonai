@@ -29,6 +29,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   reset_password_failed:
     "We couldn't send a password reset email. Please try again.",
   update_password_failed: "We couldn't update your password. Please try again.",
+  signout_failed: "We couldn't sign you out. Please try again.",
 };
 
 const GENERIC_AUTH_ERROR =

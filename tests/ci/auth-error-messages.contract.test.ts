@@ -25,6 +25,8 @@ const CODES = [
   "signin_failed",
   "reset_password_failed",
   "update_password_failed",
+  // Sign-out failure (Stage 3 follow-up — full auth-surface chokepoint)
+  "signout_failed",
 ];
 
 const GENERIC = "Something went wrong while signing you in. Please try again.";
