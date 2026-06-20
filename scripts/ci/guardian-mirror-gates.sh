@@ -31,6 +31,10 @@ CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users (id uuid
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
 SQL
 for f in "$ROOT"/supabase/migrations/*.sql; do psql_db "$DB" -q -f "$f" >/dev/null; done
+# This gate seeds auth.users directly to satisfy the profiles FK; it does NOT test auth profile
+# creation (that is genesis-fresh-apply A.2/A.3). Drop the handle_new_user trigger so the seed's
+# explicit profiles rows are authoritative and not pre-empted by the trigger's default insert.
+psql_db "$DB" -q -c "DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;" >/dev/null
 
 echo "==> seed: guardian G; S1 (linked+entitled), S2 (entitled, UNLINKED), S3 (linked, NOT entitled)"
 # Override auth.uid() to read a session GUC so we can act as the guardian. service_role / postgres

@@ -6,7 +6,6 @@ import {
   requireSupabaseAuth,
   getSupabaseAdmin,
   resolveTokenFromRequest,
-  resolveUserIdFromToken,
 } from "../middleware/supabase-auth.js";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit.js";
 import { BUILD } from "../lib/build.js";
@@ -14,7 +13,6 @@ import { clearAuthCookies } from "../lib/auth-cookies.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { z } from "zod";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
-import { sendEmail } from "../lib/email.js";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 
@@ -32,27 +30,6 @@ const authRateLimiter = rateLimit({
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
-
-/**
- * @spec [Doc-01_V8 Identity/Access; Coding Standards §6.1 | AUTH-001]
- * @implemented 2026-06-15
- * plain English: Persist a freshly-issued Supabase session into the response using the @supabase/ssr
- * server client. setSession writes the native session cookie (`sb-<ref>-auth-token`) through the
- * cookie adapter, so the auth middleware's SSR getUser() can read AND auto-refresh it on later
- * requests — no custom /refresh endpoint. Replaces the legacy two-cookie setAuthCookies writer.
- * expected outcome: cookie-native session after signin/signup. edge case: never logs the tokens.
- */
-async function persistSession(
-  req: Request,
-  res: Response,
-  session: { access_token: string; refresh_token: string },
-): Promise<void> {
-  const ssrClient = createSupabaseServerClient(req, res);
-  await ssrClient.auth.setSession({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-  });
-}
 
 const signupSchema = z.object({
   email: z.string().email(),
@@ -88,7 +65,15 @@ function runningAgainstPlaceholder(): boolean {
 
 /**
  * POST /api/auth/signup
- * Sign up with email and password
+ * @spec [contracts/auth-standard-flow.contract.md AS-1, AS1-OUTBOX-DROP-001 |
+ *   contracts/auth-login-e2e.contract.md AL-2/AL-3 | Doc-01_V8 §9 | Coding Standards §6.1 | G7/G8]
+ * @implemented [2026-06-20]
+ * plain English: sign up with email + password, minting the session on the per-request @supabase/ssr
+ * server client (G7/G8 — one session mechanism for both entry points). Under autoconfirm signUp returns
+ * a session and the setAll adapter writes the native cookie eagerly → 201; on both-store consent failure
+ * the eager cookie is cleared via signOut BEFORE the 503 (AS1-OUTBOX-DROP-001 — consent is a precondition,
+ * never silently dropped); under confirm-email-ON no session exists so signOut is a no-op → 202. The
+ * handle_new_user trigger owns profile creation; this handler never writes profiles.
  */
 router.post(
   "/signup",
@@ -134,8 +119,11 @@ router.post(
           .json({ error: "Email and password are required" });
       }
 
-      // Create anon client for signup
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      // G7/G8: mint the signup session on the per-request @supabase/ssr server client — exactly like
+      // sign-in. Under autoconfirm signUp returns a session and the setAll adapter writes the native
+      // sb-<ref>-auth-token cookie automatically; under confirm-email-ON it returns no session (202).
+      // One session mechanism for both entry points — no ad-hoc anon client, no manual persistSession.
+      const supabase = createSupabaseServerClient(req, res);
 
       // AL-3: when email confirmation is enabled, the confirmation link must land on our native
       // callback (/auth/callback), which completes it via verifyOtp/exchangeCodeForSession and
@@ -161,11 +149,15 @@ router.post(
       );
 
       if (signupError) {
-        logger.error("AUTH", "signup_failed", "Supabase signup failed", {
-          error: signupError,
+        // Generic, non-enumerable message (G5/AS-3): never reveal whether the email already exists or
+        // any provider-specific reason; the real error is logged server-side only.
+        logger.warn("AUTH", "signup_failed", "Supabase signup failed", {
+          error: signupError.message,
+          requestId: req.requestId,
         });
         return res.status(400).json({
-          error: signupError.message,
+          error:
+            "We couldn't complete your sign-up. Please check your details and try again.",
         });
       }
 
@@ -175,33 +167,18 @@ router.post(
         });
       }
 
-      // Profile is auto-created by Supabase trigger (handle_new_user).
-      // Keep server-authoritative safe default role until profile completion.
+      // Profile creation is owned solely by the handle_new_user trigger (migration 20260619000000),
+      // which inserts exactly one profiles row in the SAME transaction as the auth.users insert with
+      // the server-authoritative clamped role. There is nothing to create or "fix up" here — the old
+      // profiles.update was a phantom write that could 404/race against the trigger. We only need the
+      // admin client for the durable consent capture below.
       const admin = getSupabaseAdmin();
-      const profileUpdate: Record<string, any> = { role: "student" };
-
-      const { error: updateError } = await admin
-        .from("profiles")
-        .update(profileUpdate)
-        .eq("id", authData.user.id);
-
-      if (updateError) {
-        logger.error(
-          "AUTH",
-          "profile_update_failed",
-          "Failed to update profile",
-          {
-            userId: authData.user.id,
-            error: updateError,
-          },
-        );
-        // Don't fail the signup - profile exists
-      }
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
-      // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed BEFORE
-      // establishing the session — consent is a precondition, never silently dropped
-      // (AS1-OUTBOX-DROP-001). Runs before persistSession, so no session is granted on failure.
+      // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed — consent is
+      // a precondition, never silently dropped (AS1-OUTBOX-DROP-001). signUp on the SSR client already
+      // wrote the session cookie eagerly, so the fail-closed branch below signs out to clear it: no
+      // session may survive a consent-capture failure.
       const capture = await captureLegalAcceptances(admin, {
         userId: authData.user.id,
         consentSource,
@@ -230,6 +207,23 @@ router.post(
           "Could not durably capture consent during signup (both stores failed); failing closed",
           { userId: authData.user.id, requestId: req.requestId },
         );
+        // AS1-OUTBOX-DROP-001: signUp wrote the session cookie EAGERLY (autoconfirm) before this gate,
+        // so clear it — no session may survive a consent-capture failure. Same discipline as the OAuth
+        // callback's durable:false → signOut. No-op when confirm-email-ON returned no session.
+        await supabase.auth.signOut({ scope: "local" }).catch((signOutErr) =>
+          logger.warn(
+            "AUTH",
+            "signout_cleanup_failed",
+            "Best-effort signOut clearing the eager signup cookie after consent failure failed",
+            {
+              requestId: req.requestId,
+              error:
+                signOutErr instanceof Error
+                  ? signOutErr.message
+                  : String(signOutErr),
+            },
+          ),
+        );
         return res.status(503).json({
           error:
             "We couldn't complete your sign-up just now. Please try again.",
@@ -237,11 +231,7 @@ router.post(
       }
 
       const hasCanonicalSession = !!authData.session;
-
-      // Persist the session natively via @supabase/ssr (writes the sb-<ref>-auth-token cookie).
-      if (hasCanonicalSession && authData.session) {
-        await persistSession(req, res, authData.session);
-      }
+      // No manual persistSession: signUp on the SSR client already wrote the cookie via the adapter.
 
       logger.info("AUTH", "signup_success", "User signed up successfully", {
         userId: authData.user.id,
@@ -494,9 +484,11 @@ router.post(
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      // G7 / AL-2: mint the session on the per-request @supabase/ssr server client so the cookie
+      // (sb-<ref>-auth-token) is written natively by the setAll adapter during signInWithPassword —
+      // one session mechanism, no ad-hoc anon createClient + manual setSession hand-off.
+      const supabase = createSupabaseServerClient(req, res);
 
-      // Sign in with Supabase Auth
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -517,9 +509,6 @@ router.post(
           error: "Failed to create session",
         });
       }
-
-      // Persist the session natively via @supabase/ssr (writes the sb-<ref>-auth-token cookie).
-      await persistSession(req, res, data.session);
 
       logger.info("AUTH", "signin_success", "User signed in successfully", {
         userId: data.user.id,
@@ -720,61 +709,37 @@ router.post(
 
       if (runningAgainstPlaceholder()) return res.json({ success: true });
 
-      const admin = getSupabaseAdmin();
-      // Trusted origin only — never the request Host header. The recovery URL goes into an email;
-      // a spoofed Host would produce a phishing link to an attacker origin (Host-header injection).
+      // Trusted origin only — never the request Host header (a spoofed Host would phish the recovery
+      // redirect / Host-header injection). Missing config is a hard 500.
       const siteUrl = (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
       if (!siteUrl) {
         logger.error(
           "AUTH",
           "reset_password_config",
-          "PUBLIC_SITE_URL is missing; cannot build a trusted recovery link",
+          "PUBLIC_SITE_URL is missing; cannot build a trusted recovery redirect",
           { requestId: req.requestId },
         );
         return res.status(500).json({ error: "Failed to send reset email" });
       }
 
-      // AS-5: native recovery token via Supabase generateLink — we take the token_hash and build our
-      // OWN link to /auth/callback so the SERVER completes verifyOtp(type=recovery) and establishes
-      // the SSR session, then routes to the set-new-password page. (The raw action_link returns
-      // tokens in the URL *hash*, which a server route can't read — that stranded users on a
-      // RequireRole page with no session.)
-      const { data, error } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email: email,
-        options: {
-          redirectTo: `${siteUrl}/auth/callback`,
-        },
+      // AS-5 (G6): native password reset. Supabase sends the recovery email (PKCE token-hash template)
+      // and we hand it our trusted callback as the redirect — the SERVER completes
+      // verifyOtp(type=recovery) at /auth/callback, establishes the SSR session, then routes to the
+      // safe-listed /update-password page. No admin.generateLink, no app-built email/template.
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`,
       });
 
-      // Non-enumeration (AS3-AS5-RESET-ENUM-001): the user-facing response is the SAME generic
-      // message whether or not the email maps to an account. A provider error (e.g. unknown email)
-      // is logged server-side ONLY — never returned — so this surface cannot enumerate accounts.
-      // (True config failures like a missing PUBLIC_SITE_URL are handled above as a 500.)
+      // Non-enumeration (AS3-AS5-RESET-ENUM-001): identical generic response whether or not the email
+      // maps to an account; any provider error is logged server-side ONLY, never returned.
       if (error) {
         logger.warn(
           "AUTH",
           "reset_password_provider_error",
-          "generateLink failed; returning generic response (anti-enumeration)",
+          "resetPasswordForEmail failed; returning generic response (anti-enumeration)",
           { requestId: req.requestId, error: error.message },
         );
-      } else {
-        const tokenHash = data?.properties?.hashed_token;
-        if (tokenHash) {
-          const recoveryUrl =
-            `${siteUrl}/auth/callback?token_hash=${encodeURIComponent(tokenHash)}` +
-            `&type=recovery&next=${encodeURIComponent("/update-password")}`;
-          await sendEmail({
-            to: email,
-            subject: "Reset your Lyceon password",
-            html: `
-          <h1>Password Reset Request</h1>
-          <p>We received a request to reset your password. Click the link below to set a new one:</p>
-          <p><a href="${recoveryUrl}">Reset Password</a></p>
-          <p>If you did not request this, you can safely ignore this email.</p>
-        `,
-          });
-        }
       }
 
       res.json({
@@ -810,26 +775,22 @@ router.post(
 
       if (runningAgainstPlaceholder()) return res.json({ success: true });
 
-      const admin = getSupabaseAdmin();
-      const tokenResult = resolveTokenFromRequest(req);
-      const userId = await resolveUserIdFromToken(tokenResult.token);
-
-      if (!userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-
-      const { error } = await admin.auth.admin.updateUserById(userId, {
-        password: password,
-      });
+      // AS-5/AS-6 (G6/G9): the recovery (or normal) session lives in the httpOnly @supabase/ssr
+      // cookie. Update the password natively on the per-request server client — Supabase's updateUser
+      // acts on the cookie-held session user. Documented adaptation: updateUser runs server-side
+      // because our session is server-authoritative (httpOnly cookie), NOT a custom reimplementation.
+      // No admin.updateUserById, no manual token resolution.
+      const supabase = createSupabaseServerClient(req, res);
+      const { error } = await supabase.auth.updateUser({ password });
 
       if (error) {
-        logger.error(
+        logger.warn(
           "AUTH",
           "update_password_error",
           "Supabase update password failed",
-          { error },
+          { error: error.message, requestId: req.requestId },
         );
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: "Failed to update password" });
       }
 
       res.json({ success: true, message: "Password updated successfully" });

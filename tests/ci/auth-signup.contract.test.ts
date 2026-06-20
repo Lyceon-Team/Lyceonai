@@ -27,6 +27,17 @@ const profileEqMock = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 const profileUpdateMock = vi.hoisted(() =>
   vi.fn(() => ({ eq: profileEqMock })),
 );
+// Stage-2 delta mocks (sign-in / reset / update-password) — folded here to reuse this harness's
+// already-suppressed cookieParser sink (CodeQL js/missing-token-validation) rather than fork a 2nd app.
+const resetPasswordForEmailMock = vi.hoisted(() =>
+  vi.fn(async () => ({ data: {}, error: null })),
+);
+const ssrSignInMock = vi.hoisted(() => vi.fn());
+const ssrUpdateUserMock = vi.hoisted(() =>
+  vi.fn(async () => ({ data: { user: { id: "u" } }, error: null })),
+);
+const ssrSignOutMock = vi.hoisted(() => vi.fn());
+const ssrSetSessionMock = vi.hoisted(() => vi.fn());
 const profileFromMock = vi.hoisted(() =>
   vi.fn((table: string) => {
     if (table === "profiles") {
@@ -75,20 +86,22 @@ vi.mock("@supabase/supabase-js", () => ({
     auth: {
       signUp: signUpMock,
       signInWithPassword: vi.fn(),
+      resetPasswordForEmail: resetPasswordForEmailMock,
       refreshSession: vi.fn(),
       getUser: vi.fn(),
     },
   })),
 }));
 
-// AUTH-001: signup now persists the session via @supabase/ssr createServerClient.setSession, which
-// writes the native session cookie through the cookie adapter's setAll. Mock it to exercise that path.
+// signup/sign-in mint the session on the @supabase/ssr createServerClient (signUp / signInWithPassword);
+// the cookie adapter's setAll writes the native cookie. signOut clears it (fail-closed). Mocked below.
 vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn(
     (_url: string, _key: string, options: SsrCookieAdapterOptions) => ({
       auth: {
-        setSession: vi.fn(async () => {
-          // Emulate the SSR client writing the native session cookie through the adapter.
+        setSession: vi.fn(async (...args: unknown[]) => {
+          // Tracked so tests can assert signup/sign-in mint NATIVELY (no manual persistSession).
+          ssrSetSessionMock(...args);
           options.cookies.setAll([
             {
               name: "sb-lyceon-prod-auth-token",
@@ -98,7 +111,49 @@ vi.mock("@supabase/ssr", () => ({
           ]);
           return { data: { session: null, user: null }, error: null };
         }),
-        signOut: vi.fn(async () => ({ error: null })),
+        // G7/G8: signup mints on the SSR client too — signUp writes the native cookie via setAll when
+        // autoconfirm returns a session (driven by signUpMock for each outcome). No manual persist.
+        signUp: vi.fn(async (args: unknown) => {
+          const result = (await signUpMock(args)) as {
+            data?: { session?: unknown };
+          };
+          if (result?.data?.session) {
+            options.cookies.setAll([
+              {
+                name: "sb-lyceon-prod-auth-token",
+                value: "base64-" + Buffer.from("{}").toString("base64"),
+                options: {},
+              },
+            ]);
+          }
+          return result;
+        }),
+        // G7: sign-in mints the session on the SSR client, which writes the native cookie via setAll.
+        signInWithPassword: vi.fn(async (creds: unknown) => {
+          const result = (await ssrSignInMock(creds)) as {
+            data?: { session?: unknown };
+          };
+          if (result?.data?.session) {
+            options.cookies.setAll([
+              {
+                name: "sb-lyceon-prod-auth-token",
+                value: "base64-" + Buffer.from("{}").toString("base64"),
+                options: {},
+              },
+            ]);
+          }
+          return result;
+        }),
+        // G6/G9: update-password runs updateUser on the cookie-held session.
+        updateUser: ssrUpdateUserMock,
+        // signOut clears the native cookie via the adapter (mirrors real fail-closed clearing).
+        signOut: vi.fn(async () => {
+          ssrSignOutMock();
+          options.cookies.setAll([
+            { name: "sb-lyceon-prod-auth-token", value: "", options: {} },
+          ]);
+          return { error: null };
+        }),
       },
     }),
   ),
@@ -156,15 +211,28 @@ async function signupWithCsrf(
   app: express.Express,
   body: Record<string, unknown>,
 ) {
+  return postWithCsrf(app, "/api/auth/signup", body);
+}
+
+// Generic CSRF double-submit POST (reused by the Stage-2 delta tests for signin/reset/update-password).
+async function postWithCsrf(
+  app: express.Express,
+  path: string,
+  body: Record<string, unknown>,
+) {
   const agent = request.agent(app);
   const tokenRes = await agent.get("/api/csrf-token");
   const csrfToken = tokenRes.body.csrfToken as string;
-  return agent
-    .post("/api/auth/signup")
-    .set("x-csrf-token", csrfToken)
-    .send(body);
+  return agent.post(path).set("x-csrf-token", csrfToken).send(body);
 }
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-1, AS1-OUTBOX-DROP-001 |
+ *   contracts/auth-login-e2e.contract.md AL-2/AL-3 | Coding Standards §14]
+ * Proves signup SSR session minting (G7/G8), the fail-closed consent gate (AS1-OUTBOX-DROP-001 — the
+ * eager cookie is cleared, no session survives a consent failure), the toggle-robust 201/202 branches,
+ * and that no manual persistSession (setSession) hand-off survives.
+ */
 describe("Auth Signup Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -320,6 +388,9 @@ describe("Auth Signup Contract", () => {
     expect(
       setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
     ).toBe(true);
+    // G7/G8: minted NATIVELY on the SSR client's signUp — no manual persistSession (setSession) hand-off.
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    expect(ssrSetSessionMock).not.toHaveBeenCalled();
   });
 
   it("AS1-OUTBOX-DROP-001: fails closed (503, no session cookie) when consent can't be durably captured", async () => {
@@ -357,11 +428,17 @@ describe("Auth Signup Contract", () => {
     });
 
     expect(res.status).toBe(503);
-    // No session may be granted when consent could not be captured.
+    // signUp wrote the session cookie EAGERLY; the fail-closed branch must sign out to clear it, so no
+    // session survives a consent-capture failure (AS1-OUTBOX-DROP-001).
+    expect(ssrSignOutMock).toHaveBeenCalled();
     const setCookies = res.headers["set-cookie"] ?? [];
-    expect(
-      setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
-    ).toBe(false);
+    const authCookies = setCookies.filter((cookie: string) =>
+      /^sb-[^=]*-auth-token=/.test(cookie),
+    );
+    expect(authCookies.length).toBeGreaterThan(0); // the eager cookie WAS written ...
+    expect(authCookies[authCookies.length - 1]).toMatch(
+      /^sb-[^=]*-auth-token=;/,
+    ); // ... and then cleared (empty value) — no live session left
   });
 });
 
@@ -371,4 +448,142 @@ afterEach(() => {
   process.env.SUPABASE_URL = baselineEnv.SUPABASE_URL;
   process.env.SUPABASE_ANON_KEY = baselineEnv.SUPABASE_ANON_KEY;
   process.env.PUBLIC_SITE_URL = baselineEnv.PUBLIC_SITE_URL;
+});
+
+/**
+ * @spec [auth-login-e2e AL-2 | auth-standard-flow AS-5/AS-6 | gap-analysis G1/G5/G6/G7/G9]
+ * Stage-2 DELTA proofs — surgical (prove the changes, not the whole surface). Folded into this file so
+ * they share the harness's already-suppressed cookieParser sink instead of forking a second test app.
+ */
+describe("Auth routes — Stage 2 deltas (signin / reset / update-password)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("G7/AL-2: sign-in mints the session on the SSR server client and writes the native cookie", async () => {
+    ssrSignInMock.mockResolvedValueOnce({
+      data: {
+        session: {
+          access_token: "a".repeat(40),
+          refresh_token: "r".repeat(40),
+        },
+        user: { id: "u1", email: "in@example.com" },
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/signin", {
+      email: "in@example.com",
+      password: "Password123!",
+    });
+
+    expect(res.status).toBe(200);
+    expect(ssrSignInMock).toHaveBeenCalledTimes(1);
+    const setCookies = res.headers["set-cookie"] ?? [];
+    expect(
+      setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
+    ).toBe(true);
+  });
+
+  it("G7: invalid sign-in stays generic (Invalid email or password)", async () => {
+    ssrSignInMock.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: "Invalid login credentials" },
+    });
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/signin", {
+      email: "in@example.com",
+      password: "wrong",
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Invalid email or password");
+  });
+
+  it("G1: signup does NOT write profiles (phantom update removed — the trigger owns creation)", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "u2", email: "new@example.com" },
+        session: {
+          access_token: "a".repeat(48),
+          refresh_token: "r".repeat(48),
+          expires_in: 3600,
+        },
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/signup", {
+      email: "new@example.com",
+      password: "Password123!",
+      displayName: "New User",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(201);
+    // The handle_new_user trigger is the single creator — no profiles.update here.
+    expect(profileUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("G5: signup error is generic and non-enumerable (never reveals 'already registered')", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: "User already registered" },
+    });
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/signup", {
+      email: "dupe@example.com",
+      password: "Password123!",
+      legalConsent: {
+        studentTermsAccepted: true,
+        privacyPolicyAccepted: true,
+        consentSource: "email_signup_form",
+      },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).not.toMatch(/registered|exists/i);
+  });
+
+  it("G6/AS-5: reset calls native resetPasswordForEmail (callback redirect) with a generic 200", async () => {
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/reset-password", {
+      email: "reset@example.com",
+    });
+
+    expect(res.status).toBe(200);
+    expect(resetPasswordForEmailMock).toHaveBeenCalledTimes(1);
+    const [emailArg, opts] = resetPasswordForEmailMock.mock.calls[0] as [
+      string,
+      { redirectTo?: string },
+    ];
+    expect(emailArg).toBe("reset@example.com");
+    expect(opts.redirectTo).toContain("/auth/callback");
+    expect(decodeURIComponent(opts.redirectTo ?? "")).toContain(
+      "/update-password",
+    );
+  });
+
+  it("G6/G9/AS-6: update-password uses the SSR client's updateUser (no admin.updateUserById)", async () => {
+    const app = await loadAuthApp();
+
+    const res = await postWithCsrf(app, "/api/auth/update-password", {
+      password: "BrandNewPassword123!",
+    });
+
+    expect(res.status).toBe(200);
+    expect(ssrUpdateUserMock).toHaveBeenCalledTimes(1);
+    expect(ssrUpdateUserMock).toHaveBeenCalledWith({
+      password: "BrandNewPassword123!",
+    });
+  });
 });

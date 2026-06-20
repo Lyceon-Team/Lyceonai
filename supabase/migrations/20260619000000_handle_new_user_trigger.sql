@@ -1,0 +1,95 @@
+-- ============================================================================
+-- handle_new_user — canonical @supabase/ssr profile-creation trigger (G1)
+-- ============================================================================
+-- @spec [contracts/auth-login-e2e.contract.md AL-2/AL-4 | Doc-01_V8 Part I Identity Model
+--   (one profiles row per authenticated user) | Doc-01_V8 §3 profiles write protocol (deviation below) |
+--   docs/SpecAudit/50-auth-entitlement/auth-ssr-gap-analysis.md G1]
+-- @implemented [2026-06-19]
+--
+-- plain English: the SINGLE, canonical mechanism that creates exactly one public.profiles row for
+-- every auth.users insert, atomically, inside the same transaction GoTrue uses to create the user.
+-- This is the Supabase-documented pattern (handle_new_user + on_auth_user_created). Before this, the
+-- email-signup path only UPDATEd a row it ASSUMED a trigger had created — but no such trigger existed
+-- in prod, so 54/116 users had no profile and every legal-acceptance write FK-failed (total signup
+-- outage). With this trigger the profile always exists before any app row that references it.
+--
+-- DESIGN:
+--   * SECURITY DEFINER + SET search_path = '' (canonical hardening): runs as the function owner so it
+--     may insert past profiles' service-role-only RLS; the empty search_path forces fully-qualified
+--     names (no search-path injection).
+--   * display_name falls back display_name -> full_name -> name -> email-localpart so Google OAuth
+--     identities (which carry full_name/name, not display_name) keep a sensible name — matches the
+--     old ensureProfileForAuthUser fallback the trigger now replaces.
+--   * role is CLAMPED: a self-asserted 'admin'/'tutor'/'teacher' in user_metadata can NEVER mint an
+--     elevated profile (server-authoritative role rule). Only 'guardian' is honored from metadata;
+--     everything else becomes 'student'. profile-complete finalization sets the durable role later.
+--   * ON CONFLICT DO NOTHING (no target — catch-all): idempotent AND collision-robust. The catch-all
+--     absorbs BOTH unique arbiters this insert can hit — the id primary key (same human re-inserted /
+--     resume / replay) AND the partial unique idx_profiles_email_active on lower(email) (a second auth
+--     identity on an already-registered email). Because it is target-less, a same-email-second-identity
+--     insert can NEVER raise 23505, so it can NEVER abort the GoTrue auth.users insert: the new auth
+--     user is simply left without a duplicate profile rather than failing user creation outright.
+--   * Launch vs. test posture: with native identity-linking ON (Karl-2) a verified-email second
+--     identity maps to the SAME auth id, so the email arbiter is unreachable and only the id path is
+--     exercised. Linking + confirm-email stay OFF for the autoconfirm test phase, where the email path
+--     IS reachable — which is exactly why the arbiter is catch-all. The rare linking-OFF email
+--     collision yields an auth user with no profile; profile-bootstrap (Stage 2, read-only) surfaces
+--     that as a logged, recoverable state — never a silent 500. Proven by genesis-fresh-apply A.5.
+--   * age_years / is_under_13 stay NULL at creation (no date_of_birth yet) and are maintained by the
+--     existing profiles_set_age trigger when DOB is set at profile-complete.
+--
+-- DEVIATION (tracked) — Doc 01 V8 §3 (single-writer + audit-emit on profiles writes):
+--   §3 names profile-service.ts as the single canonical profiles writer and asks every profiles write
+--   to emit an audit_logs event. This trigger is a second writer and emits no audit row. Both are
+--   deliberate under the §3 "current-state deviation" (multiple writers acknowledged as debt):
+--     - Per the approved rebuild (Q1=a) the trigger is THE profile creator; ensureProfileForAuthUser
+--       is reduced to read/verify, so total writer count goes DOWN, not up.
+--     - Audit is intentionally NOT coupled into the GoTrue auth.users transaction: a failing audit
+--       insert here would abort user creation — exactly the fragile coupling this rebuild removes.
+--       Profile creation stays observable (auth.users.created_at + profiles.created_at); durable
+--       audit/notification emission is the single-writer-consolidation wave's concern, tracked there.
+--
+-- ROLLBACK (reversible): DOWN block drops the trigger then the function. No data destroyed.
+--   LYCEON-MIGRATION-REVIEWED
+-- ============================================================================
+
+BEGIN;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, display_name, role)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(
+      NEW.raw_user_meta_data->>'display_name',
+      NEW.raw_user_meta_data->>'full_name',  -- Google OAuth sets full_name / name, not display_name
+      NEW.raw_user_meta_data->>'name',
+      split_part(NEW.email, '@', 1)
+    ),
+    CASE WHEN NEW.raw_user_meta_data->>'role' = 'guardian' THEN 'guardian' ELSE 'student' END::public.profile_role
+  )
+  ON CONFLICT DO NOTHING;  -- catch-all: tolerates id PK AND lower(email) arbiters; never aborts the auth insert
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+COMMIT;
+
+-- ============================================================================
+-- DOWN (reversible)
+-- ============================================================================
+-- BEGIN;
+--   DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+--   DROP FUNCTION IF EXISTS public.handle_new_user();
+-- COMMIT;
