@@ -1,28 +1,37 @@
-import { useMemo, useState } from 'react';
-import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, Mail, Lock, User } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast';
+import { useMemo, useState } from "react";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertCircle, Mail, Lock, User } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { resolveAuthErrorMessage } from "@/lib/auth-error-messages";
 
-type AuthMode = 'signin' | 'signup' | 'reset';
+type AuthMode = "signin" | "signup" | "reset";
 
 export function SupabaseAuthForm() {
-  const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } = useSupabaseAuth();
+  const { signIn, signUp, signInWithGoogle, isLoading, resetPassword } =
+    useSupabaseAuth();
   const { toast } = useToast();
 
-  const [mode, setMode] = useState<AuthMode>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [mode, setMode] = useState<AuthMode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [signupLegalAccepted, setSignupLegalAccepted] = useState(false);
   const [googleLegalAccepted, setGoogleLegalAccepted] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [verificationState, setVerificationState] = useState<{
     email: string;
     message: string;
@@ -32,46 +41,46 @@ export function SupabaseAuthForm() {
     return Boolean(signupLegalAccepted && email && password);
   }, [signupLegalAccepted, email, password]);
 
-
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setVerificationState(null);
 
     if (!email) {
-      setError('Please enter your email address');
+      setError("Please enter your email address");
       return;
     }
 
     try {
       await resetPassword(email);
       toast({
-        title: 'Check your email',
-        description: 'Password reset instructions have been sent.',
+        title: "Check your email",
+        description: "Password reset instructions have been sent.",
       });
-      setMode('signin');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset email');
+      setMode("signin");
+    } catch (err) {
+      setError(resolveAuthErrorMessage(err));
     }
   };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setVerificationState(null);
 
     try {
-      if (mode === 'signin') {
+      if (mode === "signin") {
         await signIn(email, password);
         toast({
-          title: 'Welcome back!',
-          description: 'You have been signed in successfully.',
+          title: "Welcome back!",
+          description: "You have been signed in successfully.",
         });
         return;
       }
 
       if (!signupLegalAccepted) {
-        throw new Error('You must accept Terms and Privacy to create an account');
+        setError("You must accept Terms and Privacy to create an account");
+        return;
       }
 
       const signupResult = await signUp(
@@ -80,61 +89,63 @@ export function SupabaseAuthForm() {
         {
           studentTermsAccepted: true,
           privacyPolicyAccepted: true,
-          consentSource: 'email_signup_form',
+          consentSource: "email_signup_form",
         },
         displayName,
       );
 
-      if (signupResult.outcome === 'verification_required') {
-        const msg = signupResult.message || 'Please verify your email before continuing.';
+      if (signupResult.outcome === "verification_required") {
+        const msg =
+          signupResult.message || "Please verify your email before continuing.";
         setVerificationState({
           email,
           message: msg,
         });
         toast({
-          title: 'Verification required',
+          title: "Verification required",
           description: msg,
         });
         return;
       }
 
       toast({
-        title: 'Account created',
-        description: 'Welcome to Lyceon.',
+        title: "Account created",
+        description: "Welcome to Lyceon.",
       });
-    } catch (err: any) {
-      const errorMsg = err.message || 'Authentication failed';
+    } catch (err) {
+      const errorMsg = resolveAuthErrorMessage(err);
       setError(errorMsg);
       toast({
-        title: mode === 'signin' ? 'Sign In Failed' : 'Sign Up Failed',
+        title: mode === "signin" ? "Sign In Failed" : "Sign Up Failed",
         description: errorMsg,
       });
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setError('');
+    setError("");
     setVerificationState(null);
 
     try {
       if (!googleLegalAccepted) {
-        throw new Error('Accept Terms and Privacy before continuing with Google');
+        setError("Accept Terms and Privacy before continuing with Google");
+        return;
       }
 
       await signInWithGoogle({
         studentTermsAccepted: true,
         privacyPolicyAccepted: true,
-        consentSource: 'google_continue_pre_oauth',
+        consentSource: "google_continue_pre_oauth",
       });
       toast({
-        title: 'Redirecting to Google...',
-        description: 'Continue in Google to finish sign-in.',
+        title: "Redirecting to Google...",
+        description: "Continue in Google to finish sign-in.",
       });
-    } catch (err: any) {
-      const errorMsg = err.message || 'Failed to sign in with Google';
+    } catch (err) {
+      const errorMsg = resolveAuthErrorMessage(err);
       setError(errorMsg);
       toast({
-        title: 'Google Sign-In Failed',
+        title: "Google Sign-In Failed",
         description: errorMsg,
       });
     }
@@ -144,16 +155,16 @@ export function SupabaseAuthForm() {
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <CardTitle className="text-2xl">
-          {mode === 'reset' ? 'Reset Password' : 'Lyceon'}
+          {mode === "reset" ? "Reset Password" : "Lyceon"}
         </CardTitle>
         <CardDescription>
-          {mode === 'reset'
-            ? 'Enter your email to receive a password reset link'
-            : 'Sign in to continue your SAT prep journey'}
+          {mode === "reset"
+            ? "Enter your email to receive a password reset link"
+            : "Sign in to continue your SAT prep journey"}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {mode === 'reset' ? (
+        {mode === "reset" ? (
           <form onSubmit={handleResetPassword} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="reset-email">Email</Label>
@@ -172,9 +183,14 @@ export function SupabaseAuthForm() {
             </div>
 
             {error && (
-              <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+              <Alert
+                className="border-amber-200 bg-amber-50"
+                data-testid="alert-error"
+              >
                 <AlertCircle className="h-4 w-4 text-amber-700" />
-                <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                <AlertDescription className="text-amber-800">
+                  {error}
+                </AlertDescription>
               </Alert>
             )}
 
@@ -186,13 +202,21 @@ export function SupabaseAuthForm() {
             )}
 
             <div className="flex flex-col space-y-2 mt-4">
-              <Button type="submit" disabled={isLoading} className="w-full" data-testid="button-reset">
-                {isLoading ? 'Sending...' : 'Send Reset Link'}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full"
+                data-testid="button-reset"
+              >
+                {isLoading ? "Sending..." : "Send Reset Link"}
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => { setMode('signin'); setError(''); }}
+                onClick={() => {
+                  setMode("signin");
+                  setError("");
+                }}
                 className="w-full"
               >
                 Back to Sign In
@@ -201,10 +225,20 @@ export function SupabaseAuthForm() {
           </form>
         ) : (
           <>
-            <Tabs value={mode} onValueChange={(v) => { setMode(v as AuthMode); setVerificationState(null); }}>
+            <Tabs
+              value={mode}
+              onValueChange={(v) => {
+                setMode(v as AuthMode);
+                setVerificationState(null);
+              }}
+            >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="signin" data-testid="tab-signin">Sign In</TabsTrigger>
-                <TabsTrigger value="signup" data-testid="tab-signup">Sign Up</TabsTrigger>
+                <TabsTrigger value="signin" data-testid="tab-signin">
+                  Sign In
+                </TabsTrigger>
+                <TabsTrigger value="signup" data-testid="tab-signup">
+                  Sign Up
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="signin" className="space-y-4 mt-4">
@@ -232,7 +266,11 @@ export function SupabaseAuthForm() {
                       <Button
                         variant="link"
                         className="p-0 h-auto text-xs text-muted-foreground font-normal"
-                        onClick={(e) => { e.preventDefault(); setMode('reset'); setError(''); }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setMode("reset");
+                          setError("");
+                        }}
                       >
                         Forgot password?
                       </Button>
@@ -253,9 +291,14 @@ export function SupabaseAuthForm() {
                   </div>
 
                   {error && (
-                    <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                    <Alert
+                      className="border-amber-200 bg-amber-50"
+                      data-testid="alert-error"
+                    >
                       <AlertCircle className="h-4 w-4 text-amber-700" />
-                      <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                      <AlertDescription className="text-amber-800">
+                        {error}
+                      </AlertDescription>
                     </Alert>
                   )}
 
@@ -265,7 +308,7 @@ export function SupabaseAuthForm() {
                     disabled={isLoading}
                     data-testid="button-signin"
                   >
-                    {isLoading ? 'Signing in...' : 'Sign In'}
+                    {isLoading ? "Signing in..." : "Sign In"}
                   </Button>
                 </form>
               </TabsContent>
@@ -329,10 +372,29 @@ export function SupabaseAuthForm() {
                       id="signup-legal-consent"
                       data-testid="checkbox-signup-legal"
                       checked={signupLegalAccepted}
-                      onCheckedChange={(checked) => setSignupLegalAccepted(Boolean(checked))}
+                      onCheckedChange={(checked) =>
+                        setSignupLegalAccepted(Boolean(checked))
+                      }
                     />
-                    <Label htmlFor="signup-legal-consent" className="text-sm font-normal">
-                      I agree to the <a href="/legal/student-terms" className="underline hover:no-underline">Student Terms</a> and <a href="/legal/privacy-policy" className="underline hover:no-underline">Privacy Policy</a>.
+                    <Label
+                      htmlFor="signup-legal-consent"
+                      className="text-sm font-normal"
+                    >
+                      I agree to the{" "}
+                      <a
+                        href="/legal/student-terms"
+                        className="underline hover:no-underline"
+                      >
+                        Student Terms
+                      </a>{" "}
+                      and{" "}
+                      <a
+                        href="/legal/privacy-policy"
+                        className="underline hover:no-underline"
+                      >
+                        Privacy Policy
+                      </a>
+                      .
                     </Label>
                   </div>
 
@@ -346,9 +408,14 @@ export function SupabaseAuthForm() {
                   )}
 
                   {error && (
-                    <Alert className="border-amber-200 bg-amber-50" data-testid="alert-error">
+                    <Alert
+                      className="border-amber-200 bg-amber-50"
+                      data-testid="alert-error"
+                    >
                       <AlertCircle className="h-4 w-4 text-amber-700" />
-                      <AlertDescription className="text-amber-800">{error}</AlertDescription>
+                      <AlertDescription className="text-amber-800">
+                        {error}
+                      </AlertDescription>
                     </Alert>
                   )}
 
@@ -358,7 +425,7 @@ export function SupabaseAuthForm() {
                     disabled={isLoading || !canSubmitSignup}
                     data-testid="button-signup"
                   >
-                    {isLoading ? 'Creating account...' : 'Sign Up'}
+                    {isLoading ? "Creating account..." : "Sign Up"}
                   </Button>
                 </form>
               </TabsContent>
@@ -369,7 +436,9 @@ export function SupabaseAuthForm() {
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with
+                </span>
               </div>
             </div>
 
@@ -379,10 +448,29 @@ export function SupabaseAuthForm() {
                   id="google-legal-consent"
                   data-testid="checkbox-google-legal"
                   checked={googleLegalAccepted}
-                  onCheckedChange={(checked) => setGoogleLegalAccepted(Boolean(checked))}
+                  onCheckedChange={(checked) =>
+                    setGoogleLegalAccepted(Boolean(checked))
+                  }
                 />
-                <Label htmlFor="google-legal-consent" className="text-xs text-muted-foreground leading-5">
-                  By continuing with Google, I agree to the <a href="/legal/student-terms" className="underline hover:no-underline">Student Terms</a> and <a href="/legal/privacy-policy" className="underline hover:no-underline">Privacy Policy</a>.
+                <Label
+                  htmlFor="google-legal-consent"
+                  className="text-xs text-muted-foreground leading-5"
+                >
+                  By continuing with Google, I agree to the{" "}
+                  <a
+                    href="/legal/student-terms"
+                    className="underline hover:no-underline"
+                  >
+                    Student Terms
+                  </a>{" "}
+                  and{" "}
+                  <a
+                    href="/legal/privacy-policy"
+                    className="underline hover:no-underline"
+                  >
+                    Privacy Policy
+                  </a>
+                  .
                 </Label>
               </div>
 
