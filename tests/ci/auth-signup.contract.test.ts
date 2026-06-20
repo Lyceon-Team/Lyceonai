@@ -36,6 +36,8 @@ const ssrSignInMock = vi.hoisted(() => vi.fn());
 const ssrUpdateUserMock = vi.hoisted(() =>
   vi.fn(async () => ({ data: { user: { id: "u" } }, error: null })),
 );
+const ssrSignOutMock = vi.hoisted(() => vi.fn());
+const ssrSetSessionMock = vi.hoisted(() => vi.fn());
 const profileFromMock = vi.hoisted(() =>
   vi.fn((table: string) => {
     if (table === "profiles") {
@@ -91,14 +93,15 @@ vi.mock("@supabase/supabase-js", () => ({
   })),
 }));
 
-// AUTH-001: signup now persists the session via @supabase/ssr createServerClient.setSession, which
-// writes the native session cookie through the cookie adapter's setAll. Mock it to exercise that path.
+// signup/sign-in mint the session on the @supabase/ssr createServerClient (signUp / signInWithPassword);
+// the cookie adapter's setAll writes the native cookie. signOut clears it (fail-closed). Mocked below.
 vi.mock("@supabase/ssr", () => ({
   createServerClient: vi.fn(
     (_url: string, _key: string, options: SsrCookieAdapterOptions) => ({
       auth: {
-        setSession: vi.fn(async () => {
-          // Emulate the SSR client writing the native session cookie through the adapter.
+        setSession: vi.fn(async (...args: unknown[]) => {
+          // Tracked so tests can assert signup/sign-in mint NATIVELY (no manual persistSession).
+          ssrSetSessionMock(...args);
           options.cookies.setAll([
             {
               name: "sb-lyceon-prod-auth-token",
@@ -107,6 +110,23 @@ vi.mock("@supabase/ssr", () => ({
             },
           ]);
           return { data: { session: null, user: null }, error: null };
+        }),
+        // G7/G8: signup mints on the SSR client too — signUp writes the native cookie via setAll when
+        // autoconfirm returns a session (driven by signUpMock for each outcome). No manual persist.
+        signUp: vi.fn(async (args: unknown) => {
+          const result = (await signUpMock(args)) as {
+            data?: { session?: unknown };
+          };
+          if (result?.data?.session) {
+            options.cookies.setAll([
+              {
+                name: "sb-lyceon-prod-auth-token",
+                value: "base64-" + Buffer.from("{}").toString("base64"),
+                options: {},
+              },
+            ]);
+          }
+          return result;
         }),
         // G7: sign-in mints the session on the SSR client, which writes the native cookie via setAll.
         signInWithPassword: vi.fn(async (creds: unknown) => {
@@ -126,7 +146,14 @@ vi.mock("@supabase/ssr", () => ({
         }),
         // G6/G9: update-password runs updateUser on the cookie-held session.
         updateUser: ssrUpdateUserMock,
-        signOut: vi.fn(async () => ({ error: null })),
+        // signOut clears the native cookie via the adapter (mirrors real fail-closed clearing).
+        signOut: vi.fn(async () => {
+          ssrSignOutMock();
+          options.cookies.setAll([
+            { name: "sb-lyceon-prod-auth-token", value: "", options: {} },
+          ]);
+          return { error: null };
+        }),
       },
     }),
   ),
@@ -199,6 +226,13 @@ async function postWithCsrf(
   return agent.post(path).set("x-csrf-token", csrfToken).send(body);
 }
 
+/**
+ * @spec [contracts/auth-standard-flow.contract.md AS-1, AS1-OUTBOX-DROP-001 |
+ *   contracts/auth-login-e2e.contract.md AL-2/AL-3 | Coding Standards §14]
+ * Proves signup SSR session minting (G7/G8), the fail-closed consent gate (AS1-OUTBOX-DROP-001 — the
+ * eager cookie is cleared, no session survives a consent failure), the toggle-robust 201/202 branches,
+ * and that no manual persistSession (setSession) hand-off survives.
+ */
 describe("Auth Signup Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -354,6 +388,9 @@ describe("Auth Signup Contract", () => {
     expect(
       setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
     ).toBe(true);
+    // G7/G8: minted NATIVELY on the SSR client's signUp — no manual persistSession (setSession) hand-off.
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    expect(ssrSetSessionMock).not.toHaveBeenCalled();
   });
 
   it("AS1-OUTBOX-DROP-001: fails closed (503, no session cookie) when consent can't be durably captured", async () => {
@@ -391,11 +428,17 @@ describe("Auth Signup Contract", () => {
     });
 
     expect(res.status).toBe(503);
-    // No session may be granted when consent could not be captured.
+    // signUp wrote the session cookie EAGERLY; the fail-closed branch must sign out to clear it, so no
+    // session survives a consent-capture failure (AS1-OUTBOX-DROP-001).
+    expect(ssrSignOutMock).toHaveBeenCalled();
     const setCookies = res.headers["set-cookie"] ?? [];
-    expect(
-      setCookies.some((cookie: string) => /^sb-.*-auth-token=/.test(cookie)),
-    ).toBe(false);
+    const authCookies = setCookies.filter((cookie: string) =>
+      /^sb-[^=]*-auth-token=/.test(cookie),
+    );
+    expect(authCookies.length).toBeGreaterThan(0); // the eager cookie WAS written ...
+    expect(authCookies[authCookies.length - 1]).toMatch(
+      /^sb-[^=]*-auth-token=;/,
+    ); // ... and then cleared (empty value) — no live session left
   });
 });
 
