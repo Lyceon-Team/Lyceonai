@@ -6,7 +6,7 @@ import { drainAllPendingLegalAcceptances } from "../lib/legal-acceptance.js";
 import {
   executeDueDeletions,
   isDeletionLifecycleV2Enabled,
-} from "./account-deletion-routes.js";
+} from "../lib/account-deletion-execute.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18

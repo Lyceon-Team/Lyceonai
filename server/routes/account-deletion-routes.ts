@@ -5,6 +5,10 @@ import { getSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-au
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { sendEmail } from '../lib/email';
 import { logger } from '../logger';
+import { isDeletionLifecycleV2Enabled } from '../lib/account-deletion-execute';
+// buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
+// loading this route module); re-exported here for existing importers (deletion-lifecycle.test.ts).
+export { buildDeletedEmail } from '../lib/account-deletion-execute';
 
 const router = Router();
 // @spec [Doc-01 §40 Account deletion lifecycle] | @implemented 2026-06-20
@@ -16,11 +20,6 @@ const router = Router();
 // so the right-to-erasure path never worked in prod — GAP-HY-13).
 export const DELETION_GRACE_DAYS = 7;
 const DELETION_GRACE_MS = DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
-const DELETION_BAN_DURATION = '876000h'; // 100 years
-
-export function buildDeletedEmail(userId: string): string {
-    return `deleted_${userId}@deleted.lyceon.ai`;
-}
 
 export function isGraceWindowExpired(requestedAt: string, now: Date = new Date()): boolean {
     const requestedAtMs = new Date(requestedAt).getTime();
@@ -46,15 +45,6 @@ export function buildDeletionRequestInsert(profileId: string, now: Date = new Da
         status: 'pending' as const,
         stripe_cancellation_status: 'pending' as const,
     };
-}
-
-// @spec [Doc-01 §40.2.1 / §40.3 / §40.4] V2 lifecycle gate. The soft-delete-lock + token-recovery
-// path goes live ONLY when the owner has applied the staged migration
-// (supabase/migrations-pending/20260621000000_account_deletion_lifecycle.sql) and set this flag.
-// Flag OFF (default) = the post-#403 direct-insert path: it never sets profiles.deleted_at and never
-// calls the (pre-migration absent) RPCs, so shipping this code dormant cannot regress /delete or login.
-export function isDeletionLifecycleV2Enabled(): boolean {
-    return process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === 'true';
 }
 
 // @spec [Doc-01 §40.4] recovery token: a 256-bit URL-safe secret mailed to the user; only its
@@ -346,89 +336,5 @@ router.post('/recover-deletion', async (req: Request, res: Response) => {
         return res.status(500).json({ error: 'Internal server error', requestId });
     }
 });
-
-/**
- * @spec [Doc-01 §40.5 Hard delete at T+7] the irreversible de-identify pass.
- * This is intentionally NOT a route here: the destructive path must be reachable ONLY from the
- * cron-secret + flag gated internal endpoint (server/routes/internal-cron-routes.ts), so that
- * (a) nothing but the scheduled job can trigger it, and (b) flag-OFF is genuinely dormant. Per-row
- * idempotent: deidentify_user is a no-op over an already-anonymized row, and once a request flips to
- * status='completed' it leaves the pending selection — both proven by the deletion-deidentify
- * rehearsal gate (scripts/ci/deletion-deidentify-rehearsal.*).
- */
-export async function executeDueDeletions(
-    admin: DeletionAdminClient,
-    requestId?: string,
-): Promise<{ executedCount: number; failedCount: number }> {
-    // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
-    const nowIso = new Date().toISOString();
-
-    const { data: pendingRequests, error: fetchError } = await admin
-        .from('account_deletion_requests')
-        .select('id, profile_id')
-        .eq('status', 'pending')
-        .lte('scheduled_hard_delete_at', nowIso);
-
-    if (fetchError) {
-        logger.error('DELETION', 'fetch_pending_error', 'Failed to fetch pending deletions', { error: fetchError.message, requestId });
-        throw new Error(fetchError.message);
-    }
-
-    if (!pendingRequests || pendingRequests.length === 0) {
-        return { executedCount: 0, failedCount: 0 };
-    }
-
-    let successCount = 0;
-    let failureCount = 0;
-
-    // Execute de-identification logic via stored procedure per user
-    for (const pending of pendingRequests) {
-        const deletionEmail = buildDeletedEmail(pending.profile_id);
-
-        const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.profile_id, deleted_email: deletionEmail });
-
-        if (rpcError) {
-            logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.profile_id, error: rpcError.message, requestId });
-            failureCount++;
-            continue;
-        }
-
-        const { error: authError } = await admin.auth.admin.updateUserById(pending.profile_id, {
-            email: deletionEmail,
-            ban_duration: DELETION_BAN_DURATION,
-            user_metadata: {
-                deletion_status: 'completed',
-                deleted_at: new Date().toISOString(),
-            },
-        });
-
-        if (authError) {
-            logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
-                userId: pending.profile_id,
-                error: authError.message,
-                requestId,
-            });
-            failureCount++;
-            continue;
-        }
-
-        // Mark as completed
-        await admin
-            .from('account_deletion_requests')
-            .update({ status: 'completed', completion_at: new Date().toISOString() })
-            .eq('id', pending.id);
-
-        successCount++;
-    }
-
-    logger.info('DELETION', 'execution_complete', 'Executed pending account deletions', {
-        attemptedCount: pendingRequests.length,
-        successCount,
-        failedCount: failureCount,
-        requestId,
-    });
-
-    return { executedCount: successCount, failedCount: failureCount };
-}
 
 export default router;
