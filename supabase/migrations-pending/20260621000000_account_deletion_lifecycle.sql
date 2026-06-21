@@ -166,9 +166,51 @@ $$;
 REVOKE ALL ON FUNCTION public.restore_account_deletion(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.restore_account_deletion(text) TO service_role;
 
+-- §40.4 in-app cancel — the AUTHENTICATED symmetric twin of restore_account_deletion. Keyed by the
+-- signed-in profile_id (the route has req.user.id) instead of a recovery token, but otherwise the same
+-- single-transaction shape: clear profiles.deleted_at AND cancel the pending request atomically, so a
+-- partial failure can never leave the user cancelled-but-still-soft-locked (the strand the §40.3 lock
+-- exists to prevent). If the freed email was re-registered during grace, clearing deleted_at raises
+-- 23505 on idx_profiles_email_active and the WHOLE function rolls back — the request stays 'pending'
+-- (recoverable), never stranded as cancelled. Returns the restored profile_id, or NULL if there was no
+-- pending request to cancel (caller maps NULL -> 404, 23505 -> 409).
+CREATE OR REPLACE FUNCTION public.cancel_account_deletion(p_profile_id uuid)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_request_id uuid;
+BEGIN
+  SELECT adr.id INTO v_request_id
+    FROM public.account_deletion_requests adr
+   WHERE adr.profile_id = p_profile_id
+     AND adr.status = 'pending'
+   LIMIT 1;
+
+  IF v_request_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- Lift the soft-delete lock first; a 23505 here aborts the whole function (both writes roll back).
+  UPDATE public.profiles SET deleted_at = NULL, updated_at = now() WHERE id = p_profile_id;
+
+  UPDATE public.account_deletion_requests
+     SET status                     = 'cancelled',
+         stripe_cancellation_status = 'cancelled_by_recovery'
+   WHERE id = v_request_id;
+
+  RETURN p_profile_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.cancel_account_deletion(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cancel_account_deletion(uuid) TO service_role;
+
 -- ----------------------------------------------------------------------------
 -- DOWN (fully reversible per migrations-pending discipline / INV-06)
 -- ----------------------------------------------------------------------------
+-- DROP FUNCTION IF EXISTS public.cancel_account_deletion(uuid);
 -- DROP FUNCTION IF EXISTS public.restore_account_deletion(text);
 -- DROP FUNCTION IF EXISTS public.request_account_deletion(uuid, uuid, text, integer);
 -- DROP FUNCTION IF EXISTS public.deidentify_user(uuid, text);

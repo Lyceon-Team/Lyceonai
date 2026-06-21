@@ -270,6 +270,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/deletion-deidentify-negative-control.sh
 
+      - name: In-app cancel atomicity (no-strand) rehearsal
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-cancel-atomicity.sh
+
   # ---------------------------------------------------------------------------
   # Mastery PARITY gate (Doc 05A §12 / §12.4a / §12.5) — HARD GATE. Proves the
   # PL/pgSQL compute_mastery_for_entity matches the independent Python reference

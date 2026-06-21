@@ -88,6 +88,30 @@ export async function performRecovery(admin: DeletionAdminClient, rawToken: stri
     return { ok: true, profileId };
 }
 
+type InAppCancelResult =
+    | { ok: true; profileId: string }
+    | { ok: false; code: 'NO_PENDING' | 'EMAIL_RECLAIMED' | 'ERROR'; message: string };
+
+// @spec [Doc-01 §40.4] in-app cancel — the AUTHENTICATED symmetric twin of performRecovery. Calls the
+// atomic cancel_account_deletion RPC (clears profiles.deleted_at AND cancels the request in ONE
+// transaction) keyed by the signed-in profile_id. Maps the RPC NULL (no pending request) to a
+// 404-class result and a unique_violation (email reclaimed during grace — the RPC rolled BOTH writes
+// back, so the request stays pending) to a 409-class result, so the route can never report a strand.
+export async function performInAppCancel(admin: DeletionAdminClient, profileId: string): Promise<InAppCancelResult> {
+    const { data, error } = await admin.rpc('cancel_account_deletion', { p_profile_id: profileId });
+    if (error) {
+        if (error.code === '23505') {
+            return { ok: false, code: 'EMAIL_RECLAIMED', message: 'Email is no longer available; account is still scheduled for deletion' };
+        }
+        return { ok: false, code: 'ERROR', message: error.message };
+    }
+    const restoredId = data as string | null;
+    if (!restoredId) {
+        return { ok: false, code: 'NO_PENDING', message: 'No pending deletion request found' };
+    }
+    return { ok: true, profileId: restoredId };
+}
+
 // @spec [Doc-01 §40.2.1 Phase 1] atomic soft-delete + request insert via RPC; returns the schedule
 // plus the raw recovery token (mailed once, never stored raw). Idempotency is enforced inside the RPC.
 export async function performDeletionRequestV2(
@@ -275,47 +299,38 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
             });
         }
 
-        const { error } = await admin
-            .from('account_deletion_requests')
-            .update({ status: 'cancelled' })
-            .eq('id', pending.id)
-            .select('id');
-
-        if (error) {
-            logger.error('DELETION', 'cancel_error', 'Failed to cancel deletion request', { userId, error: error.message, requestId });
-            return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
-        }
-
-        // @spec [Doc-01 §40.4] V2 in-app cancel re-activates the account: clear the soft-delete marker
-        // so the §40.3 login-lock lifts. Safety ordering — the request is already 'cancelled' above
-        // (removed from the §40.5 cron selection, so no hard-delete can fire) BEFORE we clear deleted_at.
-        // If the freed email was re-registered during grace, the partial unique index
-        // (idx_profiles_email_active) rejects the clear with 23505 → distinct 409 (account is safe from
-        // deletion but stays locked pending support), never a 500.
         if (isDeletionLifecycleV2Enabled()) {
-            const { error: clearError } = await admin
-                .from('profiles')
-                .update({ deleted_at: null })
-                .eq('id', userId)
-                .select('id');
-
-            if (clearError) {
-                if (clearError.code === '23505') {
-                    logger.warn('DELETION', 'cancel_email_reclaimed', 'Deletion cancelled but email reclaimed during grace', { userId, requestId });
+            // @spec [Doc-01 §40.4] atomic in-app cancel (symmetric twin of token recovery): one RPC
+            // clears deleted_at + cancels the request in a single transaction, so a failure can never
+            // strand the user cancelled-but-locked. Atomicity proven by scripts/ci/deletion-cancel-atomicity.*.
+            const result = await performInAppCancel(admin, userId);
+            if (!result.ok) {
+                if (result.code === 'EMAIL_RECLAIMED') {
+                    logger.warn('DELETION', 'cancel_email_reclaimed', 'In-app cancel rolled back: email reclaimed during grace (request still pending)', { userId, requestId });
                     return res.status(409).json({
-                        error: 'Your deletion was cancelled, but your email is no longer available. Contact support to finish restoring access.',
+                        error: 'Your email address is no longer available, so we could not restore your account. It is still scheduled for deletion — please contact support to recover it.',
                         code: 'EMAIL_RECLAIMED',
                         requestId,
                     });
                 }
-                logger.error('DELETION', 'cancel_clear_error', 'Failed to clear soft-delete marker after cancel', { userId, error: clearError.message, requestId });
-                return res.status(500).json({ error: 'Failed to fully cancel deletion request', requestId });
+                if (result.code === 'NO_PENDING') {
+                    // Raced: the pending request was resolved between the fetch above and the RPC.
+                    return res.status(404).json({ error: 'No pending deletion request found', requestId });
+                }
+                logger.error('DELETION', 'cancel_rpc_error', 'Failed to cancel deletion request', { userId, error: result.message, requestId });
+                return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
             }
-
-            await admin
+        } else {
+            const { error } = await admin
                 .from('account_deletion_requests')
-                .update({ stripe_cancellation_status: 'cancelled_by_recovery' })
-                .eq('id', pending.id);
+                .update({ status: 'cancelled' })
+                .eq('id', pending.id)
+                .select('id');
+
+            if (error) {
+                logger.error('DELETION', 'cancel_error', 'Failed to cancel deletion request', { userId, error: error.message, requestId });
+                return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
+            }
         }
 
         logger.info('DELETION', 'cancelled', 'User cancelled deletion request', { userId, requestId });
