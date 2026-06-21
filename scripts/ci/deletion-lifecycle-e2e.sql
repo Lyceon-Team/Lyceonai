@@ -15,9 +15,12 @@
 -- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
 -- ============================================================================
 
--- NOTE: portable plain-SQL — no psql meta-commands (\set/\echo) or :'var' interpolation,
--- so this runs as-is through the Supabase SQL editor / any libpq connection AND under the CI
--- runner (which passes psql -v ON_ERROR_STOP=1 on the command line). UUIDs are inlined below:
+-- NOTE: portable + prod-safe + re-runnable — no psql meta-commands (\set/\echo) or :'var'
+-- interpolation, so it runs as-is through the Supabase SQL editor / any libpq connection AND under
+-- the CI runner (which also passes psql -v ON_ERROR_STOP=1). The ENTIRE chain runs in one
+-- transaction that ROLLBACKs at the end: it seeds, proves all three chains, then leaves ZERO
+-- residue — safe to run against a live DB and re-runnable. An assertion failure RAISEs (the editor
+-- shows the error; CI's -v ON_ERROR_STOP=1 exits non-zero). UUIDs are inlined below:
 --   UA=a1111111-… UB=b2222222-… UC=c3333333-…
 
 BEGIN;
@@ -30,7 +33,8 @@ UPDATE profiles SET full_name='B Name', display_name='B', date_of_birth='2008-02
        stripe_customer_id='cus_b', guardian_email='gb@e2e.test' WHERE id = 'b2222222-2222-2222-2222-222222222222';
 UPDATE profiles SET full_name='C Name', display_name='C', date_of_birth='2008-03-03',
        stripe_customer_id='cus_c', guardian_email='gc@e2e.test' WHERE id = 'c3333333-3333-3333-3333-333333333333';
-COMMIT;
+-- (no COMMIT — the whole script is one transaction; the trailing ROLLBACK discards every seeded
+-- row + every mutation below, so a live-DB run leaves zero residue and is re-runnable.)
 
 -- ============================================================================
 -- CHAIN 1 — request -> T+7 cron -> anonymize
@@ -135,3 +139,6 @@ END $$;
 DO $$ BEGIN
   RAISE NOTICE '==> DELETION LIFECYCLE E2E PASSED: request->cron->anonymize; request->token-recover->restored; request->in-app-cancel->restored';
 END $$;
+
+-- Discard the whole lifecycle run (seed + all three chains' mutations): no residue, re-runnable.
+ROLLBACK;

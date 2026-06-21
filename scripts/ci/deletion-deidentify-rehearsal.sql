@@ -19,9 +19,12 @@
 -- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
 -- ============================================================================
 
--- NOTE: portable plain-SQL — no psql meta-commands (\set/\echo) or :'var' interpolation,
--- so this runs as-is through the Supabase SQL editor / any libpq connection AND under the CI
--- runner (which passes psql -v ON_ERROR_STOP=1 on the command line). UUIDs are inlined below:
+-- NOTE: portable + prod-safe + re-runnable — no psql meta-commands (\set/\echo) or :'var'
+-- interpolation, so it runs as-is through the Supabase SQL editor / any libpq connection AND under
+-- the CI runner (which also passes psql -v ON_ERROR_STOP=1). The ENTIRE rehearsal runs in one
+-- transaction that ROLLBACKs at the end: it seeds, proves (A)-(E), then leaves ZERO residue — safe
+-- to run against a live DB and re-runnable. An assertion failure RAISEs (the editor shows the error;
+-- CI's -v ON_ERROR_STOP=1 exits non-zero). UUIDs are inlined below:
 --   ELIGIBLE=11111111-… ACTIVE=22222222-… MIDGRACE=33333333-… DONE=44444444-…
 
 BEGIN;
@@ -73,7 +76,8 @@ INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status, completion_at)
 VALUES ('44444444-4444-4444-4444-444444444444', now() - interval '30 days', now() - interval '23 days', '44444444-4444-4444-4444-444444444444','completed','completed', now() - interval '23 days');
 
-COMMIT;
+-- (no COMMIT — the whole script is one transaction; the trailing ROLLBACK discards every seeded
+-- row + every mutation below, so a live-DB run leaves zero residue and is re-runnable.)
 
 -- ============================================================================
 -- (A) CRON SELECTION targets ONLY the eligible row
@@ -173,3 +177,6 @@ END $$;
 DO $$ BEGIN
   RAISE NOTICE '==> REHEARSAL PASSED: exact-target + idempotency/re-entrancy proven on real schema';
 END $$;
+
+-- Discard the whole rehearsal (seed + the deidentify mutation): leaves no residue, re-runnable.
+ROLLBACK;
