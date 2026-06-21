@@ -220,6 +220,47 @@ jobs:
           bash scripts/ci/genesis-fresh-apply.sh
 
   # ---------------------------------------------------------------------------
+  # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
+  # staged (owner-run) deletion-lifecycle migration to a throwaway Postgres and
+  # proves the IRREVERSIBLE deidentify_user RPC + cron eligibility filter on the
+  # real schema: exact-target (only the eligible row changes, others byte-identical),
+  # plus idempotency / re-entrancy. A mocked unit suite cannot prove a WHERE clause.
+  # ---------------------------------------------------------------------------
+  deletion-deidentify-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # genesis declares the `vector` extension
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure postgresql-client 16
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: deidentify_user exact-target + idempotency rehearsal
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-deidentify-rehearsal.sh
+
+  # ---------------------------------------------------------------------------
   # Mastery PARITY gate (Doc 05A §12 / §12.4a / §12.5) — HARD GATE. Proves the
   # PL/pgSQL compute_mastery_for_entity matches the independent Python reference
   # AND the §12 published values across all 31 fixtures, plus recompute-equivalence.
