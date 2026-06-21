@@ -44,6 +44,7 @@ import {
 } from "./routes/review-session-routes";
 import {
   supabaseAuthMiddleware,
+  enforceDeletionLock,
   requireSupabaseAuth,
   requireSupabaseAdmin,
   requireStudentOrAdmin,
@@ -196,6 +197,12 @@ app.get("/api/csrf-token", (req: Request, res: Response) => {
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
+
+// @spec [Doc-01_V8 §40.3] Account-deletion lock — the ONE structural enforcement point. Mounted here
+// (after req.user is set, before every API router) so deleted/pending-deletion users are default-denied
+// across requireSupabaseAuth AND requireRequestUser routes alike. Flag-gated => dormant pass-through
+// until activation.
+app.use(enforceDeletionLock);
 
 // Legal API (requires Supabase auth)
 app.use("/api/legal", requireSupabaseAuth, doubleCsrfProtection, legalRouter);

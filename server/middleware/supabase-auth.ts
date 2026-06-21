@@ -167,7 +167,11 @@ export interface AuthenticatedRequest extends Request {
   user?: SupabaseUser;
 }
 
-export type DeletionStatusState = "active" | "deleted" | "unavailable";
+export type DeletionStatusState =
+  | "active"
+  | "pending_deletion"
+  | "deleted"
+  | "unavailable";
 
 export type DeletionStatusResult = {
   status: DeletionStatusState;
@@ -283,12 +287,40 @@ async function defaultSupabaseDeletionResolver(args: {
   try {
     const admin = getSupabaseAdmin();
 
-    // @spec [Doc-01_V8 §40.3] During the soft-delete grace the profile is login-locked: the auth
-    // middleware checks profiles.deleted_at and rejects. Flag-gated (ACCOUNT_DELETION_LIFECYCLE_V2)
-    // until the account-deletion-lifecycle migration is applied — pre-activation nothing sets
-    // deleted_at, so flag-off this branch is inert and login behaviour is unchanged. The token-gated
-    // recovery route (/api/account/recover-deletion) carries no session, so this lock does not
-    // strand recovery. deleted_at stays set through hard-delete, so it also covers completed rows.
+    // Hard-deleted (a completed request) takes precedence over the soft-delete grace: the account is
+    // anonymized and gone — "deleted" everywhere, no allowlist. Checked FIRST because deleted_at stays
+    // set through hard-delete, so a completed row must not be mis-read as a recoverable grace state.
+    const { data: completed, error: completedError } = await admin
+      .from("account_deletion_requests")
+      .select("status, completion_at")
+      .eq("profile_id", args.userId)
+      .eq("status", "completed")
+      .maybeSingle();
+
+    if (completedError && completedError.code !== "PGRST116") {
+      logger.error(
+        "DELETION",
+        "auth_check_failed",
+        "Failed to verify deletion status",
+        {
+          userId: args.userId,
+          error: completedError.message,
+          requestId: args.requestId,
+        },
+      );
+      return { status: "unavailable", executedAt: null };
+    }
+
+    if (completed?.status === "completed") {
+      // Canonical column is `completion_at` (genesis); the internal result field stays `executedAt`.
+      return { status: "deleted", executedAt: completed.completion_at ?? null };
+    }
+
+    // @spec [Doc-01_V8 §40.3] Soft-delete grace: profiles.deleted_at is set but the request is still
+    // pending → the account is RECOVERABLE. A distinct "pending_deletion" state lets the global
+    // deletion lock (enforceDeletionLock) allow the minimal recovery/cancel/profile allowlist while
+    // blocking everything else, instead of a blunt 403 that would strand in-app cancel. Flag-gated
+    // (ACCOUNT_DELETION_LIFECYCLE_V2): pre-activation nothing sets deleted_at, so this branch is inert.
     if (process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true") {
       const { data: profile, error: profileError } = await admin
         .from("profiles")
@@ -311,34 +343,8 @@ async function defaultSupabaseDeletionResolver(args: {
       }
 
       if (profile?.deleted_at) {
-        return { status: "deleted", executedAt: profile.deleted_at };
+        return { status: "pending_deletion", executedAt: profile.deleted_at };
       }
-    }
-
-    const { data, error } = await admin
-      .from("account_deletion_requests")
-      .select("status, completion_at")
-      .eq("profile_id", args.userId)
-      .eq("status", "completed")
-      .maybeSingle();
-
-    if (error && error.code !== "PGRST116") {
-      logger.error(
-        "DELETION",
-        "auth_check_failed",
-        "Failed to verify deletion status",
-        {
-          userId: args.userId,
-          error: error.message,
-          requestId: args.requestId,
-        },
-      );
-      return { status: "unavailable", executedAt: null };
-    }
-
-    if (data?.status === "completed") {
-      // Canonical column is `completion_at` (genesis); the internal result field stays `executedAt`.
-      return { status: "deleted", executedAt: data.completion_at ?? null };
     }
 
     return { status: "active", executedAt: null };
@@ -643,8 +649,59 @@ export async function requireSupabaseAuth(
   res: Response,
   next: NextFunction,
 ) {
+  // 401 gate only. The deletion lock (deleted / pending-deletion) is enforced ONCE, structurally, by
+  // the global enforceDeletionLock middleware (default-deny + minimal allowlist) — not per-route — so
+  // requireRequestUser routes can't bypass it and a new route is locked by default. (Was: this also
+  // did the deletion 403; subsumed by enforceDeletionLock so the two can never diverge.)
   if (!req.user) {
     return sendUnauthenticated(res, req.requestId);
+  }
+  return next();
+}
+
+// @spec [Doc-01_V8 §40.3 soft-delete state behaviour | §40.4 recovery] | @implemented 2026-06-21
+// plain English: the ONE structural enforcement point for the account-deletion lock. Mounted globally
+// (after supabaseAuthMiddleware, before the API routers), it default-denies every /api route for a
+// deleted/pending-deletion user, with a minimal pending-only allowlist so the grace-window user can
+// still load their profile, cancel in-app, recover via the email token, and sign out — and nothing
+// else. Hard-deleted (completed) accounts are gone: 403 everywhere, no allowlist. Flag-gated
+// (ACCOUNT_DELETION_LIFECYCLE_V2): flag-OFF => pure pass-through (dormant), so it activates atomically
+// with the rest of the lifecycle. Non-/api paths (SPA + static) are never blocked — the client must
+// load to render the pending-deletion screen.
+type AllowlistEntry = { method: string; path: string };
+const DELETION_LOCK_PENDING_ALLOWLIST: ReadonlyArray<AllowlistEntry> = [
+  { method: "GET", path: "/api/profile" }, // client reads pendingDeletion → routes to the pending screen
+  { method: "POST", path: "/api/account/cancel-deletion" }, // in-app cancel (strand-prevention)
+  { method: "POST", path: "/api/account/recover-deletion" }, // email-token recovery (strand-prevention)
+  { method: "POST", path: "/api/auth/signout" }, // a pending user can always sign out
+];
+
+function isPendingDeletionAllowlisted(method: string, path: string): boolean {
+  const normalizedPath =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return DELETION_LOCK_PENDING_ALLOWLIST.some(
+    (entry) =>
+      entry.method === method.toUpperCase() && entry.path === normalizedPath,
+  );
+}
+
+export async function enforceDeletionLock(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  // Dormant until the lifecycle is activated.
+  if (process.env.ACCOUNT_DELETION_LIFECYCLE_V2 !== "true") {
+    return next();
+  }
+  // Only guard the API surface. The SPA/static must always load so the client can render the
+  // pending-deletion screen and call the allowlisted endpoints.
+  if (!req.path.startsWith("/api/")) {
+    return next();
+  }
+  // Nothing to enforce for unauthenticated requests (login/health/etc.).
+  if (!req.user) {
+    return next();
   }
 
   const deletionStatus = await resolveDeletionStatus({
@@ -653,6 +710,7 @@ export async function requireSupabaseAuth(
   });
 
   if (deletionStatus.status === "unavailable") {
+    // Fail closed: if we can't determine the state, do not let a possibly-deleted user through.
     return res.status(503).json({
       error: "Deletion status unavailable",
       code: "DELETION_STATUS_UNAVAILABLE",
@@ -666,6 +724,19 @@ export async function requireSupabaseAuth(
       code: "ACCOUNT_DELETED",
       message:
         "This account has been deleted and can no longer access the service.",
+      requestId: req.requestId,
+    });
+  }
+
+  if (deletionStatus.status === "pending_deletion") {
+    if (isPendingDeletionAllowlisted(req.method, req.path)) {
+      return next();
+    }
+    return res.status(403).json({
+      error: "Account pending deletion",
+      code: "PENDING_DELETION",
+      message:
+        "This account is scheduled for deletion. Cancel the deletion to continue using your account.",
       requestId: req.requestId,
     });
   }

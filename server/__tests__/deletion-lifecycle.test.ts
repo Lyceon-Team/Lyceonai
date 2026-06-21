@@ -22,6 +22,7 @@ describe('Deletion Lifecycle', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         authMiddleware.setDeletionStatusResolverForTests(null);
+        delete process.env.ACCOUNT_DELETION_LIFECYCLE_V2;
     });
 
     it('deletion request enters pending state', () => {
@@ -79,24 +80,83 @@ describe('Deletion Lifecycle', () => {
         expect(email.includes('account_abc')).toBe(true);
     });
 
-    it('deleted/de-identified user no longer has active runtime visibility/access where prohibited', async () => {
-        authMiddleware.setDeletionStatusResolverForTests(async () => ({
-            status: 'deleted',
-            executedAt: new Date().toISOString(),
-        }));
+    // @spec [Doc-01_V8 §40.3] The §40.3 lock is enforced structurally by enforceDeletionLock (global
+    // default-deny + minimal allowlist), NOT per-route — closing the requireRequestUser bypass class.
+    const lockReq = (over: Record<string, unknown>) =>
+        ({ user: { id: 'user_123' }, requestId: 'req_1', method: 'GET', path: '/api/x', ...over }) as any;
+    const lockRes = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn() }) as any;
 
-        const req: any = { user: { id: 'user_123' }, requestId: 'req_1' };
-        const res: any = {
-            status: vi.fn().mockReturnThis(),
-            json: vi.fn(),
-        };
+    it('hard-deleted user is 403 ACCOUNT_DELETED on every /api route (no allowlist)', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'true';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'deleted', executedAt: new Date().toISOString() }));
+        const res = lockRes();
         const next = vi.fn();
-
-        await authMiddleware.requireSupabaseAuth(req, res, next);
-
+        // even an otherwise-allowlisted path is blocked for a completed/hard-deleted account
+        await authMiddleware.enforceDeletionLock(lockReq({ path: '/api/profile', method: 'GET' }), res, next);
         expect(res.status).toHaveBeenCalledWith(403);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCOUNT_DELETED' }));
         expect(next).not.toHaveBeenCalled();
+    });
+
+    it('pending-deletion user is 403 PENDING_DELETION on a non-allowlisted route', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'true';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'pending_deletion', executedAt: new Date().toISOString() }));
+        const res = lockRes();
+        const next = vi.fn();
+        await authMiddleware.enforceDeletionLock(lockReq({ path: '/api/tutor/messages', method: 'POST' }), res, next);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PENDING_DELETION' }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    // LOAD-BEARING (strand-prevention at the middleware level): a pending user MUST reach every
+    // allowlisted recovery/cancel/profile/signout path, or they are stranded soft-deleted.
+    it('pending-deletion user reaches every allowlisted route', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'true';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'pending_deletion', executedAt: new Date().toISOString() }));
+        const allow: ReadonlyArray<readonly [string, string]> = [
+            ['GET', '/api/profile'],
+            ['POST', '/api/account/cancel-deletion'],
+            ['POST', '/api/account/recover-deletion'],
+            ['POST', '/api/auth/signout'],
+        ];
+        for (const [method, path] of allow) {
+            const res = lockRes();
+            const next = vi.fn();
+            await authMiddleware.enforceDeletionLock(lockReq({ path, method }), res, next);
+            expect(next, `${method} ${path} must be allowlisted`).toHaveBeenCalledTimes(1);
+            expect(res.status).not.toHaveBeenCalled();
+        }
+    });
+
+    it('PATCH /api/profile is NOT allowlisted (only GET) for a pending user', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'true';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'pending_deletion', executedAt: new Date().toISOString() }));
+        const res = lockRes();
+        const next = vi.fn();
+        await authMiddleware.enforceDeletionLock(lockReq({ path: '/api/profile', method: 'PATCH' }), res, next);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PENDING_DELETION' }));
+    });
+
+    it('flag OFF => pass-through (dormant) even when the resolver says deleted', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'false';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'deleted', executedAt: null }));
+        const res = lockRes();
+        const next = vi.fn();
+        await authMiddleware.enforceDeletionLock(lockReq({ path: '/api/tutor/messages', method: 'POST' }), res, next);
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('non-/api path (SPA/static) is never blocked, so the client can render the pending screen', async () => {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = 'true';
+        authMiddleware.setDeletionStatusResolverForTests(async () => ({ status: 'pending_deletion', executedAt: null }));
+        const res = lockRes();
+        const next = vi.fn();
+        await authMiddleware.enforceDeletionLock(lockReq({ path: '/dashboard', method: 'GET' }), res, next);
+        expect(next).toHaveBeenCalledTimes(1);
+        expect(res.status).not.toHaveBeenCalled();
     });
 });
 

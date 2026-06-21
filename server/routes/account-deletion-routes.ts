@@ -1,10 +1,14 @@
 import { Request, Response, Router } from 'express';
 import { randomBytes, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { getSupabaseAdmin, requireSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
+import { getSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { sendEmail } from '../lib/email';
 import { logger } from '../logger';
+import { isDeletionLifecycleV2Enabled } from '../lib/account-deletion-execute';
+// buildDeletedEmail is domain logic in the lib (so the cron router can use the executor without
+// loading this route module); re-exported here for existing importers (deletion-lifecycle.test.ts).
+export { buildDeletedEmail } from '../lib/account-deletion-execute';
 
 const router = Router();
 // @spec [Doc-01 §40 Account deletion lifecycle] | @implemented 2026-06-20
@@ -16,11 +20,6 @@ const router = Router();
 // so the right-to-erasure path never worked in prod — GAP-HY-13).
 export const DELETION_GRACE_DAYS = 7;
 const DELETION_GRACE_MS = DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
-const DELETION_BAN_DURATION = '876000h'; // 100 years
-
-export function buildDeletedEmail(userId: string): string {
-    return `deleted_${userId}@deleted.lyceon.ai`;
-}
 
 export function isGraceWindowExpired(requestedAt: string, now: Date = new Date()): boolean {
     const requestedAtMs = new Date(requestedAt).getTime();
@@ -46,15 +45,6 @@ export function buildDeletionRequestInsert(profileId: string, now: Date = new Da
         status: 'pending' as const,
         stripe_cancellation_status: 'pending' as const,
     };
-}
-
-// @spec [Doc-01 §40.2.1 / §40.3 / §40.4] V2 lifecycle gate. The soft-delete-lock + token-recovery
-// path goes live ONLY when the owner has applied the staged migration
-// (supabase/migrations-pending/20260621000000_account_deletion_lifecycle.sql) and set this flag.
-// Flag OFF (default) = the post-#403 direct-insert path: it never sets profiles.deleted_at and never
-// calls the (pre-migration absent) RPCs, so shipping this code dormant cannot regress /delete or login.
-export function isDeletionLifecycleV2Enabled(): boolean {
-    return process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === 'true';
 }
 
 // @spec [Doc-01 §40.4] recovery token: a 256-bit URL-safe secret mailed to the user; only its
@@ -296,6 +286,38 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
             return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
         }
 
+        // @spec [Doc-01 §40.4] V2 in-app cancel re-activates the account: clear the soft-delete marker
+        // so the §40.3 login-lock lifts. Safety ordering — the request is already 'cancelled' above
+        // (removed from the §40.5 cron selection, so no hard-delete can fire) BEFORE we clear deleted_at.
+        // If the freed email was re-registered during grace, the partial unique index
+        // (idx_profiles_email_active) rejects the clear with 23505 → distinct 409 (account is safe from
+        // deletion but stays locked pending support), never a 500.
+        if (isDeletionLifecycleV2Enabled()) {
+            const { error: clearError } = await admin
+                .from('profiles')
+                .update({ deleted_at: null })
+                .eq('id', userId)
+                .select('id');
+
+            if (clearError) {
+                if (clearError.code === '23505') {
+                    logger.warn('DELETION', 'cancel_email_reclaimed', 'Deletion cancelled but email reclaimed during grace', { userId, requestId });
+                    return res.status(409).json({
+                        error: 'Your deletion was cancelled, but your email is no longer available. Contact support to finish restoring access.',
+                        code: 'EMAIL_RECLAIMED',
+                        requestId,
+                    });
+                }
+                logger.error('DELETION', 'cancel_clear_error', 'Failed to clear soft-delete marker after cancel', { userId, error: clearError.message, requestId });
+                return res.status(500).json({ error: 'Failed to fully cancel deletion request', requestId });
+            }
+
+            await admin
+                .from('account_deletion_requests')
+                .update({ stripe_cancellation_status: 'cancelled_by_recovery' })
+                .eq('id', pending.id);
+        }
+
         logger.info('DELETION', 'cancelled', 'User cancelled deletion request', { userId, requestId });
         res.json({ ok: true, message: 'Account deletion cancelled successfully', requestId });
 
@@ -344,92 +366,6 @@ router.post('/recover-deletion', async (req: Request, res: Response) => {
             requestId,
         });
         return res.status(500).json({ error: 'Internal server error', requestId });
-    }
-});
-
-/**
- * POST /api/account/execute-deletions
- * Admin-only / system endpoint to hard-delete pending requests whose scheduled 7-day
- * hard-delete time has arrived (Doc-01 §40.5).
- */
-// CSRF_EXEMPT_REASON: Non-browser admin/system operation with server-side auth gating.
-router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, async (req: Request, res: Response) => {
-    const requestId = req.requestId;
-
-    try {
-        const admin = getSupabaseAdmin();
-        // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
-        const nowIso = new Date().toISOString();
-
-        const { data: pendingRequests, error: fetchError } = await admin
-            .from('account_deletion_requests')
-            .select('id, profile_id')
-            .eq('status', 'pending')
-            .lte('scheduled_hard_delete_at', nowIso);
-
-        if (fetchError) {
-            logger.error('DELETION', 'fetch_pending_error', 'Failed to fetch pending deletions', { error: fetchError.message, requestId });
-            return res.status(500).json({ error: 'Failed to fetch pending deletions', requestId });
-        }
-
-        if (!pendingRequests || pendingRequests.length === 0) {
-            return res.json({ ok: true, message: 'No eligible pending deletions', executedCount: 0, requestId });
-        }
-
-        let successCount = 0;
-        let failureCount = 0;
-
-        // Execute de-identification logic via stored procedure per user
-        for (const pending of pendingRequests) {
-            const deletionEmail = buildDeletedEmail(pending.profile_id);
-
-            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.profile_id, deleted_email: deletionEmail });
-
-            if (rpcError) {
-                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.profile_id, error: rpcError.message, requestId });
-                failureCount++;
-                continue;
-            }
-
-            const { error: authError } = await admin.auth.admin.updateUserById(pending.profile_id, {
-                email: deletionEmail,
-                ban_duration: DELETION_BAN_DURATION,
-                user_metadata: {
-                    deletion_status: 'completed',
-                    deleted_at: new Date().toISOString(),
-                },
-            });
-
-            if (authError) {
-                logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
-                    userId: pending.profile_id,
-                    error: authError.message,
-                    requestId,
-                });
-                failureCount++;
-                continue;
-            }
-
-            // Mark as completed
-            await admin
-                .from('account_deletion_requests')
-                .update({ status: 'completed', completion_at: new Date().toISOString() })
-                .eq('id', pending.id);
-
-            successCount++;
-        }
-
-        logger.info('DELETION', 'execution_complete', 'Executed pending account deletions', {
-            attemptedCount: pendingRequests.length,
-            successCount,
-            failedCount: failureCount,
-            requestId
-        });
-
-        res.json({ ok: true, executedCount: successCount, failedCount: failureCount, requestId });
-    } catch (err: any) {
-        logger.error('DELETION', 'execution_fatal', 'Fatal error during account deletion process', { error: err.message, requestId });
-        res.status(500).json({ error: 'Internal server error', requestId });
     }
 });
 

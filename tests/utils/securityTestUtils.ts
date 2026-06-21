@@ -54,6 +54,8 @@ export function setupSecurityMocks() {
       req.requestId ??= "req-security-test";
       next();
     },
+    // Global deletion lock — pass-through in security tests (not exercising deletion state).
+    enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
     requireRequestUser: (req: any, res: any) => {
       if (!req.user?.id) {
         res.status(401).json({
