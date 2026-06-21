@@ -19,20 +19,19 @@
 -- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
 -- ============================================================================
 
-\set ON_ERROR_STOP on
-\set ELIGIBLE  '11111111-1111-1111-1111-111111111111'
-\set ACTIVE    '22222222-2222-2222-2222-222222222222'
-\set MIDGRACE  '33333333-3333-3333-3333-333333333333'
-\set DONE      '44444444-4444-4444-4444-444444444444'
+-- NOTE: portable plain-SQL — no psql meta-commands (\set/\echo) or :'var' interpolation,
+-- so this runs as-is through the Supabase SQL editor / any libpq connection AND under the CI
+-- runner (which passes psql -v ON_ERROR_STOP=1 on the command line). UUIDs are inlined below:
+--   ELIGIBLE=11111111-… ACTIVE=22222222-… MIDGRACE=33333333-… DONE=44444444-…
 
 BEGIN;
 
 -- ---- auth.users backing rows (profiles.id FK -> auth.users) -----------------
 INSERT INTO auth.users (id, email) VALUES
-  (:'ELIGIBLE','eligible@example.com'),
-  (:'ACTIVE',  'active@example.com'),
-  (:'MIDGRACE','midgrace@example.com'),
-  (:'DONE',    'deleted_44444444-4444-4444-4444-444444444444@deleted.lyceon.ai');
+  ('11111111-1111-1111-1111-111111111111','eligible@example.com'),
+  ('22222222-2222-2222-2222-222222222222',  'active@example.com'),
+  ('33333333-3333-3333-3333-333333333333','midgrace@example.com'),
+  ('44444444-4444-4444-4444-444444444444',    'deleted_44444444-4444-4444-4444-444444444444@deleted.lyceon.ai');
 
 -- ---- profiles ---------------------------------------------------------------
 -- Rows were auto-created by the handle_new_user trigger on the auth.users insert
@@ -42,37 +41,37 @@ INSERT INTO auth.users (id, email) VALUES
 UPDATE profiles SET full_name='Ellie Eligible', display_name='Ellie', date_of_birth='2008-05-01',
        stripe_customer_id='cus_ELIGIBLE', guardian_email='guardian.eligible@example.com',
        deleted_at = now() - interval '8 days'
- WHERE id = :'ELIGIBLE';
+ WHERE id = '11111111-1111-1111-1111-111111111111';
 -- ACTIVE: ordinary live user, no deletion request. Must be untouched.
 UPDATE profiles SET full_name='Andy Active', display_name='Andy', date_of_birth='2007-03-03',
        stripe_customer_id='cus_ACTIVE', guardian_email='guardian.active@example.com',
        deleted_at = NULL
- WHERE id = :'ACTIVE';
+ WHERE id = '22222222-2222-2222-2222-222222222222';
 -- MIDGRACE: soft-deleted but still inside the 7-day grace. Must be untouched by this run.
 UPDATE profiles SET full_name='Mia Midgrace', display_name='Mia', date_of_birth='2009-09-09',
        stripe_customer_id='cus_MIDGRACE', guardian_email='guardian.midgrace@example.com',
        deleted_at = now() - interval '2 days'
- WHERE id = :'MIDGRACE';
+ WHERE id = '33333333-3333-3333-3333-333333333333';
 -- DONE: already anonymized (a prior completed deletion). email is already the deleted_<id>
 -- form (from auth.users). Re-run must be a PII-safe no-op.
 UPDATE profiles SET full_name=NULL, display_name='Deleted User', date_of_birth=NULL,
        stripe_customer_id=NULL, guardian_email=NULL,
        deleted_at = now() - interval '30 days'
- WHERE id = :'DONE';
+ WHERE id = '44444444-4444-4444-4444-444444444444';
 
 -- ---- account_deletion_requests ---------------------------------------------
 -- ELIGIBLE: pending, scheduled in the past -> selected by the cron.
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status)
-VALUES (:'ELIGIBLE', now() - interval '8 days', now() - interval '1 day', :'ELIGIBLE','pending','pending');
+VALUES ('11111111-1111-1111-1111-111111111111', now() - interval '8 days', now() - interval '1 day', '11111111-1111-1111-1111-111111111111','pending','pending');
 -- MIDGRACE: pending, scheduled in the FUTURE -> NOT yet eligible.
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status)
-VALUES (:'MIDGRACE', now() - interval '2 days', now() + interval '5 days', :'MIDGRACE','pending','pending');
+VALUES ('33333333-3333-3333-3333-333333333333', now() - interval '2 days', now() + interval '5 days', '33333333-3333-3333-3333-333333333333','pending','pending');
 -- DONE: already completed.
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status, completion_at)
-VALUES (:'DONE', now() - interval '30 days', now() - interval '23 days', :'DONE','completed','completed', now() - interval '23 days');
+VALUES ('44444444-4444-4444-4444-444444444444', now() - interval '30 days', now() - interval '23 days', '44444444-4444-4444-4444-444444444444','completed','completed', now() - interval '23 days');
 
 COMMIT;
 
@@ -171,4 +170,6 @@ BEGIN
   RAISE NOTICE '(E) OK  completed request excluded from cron re-selection';
 END $$;
 
-\echo '==> REHEARSAL PASSED: exact-target + idempotency/re-entrancy proven on real schema'
+DO $$ BEGIN
+  RAISE NOTICE '==> REHEARSAL PASSED: exact-target + idempotency/re-entrancy proven on real schema';
+END $$;

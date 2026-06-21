@@ -15,21 +15,21 @@
 -- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
 -- ============================================================================
 
-\set ON_ERROR_STOP on
-\set UA 'a1111111-1111-1111-1111-111111111111'
-\set UB 'b2222222-2222-2222-2222-222222222222'
-\set UC 'c3333333-3333-3333-3333-333333333333'
+-- NOTE: portable plain-SQL — no psql meta-commands (\set/\echo) or :'var' interpolation,
+-- so this runs as-is through the Supabase SQL editor / any libpq connection AND under the CI
+-- runner (which passes psql -v ON_ERROR_STOP=1 on the command line). UUIDs are inlined below:
+--   UA=a1111111-… UB=b2222222-… UC=c3333333-…
 
 BEGIN;
 -- auth.users inserts fire handle_new_user -> active profiles; give each full PII.
 INSERT INTO auth.users (id, email) VALUES
-  (:'UA', 'a@e2e.test'), (:'UB', 'b@e2e.test'), (:'UC', 'c@e2e.test');
+  ('a1111111-1111-1111-1111-111111111111', 'a@e2e.test'), ('b2222222-2222-2222-2222-222222222222', 'b@e2e.test'), ('c3333333-3333-3333-3333-333333333333', 'c@e2e.test');
 UPDATE profiles SET full_name='A Name', display_name='A', date_of_birth='2008-01-01',
-       stripe_customer_id='cus_a', guardian_email='ga@e2e.test' WHERE id = :'UA';
+       stripe_customer_id='cus_a', guardian_email='ga@e2e.test' WHERE id = 'a1111111-1111-1111-1111-111111111111';
 UPDATE profiles SET full_name='B Name', display_name='B', date_of_birth='2008-02-02',
-       stripe_customer_id='cus_b', guardian_email='gb@e2e.test' WHERE id = :'UB';
+       stripe_customer_id='cus_b', guardian_email='gb@e2e.test' WHERE id = 'b2222222-2222-2222-2222-222222222222';
 UPDATE profiles SET full_name='C Name', display_name='C', date_of_birth='2008-03-03',
-       stripe_customer_id='cus_c', guardian_email='gc@e2e.test' WHERE id = :'UC';
+       stripe_customer_id='cus_c', guardian_email='gc@e2e.test' WHERE id = 'c3333333-3333-3333-3333-333333333333';
 COMMIT;
 
 -- ============================================================================
@@ -60,7 +60,7 @@ END $$;
 
 -- time passes to T+7 (the request becomes due for the §40.5 cron)
 UPDATE account_deletion_requests SET scheduled_hard_delete_at = now() - interval '1 minute'
- WHERE profile_id = :'UA' AND status = 'pending';
+ WHERE profile_id = 'a1111111-1111-1111-1111-111111111111' AND status = 'pending';
 
 DO $$
 DECLARE v_id uuid;
@@ -132,4 +132,6 @@ BEGIN
   RAISE NOTICE 'C3 OK  request -> in-app cancel -> restored (deleted_at cleared, request cancelled)';
 END $$;
 
-\echo '==> DELETION LIFECYCLE E2E PASSED: request->cron->anonymize; request->token-recover->restored; request->in-app-cancel->restored'
+DO $$ BEGIN
+  RAISE NOTICE '==> DELETION LIFECYCLE E2E PASSED: request->cron->anonymize; request->token-recover->restored; request->in-app-cancel->restored';
+END $$;

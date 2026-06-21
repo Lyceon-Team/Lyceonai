@@ -16,38 +16,37 @@
 -- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
 -- ============================================================================
 
-\set ON_ERROR_STOP on
-\set HAPPY     '55555555-5555-5555-5555-555555555555'
-\set RECLAIM   '66666666-6666-6666-6666-666666666666'
-\set COLLIDER  '77777777-7777-7777-7777-777777777777'
-\set NOPENDING '88888888-8888-8888-8888-888888888888'
+-- NOTE: portable plain-SQL — no psql meta-commands (\set/\echo) or :'var' interpolation,
+-- so this runs as-is through the Supabase SQL editor / any libpq connection AND under the CI
+-- runner (which passes psql -v ON_ERROR_STOP=1 on the command line). UUIDs are inlined below:
+--   HAPPY=55555555-… RECLAIM=66666666-… COLLIDER=77777777-… NOPENDING=88888888-…
 
 BEGIN;
 
 -- auth.users inserts fire the handle_new_user trigger → active profiles (email from auth.users).
 INSERT INTO auth.users (id, email) VALUES
-  (:'HAPPY',    'happy@example.com'),
-  (:'RECLAIM',  'dup@example.com'),
-  (:'NOPENDING','nopending@example.com');
+  ('55555555-5555-5555-5555-555555555555',    'happy@example.com'),
+  ('66666666-6666-6666-6666-666666666666',  'dup@example.com'),
+  ('88888888-8888-8888-8888-888888888888','nopending@example.com');
 
 -- HAPPY: soft-deleted, in grace, pending request.
-UPDATE profiles SET deleted_at = now() - interval '1 day' WHERE id = :'HAPPY';
+UPDATE profiles SET deleted_at = now() - interval '1 day' WHERE id = '55555555-5555-5555-5555-555555555555';
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status)
-VALUES (:'HAPPY', now() - interval '1 day', now() + interval '6 days', :'HAPPY', 'pending', 'pending');
+VALUES ('55555555-5555-5555-5555-555555555555', now() - interval '1 day', now() + interval '6 days', '55555555-5555-5555-5555-555555555555', 'pending', 'pending');
 
 -- RECLAIM: soft-deleted FIRST (frees its email from the partial unique index), pending request.
-UPDATE profiles SET deleted_at = now() - interval '1 day' WHERE id = :'RECLAIM';
+UPDATE profiles SET deleted_at = now() - interval '1 day' WHERE id = '66666666-6666-6666-6666-666666666666';
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status)
-VALUES (:'RECLAIM', now() - interval '1 day', now() + interval '6 days', :'RECLAIM', 'pending', 'pending');
+VALUES ('66666666-6666-6666-6666-666666666666', now() - interval '1 day', now() + interval '6 days', '66666666-6666-6666-6666-666666666666', 'pending', 'pending');
 -- COLLIDER then registers with RECLAIM's freed email → now the active holder of dup@example.com.
-INSERT INTO auth.users (id, email) VALUES (:'COLLIDER', 'dup@example.com');
+INSERT INTO auth.users (id, email) VALUES ('77777777-7777-7777-7777-777777777777', 'dup@example.com');
 
 -- NOPENDING: already-resolved request (no pending row).
 INSERT INTO account_deletion_requests
   (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status)
-VALUES (:'NOPENDING', now() - interval '2 days', now() + interval '5 days', :'NOPENDING', 'cancelled', 'cancelled_by_recovery');
+VALUES ('88888888-8888-8888-8888-888888888888', now() - interval '2 days', now() + interval '5 days', '88888888-8888-8888-8888-888888888888', 'cancelled', 'cancelled_by_recovery');
 
 COMMIT;
 
@@ -111,4 +110,6 @@ BEGIN
   RAISE NOTICE '(3) OK  no pending request → NULL (route → 404)';
 END $$;
 
-\echo '==> CANCEL ATOMICITY PASSED: clear+cancel atomic; email-reclaim rolls both back; no-pending → NULL'
+DO $$ BEGIN
+  RAISE NOTICE '==> CANCEL ATOMICITY PASSED: clear+cancel atomic; email-reclaim rolls both back; no-pending → NULL';
+END $$;
