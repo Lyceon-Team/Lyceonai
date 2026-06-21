@@ -174,6 +174,9 @@ GRANT EXECUTE ON FUNCTION public.restore_account_deletion(text) TO service_role;
 -- 23505 on idx_profiles_email_active and the WHOLE function rolls back — the request stays 'pending'
 -- (recoverable), never stranded as cancelled. Returns the restored profile_id, or NULL if there was no
 -- pending request to cancel (caller maps NULL -> 404, 23505 -> 409).
+-- GRACE-WINDOW: this RPC does NOT enforce the 7-day grace window — the calling route does, before this
+-- call. It is service_role-only with that route as the sole caller; ANY new caller MUST enforce the
+-- grace window itself (the function will happily cancel an expired request otherwise).
 CREATE OR REPLACE FUNCTION public.cancel_account_deletion(p_profile_id uuid)
 RETURNS uuid
 LANGUAGE plpgsql

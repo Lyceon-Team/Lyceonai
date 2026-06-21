@@ -280,6 +280,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/deletion-cancel-atomicity.sh
 
+      - name: Flag-on lifecycle e2e (request -> cron -> anonymize; recover/cancel -> restored)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/deletion-lifecycle-e2e.sh
+
   # ---------------------------------------------------------------------------
   # Mastery PARITY gate (Doc 05A §12 / §12.4a / §12.5) — HARD GATE. Proves the
   # PL/pgSQL compute_mastery_for_entity matches the independent Python reference

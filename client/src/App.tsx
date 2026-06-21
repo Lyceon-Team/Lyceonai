@@ -1,9 +1,13 @@
 import { Component, ReactNode, Suspense, lazy } from "react";
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
-import { SupabaseAuthProvider } from "@/contexts/SupabaseAuthContext";
+import {
+  SupabaseAuthProvider,
+  useSupabaseAuth,
+} from "@/contexts/SupabaseAuthContext";
+import { PendingDeletionScreen } from "@/components/account-deletion/PendingDeletionScreen";
 import { UIProvider } from "@/components/providers/ui-provider";
 import "@/styles/tokens.css";
 import "@/styles/accessibility.css";
@@ -13,6 +17,8 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { RequireRole } from "@/components/auth/RequireRole";
 import UpdatePassword from "@/pages/update-password";
+
+const AccountRecover = lazy(() => import("@/pages/account-recover"));
 
 const LyceonDashboard = lazy(() => import("@/pages/lyceon-dashboard"));
 const CalendarPage = lazy(() => import("@/pages/calendar"));
@@ -111,6 +117,8 @@ function Router() {
         <Route path="/profile/complete" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><ProfileComplete /></RequireRole>} />
         <Route path="/update-password" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UpdatePassword /></RequireRole>} />
         <Route path="/reset-password" component={UpdatePassword} />
+        {/* §40.4 deletion recovery — public (token-gated, no session needed) */}
+        <Route path="/account/recover" component={AccountRecover} />
 
         {/* Guardian routes - require guardian or admin role */}
         <Route path="/guardian/verify-consent" component={GuardianConsentVerify} />
@@ -167,6 +175,22 @@ class ErrorBoundary extends Component<
   }
 }
 
+/**
+ * @spec [Doc-01_V8 §40.3 soft-delete state behaviour] | @implemented 2026-06-21
+ * plain English: routes a grace-window (soft-locked) user to the restricted pending-deletion screen —
+ * except the recovery page, which must stay reachable. Unauthenticated + non-pending users pass
+ * straight through. The server is authoritative (pendingDeletion comes from /api/profile via the auth
+ * context + the global deletion lock); this only mirrors that state in the UI.
+ */
+function DeletionGate({ children }: { children: ReactNode }) {
+  const { user } = useSupabaseAuth();
+  const [location] = useLocation();
+  if (user?.pendingDeletion && location !== "/account/recover") {
+    return <PendingDeletionScreen />;
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -174,7 +198,9 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <SupabaseAuthProvider>
             <UIProvider>
-              <Router />
+              <DeletionGate>
+                <Router />
+              </DeletionGate>
             </UIProvider>
           </SupabaseAuthProvider>
         </QueryClientProvider>

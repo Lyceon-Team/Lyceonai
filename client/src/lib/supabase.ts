@@ -44,4 +44,9 @@ export interface SupabaseProfile {
   requiredConsentsComplete?: boolean;
   requiredProfileComplete?: boolean;
   guardianConsentRequired?: boolean;
+  // §40 account-deletion lifecycle (server-authority — sourced from /api/profile, never a client env
+  // guess). `accountDeletionLifecycleV2` says whether the V2 path is live (gates the delete control);
+  // `pendingDeletion` is set ONLY while THIS user is in the 7-day soft-delete grace.
+  accountDeletionLifecycleV2?: boolean;
+  pendingDeletion?: { scheduledHardDeleteAt: string } | null;
 }
