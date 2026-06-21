@@ -3,6 +3,10 @@ import { Router, Request, Response } from "express";
 import { logger } from "../logger.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
 import { drainAllPendingLegalAcceptances } from "../lib/legal-acceptance.js";
+import {
+  executeDueDeletions,
+  isDeletionLifecycleV2Enabled,
+} from "./account-deletion-routes.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -52,6 +56,56 @@ router.get(
         err,
       );
       res.status(500).json({ error: "drain_failed" });
+    }
+  },
+);
+
+/**
+ * POST /api/internal/execute-deletions
+ * @spec [Doc-01 §40.5 Hard delete at T+7] cron-only hard-delete pass. The IRREVERSIBLE deidentify
+ * path is reachable ONLY here, behind TWO gates:
+ *   1. CRON_SECRET (like the legal-acceptance drain) — nothing but the scheduled job can trigger it;
+ *      unauthorized/unconfigured => 404 (fails closed, reveals nothing).
+ *   2. ACCOUNT_DELETION_LIFECYCLE_V2 — flag-OFF is genuinely dormant: a no-op acknowledgement, no
+ *      selector, no deidentify_user call. So shipping with the staged migration unapplied / flag off
+ *      cannot anonymize anyone.
+ */
+router.post(
+  "/execute-deletions",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!isDeletionLifecycleV2Enabled()) {
+      // Flag OFF: destructive path inert. Acknowledge to the scheduler as a no-op, not an error.
+      res.json({
+        ok: true,
+        skipped: "lifecycle_v2_disabled",
+        executedCount: 0,
+      });
+      return;
+    }
+    try {
+      const { executedCount, failedCount } = await executeDueDeletions(
+        getSupabaseAdmin(),
+        req.requestId,
+      );
+      logger.info(
+        "DELETION",
+        "execute_deletions_job",
+        "Scheduled hard-delete pass completed",
+        { executedCount, failedCount },
+      );
+      res.json({ ok: true, executedCount, failedCount });
+    } catch (err) {
+      logger.error(
+        "DELETION",
+        "execute_deletions_job_error",
+        "Scheduled hard-delete pass failed",
+        err,
+      );
+      res.status(500).json({ error: "execute_deletions_failed" });
     }
   },
 );

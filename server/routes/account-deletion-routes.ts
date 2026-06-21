@@ -1,7 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { randomBytes, createHash } from 'node:crypto';
 import { z } from 'zod';
-import { getSupabaseAdmin, requireSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
+import { getSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
 import { sendEmail } from '../lib/email';
 import { logger } from '../logger';
@@ -348,89 +348,87 @@ router.post('/recover-deletion', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/account/execute-deletions
- * Admin-only / system endpoint to hard-delete pending requests whose scheduled 7-day
- * hard-delete time has arrived (Doc-01 §40.5).
+ * @spec [Doc-01 §40.5 Hard delete at T+7] the irreversible de-identify pass.
+ * This is intentionally NOT a route here: the destructive path must be reachable ONLY from the
+ * cron-secret + flag gated internal endpoint (server/routes/internal-cron-routes.ts), so that
+ * (a) nothing but the scheduled job can trigger it, and (b) flag-OFF is genuinely dormant. Per-row
+ * idempotent: deidentify_user is a no-op over an already-anonymized row, and once a request flips to
+ * status='completed' it leaves the pending selection — both proven by the deletion-deidentify
+ * rehearsal gate (scripts/ci/deletion-deidentify-rehearsal.*).
  */
-// CSRF_EXEMPT_REASON: Non-browser admin/system operation with server-side auth gating.
-router.post('/execute-deletions', requireSupabaseAuth, requireSupabaseAdmin, async (req: Request, res: Response) => {
-    const requestId = req.requestId;
+export async function executeDueDeletions(
+    admin: DeletionAdminClient,
+    requestId?: string,
+): Promise<{ executedCount: number; failedCount: number }> {
+    // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
+    const nowIso = new Date().toISOString();
 
-    try {
-        const admin = getSupabaseAdmin();
-        // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
-        const nowIso = new Date().toISOString();
+    const { data: pendingRequests, error: fetchError } = await admin
+        .from('account_deletion_requests')
+        .select('id, profile_id')
+        .eq('status', 'pending')
+        .lte('scheduled_hard_delete_at', nowIso);
 
-        const { data: pendingRequests, error: fetchError } = await admin
-            .from('account_deletion_requests')
-            .select('id, profile_id')
-            .eq('status', 'pending')
-            .lte('scheduled_hard_delete_at', nowIso);
+    if (fetchError) {
+        logger.error('DELETION', 'fetch_pending_error', 'Failed to fetch pending deletions', { error: fetchError.message, requestId });
+        throw new Error(fetchError.message);
+    }
 
-        if (fetchError) {
-            logger.error('DELETION', 'fetch_pending_error', 'Failed to fetch pending deletions', { error: fetchError.message, requestId });
-            return res.status(500).json({ error: 'Failed to fetch pending deletions', requestId });
+    if (!pendingRequests || pendingRequests.length === 0) {
+        return { executedCount: 0, failedCount: 0 };
+    }
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Execute de-identification logic via stored procedure per user
+    for (const pending of pendingRequests) {
+        const deletionEmail = buildDeletedEmail(pending.profile_id);
+
+        const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.profile_id, deleted_email: deletionEmail });
+
+        if (rpcError) {
+            logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.profile_id, error: rpcError.message, requestId });
+            failureCount++;
+            continue;
         }
 
-        if (!pendingRequests || pendingRequests.length === 0) {
-            return res.json({ ok: true, message: 'No eligible pending deletions', executedCount: 0, requestId });
-        }
-
-        let successCount = 0;
-        let failureCount = 0;
-
-        // Execute de-identification logic via stored procedure per user
-        for (const pending of pendingRequests) {
-            const deletionEmail = buildDeletedEmail(pending.profile_id);
-
-            const { error: rpcError } = await admin.rpc('deidentify_user', { target_user_id: pending.profile_id, deleted_email: deletionEmail });
-
-            if (rpcError) {
-                logger.error('DELETION', 'deidentify_error', 'Failed to deidentify user', { userId: pending.profile_id, error: rpcError.message, requestId });
-                failureCount++;
-                continue;
-            }
-
-            const { error: authError } = await admin.auth.admin.updateUserById(pending.profile_id, {
-                email: deletionEmail,
-                ban_duration: DELETION_BAN_DURATION,
-                user_metadata: {
-                    deletion_status: 'completed',
-                    deleted_at: new Date().toISOString(),
-                },
-            });
-
-            if (authError) {
-                logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
-                    userId: pending.profile_id,
-                    error: authError.message,
-                    requestId,
-                });
-                failureCount++;
-                continue;
-            }
-
-            // Mark as completed
-            await admin
-                .from('account_deletion_requests')
-                .update({ status: 'completed', completion_at: new Date().toISOString() })
-                .eq('id', pending.id);
-
-            successCount++;
-        }
-
-        logger.info('DELETION', 'execution_complete', 'Executed pending account deletions', {
-            attemptedCount: pendingRequests.length,
-            successCount,
-            failedCount: failureCount,
-            requestId
+        const { error: authError } = await admin.auth.admin.updateUserById(pending.profile_id, {
+            email: deletionEmail,
+            ban_duration: DELETION_BAN_DURATION,
+            user_metadata: {
+                deletion_status: 'completed',
+                deleted_at: new Date().toISOString(),
+            },
         });
 
-        res.json({ ok: true, executedCount: successCount, failedCount: failureCount, requestId });
-    } catch (err: any) {
-        logger.error('DELETION', 'execution_fatal', 'Fatal error during account deletion process', { error: err.message, requestId });
-        res.status(500).json({ error: 'Internal server error', requestId });
+        if (authError) {
+            logger.error('DELETION', 'auth_disable_failed', 'Failed to disable auth user after deidentification', {
+                userId: pending.profile_id,
+                error: authError.message,
+                requestId,
+            });
+            failureCount++;
+            continue;
+        }
+
+        // Mark as completed
+        await admin
+            .from('account_deletion_requests')
+            .update({ status: 'completed', completion_at: new Date().toISOString() })
+            .eq('id', pending.id);
+
+        successCount++;
     }
-});
+
+    logger.info('DELETION', 'execution_complete', 'Executed pending account deletions', {
+        attemptedCount: pendingRequests.length,
+        successCount,
+        failedCount: failureCount,
+        requestId,
+    });
+
+    return { executedCount: successCount, failedCount: failureCount };
+}
 
 export default router;
