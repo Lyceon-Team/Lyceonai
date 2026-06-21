@@ -1,6 +1,9 @@
 import { Request, Response, Router } from 'express';
+import { randomBytes, createHash } from 'node:crypto';
+import { z } from 'zod';
 import { getSupabaseAdmin, requireSupabaseAdmin, requireSupabaseAuth } from '../middleware/supabase-auth';
 import { doubleCsrfProtection } from '../middleware/csrf-double-submit';
+import { sendEmail } from '../lib/email';
 import { logger } from '../logger';
 
 const router = Router();
@@ -45,6 +48,126 @@ export function buildDeletionRequestInsert(profileId: string, now: Date = new Da
     };
 }
 
+// @spec [Doc-01 §40.2.1 / §40.3 / §40.4] V2 lifecycle gate. The soft-delete-lock + token-recovery
+// path goes live ONLY when the owner has applied the staged migration
+// (supabase/migrations-pending/20260621000000_account_deletion_lifecycle.sql) and set this flag.
+// Flag OFF (default) = the post-#403 direct-insert path: it never sets profiles.deleted_at and never
+// calls the (pre-migration absent) RPCs, so shipping this code dormant cannot regress /delete or login.
+export function isDeletionLifecycleV2Enabled(): boolean {
+    return process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === 'true';
+}
+
+// @spec [Doc-01 §40.4] recovery token: a 256-bit URL-safe secret mailed to the user; only its
+// sha256 hash is persisted (a leaked DB row cannot reconstruct a working link).
+export function hashRecoveryToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
+}
+
+export function generateRecoveryToken(): { rawToken: string; tokenHash: string } {
+    const rawToken = randomBytes(32).toString('base64url');
+    return { rawToken, tokenHash: hashRecoveryToken(rawToken) };
+}
+
+export const recoverDeletionSchema = z.object({
+    token: z.string().min(1),
+});
+
+type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
+
+type RecoveryResult =
+    | { ok: true; profileId: string }
+    | { ok: false; code: 'INVALID_OR_EXPIRED' | 'EMAIL_RECLAIMED' | 'ERROR'; message: string };
+
+// @spec [Doc-01 §40.4] restore-by-token. STRAND-SAFE: takes NO authenticated session — the token IS
+// the capability — so a soft-deleted, login-locked (§40.3) user can still recover. Maps the RPC's
+// NULL (unknown/expired/already-resolved) to a 404-class result and a unique_violation (the freed
+// email was re-registered during grace) to a distinct 409-class result.
+export async function performRecovery(admin: DeletionAdminClient, rawToken: string): Promise<RecoveryResult> {
+    const tokenHash = hashRecoveryToken(rawToken);
+    const { data, error } = await admin.rpc('restore_account_deletion', { p_recovery_token_hash: tokenHash });
+    if (error) {
+        if (error.code === '23505') {
+            return { ok: false, code: 'EMAIL_RECLAIMED', message: 'Email is no longer available for restoration' };
+        }
+        return { ok: false, code: 'ERROR', message: error.message };
+    }
+    const profileId = data as string | null;
+    if (!profileId) {
+        return { ok: false, code: 'INVALID_OR_EXPIRED', message: 'Recovery link is invalid or has expired' };
+    }
+    return { ok: true, profileId };
+}
+
+// @spec [Doc-01 §40.2.1 Phase 1] atomic soft-delete + request insert via RPC; returns the schedule
+// plus the raw recovery token (mailed once, never stored raw). Idempotency is enforced inside the RPC.
+export async function performDeletionRequestV2(
+    admin: DeletionAdminClient,
+    profileId: string,
+): Promise<{ requestedAt: string; scheduledHardDeleteAt: string; rawToken: string } | { error: string }> {
+    const { rawToken, tokenHash } = generateRecoveryToken();
+    const { data, error } = await admin.rpc('request_account_deletion', {
+        p_profile_id: profileId,
+        p_actor_id: profileId, // self-serve: actor = the requesting user (§5)
+        p_recovery_token_hash: tokenHash,
+        p_grace_days: DELETION_GRACE_DAYS,
+    });
+    if (error) {
+        return { error: error.message };
+    }
+    const row = (Array.isArray(data) ? data[0] : data) as
+        | { requested_at?: string; scheduled_hard_delete_at?: string }
+        | null;
+    if (!row?.requested_at || !row.scheduled_hard_delete_at) {
+        return { error: 'Deletion request did not return a schedule' };
+    }
+    return { requestedAt: row.requested_at, scheduledHardDeleteAt: row.scheduled_hard_delete_at, rawToken };
+}
+
+function deletionRecoveryBaseUrl(): string {
+    return (
+        process.env.APP_BASE_URL ??
+        (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://lyceon.ai')
+    );
+}
+
+// @spec [Doc-01 §40.2.1 Phase 4] confirmation email carrying the 7-day recovery link. Best-effort:
+// the deletion is already committed, so a mail failure is logged, not surfaced. PRIVACY: never logs
+// the address, token, or body — only userId + requestId + outcome (Coding Standards §12.1).
+async function sendDeletionScheduledEmail(
+    admin: DeletionAdminClient,
+    userId: string,
+    rawToken: string,
+    scheduledHardDeleteAt: string,
+    requestId?: string,
+): Promise<void> {
+    try {
+        const { data, error } = await admin.auth.admin.getUserById(userId);
+        const email = data?.user?.email;
+        if (error || !email) {
+            logger.warn('DELETION', 'recovery_email_skipped', 'No address to send deletion-scheduled email', { userId, requestId });
+            return;
+        }
+        const recoverUrl = `${deletionRecoveryBaseUrl()}/account/recover?token=${encodeURIComponent(rawToken)}`;
+        const when = new Date(scheduledHardDeleteAt).toUTCString();
+        await sendEmail({
+            to: email,
+            subject: 'Your Lyceon account is scheduled for deletion',
+            html:
+                `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong>.</p>` +
+                `<p>If you did not request this, or you change your mind, you can restore your account any time before then:</p>` +
+                `<p><a href="${recoverUrl}">Restore my account</a></p>` +
+                `<p>This link stops working once the deletion completes.</p>`,
+        });
+        logger.info('DELETION', 'recovery_email_sent', 'Deletion-scheduled email sent', { userId, requestId });
+    } catch (err) {
+        logger.warn('DELETION', 'recovery_email_failed', 'Failed to send deletion-scheduled email', {
+            userId,
+            requestId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 /**
  * POST /api/account/delete
  * Request account deletion. Schedules the hard delete 7 days out per Doc-01 §40.
@@ -55,6 +178,25 @@ router.post('/delete', requireSupabaseAuth, doubleCsrfProtection, async (req: Re
 
     try {
         const admin = getSupabaseAdmin();
+
+        // §40.2.1/§40.3/§40.4 V2 path (flag-gated; live only once the staged migration is applied).
+        if (isDeletionLifecycleV2Enabled()) {
+            const result = await performDeletionRequestV2(admin, userId);
+            if ('error' in result) {
+                logger.error('DELETION', 'request_v2_error', 'Failed to process deletion request (v2)', { userId, error: result.error, requestId });
+                return res.status(500).json({ error: 'Failed to queue account for deletion', requestId });
+            }
+            // §40.2.1 Phase 4: confirmation email with the 7-day recovery link (best-effort).
+            await sendDeletionScheduledEmail(admin, userId, result.rawToken, result.scheduledHardDeleteAt, requestId);
+            logger.info('DELETION', 'requested', 'User requested account deletion (v2 soft-delete)', { userId, requestId });
+            return res.json({
+                ok: true,
+                graceWindowDays: DELETION_GRACE_DAYS,
+                requestedAt: result.requestedAt,
+                scheduledHardDeleteAt: result.scheduledHardDeleteAt,
+                requestId,
+            });
+        }
 
         // Check if there's already a pending deletion
         const { data: existing, error: findError } = await admin
@@ -160,6 +302,48 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
     } catch (err: any) {
         logger.error('DELETION', 'unhandled_error', 'Failed to cancel deletion request', { userId, error: err.message, requestId });
         res.status(500).json({ error: 'Internal server error', requestId });
+    }
+});
+
+/**
+ * POST /api/account/recover-deletion
+ * §40.4 recovery during the grace window. Token-gated by the recovery link from the deletion email —
+ * takes NO authenticated session, so a soft-deleted, login-locked (§40.3) user can still restore.
+ */
+// CSRF_EXEMPT_REASON: unauthenticated, capability-gated by a single-use recovery token — no cookie/session auth to protect.
+router.post('/recover-deletion', async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+
+    if (!isDeletionLifecycleV2Enabled()) {
+        return res.status(404).json({ error: 'Not found', requestId });
+    }
+
+    const parsed = recoverDeletionSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: 'Invalid input', requestId });
+    }
+
+    try {
+        const admin = getSupabaseAdmin();
+        const result = await performRecovery(admin, parsed.data.token);
+
+        if (!result.ok) {
+            if (result.code === 'ERROR') {
+                logger.error('DELETION', 'recover_error', 'Failed to restore account', { error: result.message, requestId });
+                return res.status(500).json({ error: 'Failed to restore account', requestId });
+            }
+            const status = result.code === 'EMAIL_RECLAIMED' ? 409 : 404;
+            return res.status(status).json({ error: result.message, code: result.code, requestId });
+        }
+
+        logger.info('DELETION', 'recovered', 'Account restored via recovery link', { userId: result.profileId, requestId });
+        return res.json({ ok: true, message: 'Account restored successfully', requestId });
+    } catch (err) {
+        logger.error('DELETION', 'recover_unhandled', 'Unhandled error restoring account', {
+            error: err instanceof Error ? err.message : String(err),
+            requestId,
+        });
+        return res.status(500).json({ error: 'Internal server error', requestId });
     }
 });
 

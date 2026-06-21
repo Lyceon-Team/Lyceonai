@@ -282,6 +282,39 @@ async function defaultSupabaseDeletionResolver(args: {
 }): Promise<DeletionStatusResult> {
   try {
     const admin = getSupabaseAdmin();
+
+    // @spec [Doc-01_V8 §40.3] During the soft-delete grace the profile is login-locked: the auth
+    // middleware checks profiles.deleted_at and rejects. Flag-gated (ACCOUNT_DELETION_LIFECYCLE_V2)
+    // until the account-deletion-lifecycle migration is applied — pre-activation nothing sets
+    // deleted_at, so flag-off this branch is inert and login behaviour is unchanged. The token-gated
+    // recovery route (/api/account/recover-deletion) carries no session, so this lock does not
+    // strand recovery. deleted_at stays set through hard-delete, so it also covers completed rows.
+    if (process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true") {
+      const { data: profile, error: profileError } = await admin
+        .from("profiles")
+        .select("deleted_at")
+        .eq("id", args.userId)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== "PGRST116") {
+        logger.error(
+          "DELETION",
+          "soft_delete_check_failed",
+          "Failed to verify soft-delete state",
+          {
+            userId: args.userId,
+            error: profileError.message,
+            requestId: args.requestId,
+          },
+        );
+        return { status: "unavailable", executedAt: null };
+      }
+
+      if (profile?.deleted_at) {
+        return { status: "deleted", executedAt: profile.deleted_at };
+      }
+    }
+
     const { data, error } = await admin
       .from("account_deletion_requests")
       .select("status, completion_at")
