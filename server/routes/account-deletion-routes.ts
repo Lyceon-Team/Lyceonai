@@ -286,6 +286,38 @@ router.post('/cancel-deletion', requireSupabaseAuth, doubleCsrfProtection, async
             return res.status(500).json({ error: 'Failed to cancel deletion request', requestId });
         }
 
+        // @spec [Doc-01 §40.4] V2 in-app cancel re-activates the account: clear the soft-delete marker
+        // so the §40.3 login-lock lifts. Safety ordering — the request is already 'cancelled' above
+        // (removed from the §40.5 cron selection, so no hard-delete can fire) BEFORE we clear deleted_at.
+        // If the freed email was re-registered during grace, the partial unique index
+        // (idx_profiles_email_active) rejects the clear with 23505 → distinct 409 (account is safe from
+        // deletion but stays locked pending support), never a 500.
+        if (isDeletionLifecycleV2Enabled()) {
+            const { error: clearError } = await admin
+                .from('profiles')
+                .update({ deleted_at: null })
+                .eq('id', userId)
+                .select('id');
+
+            if (clearError) {
+                if (clearError.code === '23505') {
+                    logger.warn('DELETION', 'cancel_email_reclaimed', 'Deletion cancelled but email reclaimed during grace', { userId, requestId });
+                    return res.status(409).json({
+                        error: 'Your deletion was cancelled, but your email is no longer available. Contact support to finish restoring access.',
+                        code: 'EMAIL_RECLAIMED',
+                        requestId,
+                    });
+                }
+                logger.error('DELETION', 'cancel_clear_error', 'Failed to clear soft-delete marker after cancel', { userId, error: clearError.message, requestId });
+                return res.status(500).json({ error: 'Failed to fully cancel deletion request', requestId });
+            }
+
+            await admin
+                .from('account_deletion_requests')
+                .update({ stripe_cancellation_status: 'cancelled_by_recovery' })
+                .eq('id', pending.id);
+        }
+
         logger.info('DELETION', 'cancelled', 'User cancelled deletion request', { userId, requestId });
         res.json({ ok: true, message: 'Account deletion cancelled successfully', requestId });
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 vi.mock("../../server/middleware/supabase-auth", () => ({
+  enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
   supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
     req.user = {
       id: "student-diagnostic-user",
@@ -34,12 +35,10 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   }),
   resolveUserIdFromToken: async () => null,
   sendUnauthenticated: (res: any, requestId?: string) =>
-    res
-      .status(401)
-      .json({
-        error: "Authentication required",
-        requestId: requestId ?? "req-diagnostic-disabled",
-      }),
+    res.status(401).json({
+      error: "Authentication required",
+      requestId: requestId ?? "req-diagnostic-disabled",
+    }),
   sendForbidden: (res: any, payload: any) =>
     res.status(403).json({
       error: payload?.error ?? "Forbidden",
