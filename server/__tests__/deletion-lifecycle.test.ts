@@ -7,6 +7,7 @@ import {
     hashRecoveryToken,
     generateRecoveryToken,
     performRecovery,
+    performInAppCancel,
     performDeletionRequestV2,
 } from '../routes/account-deletion-routes';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -221,6 +222,39 @@ describe('Deletion Lifecycle V2 — token recovery (§40.4) + request (§40.2.1)
     it('surfaces other RPC errors as ERROR (500-class)', async () => {
         const admin = fakeAdminWithRpc(() => ({ data: null, error: { code: 'P0001', message: 'boom' } }));
         expect(await performRecovery(admin, 'whatever')).toEqual({ ok: false, code: 'ERROR', message: 'boom' });
+    });
+
+    // §40.4 in-app cancel — the authenticated symmetric twin of token recovery. DB-level atomicity
+    // (no strand on email-reclaim) is proven by scripts/ci/deletion-cancel-atomicity.*; these cover
+    // the route-facing result mapping.
+    it('in-app cancel returns ok with the restored profileId', async () => {
+        const admin = fakeAdminWithRpc((fn) => {
+            expect(fn).toBe('cancel_account_deletion');
+            return { data: 'profile-xyz', error: null };
+        });
+        expect(await performInAppCancel(admin, 'profile-xyz')).toEqual({ ok: true, profileId: 'profile-xyz' });
+    });
+
+    it('in-app cancel passes only p_profile_id to the RPC', async () => {
+        const rpc = vi.fn(async () => ({ data: 'p1', error: null }));
+        const admin = { rpc } as unknown as FakeAdmin;
+        await performInAppCancel(admin, 'p1');
+        expect(rpc).toHaveBeenCalledWith('cancel_account_deletion', { p_profile_id: 'p1' });
+    });
+
+    it('in-app cancel maps RPC null (no pending request) to NO_PENDING (404-class)', async () => {
+        const admin = fakeAdminWithRpc(() => ({ data: null, error: null }));
+        expect(await performInAppCancel(admin, 'p1')).toEqual({ ok: false, code: 'NO_PENDING', message: expect.any(String) });
+    });
+
+    it('in-app cancel maps a unique_violation (email reclaimed, rolled back) to EMAIL_RECLAIMED (409-class)', async () => {
+        const admin = fakeAdminWithRpc(() => ({ data: null, error: { code: '23505', message: 'duplicate key' } }));
+        expect(await performInAppCancel(admin, 'p1')).toEqual({ ok: false, code: 'EMAIL_RECLAIMED', message: expect.any(String) });
+    });
+
+    it('in-app cancel surfaces other RPC errors as ERROR (500-class)', async () => {
+        const admin = fakeAdminWithRpc(() => ({ data: null, error: { code: 'P0001', message: 'boom' } }));
+        expect(await performInAppCancel(admin, 'p1')).toEqual({ ok: false, code: 'ERROR', message: 'boom' });
     });
 
     // §40.2.1 Phase 1: self-serve request → actor = requester, 7-day grace, returns schedule + token.
