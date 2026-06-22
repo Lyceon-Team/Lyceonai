@@ -110,6 +110,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         requiredConsentsComplete: backendUser.requiredConsentsComplete,
         requiredProfileComplete: backendUser.requiredProfileComplete,
         guardianConsentRequired: backendUser.guardianConsentRequired,
+        // §40 server-authority flags + grace-window state (top-level on the /api/profile response).
+        accountDeletionLifecycleV2:
+          data.featureFlags?.accountDeletionLifecycleV2 ?? false,
+        pendingDeletion: data.pendingDeletion ?? null,
       };
     } catch (error) {
       console.error("[AUTH] Network error fetching user from backend:", error);

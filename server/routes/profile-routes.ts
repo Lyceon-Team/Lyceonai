@@ -4,6 +4,7 @@ import {
   getSupabaseAdmin,
   requireRequestUser,
 } from "../middleware/supabase-auth";
+import { isDeletionLifecycleV2Enabled } from "../lib/account-deletion-execute";
 import { drainLegalAcceptanceOutbox } from "../lib/legal-acceptance";
 import { SUPPORT_EMAIL } from "../lib/support-contact";
 import { LEGAL_DOCS } from "../../shared/legal-consent.js";
@@ -66,7 +67,7 @@ router.get("/", async (req: Request, res: Response) => {
     const { data: profileRow, error: profileError } = await supabase
       .from("profiles")
       .select(
-        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at",
+        "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, date_of_birth, marketing_opt_in, profile_completed_at, deleted_at",
       )
       .eq("id", user.id)
       .single();
@@ -106,8 +107,35 @@ router.get("/", async (req: Request, res: Response) => {
       requiredLegalAccepted && !guardianConsentRequired;
     const requiredProfileComplete = !!profileRow.profile_completed_at;
 
+    // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
+    // exposure of (a) whether the V2 account-deletion lifecycle is live and (b) whether THIS user is in
+    // the 7-day soft-delete grace. The client must NEVER guess the flag from a client env var — the
+    // server is the authority on whether the deletion path is real, so the UI can gate the delete
+    // control and route a grace-window user to the pending-deletion screen. Flag OFF or no soft-delete
+    // => both inert; the schedule is only queried when the user is actually soft-deleted (not a hot path).
+    const lifecycleV2 = isDeletionLifecycleV2Enabled();
+    let pendingDeletion: { scheduledHardDeleteAt: string } | null = null;
+    if (lifecycleV2 && profileRow.deleted_at) {
+      const { data: pendingRow } = await supabase
+        .from("account_deletion_requests")
+        .select("scheduled_hard_delete_at")
+        .eq("profile_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (pendingRow?.scheduled_hard_delete_at) {
+        pendingDeletion = {
+          scheduledHardDeleteAt: pendingRow.scheduled_hard_delete_at,
+        };
+      }
+    }
+
     return res.json({
       authenticated: true,
+      // Server-authority flags + grace-window state (see the @spec note above).
+      featureFlags: {
+        accountDeletionLifecycleV2: lifecycleV2,
+      },
+      pendingDeletion,
       user: {
         id: profileRow.id,
         email: profileRow.email,

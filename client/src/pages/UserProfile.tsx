@@ -30,6 +30,7 @@ import { openBillingPortal } from '@/lib/billing-client';
 import type { NotificationDigestFrequency, UserNotificationPreferences } from '@shared/schema';
 import { RecoveryNotice } from '@/components/feedback/RecoveryNotice';
 import { SessionNotice } from '@/components/feedback/SessionNotice';
+import { DeleteAccountCard } from '@/components/account-deletion/DeleteAccountCard';
 import { isSessionError, toUserFacingMessage } from '@/lib/api-error';
 
 interface UserProfile {
@@ -977,12 +978,7 @@ export default function UserProfile() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Data export/reset/delete controls are intentionally withheld until safe ownership flows are finalized.
-                  </AlertDescription>
-                </Alert>
+                <DeleteAccountCard />
               </CardContent>
             </Card>
           </TabsContent>

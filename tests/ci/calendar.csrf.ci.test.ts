@@ -23,6 +23,7 @@ function requireUser(req: any, res: any) {
 }
 
 vi.mock("../../server/middleware/supabase-auth", () => ({
+  enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
   supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
     req.user = testUser;
     req.requestId ??= "req-calendar-csrf";
@@ -75,12 +76,10 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
   }),
   resolveUserIdFromToken: async () => null,
   sendUnauthenticated: (res: any, requestId?: string) =>
-    res
-      .status(401)
-      .json({
-        error: "Authentication required",
-        requestId: requestId ?? "req-calendar-csrf",
-      }),
+    res.status(401).json({
+      error: "Authentication required",
+      requestId: requestId ?? "req-calendar-csrf",
+    }),
   sendForbidden: (res: any, payload: any) =>
     res.status(403).json({
       error: payload?.error ?? "Forbidden",
