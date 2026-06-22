@@ -274,6 +274,40 @@ $$;
 
 
 --
+-- Name: cancel_account_deletion(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancel_account_deletion(p_profile_id uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_request_id uuid;
+BEGIN
+  SELECT adr.id INTO v_request_id
+    FROM public.account_deletion_requests adr
+   WHERE adr.profile_id = p_profile_id
+     AND adr.status = 'pending'
+   LIMIT 1;
+
+  IF v_request_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- Lift the soft-delete lock first; a 23505 here aborts the whole function (both writes roll back).
+  UPDATE public.profiles SET deleted_at = NULL, updated_at = now() WHERE id = p_profile_id;
+
+  UPDATE public.account_deletion_requests
+     SET status                     = 'cancelled',
+         stripe_cancellation_status = 'cancelled_by_recovery'
+   WHERE id = v_request_id;
+
+  RETURN p_profile_id;
+END;
+$$;
+
+
+--
 -- Name: canonical_mastery_events(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -931,6 +965,32 @@ BEGIN
   END LOOP;
 
   RETURN v_streak;
+END;
+$$;
+
+
+--
+-- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.deidentify_user(target_user_id uuid, deleted_email text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  UPDATE public.profiles
+     SET email              = deleted_email,
+         full_name          = NULL,
+         display_name        = 'Deleted User',
+         stripe_customer_id  = NULL,
+         guardian_email      = NULL,
+         date_of_birth       = NULL,
+         updated_at          = now()
+   WHERE id = target_user_id;
+  -- DEFERRED cascade (GAP-HY-15, Doc 03A V2 retention sign-off required): hard-delete feature-level
+  -- rows where retention is not required; retain anonymized analytics per
+  -- account_deletion_runtime_config.anonymization_retention_days. Not added until the delete list
+  -- is traced to Doc 03A — leaving it out keeps this RPC non-destructive beyond the PII row.
 END;
 $$;
 
@@ -1858,6 +1918,80 @@ $$;
 
 
 --
+-- Name: request_account_deletion(uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer DEFAULT 7) RETURNS TABLE(requested_at timestamp with time zone, scheduled_hard_delete_at timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_now   timestamptz := now();
+  v_sched timestamptz := now() + make_interval(days => p_grace_days);
+BEGIN
+  -- Idempotency: surface the existing pending request rather than creating a second one.
+  IF EXISTS (
+    SELECT 1 FROM public.account_deletion_requests adr
+     WHERE adr.profile_id = p_profile_id AND adr.status = 'pending'
+  ) THEN
+    RETURN QUERY
+      SELECT adr.requested_at, adr.scheduled_hard_delete_at
+        FROM public.account_deletion_requests adr
+       WHERE adr.profile_id = p_profile_id AND adr.status = 'pending'
+       LIMIT 1;
+    RETURN;
+  END IF;
+
+  UPDATE public.profiles SET deleted_at = v_now, updated_at = v_now WHERE id = p_profile_id;
+
+  INSERT INTO public.account_deletion_requests
+    (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status,
+     stripe_cancellation_status, recovery_token_hash, recovery_token_expires_at)
+  VALUES
+    (p_profile_id, v_now, v_sched, p_actor_id, 'pending',
+     'pending', p_recovery_token_hash, v_sched);
+
+  RETURN QUERY SELECT v_now, v_sched;
+END;
+$$;
+
+
+--
+-- Name: restore_account_deletion(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.restore_account_deletion(p_recovery_token_hash text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_profile_id uuid;
+BEGIN
+  SELECT adr.profile_id INTO v_profile_id
+    FROM public.account_deletion_requests adr
+   WHERE adr.recovery_token_hash    = p_recovery_token_hash
+     AND adr.status                 = 'pending'
+     AND adr.recovery_token_expires_at > now()
+   LIMIT 1;
+
+  IF v_profile_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  UPDATE public.profiles SET deleted_at = NULL, updated_at = now() WHERE id = v_profile_id;
+
+  UPDATE public.account_deletion_requests
+     SET status                     = 'cancelled',
+         stripe_cancellation_status = 'cancelled_by_recovery'
+   WHERE recovery_token_hash = p_recovery_token_hash
+     AND status              = 'pending';
+
+  RETURN v_profile_id;
+END;
+$$;
+
+
+--
 -- Name: round_to_step(numeric, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1972,6 +2106,8 @@ CREATE TABLE public.account_deletion_requests (
     completion_at timestamp with time zone,
     deletion_reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    recovery_token_hash text,
+    recovery_token_expires_at timestamp with time zone,
     CONSTRAINT account_deletion_requests_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'cancelled'::text, 'completed'::text]))),
     CONSTRAINT account_deletion_requests_stripe_cancellation_status_check CHECK ((stripe_cancellation_status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'completed'::text, 'failed_manual'::text, 'cancelled_by_recovery'::text])))
 );
@@ -3961,6 +4097,13 @@ CREATE INDEX idx_account_deletion_pending ON public.account_deletion_requests US
 
 
 --
+-- Name: idx_account_deletion_recovery_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_deletion_recovery_token ON public.account_deletion_requests USING btree (recovery_token_hash) WHERE (status = 'pending'::text);
+
+
+--
 -- Name: idx_audit_logs_action; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5791,6 +5934,14 @@ GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, 
 
 
 --
+-- Name: FUNCTION cancel_account_deletion(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -5915,6 +6066,14 @@ GRANT ALL ON FUNCTION public.compute_section_projection(p_student_id uuid, p_sec
 
 REVOKE ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email text) TO service_role;
 
 
 --
@@ -6321,6 +6480,22 @@ GRANT ALL ON FUNCTION public.refresh_section_kpi(p_student_id uuid, p_section te
 
 REVOKE ALL ON FUNCTION public.refresh_skill_kpi(p_student_id uuid, p_section text, p_domain text, p_t_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.refresh_skill_kpi(p_student_id uuid, p_section text, p_domain text, p_t_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.request_account_deletion(p_profile_id uuid, p_actor_id uuid, p_recovery_token_hash text, p_grace_days integer) TO service_role;
+
+
+--
+-- Name: FUNCTION restore_account_deletion(p_recovery_token_hash text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) TO service_role;
 
 
 --

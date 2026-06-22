@@ -2,8 +2,9 @@
 # ============================================================================
 # Shared throwaway-DB setup for the deletion-deidentify rehearsal + its negative
 # control. Sourced (not executed). Provisions a fresh Postgres DB with the genesis
-# pipeline + the staged (owner-run) deletion-lifecycle migration applied, so both
-# gates run the REAL schema + REAL deidentify_user.
+# pipeline applied (which now INCLUDES 20260621000000_account_deletion_lifecycle —
+# reconciled into supabase/migrations/), so both gates run the REAL schema + REAL
+# deidentify_user.
 #
 # Provides: setup_deletion_rehearsal_db <dbname>
 # Requires: PG* env (PGHOST/PGPORT/PGUSER/PGPASSWORD) + psql on PATH.
@@ -14,11 +15,9 @@ _deletion_rehearsal_root() { (cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pw
 
 setup_deletion_rehearsal_db() {
   local db="$1"
-  local root mig pending f
+  local root mig f
   root="$(_deletion_rehearsal_root)"
   mig="$root/supabase/migrations"
-  pending="$root/supabase/migrations-pending/20260621000000_account_deletion_lifecycle.sql"
-  [ -f "$pending" ] || { echo "FAIL: pending migration not found ($pending)"; return 1; }
 
   psql -v ON_ERROR_STOP=1 -d postgres \
     -c "DROP DATABASE IF EXISTS $db;" -c "CREATE DATABASE $db;" >/dev/null
@@ -37,7 +36,6 @@ CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SE
 SQL
 
   for f in "$mig"/*.sql; do psql -v ON_ERROR_STOP=1 -d "$db" -q -f "$f" >/dev/null; done
-  psql -v ON_ERROR_STOP=1 -d "$db" -q -f "$pending" >/dev/null
 }
 
 drop_deletion_rehearsal_db() {
