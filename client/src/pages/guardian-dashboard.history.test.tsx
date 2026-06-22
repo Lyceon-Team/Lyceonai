@@ -88,10 +88,9 @@ describe('GuardianDashboard full-length history view UX', () => {
         return jsonResponse({
           student: { id: 'student-1', displayName: 'Alex Student' },
           progress: {
-            practiceMinutesLast7Days: 120,
-            sessionsLast7Days: 5,
             questionsAttempted: 80,
             accuracy: 75,
+            currentStreakDays: 3,
           },
           metrics: [],
         });

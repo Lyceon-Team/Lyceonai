@@ -249,35 +249,17 @@ describe('Guardian reporting runtime contract', () => {
       modelVersion: 'kpi-v1',
       timezone: 'America/Chicago',
       week: {
-        practiceSessions: 4,
         questionsSolved: 30,
         accuracy: 80,
         explanations: {},
       },
       recency: {
-        window: 200,
+        window: 30,
         totalAttempts: 200,
         accuracy: 78,
-        avgSecondsPerQuestion: 75.3,
         explanations: {},
       },
       metrics: [
-        {
-          id: 'week_minutes',
-          label: 'Practice Minutes (7d)',
-          kind: 'diagnostic',
-          unit: 'minutes',
-          value: 120,
-          explanation: { ruleId: 'RULE_WEEK_MINUTES', whatThisMeans: 'wm', whyThisChanged: 'up', whatToDoNext: 'keep going' },
-        },
-        {
-          id: 'week_sessions',
-          label: 'Practice Sessions (7d)',
-          kind: 'diagnostic',
-          unit: 'count',
-          value: 4,
-          explanation: { ruleId: 'RULE_WEEK_SESSIONS', whatThisMeans: 'ws', whyThisChanged: 'up', whatToDoNext: 'keep going' },
-        },
         {
           id: 'week_questions',
           label: 'Questions Solved (7d)',
@@ -295,8 +277,16 @@ describe('Guardian reporting runtime contract', () => {
           explanation: { ruleId: 'RULE_WEEK_ACCURACY', whatThisMeans: 'wa', whyThisChanged: 'up', whatToDoNext: 'keep going' },
         },
         {
+          id: 'current_streak',
+          label: 'Current Streak (days)',
+          kind: 'diagnostic',
+          unit: 'count',
+          value: 3,
+          explanation: { ruleId: 'RULE_CURRENT_STREAK', whatThisMeans: 'cs', whyThisChanged: 'active today', whatToDoNext: 'protect the streak' },
+        },
+        {
           id: 'recency_accuracy',
-          label: 'Accuracy (last 200 attempts)',
+          label: 'Accuracy (30d)',
           kind: 'diagnostic',
           unit: 'percent',
           value: 78,
@@ -309,7 +299,7 @@ describe('Guardian reporting runtime contract', () => {
       measurementModel: {
         official: [],
         weighted: [],
-        diagnostic: ['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy', 'recency_accuracy'],
+        diagnostic: ['week_questions', 'week_accuracy', 'current_streak', 'recency_accuracy'],
       },
     });
     kpiMocks.buildStudentFullLengthReportView.mockImplementation((report: any) => report);
@@ -457,33 +447,34 @@ describe('Guardian reporting runtime contract', () => {
     expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledTimes(1);
     expect(kpiMocks.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-1', true);
     expect(response.body.progress).toEqual({
-      practiceMinutesLast7Days: 120,
-      sessionsLast7Days: 4,
       questionsAttempted: 30,
       accuracy: 80,
+      currentStreakDays: 3,
       explanations: {
-        week_minutes: expect.objectContaining({ ruleId: 'RULE_WEEK_MINUTES' }),
-        week_sessions: expect.objectContaining({ ruleId: 'RULE_WEEK_SESSIONS' }),
         week_questions: expect.objectContaining({ ruleId: 'RULE_WEEK_QUESTIONS' }),
         week_accuracy: expect.objectContaining({ ruleId: 'RULE_WEEK_ACCURACY' }),
+        current_streak: expect.objectContaining({ ruleId: 'RULE_CURRENT_STREAK' }),
       },
     });
-    expect(response.body.metrics.map((metric: any) => metric.id)).toEqual([
-      'week_minutes',
-      'week_sessions',
+    const metrics = response.body.metrics as Array<{ id: string; value: number | null }>;
+    const metricValue = (id: string): number | null | undefined => metrics.find((metric) => metric.id === id)?.value;
+    expect(metrics.map((metric) => metric.id)).toEqual([
       'week_questions',
       'week_accuracy',
+      'current_streak',
     ]);
-    expect(response.body.metrics.find((metric: any) => metric.id === 'week_minutes')?.value).toBe(120);
-    expect(response.body.metrics.find((metric: any) => metric.id === 'week_sessions')?.value).toBe(4);
-    expect(response.body.metrics.find((metric: any) => metric.id === 'week_questions')?.value).toBe(30);
-    expect(response.body.metrics.find((metric: any) => metric.id === 'week_accuracy')?.value).toBe(80);
+    expect(metricValue('week_questions')).toBe(30);
+    expect(metricValue('week_accuracy')).toBe(80);
+    expect(metricValue('current_streak')).toBe(3);
     expect(response.body.measurementModel).toEqual({
       official: [],
       weighted: [],
-      diagnostic: ['week_minutes', 'week_sessions', 'week_questions', 'week_accuracy'],
+      diagnostic: ['week_questions', 'week_accuracy', 'current_streak'],
     });
-    expect(response.body.metrics.find((metric: any) => metric.id === 'recency_accuracy')).toBeUndefined();
+    // Old-gen engagement metrics are dropped under the genesis event vocabulary.
+    expect(metrics.find((metric) => metric.id === 'recency_accuracy')).toBeUndefined();
+    expect(metrics.find((metric) => metric.id === 'week_minutes')).toBeUndefined();
+    expect(metrics.find((metric) => metric.id === 'week_sessions')).toBeUndefined();
 
     const reportViewed = systemEventInserts.find((row) => row.event_type === 'guardian_report_viewed');
     expect(reportViewed).toBeDefined();

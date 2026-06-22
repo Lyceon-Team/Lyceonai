@@ -282,7 +282,7 @@ describe('KPI summary: canonical builder path', () => {
         kpiMocks5.buildStudentKpiViewFromCanonical.mockResolvedValue({
             modelVersion: 'kpi_truth_v1',
             timezone: 'America/Chicago',
-            week: { practiceSessions: 3, questionsSolved: 45, accuracy: 80, explanations: {} },
+            week: { questionsSolved: 45, accuracy: 80, explanations: {} },
             recency: null,
             metrics: [],
             gating: { historicalTrends: { allowed: false, requiredPlan: 'paid', reason: 'no plan' } },
