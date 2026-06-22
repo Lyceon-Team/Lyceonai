@@ -19,6 +19,10 @@ import { AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiRequestRaw } from "@/lib/queryClient";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import {
+  DeletionActionError,
+  deleteRequestErrorCopy,
+} from "@/lib/account-deletion-errors";
 
 /**
  * @spec [Doc-01_V8 §40.1 deletion request | §40 lifecycle] | @implemented 2026-06-21
@@ -40,10 +44,8 @@ export function DeleteAccountCard() {
       const res = await apiRequestRaw("/api/account/delete", {
         method: "POST",
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Failed to schedule deletion");
-      }
+      // Never surface the raw server `error` string — map by status in onError.
+      if (!res.ok) throw new DeletionActionError(res.status);
     },
     onSuccess: () => {
       toast({
@@ -55,10 +57,8 @@ export function DeleteAccountCard() {
       window.location.assign("/profile");
     },
     onError: (err: unknown) => {
-      toast({
-        title: "Could not schedule deletion",
-        description: err instanceof Error ? err.message : "Please try again.",
-      });
+      const status = err instanceof DeletionActionError ? err.status : 0;
+      toast(deleteRequestErrorCopy(status));
     },
   });
 

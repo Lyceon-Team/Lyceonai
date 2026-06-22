@@ -5,7 +5,10 @@ import { AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiRequestRaw } from "@/lib/queryClient";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
-import { SUPPORT_EMAIL } from "@/lib/support-contact";
+import {
+  DeletionActionError,
+  cancelDeletionErrorCopy,
+} from "@/lib/account-deletion-errors";
 
 /**
  * @spec [Doc-01_V8 §40.3 soft-delete state | §40.4 recovery] | @implemented 2026-06-21
@@ -34,20 +37,10 @@ export function PendingDeletionScreen() {
       const res = await apiRequestRaw("/api/account/cancel-deletion", {
         method: "POST",
       });
-      if (res.ok) return "ok" as const;
-      if (res.status === 409) return "reclaimed" as const;
-      if (res.status === 404) return "gone" as const;
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? "Failed to cancel deletion");
+      // Never surface the raw server `error` string — map by status below.
+      if (!res.ok) throw new DeletionActionError(res.status);
     },
-    onSuccess: (result) => {
-      if (result === "reclaimed") {
-        toast({
-          title: "We couldn't restore your account automatically",
-          description: `Your email is no longer available. Contact ${SUPPORT_EMAIL} to recover your account.`,
-        });
-        return;
-      }
+    onSuccess: () => {
       toast({
         title: "Account restored",
         description: "Your account is no longer scheduled for deletion.",
@@ -56,10 +49,13 @@ export function PendingDeletionScreen() {
       window.location.assign("/dashboard");
     },
     onError: (err: unknown) => {
-      toast({
-        title: "Could not cancel deletion",
-        description: err instanceof Error ? err.message : "Please try again.",
-      });
+      const status = err instanceof DeletionActionError ? err.status : 0;
+      // 404 = no pending request (already resolved elsewhere) — re-sync; the gate lifts on reload.
+      if (status === 404) {
+        window.location.assign("/dashboard");
+        return;
+      }
+      toast(cancelDeletionErrorCopy(status));
     },
   });
 
