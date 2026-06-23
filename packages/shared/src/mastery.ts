@@ -8,8 +8,8 @@ import { z } from "zod";
  * guardian surfaces expose ONLY the canonical 0–4 `mastery_level` rendered as a tier — never
  * `mastery_score`, never `mastery_pct`, never a percentage (AC#20, INV-05A-12). Skill and domain
  * mastery are each independently event-computed (Parent §4.7); a domain tier is NOT an average of
- * its skills. The section level carries no tier (it shows the Doc 05C projection band, served by
- * the separate `/api/progress/projection` surface).
+ * its skills. The section level carries no tier and no projection — it is a pure grouping container
+ * (owner ruling 2026-06-23); the Doc 05C SAT projection lives on its own surface, not this page.
  * Trade-offs: the tier is a coarser signal than the raw score by design (anti-leak / honest
  * progress); the raw score stays admin-only and does not unlock behind auth+entitlement.
  * Edge cases: `masteryLevel === null` means no/insufficient evidence (< MIN_EVENTS_FOR_MASTERY,
