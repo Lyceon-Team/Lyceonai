@@ -39,7 +39,6 @@ export interface SkillWeakness {
   skill: string;
   mastery_score: number;
   mastery_level: number | null;
-  accuracy: number;
 }
 
 export interface ClusterWeakness {
@@ -189,12 +188,15 @@ export async function fetchDomainMasteryRows(args: {
 }
 
 /**
- * @spec [Doc 05A §7.4 — mastery_score is admin-only; used server-side by adaptiveSelector for
- *   deterministic practice-engine selection] | @implemented [2026-06-23]
- * ANTI-LEAK BOUNDARY: mastery_score is DUAL-USE. This fetch keeps it for server-side consumers
- * (adaptiveSelector, planner). The /weakest route strips it at serialization — the score
- * never crosses to the client. `accuracy` is mapped from `mastery_score` for backward compat
- * with the adaptiveSelector's `weightedDeterministicPick` interface.
+ * @spec [Doc 05A §7.4 — mastery_score is the canonical DB-computed weakness signal, admin-only;
+ *   consumed server-side by adaptiveSelector for deterministic practice-engine selection]
+ * | @implemented [2026-06-23]
+ * ANTI-LEAK BOUNDARY: mastery_score is DUAL-USE. This fetch reads the ALREADY-COMPUTED
+ * mastery_score column directly (thin-read-surface — no recomputation from raw counts) and keeps
+ * it for server-side consumers (adaptiveSelector, planner). The /weakest route strips it at
+ * serialization — the score never crosses to the client. There is no synthesized `accuracy`
+ * field: the selector consumes the same canonical mastery_score column (parallel-paths rule),
+ * never a second derivation of the same value under a different name.
  */
 export async function fetchWeakestSkills(
   query: WeaknessQuery,
@@ -229,7 +231,6 @@ export async function fetchWeakestSkills(
     skill: row.skill as string,
     mastery_score: Number(row.mastery_score) || 0,
     mastery_level: row.mastery_level as number | null,
-    accuracy: Number(row.mastery_score) || 0,
   }));
 }
 

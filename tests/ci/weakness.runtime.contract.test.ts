@@ -86,7 +86,6 @@ describe("Weakness runtime contract", () => {
         skill: "Linear Equations",
         mastery_score: 0.25,
         mastery_level: 1,
-        accuracy: 0.25,
       },
     ]);
 

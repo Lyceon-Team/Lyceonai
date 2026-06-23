@@ -116,7 +116,6 @@ describe("Mastery Read Contract", () => {
         skill: "linear_equations",
         mastery_score: 0.35,
         mastery_level: 1,
-        accuracy: 0.35,
       },
     ]);
   });
