@@ -3,8 +3,8 @@
 > **Status: WS-1 CLOSED.** The owner executed the teardown + genesis + reseed arc
 > ([`RECUT-CONTRACT.md`](./RECUT-CONTRACT.md) §4) by hand via the Supabase SQL editor.
 > The **live genesis `public` schema with 117 profiles is canonical.** This record
-> captures the exit/GUARD evidence and reconciles the migration ledger so the tracked
-> pipeline (`supabase db push`) is safe to resume.
+> captures the exit/GUARD evidence and the migration-ledger reconcile (**DONE 2026-06-22,
+> ledger 3 → 15 — §4**), so the tracked pipeline (`supabase db push`) is safe to resume.
 >
 > **Supersession:** the canonical reseed path is the owner's **manual full reseed
 > (117 profiles, one per `auth.users` row, FK-intact, `questions = 0`)**. This
@@ -23,9 +23,10 @@ apply-path migrations      = supabase/migrations/*.sql  → 15 files
 genesis git hash-object    = 10f205d8d1569824ae3760e877cda97b0168c1f6  (00000000000000_genesis.sql)
 ```
 
-All DB facts below are from **read-only introspection** of the live project this
-session (MCP `execute_sql`). No prod writes were issued; the ledger repairs in §4
-are authored for the **owner** to run.
+All DB facts below are from **read-only introspection** of the live project (MCP
+`execute_sql`). No prod writes were issued by the agent; the §4 ledger reconcile was
+executed by the **CTO** via the Supabase connector (ledger-only write) and is verified
+live in this record.
 
 ---
 
@@ -59,6 +60,21 @@ select (select count(*) from auth.users)                                        
   `auth_users_count = 117` with `profiles_count = 117` and `orphan_profiles = 0` — the
   reseed keyed cleanly to the preserved ids, which is only possible if GUARD-2 held.
 
+### Table census (live, measured this pass — not asserted)
+
+```sql
+select count(*) from information_schema.tables
+ where table_schema='public' and table_type='BASE TABLE';   -- 76
+select count(*) from information_schema.tables
+ where table_schema='public' and table_type='VIEW';         -- 0
+```
+| public BASE TABLE | public VIEW |
+|---|---|
+| **76** | **0** |
+
+The **76** `public` base tables cited above (GUARD-1) and in §3 are confirmed by direct
+`information_schema` census this session — the figure is measured, not carried forward.
+
 ---
 
 ## 3. Live ↔ repo migration map (what is applied)
@@ -85,8 +101,10 @@ ledger, and not assumed.
 | 14 | `20260619000300_legal_outbox_independent` | `legal_acceptance_outbox_user_id_fkey` **dropped** (0 remaining) | no |
 | 15 | `20260621000000_account_deletion_lifecycle` | `request/restore/cancel_account_deletion()`, `deidentify_user()`, `account_deletion_requests.recovery_token_hash` | no |
 
-**Result:** 15/15 repo migrations are live; the ledger records only 3 versions, and
-2 of those 3 are recorded under **wrong versions** (the legal pair).
+**Result:** 15/15 repo migrations are live. The **In ledger?** column above is the
+**pre-reconcile** snapshot — the ledger then held only 3 versions, 2 of them under wrong
+versions (the legal pair). The ledger was reconciled to all 15 repo versions on
+**2026-06-22** (§4); the row-10/11 mismatches no longer exist.
 
 > `supabase/migrations-pending/20260617130000_guardian_linked_emit.sql` is **NOT** in
 > the apply path (separate `migrations-pending/` folder) and is **not live**
@@ -95,30 +113,66 @@ ledger, and not assumed.
 
 ---
 
-## 4. Ledger reconcile — owner-run repair commands (run BEFORE any `db push`)
+## 4. Ledger reconcile — DONE 2026-06-22 (ledger 3 → 15, verified live)
 
-**Do NOT hand-`INSERT` into `supabase_migrations.schema_migrations`.** Use the CLI
-`migration repair`, which is the supported, audited path. Project is already linked
-(`--project-ref hncolwkccbbjkfithhlo` if not).
+**Status: COMPLETE.** The CTO reconciled `supabase_migrations.schema_migrations`
+directly via the Supabase connector — a **ledger-only write**: no migration SQL ran, the
+`public` schema and all data are untouched, and the write is idempotent (`ON CONFLICT`-safe).
+Verified live this session (read-only introspection):
 
-### 4a. Fix the legal version-vs-filename mismatch (revert phantoms, then record repo versions)
+- **BEFORE:** 3 rows — `genesis` + the two **phantom** legal versions
+  (`20260618044956`, `20260618051930`).
+- **AFTER:** **15 rows = the 15 repo filenames, in order, with no phantoms.**
 
-The objects are live, but the ledger keyed them to editor-generated timestamps. Revert
-the two phantom rows and record the two repo filenames as applied:
+### 4.1 Proof artifact — the live 15-row ledger (this pass, read-only)
+
+`select version, name from supabase_migrations.schema_migrations order by version;`
+
+| # | version | name |
+|---|---|---|
+| 1 | `00000000000000` | genesis |
+| 2 | `20260610000000` | ws2_config_constants |
+| 3 | `20260610010000` | ws3_mastery_formula |
+| 4 | `20260610020000` | ws2_practice_review_runtime |
+| 5 | `20260613000000` | lane_c_mastery_seam |
+| 6 | `20260613010000` | 05b_domain_mastery_kpi |
+| 7 | `20260613020000` | 05c_section_projection |
+| 8 | `20260616120000` | entitlement_active_include_trialing |
+| 9 | `20260617000000` | notification_outbox |
+| 10 | `20260618000000` | legal_acceptances |
+| 11 | `20260618010000` | legal_acceptance_outbox |
+| 12 | `20260619000000` | handle_new_user_trigger |
+| 13 | `20260619000100` | profiles_auth_columns |
+| 14 | `20260619000300` | legal_outbox_independent |
+| 15 | `20260621000000` | account_deletion_lifecycle |
+
+The phantoms are gone; the legal pair now sit under their **repo** versions
+(`20260618000000` / `20260618010000`). `ledger_rows = 15 = apply-path migration count`,
+so `supabase db push` is now a safe no-op (everything already applied) — the desired
+post-reseed steady state.
+
+### 4.2 Owner cross-check (optional tooling confirmation)
 
 ```bash
-# remove the two phantom ledger rows (objects stay; only the ledger entry is removed)
-supabase migration repair --status reverted 20260618044956
-supabase migration repair --status reverted 20260618051930
-
-# record the repo filenames (legal_acceptances / legal_acceptance_outbox) as applied
-supabase migration repair --status applied 20260618000000
-supabase migration repair --status applied 20260618010000
+supabase link --project-ref hncolwkccbbjkfithhlo
+supabase migration list      # expect 15 rows, Local == Remote on every version
 ```
 
-### 4b. Record the 12 applied-but-unrecorded migrations (one per migration)
+### 4.3 Provenance — original CLI repair plan (SUPERSEDED by the direct connector write)
+
+The reconcile was first authored as `supabase migration repair` commands (below).
+They are **superseded by the CTO's direct connector write**, which achieved the same
+ledger end-state; the CLI path errored only on a missing `supabase link`. Retained for
+provenance — do **not** re-run (the ledger is already at 15):
 
 ```bash
+# 4a — revert the two phantom ledger rows, then record the two repo versions
+supabase migration repair --status reverted 20260618044956
+supabase migration repair --status reverted 20260618051930
+supabase migration repair --status applied  20260618000000   # legal_acceptances
+supabase migration repair --status applied  20260618010000   # legal_acceptance_outbox
+
+# 4b — record the 12 applied-but-unrecorded migrations
 supabase migration repair --status applied 20260610000000   # ws2_config_constants
 supabase migration repair --status applied 20260610010000   # ws3_mastery_formula
 supabase migration repair --status applied 20260610020000   # ws2_practice_review_runtime
@@ -133,26 +187,6 @@ supabase migration repair --status applied 20260619000300   # legal_outbox_indep
 supabase migration repair --status applied 20260621000000   # account_deletion_lifecycle
 ```
 
-> Convenience (equivalent, batched): one `--status reverted 20260618044956 20260618051930`
-> followed by one `--status applied <all 14 repo versions>`. The per-migration form above
-> is the canonical, auditable list.
-
-### 4c. Proof of reconcile (owner runs after the repairs)
-
-```bash
-supabase migration list      # local ↔ remote columns must match on all 15 versions
-```
-```sql
--- ledger row count must equal the apply-path migration count (15)
-select count(*) as ledger_rows from supabase_migrations.schema_migrations;   -- expect 15
-select version from supabase_migrations.schema_migrations order by version;  -- the 15 repo versions, no phantoms
-```
-
-**Reconcile is complete when `ledger_rows = 15` and the version set equals the 15 repo
-filenames (no `20260618044956` / `20260618051930`).** Only then is `supabase db push`
-safe to run — and at that point it is a **no-op** (everything is already applied), which
-is the desired post-reseed steady state.
-
 ---
 
 ## 5. WS-1 closure assertions
@@ -160,7 +194,9 @@ is the desired post-reseed steady state.
 1. Genesis `public` schema is live, RLS-enabled, spec-conformant (RECUT §5/§9).
 2. Reseed is the **manual 117-profile** path (FK-intact; `questions = 0`), **superseding
    RESEED-MAPPING §4**.
-3. The migration ledger, once §4 repairs run, matches introspected reality (15 = 15).
-4. No prod writes were made by the agent; all DDL/ledger changes are owner-run.
+3. The migration ledger matches introspected reality (**15 = 15**) — reconciled
+   2026-06-22 via the CTO's connector write (§4), verified live this pass.
+4. No prod writes were made by the agent; all DDL/ledger changes are owner-run (the §4
+   ledger reconcile was the CTO's connector write).
 
 WS-1 is closed. WS-2 (Doc 02B runtime) and WS-3 (Doc 05 mastery) proceed in parallel.
