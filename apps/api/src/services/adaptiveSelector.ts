@@ -110,16 +110,6 @@ function pickDifficultyWithWeights(
   return "hard";
 }
 
-function normalizeDifficulty(
-  difficulty: string | null | undefined,
-): DifficultyBucket {
-  if (!difficulty) return "medium";
-  const lower = difficulty.toLowerCase();
-  if (lower === "easy") return "easy";
-  if (lower === "hard") return "hard";
-  return "medium";
-}
-
 async function computeBaselineDifficulty(
   userId: string,
   section: SectionFilter,

@@ -18,6 +18,10 @@ import {
   QuestionContext,
   RagQueryRequest,
 } from '../src/lib/rag-types';
+import {
+  buildCompetencyMapFromMasteryRows,
+  MasterySkillRow,
+} from '../src/services/mastery-derived';
 
 // ========== MOCK DATA ==========
 
@@ -226,6 +230,93 @@ describe('RagService', () => {
 
       const weakAreas = service.testExtractStudentWeakAreas(profile);
       expect(weakAreas).toEqual([]);
+    });
+  });
+
+  describe('Canonical mastery_score classification equivalence (genesis-column-drift closure)', () => {
+    // Reference: the prior synthesized-count classification, replicated exactly.
+    // The old path stored correct = round(score*events), incorrect = events - correct,
+    // then classified weak when incorrect > correct and strong when correct > incorrect
+    // (guarded by total >= 3). This is the behavior we must preserve.
+    function referenceClass(score: number, events: number): 'weak' | 'strong' | 'neutral' {
+      const s = Math.max(0, Math.min(1, score));
+      const correct = Math.round(s * events);
+      const incorrect = events - correct;
+      if (events < 3) return 'neutral';
+      if (incorrect > correct) return 'weak';
+      if (correct > incorrect) return 'strong';
+      return 'neutral';
+    }
+
+    it('produces identical weak/strong output to the synthesized-count path across the full input grid (incl. score=0.5 boundary and odd-event rounding flips)', () => {
+      const rows: MasterySkillRow[] = [];
+      const expected = new Map<string, 'weak' | 'strong' | 'neutral'>();
+      let i = 0;
+      for (let events = 0; events <= 12; events++) {
+        for (let pct = 0; pct <= 100; pct++) {
+          const score = pct / 100;
+          const domain = `d${i}`;
+          const skill = `s${i}`;
+          const key = `${domain}.${skill}`;
+          rows.push({
+            section: 'MATH',
+            domain,
+            skill,
+            mastery_score: score,
+            event_count_total: events,
+            computed_at: null,
+          });
+          expected.set(key, referenceClass(score, events));
+          i++;
+        }
+      }
+
+      const competencyMap = buildCompetencyMapFromMasteryRows(rows);
+      const profile: StudentProfile = {
+        userId: 'equivalence-grid',
+        primaryStyle: 'step-by-step',
+        competencyMap,
+      };
+
+      const weak = new Set(service.testExtractStudentWeakAreas(profile));
+      const strong = new Set(service.testExtractStudentStrongAreas(profile));
+
+      const mismatches: Array<{ key: string; expected: string; got: string }> = [];
+      for (const [key, exp] of expected) {
+        const got = weak.has(key) ? 'weak' : strong.has(key) ? 'strong' : 'neutral';
+        if (got !== exp) mismatches.push({ key, expected: exp, got });
+      }
+
+      expect(mismatches).toEqual([]);
+    });
+
+    it('treats the score=0.5 boundary exactly as the synthesized path did: never weak, odd event counts strong, even neutral', () => {
+      const rows: MasterySkillRow[] = [
+        { section: 'MATH', domain: 'a', skill: 'even4', mastery_score: 0.5, event_count_total: 4, computed_at: null },
+        { section: 'MATH', domain: 'a', skill: 'odd3', mastery_score: 0.5, event_count_total: 3, computed_at: null },
+        { section: 'MATH', domain: 'a', skill: 'odd5', mastery_score: 0.5, event_count_total: 5, computed_at: null },
+      ];
+      const competencyMap = buildCompetencyMapFromMasteryRows(rows);
+      const profile: StudentProfile = { userId: 'boundary', primaryStyle: 'step-by-step', competencyMap };
+
+      // weak direction is strict (< 0.5): exactly 0.5 is never weak.
+      expect(service.testExtractStudentWeakAreas(profile)).toEqual([]);
+      const strong = service.testExtractStudentStrongAreas(profile);
+      expect(strong).toContain('a.odd3');
+      expect(strong).toContain('a.odd5');
+      expect(strong).not.toContain('a.even4');
+    });
+
+    it('does NOT collapse to a naive <0.5 threshold: score=0.49 with events=4 stays neutral (round(1.96)=2 ⇒ correct=incorrect), matching the synthesized path', () => {
+      const rows: MasterySkillRow[] = [
+        { section: 'MATH', domain: 'a', skill: 'near', mastery_score: 0.49, event_count_total: 4, computed_at: null },
+      ];
+      const competencyMap = buildCompetencyMapFromMasteryRows(rows);
+      const profile: StudentProfile = { userId: 'near-boundary', primaryStyle: 'step-by-step', competencyMap };
+
+      // A bare `score < 0.5` test would wrongly mark this weak; the exact path keeps it neutral.
+      expect(service.testExtractStudentWeakAreas(profile)).toEqual([]);
+      expect(service.testExtractStudentStrongAreas(profile)).toEqual([]);
     });
   });
 

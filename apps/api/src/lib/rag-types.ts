@@ -16,6 +16,12 @@ export interface CompetencyProgress {
   incorrect?: number;
   total?: number;
   masteryLevel?: number;
+  /**
+   * Canonical mastery_score (0..1) read directly from student_skill_mastery.
+   * When present it is the source of truth for weak/strong classification —
+   * preferred over the legacy observed correct/incorrect counts.
+   */
+  masteryScore?: number;
 }
 
 export interface RecentQuestion {
