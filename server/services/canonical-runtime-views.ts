@@ -23,16 +23,14 @@ export interface StudentKpiView {
   modelVersion: string;
   timezone: string;
   week: {
-    practiceSessions: number;
-    questionsSolved: number;
-    accuracy: number;
+    questionsSolved: number; // events_last_7d (a scored event == an answered question)
+    accuracy: number | null; // round(accuracy_last_7d * 100); null when no events
     explanations: Record<string, KpiExplanation>;
   };
   recency: {
-    window: number;
-    totalAttempts: number;
-    accuracy: number;
-    avgSecondsPerQuestion: number;
+    window: number; // 30-day trend window
+    totalAttempts: number; // events_last_30d
+    accuracy: number | null; // round(accuracy_last_30d * 100); null when no events
     explanations: Record<string, KpiExplanation>;
   } | null;
   metrics: ExplainedKpiMetric[];
@@ -50,89 +48,84 @@ export interface StudentKpiView {
   };
 }
 
-type PracticeWindowStats = {
-  practiceSessions: number;
-  practiceMinutes: number;
-  questionsSolved: number;
-  accuracyPercent: number;
-  avgSecondsPerQuestion: number;
-};
-
-function baselineReason(current: number, previous: number, unit: "count" | "percent" | "minutes" | "seconds"): string {
-  if (previous === 0 && current === 0) {
-    return "No activity in either the current or previous 7-day window.";
+function guidanceForMetric(metricId: string, value: number | null): string {
+  if (value === null) {
+    return "No scored evidence in this window yet — complete a few questions to populate it.";
   }
-  if (previous === 0 && current > 0) {
-    return "Activity started this week after a quiet prior week.";
-  }
-
-  const delta = current - previous;
-  if (delta === 0) {
-    return "No change versus the previous 7-day window.";
-  }
-
-  const direction = delta > 0 ? "increased" : "decreased";
-  const magnitude = unit === "percent" ? `${Math.abs(delta)} pts` : `${Math.abs(delta)}`;
-  return `${direction} by ${magnitude} versus the previous 7-day window.`;
-}
-
-function guidanceForMetric(metricId: string, value: number): string {
-  if (metricId === "week_accuracy") {
-    if (value >= 80) return "Keep difficulty steady and add one mixed timed set to protect accuracy under pressure.";
-    if (value >= 65) return "Review misses before the next session and target one weak skill block today.";
+  if (metricId === "week_accuracy" || metricId === "recency_accuracy") {
+    if (value >= 80)
+      return "Keep difficulty steady and add one mixed timed set to protect accuracy under pressure.";
+    if (value >= 65)
+      return "Review misses before the next session and target one weak skill block today.";
     return "Slow pace slightly, review every miss, and run one short untimed corrective set before speed work.";
   }
-  if (metricId === "week_sessions") {
-    if (value >= 5) return "Maintain session frequency and shift one session toward weakest skills.";
-    if (value >= 3) return "Add one extra short session this week to stabilize consistency.";
-    return "Schedule at least three short sessions this week before increasing question volume.";
-  }
   if (metricId === "week_questions") {
-    if (value >= 80) return "Hold volume and focus next set on error categories, not just throughput.";
-    if (value >= 30) return "Increase one session by 10-15 questions while keeping review time fixed.";
+    if (value >= 80)
+      return "Hold volume and focus next set on error categories, not just throughput.";
+    if (value >= 30)
+      return "Increase one session by 10-15 questions while keeping review time fixed.";
     return "Start with one 20-question block and immediate review to rebuild momentum.";
   }
-  if (metricId === "week_minutes") {
-    if (value >= 180) return "Protect current study time and use post-session error logs to improve conversion.";
-    if (value >= 90) return "Add one 20-minute block this week and keep it focused on one section.";
-    return "Add short daily blocks (15-20 minutes) before trying longer sessions.";
-  }
-  if (metricId === "recency_accuracy") {
-    if (value >= 80) return "Increase timed pressure gradually while keeping current review depth.";
-    if (value >= 65) return "Run targeted drills on top two error tags before the next mixed set.";
-    return "Pause broad drills and run focused remediation on the highest-miss skill cluster.";
-  }
-  if (metricId === "recency_pace") {
-    if (value <= 75) return "Speed is strong; keep quality checks to avoid careless misses.";
-    if (value <= 110) return "Maintain pace and add one timed section this week.";
-    return "Use two-pass timing (easy first, then returns) to lower average seconds per question.";
+  if (metricId === "current_streak") {
+    if (value >= 5)
+      return "Strong consistency — keep the daily cadence and shift one block toward weakest skills.";
+    if (value >= 1)
+      return "Protect the streak with at least one short scored block today.";
+    return "Start a streak today: one short scored practice block counts.";
   }
   return "Continue consistent practice and prioritize highest-impact weak areas.";
+}
+
+function windowNote(unit: "count" | "percent", windowDays: number): string {
+  return unit === "percent"
+    ? `Correct fraction across scored events in the last ${windowDays} days.`
+    : `Scored events recorded in the last ${windowDays} days.`;
 }
 
 function buildExplanation(input: {
   metricId: string;
   whatThisMeans: string;
-  current: number;
-  previous: number;
-  unit: "count" | "percent" | "minutes" | "seconds" | "score";
+  whyThisChanged: string;
+  value: number | null;
 }): KpiExplanation {
-  const reasonUnit = input.unit === "score" ? "count" : input.unit;
   return {
     ruleId: `RULE_${input.metricId.toUpperCase()}`,
     whatThisMeans: input.whatThisMeans,
-    whyThisChanged: baselineReason(input.current, input.previous, reasonUnit),
-    whatToDoNext: guidanceForMetric(input.metricId, input.current),
+    whyThisChanged: input.whyThisChanged,
+    whatToDoNext: guidanceForMetric(input.metricId, input.value),
   };
 }
 
-function metricListToExplanationMap(metrics: ExplainedKpiMetric[]): Record<string, KpiExplanation> {
+function metricListToExplanationMap(
+  metrics: ExplainedKpiMetric[],
+): Record<string, KpiExplanation> {
   const out: Record<string, KpiExplanation> = {};
   for (const metric of metrics) {
     out[metric.id] = metric.explanation;
   }
   return out;
 }
+
+// Genesis accuracy_* columns are 0–1 fractions (Doc 05B §6.5). Present as an integer
+// percent; null (not 0) when the window has zero events — an honest "no data" signal.
+function toAccuracyPercent(fraction: unknown, events: number): number | null {
+  if (events <= 0) return null;
+  if (typeof fraction !== "number" || !Number.isFinite(fraction)) return null;
+  return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+}
+
+type OverallKpiRow = {
+  events_total: number | null;
+  events_last_7d: number | null;
+  events_last_30d: number | null;
+  accuracy_overall: number | null;
+  accuracy_last_7d: number | null;
+  accuracy_last_30d: number | null;
+  current_streak_days: number | null;
+  longest_streak_days: number | null;
+  sections_active: number | null;
+  last_active_at: string | null;
+};
 
 async function resolveTimezone(userId: string): Promise<string> {
   const { data } = await supabaseServer
@@ -145,38 +138,25 @@ async function resolveTimezone(userId: string): Promise<string> {
 }
 
 function buildStudentMetrics(input: {
-  currentWeek: PracticeWindowStats;
-  previousWeek: PracticeWindowStats;
-  recency200: { totalAttempts: number; accuracyPercent: number; avgSecondsPerQuestion: number };
+  weekEvents: number;
+  weekAccuracyPct: number | null;
+  recency30Events: number;
+  recency30AccuracyPct: number | null;
+  currentStreakDays: number;
   includeHistoricalTrends: boolean;
 }): ExplainedKpiMetric[] {
   const metrics: ExplainedKpiMetric[] = [
-    {
-      id: "week_sessions",
-      label: "Practice Sessions (7d)",
-      kind: "diagnostic",
-      unit: "count",
-      value: input.currentWeek.practiceSessions,
-      explanation: buildExplanation({
-        metricId: "week_sessions",
-        whatThisMeans: "Number of completed practice sessions in the current 7-day local window.",
-        current: input.currentWeek.practiceSessions,
-        previous: input.previousWeek.practiceSessions,
-        unit: "count",
-      }),
-    },
     {
       id: "week_questions",
       label: "Questions Solved (7d)",
       kind: "diagnostic",
       unit: "count",
-      value: input.currentWeek.questionsSolved,
+      value: input.weekEvents,
       explanation: buildExplanation({
         metricId: "week_questions",
-        whatThisMeans: "Number of practice attempts recorded in the current 7-day local window.",
-        current: input.currentWeek.questionsSolved,
-        previous: input.previousWeek.questionsSolved,
-        unit: "count",
+        whatThisMeans: "Scored practice events recorded in the last 7 days.",
+        whyThisChanged: windowNote("count", 7),
+        value: input.weekEvents,
       }),
     },
     {
@@ -184,27 +164,27 @@ function buildStudentMetrics(input: {
       label: "Accuracy (7d)",
       kind: "diagnostic",
       unit: "percent",
-      value: input.currentWeek.accuracyPercent,
+      value: input.weekAccuracyPct,
       explanation: buildExplanation({
         metricId: "week_accuracy",
-        whatThisMeans: "Percent of attempted questions answered correctly in the current 7-day window.",
-        current: input.currentWeek.accuracyPercent,
-        previous: input.previousWeek.accuracyPercent,
-        unit: "percent",
+        whatThisMeans:
+          "Percent of scored events answered correctly in the last 7 days.",
+        whyThisChanged: windowNote("percent", 7),
+        value: input.weekAccuracyPct,
       }),
     },
     {
-      id: "week_minutes",
-      label: "Practice Minutes (7d)",
+      id: "current_streak",
+      label: "Current Streak (days)",
       kind: "diagnostic",
-      unit: "minutes",
-      value: input.currentWeek.practiceMinutes,
+      unit: "count",
+      value: input.currentStreakDays,
       explanation: buildExplanation({
-        metricId: "week_minutes",
-        whatThisMeans: "Total active study minutes across completed sessions in the current 7-day window.",
-        current: input.currentWeek.practiceMinutes,
-        previous: input.previousWeek.practiceMinutes,
-        unit: "minutes",
+        metricId: "current_streak",
+        whatThisMeans:
+          "Consecutive days with at least one scored practice event.",
+        whyThisChanged: "Derived from your most recent active-day run.",
+        value: input.currentStreakDays,
       }),
     },
   ];
@@ -212,30 +192,16 @@ function buildStudentMetrics(input: {
   if (input.includeHistoricalTrends) {
     metrics.push({
       id: "recency_accuracy",
-      label: "Accuracy (last 200 attempts)",
+      label: "Accuracy (30d)",
       kind: "diagnostic",
       unit: "percent",
-      value: input.recency200.accuracyPercent,
+      value: input.recency30AccuracyPct,
       explanation: buildExplanation({
         metricId: "recency_accuracy",
-        whatThisMeans: "Rolling accuracy across the last 200 attempts.",
-        current: input.recency200.accuracyPercent,
-        previous: input.previousWeek.accuracyPercent,
-        unit: "percent",
-      }),
-    });
-    metrics.push({
-      id: "recency_pace",
-      label: "Average Seconds/Question (last 200 attempts)",
-      kind: "diagnostic",
-      unit: "seconds",
-      value: input.recency200.avgSecondsPerQuestion,
-      explanation: buildExplanation({
-        metricId: "recency_pace",
-        whatThisMeans: "Rolling average response time across the last 200 attempts.",
-        current: input.recency200.avgSecondsPerQuestion,
-        previous: input.previousWeek.avgSecondsPerQuestion,
-        unit: "seconds",
+        whatThisMeans:
+          "Percent of scored events answered correctly in the last 30 days.",
+        whyThisChanged: windowNote("percent", 30),
+        value: input.recency30AccuracyPct,
       }),
     });
   }
@@ -243,133 +209,75 @@ function buildStudentMetrics(input: {
   return metrics;
 }
 
-export async function buildStudentKpiViewFromCanonical(userId: string, includeHistoricalTrends: boolean): Promise<StudentKpiView> {
+/**
+ * @spec [Doc-05B_V1, §6.5/§6.7 KPI visibility + §10.5 column projection] | @implemented [2026-06-22]
+ * plain English: builds the student KPI view from the genesis event-aggregated rollup
+ * (`student_overall_kpi`). The retired old-gen `student_kpi_rollups_current` flat columns
+ * (source_family/total_questions/avg_latency_ms) are gone — it is an unpopulated no-writer
+ * shell. Exposes only student-granted columns (events/accuracy/streak); never the admin-only
+ * audit columns or mastery_score/pct. Accuracy is a 0–1 fraction → integer percent, null
+ * (honest "no data") when the window has zero events. Engagement metrics the event model does
+ * not track (sessions/minutes/pace) are intentionally dropped (owner ruling 2026-06-22).
+ */
+export async function buildStudentKpiViewFromCanonical(
+  userId: string,
+  includeHistoricalTrends: boolean,
+): Promise<StudentKpiView> {
   const timezone = await resolveTimezone(userId);
 
-  const { data: rollupRows, error: rollupError } = await supabaseServer
-    .from("student_kpi_rollups_current")
-    .select("source_family, total_questions, correct_questions, incorrect_questions, accuracy_pct, avg_latency_ms")
-    .eq("student_id", userId);
+  const { data: overall, error: overallError } = await supabaseServer
+    .from("student_overall_kpi")
+    .select(
+      "events_total, events_last_7d, events_last_30d, accuracy_overall, accuracy_last_7d, accuracy_last_30d, current_streak_days, longest_streak_days, sections_active, last_active_at",
+    )
+    .eq("student_id", userId)
+    .maybeSingle();
 
-  if (rollupError) {
-    throw new Error(`Failed to fetch KPI rollups: ${rollupError.message}`);
+  if (overallError) {
+    throw new Error(`Failed to fetch overall KPI: ${overallError.message}`);
   }
 
-  const toNumber = (value: unknown): number => {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string") {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-    return 0;
-  };
-  const rows = (rollupRows ?? []) as Array<{
-    source_family: string | null;
-    total_questions: number | string | null;
-    correct_questions: number | string | null;
-    incorrect_questions: number | string | null;
-    accuracy_pct: number | string | null;
-    avg_latency_ms: number | string | null;
-  }>;
+  const row = (overall ?? null) as OverallKpiRow | null;
+  const toInt = (value: number | null | undefined): number =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(0, Math.round(value))
+      : 0;
 
-  type Totals = {
-    questions: number;
-    correct: number;
-    latencyWeightedMs: number;
-    latencyWeightQuestions: number;
-  };
-  const aggregateBySource = new Map<string, Totals>();
-  const allTotals: Totals = {
-    questions: 0,
-    correct: 0,
-    latencyWeightedMs: 0,
-    latencyWeightQuestions: 0,
-  };
-  for (const row of rows) {
-    const source = typeof row.source_family === "string" ? row.source_family.trim().toLowerCase() : "unknown";
-    const questions = Math.max(0, Math.round(toNumber(row.total_questions)));
-    const correct = Math.max(0, Math.round(toNumber(row.correct_questions)));
-    const avgLatencyMs = Math.max(0, toNumber(row.avg_latency_ms));
-
-    const bucket = aggregateBySource.get(source) ?? {
-      questions: 0,
-      correct: 0,
-      latencyWeightedMs: 0,
-      latencyWeightQuestions: 0,
-    };
-    bucket.questions += questions;
-    bucket.correct += correct;
-    bucket.latencyWeightedMs += avgLatencyMs * questions;
-    bucket.latencyWeightQuestions += questions;
-    aggregateBySource.set(source, bucket);
-
-    allTotals.questions += questions;
-    allTotals.correct += correct;
-    allTotals.latencyWeightedMs += avgLatencyMs * questions;
-    allTotals.latencyWeightQuestions += questions;
-
-  }
-
-  const practiceTotals = aggregateBySource.get("practice") ?? allTotals;
-  const practiceAccuracy = practiceTotals.questions > 0
-    ? Math.round((practiceTotals.correct / practiceTotals.questions) * 100)
-    : 0;
-  const practicePaceSeconds = practiceTotals.latencyWeightQuestions > 0
-    ? Math.round((practiceTotals.latencyWeightedMs / practiceTotals.latencyWeightQuestions) / 1000)
-    : 0;
-  const allAccuracy = allTotals.questions > 0
-    ? Math.round((allTotals.correct / allTotals.questions) * 100)
-    : 0;
-  const allPaceSeconds = allTotals.latencyWeightQuestions > 0
-    ? Math.round((allTotals.latencyWeightedMs / allTotals.latencyWeightQuestions) / 1000)
-    : 0;
-
-  const currentWeek = {
-    practiceSessions: 0,
-    practiceMinutes: 0,
-    questionsSolved: practiceTotals.questions,
-    accuracyPercent: practiceAccuracy,
-    avgSecondsPerQuestion: practicePaceSeconds,
-  };
-
-  const previousWeek = {
-    practiceSessions: currentWeek.practiceSessions,
-    practiceMinutes: currentWeek.practiceMinutes,
-    questionsSolved: currentWeek.questionsSolved,
-    accuracyPercent: currentWeek.accuracyPercent,
-    avgSecondsPerQuestion: currentWeek.avgSecondsPerQuestion,
-  };
-
-  const recency = {
-    totalAttempts: allTotals.questions,
-    accuracyPercent: allAccuracy,
-    avgSecondsPerQuestion: allPaceSeconds,
-  };
+  const weekEvents = toInt(row?.events_last_7d);
+  const recency30Events = toInt(row?.events_last_30d);
+  const currentStreakDays = toInt(row?.current_streak_days);
+  const weekAccuracyPct = toAccuracyPercent(row?.accuracy_last_7d, weekEvents);
+  const recency30AccuracyPct = toAccuracyPercent(
+    row?.accuracy_last_30d,
+    recency30Events,
+  );
 
   const metrics = buildStudentMetrics({
-    currentWeek,
-    previousWeek,
-    recency200: recency,
+    weekEvents,
+    weekAccuracyPct,
+    recency30Events,
+    recency30AccuracyPct,
+    currentStreakDays,
     includeHistoricalTrends,
   });
-  const weekMetrics = metrics.filter((m) => m.id.startsWith("week_"));
+  const weekMetrics = metrics.filter(
+    (m) => m.id.startsWith("week_") || m.id === "current_streak",
+  );
   const recencyMetrics = metrics.filter((m) => m.id.startsWith("recency_"));
 
   return {
     modelVersion: CANONICAL_RUNTIME_VIEW_VERSION,
     timezone,
     week: {
-      practiceSessions: currentWeek.practiceSessions,
-      questionsSolved: currentWeek.questionsSolved,
-      accuracy: currentWeek.accuracyPercent,
+      questionsSolved: weekEvents,
+      accuracy: weekAccuracyPct,
       explanations: metricListToExplanationMap(weekMetrics),
     },
     recency: includeHistoricalTrends
       ? {
-          window: 200,
-          totalAttempts: recency.totalAttempts,
-          accuracy: recency.accuracyPercent,
-          avgSecondsPerQuestion: recency.avgSecondsPerQuestion,
+          window: 30,
+          totalAttempts: recency30Events,
+          accuracy: recency30AccuracyPct,
           explanations: metricListToExplanationMap(recencyMetrics),
         }
       : null,
@@ -391,14 +299,6 @@ export async function buildStudentKpiViewFromCanonical(userId: string, includeHi
   };
 }
 
-export interface DomainBreakdown {
-  domain: string;
-  weight: number;
-  rawMastery: number;
-  decayedMastery: number;
-  contribution: number;
-}
-
 export interface ScoreEstimate {
   composite: number;
   math: number;
@@ -408,10 +308,6 @@ export interface ScoreEstimate {
     high: number;
   };
   confidence: number;
-  breakdown: {
-    math: DomainBreakdown[];
-    rw: DomainBreakdown[];
-  };
 }
 
 type SectionProjectionRow = {
@@ -422,41 +318,22 @@ type SectionProjectionRow = {
   relevant_question_count: number | null;
 };
 
-type DomainMasteryRow = {
-  section: string | null;
-  domain: string | null;
-  mastery_pct: number | null;
-  questions_total: number | null;
-};
-
 function normalizeSectionKey(value: unknown): "math" | "rw" | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
-  if (normalized === "math" || normalized === "m" || normalized === "mth") return "math";
-  if (normalized === "rw" || normalized === "reading_writing" || normalized === "reading and writing") return "rw";
+  if (normalized === "math" || normalized === "m" || normalized === "mth")
+    return "math";
+  if (
+    normalized === "rw" ||
+    normalized === "reading_writing" ||
+    normalized === "reading and writing"
+  )
+    return "rw";
   return null;
 }
 
 function clampScore(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function toDomainBreakdown(rows: DomainMasteryRow[], section: "math" | "rw"): DomainBreakdown[] {
-  const filtered = rows.filter((row) => normalizeSectionKey(row.section) === section && typeof row.domain === "string" && row.domain.trim().length > 0);
-  const totalWeight = filtered.reduce((sum, row) => sum + (typeof row.questions_total === "number" && row.questions_total > 0 ? row.questions_total : 0), 0);
-  return filtered.map((row) => {
-    const masteryPct = typeof row.mastery_pct === "number" ? clampScore(row.mastery_pct, 0, 100) : 0;
-    const weightBase = typeof row.questions_total === "number" && row.questions_total > 0 ? row.questions_total : 0;
-    const weight = totalWeight > 0 ? weightBase / totalWeight : 0;
-    const decayedMastery = masteryPct / 100;
-    return {
-      domain: row.domain as string,
-      weight,
-      rawMastery: decayedMastery,
-      decayedMastery,
-      contribution: Number((weight * decayedMastery).toFixed(4)),
-    };
-  });
 }
 
 /**
@@ -467,41 +344,61 @@ function toDomainBreakdown(rows: DomainMasteryRow[], section: "math" | "rw"): Do
  * section projections (math AND rw) are present; otherwise the composite would be invented.
  */
 export type CanonicalScoreEstimate =
-  | { status: "uncomputed"; estimate: null; totalQuestionsAttempted: number; lastUpdated: string }
-  | { status: "computed"; estimate: ScoreEstimate; totalQuestionsAttempted: number; lastUpdated: string };
+  | {
+      status: "uncomputed";
+      estimate: null;
+      totalQuestionsAttempted: number;
+      lastUpdated: string;
+    }
+  | {
+      status: "computed";
+      estimate: ScoreEstimate;
+      totalQuestionsAttempted: number;
+      lastUpdated: string;
+    };
 
-export async function buildScoreEstimateFromCanonical(userId: string): Promise<CanonicalScoreEstimate> {
-  const [{ data: projections, error: projectionError }, { data: domains, error: domainError }, { data: rollups, error: rollupError }] = await Promise.all([
+export async function buildScoreEstimateFromCanonical(
+  userId: string,
+): Promise<CanonicalScoreEstimate> {
+  // Genesis read surface (Doc 05C): the score estimate is the section-projection blend.
+  // The evidence count comes from the canonical event rollup (events_total); the
+  // per-domain breakdown is intentionally NOT served — it derived from admin-only
+  // mastery_pct, which Doc 05B §10.5 keeps off student/guardian read surfaces.
+  const [
+    { data: projections, error: projectionError },
+    { data: overall, error: overallError },
+  ] = await Promise.all([
     supabaseServer
       .from("student_section_projections")
-      .select("section, projected_score_mid, projected_score_low, projected_score_high, relevant_question_count")
+      .select(
+        "section, projected_score_mid, projected_score_low, projected_score_high, relevant_question_count",
+      )
       .eq("student_id", userId),
     supabaseServer
-      .from("student_domain_mastery")
-      .select("section, domain, mastery_pct, questions_total")
-      .eq("student_id", userId),
-    supabaseServer
-      .from("student_kpi_rollups_current")
-      .select("total_questions")
-      .eq("student_id", userId),
+      .from("student_overall_kpi")
+      .select("events_total")
+      .eq("student_id", userId)
+      .maybeSingle(),
   ]);
 
   if (projectionError) {
-    throw new Error(`Failed to fetch section projections: ${projectionError.message}`);
+    throw new Error(
+      `Failed to fetch section projections: ${projectionError.message}`,
+    );
   }
-  if (domainError) {
-    throw new Error(`Failed to fetch domain mastery: ${domainError.message}`);
-  }
-  if (rollupError) {
-    throw new Error(`Failed to fetch KPI rollups: ${rollupError.message}`);
+  if (overallError) {
+    throw new Error(`Failed to fetch overall KPI: ${overallError.message}`);
   }
 
   const projectionRows = (projections ?? []) as SectionProjectionRow[];
-  const domainRows = (domains ?? []) as DomainMasteryRow[];
-  const totalQuestionsAttempted = (rollups ?? []).reduce((sum, row: any) => {
-    const total = typeof row.total_questions === "number" ? row.total_questions : Number(row.total_questions ?? 0) || 0;
-    return sum + Math.max(0, total);
-  }, 0);
+  const overallRow = (overall ?? null) as {
+    events_total: number | null;
+  } | null;
+  const totalQuestionsAttempted =
+    typeof overallRow?.events_total === "number" &&
+    Number.isFinite(overallRow.events_total)
+      ? Math.max(0, Math.round(overallRow.events_total))
+      : 0;
 
   const sectionMap = new Map<"math" | "rw", SectionProjectionRow>();
   for (const row of projectionRows) {
@@ -529,11 +426,24 @@ export async function buildScoreEstimateFromCanonical(userId: string): Promise<C
 
   // Both projections present: compute from REAL values only (no defaults). Missing low/high
   // bound falls back to the present mid (a real value), never to a 200 floor.
-  const mathLow = typeof math?.projected_score_low === "number" ? math.projected_score_low : mathMid;
-  const rwLow = typeof rw?.projected_score_low === "number" ? rw.projected_score_low : rwMid;
-  const mathHigh = typeof math?.projected_score_high === "number" ? math.projected_score_high : mathMid;
-  const rwHigh = typeof rw?.projected_score_high === "number" ? rw.projected_score_high : rwMid;
-  const relevantCount = (math?.relevant_question_count ?? 0) + (rw?.relevant_question_count ?? 0);
+  const mathLow =
+    typeof math?.projected_score_low === "number"
+      ? math.projected_score_low
+      : mathMid;
+  const rwLow =
+    typeof rw?.projected_score_low === "number"
+      ? rw.projected_score_low
+      : rwMid;
+  const mathHigh =
+    typeof math?.projected_score_high === "number"
+      ? math.projected_score_high
+      : mathMid;
+  const rwHigh =
+    typeof rw?.projected_score_high === "number"
+      ? rw.projected_score_high
+      : rwMid;
+  const relevantCount =
+    (math?.relevant_question_count ?? 0) + (rw?.relevant_question_count ?? 0);
 
   const estimate: ScoreEstimate = {
     composite: clampScore(Math.round(mathMid + rwMid), 400, 1600),
@@ -544,10 +454,6 @@ export async function buildScoreEstimateFromCanonical(userId: string): Promise<C
       high: clampScore(Math.round(mathHigh + rwHigh), 400, 1600),
     },
     confidence: Math.max(0, Math.min(1, relevantCount / 120)),
-    breakdown: {
-      math: toDomainBreakdown(domainRows, "math"),
-      rw: toDomainBreakdown(domainRows, "rw"),
-    },
   };
 
   return {
@@ -566,8 +472,13 @@ export interface FullTestKpiInput {
   totalQuestions: number;
 }
 
-export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[] {
-  const accuracyPercent = input.totalQuestions > 0 ? Math.round((input.totalCorrect / input.totalQuestions) * 100) : 0;
+export function buildFullTestKpis(
+  input: FullTestKpiInput,
+): ExplainedKpiMetric[] {
+  const accuracyPercent =
+    input.totalQuestions > 0
+      ? Math.round((input.totalCorrect / input.totalQuestions) * 100)
+      : 0;
 
   return [
     {
@@ -578,9 +489,12 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
       value: null,
       explanation: {
         ruleId: "RULE_OFFICIAL_SCORE_UNAVAILABLE",
-        whatThisMeans: "Official SAT scores come only from College Board reports.",
-        whyThisChanged: "Lyceon practice tests produce diagnostic estimates, not official scores.",
-        whatToDoNext: "Use this result for study planning, then validate on the next official or proctored benchmark.",
+        whatThisMeans:
+          "Official SAT scores come only from College Board reports.",
+        whyThisChanged:
+          "Lyceon practice tests produce diagnostic estimates, not official scores.",
+        whatToDoNext:
+          "Use this result for study planning, then validate on the next official or proctored benchmark.",
       },
     },
     {
@@ -591,9 +505,12 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
       value: input.scaledTotal,
       explanation: {
         ruleId: "RULE_ESTIMATED_SCALED_TOTAL",
-        whatThisMeans: "Weighted estimate mapped from this test's raw performance only.",
-        whyThisChanged: "Value reflects this completed test's section performance, not an average across tests.",
-        whatToDoNext: "Compare this estimate to your prior test and focus next sessions on the lower section score.",
+        whatThisMeans:
+          "Weighted estimate mapped from this test's raw performance only.",
+        whyThisChanged:
+          "Value reflects this completed test's section performance, not an average across tests.",
+        whatToDoNext:
+          "Compare this estimate to your prior test and focus next sessions on the lower section score.",
       },
     },
     {
@@ -604,9 +521,12 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
       value: input.scaledRw,
       explanation: {
         ruleId: "RULE_ESTIMATED_RW",
-        whatThisMeans: "Weighted section estimate for Reading & Writing from this test.",
-        whyThisChanged: "Computed from RW module outcomes in this session only.",
-        whatToDoNext: "If RW is lower than Math, assign your next two sessions to RW weak domains.",
+        whatThisMeans:
+          "Weighted section estimate for Reading & Writing from this test.",
+        whyThisChanged:
+          "Computed from RW module outcomes in this session only.",
+        whatToDoNext:
+          "If RW is lower than Math, assign your next two sessions to RW weak domains.",
       },
     },
     {
@@ -618,8 +538,10 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
       explanation: {
         ruleId: "RULE_ESTIMATED_MATH",
         whatThisMeans: "Weighted section estimate for Math from this test.",
-        whyThisChanged: "Computed from Math module outcomes in this session only.",
-        whatToDoNext: "If Math is lower than RW, prioritize medium-to-hard math sets with post-set error review.",
+        whyThisChanged:
+          "Computed from Math module outcomes in this session only.",
+        whatToDoNext:
+          "If Math is lower than RW, prioritize medium-to-hard math sets with post-set error review.",
       },
     },
     {
@@ -631,8 +553,10 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
       explanation: {
         ruleId: "RULE_DIAGNOSTIC_ACCURACY",
         whatThisMeans: "Raw percent correct on this completed test session.",
-        whyThisChanged: "Reflects this test only; previous tests are not averaged into this value.",
-        whatToDoNext: "Use missed-question patterns to build your next targeted practice block.",
+        whyThisChanged:
+          "Reflects this test only; previous tests are not averaged into this value.",
+        whatToDoNext:
+          "Use missed-question patterns to build your next targeted practice block.",
       },
     },
   ];
@@ -641,7 +565,11 @@ export function buildFullTestKpis(input: FullTestKpiInput): ExplainedKpiMetric[]
 export function fullTestMeasurementModel() {
   return {
     official: ["official_sat_score"],
-    weighted: ["estimated_scaled_total", "estimated_scaled_rw", "estimated_scaled_math"],
+    weighted: [
+      "estimated_scaled_total",
+      "estimated_scaled_rw",
+      "estimated_scaled_math",
+    ],
     diagnostic: ["diagnostic_accuracy"],
   };
 }
@@ -651,7 +579,9 @@ export type StudentFullLengthReportView = CompleteExamResult & {
   measurementModel: ReturnType<typeof fullTestMeasurementModel>;
 };
 
-export function buildStudentFullLengthReportView(report: CompleteExamResult): StudentFullLengthReportView {
+export function buildStudentFullLengthReportView(
+  report: CompleteExamResult,
+): StudentFullLengthReportView {
   return {
     ...report,
     kpis: buildFullTestKpis({
@@ -665,7 +595,9 @@ export function buildStudentFullLengthReportView(report: CompleteExamResult): St
   };
 }
 
-export function projectGuardianFullLengthReportView(view: StudentFullLengthReportView) {
+export function projectGuardianFullLengthReportView(
+  view: StudentFullLengthReportView,
+) {
   return {
     sessionId: view.sessionId,
     estimatedScore: {

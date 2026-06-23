@@ -2,7 +2,13 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageCard } from "@/components/common/page-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BookOpen,
@@ -25,9 +31,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
-import { normalizePracticeTopicDomains, type RawPracticeTopicDomain } from "@/lib/practice-topic-taxonomy";
+import {
+  normalizePracticeTopicDomains,
+  type RawPracticeTopicDomain,
+} from "@/lib/practice-topic-taxonomy";
 import { appendPracticeDuration } from "@/lib/practice-duration";
-import { appendPracticeFilters, type PracticeDifficulty } from "@/lib/practice-filters";
+import {
+  appendPracticeFilters,
+  type PracticeDifficulty,
+} from "@/lib/practice-filters";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { csrfFetch } from "@/lib/csrf";
@@ -66,30 +78,49 @@ interface PracticeTopics {
 interface KpiResponse {
   timezone: string;
   week: {
-    practiceSessions: number;
     questionsSolved: number;
-    accuracy: number;
+    accuracy: number | null;
   };
   recency: {
     window: number;
     totalAttempts: number;
-    accuracy: number;
-    avgSecondsPerQuestion: number;
-  };
+    accuracy: number | null;
+  } | null;
 }
 
-const DIFFICULTY_OPTIONS: { value: PracticeDifficulty; label: string; color: string }[] = [
-  { value: "easy", label: "Easy", color: "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" },
-  { value: "medium", label: "Medium", color: "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100" },
-  { value: "hard", label: "Hard", color: "border-red-300 text-red-700 bg-red-50 hover:bg-red-100" },
+const DIFFICULTY_OPTIONS: {
+  value: PracticeDifficulty;
+  label: string;
+  color: string;
+}[] = [
+  {
+    value: "easy",
+    label: "Easy",
+    color:
+      "border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100",
+  },
+  {
+    value: "medium",
+    label: "Medium",
+    color: "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100",
+  },
+  {
+    value: "hard",
+    label: "Hard",
+    color: "border-red-300 text-red-700 bg-red-50 hover:bg-red-100",
+  },
 ];
 
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
   const [timePreference, setTimePreference] = useState("15");
-  const [selectedDifficulties, setSelectedDifficulties] = useState<PracticeDifficulty[]>([]);
+  const [selectedDifficulties, setSelectedDifficulties] = useState<
+    PracticeDifficulty[]
+  >([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
-  const [focusSection, setFocusSection] = useState<"math" | "reading_writing" | "">("math");
+  const [focusSection, setFocusSection] = useState<
+    "math" | "reading_writing" | ""
+  >("math");
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
@@ -115,14 +146,19 @@ function Practice() {
 
   const terminateMutation = useMutation({
     mutationFn: async (sessionId: string) => {
-      const res = await csrfFetch(`/api/practice/sessions/${sessionId}/terminate`, {
-        method: "POST",
-      });
+      const res = await csrfFetch(
+        `/api/practice/sessions/${sessionId}/terminate`,
+        {
+          method: "POST",
+        },
+      );
       if (!res.ok) throw new Error("Failed to terminate session");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/practice/sessions/open"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/practice/sessions/open"],
+      });
     },
   });
 
@@ -166,10 +202,15 @@ function Practice() {
   });
 
   const streakCurrent = calendarData?.streak?.current ?? 0;
-  const weekSessions = kpiData?.week?.practiceSessions ?? 0;
+  const weekQuestions = kpiData?.week?.questionsSolved ?? 0;
   const weekAccuracy = kpiData?.week?.accuracy ?? 0;
-  const mathDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "math")?.domains);
-  const readingDomains = normalizePracticeTopicDomains(topicsData?.sections?.find((s: any) => s.section === "reading_writing")?.domains);
+  const mathDomains = normalizePracticeTopicDomains(
+    topicsData?.sections?.find((s: any) => s.section === "math")?.domains,
+  );
+  const readingDomains = normalizePracticeTopicDomains(
+    topicsData?.sections?.find((s: any) => s.section === "reading_writing")
+      ?.domains,
+  );
 
   const visibleDomains = useMemo(() => {
     if (focusSection === "math") return mathDomains;
@@ -191,13 +232,15 @@ function Practice() {
 
   const toggleDifficulty = (d: PracticeDifficulty) => {
     setSelectedDifficulties((prev) =>
-      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]
+      prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d],
     );
   };
 
   const toggleDomain = (domain: string) => {
     setSelectedDomains((prev) =>
-      prev.includes(domain) ? prev.filter((x) => x !== domain) : [...prev, domain]
+      prev.includes(domain)
+        ? prev.filter((x) => x !== domain)
+        : [...prev, domain],
     );
   };
 
@@ -206,7 +249,8 @@ function Practice() {
     setSelectedDomains([]);
   };
 
-  const hasActiveFilters = selectedDifficulties.length > 0 || selectedDomains.length > 0;
+  const hasActiveFilters =
+    selectedDifficulties.length > 0 || selectedDomains.length > 0;
 
   const quickFocus = useMemo(
     () => [
@@ -228,26 +272,61 @@ function Practice() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stats?.math, stats?.reading_writing, statsError, statsLoading, timePreference, selectedDifficulties, selectedDomains],
+    [
+      stats?.math,
+      stats?.reading_writing,
+      statsError,
+      statsLoading,
+      timePreference,
+      selectedDifficulties,
+      selectedDomains,
+    ],
   );
 
   const secondaryActions = [
-    { href: "/review-errors", title: "Review Errors", icon: AlertCircle, caption: "Resolve unresolved mistakes" },
-    { href: "/flow-cards", title: "FlowCards", icon: Sparkles, caption: "Fast adaptive drill mode" },
-    { href: "/full-test", title: "Full-Length Exam", icon: Target, caption: "Run a timed full SAT" },
-    { href: "/mastery", title: "Mastery", icon: TrendingUp, caption: "Domain-level performance" },
+    {
+      href: "/review-errors",
+      title: "Review Errors",
+      icon: AlertCircle,
+      caption: "Resolve unresolved mistakes",
+    },
+    {
+      href: "/flow-cards",
+      title: "FlowCards",
+      icon: Sparkles,
+      caption: "Fast adaptive drill mode",
+    },
+    {
+      href: "/full-test",
+      title: "Full-Length Exam",
+      icon: Target,
+      caption: "Run a timed full SAT",
+    },
+    {
+      href: "/mastery",
+      title: "Mastery",
+      icon: TrendingUp,
+      caption: "Domain-level performance",
+    },
   ];
 
   return (
     <AppShell showFooter>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
         <header className="mb-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">Practice Center</p>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground mb-2" data-testid="page-title">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-3">
+            Practice Center
+          </p>
+          <h1
+            className="text-4xl font-bold tracking-tight text-foreground mb-2"
+            data-testid="page-title"
+          >
             Deliberate SAT Practice
           </h1>
           <p className="text-muted-foreground max-w-3xl">
-            Start focused sessions, continue your current section flow naturally, and keep all activity synced to live Lyceon runtime progress.
+            Start focused sessions, continue your current section flow
+            naturally, and keep all activity synced to live Lyceon runtime
+            progress.
           </p>
         </header>
 
@@ -267,15 +346,30 @@ function Practice() {
                     >
                       <div className="flex items-center gap-4">
                         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                          {s.section?.toLowerCase() === 'math' ? <Calculator className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
+                          {s.section?.toLowerCase() === "math" ? (
+                            <Calculator className="h-5 w-5" />
+                          ) : (
+                            <BookOpen className="h-5 w-5" />
+                          )}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold capitalize">{s.section?.toLowerCase() === 'math' ? 'Math' : 'Reading & Writing'}</span>
-                            <Badge variant="secondary" className="text-[10px] py-0">{s.mode}</Badge>
+                            <span className="font-semibold capitalize">
+                              {s.section?.toLowerCase() === "math"
+                                ? "Math"
+                                : "Reading & Writing"}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] py-0"
+                            >
+                              {s.mode}
+                            </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            Progress: {s.answered_items} / {s.total_items} questions · Started {DateTime.fromISO(s.started_at).toRelative()}
+                            Progress: {s.answered_items} / {s.total_items}{" "}
+                            questions · Started{" "}
+                            {DateTime.fromISO(s.started_at).toRelative()}
                           </p>
                         </div>
                       </div>
@@ -289,7 +383,12 @@ function Practice() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" onClick={() => setLocation(`/practice/session/${s.id}`)}>
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            setLocation(`/practice/session/${s.id}`)
+                          }
+                        >
                           <PlayCircle className="h-4 w-4 mr-2" />
                           Continue
                         </Button>
@@ -306,13 +405,20 @@ function Practice() {
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
-
                 {/* Duration */}
                 <div className="flex flex-wrap items-center gap-3 rounded-xl bg-secondary/50 p-4">
                   <Timer className="h-4 w-4 text-foreground" />
-                  <p className="text-sm text-foreground/90">Session target duration</p>
-                  <Select value={timePreference} onValueChange={setTimePreference}>
-                    <SelectTrigger className="w-44 bg-background" data-testid="select-duration">
+                  <p className="text-sm text-foreground/90">
+                    Session target duration
+                  </p>
+                  <Select
+                    value={timePreference}
+                    onValueChange={setTimePreference}
+                  >
+                    <SelectTrigger
+                      className="w-44 bg-background"
+                      data-testid="select-duration"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -326,7 +432,9 @@ function Practice() {
 
                 {/* Difficulty Filter */}
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Difficulty</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    Difficulty
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     {DIFFICULTY_OPTIONS.map((opt) => {
                       const active = selectedDifficulties.includes(opt.value);
@@ -346,21 +454,33 @@ function Practice() {
                       );
                     })}
                   </div>
-                  <p className="text-[11px] text-muted-foreground">Select none to include all difficulties</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Select none to include all difficulties
+                  </p>
                 </div>
 
                 {/* Topic/Domain Filter */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Topic (Domain)</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Topic (Domain)
+                    </p>
                     <div className="flex items-center gap-2">
-                      <Select value={focusSection} onValueChange={(v) => { setFocusSection(v as any); setSelectedDomains([]); }}>
+                      <Select
+                        value={focusSection}
+                        onValueChange={(v) => {
+                          setFocusSection(v as any);
+                          setSelectedDomains([]);
+                        }}
+                      >
                         <SelectTrigger className="h-7 w-36 text-xs bg-background">
                           <SelectValue placeholder="All sections" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="math">Math</SelectItem>
-                          <SelectItem value="reading_writing">Reading & Writing</SelectItem>
+                          <SelectItem value="reading_writing">
+                            Reading & Writing
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -392,26 +512,51 @@ function Practice() {
                       })}
                     </div>
                   )}
-                  <p className="text-[11px] text-muted-foreground">Select none to include all domains</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Select none to include all domains
+                  </p>
                 </div>
 
                 {/* Active filter summary + clear */}
                 {hasActiveFilters && (
                   <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <span className="text-xs text-muted-foreground">Active filters:</span>
+                    <span className="text-xs text-muted-foreground">
+                      Active filters:
+                    </span>
                     {selectedDifficulties.map((d) => (
-                      <Badge key={d} variant="secondary" className="text-[10px] gap-1">
+                      <Badge
+                        key={d}
+                        variant="secondary"
+                        className="text-[10px] gap-1"
+                      >
                         {d}
-                        <button onClick={() => toggleDifficulty(d)} className="ml-0.5 hover:text-destructive"><X className="h-2.5 w-2.5" /></button>
+                        <button
+                          onClick={() => toggleDifficulty(d)}
+                          className="ml-0.5 hover:text-destructive"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
                       </Badge>
                     ))}
                     {selectedDomains.map((domain) => (
-                      <Badge key={domain} variant="secondary" className="text-[10px] gap-1 max-w-[140px] truncate">
+                      <Badge
+                        key={domain}
+                        variant="secondary"
+                        className="text-[10px] gap-1 max-w-[140px] truncate"
+                      >
                         {domain}
-                        <button onClick={() => toggleDomain(domain)} className="ml-0.5 hover:text-destructive flex-shrink-0"><X className="h-2.5 w-2.5" /></button>
+                        <button
+                          onClick={() => toggleDomain(domain)}
+                          className="ml-0.5 hover:text-destructive flex-shrink-0"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
                       </Badge>
                     ))}
-                    <button onClick={clearFilters} className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline">
+                    <button
+                      onClick={clearFilters}
+                      className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+                    >
                       Clear all
                     </button>
                   </div>
@@ -420,7 +565,8 @@ function Practice() {
                 {/* Section buttons */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   {quickFocus.map((focus) => {
-                    const isLimitReached = (openSessions?.sessions?.length ?? 0) >= 5;
+                    const isLimitReached =
+                      (openSessions?.sessions?.length ?? 0) >= 5;
                     return (
                       <Button
                         key={focus.title}
@@ -436,10 +582,14 @@ function Practice() {
                             <div className="space-y-2">
                               <div className="flex items-center gap-2">
                                 <focus.icon className="h-4 w-4" />
-                                <span className="font-semibold">{focus.title}</span>
+                                <span className="font-semibold">
+                                  {focus.title}
+                                </span>
                               </div>
                               <p className="text-xs opacity-85">
-                                {isLimitReached ? "Limit reached (5 sessions)" : focus.subtitle}
+                                {isLimitReached
+                                  ? "Limit reached (5 sessions)"
+                                  : focus.subtitle}
                               </p>
                             </div>
                             <ArrowRight className="h-4 w-4 shrink-0" />
@@ -453,14 +603,18 @@ function Practice() {
                 {(openSessions?.sessions?.length ?? 0) >= 5 && (
                   <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3 text-amber-800 text-sm">
                     <AlertCircle className="h-4 w-4" />
-                    You've reached the limit of 5 active sessions. Complete or delete an existing session to start a new one.
+                    You've reached the limit of 5 active sessions. Complete or
+                    delete an existing session to start a new one.
                   </div>
                 )}
 
                 {statsError && (
                   <RecoveryNotice
                     title="We couldn't load question totals."
-                    message={(statsErrorObj as Error)?.message ?? "Try again. If this keeps happening, refresh the page."}
+                    message={
+                      (statsErrorObj as Error)?.message ??
+                      "Try again. If this keeps happening, refresh the page."
+                    }
                     onRetry={() => void refetchStats()}
                     retryLabel="Retry"
                     className="rounded-lg"
@@ -484,22 +638,35 @@ function Practice() {
               ) : topicsError ? (
                 <RecoveryNotice
                   title="We couldn't load domain taxonomy."
-                  message={(topicsErrorObj as Error)?.message ?? "Try again. If this keeps happening, refresh the page."}
+                  message={
+                    (topicsErrorObj as Error)?.message ??
+                    "Try again. If this keeps happening, refresh the page."
+                  }
                   onRetry={() => void refetchTopics()}
                   retryLabel="Retry"
                 />
               ) : (
                 <div className="space-y-6">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Math Domains</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                      Math Domains
+                    </p>
                     {mathDomains.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No math domains published yet.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No math domains published yet.
+                      </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {mathDomains.map((domain: any) => (
-                          <Badge key={`math-${domain.domain}`} variant="outline" className="px-3 py-1">
+                          <Badge
+                            key={`math-${domain.domain}`}
+                            variant="outline"
+                            className="px-3 py-1"
+                          >
                             {domain.domain}
-                            {domain.skills.length > 0 ? ` · ${domain.skills.length}` : ""}
+                            {domain.skills.length > 0
+                              ? ` · ${domain.skills.length}`
+                              : ""}
                           </Badge>
                         ))}
                       </div>
@@ -507,15 +674,25 @@ function Practice() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Reading & Writing Domains</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                      Reading & Writing Domains
+                    </p>
                     {readingDomains.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No reading & writing domains published yet.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No reading & writing domains published yet.
+                      </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {readingDomains.map((domain: any) => (
-                          <Badge key={`rw-${domain.domain}`} variant="outline" className="px-3 py-1">
+                          <Badge
+                            key={`rw-${domain.domain}`}
+                            variant="outline"
+                            className="px-3 py-1"
+                          >
                             {domain.domain}
-                            {domain.skills.length > 0 ? ` · ${domain.skills.length}` : ""}
+                            {domain.skills.length > 0
+                              ? ` · ${domain.skills.length}`
+                              : ""}
                           </Badge>
                         ))}
                       </div>
@@ -536,7 +713,10 @@ function Practice() {
           </div>
 
           <aside className="lg:col-span-4 space-y-6">
-            <PageCard title="Weekly Activity" className="bg-card/80 border-border/50">
+            <PageCard
+              title="Weekly Activity"
+              className="bg-card/80 border-border/50"
+            >
               <div className="space-y-4">
                 {(kpiError || streakError) && (
                   <RecoveryNotice
@@ -559,15 +739,31 @@ function Practice() {
                     <Flame className="h-4 w-4" />
                     Streak
                   </div>
-                  <span className="text-xl font-semibold">{streakLoading ? "—" : streakError ? "—" : streakEmpty ? "0" : streakCurrent}</span>
+                  <span className="text-xl font-semibold">
+                    {streakLoading
+                      ? "—"
+                      : streakError
+                        ? "—"
+                        : streakEmpty
+                          ? "0"
+                          : streakCurrent}
+                  </span>
                 </div>
 
                 <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm text-foreground/80">
                     <Clock className="h-4 w-4" />
-                    Sessions (7d)
+                    Questions (7d)
                   </div>
-                  <span className="text-xl font-semibold">{kpiLoading ? "—" : kpiError ? "—" : kpiEmpty ? "0" : weekSessions}</span>
+                  <span className="text-xl font-semibold">
+                    {kpiLoading
+                      ? "—"
+                      : kpiError
+                        ? "—"
+                        : kpiEmpty
+                          ? "0"
+                          : weekQuestions}
+                  </span>
                 </div>
 
                 <div className="rounded-lg bg-secondary/60 px-4 py-3 flex items-center justify-between">
@@ -576,35 +772,65 @@ function Practice() {
                     Accuracy
                   </div>
                   <span className="text-xl font-semibold">
-                    {kpiLoading ? "—" : kpiError ? "—" : kpiData?.week?.questionsSolved === 0 ? "—" : `${weekAccuracy}%`}
+                    {kpiLoading
+                      ? "—"
+                      : kpiError
+                        ? "—"
+                        : kpiData?.week?.questionsSolved === 0
+                          ? "—"
+                          : `${weekAccuracy}%`}
                   </span>
                 </div>
 
-                {kpiEmpty && <p className="text-xs text-muted-foreground">No weekly KPI activity recorded yet.</p>}
-                {streakEmpty && <p className="text-xs text-muted-foreground">No streak data for this month yet.</p>}
+                {kpiEmpty && (
+                  <p className="text-xs text-muted-foreground">
+                    No weekly KPI activity recorded yet.
+                  </p>
+                )}
+                {streakEmpty && (
+                  <p className="text-xs text-muted-foreground">
+                    No streak data for this month yet.
+                  </p>
+                )}
               </div>
             </PageCard>
 
             <PageCard className="bg-primary-container text-primary-foreground border-transparent">
               <div className="space-y-2 text-center py-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70">Question Bank</p>
-                <p className="text-5xl font-bold">{statsError ? "—" : statsLoading ? "--" : stats?.total || 0}</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-primary-foreground/70">
+                  Question Bank
+                </p>
+                <p className="text-5xl font-bold">
+                  {statsError ? "—" : statsLoading ? "--" : stats?.total || 0}
+                </p>
                 <p className="text-sm text-primary-foreground/80">
-                  {statsEmpty ? "No questions available yet" : "Total questions currently available"}
+                  {statsEmpty
+                    ? "No questions available yet"
+                    : "Total questions currently available"}
                 </p>
               </div>
             </PageCard>
 
-            <PageCard title="Quick Actions" className="bg-card/80 border-border/50">
+            <PageCard
+              title="Quick Actions"
+              className="bg-card/80 border-border/50"
+            >
               <div className="space-y-3">
                 {secondaryActions.map((item) => (
-                  <Button key={item.href} asChild variant="ghost" className="h-auto w-full justify-between px-3 py-3">
+                  <Button
+                    key={item.href}
+                    asChild
+                    variant="ghost"
+                    className="h-auto w-full justify-between px-3 py-3"
+                  >
                     <Link href={item.href}>
                       <span className="flex items-center gap-2 text-sm">
                         <item.icon className="h-4 w-4" />
                         {item.title}
                       </span>
-                      <span className="text-xs text-muted-foreground">{item.caption}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {item.caption}
+                      </span>
                     </Link>
                   </Button>
                 ))}

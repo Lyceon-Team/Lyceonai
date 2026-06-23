@@ -4,7 +4,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, Target, AlertCircle } from "lucide-react";
-import { fetchScoreEstimate, getConfidenceLabel, getConfidenceColor } from "@/lib/projectionApi";
+import {
+  fetchScoreEstimate,
+  getConfidenceLabel,
+  getConfidenceColor,
+} from "@/lib/projectionApi";
 import { useLocation } from "wouter";
 import { isEntitlementDenialError } from "@/lib/api-error";
 
@@ -88,7 +92,9 @@ export function ScoreProjectionCard() {
             <AlertCircle className="h-4 w-4" />
             <span>
               Your score estimate isn’t available yet
-              {totalQuestionsAttempted > 0 ? " — it appears once enough scored evidence accumulates." : " — start practicing to generate it."}
+              {totalQuestionsAttempted > 0
+                ? " — it appears once enough scored evidence accumulates."
+                : " — start practicing to generate it."}
             </span>
           </div>
         </CardContent>
@@ -105,7 +111,9 @@ export function ScoreProjectionCard() {
             <Target className="h-5 w-5 text-primary" />
             Score Estimate
           </span>
-          <span className={`text-sm font-normal ${getConfidenceColor(estimate.confidence)}`}>
+          <span
+            className={`text-sm font-normal ${getConfidenceColor(estimate.confidence)}`}
+          >
             {getConfidenceLabel(estimate.confidence)} Estimate Confidence
           </span>
         </CardTitle>
@@ -124,12 +132,16 @@ export function ScoreProjectionCard() {
 
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-lg border p-3">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Math</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wide">
+              Math
+            </div>
             <div className="text-2xl font-semibold">{estimate.math}</div>
             <div className="text-xs text-muted-foreground">/ 800</div>
           </div>
           <div className="rounded-lg border p-3">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Reading & Writing</div>
+            <div className="text-xs text-muted-foreground uppercase tracking-wide">
+              Reading & Writing
+            </div>
             <div className="text-2xl font-semibold">{estimate.rw}</div>
             <div className="text-xs text-muted-foreground">/ 800</div>
           </div>
@@ -139,28 +151,6 @@ export function ScoreProjectionCard() {
           <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
             <TrendingUp className="h-4 w-4" />
             Based on {totalQuestionsAttempted} questions
-          </div>
-        )}
-
-        {estimate.breakdown && (
-          <div className="space-y-2 pt-2 border-t">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Domain Breakdown
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {estimate.breakdown.math.slice(0, 2).map((d) => (
-                <div key={d.domain} className="flex justify-between">
-                  <span className="capitalize">{d.domain.replace(/_/g, " ")}</span>
-                  <span className="font-mono">{Math.round(d.decayedMastery * 100)}%</span>
-                </div>
-              ))}
-              {estimate.breakdown.rw.slice(0, 2).map((d) => (
-                <div key={d.domain} className="flex justify-between">
-                  <span className="capitalize">{d.domain.replace(/_/g, " ")}</span>
-                  <span className="font-mono">{Math.round(d.decayedMastery * 100)}%</span>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </CardContent>
