@@ -124,10 +124,12 @@ export function mapMasteryStatusFromLevel(
 
 /**
  * @spec [Doc 05A §7.4 — student_skill_mastery student-readable grant: section, domain, skill,
- *   mastery_level, event_count_total, computed_at] | @implemented [2026-06-23]
- * plain English: reads per-skill mastery rows for the tree builder. Selects ONLY student-grantable
- * columns. The prior select included `attempts, correct, accuracy` which do NOT exist on the
- * table (column name was `user_id` → `student_id`), causing every query to error → return [].
+ *   mastery_level, computed_at; event_count_total is service_role only (§7.2)] | @implemented [2026-06-23]
+ * plain English: reads per-skill mastery rows for the tree builder. Query runs as service_role
+ * (getSupabaseAdmin) so event_count_total is accessible; it is used only server-side and never
+ * serialised to the client response. The prior select included `attempts, correct, accuracy` which
+ * do NOT exist on the table (column name was `user_id` → `student_id`), causing every query to
+ * error → return [].
  */
 export async function fetchSkillMasteryRows(args: {
   userId: string;

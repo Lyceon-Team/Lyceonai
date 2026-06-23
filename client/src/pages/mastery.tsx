@@ -22,35 +22,13 @@ import { useEffect, useMemo, useState } from "react";
 import { isEntitlementDenialError } from "@/lib/api-error";
 import { EmptyStateCTA } from "@/components/feedback/EmptyStateCTA";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-
-type MasteryTier = "not_started" | "weak" | "improving" | "proficient";
-
-interface SkillNode {
-  skill: string;
-  label: string;
-  masteryLevel: number | null;
-  tier: MasteryTier;
-  computedAt: string | null;
-}
-
-interface DomainNode {
-  domain: string;
-  label: string;
-  masteryLevel: number | null;
-  tier: MasteryTier;
-  computedAt: string | null;
-  skills: SkillNode[];
-}
-
-interface SectionNode {
-  section: string;
-  label: string;
-  domains: DomainNode[];
-}
-
-interface MasteryResponse {
-  sections: SectionNode[];
-}
+import type {
+  MasteryTier,
+  SkillMasteryNode,
+  DomainMasteryNode,
+  SectionMasteryNode,
+  MasteryTreeResponse,
+} from "@shared/mastery";
 
 function getTierTone(tier: MasteryTier): string {
   switch (tier) {
@@ -102,7 +80,7 @@ export default function MasteryPage() {
     navigate("/upgrade");
   };
 
-  const { data, isLoading, error, refetch } = useQuery<MasteryResponse>({
+  const { data, isLoading, error, refetch } = useQuery<MasteryTreeResponse>({
     queryKey: ["/api/me/mastery/skills"],
     retry: 1,
   });
@@ -113,8 +91,8 @@ export default function MasteryPage() {
   );
   const domains = useMemo(
     () =>
-      sections.flatMap((section) =>
-        section.domains.map((domain) => ({
+      sections.flatMap((section: SectionMasteryNode) =>
+        section.domains.map((domain: DomainMasteryNode) => ({
           sectionLabel: section.label,
           ...domain,
         })),
@@ -222,7 +200,7 @@ export default function MasteryPage() {
         {!isLoading && !error && hasAnyMastery && (
           <div className="space-y-8">
             <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {sections.map((section) => (
+              {sections.map((section: SectionMasteryNode) => (
                 <Card
                   key={section.section}
                   className="bg-card/80 border-border/50"
@@ -237,7 +215,7 @@ export default function MasteryPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
-                      {section.domains.map((d) => (
+                      {section.domains.map((d: DomainMasteryNode) => (
                         <Badge key={d.domain} className={getTierTone(d.tier)}>
                           {d.label}: {getTierLabel(d.tier)}
                         </Badge>
@@ -248,7 +226,7 @@ export default function MasteryPage() {
               ))}
             </section>
 
-            {sections.map((section) => (
+            {sections.map((section: SectionMasteryNode) => (
               <section key={`domains-${section.section}`}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold tracking-tight">
@@ -265,7 +243,7 @@ export default function MasteryPage() {
                   onValueChange={(value) => setSelectedDomainId(value || null)}
                   className="space-y-3"
                 >
-                  {section.domains.map((domain) => (
+                  {section.domains.map((domain: DomainMasteryNode) => (
                     <AccordionItem
                       key={domain.domain}
                       value={domain.domain}
@@ -298,7 +276,7 @@ export default function MasteryPage() {
                       </AccordionTrigger>
                       <AccordionContent>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
-                          {domain.skills.map((skill) => (
+                          {domain.skills.map((skill: SkillMasteryNode) => (
                             <div
                               key={skill.skill}
                               className="rounded-lg border border-border/60 bg-secondary/35 p-3"
@@ -348,7 +326,7 @@ export default function MasteryPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {selectedDomain.skills
                           .slice()
-                          .sort((a, b) => {
+                          .sort((a: SkillMasteryNode, b: SkillMasteryNode) => {
                             const tierOrder: Record<MasteryTier, number> = {
                               not_started: 0,
                               weak: 1,
@@ -357,7 +335,7 @@ export default function MasteryPage() {
                             };
                             return tierOrder[a.tier] - tierOrder[b.tier];
                           })
-                          .map((skill) => (
+                          .map((skill: SkillMasteryNode) => (
                             <div
                               key={skill.skill}
                               className="rounded-lg border border-border/60 bg-secondary/40 p-3"
