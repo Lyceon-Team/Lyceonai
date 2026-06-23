@@ -108,8 +108,7 @@ type SkillMasteryRow = {
   domain: string | null;
   skill: string;
   mastery_score: number | null;
-  accuracy: number | null;
-  last_attempt_at: string | null;
+  last_event_occurred_at: string | null;
 };
 
 export type ExamSkillDiagnostic = {
@@ -435,8 +434,8 @@ async function loadSkillMasteryRows(userId: string): Promise<SkillMasteryRow[]> 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, mastery_score, accuracy, last_attempt_at")
-    .eq("user_id", userId);
+    .select("section, domain, skill, mastery_score, last_event_occurred_at")
+    .eq("student_id", userId);
 
   if (error || !data) return [];
   return data as SkillMasteryRow[];
@@ -453,8 +452,11 @@ function buildSkillSignals(rows: SkillMasteryRow[]): SkillSignal[] {
       domain: row.domain ?? "general",
       subskill: null,
       masteryScore: typeof row.mastery_score === "number" ? row.mastery_score : 0.5,
-      accuracy: typeof row.accuracy === "number" ? row.accuracy : 0.5,
-      lastAttemptDate: row.last_attempt_at ? DateTime.fromISO(row.last_attempt_at).toISODate() : null,
+      // `accuracy` here carries the canonical mastery_score (there is no `accuracy`
+      // column on student_skill_mastery). Server-internal planner input only — fed to
+      // generateDeterministicPlan, never serialized to any client/guardian response.
+      accuracy: typeof row.mastery_score === "number" ? row.mastery_score : 0.5,
+      lastAttemptDate: row.last_event_occurred_at ? DateTime.fromISO(row.last_event_occurred_at).toISODate() : null,
     });
   }
   return skillSignals;

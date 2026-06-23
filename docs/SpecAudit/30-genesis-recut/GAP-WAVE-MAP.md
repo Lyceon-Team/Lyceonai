@@ -1,4 +1,9 @@
-# Genesis Re-Cut — GAP → Wave Map (all 66 registry gaps)
+# Genesis Re-Cut — GAP → Wave Map (all 71 registry gaps)
+
+> **Count reconciled 2026-06-22:** this map was first cut for **66** gaps; the registry is
+> now **71** (the +5 auth+deletion arc HY-12…HY-16). The arc + the WS-3 progress lead are
+> folded in via the **Addendum** at the foot of this file; the body below remains the
+> original 66-gap mapping. See that addendum for the explicit delta.
 
 > Derived from [`../10-gap-registry/gap-registry.md`](../10-gap-registry/gap-registry.md)
 > (V1.1, 66 gaps) under the teardown + genesis-from-spec re-cut
@@ -24,9 +29,11 @@ not DB) and **spec revisions**. Disposition vocabulary:
 | **SPEC** | Spec-revision; WS-S lock-cycle only |
 | **WS0✓** | Already closed in WS-0; the *patch* is mooted by teardown but genesis re-ships the protection natively, and the WS-0 probe carries forward as a **CI guard** |
 
-**Tally:** 66 gaps → **CBC-native 18 · CBC-build 11 · CBC-moot 12 · CODE 13 ·
-SPEC 6 · WS0✓ 6** (TB-04 counted once as CBC-native). Net new *build* effort
-concentrates in WS-3/WS-4/WS-5/WS-6; net *code* effort in WS-2/WS-5/WS-8.
+**Tally (original 66-gap body):** 66 gaps → **CBC-native 18 · CBC-build 11 · CBC-moot 12 ·
+CODE 13 · SPEC 6 · WS0✓ 6** (TB-04 counted once as CBC-native). Net new *build* effort
+concentrates in WS-3/WS-4/WS-5/WS-6; net *code* effort in WS-2/WS-5/WS-8. The **+5 arc**
+(HY-12…HY-16) adds **CODE ×3 (HY-12/13/16) · CBC-build ×1 (HY-15) · SPEC ×1 (HY-14)** —
+see the Addendum.
 
 ---
 
@@ -160,8 +167,42 @@ C-8 mastery write choke-point + grep-guard · C-9 level boundaries
 
 ## Coverage check
 
-All 66 registry gaps appear exactly once above (HY-11 already CLOSED; the rest
-mapped to a wave + genesis disposition). The 6 SP items route through WS-S. The
+All 66 **original-body** registry gaps appear exactly once above (HY-11 already CLOSED; the
+rest mapped to a wave + genesis disposition). The 6 SP items route through WS-S. The
 9 conformant behaviors carry forward as CI guards. The two mooted provenance-WS-1
 drops (TU-09, HY-02 fn-set) are absorbed as **CBC-moot** — genesis never recreates
-them, so the D4 drop migration is unnecessary (see RECUT-CONTRACT §8).
+them, so the D4 drop migration is unnecessary (see RECUT-CONTRACT §8). The **+5 auth+deletion
+arc (HY-12…HY-16)** and the **WS-3 progress lead** are covered in the Addendum below — total
+coverage is the registry's current **71** gaps.
+
+---
+
+## Addendum — auth+deletion arc + WS-3 progress lead (2026-06-22)
+
+The registry grew from the V1.1 **66** to **71 gap entries** — the **+5** auth+deletion arc
+(**HY-12 … HY-16**), born after this map was first cut (the auth rebuild + GDPR/COPPA deletion
+lifecycle). They are folded into their execution waves below; the WS-3 progress lead (the live
+`/api/progress/*` 500 fix) is recorded as a CODE item already DONE. The registry also tracks
+**21** spec-revision items (was **6** SP here; grew via SP-06…SP-25) and **9** conformant
+verifications — routed through WS-S / CI guards as before, not counted as gaps.
+
+| Gap | Sev | Disposition | Wave | Status (2026-06-22) | Note |
+|---|---|---|---|---|---|
+| HY-12 | MED | **CODE** | WS-8 (frontend hygiene) | OPEN | raw-string display, 8 non-auth surfaces; `SubscriptionPaywall.tsx:147` first |
+| HY-13 | HIGH | **CODE** (+ governed migration) | WS-6 | BUILT + PROD-RECONCILED — activation owner-gated | deletion insert/cron/soft-lock; `account_deletion_lifecycle` = ledger row 15; flag flip + §40.3/40.4 increment pending |
+| HY-14 | HIGH | **SPEC** | WS-S | RESOLVED — §40.6 spec edit pending owner | uniform 7-day per counsel; no new code |
+| HY-15 | HIGH | **CBC-build** (STAGE-MIGRATION) | WS-6 | PARTIAL — core RPC applied + governed | `deidentify_user` core done; feature-table cascade OPEN (TU-03 / Doc 03A) |
+| HY-16 | HIGH | **CODE** | WS-6 | PARTIAL — backend+UI+e2e shipped | global soft-lock; §40.3 spec edit + flag activation pending |
+| WS-3 lead | — | **CODE** | WS-3 | DONE (#415 → `cleanup`) | `/api/progress/*` rewired off retired old-gen columns to genesis Doc-05 (event vocabulary; §10.5 breakdown drop) |
+
+### MA-07 read-layer rebuild — column-drift class + dead-code close-out (2026-06-23)
+
+| Gap | Sev | Disposition | Wave | Status (2026-06-23) | Note |
+|---|---|---|---|---|---|
+| MA-12 | HIGH | **CODE** | WS-3 | CLOSED (#419 + step-6 → `cleanup`) | GENESIS-COLUMN-DRIFT CLASS: 4 broken `student_skill_mastery` queries (non-existent columns + `user_id`→`student_id`); RAG classifier rewritten to canonical `mastery_score`; anti-leak chokepoint hardened; dead code deleted |
+| HY-17 | LOW | **PROCESS** | — | OPEN | BASELINE-TEST-DEBT: 36 pre-existing test failures across 15 files; honest baseline pinned by Codex audit; not regressions |
+
+**Count delta (explicit):** wave-map **66** gaps **+ HY-12…HY-16 (5) + MA-12 + HY-17 (2)** = registry **73** gaps.
+Spec-revision items **6 → 21** (genesis re-cut + WS-2/3 Phase-0 + Lane-C revisions, SP-06…SP-25);
+conformant verifications **9** (unchanged). Per-gap status detail is reconciled in
+`../10-gap-registry/gap-registry.md` § "Reconciliation addendum — genesis re-cut resume".

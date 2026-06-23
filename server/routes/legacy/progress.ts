@@ -139,7 +139,6 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         rw: scoreProjection.estimate.rw,
         range: scoreProjection.estimate.range,
         confidence: scoreProjection.estimate.confidence,
-        breakdown: scoreProjection.estimate.breakdown,
       },
       estimateStatus: "computed",
       explanations: {
@@ -170,12 +169,10 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       requestId: req.requestId,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({
-        error: "Failed to calculate score estimate",
-        requestId: req.requestId,
-      });
+    return res.status(500).json({
+      error: "Failed to calculate score estimate",
+      requestId: req.requestId,
+    });
   }
 };
 

@@ -4,7 +4,7 @@ import { apiRequest } from '@/lib/queryClient';
 import type { StudentQuestion } from '@shared/schema';
 
 export type SectionType = 'math' | 'rw';
-export type SelectionMode = 'balanced' | 'skill' | 'cluster' | 'flow' | 'structured' | 'practice';
+export type SelectionMode = 'balanced' | 'skill' | 'flow' | 'structured' | 'practice';
 
 interface AdaptivePracticeOptions {
   section: SectionType;

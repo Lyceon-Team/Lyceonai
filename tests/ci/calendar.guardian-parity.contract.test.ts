@@ -221,9 +221,6 @@ vi.mock("../../server/logger", () => ({
 vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
   getExamReport: vi.fn(),
 }));
-vi.mock("../../apps/api/src/services/mastery-derived", () => ({
-  getDerivedWeaknessSignals: vi.fn(async () => []),
-}));
 import { calendarRouter } from "../../apps/api/src/routes/calendar";
 
 function buildStudentApp() {

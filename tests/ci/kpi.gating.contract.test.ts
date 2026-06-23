@@ -105,16 +105,9 @@ describe('KPI Gating Contract', () => {
       modelVersion: 'kpi_truth_v1',
       timezone: 'America/Chicago',
       week: {
-        practiceSessions: 2,
         questionsSolved: 24,
         accuracy: 58,
         explanations: {
-          week_sessions: {
-            whatThisMeans: 'Sessions in 7 days',
-            whyThisChanged: 'Increased by 1',
-            whatToDoNext: 'Add one more short session',
-            ruleId: 'RULE_WEEK_SESSIONS',
-          },
           week_questions: {
             whatThisMeans: 'Questions attempted in 7 days',
             whyThisChanged: 'Increased by 14',
@@ -126,6 +119,12 @@ describe('KPI Gating Contract', () => {
             whyThisChanged: 'Up by 8 pts',
             whatToDoNext: 'Focus next set on weakest skill',
             ruleId: 'RULE_WEEK_ACCURACY',
+          },
+          current_streak: {
+            whatThisMeans: 'Consecutive active days',
+            whyThisChanged: 'Active again today',
+            whatToDoNext: 'Protect the streak with one short scored block',
+            ruleId: 'RULE_CURRENT_STREAK',
           },
         },
       },
@@ -141,11 +140,12 @@ describe('KPI Gating Contract', () => {
       measurementModel: {
         official: [],
         weighted: [],
-        diagnostic: ['week_sessions', 'week_questions', 'week_accuracy'],
+        diagnostic: ['week_questions', 'week_accuracy', 'current_streak'],
       },
     });
 
     buildScoreEstimateFromCanonical.mockResolvedValue({
+      status: 'computed',
       totalQuestionsAttempted: 40,
       lastUpdated: '2026-03-10T00:00:00.000Z',
       estimate: {
@@ -154,9 +154,7 @@ describe('KPI Gating Contract', () => {
         rw: 540,
         range: { low: 1040, high: 1120 },
         confidence: 0.7,
-        breakdown: { math: [], rw: [] },
       },
-      masteryData: [],
     });
   });
 
@@ -223,9 +221,9 @@ describe('KPI Gating Contract', () => {
     const payload = getBody();
     expect(payload.recency).toBeNull();
     expect(payload.gating.historicalTrends.allowed).toBe(false);
-    expect(payload.week.explanations.week_sessions.whatThisMeans).toEqual(expect.stringMatching(/\S/));
-    expect(payload.week.explanations.week_sessions.whyThisChanged).toEqual(expect.stringMatching(/\S/));
-    expect(payload.week.explanations.week_sessions.whatToDoNext).toEqual(expect.stringMatching(/\S/));
+    expect(payload.week.explanations.week_questions.whatThisMeans).toEqual(expect.stringMatching(/\S/));
+    expect(payload.week.explanations.week_questions.whyThisChanged).toEqual(expect.stringMatching(/\S/));
+    expect(payload.week.explanations.week_questions.whatToDoNext).toEqual(expect.stringMatching(/\S/));
     expect(buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-1', false);
   });
 

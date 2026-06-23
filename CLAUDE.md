@@ -13,6 +13,7 @@ If a task seems to require changing a spec, STOP and surface it to Karl. Do not 
 These are hard stops. Generating any of them is a defect, not a tradeoff:
 
 - **Anti-leak:** no endpoint returns `correct_answer` or `explanation` before submit. Pre-submit payloads return them as `null`. (skill: `anti-leak`)
+- **Anti-leak chokepoint rule:** anti-leak is a property of the serialization sanitizer, not individual fields. When adding a field to a context/profile object that is spread (`...context`) into a client response, verify the sanitizer strips it in the SAME change — a new field on a spread object bypasses per-field null-outs and opens a leak one layer up. (Learned: MA-07 #419, `mastery_score` via `studentProfile` through `...context` spread in `rag-v2.ts`.)
 - **Server-authoritative:** never trust client claims about role, entitlement, session state, or elapsed time. Validate server-side only.
 - **No client privilege:** UI may show/hide by role, but the server always enforces. Never gate access on client-held role state.
 - **Determinism:** no randomness in question selection once mastery data exists. Mutations are idempotent (`idempotency_key`; Stripe webhooks deduped via event ledger).
@@ -51,6 +52,10 @@ A task is open until: build passes, tests pass, no invariant violated, result re
 - **`pnpm` only.** `npm` is prohibited (blocked by hook). No dependency changes without approval.
 - One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
 - Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
+
+## Branch targeting (PRs land on `cleanup`, never `main`)
+
+All in-flight work merges into the `cleanup` integration branch — **never open a PR against `main`**. When opening a PR, set its base to `cleanup`. If a PR is already open for the working branch, push to that branch and let the existing PR pick up the commits rather than opening a second PR.
 
 ## Unified code across agents & sessions
 

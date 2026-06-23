@@ -1,13 +1,5 @@
 import { apiRequest } from "./queryClient";
 
-export interface DomainBreakdown {
-  domain: string;
-  weight: number;
-  rawMastery: number;
-  decayedMastery: number;
-  contribution: number;
-}
-
 export interface ScoreEstimate {
   composite: number;
   math: number;
@@ -17,10 +9,6 @@ export interface ScoreEstimate {
     high: number;
   };
   confidence: number;
-  breakdown: {
-    math: DomainBreakdown[];
-    rw: DomainBreakdown[];
-  };
 }
 
 // LC-AM3-UI-001 honest-signal: mirror the server's discriminated response. The weighted score
@@ -35,8 +23,14 @@ interface EstimateResponseBase {
 }
 
 export type EstimateResponse =
-  | (EstimateResponseBase & { estimateStatus: "computed"; estimate: ScoreEstimate })
-  | (EstimateResponseBase & { estimateStatus: "not_yet_available"; estimate: null });
+  | (EstimateResponseBase & {
+      estimateStatus: "computed";
+      estimate: ScoreEstimate;
+    })
+  | (EstimateResponseBase & {
+      estimateStatus: "not_yet_available";
+      estimate: null;
+    });
 
 export async function fetchScoreEstimate(): Promise<EstimateResponse> {
   const response = await apiRequest("/api/progress/projection");

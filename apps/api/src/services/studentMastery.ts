@@ -1,7 +1,15 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import type { LearningEventInput } from "./mastery-write";
-import type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary } from "./mastery-read";
-import { buildMasterySummaryFromRows, fetchSkillMasteryRows, fetchWeakestClusters, fetchWeakestSkills } from "./mastery-read";
+import type {
+  WeaknessQuery,
+  SkillWeakness,
+  MasterySummary,
+} from "./mastery-read";
+import {
+  buildMasterySummaryFromRows,
+  fetchDomainMasteryRows,
+  fetchWeakestSkills,
+} from "./mastery-read";
 
 export interface QuestionMetadataSnapshot {
   test_code: string | null;
@@ -15,28 +23,27 @@ export interface QuestionMetadataSnapshot {
 }
 
 export type { LearningEventInput };
-export type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary };
+export type { WeaknessQuery, SkillWeakness, MasterySummary };
 
-export {
-  applyLearningEventToMastery,
-} from "./mastery-write";
+export { applyLearningEventToMastery } from "./mastery-write";
 
 // Compatibility wrappers: canonical mastery reads live in mastery-read.
-export async function getWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
+export async function getWeakestSkills(
+  query: WeaknessQuery,
+): Promise<SkillWeakness[]> {
   return fetchWeakestSkills(query);
 }
 
-export async function getWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
-  return fetchWeakestClusters(query);
-}
-
-export async function getMasterySummary(userId: string, section?: string): Promise<MasterySummary[]> {
-  const rows = await fetchSkillMasteryRows({ userId, section });
-  return buildMasterySummaryFromRows(rows);
+export async function getMasterySummary(
+  userId: string,
+  section?: string,
+): Promise<MasterySummary[]> {
+  const domainRows = await fetchDomainMasteryRows({ userId, section });
+  return buildMasterySummaryFromRows(domainRows);
 }
 
 export async function getQuestionMetadataForAttempt(
-  questionId: string
+  questionId: string,
 ): Promise<QuestionMetadataSnapshot & { canonicalId: string | null }> {
   const supabase = getSupabaseAdmin();
 
@@ -94,11 +101,10 @@ export async function getQuestionMetadataForAttempt(
     skill: data.skill || null,
     subskill: data.subskill || null,
     skill_code: data.skill_code || null,
-    difficulty: (data.difficulty === 1 || data.difficulty === 2 || data.difficulty === 3) ? data.difficulty : null,
+    difficulty:
+      data.difficulty === 1 || data.difficulty === 2 || data.difficulty === 3
+        ? data.difficulty
+        : null,
     structure_cluster_id: data.structure_cluster_id || null,
   };
 }
-
-
-
-

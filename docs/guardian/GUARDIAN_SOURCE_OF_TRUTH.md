@@ -25,7 +25,7 @@
 - Full-length report summary projection:
   - `apps/api/src/services/fullLengthExam.ts` (`getExamReport`) + guardian-safe transform in `server/routes/guardian-routes.ts`
 - Weakness rollup source:
-  - `apps/api/src/services/mastery-derived.ts` (`getDerivedWeaknessSignals`) + guardian-safe projection in `server/routes/guardian-routes.ts`
+  - `apps/api/src/services/mastery-read.ts` (`fetchDomainMasteryRows`) — domain-grain `student_domain_mastery` only (AC#19: guardians never see per-skill mastery or mastery_score/mastery_pct) + guardian-safe projection in `server/routes/guardian-routes.ts`
 
 ## Non-Canonical / Disallowed for Guardian Reporting
 - Client-side filtering as a security boundary.

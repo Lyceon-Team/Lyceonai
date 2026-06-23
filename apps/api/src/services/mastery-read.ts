@@ -1,22 +1,20 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import {
+  masteryTierFromLevel,
+  type MasteryTier,
+} from "../../../../packages/shared/src/mastery";
+
+// ---------------------------------------------------------------------------
+// Row types — match actual student_skill_mastery / student_domain_mastery columns
+// ---------------------------------------------------------------------------
 
 export interface SkillMasteryRow {
   section: string;
   domain: string | null;
   skill: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-  mastery_level?: number | null;
-}
-
-export interface ClusterMasteryRow {
-  structure_cluster_id: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
+  mastery_level: number | null;
+  event_count_total: number;
+  computed_at: string | null;
 }
 
 export interface WeaknessQuery {
@@ -31,82 +29,68 @@ export interface SkillWeakness {
   section: string;
   domain: string | null;
   skill: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
   mastery_score: number;
-  mastery_level?: number | null;
+  mastery_level: number | null;
 }
 
-export interface ClusterWeakness {
-  structure_cluster_id: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-}
+// ---------------------------------------------------------------------------
+// Tier-only summary (rebuilt — the old MasterySummary used non-existent columns)
+// ---------------------------------------------------------------------------
 
 export interface MasterySummary {
   section: string;
-  totalAttempts: number;
-  totalCorrect: number;
-  overallAccuracy: number;
-  domainBreakdown: {
+  domains: Array<{
     domain: string;
-    attempts: number;
-    correct: number;
-    accuracy: number;
-  }[];
+    tier: MasteryTier;
+    masteryLevel: number | null;
+  }>;
 }
 
+// ---------------------------------------------------------------------------
+// Tier-only tree nodes (AC#20 / INV-05A-12: no mastery_score, no mastery_pct,
+// no percent on any student/guardian surface)
+// ---------------------------------------------------------------------------
+
 export interface SkillNode {
-  id: string;
+  skill: string;
   label: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
+  masteryLevel: number | null;
+  tier: MasteryTier;
+  computedAt: string | null;
 }
 
 export interface DomainNode {
-  id: string;
+  domain: string;
   label: string;
+  masteryLevel: number | null;
+  tier: MasteryTier;
+  computedAt: string | null;
   skills: SkillNode[];
-  avgMastery: number;
-  status: "not_started" | "weak" | "improving" | "proficient";
 }
 
 export interface SectionNode {
-  id: string;
+  section: string;
   label: string;
   domains: DomainNode[];
-  avgMastery: number;
 }
 
 function toLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function mapMasteryStatusFromLevel(
-  masteryLevel: unknown,
-  attempts: number,
-  masteryScore?: number
-): "not_started" | "weak" | "improving" | "proficient" {
-  if (!Number.isFinite(attempts) || attempts < 0.01) {
-    return "not_started";
-  }
+// ---------------------------------------------------------------------------
+// Fetchers — select only columns that exist on the actual tables
+// ---------------------------------------------------------------------------
 
-  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
-  if (masteryLevel === 2) return "improving";
-  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
-
-  const fallbackScore = Number.isFinite(masteryScore as number) ? Number(masteryScore) : 0;
-  if (fallbackScore < 40) return "weak";
-  if (fallbackScore < 70) return "improving";
-  return "proficient";
-}
-
+/**
+ * @spec [Doc 05A §7.4 — student_skill_mastery student-readable grant: section, domain, skill,
+ *   mastery_level, computed_at; event_count_total is service_role only (§7.2)] | @implemented [2026-06-23]
+ * plain English: reads per-skill mastery rows for the tree builder. Query runs as service_role
+ * (getSupabaseAdmin) so event_count_total is accessible; it is used only server-side and never
+ * serialised to the client response. The prior select included `attempts, correct, accuracy` which
+ * do NOT exist on the table (column name was `user_id` → `student_id`), causing every query to
+ * error → return [].
+ */
 export async function fetchSkillMasteryRows(args: {
   userId: string;
   section?: string;
@@ -114,8 +98,10 @@ export async function fetchSkillMasteryRows(args: {
   const supabase = getSupabaseAdmin();
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
-    .eq("user_id", args.userId);
+    .select(
+      "section, domain, skill, mastery_level, event_count_total, computed_at",
+    )
+    .eq("student_id", args.userId);
 
   if (args.section) {
     q = q.eq("section", args.section);
@@ -128,17 +114,64 @@ export async function fetchSkillMasteryRows(args: {
   return data as SkillMasteryRow[];
 }
 
-export async function fetchWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
+export interface DomainMasteryRow {
+  section: string;
+  domain: string;
+  mastery_level: number | null;
+}
+
+/**
+ * @spec [Doc 05B §5.4 — student_domain_mastery (section, domain, mastery_level) student-readable] | @implemented [2026-06-23]
+ * plain English: reads the per-domain canonical rollup level so the domain status badge can
+ * use the same level→status logic as skills (MA-06), instead of a synthesized score bucket.
+ * Selects ONLY student-grantable columns — never the admin-only mastery_score / mastery_pct /
+ * event_count_total (Doc 05B §5.2/§6.5).
+ */
+export async function fetchDomainMasteryRows(args: {
+  userId: string;
+  section?: string;
+}): Promise<DomainMasteryRow[]> {
+  const supabase = getSupabaseAdmin();
+  let q = supabase
+    .from("student_domain_mastery")
+    .select("section, domain, mastery_level")
+    .eq("student_id", args.userId);
+
+  if (args.section) {
+    q = q.eq("section", args.section);
+  }
+
+  const { data, error } = await q;
+  if (error || !data) {
+    return [];
+  }
+  return data as DomainMasteryRow[];
+}
+
+/**
+ * @spec [Doc 05A §7.4 — mastery_score is the canonical DB-computed weakness signal, admin-only;
+ *   consumed server-side by adaptiveSelector for deterministic practice-engine selection]
+ * | @implemented [2026-06-23]
+ * ANTI-LEAK BOUNDARY: mastery_score is DUAL-USE. This fetch reads the ALREADY-COMPUTED
+ * mastery_score column directly (thin-read-surface — no recomputation from raw counts) and keeps
+ * it for server-side consumers (adaptiveSelector, planner). The /weakest route strips it at
+ * serialization — the score never crosses to the client. There is no synthesized `accuracy`
+ * field: the selector consumes the same canonical mastery_score column (parallel-paths rule),
+ * never a second derivation of the same value under a different name.
+ */
+export async function fetchWeakestSkills(
+  query: WeaknessQuery,
+): Promise<SkillWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
   const minAttempts = query.minAttempts || 3;
 
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
-    .eq("user_id", query.userId)
-    .gte("attempts", minAttempts)
-    .order("accuracy", { ascending: true })
+    .select("section, domain, skill, mastery_score, mastery_level")
+    .eq("student_id", query.userId)
+    .gte("event_count_total", minAttempts)
+    .order("mastery_score", { ascending: true })
     .limit(limit);
 
   if (query.section) {
@@ -153,84 +186,74 @@ export async function fetchWeakestSkills(query: WeaknessQuery): Promise<SkillWea
     return [];
   }
 
-  return (data || []) as SkillWeakness[];
+  return (data || []).map((row) => ({
+    section: row.section as string,
+    domain: (row.domain as string | null) ?? null,
+    skill: row.skill as string,
+    mastery_score: Number(row.mastery_score) || 0,
+    mastery_level: row.mastery_level as number | null,
+  }));
 }
 
-export async function fetchWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
-  const supabase = getSupabaseAdmin();
-  const limit = query.limit || 10;
-  const minAttempts = query.minAttempts || 3;
+// ---------------------------------------------------------------------------
+// Tier-only summary builder
+// ---------------------------------------------------------------------------
 
-  const { data, error } = await supabase
-    .from("student_cluster_mastery")
-    .select("structure_cluster_id, attempts, correct, accuracy, mastery_score")
-    .eq("user_id", query.userId)
-    .gte("attempts", minAttempts)
-    .order("accuracy", { ascending: true })
-    .limit(limit);
+/**
+ * @spec [Doc 05B §5.4 — domain mastery_level is the canonical tier source] | @implemented [2026-06-23]
+ * plain English: builds a section→domain tier summary from the domain mastery rows. The
+ * prior version aggregated non-existent `attempts/correct/accuracy` columns from skill rows
+ * (never worked). This version reads the domain's own canonical mastery_level.
+ */
+export function buildMasterySummaryFromRows(
+  domainRows: DomainMasteryRow[],
+): MasterySummary[] {
+  const sectionMap = new Map<
+    string,
+    Array<{ domain: string; tier: MasteryTier; masteryLevel: number | null }>
+  >();
 
-  if (error) {
-    if (query.failOnError) {
-      throw new Error(`weakest_clusters_query_failed: ${error.message}`);
+  for (const row of domainRows) {
+    if (!sectionMap.has(row.section)) {
+      sectionMap.set(row.section, []);
     }
-    return [];
-  }
-
-  return (data || []) as ClusterWeakness[];
-}
-
-export function buildMasterySummaryFromRows(rows: SkillMasteryRow[]): MasterySummary[] {
-  const sectionMap = new Map<string, {
-    totalAttempts: number;
-    totalCorrect: number;
-    domains: Map<string, { attempts: number; correct: number }>;
-  }>();
-
-  for (const row of rows) {
-    const sec = row.section;
-    const dom = row.domain || "unknown";
-
-    if (!sectionMap.has(sec)) {
-      sectionMap.set(sec, { totalAttempts: 0, totalCorrect: 0, domains: new Map() });
-    }
-
-    const entry = sectionMap.get(sec)!;
-    entry.totalAttempts += row.attempts;
-    entry.totalCorrect += row.correct;
-
-    if (!entry.domains.has(dom)) {
-      entry.domains.set(dom, { attempts: 0, correct: 0 });
-    }
-
-    const domEntry = entry.domains.get(dom)!;
-    domEntry.attempts += row.attempts;
-    domEntry.correct += row.correct;
-  }
-
-  const result: MasterySummary[] = [];
-  for (const [sec, entry] of sectionMap) {
-    const domainBreakdown = Array.from(entry.domains.entries()).map(([dom, stats]) => ({
-      domain: dom,
-      attempts: stats.attempts,
-      correct: stats.correct,
-      accuracy: stats.attempts > 0 ? stats.correct / stats.attempts : 0,
-    }));
-
-    result.push({
-      section: sec,
-      totalAttempts: entry.totalAttempts,
-      totalCorrect: entry.totalCorrect,
-      overallAccuracy: entry.totalAttempts > 0 ? entry.totalCorrect / entry.totalAttempts : 0,
-      domainBreakdown,
+    sectionMap.get(row.section)!.push({
+      domain: row.domain,
+      tier: masteryTierFromLevel(row.mastery_level),
+      masteryLevel: row.mastery_level,
     });
   }
 
+  const result: MasterySummary[] = [];
+  for (const [sec, domains] of sectionMap) {
+    result.push({ section: sec, domains });
+  }
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// Tier-only tree builder
+// ---------------------------------------------------------------------------
+
+/**
+ * @spec [Doc 05A §7.4 + Doc 05B §5.4 + Parent §4.7 independent computation + AC#20] | @implemented [2026-06-23]
+ * plain English: builds a section → domain → skill tree with tier-only data. Skill tier from
+ * skill mastery_level; domain tier from the domain's OWN student_domain_mastery.mastery_level
+ * (independent canonical row — NOT a skill-rollup average); section = pure container (no tier,
+ * no band, no percent). No mastery_score, no mastery_pct, no percent on any field.
+ * The prior version computed avgMastery from skill mastery_scores (leaked admin data + used
+ * non-existent columns). This version is tier-only, matching the shared schema.
+ */
 export function buildMasterySkillTreeFromRows(
   rows: SkillMasteryRow[],
-  taxonomy: Record<string, { label: string; domains: Record<string, { label: string; skills: string[] }> }>
+  taxonomy: Record<
+    string,
+    {
+      label: string;
+      domains: Record<string, { label: string; skills: string[] }>;
+    }
+  >,
+  domainRows: DomainMasteryRow[] = [],
 ): SectionNode[] {
   const masteryMap = new Map<string, SkillMasteryRow>();
   for (const row of rows) {
@@ -238,62 +261,48 @@ export function buildMasterySkillTreeFromRows(
     masteryMap.set(key, row);
   }
 
+  const domainMasteryMap = new Map<string, DomainMasteryRow>();
+  for (const dr of domainRows) {
+    domainMasteryMap.set(`${dr.section}:${dr.domain}`, dr);
+  }
+
   const result: SectionNode[] = [];
 
   for (const [sectionId, sectionDef] of Object.entries(taxonomy)) {
     const domains: DomainNode[] = [];
-    let sectionTotalMastery = 0;
-    let sectionDomainCount = 0;
 
     for (const [domainId, domainDef] of Object.entries(sectionDef.domains)) {
       const skills: SkillNode[] = [];
-      let domainTotalMastery = 0;
 
       for (const skillId of domainDef.skills) {
         const key = `${sectionId}:${domainId}:${skillId}`;
         const row = masteryMap.get(key);
 
-        const attempts = row?.attempts ?? 0;
-        const correct = row?.correct ?? 0;
-        const accuracy = row?.accuracy ?? 0;
-        const mastery_score = row?.mastery_score ?? 0;
-
         skills.push({
-          id: skillId,
+          skill: skillId,
           label: toLabel(skillId),
-          attempts,
-          correct,
-          accuracy: Math.round(accuracy * 100),
-          mastery_score: Math.round(mastery_score),
-          status: mapMasteryStatusFromLevel(row?.mastery_level, attempts, mastery_score),
+          masteryLevel: row?.mastery_level ?? null,
+          tier: masteryTierFromLevel(row?.mastery_level ?? null),
+          computedAt: row?.computed_at ?? null,
         });
-
-        domainTotalMastery += mastery_score;
       }
 
-      const avgDomainMastery = domainDef.skills.length > 0
-        ? domainTotalMastery / domainDef.skills.length
-        : 0;
-
+      const domainMastery = domainMasteryMap.get(`${sectionId}:${domainId}`);
+      const domainLevel = domainMastery?.mastery_level ?? null;
       domains.push({
-        id: domainId,
+        domain: domainId,
         label: domainDef.label,
+        masteryLevel: domainLevel,
+        tier: masteryTierFromLevel(domainLevel),
+        computedAt: null,
         skills,
-        avgMastery: Math.round(avgDomainMastery),
-        status: mapMasteryStatusFromLevel(null, skills.reduce((a, s) => a + s.attempts, 0), avgDomainMastery),
       });
-
-      sectionTotalMastery += avgDomainMastery;
-      sectionDomainCount++;
     }
 
     result.push({
-      id: sectionId,
+      section: sectionId,
       label: sectionDef.label,
       domains,
-      avgMastery: sectionDomainCount > 0
-        ? Math.round(sectionTotalMastery / sectionDomainCount)
-        : 0,
     });
   }
 

@@ -3,7 +3,7 @@ import { fetchWeakestSkills } from "./mastery-read";
 import { isValidCanonicalId } from "../../../../shared/question-bank-contract";
 
 export type SectionFilter = "math" | "rw";
-export type SelectionMode = "balanced" | "skill" | "cluster";
+export type SelectionMode = "balanced" | "skill";
 export type DifficultyPolicy = "auto" | "easy" | "medium" | "hard";
 export type DifficultyBucket = "easy" | "medium" | "hard" | "unknown";
 
@@ -16,7 +16,6 @@ export interface SelectNextParams {
     mode?: SelectionMode;
     domain?: string;
     skill?: string;
-    clusterId?: string;
   };
   difficultyPolicy?: DifficultyPolicy;
   excludeCanonicalIds?: string[];
@@ -42,7 +41,7 @@ function simpleHash(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
   return Math.abs(hash);
@@ -54,11 +53,16 @@ function deterministicPick<T>(items: T[], seed: string): T {
   return items[idx];
 }
 
-function weightedDeterministicPick<T extends { accuracy: number }>(items: T[], seed: string): T {
+function weightedDeterministicPick<T extends { mastery_score: number }>(
+  items: T[],
+  seed: string,
+): T {
   if (items.length === 0) throw new Error("Cannot pick from empty array");
   if (items.length === 1) return items[0];
 
-  const weights = items.map((item) => Math.max(0.1, 1 - item.accuracy));
+  // Weakness weight from the canonical DB-computed mastery_score (lower score → weaker → higher
+  // weight). Same computed column the read surface orders by — no parallel derivation.
+  const weights = items.map((item) => Math.max(0.1, 1 - item.mastery_score));
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
   const normalizedWeights = weights.map((w) => w / totalWeight);
   const randomPoint = (simpleHash(seed) % 10000) / 10000;
@@ -72,7 +76,11 @@ function weightedDeterministicPick<T extends { accuracy: number }>(items: T[], s
   return items[items.length - 1];
 }
 
-function getDifficultyWeights(baseline: DifficultyBucket): { easy: number; medium: number; hard: number } {
+function getDifficultyWeights(baseline: DifficultyBucket): {
+  easy: number;
+  medium: number;
+  hard: number;
+} {
   switch (baseline) {
     case "easy":
       return { easy: 0.75, medium: 0.25, hard: 0 };
@@ -85,7 +93,10 @@ function getDifficultyWeights(baseline: DifficultyBucket): { easy: number; mediu
   }
 }
 
-function pickDifficultyWithWeights(baseline: DifficultyBucket, seed: string): DifficultyBucket {
+function pickDifficultyWithWeights(
+  baseline: DifficultyBucket,
+  seed: string,
+): DifficultyBucket {
   const weights = getDifficultyWeights(baseline);
   const randomPoint = (simpleHash(seed + ":difficulty") % 10000) / 10000;
 
@@ -99,17 +110,13 @@ function pickDifficultyWithWeights(baseline: DifficultyBucket, seed: string): Di
   return "hard";
 }
 
-function normalizeDifficulty(difficulty: string | null | undefined): DifficultyBucket {
-  if (!difficulty) return "medium";
-  const lower = difficulty.toLowerCase();
-  if (lower === "easy") return "easy";
-  if (lower === "hard") return "hard";
-  return "medium";
-}
-
-async function computeBaselineDifficulty(userId: string, section: SectionFilter): Promise<DifficultyBucket> {
+async function computeBaselineDifficulty(
+  userId: string,
+  section: SectionFilter,
+): Promise<DifficultyBucket> {
   const supabase = getSupabaseAdmin();
-  const sectionFilter = section === "math" ? "math" : ["reading", "writing", "rw"];
+  const sectionFilter =
+    section === "math" ? "math" : ["reading", "writing", "rw"];
 
   let query: any = supabase
     .from("student_question_attempts")
@@ -122,7 +129,9 @@ async function computeBaselineDifficulty(userId: string, section: SectionFilter)
     query = query.ilike("section", `%${sectionFilter}%`);
   }
 
-  const { data, error } = await query.order("occurred_at", { ascending: false }).limit(20);
+  const { data, error } = await query
+    .order("occurred_at", { ascending: false })
+    .limit(20);
 
   if (error || !data || data.length < 5) return "medium";
 
@@ -132,12 +141,17 @@ async function computeBaselineDifficulty(userId: string, section: SectionFilter)
   return "hard";
 }
 
-async function getRecentlyAttemptedCanonicalIds(userId: string, section: SectionFilter, dayLimit = 14): Promise<string[]> {
+async function getRecentlyAttemptedCanonicalIds(
+  userId: string,
+  section: SectionFilter,
+  dayLimit = 14,
+): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - dayLimit);
 
-  const sectionFilter = section === "math" ? "math" : ["reading", "writing", "rw"];
+  const sectionFilter =
+    section === "math" ? "math" : ["reading", "writing", "rw"];
 
   let query: any = supabase
     .from("student_question_attempts")
@@ -154,7 +168,11 @@ async function getRecentlyAttemptedCanonicalIds(userId: string, section: Section
   const { data, error } = await query;
   if (error || !data) return [];
 
-  return data.map((r: any) => r.question_canonical_id).filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+  return data
+    .map((r: any) => r.question_canonical_id)
+    .filter(
+      (id: unknown): id is string => typeof id === "string" && id.length > 0,
+    );
 }
 
 interface CandidateQuery {
@@ -169,12 +187,18 @@ interface CandidateQuery {
 function parseOptions(raw: unknown): Array<{ key: string; text: string }> {
   if (!Array.isArray(raw)) return [];
   return raw.filter((item) => {
-    return item && typeof item === "object" && typeof (item as any).key === "string" && typeof (item as any).text === "string";
+    return (
+      item &&
+      typeof item === "object" &&
+      typeof (item as any).key === "string" &&
+      typeof (item as any).text === "string"
+    );
   }) as Array<{ key: string; text: string }>;
 }
 
 function getCanonicalIdOrNull(q: any): string | null {
-  const value = typeof q?.canonical_id === 'string' ? q.canonical_id.trim() : '';
+  const value =
+    typeof q?.canonical_id === "string" ? q.canonical_id.trim() : "";
   if (!value || !isValidCanonicalId(value)) {
     return null;
   }
@@ -186,7 +210,8 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
 
   let query: any = supabase
     .from("questions")
-    .select(`
+    .select(
+      `
       id,
       canonical_id,
       stem,
@@ -205,7 +230,8 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
       source_type,
       tags,
       diagram_present
-    `)
+    `,
+    )
     .eq("question_type", "multiple_choice")
     .limit(limit * 2);
 
@@ -245,7 +271,9 @@ async function queryCandidateQuestions(params: CandidateQuery): Promise<any[]> {
     .slice(0, limit);
 }
 
-export async function selectNextQuestionForStudent(params: SelectNextParams): Promise<SelectNextResult> {
+export async function selectNextQuestionForStudent(
+  params: SelectNextParams,
+): Promise<SelectNextResult> {
   const {
     userId,
     section,
@@ -259,8 +287,13 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
   const mode: SelectionMode = target?.mode || "balanced";
   const filterPath: string[] = [];
 
-  const recentlyAttempted = await getRecentlyAttemptedCanonicalIds(userId, section);
-  const allExcluded = [...new Set([...excludeCanonicalIds, ...recentlyAttempted])];
+  const recentlyAttempted = await getRecentlyAttemptedCanonicalIds(
+    userId,
+    section,
+  );
+  const allExcluded = [
+    ...new Set([...excludeCanonicalIds, ...recentlyAttempted]),
+  ];
 
   const excludeHash = simpleHash(allExcluded.sort().join(","));
   const determineSeed = `${userId}:${sessionId || "nosession"}:${section}:${attemptIndex}:${excludeHash}`;
@@ -270,8 +303,13 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
 
   if (difficultyPolicy === "auto") {
     baselineDifficulty = await computeBaselineDifficulty(userId, section);
-    targetDifficulty = pickDifficultyWithWeights(baselineDifficulty, determineSeed);
-    filterPath.push(`baseline=${baselineDifficulty},picked=${targetDifficulty}`);
+    targetDifficulty = pickDifficultyWithWeights(
+      baselineDifficulty,
+      determineSeed,
+    );
+    filterPath.push(
+      `baseline=${baselineDifficulty},picked=${targetDifficulty}`,
+    );
   } else {
     baselineDifficulty = difficultyPolicy as DifficultyBucket;
     targetDifficulty = difficultyPolicy as DifficultyBucket;
@@ -286,7 +324,11 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
 
   if ((mode === "skill" || mode === "balanced") && !targetSkill) {
     const sectionMap = section === "math" ? "math" : "reading";
-    let weakSkills: Array<{ domain: string | null; skill: string; accuracy: number }> = [];
+    let weakSkills: Array<{
+      domain: string | null;
+      skill: string;
+      mastery_score: number;
+    }> = [];
     try {
       weakSkills = await fetchWeakestSkills({
         userId,
@@ -301,20 +343,50 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
     }
 
     if (weakSkills.length > 0) {
-      const picked = weightedDeterministicPick(weakSkills, determineSeed + ":skill");
+      const picked = weightedDeterministicPick(
+        weakSkills,
+        determineSeed + ":skill",
+      );
       targetDomain = picked.domain || undefined;
       targetSkill = picked.skill;
       weaknessKey = `skill:${targetDomain}/${targetSkill}`;
       pickedFrom = "skill";
-      filterPath.push(`weighted-skill=${targetDomain}/${targetSkill}(acc=${picked.accuracy.toFixed(2)})`);
+      filterPath.push(
+        `weighted-skill=${targetDomain}/${targetSkill}(score=${picked.mastery_score.toFixed(2)})`,
+      );
     }
   }
 
-  const relaxationSteps: Array<{ difficulty?: DifficultyBucket; skill?: string; domain?: string; label: string }> = [
-    { difficulty: targetDifficulty, skill: targetSkill, domain: targetDomain, label: "full-filter" },
-    { difficulty: "unknown", skill: targetSkill, domain: targetDomain, label: "relax-difficulty" },
-    { difficulty: "unknown", skill: undefined, domain: targetDomain, label: "drop-skill" },
-    { difficulty: "unknown", skill: undefined, domain: undefined, label: "section-only" },
+  const relaxationSteps: Array<{
+    difficulty?: DifficultyBucket;
+    skill?: string;
+    domain?: string;
+    label: string;
+  }> = [
+    {
+      difficulty: targetDifficulty,
+      skill: targetSkill,
+      domain: targetDomain,
+      label: "full-filter",
+    },
+    {
+      difficulty: "unknown",
+      skill: targetSkill,
+      domain: targetDomain,
+      label: "relax-difficulty",
+    },
+    {
+      difficulty: "unknown",
+      skill: undefined,
+      domain: targetDomain,
+      label: "drop-skill",
+    },
+    {
+      difficulty: "unknown",
+      skill: undefined,
+      domain: undefined,
+      label: "section-only",
+    },
   ];
 
   for (let stepIndex = 0; stepIndex < relaxationSteps.length; stepIndex++) {
@@ -329,7 +401,10 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
     });
 
     if (candidates.length > 0) {
-      const question = deterministicPick(candidates, determineSeed + ":question:" + stepIndex);
+      const question = deterministicPick(
+        candidates,
+        determineSeed + ":question:" + stepIndex,
+      );
       filterPath.push(`found-at=${step.label}(${candidates.length})`);
 
       return {
@@ -342,7 +417,8 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
           relaxStepUsed: stepIndex,
           filterPath,
           candidateCount: candidates.length,
-          sourceWarnings: sourceWarnings.length > 0 ? sourceWarnings : undefined,
+          sourceWarnings:
+            sourceWarnings.length > 0 ? sourceWarnings : undefined,
         },
       };
     }
@@ -355,7 +431,10 @@ export async function selectNextQuestionForStudent(params: SelectNextParams): Pr
   });
 
   if (lastResort.length > 0) {
-    const question = deterministicPick(lastResort, determineSeed + ":lastresort");
+    const question = deterministicPick(
+      lastResort,
+      determineSeed + ":lastresort",
+    );
     filterPath.push("last-resort-no-exclusions");
 
     return {

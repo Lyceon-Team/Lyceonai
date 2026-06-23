@@ -168,7 +168,7 @@ Execution view (workstreams, sequencing, exit criteria): `closure-plan.md` in th
 | GAP-SP-17 | `questions.skill_codes` is `text[]` but mastery is single-skill (`apply_mastery_event(p_skill text)`, PK `(…,skill)`, no fan-out). Pin the array→single-canonical-skill denormalization rule for mastery (proposed: `skill_codes[1]` primary)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | WS-2/3 Phase-0 HALT-6/R1 (2026-06-10)                         | OPEN                                                         |
 | GAP-SP-18 | Doc 05 Parent §10.1 line 529 mislabels `ROUND_MASTERY_SCORE_DECIMALS=2` ("for mastery_pct"); the §12 fixtures (mastery_score @4dp, mastery_pct @2dp) + Doc 05A §6 require SCORE_DECIMALS=4 + PCT_DECIMALS=2. Fix the Parent §10.1 row                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | B-WS3-1 (2026-06-10)                                          | OPEN                                                         |
 | GAP-SP-25 | Doc 05B §5.3/§6.6 name the guardian-access tables `guardian_student_links(guardian_id, linked_student_id, link_active)` + `student_entitlements(student_id, active)`; the genesis identity model (Doc 01 V8) names `guardian_links(guardian_profile_id, student_profile_id, status)` + `entitlements(profile_id, status)`. **Owner ruling 2026-06-14: guardian = GRACE-INCLUSIVE exact view-only mirror of the student** → all 6 guardian-mirror RLS policies (05B domain mastery + section/domain/overall KPI; 05C section projections + snapshots) consume ONE canonical `public.entitlement_active(uuid)` fn (`status IN ('active','past_due')`, matching `idx_entitlements_active`), so the guardian gate can't drift from the student's. **Literal-vs-intent reconciliation:** Doc 05B §5.3's literal `active = true` is the _entitled_ (grace-inclusive) intent — reconcile the §5.3/§6.6 table/column names + the active-vs-entitled wording owner-side (`docs/Spec` read-only). Follow-up: the route-layer student premium gate (kpi-access) should consume the same definition to fully close TS↔SQL drift. (KPI UNION stale-source = SP-22 class; test branch → WS-4.) | 05B (2026-06-13); grace-inclusive ruling (2026-06-14)         | OPEN — code matches ruling; spec wording stale               |
-| GAP-SP-24 | **OWNER DECISION** — `student_cluster_mastery`/`refresh_cluster_mastery` (named in the B-WS3-1 contract C1 + present in Doc 02B's §8 schema map) have **NO formula/refresh spec** anywhere in the 05 family (absent from Doc 05 Parent / 05B / 05C). The 05B/05C wave does NOT build cluster mastery (nothing to build from). Decide: (a) real future feature → needs a spec home (a Doc 05x cluster contract) before any build; or (b) vestige → strike the C1 cluster line + the 02B schema-map entry. Until ruled, it is a tracked decision item, NOT a silent speculative shell. AM-1 (cluster deferral) remains CARRIED                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 05B/05C wave Phase-0 (2026-06-13)                             | OPEN — owner decision                                        |
+| GAP-SP-24 | **OWNER RULING (2026-06-23): DEPRECATED, POST-LAUNCH REVISIT.** `student_cluster_mastery`/`refresh_cluster_mastery` (named in B-WS3-1 C1 + Doc 02B §8) have NO formula/refresh spec in the 05 family. **Decision: (b) vestige — clusters deprecated pre-launch.** DB table `student_cluster_mastery` RETAINED (dormant; no migration, no drop). ALL app-layer cluster code REMOVED (PR #418): `ClusterMasteryRow`, `ClusterWeakness`, `fetchWeakestClusters`, `getWeakestClusters`, `/clusters` weakness route, `"cluster"` selection mode, `clusterId` selector param, all cluster test fixtures/mocks. Weakness/mastery is SKILLS + DOMAINS only. `structure_cluster_id` on the `questions` table retained as static question metadata (not cluster mastery system). **Spec-side:** C1 cluster line + Doc 02B §8 schema-map entry should be struck (owner-side, `docs/Spec` read-only). Revisit trigger: post-launch if cluster-grain weakness analysis proves valuable — requires a Doc 05x cluster contract before any build | 05B/05C wave Phase-0 (2026-06-13); owner ruling (2026-06-23) | CLOSED — deprecated; table dormant; code removed (PR #418)   |
 | GAP-SP-22 | Doc 05A §6.2's `canonical_mastery_events` example reads `practice_attempts_v0` (a Wave-1 fossil per Doc 02B §8). The canonical practice answer table is `practice_session_items` (Doc 02B §8 writer map / frozen seam §2). Lane C's production `canonical_mastery_events` reads `practice_session_items` (`status='answered'`); the §6.2 structural shape (UNION of uniform event rows) is honored. Reconcile the §6.2 example table name owner-side (`docs/Spec` read-only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Lane C (2026-06-13)                                           | OPEN — code correct; spec example stale                      |
 | GAP-SP-23 | Doc 05A §4.3 idempotency-lookup pseudocode selects `skill_mastery_row_id` from `mastery_event_audit_log`, but the table's PK column is `audit_row_id` (no `skill_mastery_row_id` column exists). Lane C's `apply_mastery_event` correctly selects `audit_row_id` for the existence check. Reconcile the §4.3 pseudocode column name owner-side                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Lane C spec-auditor pass (2026-06-13)                         | OPEN — code correct; spec pseudocode stale                   |
 | GAP-SP-21 | `question_id` TYPE mismatch across the WS-2↔WS-3 seam: genesis `public.questions.id` is **TEXT** (`^SAT(M\|RW)[12][A-Z0-9]{6}$`), but the frozen seam §2 R1, Doc 05A `apply_mastery_event(p_question_id uuid)`, and B-WS3-1 `mastery_event_audit_log.question_id uuid` typed it **uuid**. **Codex F-002 RULING: TEXT is authoritative** (the canonical SAT id, FK to `questions.id`); the spec's `uuid` typing is stale. **Done in code:** `mastery_event_audit_log.question_id` corrected `uuid → text`; parity-stub `canonical_mastery_events.question_id → text`; B-WS2-1 answer tables already `text`. `event_id` stays `uuid` (idempotency key, unaffected). **OWNER-side (spec amendment):** amend Doc 05A `apply_mastery_event(p_question_id text)` + `canonical_mastery_events` to TEXT. Must close before Lane C wires the RPC                                                                                                                                                                                                                                                                                                                                          | B-WS2-1 / Codex F-002 (2026-06-10)                            | OPEN — code fixed; Doc 05A amendment + Lane-C wiring pending |
@@ -210,3 +210,84 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   - `tests/ci/tutor-interactions.no-verbatim.contract.test.ts` asserted `20260606_tutor_interactions_drop_verbatim.sql` — a migration **never applied** (capture: prod still carries the verbatim `message`/`answer` columns the test claims were dropped). The guard was validating repo-_intent_ that never reached production. **Corrected in D4**: re-point to the tracked forward drops migration (full-table `DROP TABLE public.tutor_interactions`).
   - `tests/ci/rate-limit-sql.contract.test.ts` asserted `20260408_rate_limit_ledger_truth.sql` — its objects (`usage_rate_limit_ledger`, `check_and_reserve_*`, `finalize_tutor_usage`) reached prod via an **untracked hand-run** (present in capture B1) but were sourced from outside the tracked pipeline. **Corrected in D5**: re-point to baseline `0000` (deployed truth).
     Both now assert against the tracked pipeline (`0000` + forward migrations), never archived legacy files. This is the OP-05 provenance failure reproduced at the CI layer — recorded as a finding, not merely a task.
+
+---
+
+## Reconciliation addendum — genesis re-cut resume (2026-06-22)
+
+> Truth-up to the **current** post-genesis surface. Where a per-row **Status** token above
+> predates this pass, the entry here is **authoritative** for that gap as of 2026-06-22
+> (immutable-history rule: staleness noted here, mega-cells not rewritten). Each line cites
+> live file:line evidence (front-of-wave audit `f1f6392`; progress rewire PR #415 → `cleanup`;
+> auth+deletion arc #406–#411 → main).
+
+### A. Front-of-wave CODE audit (`f1f6392`; full record `docs/SpecAudit/40-ws2-ws3/FRONT-OF-WAVE-CODE-AUDIT.md`)
+- **GAP-MA-06 — OPEN → PARTIAL.** Live mastery math is now DB-delegated
+  (`apply_learning_event_to_mastery` reads `mastery_constants`; projections via
+  `read_projection_constants`), and the old `canonical-runtime-views.ts` literal site was
+  removed by the WS-3 progress rewire (#415). **Residual (the C1 close target):** level-boundary
+  literals `< 40` / `< 70` hardcoded as fallbacks at `apps/api/src/routes/mastery.ts:122-123`
+  and `apps/api/src/services/mastery-read.ts:105-106` (the five `mastery_constants` level
+  boundaries; `mastery-read` feeds `/mastery/skills` + `guardian-routes.ts:582`); plus the
+  dead-but-divergent `apps/api/src/services/mastery-constants.ts` literal block and the
+  config-class `apps/api/src/services/calendar-planner.ts:103-109` scoring weights/horizons.
+  The registry row's stale refs (`42d vs 21d half-life`, `calendar.ts`) are superseded by these.
+- **GAP-EX-05 — OPEN (confirmed).** Two live disclosure paths: mid-exam `module/submit`
+  returns `result.nextModule.difficultyBucket` unstripped (`server/routes/full-length-exam-routes.ts:549`;
+  set `apps/api/src/services/fullLengthExam.ts:2783`, returned `:2816`) — reaches the client
+  **before Module 2**; review `:739` carries `formattedModules[].difficultyBucket`
+  (`fullLengthExam.ts:3548`); UI badge `client/src/components/full-length-exam/FullLengthReviewView.tsx:125`.
+- **GAP-TU-04 — OPEN (confirmed).** Leak filter `hasDirectAnswerLeak`
+  (`server/routes/tutor-runtime.ts:528-541`) gated to `source_surface === "practice"` + `isPreSubmit`
+  (`:1365-1378`); **review pre-submit unfiltered**; replay `GET /conversations/:id` (`:878`) returns
+  `message` verbatim (`:915`). C2 close = ONE chokepoint across all pre-submit surfaces.
+- **GAP-ID-09 — OPEN (confirmed).** Spec'd `EntitlementService.canAccessFeature` does not exist
+  (0 matches); full-length only **3/11** routes gated (ungated incl. `current`/`start`/`answer`/
+  `module/submit`/`review`); `apps/api/src/routes/weakness.ts` `GET /skills` (`:8`)
+  ungated (note: `/clusters` route removed — SP-24 cluster deprecation, PR #418). C3 (app-layer, no DDL).
+- **GAP-ID-10 — OPEN (confirmed).** `startOrReplaySession` (`server/routes/practice-canonical.ts:1175`)
+  materializes item[0] `served` (`:1488`) with no `reservePracticeQuestionQuota` in the create path;
+  reservation fires only on 2nd+ promotion (`:1874`). First item of every session bypasses quota. C3.
+
+### B. WS-3 progress lead — `/api/progress/*` (#415 → `cleanup`, merged 2026-06-22)
+- The live `/api/progress/{kpis,projection}` **500s** were post-teardown CODE debris (reads on
+  retired old-gen columns). Rewired to genesis Doc-05 (`student_overall_kpi` event vocabulary;
+  projection breakdown dropped per §10.5). Verified: tsc 0; 34/34 affected tests; live selects 200-capable.
+- Substrate note (ID-02 half): `student_kpi_rollups_current` is an **unpopulated no-writer shell**
+  (RLS-on, 0 policies, deny-all) — not read by any runtime surface after the rewire.
+
+### C. Auth + deletion arc — ledger + governed-set reconcile (2026-06-22)
+- **Migration ledger reconciled 3 → 15** (`WS-1-CLOSURE.md §4`, CTO connector write, verified live).
+  This **closes the "ledger migration-repair pending / self-healing on next db push" caveat** in
+  HY-13's status; `account_deletion_lifecycle` is governed-set **ledger row 15**, not `migrations-pending`.
+- **GAP-HY-13** — BUILT + PROD-RECONCILED (prod ≡ governed ≡ snapshot, #411 → main); remaining =
+  the §40.3/§40.4 soft-lock+recovery increment + owner **ACTIVATION** (flag flip). Ledger caveat now DONE.
+- **GAP-HY-15** — PARTIAL: core `deidentify_user` APPLIED + governed (ledger row 15); feature-table
+  cascade still OPEN (Doc 03A V2 retention / tracked as TU-03).
+- **GAP-HY-16** — PARTIAL: backend soft-lock + bypass fix + UI + flag-on e2e + curated error mapper
+  SHIPPED (#408/#410 → main); remaining = §40.3 **spec edit** (owner, READ-ONLY corpus) + flag activation.
+- **GAP-HY-14** — RESOLVED (uniform 7-day per counsel; under-13 = standard flow, no new code);
+  remaining = the §40.6 **spec edit** (owner-applied to READ-ONLY `docs/Spec`).
+- **GAP-HY-12** — OPEN: raw-string-display cleanup on 8 non-auth surfaces; **`SubscriptionPaywall.tsx:147` first**.
+
+### D. MA-07 read-layer rebuild — column-drift class + dead-code close-out (2026-06-23)
+
+- **GAP-MA-12 (NEW) — CLOSED.** GENESIS-COLUMN-DRIFT CLASS: app-layer queries on
+  `student_skill_mastery` selected non-existent columns (`user_id`, `accuracy`, `attempts`,
+  `correct`, `last_attempt_at`, `updated_at`) and filtered on `user_id` instead of `student_id`,
+  causing every query to error → return `[]` → starve all consumers (RAG weak/strong, calendar
+  planner, reprioritization). **Root cause:** column names drifted between the old-gen and
+  genesis schemas; app code was never updated. Four broken queries fixed across three files:
+  `apps/api/src/lib/rag-service.ts:537`, `apps/api/src/routes/calendar.ts` (`loadSkillSignals`),
+  `apps/api/src/services/calendar-planner-reprioritization.ts` (`loadSkillSignals`),
+  `apps/api/src/services/mastery-derived.ts` (`buildCompetencyMapFromMasteryRows`). Dead
+  synthesized correct/incorrect counts dropped; RAG classifier rewritten to consume
+  `mastery_score` directly via exact `2·round(score·total)` vs `total` comparison (behavior-preserving,
+  equivalence proven in 1,313-combo grid test). Anti-leak chokepoint hardened: `studentProfile`
+  (carrying `mastery_score`) stripped at `rag-v2.ts:55` serialization boundary. Dead
+  `getDerivedWeaknessSignals` + `mapMasteryStatusFromLevel` deleted. Severity HIGH (same class as
+  MA-06 drift). PRs #419 + step-6 close-out → `cleanup`.
+- **GAP-HY-17 (NEW) — OPEN.** BASELINE-TEST-DEBT: **36 pre-existing test failures** across 15
+  test files as of 2026-06-23 (pinned by Codex audit of #419). These are NOT regressions from
+  the MA-07 work — they predate it. The 36 are the honest baseline; any work that increases the
+  count is a regression. Tracked for systematic triage in a future wave. Severity LOW.
