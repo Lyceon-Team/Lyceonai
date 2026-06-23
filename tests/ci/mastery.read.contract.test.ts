@@ -1,91 +1,131 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
-import request from 'supertest';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
 
 const fetchSkillMasteryRows = vi.fn();
+const fetchDomainMasteryRows = vi.fn();
 const buildMasterySummaryFromRows = vi.fn();
 const buildMasterySkillTreeFromRows = vi.fn();
 const fetchWeakestSkills = vi.fn();
+const mapMasteryStatusFromLevel = vi.fn();
 
-vi.mock('../../apps/api/src/services/mastery-read', () => ({
+vi.mock("../../apps/api/src/services/mastery-read", () => ({
   fetchSkillMasteryRows,
+  fetchDomainMasteryRows,
   buildMasterySummaryFromRows,
   buildMasterySkillTreeFromRows,
   fetchWeakestSkills,
+  mapMasteryStatusFromLevel,
 }));
 
-vi.mock('../../server/services/kpi-access', () => ({
+vi.mock("../../server/services/kpi-access", () => ({
   resolvePaidKpiAccessForUser: vi.fn(async () => ({
     hasPaidAccess: true,
-    accountId: 'acc-paid',
-    plan: 'paid',
-    status: 'active',
+    accountId: "acc-paid",
+    plan: "paid",
+    status: "active",
     currentPeriodEnd: null,
-    reason: 'Active paid entitlement.',
+    reason: "Active paid entitlement.",
   })),
 }));
 
 async function buildApp() {
-  const { masteryRouter } = await import('../../apps/api/src/routes/mastery');
+  const { masteryRouter } = await import("../../apps/api/src/routes/mastery");
   const app = express();
   app.use((req: any, _res, next) => {
-    req.user = { id: 'student-1', role: 'student', isGuardian: false, isAdmin: false };
-    req.requestId ??= 'req-mastery-read';
+    req.user = {
+      id: "student-1",
+      role: "student",
+      isGuardian: false,
+      isAdmin: false,
+    };
+    req.requestId ??= "req-mastery-read";
     next();
   });
-  app.use('/api/me/mastery', masteryRouter);
+  app.use("/api/me/mastery", masteryRouter);
   return app;
 }
 
-describe('Mastery Read Contract', () => {
+describe("Mastery Read Contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchSkillMasteryRows.mockResolvedValue([
-      { section: 'math', domain: 'algebra', skill: 'linear_equations', attempts: 4, correct: 2, accuracy: 0.5, mastery_score: 50 },
+      {
+        section: "math",
+        domain: "algebra",
+        skill: "linear_equations",
+        attempts: 4,
+        correct: 2,
+        accuracy: 0.5,
+        mastery_score: 50,
+        mastery_level: 2,
+      },
     ]);
+    fetchDomainMasteryRows.mockResolvedValue([
+      {
+        section: "math",
+        domain: "algebra",
+        mastery_level: 2,
+        event_count_total: 4,
+      },
+    ]);
+    mapMasteryStatusFromLevel.mockReturnValue("improving");
     buildMasterySummaryFromRows.mockReturnValue([
       {
-        section: 'math',
+        section: "math",
         totalAttempts: 4,
         totalCorrect: 2,
         overallAccuracy: 0.5,
-        domainBreakdown: [{ domain: 'algebra', attempts: 4, correct: 2, accuracy: 0.5 }],
+        domainBreakdown: [
+          { domain: "algebra", attempts: 4, correct: 2, accuracy: 0.5 },
+        ],
       },
     ]);
     buildMasterySkillTreeFromRows.mockReturnValue([
-      { id: 'math', label: 'Math', domains: [], avgMastery: 50 },
+      { id: "math", label: "Math", domains: [], avgMastery: 50 },
     ]);
     fetchWeakestSkills.mockResolvedValue([
-      { section: 'math', domain: 'algebra', skill: 'linear_equations', attempts: 4, correct: 2, accuracy: 0.5, mastery_score: 50 },
+      {
+        section: "math",
+        domain: "algebra",
+        skill: "linear_equations",
+        attempts: 4,
+        correct: 2,
+        accuracy: 0.5,
+        mastery_score: 50,
+      },
     ]);
   });
 
-  it('uses canonical mastery read layer for summary', async () => {
+  it("uses canonical mastery read layer for summary", async () => {
     const app = await buildApp();
-    const res = await request(app).get('/api/me/mastery/summary');
+    const res = await request(app).get("/api/me/mastery/summary");
 
     expect(res.status).toBe(200);
     expect(res.body.sections).toHaveLength(1);
-    expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: 'student-1', section: undefined });
+    expect(fetchSkillMasteryRows).toHaveBeenCalledWith({
+      userId: "student-1",
+      section: undefined,
+    });
     expect(buildMasterySummaryFromRows).toHaveBeenCalled();
   }, 15000);
 
-  it('uses canonical mastery read layer for skill tree', async () => {
+  it("uses canonical mastery read layer for skill tree", async () => {
     const app = await buildApp();
-    const res = await request(app).get('/api/me/mastery/skills');
+    const res = await request(app).get("/api/me/mastery/skills");
 
     expect(res.status).toBe(200);
-    expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: 'student-1' });
+    expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: "student-1" });
     expect(buildMasterySkillTreeFromRows).toHaveBeenCalled();
   }, 15000);
 
-  it('uses canonical mastery read layer for weakest skills', async () => {
+  it("uses canonical mastery read layer for weakest skills", async () => {
     const app = await buildApp();
-    const res = await request(app).get('/api/me/mastery/weakest');
+    const res = await request(app).get("/api/me/mastery/weakest");
 
     expect(res.status).toBe(200);
     expect(fetchWeakestSkills).toHaveBeenCalledWith({
-      userId: 'student-1',
+      userId: "student-1",
       limit: 5,
       minAttempts: 2,
     });

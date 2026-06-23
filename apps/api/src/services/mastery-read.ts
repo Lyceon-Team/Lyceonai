@@ -88,10 +88,16 @@ function toLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * @spec [Doc 05B level boundaries via mastery_constants; Doc 07C status vocabulary] | @implemented [2026-06-23]
+ * plain English: maps the canonical mastery_level (0-4, DB-computed from the
+ * mastery_constants level boundaries) to a UI status. mastery_score is NOT consulted —
+ * the prior 40/70 score fallback (divergent from the level grouping) is removed (MA-06).
+ * Returns not_started when there is no canonical level yet.
+ */
 export function mapMasteryStatusFromLevel(
   masteryLevel: unknown,
   attempts: number,
-  masteryScore?: number
 ): "not_started" | "weak" | "improving" | "proficient" {
   if (!Number.isFinite(attempts) || attempts < 0.01) {
     return "not_started";
@@ -101,10 +107,7 @@ export function mapMasteryStatusFromLevel(
   if (masteryLevel === 2) return "improving";
   if (masteryLevel === 1 || masteryLevel === 0) return "weak";
 
-  const fallbackScore = Number.isFinite(masteryScore as number) ? Number(masteryScore) : 0;
-  if (fallbackScore < 40) return "weak";
-  if (fallbackScore < 70) return "improving";
-  return "proficient";
+  return "not_started";
 }
 
 export async function fetchSkillMasteryRows(args: {
@@ -114,7 +117,9 @@ export async function fetchSkillMasteryRows(args: {
   const supabase = getSupabaseAdmin();
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
+    .select(
+      "section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level",
+    )
     .eq("user_id", args.userId);
 
   if (args.section) {
@@ -128,14 +133,51 @@ export async function fetchSkillMasteryRows(args: {
   return data as SkillMasteryRow[];
 }
 
-export async function fetchWeakestSkills(query: WeaknessQuery): Promise<SkillWeakness[]> {
+export interface DomainMasteryRow {
+  section: string;
+  domain: string;
+  mastery_level: number | null;
+  event_count_total: number;
+}
+
+/**
+ * @spec [Doc 05B §5/§6.5 — student_domain_mastery.mastery_level student-readable] | @implemented [2026-06-23]
+ * plain English: reads the per-domain canonical rollup level so the domain status badge can
+ * use the same level→status logic as skills (MA-06), instead of a synthesized score bucket.
+ */
+export async function fetchDomainMasteryRows(args: {
+  userId: string;
+  section?: string;
+}): Promise<DomainMasteryRow[]> {
+  const supabase = getSupabaseAdmin();
+  let q = supabase
+    .from("student_domain_mastery")
+    .select("section, domain, mastery_level, event_count_total")
+    .eq("student_id", args.userId);
+
+  if (args.section) {
+    q = q.eq("section", args.section);
+  }
+
+  const { data, error } = await q;
+  if (error || !data) {
+    return [];
+  }
+  return data as DomainMasteryRow[];
+}
+
+export async function fetchWeakestSkills(
+  query: WeaknessQuery,
+): Promise<SkillWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
   const minAttempts = query.minAttempts || 3;
 
   let q = supabase
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level")
+    .select(
+      "section, domain, skill, attempts, correct, accuracy, mastery_score, mastery_level",
+    )
     .eq("user_id", query.userId)
     .gte("attempts", minAttempts)
     .order("accuracy", { ascending: true })
@@ -156,7 +198,9 @@ export async function fetchWeakestSkills(query: WeaknessQuery): Promise<SkillWea
   return (data || []) as SkillWeakness[];
 }
 
-export async function fetchWeakestClusters(query: WeaknessQuery): Promise<ClusterWeakness[]> {
+export async function fetchWeakestClusters(
+  query: WeaknessQuery,
+): Promise<ClusterWeakness[]> {
   const supabase = getSupabaseAdmin();
   const limit = query.limit || 10;
   const minAttempts = query.minAttempts || 3;
@@ -179,19 +223,28 @@ export async function fetchWeakestClusters(query: WeaknessQuery): Promise<Cluste
   return (data || []) as ClusterWeakness[];
 }
 
-export function buildMasterySummaryFromRows(rows: SkillMasteryRow[]): MasterySummary[] {
-  const sectionMap = new Map<string, {
-    totalAttempts: number;
-    totalCorrect: number;
-    domains: Map<string, { attempts: number; correct: number }>;
-  }>();
+export function buildMasterySummaryFromRows(
+  rows: SkillMasteryRow[],
+): MasterySummary[] {
+  const sectionMap = new Map<
+    string,
+    {
+      totalAttempts: number;
+      totalCorrect: number;
+      domains: Map<string, { attempts: number; correct: number }>;
+    }
+  >();
 
   for (const row of rows) {
     const sec = row.section;
     const dom = row.domain || "unknown";
 
     if (!sectionMap.has(sec)) {
-      sectionMap.set(sec, { totalAttempts: 0, totalCorrect: 0, domains: new Map() });
+      sectionMap.set(sec, {
+        totalAttempts: 0,
+        totalCorrect: 0,
+        domains: new Map(),
+      });
     }
 
     const entry = sectionMap.get(sec)!;
@@ -209,18 +262,21 @@ export function buildMasterySummaryFromRows(rows: SkillMasteryRow[]): MasterySum
 
   const result: MasterySummary[] = [];
   for (const [sec, entry] of sectionMap) {
-    const domainBreakdown = Array.from(entry.domains.entries()).map(([dom, stats]) => ({
-      domain: dom,
-      attempts: stats.attempts,
-      correct: stats.correct,
-      accuracy: stats.attempts > 0 ? stats.correct / stats.attempts : 0,
-    }));
+    const domainBreakdown = Array.from(entry.domains.entries()).map(
+      ([dom, stats]) => ({
+        domain: dom,
+        attempts: stats.attempts,
+        correct: stats.correct,
+        accuracy: stats.attempts > 0 ? stats.correct / stats.attempts : 0,
+      }),
+    );
 
     result.push({
       section: sec,
       totalAttempts: entry.totalAttempts,
       totalCorrect: entry.totalCorrect,
-      overallAccuracy: entry.totalAttempts > 0 ? entry.totalCorrect / entry.totalAttempts : 0,
+      overallAccuracy:
+        entry.totalAttempts > 0 ? entry.totalCorrect / entry.totalAttempts : 0,
       domainBreakdown,
     });
   }
@@ -230,12 +286,26 @@ export function buildMasterySummaryFromRows(rows: SkillMasteryRow[]): MasterySum
 
 export function buildMasterySkillTreeFromRows(
   rows: SkillMasteryRow[],
-  taxonomy: Record<string, { label: string; domains: Record<string, { label: string; skills: string[] }> }>
+  taxonomy: Record<
+    string,
+    {
+      label: string;
+      domains: Record<string, { label: string; skills: string[] }>;
+    }
+  >,
+  domainRows: DomainMasteryRow[] = [],
 ): SectionNode[] {
   const masteryMap = new Map<string, SkillMasteryRow>();
   for (const row of rows) {
     const key = `${row.section}:${row.domain || "unknown"}:${row.skill}`;
     masteryMap.set(key, row);
+  }
+
+  // MA-06: domain status uses the domain's own canonical rollup level (same level→status
+  // logic + constants as skills), keyed by section:domain.
+  const domainMasteryMap = new Map<string, DomainMasteryRow>();
+  for (const dr of domainRows) {
+    domainMasteryMap.set(`${dr.section}:${dr.domain}`, dr);
   }
 
   const result: SectionNode[] = [];
@@ -265,22 +335,27 @@ export function buildMasterySkillTreeFromRows(
           correct,
           accuracy: Math.round(accuracy * 100),
           mastery_score: Math.round(mastery_score),
-          status: mapMasteryStatusFromLevel(row?.mastery_level, attempts, mastery_score),
+          status: mapMasteryStatusFromLevel(row?.mastery_level, attempts),
         });
 
         domainTotalMastery += mastery_score;
       }
 
-      const avgDomainMastery = domainDef.skills.length > 0
-        ? domainTotalMastery / domainDef.skills.length
-        : 0;
+      const avgDomainMastery =
+        domainDef.skills.length > 0
+          ? domainTotalMastery / domainDef.skills.length
+          : 0;
 
+      const domainMastery = domainMasteryMap.get(`${sectionId}:${domainId}`);
       domains.push({
         id: domainId,
         label: domainDef.label,
         skills,
         avgMastery: Math.round(avgDomainMastery),
-        status: mapMasteryStatusFromLevel(null, skills.reduce((a, s) => a + s.attempts, 0), avgDomainMastery),
+        status: mapMasteryStatusFromLevel(
+          domainMastery?.mastery_level ?? null,
+          domainMastery?.event_count_total ?? 0,
+        ),
       });
 
       sectionTotalMastery += avgDomainMastery;
@@ -291,9 +366,10 @@ export function buildMasterySkillTreeFromRows(
       id: sectionId,
       label: sectionDef.label,
       domains,
-      avgMastery: sectionDomainCount > 0
-        ? Math.round(sectionTotalMastery / sectionDomainCount)
-        : 0,
+      avgMastery:
+        sectionDomainCount > 0
+          ? Math.round(sectionTotalMastery / sectionDomainCount)
+          : 0,
     });
   }
 
