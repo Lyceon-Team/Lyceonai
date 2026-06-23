@@ -63,3 +63,20 @@ event vocabulary (`MasteryEventType` + `KPI_CALENDAR_COUNTED_EVENTS` are importe
 3. **No regression:** domain badge reflects the domain's canonical level (not always
    `not_started`).
 4. **Build + tests green;** status-mapping unit tests cover level→status + not_started-when-absent.
+
+## 4. Spec-auditor disposition (2026-06-23)
+
+- **@spec citation** corrected — the weak/improving/proficient labels are a presentation
+  grouping of the canonical `mastery_level`, NOT the Doc 07C registry-status enum.
+- **Admin-only column** — `fetchDomainMasteryRows` no longer selects
+  `student_domain_mastery.event_count_total` (Doc 05B §5.2 admin-only); domain `not_started`
+  is derived from `mastery_level` presence. Only student-grantable columns are read.
+- **`mastery_score` on the student mastery surfaces** (raised HIGH by the auditor vs
+  Doc 05A §2.4): **owner ruling — mastery surfaces are auth + entitlement (premium) gated; a
+  student viewing their OWN `mastery_score` behind that gate is intended.** §2.4 targets
+  cross-user/guardian exposure, which the guardian path already strips (asserted in
+  `guardian-reporting.contract.test.ts`). Out of MA-06 scope; **no change** — recorded here
+  so it is not re-flagged.
+- Pre-existing `catch (err: any)` (mastery route) / `any` in the guardian-reporting test
+  harness are pre-existing standards debt, not introduced by this diff; left per the
+  no-unrelated-batching rule (eslint is not yet a hard CI gate).
