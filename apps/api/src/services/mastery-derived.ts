@@ -7,10 +7,9 @@ export interface MasterySkillRow {
   section: string | null;
   domain: string | null;
   skill: string | null;
-  attempts: number | null;
-  correct: number | null;
   mastery_score: number | null;
-  updated_at: string | null;
+  event_count_total: number | null;
+  computed_at: string | null;
 }
 
 export interface DerivedWeaknessSignal {
@@ -45,10 +44,11 @@ export function buildDerivedWeaknessSignal(row: MasterySkillRow): DerivedWeaknes
   const skillRaw = row.skill?.trim();
   if (!skillRaw) return null;
 
-  const attempts = Math.max(0, row.attempts ?? 0);
-  const correct = Math.max(0, Math.min(attempts, row.correct ?? 0));
+  const score = clamp(row.mastery_score ?? 0, 0, 1);
+  const attempts = Math.max(0, row.event_count_total ?? 0);
+  const correct = Math.round(score * attempts);
   const incorrect = Math.max(0, attempts - correct);
-  const masteryScore100 = clamp(row.mastery_score ?? 0, 0, 100);
+  const masteryScore100 = Math.round(score * 100);
   const weaknessScore = Math.round((100 - masteryScore100) * 100) / 100;
 
   const domainNorm = normalizeToken(row.domain);
@@ -73,7 +73,7 @@ export function buildDerivedWeaknessSignal(row: MasterySkillRow): DerivedWeaknes
     skipped: 0,
     masteryScore100,
     weaknessScore,
-    updatedAt: row.updated_at || null,
+    updatedAt: row.computed_at || null,
   };
 }
 
@@ -87,9 +87,9 @@ export async function getDerivedWeaknessSignals(
 
   let query = supabaseServer
     .from("student_skill_mastery")
-    .select("section, domain, skill, attempts, correct, mastery_score, updated_at")
-    .eq("user_id", userId)
-    .gte("attempts", minAttempts);
+    .select("section, domain, skill, mastery_score, event_count_total, computed_at")
+    .eq("student_id", userId)
+    .gte("event_count_total", minAttempts);
 
   if (section) {
     query = query.eq("section", section);

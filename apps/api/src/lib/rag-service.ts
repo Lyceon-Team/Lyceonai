@@ -509,9 +509,9 @@ export class RagService {
       try {
         const { data: masteryRows, error: masteryError } = await supabaseServer
           .from('student_skill_mastery')
-          .select('section, domain, skill, attempts, correct, mastery_score, updated_at')
-          .eq('user_id', userId)
-          .gte('attempts', 1);
+          .select('section, domain, skill, mastery_score, event_count_total, computed_at')
+          .eq('student_id', userId)
+          .gte('event_count_total', 1);
 
         if (!masteryError && masteryRows) {
           competencyMap = buildCompetencyMapFromMasteryRows(masteryRows as MasterySkillRow[]);
