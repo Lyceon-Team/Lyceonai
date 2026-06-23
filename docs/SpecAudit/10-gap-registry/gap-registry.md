@@ -210,3 +210,62 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   - `tests/ci/tutor-interactions.no-verbatim.contract.test.ts` asserted `20260606_tutor_interactions_drop_verbatim.sql` — a migration **never applied** (capture: prod still carries the verbatim `message`/`answer` columns the test claims were dropped). The guard was validating repo-_intent_ that never reached production. **Corrected in D4**: re-point to the tracked forward drops migration (full-table `DROP TABLE public.tutor_interactions`).
   - `tests/ci/rate-limit-sql.contract.test.ts` asserted `20260408_rate_limit_ledger_truth.sql` — its objects (`usage_rate_limit_ledger`, `check_and_reserve_*`, `finalize_tutor_usage`) reached prod via an **untracked hand-run** (present in capture B1) but were sourced from outside the tracked pipeline. **Corrected in D5**: re-point to baseline `0000` (deployed truth).
     Both now assert against the tracked pipeline (`0000` + forward migrations), never archived legacy files. This is the OP-05 provenance failure reproduced at the CI layer — recorded as a finding, not merely a task.
+
+---
+
+## Reconciliation addendum — genesis re-cut resume (2026-06-22)
+
+> Truth-up to the **current** post-genesis surface. Where a per-row **Status** token above
+> predates this pass, the entry here is **authoritative** for that gap as of 2026-06-22
+> (immutable-history rule: staleness noted here, mega-cells not rewritten). Each line cites
+> live file:line evidence (front-of-wave audit `f1f6392`; progress rewire PR #415 → `cleanup`;
+> auth+deletion arc #406–#411 → main).
+
+### A. Front-of-wave CODE audit (`f1f6392`; full record `docs/SpecAudit/40-ws2-ws3/FRONT-OF-WAVE-CODE-AUDIT.md`)
+- **GAP-MA-06 — OPEN → PARTIAL.** Live mastery math is now DB-delegated
+  (`apply_learning_event_to_mastery` reads `mastery_constants`; projections via
+  `read_projection_constants`), and the old `canonical-runtime-views.ts` literal site was
+  removed by the WS-3 progress rewire (#415). **Residual (the C1 close target):** level-boundary
+  literals `< 40` / `< 70` hardcoded as fallbacks at `apps/api/src/routes/mastery.ts:122-123`
+  and `apps/api/src/services/mastery-read.ts:105-106` (the five `mastery_constants` level
+  boundaries; `mastery-read` feeds `/mastery/skills` + `guardian-routes.ts:582`); plus the
+  dead-but-divergent `apps/api/src/services/mastery-constants.ts` literal block and the
+  config-class `apps/api/src/services/calendar-planner.ts:103-109` scoring weights/horizons.
+  The registry row's stale refs (`42d vs 21d half-life`, `calendar.ts`) are superseded by these.
+- **GAP-EX-05 — OPEN (confirmed).** Two live disclosure paths: mid-exam `module/submit`
+  returns `result.nextModule.difficultyBucket` unstripped (`server/routes/full-length-exam-routes.ts:549`;
+  set `apps/api/src/services/fullLengthExam.ts:2783`, returned `:2816`) — reaches the client
+  **before Module 2**; review `:739` carries `formattedModules[].difficultyBucket`
+  (`fullLengthExam.ts:3548`); UI badge `client/src/components/full-length-exam/FullLengthReviewView.tsx:125`.
+- **GAP-TU-04 — OPEN (confirmed).** Leak filter `hasDirectAnswerLeak`
+  (`server/routes/tutor-runtime.ts:528-541`) gated to `source_surface === "practice"` + `isPreSubmit`
+  (`:1365-1378`); **review pre-submit unfiltered**; replay `GET /conversations/:id` (`:878`) returns
+  `message` verbatim (`:915`). C2 close = ONE chokepoint across all pre-submit surfaces.
+- **GAP-ID-09 — OPEN (confirmed).** Spec'd `EntitlementService.canAccessFeature` does not exist
+  (0 matches); full-length only **3/11** routes gated (ungated incl. `current`/`start`/`answer`/
+  `module/submit`/`review`); `apps/api/src/routes/weakness.ts` `GET /skills` (`:8`) + `/clusters` (`:33`)
+  ungated. C3 (app-layer, no DDL).
+- **GAP-ID-10 — OPEN (confirmed).** `startOrReplaySession` (`server/routes/practice-canonical.ts:1175`)
+  materializes item[0] `served` (`:1488`) with no `reservePracticeQuestionQuota` in the create path;
+  reservation fires only on 2nd+ promotion (`:1874`). First item of every session bypasses quota. C3.
+
+### B. WS-3 progress lead — `/api/progress/*` (#415 → `cleanup`, merged 2026-06-22)
+- The live `/api/progress/{kpis,projection}` **500s** were post-teardown CODE debris (reads on
+  retired old-gen columns). Rewired to genesis Doc-05 (`student_overall_kpi` event vocabulary;
+  projection breakdown dropped per §10.5). Verified: tsc 0; 34/34 affected tests; live selects 200-capable.
+- Substrate note (ID-02 half): `student_kpi_rollups_current` is an **unpopulated no-writer shell**
+  (RLS-on, 0 policies, deny-all) — not read by any runtime surface after the rewire.
+
+### C. Auth + deletion arc — ledger + governed-set reconcile (2026-06-22)
+- **Migration ledger reconciled 3 → 15** (`WS-1-CLOSURE.md §4`, CTO connector write, verified live).
+  This **closes the "ledger migration-repair pending / self-healing on next db push" caveat** in
+  HY-13's status; `account_deletion_lifecycle` is governed-set **ledger row 15**, not `migrations-pending`.
+- **GAP-HY-13** — BUILT + PROD-RECONCILED (prod ≡ governed ≡ snapshot, #411 → main); remaining =
+  the §40.3/§40.4 soft-lock+recovery increment + owner **ACTIVATION** (flag flip). Ledger caveat now DONE.
+- **GAP-HY-15** — PARTIAL: core `deidentify_user` APPLIED + governed (ledger row 15); feature-table
+  cascade still OPEN (Doc 03A V2 retention / tracked as TU-03).
+- **GAP-HY-16** — PARTIAL: backend soft-lock + bypass fix + UI + flag-on e2e + curated error mapper
+  SHIPPED (#408/#410 → main); remaining = §40.3 **spec edit** (owner, READ-ONLY corpus) + flag activation.
+- **GAP-HY-14** — RESOLVED (uniform 7-day per counsel; under-13 = standard flow, no new code);
+  remaining = the §40.6 **spec edit** (owner-applied to READ-ONLY `docs/Spec`).
+- **GAP-HY-12** — OPEN: raw-string-display cleanup on 8 non-auth surfaces; **`SubscriptionPaywall.tsx:147` first**.
