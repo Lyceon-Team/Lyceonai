@@ -89,11 +89,12 @@ function toLabel(value: string): string {
 }
 
 /**
- * @spec [Doc 05B level boundaries via mastery_constants; Doc 07C status vocabulary] | @implemented [2026-06-23]
+ * @spec [Doc 05 mastery_level via mastery_constants level boundaries 0.19/0.39/0.59/0.79] | @implemented [2026-06-23]
  * plain English: maps the canonical mastery_level (0-4, DB-computed from the
- * mastery_constants level boundaries) to a UI status. mastery_score is NOT consulted —
- * the prior 40/70 score fallback (divergent from the level grouping) is removed (MA-06).
- * Returns not_started when there is no canonical level yet.
+ * mastery_constants level boundaries) to a UI status label. The weak/improving/proficient
+ * labels are a presentation grouping of those canonical levels (no separate locked-spec
+ * owner). mastery_score is NOT consulted — the prior 40/70 score fallback (divergent from
+ * the level grouping) is removed (MA-06). Returns not_started when there is no canonical level.
  */
 export function mapMasteryStatusFromLevel(
   masteryLevel: unknown,
@@ -137,13 +138,14 @@ export interface DomainMasteryRow {
   section: string;
   domain: string;
   mastery_level: number | null;
-  event_count_total: number;
 }
 
 /**
- * @spec [Doc 05B §5/§6.5 — student_domain_mastery.mastery_level student-readable] | @implemented [2026-06-23]
+ * @spec [Doc 05B §5.4 — student_domain_mastery (section, domain, mastery_level) student-readable] | @implemented [2026-06-23]
  * plain English: reads the per-domain canonical rollup level so the domain status badge can
  * use the same level→status logic as skills (MA-06), instead of a synthesized score bucket.
+ * Selects ONLY student-grantable columns — never the admin-only mastery_score / mastery_pct /
+ * event_count_total (Doc 05B §5.2/§6.5).
  */
 export async function fetchDomainMasteryRows(args: {
   userId: string;
@@ -152,7 +154,7 @@ export async function fetchDomainMasteryRows(args: {
   const supabase = getSupabaseAdmin();
   let q = supabase
     .from("student_domain_mastery")
-    .select("section, domain, mastery_level, event_count_total")
+    .select("section, domain, mastery_level")
     .eq("student_id", args.userId);
 
   if (args.section) {
@@ -346,16 +348,20 @@ export function buildMasterySkillTreeFromRows(
           ? domainTotalMastery / domainDef.skills.length
           : 0;
 
+      // A present canonical mastery_level means the domain has enough evidence to be scored
+      // (DB enforces MIN_EVENTS_FOR_MASTERY); absent level → honest not_started. We pass a
+      // sentinel attempts=1 only to clear the not_started guard, NOT the admin-only event count.
       const domainMastery = domainMasteryMap.get(`${sectionId}:${domainId}`);
+      const domainLevel = domainMastery?.mastery_level ?? null;
       domains.push({
         id: domainId,
         label: domainDef.label,
         skills,
         avgMastery: Math.round(avgDomainMastery),
-        status: mapMasteryStatusFromLevel(
-          domainMastery?.mastery_level ?? null,
-          domainMastery?.event_count_total ?? 0,
-        ),
+        status:
+          domainLevel === null
+            ? "not_started"
+            : mapMasteryStatusFromLevel(domainLevel, 1),
       });
 
       sectionTotalMastery += avgDomainMastery;

@@ -62,12 +62,7 @@ describe("Mastery Read Contract", () => {
       },
     ]);
     fetchDomainMasteryRows.mockResolvedValue([
-      {
-        section: "math",
-        domain: "algebra",
-        mastery_level: 2,
-        event_count_total: 4,
-      },
+      { section: "math", domain: "algebra", mastery_level: 2 },
     ]);
     mapMasteryStatusFromLevel.mockReturnValue("improving");
     buildMasterySummaryFromRows.mockReturnValue([

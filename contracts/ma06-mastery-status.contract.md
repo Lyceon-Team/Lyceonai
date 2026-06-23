@@ -2,8 +2,10 @@
 
 > Pure-code (no migration). Closes GAP-MA-06's residual app-code literals on the mastery
 > **status** surface. Grounds: Doc 05B (level boundaries live in `mastery_constants`;
-> `mastery_level` 0–4 is the canonical, student+guardian-readable signal, §6.5); Doc 07C
-> (the weak/improving/proficient **status** vocabulary). Owner rulings 2026-06-23: (1) drop
+> `mastery_level` 0–4 is the canonical, student+guardian-readable signal, §5.4/§6.5). The
+> weak/improving/proficient **status** labels are a presentation grouping of those canonical
+> levels (no separate locked-spec owner — they are NOT the Doc 07C registry-status enum).
+> Owner rulings 2026-06-23: (1) drop
 > the score fallback — derive status only from canonical `mastery_level`; (2) for the domain
 > rollup, use the **same level→status logic driven by the domain's own canonical rollup
 > level** (`student_domain_mastery.mastery_level`), same constants/boundaries.
@@ -37,8 +39,10 @@ mastery_level absent/other → "not_started"   (honest: no canonical level yet)
 - **Skill** status: from `student_skill_mastery.mastery_level` (existing fetch).
 - **Domain** status: from `student_domain_mastery.mastery_level` — the domain rollup's own
   canonical level, fetched alongside the skill rows and threaded into
-  `buildMasterySkillTreeFromRows`. (Previously synthesized from an averaged skill score +
-  the `40`/`70` fallback — removed.)
+  `buildMasterySkillTreeFromRows`. A present level ⇒ map it; absent ⇒ `not_started`.
+  (Previously synthesized from an averaged skill score + the `40`/`70` fallback — removed.)
+  The domain fetch selects ONLY student-grantable columns (`section, domain, mastery_level`)
+  — never the admin-only `mastery_score`/`mastery_pct`/`event_count_total` (Doc 05B §5.2).
 - `mapMasteryStatusFromLevel` / `mapWeakestStatus` lose the `masteryScore` parameter.
 
 ## 2. Dead-constant removal (`apps/api/src/services/mastery-constants.ts`)
