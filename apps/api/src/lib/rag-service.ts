@@ -18,6 +18,7 @@ import {
   QuestionContext,
   CompetencyContext,
   Competency,
+  CompetencyProgress,
 } from './rag-types';
 
 // Re-export MatchResult for tests
@@ -431,18 +432,13 @@ export class RagService {
    */
   private extractStudentWeakAreas(studentProfile: StudentProfile | null): string[] {
     const weakAreas: string[] = [];
-    
+
     if (!studentProfile?.competencyMap) {
       return weakAreas;
     }
 
     for (const [code, progress] of Object.entries(studentProfile.competencyMap)) {
-      const correct = progress.correct ?? 0;
-      const incorrect = progress.incorrect ?? 0;
-      const total = progress.total ?? (correct + incorrect);
-      
-      // Only consider competencies with at least 3 attempts
-      if (total >= 3 && incorrect > correct) {
+      if (this.classifyCompetency(progress) === 'weak') {
         weakAreas.push(code);
       }
     }
@@ -451,23 +447,53 @@ export class RagService {
   }
 
   /**
+   * Classify a competency as weak / strong / neutral.
+   *
+   * Canonical path: when the entry carries mastery_score (read straight from
+   * student_skill_mastery), classification derives ONLY from that DB-computed
+   * column. The comparison `2*round(score*total)` vs `total` is exactly the
+   * legacy `incorrect > correct` / `correct > incorrect` test expressed in
+   * canonical terms (correct === round(score*total), incorrect === total - correct),
+   * so it reproduces the prior synthesized-count output bit-for-bit — including the
+   * rounding flips near score = 0.5 that a bare `< 0.5` threshold would get wrong.
+   * No correct/incorrect counts are synthesized or stored.
+   *
+   * Legacy path: entries sourced from the persisted student_study_profile.competency_map
+   * still carry observed correct/incorrect tallies and are classified as before.
+   */
+  private classifyCompetency(progress: CompetencyProgress): 'weak' | 'strong' | 'neutral' {
+    if (typeof progress.masteryScore === 'number') {
+      const total = progress.total ?? 0;
+      if (total < 3) return 'neutral';
+      const score = Math.max(0, Math.min(1, progress.masteryScore));
+      const twiceCorrect = 2 * Math.round(score * total);
+      if (twiceCorrect < total) return 'weak';
+      if (twiceCorrect > total) return 'strong';
+      return 'neutral';
+    }
+
+    const correct = progress.correct ?? 0;
+    const incorrect = progress.incorrect ?? 0;
+    const total = progress.total ?? correct + incorrect;
+    if (total < 3) return 'neutral';
+    if (incorrect > correct) return 'weak';
+    if (correct > incorrect) return 'strong';
+    return 'neutral';
+  }
+
+  /**
    * Extract student strong areas from competency map
    * Strong areas are competencies where correct > incorrect
    */
   private extractStudentStrongAreas(studentProfile: StudentProfile | null): string[] {
     const strongAreas: string[] = [];
-    
+
     if (!studentProfile?.competencyMap) {
       return strongAreas;
     }
 
     for (const [code, progress] of Object.entries(studentProfile.competencyMap)) {
-      const correct = progress.correct ?? 0;
-      const incorrect = progress.incorrect ?? 0;
-      const total = progress.total ?? (correct + incorrect);
-      
-      // Only consider competencies with at least 3 attempts
-      if (total >= 3 && correct > incorrect) {
+      if (this.classifyCompetency(progress) === 'strong') {
         strongAreas.push(code);
       }
     }
@@ -504,7 +530,7 @@ export class RagService {
       }
 
       // Canonical competency map source: student_skill_mastery (derived reader).
-      let competencyMap: Record<string, { correct: number; incorrect: number; total: number }> = {};
+      let competencyMap: Record<string, CompetencyProgress> = {};
 
       try {
         const { data: masteryRows, error: masteryError } = await supabaseServer
@@ -520,9 +546,11 @@ export class RagService {
         console.warn(`⚠️ [RAG-V2] Failed to load canonical mastery rows for ${userId}: ${masteryReadError.message}`);
         // Continue with empty competency map
       }
-      // Merge DB competency_map with calculated one (DB takes precedence if exists)
+      // Merge DB competency_map with calculated one (DB takes precedence if exists).
+      // Persisted entries carry the legacy observed correct/incorrect shape; the classifier
+      // handles both that and the canonical mastery_score entries from the derived reader.
       if (profileRow?.competency_map && typeof profileRow.competency_map === 'object') {
-        competencyMap = { ...competencyMap, ...(profileRow.competency_map as Record<string, any>) };
+        competencyMap = { ...competencyMap, ...(profileRow.competency_map as Record<string, CompetencyProgress>) };
       }
 
       const profile: StudentProfile = {

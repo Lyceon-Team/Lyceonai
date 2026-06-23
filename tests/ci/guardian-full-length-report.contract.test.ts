@@ -77,9 +77,6 @@ vi.mock('../../apps/api/src/services/fullLengthExam', () => reportServiceMocks);
 vi.mock('../../server/services/kpi-access', () => ({
   resolvePaidKpiAccessForUser: vi.fn(async () => ({ hasPaidAccess: true, reason: 'allowed' })),
 }));
-vi.mock('../../apps/api/src/services/mastery-derived', () => ({
-  getDerivedWeaknessSignals: vi.fn(async () => ({ weakestAreas: [] })),
-}));
 vi.mock('../../server/logger', () => ({
   logger: {
     info: vi.fn(),
