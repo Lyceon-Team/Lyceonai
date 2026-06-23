@@ -1,14 +1,19 @@
-import { Response, Router } from 'express';
-import { type AuthenticatedRequest, requireRequestUser } from '../../../../server/middleware/supabase-auth';
+import { Response, Router } from "express";
+import {
+  type AuthenticatedRequest,
+  requireRequestUser,
+} from "../../../../server/middleware/supabase-auth";
 import {
   buildMasterySkillTreeFromRows,
   buildMasterySummaryFromRows,
+  fetchDomainMasteryRows,
   fetchSkillMasteryRows,
   fetchWeakestSkills,
-} from '../services/mastery-read';
-import { DateTime } from 'luxon';
-import { resolvePaidKpiAccessForUser } from '../../../../server/services/kpi-access';
-import { getSupabaseAdmin } from '../lib/supabase-admin';
+  mapMasteryStatusFromLevel,
+} from "../services/mastery-read";
+import { DateTime } from "luxon";
+import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
+import { getSupabaseAdmin } from "../lib/supabase-admin";
 
 const SAT_TAXONOMY = {
   math: {
@@ -92,11 +97,7 @@ const SAT_TAXONOMY = {
       },
       expression_ideas: {
         label: "Expression of Ideas",
-        skills: [
-          "rhetorical_synthesis",
-          "transitions",
-          "sentence_placement",
-        ],
+        skills: ["rhetorical_synthesis", "transitions", "sentence_placement"],
       },
     },
   },
@@ -104,24 +105,6 @@ const SAT_TAXONOMY = {
 
 function getTomorrowDate(): string {
   return DateTime.now().plus({ days: 1 }).toISODate()!;
-}
-
-function mapWeakestStatus(
-  masteryLevel: unknown,
-  attempts: number,
-  masteryScore: number
-): "not_started" | "weak" | "improving" | "proficient" {
-  if (!Number.isFinite(attempts) || attempts < 0.01) {
-    return "not_started";
-  }
-
-  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
-  if (masteryLevel === 2) return "improving";
-  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
-
-  if (masteryScore < 40) return "weak";
-  if (masteryScore < 70) return "improving";
-  return "proficient";
 }
 
 const router = Router();
@@ -132,7 +115,10 @@ async function ensurePremiumMasteryAccess(
   user: { id: string; role: string },
   feature: string,
 ): Promise<boolean> {
-  const access = await resolvePaidKpiAccessForUser(user.id, user.role as "student" | "guardian" | "admin");
+  const access = await resolvePaidKpiAccessForUser(
+    user.id,
+    user.role as "student" | "guardian" | "admin",
+  );
   if (!access.hasPaidAccess) {
     res.status(402).json({
       error: "Premium feature required",
@@ -154,17 +140,19 @@ async function ensurePremiumMasteryAccess(
 
 /**
  * GET /mastery/summary - READ ONLY endpoint
- * 
+ *
  * Returns aggregated mastery summary by section and domain.
  * Does NOT mutate mastery state or recalculate scores.
  */
-router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
+router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
     }
-    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_summary"))) {
+    if (
+      !(await ensurePremiumMasteryAccess(req, res, user, "mastery_summary"))
+    ) {
       return;
     }
 
@@ -178,32 +166,41 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
       sections: summary,
     });
   } catch (error) {
-    console.error('[Mastery] Error getting mastery summary:', error);
-    res.status(500).json({ error: 'Failed to get mastery summary' });
+    console.error("[Mastery] Error getting mastery summary:", error);
+    res.status(500).json({ error: "Failed to get mastery summary" });
   }
 });
 
 /**
  * GET /mastery/skills - READ ONLY endpoint
- * 
+ *
  * Returns full skill tree with mastery status computed from STORED mastery scores.
- * 
+ *
  * DERIVED COMPUTATION: Status thresholds (not_started, weak, improving, proficient)
  * are computed from stored mastery_score, but mastery_score itself is NOT recalculated.
- * 
+ *
  * Does NOT apply decay, weighting, or mutate mastery state.
  */
-router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
+router.get("/skills", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
     }
-    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_hexagon"))) {
+    if (
+      !(await ensurePremiumMasteryAccess(req, res, user, "mastery_hexagon"))
+    ) {
       return;
     }
-    const rows = await fetchSkillMasteryRows({ userId: user.id });
-    const result = buildMasterySkillTreeFromRows(rows, SAT_TAXONOMY);
+    const [rows, domainRows] = await Promise.all([
+      fetchSkillMasteryRows({ userId: user.id }),
+      fetchDomainMasteryRows({ userId: user.id }),
+    ]);
+    const result = buildMasterySkillTreeFromRows(
+      rows,
+      SAT_TAXONOMY,
+      domainRows,
+    );
     return res.json({ sections: result });
   } catch (err: any) {
     console.error("[Mastery] Error:", err.message);
@@ -213,17 +210,19 @@ router.get('/skills', async (req: AuthenticatedRequest, res: Response) => {
 
 /**
  * GET /mastery/weakest - READ ONLY endpoint
- * 
+ *
  * Returns weakest skills sorted by stored accuracy.
  * Does NOT mutate mastery state or recalculate scores.
  */
-router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
+router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const user = requireRequestUser(req, res);
     if (!user) {
       return;
     }
-    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_weakest"))) {
+    if (
+      !(await ensurePremiumMasteryAccess(req, res, user, "mastery_weakest"))
+    ) {
       return;
     }
 
@@ -240,11 +239,13 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
       section: row.section,
       domain: row.domain,
       skill: row.skill,
-      label: row.skill.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+      label: row.skill
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c: string) => c.toUpperCase()),
       attempts: row.attempts,
       accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
       mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: mapWeakestStatus((row as any).mastery_level, row.attempts, row.mastery_score),
+      status: mapMasteryStatusFromLevel(row.mastery_level, row.attempts),
     }));
 
     return res.json({ weakest: formatted });
@@ -254,70 +255,86 @@ router.get('/weakest', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.post('/add-to-plan', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const user = requireRequestUser(req, res);
-    if (!user) {
-      return;
-    }
-    if (!(await ensurePremiumMasteryAccess(req, res, user, "mastery_plan_mutation"))) {
-      return;
-    }
+router.post(
+  "/add-to-plan",
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) {
+        return;
+      }
+      if (
+        !(await ensurePremiumMasteryAccess(
+          req,
+          res,
+          user,
+          "mastery_plan_mutation",
+        ))
+      ) {
+        return;
+      }
 
-    const userId = user.id;
-    const { section, domain, skill, targetDate } = req.body;
+      const userId = user.id;
+      const { section, domain, skill, targetDate } = req.body;
 
-    if (!section || !skill) {
-      return res.status(400).json({ error: 'Section and skill are required' });
-    }
+      if (!section || !skill) {
+        return res
+          .status(400)
+          .json({ error: "Section and skill are required" });
+      }
 
-    const dayDate = targetDate || getTomorrowDate();
-    const supabase = getSupabaseAdmin();
+      const dayDate = targetDate || getTomorrowDate();
+      const supabase = getSupabaseAdmin();
 
-    const { data: profile, error: profileError } = await supabase
-      .from('student_study_profile')
-      .select('planner_mode')
-      .eq('user_id', userId)
-      .maybeSingle();
+      const { data: profile, error: profileError } = await supabase
+        .from("student_study_profile")
+        .select("planner_mode")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    if (profileError) {
-      console.error('[Mastery] Failed to load planner mode:', profileError.message);
-      return res.status(500).json({ error: 'Failed to load planner mode' });
-    }
+      if (profileError) {
+        console.error(
+          "[Mastery] Failed to load planner mode:",
+          profileError.message,
+        );
+        return res.status(500).json({ error: "Failed to load planner mode" });
+      }
 
-    const plannerMode = profile?.planner_mode === 'custom' ? 'custom' : 'auto';
-    const competencyId = domain ? `${domain}.${skill}` : skill;
-    const sectionLabel = section === 'math' ? 'Math' : 'Reading & Writing';
+      const plannerMode =
+        profile?.planner_mode === "custom" ? "custom" : "auto";
+      const competencyId = domain ? `${domain}.${skill}` : skill;
+      const sectionLabel = section === "math" ? "Math" : "Reading & Writing";
 
-    return res.json({
-      success: true,
-      applied: false,
-      planner_mode: plannerMode,
-      dayDate,
-      addedSkill: competencyId,
-      suggestion: {
-        type: 'skill_focus',
-        section: sectionLabel,
-        competency: competencyId,
-        reason:
-          plannerMode === 'custom'
-            ? 'Custom mode keeps planner ownership with the student, so mastery suggestions never auto-apply.'
-            : 'Planner ownership is centralized in /api/calendar day edit/regenerate flows.',
-        applyEndpoint: `/api/calendar/day/${dayDate}`,
-        suggestedPatch: {
-          focus: [
-            {
-              section: sectionLabel,
-              competencies: [competencyId],
-            },
-          ],
+      return res.json({
+        success: true,
+        applied: false,
+        planner_mode: plannerMode,
+        dayDate,
+        addedSkill: competencyId,
+        suggestion: {
+          type: "skill_focus",
+          section: sectionLabel,
+          competency: competencyId,
+          reason:
+            plannerMode === "custom"
+              ? "Custom mode keeps planner ownership with the student, so mastery suggestions never auto-apply."
+              : "Planner ownership is centralized in /api/calendar day edit/regenerate flows.",
+          applyEndpoint: `/api/calendar/day/${dayDate}`,
+          suggestedPatch: {
+            focus: [
+              {
+                section: sectionLabel,
+                competencies: [competencyId],
+              },
+            ],
+          },
         },
-      },
-    });
-  } catch (err: any) {
-    console.error('[Mastery] Error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+      });
+    } catch (err: any) {
+      console.error("[Mastery] Error:", err.message);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 export const masteryRouter = router;
