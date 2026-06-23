@@ -68,6 +68,18 @@
 
 ---
 
+## J — Entanglement map (implementation guardrails, discovered 2026-06-23)
+
+The repo's `mastery-read.ts` is consumed beyond the client read surface; the rebuild must not break these. **The anti-leak boundary is route serialization, not the service fetch** — services use service-role and legitimately read admin columns for internal logic.
+
+- **`fetchWeakestSkills` is dual-use:** the client `/mastery/weakest` route (must serialize tier-only) AND `apps/api/src/services/adaptiveSelector.ts` (practice-engine selection — legitimately uses `mastery_score` server-side for deterministic ordering; NEVER sent to a client). **Do NOT strip `mastery_score`/`accuracy` from the service fetch** — fix the leak at the `/weakest` route's response `.map()`. Stripping the fetch would break deterministic selection (a core invariant).
+- **`buildMasterySkillTreeFromRows`** is consumed only by `mastery.ts` `/skills` (+ the contract-test mock) → safe to rebuild tier-only.
+- **`buildMasterySummaryFromRows` / `/mastery/summary`** is built on the non-existent `attempts`/`correct`/`accuracy` columns (already broken) and is re-exported via `studentMastery.getMasterySummary`; the current client calls only `/skills`. Re-derive `/summary` as section→domain tiers (or retire) in the same pass; verify no non-test caller depends on the old shape before changing it.
+- **`calendar-planner-reprioritization.ts`** declares its OWN local `SkillMasteryRow` and reads `mastery_score` via service-role for planner weighting — internal, not a client surface; out of scope, leave intact.
+- **`mapMasteryStatusFromLevel`** (consumed by `server/routes/guardian-routes.ts:898`) is superseded by the shared `masteryTierFromLevel`; update the guardian surface to domain-grain (AC#19) and migrate the mapper together.
+
+Net: route-serialization-bounded; service-role internals (selection, planner) keep their reads. A careful pass with practice-engine regression checks, not a blind column strip.
+
 ## G — Out of scope (carried, named — do not build here)
 - 05C blend **States B/C** (04B full-length blend) — deferred WS-4 (producer is State-A only; the read surface shows whatever the producer wrote).
 - Cluster mastery (`GAP-SP-24` owner-decision; no 05-family spec home).
