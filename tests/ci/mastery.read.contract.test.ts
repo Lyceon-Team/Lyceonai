@@ -1,3 +1,9 @@
+/**
+ * @spec [Doc 05A §7.4 + Doc 05B §5.4 + AC#20 — mastery read contract: tier-only responses]
+ * | @implemented [2026-06-23]
+ * plain English: verifies that the mastery read routes call the canonical service layer and
+ * return tier-only data (no mastery_score, no mastery_pct, no percent).
+ */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
@@ -7,7 +13,6 @@ const fetchDomainMasteryRows = vi.fn();
 const buildMasterySummaryFromRows = vi.fn();
 const buildMasterySkillTreeFromRows = vi.fn();
 const fetchWeakestSkills = vi.fn();
-const mapMasteryStatusFromLevel = vi.fn();
 
 vi.mock("../../apps/api/src/services/mastery-read", () => ({
   fetchSkillMasteryRows,
@@ -15,8 +20,28 @@ vi.mock("../../apps/api/src/services/mastery-read", () => ({
   buildMasterySummaryFromRows,
   buildMasterySkillTreeFromRows,
   fetchWeakestSkills,
-  mapMasteryStatusFromLevel,
+  mapMasteryStatusFromLevel: vi.fn(),
+  fetchWeakestClusters: vi.fn().mockResolvedValue([]),
 }));
+
+vi.mock("../../packages/shared/src/mastery", async () => {
+  return {
+    masteryTierFromLevel: (level: number | null) => {
+      if (level === null) return "not_started";
+      if (level >= 3) return "proficient";
+      if (level === 2) return "improving";
+      return "weak";
+    },
+    masteryTierSchema: {
+      enum: ["not_started", "weak", "improving", "proficient"],
+    },
+    masteryLevelSchema: {},
+    skillMasteryNodeSchema: {},
+    domainMasteryNodeSchema: {},
+    sectionMasteryNodeSchema: {},
+    masteryTreeResponseSchema: {},
+  };
+});
 
 vi.mock("../../server/services/kpi-access", () => ({
   resolvePaidKpiAccessForUser: vi.fn(async () => ({
@@ -54,51 +79,55 @@ describe("Mastery Read Contract", () => {
         section: "math",
         domain: "algebra",
         skill: "linear_equations",
-        attempts: 4,
-        correct: 2,
-        accuracy: 0.5,
-        mastery_score: 50,
         mastery_level: 2,
+        event_count_total: 4,
+        computed_at: "2026-06-23T00:00:00Z",
       },
     ]);
     fetchDomainMasteryRows.mockResolvedValue([
       { section: "math", domain: "algebra", mastery_level: 2 },
     ]);
-    mapMasteryStatusFromLevel.mockReturnValue("improving");
     buildMasterySummaryFromRows.mockReturnValue([
       {
         section: "math",
-        totalAttempts: 4,
-        totalCorrect: 2,
-        overallAccuracy: 0.5,
-        domainBreakdown: [
-          { domain: "algebra", attempts: 4, correct: 2, accuracy: 0.5 },
-        ],
+        domains: [{ domain: "algebra", tier: "improving", masteryLevel: 2 }],
       },
     ]);
     buildMasterySkillTreeFromRows.mockReturnValue([
-      { id: "math", label: "Math", domains: [], avgMastery: 50 },
+      {
+        section: "math",
+        label: "Math",
+        domains: [
+          {
+            domain: "algebra",
+            label: "Algebra",
+            masteryLevel: 2,
+            tier: "improving",
+            computedAt: null,
+            skills: [],
+          },
+        ],
+      },
     ]);
     fetchWeakestSkills.mockResolvedValue([
       {
         section: "math",
         domain: "algebra",
         skill: "linear_equations",
-        attempts: 4,
-        correct: 2,
-        accuracy: 0.5,
-        mastery_score: 50,
+        mastery_score: 0.35,
+        mastery_level: 1,
+        accuracy: 0.35,
       },
     ]);
   });
 
-  it("uses canonical mastery read layer for summary", async () => {
+  it("uses canonical mastery read layer for summary (domain rows)", async () => {
     const app = await buildApp();
     const res = await request(app).get("/api/me/mastery/summary");
 
     expect(res.status).toBe(200);
     expect(res.body.sections).toHaveLength(1);
-    expect(fetchSkillMasteryRows).toHaveBeenCalledWith({
+    expect(fetchDomainMasteryRows).toHaveBeenCalledWith({
       userId: "student-1",
       section: undefined,
     });
@@ -111,10 +140,13 @@ describe("Mastery Read Contract", () => {
 
     expect(res.status).toBe(200);
     expect(fetchSkillMasteryRows).toHaveBeenCalledWith({ userId: "student-1" });
+    expect(fetchDomainMasteryRows).toHaveBeenCalledWith({
+      userId: "student-1",
+    });
     expect(buildMasterySkillTreeFromRows).toHaveBeenCalled();
   }, 15000);
 
-  it("uses canonical mastery read layer for weakest skills", async () => {
+  it("uses canonical mastery read layer for weakest skills (tier-only response)", async () => {
     const app = await buildApp();
     const res = await request(app).get("/api/me/mastery/weakest");
 
@@ -124,5 +156,10 @@ describe("Mastery Read Contract", () => {
       limit: 5,
       minAttempts: 2,
     });
+    const items = res.body.weakest;
+    expect(Array.isArray(items)).toBe(true);
+    expect(items[0]).toHaveProperty("tier");
+    expect(items[0]).not.toHaveProperty("mastery_score");
+    expect(items[0]).not.toHaveProperty("accuracy");
   }, 15000);
 });
