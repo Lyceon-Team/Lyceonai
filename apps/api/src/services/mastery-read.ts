@@ -78,29 +78,6 @@ function toLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * @spec [Doc 05 mastery_level via mastery_constants level boundaries 0.19/0.39/0.59/0.79] | @implemented [2026-06-23]
- * plain English: maps the canonical mastery_level (0-4, DB-computed from the
- * mastery_constants level boundaries) to a UI status label. The weak/improving/proficient
- * labels are a presentation grouping of those canonical levels (no separate locked-spec
- * owner). mastery_score is NOT consulted — the prior 40/70 score fallback (divergent from
- * the level grouping) is removed (MA-06). Returns not_started when there is no canonical level.
- */
-export function mapMasteryStatusFromLevel(
-  masteryLevel: unknown,
-  attempts: number,
-): "not_started" | "weak" | "improving" | "proficient" {
-  if (!Number.isFinite(attempts) || attempts < 0.01) {
-    return "not_started";
-  }
-
-  if (masteryLevel === 4 || masteryLevel === 3) return "proficient";
-  if (masteryLevel === 2) return "improving";
-  if (masteryLevel === 1 || masteryLevel === 0) return "weak";
-
-  return "not_started";
-}
-
 // ---------------------------------------------------------------------------
 // Fetchers — select only columns that exist on the actual tables
 // ---------------------------------------------------------------------------

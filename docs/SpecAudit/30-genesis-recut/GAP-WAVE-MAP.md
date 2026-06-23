@@ -195,7 +195,14 @@ verifications — routed through WS-S / CI guards as before, not counted as gaps
 | HY-16 | HIGH | **CODE** | WS-6 | PARTIAL — backend+UI+e2e shipped | global soft-lock; §40.3 spec edit + flag activation pending |
 | WS-3 lead | — | **CODE** | WS-3 | DONE (#415 → `cleanup`) | `/api/progress/*` rewired off retired old-gen columns to genesis Doc-05 (event vocabulary; §10.5 breakdown drop) |
 
-**Count delta (explicit):** wave-map **66** gaps **+ HY-12…HY-16 (5)** = registry **71** gaps.
+### MA-07 read-layer rebuild — column-drift class + dead-code close-out (2026-06-23)
+
+| Gap | Sev | Disposition | Wave | Status (2026-06-23) | Note |
+|---|---|---|---|---|---|
+| MA-12 | HIGH | **CODE** | WS-3 | CLOSED (#419 + step-6 → `cleanup`) | GENESIS-COLUMN-DRIFT CLASS: 4 broken `student_skill_mastery` queries (non-existent columns + `user_id`→`student_id`); RAG classifier rewritten to canonical `mastery_score`; anti-leak chokepoint hardened; dead code deleted |
+| HY-17 | LOW | **PROCESS** | — | OPEN | BASELINE-TEST-DEBT: 36 pre-existing test failures across 15 files; honest baseline pinned by Codex audit; not regressions |
+
+**Count delta (explicit):** wave-map **66** gaps **+ HY-12…HY-16 (5) + MA-12 + HY-17 (2)** = registry **73** gaps.
 Spec-revision items **6 → 21** (genesis re-cut + WS-2/3 Phase-0 + Lane-C revisions, SP-06…SP-25);
 conformant verifications **9** (unchanged). Per-gap status detail is reconciled in
-`../10-gap-registry/gap-registry.md` § "Reconciliation addendum — genesis re-cut resume (2026-06-22)".
+`../10-gap-registry/gap-registry.md` § "Reconciliation addendum — genesis re-cut resume".

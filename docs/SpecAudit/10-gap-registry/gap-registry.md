@@ -269,3 +269,25 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
 - **GAP-HY-14** — RESOLVED (uniform 7-day per counsel; under-13 = standard flow, no new code);
   remaining = the §40.6 **spec edit** (owner-applied to READ-ONLY `docs/Spec`).
 - **GAP-HY-12** — OPEN: raw-string-display cleanup on 8 non-auth surfaces; **`SubscriptionPaywall.tsx:147` first**.
+
+### D. MA-07 read-layer rebuild — column-drift class + dead-code close-out (2026-06-23)
+
+- **GAP-MA-12 (NEW) — CLOSED.** GENESIS-COLUMN-DRIFT CLASS: app-layer queries on
+  `student_skill_mastery` selected non-existent columns (`user_id`, `accuracy`, `attempts`,
+  `correct`, `last_attempt_at`, `updated_at`) and filtered on `user_id` instead of `student_id`,
+  causing every query to error → return `[]` → starve all consumers (RAG weak/strong, calendar
+  planner, reprioritization). **Root cause:** column names drifted between the old-gen and
+  genesis schemas; app code was never updated. Four broken queries fixed across three files:
+  `apps/api/src/lib/rag-service.ts:537`, `apps/api/src/routes/calendar.ts` (`loadSkillSignals`),
+  `apps/api/src/services/calendar-planner-reprioritization.ts` (`loadSkillSignals`),
+  `apps/api/src/services/mastery-derived.ts` (`buildCompetencyMapFromMasteryRows`). Dead
+  synthesized correct/incorrect counts dropped; RAG classifier rewritten to consume
+  `mastery_score` directly via exact `2·round(score·total)` vs `total` comparison (behavior-preserving,
+  equivalence proven in 1,313-combo grid test). Anti-leak chokepoint hardened: `studentProfile`
+  (carrying `mastery_score`) stripped at `rag-v2.ts:55` serialization boundary. Dead
+  `getDerivedWeaknessSignals` + `mapMasteryStatusFromLevel` deleted. Severity HIGH (same class as
+  MA-06 drift). PRs #419 + step-6 close-out → `cleanup`.
+- **GAP-HY-17 (NEW) — OPEN.** BASELINE-TEST-DEBT: **36 pre-existing test failures** across 15
+  test files as of 2026-06-23 (pinned by Codex audit of #419). These are NOT regressions from
+  the MA-07 work — they predate it. The 36 are the honest baseline; any work that increases the
+  count is a regression. Tracked for systematic triage in a future wave. Severity LOW.
