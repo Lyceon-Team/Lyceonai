@@ -9,7 +9,7 @@
  * Surfaces:
  *   - Practice session/state/view   → serveNextForSession in practice-canonical
  *   - Full-length report/view       → buildStudentFullLengthReportView in canonical-runtime-views
- *   - Weakness view                 → buildWeaknessSkillsView → getWeakestSkills + getWeakestClusters
+ *   - Weakness view                 → buildWeaknessSkillsView → getWeakestSkills
  *   - Calendar month view           → buildCalendarMonthView (getMonthPayload alias in calendar route)
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
@@ -20,12 +20,10 @@ import request from 'supertest';
 
 const masteryMocks2 = vi.hoisted(() => ({
     getWeakestSkills: vi.fn(),
-    getWeakestClusters: vi.fn(),
 }));
 
 vi.mock('../../apps/api/src/services/studentMastery', () => ({
     getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
-    getWeakestClusters: (...args: any[]) => masteryMocks2.getWeakestClusters(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -191,18 +189,13 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
 });
 
 // ---------------------------------------------------------------------------
-// Surface 3: Weakness — both /skills and /clusters route through canonical
-//            builders only. buildWeaknessSkillsView owns the skills shape;
-//            getWeakestClusters owns the clusters shape. No inline fork.
+// Surface 3: Weakness — /skills route through canonical builder only.
+//            buildWeaknessSkillsView owns the skills shape. No inline fork.
+//            Clusters deprecated (post-launch revisit); table retained, code removed.
 // ---------------------------------------------------------------------------
 describe('Weakness view: single canonical builder per sub-surface', () => {
-    // NOTE: weakness.runtime.contract.test.ts already mocks studentMastery.
-    // This test imports the router directly and verifies it flows through
-    // buildWeaknessSkillsView (which calls getWeakestSkills with failOnError=true).
-
     it('skills route calls buildWeaknessSkillsView with failOnError=true', async () => {
         masteryMocks2.getWeakestSkills.mockResolvedValue([]);
-        masteryMocks2.getWeakestClusters.mockResolvedValue([]);
 
         const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
 
@@ -220,31 +213,6 @@ describe('Weakness view: single canonical builder per sub-surface', () => {
         expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
             expect.objectContaining({ failOnError: true, userId: 'student-2' })
         );
-    });
-
-    it('clusters route calls getWeakestClusters with failOnError=true (no inline shape)', async () => {
-        masteryMocks2.getWeakestSkills.mockResolvedValue([]);
-        masteryMocks2.getWeakestClusters.mockResolvedValue([]);
-
-        const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
-
-        const app = express();
-        app.use(express.json());
-        app.use((req: any, _res, next) => {
-            req.user = { id: 'student-3', role: 'student' };
-            next();
-        });
-        app.use('/api/me/weakness', weaknessRouter);
-
-        const res = await request(app).get('/api/me/weakness/clusters');
-
-        expect(masteryMocks2.getWeakestClusters).toHaveBeenCalledWith(
-            expect.objectContaining({ failOnError: true, userId: 'student-3' })
-        );
-        // Response envelope is exactly { ok, count, clusters } — not inlined differently
-        expect(res.body).toHaveProperty('ok', true);
-        expect(res.body).toHaveProperty('count');
-        expect(res.body).toHaveProperty('clusters');
     });
 });
 

@@ -3,13 +3,11 @@ import type { LearningEventInput } from "./mastery-write";
 import type {
   WeaknessQuery,
   SkillWeakness,
-  ClusterWeakness,
   MasterySummary,
 } from "./mastery-read";
 import {
   buildMasterySummaryFromRows,
   fetchDomainMasteryRows,
-  fetchWeakestClusters,
   fetchWeakestSkills,
 } from "./mastery-read";
 
@@ -25,7 +23,7 @@ export interface QuestionMetadataSnapshot {
 }
 
 export type { LearningEventInput };
-export type { WeaknessQuery, SkillWeakness, ClusterWeakness, MasterySummary };
+export type { WeaknessQuery, SkillWeakness, MasterySummary };
 
 export { applyLearningEventToMastery } from "./mastery-write";
 
@@ -34,12 +32,6 @@ export async function getWeakestSkills(
   query: WeaknessQuery,
 ): Promise<SkillWeakness[]> {
   return fetchWeakestSkills(query);
-}
-
-export async function getWeakestClusters(
-  query: WeaknessQuery,
-): Promise<ClusterWeakness[]> {
-  return fetchWeakestClusters(query);
 }
 
 export async function getMasterySummary(

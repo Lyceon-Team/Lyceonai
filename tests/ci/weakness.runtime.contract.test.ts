@@ -4,12 +4,10 @@ import request from "supertest";
 
 const masteryMocks = {
   getWeakestSkills: vi.fn(),
-  getWeakestClusters: vi.fn(),
 };
 
 vi.mock("../../apps/api/src/services/studentMastery", () => ({
   getWeakestSkills: masteryMocks.getWeakestSkills,
-  getWeakestClusters: masteryMocks.getWeakestClusters,
 }));
 
 vi.mock("../../packages/shared/src/mastery", () => ({
@@ -25,7 +23,6 @@ describe("Weakness runtime contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     masteryMocks.getWeakestSkills.mockResolvedValue([]);
-    masteryMocks.getWeakestClusters.mockResolvedValue([]);
   });
 
   function buildApp() {
@@ -54,25 +51,6 @@ describe("Weakness runtime contract", () => {
     app.use("/api/me/weakness", weaknessRouter);
 
     const res = await request(app).get("/api/me/weakness/skills");
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: "Failed to get weakness data" });
-  });
-
-  it("fails closed for clusters when required-source read fails", async () => {
-    masteryMocks.getWeakestClusters.mockImplementationOnce(
-      async (query: any) => {
-        expect(query.failOnError).toBe(true);
-        throw new Error("weakest_clusters_query_failed");
-      },
-    );
-
-    const { weaknessRouter } =
-      await import("../../apps/api/src/routes/weakness");
-    const app = buildApp();
-    app.use("/api/me/weakness", weaknessRouter);
-
-    const res = await request(app).get("/api/me/weakness/clusters");
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "Failed to get weakness data" });

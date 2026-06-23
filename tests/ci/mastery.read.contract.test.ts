@@ -21,7 +21,6 @@ vi.mock("../../apps/api/src/services/mastery-read", () => ({
   buildMasterySkillTreeFromRows,
   fetchWeakestSkills,
   mapMasteryStatusFromLevel: vi.fn(),
-  fetchWeakestClusters: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../packages/shared/src/mastery", async () => {

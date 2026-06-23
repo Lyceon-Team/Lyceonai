@@ -105,7 +105,6 @@ function createChainableMock(returnData: any[] = []) {
 
 vi.mock("../mastery-read", () => ({
   fetchWeakestSkills: vi.fn(),
-  fetchWeakestClusters: vi.fn(),
 }));
 
 vi.mock("../../lib/supabase-admin", () => ({
@@ -120,13 +119,12 @@ vi.mock("../../lib/supabase-admin", () => ({
 }));
 
 import { selectNextQuestionForStudent } from "../adaptiveSelector";
-import { fetchWeakestSkills, fetchWeakestClusters } from "../mastery-read";
+import { fetchWeakestSkills } from "../mastery-read";
 
 describe("adaptiveSelector", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (fetchWeakestSkills as Mock).mockResolvedValue([]);
-    (fetchWeakestClusters as Mock).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -145,27 +143,6 @@ describe("adaptiveSelector", () => {
     expect(result.question.id).toBeDefined();
     expect(result.rationale).toBeDefined();
     expect(result.rationale.mode).toBe("balanced");
-  });
-
-  it("should use cluster mode when specified", async () => {
-    (fetchWeakestClusters as Mock).mockResolvedValue([
-      {
-        structure_cluster_id: "cluster-1",
-        accuracy: 0.3,
-        attempts: 10,
-        correct: 3,
-        mastery_score: 0.3,
-      },
-    ]);
-
-    const result = await selectNextQuestionForStudent({
-      userId: "user-123",
-      section: "math",
-      sessionId: "session-123",
-      target: { mode: "cluster" },
-    });
-
-    expect(result.rationale.mode).toBe("cluster");
   });
 
   it("should use skill mode when specified", async () => {

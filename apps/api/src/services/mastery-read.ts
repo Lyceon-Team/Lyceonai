@@ -17,14 +17,6 @@ export interface SkillMasteryRow {
   computed_at: string | null;
 }
 
-export interface ClusterMasteryRow {
-  structure_cluster_id: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
-}
-
 export interface WeaknessQuery {
   userId: string;
   section?: string;
@@ -39,14 +31,6 @@ export interface SkillWeakness {
   skill: string;
   mastery_score: number;
   mastery_level: number | null;
-}
-
-export interface ClusterWeakness {
-  structure_cluster_id: string;
-  attempts: number;
-  correct: number;
-  accuracy: number;
-  mastery_score: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,31 +216,6 @@ export async function fetchWeakestSkills(
     mastery_score: Number(row.mastery_score) || 0,
     mastery_level: row.mastery_level as number | null,
   }));
-}
-
-export async function fetchWeakestClusters(
-  query: WeaknessQuery,
-): Promise<ClusterWeakness[]> {
-  const supabase = getSupabaseAdmin();
-  const limit = query.limit || 10;
-  const minAttempts = query.minAttempts || 3;
-
-  const { data, error } = await supabase
-    .from("student_cluster_mastery")
-    .select("structure_cluster_id, attempts, correct, accuracy, mastery_score")
-    .eq("user_id", query.userId)
-    .gte("attempts", minAttempts)
-    .order("accuracy", { ascending: true })
-    .limit(limit);
-
-  if (error) {
-    if (query.failOnError) {
-      throw new Error(`weakest_clusters_query_failed: ${error.message}`);
-    }
-    return [];
-  }
-
-  return (data || []) as ClusterWeakness[];
 }
 
 // ---------------------------------------------------------------------------

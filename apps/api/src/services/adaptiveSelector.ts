@@ -3,7 +3,7 @@ import { fetchWeakestSkills } from "./mastery-read";
 import { isValidCanonicalId } from "../../../../shared/question-bank-contract";
 
 export type SectionFilter = "math" | "rw";
-export type SelectionMode = "balanced" | "skill" | "cluster";
+export type SelectionMode = "balanced" | "skill";
 export type DifficultyPolicy = "auto" | "easy" | "medium" | "hard";
 export type DifficultyBucket = "easy" | "medium" | "hard" | "unknown";
 
@@ -16,7 +16,6 @@ export interface SelectNextParams {
     mode?: SelectionMode;
     domain?: string;
     skill?: string;
-    clusterId?: string;
   };
   difficultyPolicy?: DifficultyPolicy;
   excludeCanonicalIds?: string[];
