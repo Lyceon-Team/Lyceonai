@@ -162,6 +162,52 @@ describe('RAG Security Surface', () => {
     expect(res.body.context.supportingQuestions[1].explanation).toBeNull();
   });
 
+  it('strips studentProfile (incl. canonical mastery_score) from student /api/rag/v2 responses', async () => {
+    handleRagQueryMock.mockResolvedValueOnce({
+      context: {
+        primaryQuestion: null,
+        supportingQuestions: [],
+        competencyContext: {
+          studentWeakAreas: ['algebra.linear_equations'],
+          studentStrongAreas: [],
+          competencyLabels: ['algebra.linear_equations'],
+        },
+        studentProfile: {
+          userId: 'test-user',
+          competencyMap: {
+            'algebra.linear_equations': { masteryScore: 0.2371, total: 8 },
+          },
+          personaTags: ['fast-mover'],
+        },
+      },
+      metadata: {
+        canonicalIdsUsed: [],
+        mode: 'concept',
+        processingTimeMs: 1,
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/rag/v2')
+      .send({
+        userId: 'victim-id',
+        message: 'Help me with this concept',
+        mode: 'concept',
+      });
+
+    expect(res.status).toBe(200);
+    // studentProfile must not cross to the client — it carries server-only mastery_score.
+    expect(res.body.context.studentProfile).toBeNull();
+    // Belt-and-suspenders: the forbidden field/value must not appear anywhere in the payload.
+    const serialized = JSON.stringify(res.body);
+    expect(serialized).not.toContain('masteryScore');
+    expect(serialized).not.toContain('0.2371');
+    expect(serialized).not.toContain('personaTags');
+    // Derived weak/strong analysis stays zeroed for students.
+    expect(res.body.context.competencyContext.studentWeakAreas).toEqual([]);
+    expect(res.body.context.competencyContext.studentStrongAreas).toEqual([]);
+  });
+
   it('generic authenticated student calls cannot leak answer or explanation fields', async () => {
     handleRagQueryMock.mockResolvedValueOnce({
       context: {

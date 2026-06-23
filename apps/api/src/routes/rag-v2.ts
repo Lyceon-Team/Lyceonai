@@ -56,6 +56,11 @@ function sanitizeRagResponseForStudent(response: RagQueryResponse): RagQueryResp
       primaryQuestion,
       supportingQuestions,
       competencyContext: sanitizedCompetencyContext,
+      // Anti-leak: studentProfile is a server-only RAG input. Its competencyMap
+      // carries the canonical mastery_score (Doc 05A §7.4 — service-role only) plus
+      // persona/learning signals. It must never cross to the client; the derived
+      // weak/strong analysis is already zeroed via competencyContext above.
+      studentProfile: null,
     },
   };
 }

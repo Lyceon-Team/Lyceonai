@@ -647,6 +647,9 @@ async function loadSkillSignals(userId: string): Promise<SkillSignal[]> {
       domain: row.domain ?? "general",
       subskill: null,
       masteryScore: typeof row.mastery_score === "number" ? row.mastery_score : 0.5,
+      // `accuracy` here carries the canonical mastery_score (there is no `accuracy`
+      // column on student_skill_mastery). Server-internal planner input only — fed to
+      // generateDeterministicPlan, never serialized to any client/guardian response.
       accuracy: typeof row.mastery_score === "number" ? row.mastery_score : 0.5,
       lastAttemptDate: row.last_event_occurred_at ? DateTime.fromISO(row.last_event_occurred_at).toISODate() : null,
     });

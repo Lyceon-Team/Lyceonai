@@ -29,10 +29,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Build the RAG competency map from canonical student_skill_mastery rows.
+ * @spec [Doc 05A §7.4 — student_skill_mastery service-role columns: mastery_score, event_count_total] | @implemented [2026-06-23]
+ * plain English: Build the RAG competency map from canonical student_skill_mastery rows.
  * Each entry carries the DB-computed mastery_score (0..1) and the event count — NOT
  * synthesized correct/incorrect tallies. Weak/strong classification happens downstream
  * from mastery_score; this reader only conforms the rows to the canonical signal.
+ * mastery_score is service-role only and never serialized to a client (stripped at the
+ * rag-v2 student boundary).
  */
 export function buildCompetencyMapFromMasteryRows(
   rows: MasterySkillRow[]
