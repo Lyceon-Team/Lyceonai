@@ -231,6 +231,35 @@ vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
 vi.mock("../../apps/api/src/services/weakness-view", () => ({
   buildWeaknessSkillsView: weaknessViewMocks.buildWeaknessSkillsView,
 }));
+
+const masteryReadMocks = {
+  fetchDomainMasteryRows: vi.fn(async () => []),
+};
+vi.mock("../../apps/api/src/services/mastery-read", () => ({
+  fetchDomainMasteryRows: masteryReadMocks.fetchDomainMasteryRows,
+  fetchSkillMasteryRows: vi.fn(async () => []),
+  buildMasterySummaryFromRows: vi.fn(() => []),
+  buildMasterySkillTreeFromRows: vi.fn(() => []),
+  fetchWeakestSkills: vi.fn(async () => []),
+  mapMasteryStatusFromLevel: vi.fn(),
+}));
+
+vi.mock("../../packages/shared/src/mastery", () => ({
+  masteryTierFromLevel: (level: number | null) => {
+    if (level === null) return "not_started";
+    if (level >= 3) return "proficient";
+    if (level === 2) return "improving";
+    return "weak";
+  },
+  masteryTierSchema: {
+    enum: ["not_started", "weak", "improving", "proficient"],
+  },
+  masteryLevelSchema: {},
+  skillMasteryNodeSchema: {},
+  domainMasteryNodeSchema: {},
+  sectionMasteryNodeSchema: {},
+  masteryTreeResponseSchema: {},
+}));
 vi.mock("../../apps/api/src/services/calendar-month-view", () => ({
   buildCalendarMonthView: calendarMocks.buildCalendarMonthView,
 }));
@@ -696,8 +725,8 @@ describe("Guardian reporting runtime contract", () => {
   });
 
   it("fails closed when canonical weakness view source fails", async () => {
-    weaknessViewMocks.buildWeaknessSkillsView.mockRejectedValueOnce(
-      new Error("weakness_view_failed"),
+    masteryReadMocks.fetchDomainMasteryRows.mockRejectedValueOnce(
+      new Error("domain_mastery_fetch_failed"),
     );
 
     const router = (await import("../../server/routes/guardian-routes"))
@@ -719,23 +748,10 @@ describe("Guardian reporting runtime contract", () => {
     expect(weaknessViewed).toBeUndefined();
   });
 
-  it("returns canonical student weakness view payload", async () => {
-    weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValueOnce({
-      ok: true,
-      count: 1,
-      skills: [
-        {
-          section: "math",
-          domain: "Algebra",
-          skill: "Linear Equations",
-          attempts: 8,
-          correct: 2,
-          accuracy: 0.25,
-          mastery_score: 25,
-          mastery_level: 1,
-        },
-      ],
-    });
+  it("returns canonical student domain mastery payload (AC#19 domain-grain)", async () => {
+    masteryReadMocks.fetchDomainMasteryRows.mockResolvedValueOnce([
+      { section: "math", domain: "Algebra", mastery_level: 1 },
+    ]);
 
     const router = (await import("../../server/routes/guardian-routes"))
       .default;
@@ -751,24 +767,19 @@ describe("Guardian reporting runtime contract", () => {
       expect.objectContaining({
         ok: true,
         count: 1,
-        skills: [
+        domains: [
           expect.objectContaining({
             section: "math",
             domain: "Algebra",
-            skill: "Linear Equations",
-            attempts: 8,
-            correct: 2,
-            accuracyPercent: 25,
-            status: "weak",
+            tier: "weak",
+            masteryLevel: 1,
           }),
         ],
       }),
     );
-    expect(weaknessViewMocks.buildWeaknessSkillsView).toHaveBeenCalledWith({
+    expect(masteryReadMocks.fetchDomainMasteryRows).toHaveBeenCalledWith({
       userId: "student-1",
       section: undefined,
-      limit: undefined,
-      minAttempts: undefined,
     });
     const weaknessViewed = systemEventInserts.find(
       (row) =>
@@ -778,68 +789,44 @@ describe("Guardian reporting runtime contract", () => {
     expect(weaknessViewed).toBeDefined();
   });
 
-  it("projects guardian weakness output without raw mastery internals", async () => {
-    weaknessViewMocks.buildWeaknessSkillsView.mockResolvedValue({
-      ok: true,
-      count: 2,
-      skills: [
-        {
-          section: "math",
-          domain: "Algebra",
-          skill: "Linear Equations",
-          attempts: 8,
-          correct: 2,
-          accuracy: 0.25,
-          mastery_score: 25,
-          mastery_level: 1,
-        },
-        {
-          section: "rw",
-          domain: "Information and Ideas",
-          skill: "Main Idea",
-          attempts: 6,
-          correct: 3,
-          accuracy: 0.5,
-          mastery_score: 50,
-          mastery_level: 2,
-        },
-      ],
-    });
-
-    const { weaknessRouter } =
-      await import("../../apps/api/src/routes/weakness");
-    const studentApp = express();
-    studentApp.use(express.json());
-    studentApp.use((req: any, _res, next) => {
-      req.user = {
-        id: "student-1",
-        role: "student",
-        isGuardian: false,
-        isAdmin: false,
-      };
-      next();
-    });
-    studentApp.use("/api/me/weakness", weaknessRouter);
+  it("projects guardian weakness output as domain-grain without raw mastery internals (AC#19)", async () => {
+    masteryReadMocks.fetchDomainMasteryRows.mockResolvedValue([
+      { section: "math", domain: "Algebra", mastery_level: 1 },
+      { section: "rw", domain: "Information and Ideas", mastery_level: 2 },
+    ]);
 
     const guardianRouter = (await import("../../server/routes/guardian-routes"))
       .default;
     const guardianApp = buildApp("guardian");
     guardianApp.use("/api/guardian", guardianRouter);
 
-    const studentResponse = await request(studentApp).get(
-      "/api/me/weakness/skills",
-    );
     const guardianResponse = await request(guardianApp).get(
       "/api/guardian/weaknesses/student-1",
     );
 
-    expect(studentResponse.status).toBe(200);
     expect(guardianResponse.status).toBe(200);
-    expect(guardianResponse.body.skills[0].mastery_score).toBeUndefined();
-    expect(guardianResponse.body.skills[0].accuracyPercent).toBe(25);
-    expect(guardianResponse.body.skills[0].status).toBe("weak");
-    expect(guardianResponse.body.skills[1].accuracyPercent).toBe(50);
-    expect(guardianResponse.body.skills[1].status).toBe("improving");
+    expect(guardianResponse.body.domains).toHaveLength(2);
+    expect(guardianResponse.body.domains[0]).toEqual(
+      expect.objectContaining({
+        section: "math",
+        domain: "Algebra",
+        tier: "weak",
+        masteryLevel: 1,
+      }),
+    );
+    expect(guardianResponse.body.domains[1]).toEqual(
+      expect.objectContaining({
+        section: "rw",
+        domain: "Information and Ideas",
+        tier: "improving",
+        masteryLevel: 2,
+      }),
+    );
+    const json = JSON.stringify(guardianResponse.body);
+    expect(json).not.toContain('"mastery_score"');
+    expect(json).not.toContain('"accuracy"');
+    expect(json).not.toContain('"accuracyPercent"');
+    expect(json).not.toContain('"skills"');
   });
 
   it("denies unlinked guardian summary requests and emits denied event", async () => {

@@ -9,8 +9,8 @@ import {
   fetchDomainMasteryRows,
   fetchSkillMasteryRows,
   fetchWeakestSkills,
-  mapMasteryStatusFromLevel,
 } from "../services/mastery-read";
+import { masteryTierFromLevel } from "../../../../packages/shared/src/mastery";
 import { DateTime } from "luxon";
 import { resolvePaidKpiAccessForUser } from "../../../../server/services/kpi-access";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
@@ -139,10 +139,9 @@ async function ensurePremiumMasteryAccess(
 }
 
 /**
- * GET /mastery/summary - READ ONLY endpoint
- *
- * Returns aggregated mastery summary by section and domain.
- * Does NOT mutate mastery state or recalculate scores.
+ * @spec [Doc 05B §5.4 + AC#20 — tier-only domain summary, no mastery_score/pct/percent] | @implemented [2026-06-23]
+ * plain English: returns section→domain tier summary from canonical domain mastery_level.
+ * The prior version aggregated non-existent `attempts/correct/accuracy` columns (never worked).
  */
 router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -158,8 +157,11 @@ router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
 
     const section = req.query.section as string | undefined;
 
-    const rows = await fetchSkillMasteryRows({ userId: user.id, section });
-    const summary = buildMasterySummaryFromRows(rows);
+    const domainRows = await fetchDomainMasteryRows({
+      userId: user.id,
+      section,
+    });
+    const summary = buildMasterySummaryFromRows(domainRows);
 
     res.json({
       ok: true,
@@ -172,14 +174,10 @@ router.get("/summary", async (req: AuthenticatedRequest, res: Response) => {
 });
 
 /**
- * GET /mastery/skills - READ ONLY endpoint
- *
- * Returns full skill tree with mastery status computed from STORED mastery scores.
- *
- * DERIVED COMPUTATION: Status thresholds (not_started, weak, improving, proficient)
- * are computed from stored mastery_score, but mastery_score itself is NOT recalculated.
- *
- * Does NOT apply decay, weighting, or mutate mastery state.
+ * @spec [Doc 05A §7.4 + Doc 05B §5.4 + AC#20 — tier-only skill tree] | @implemented [2026-06-23]
+ * plain English: returns section→domain→skill tree with tier-only data (no mastery_score,
+ * no mastery_pct, no percent). Skill tier from canonical mastery_level; domain tier from
+ * the domain's own canonical level; section = pure container.
  */
 router.get("/skills", async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -209,10 +207,11 @@ router.get("/skills", async (req: AuthenticatedRequest, res: Response) => {
 });
 
 /**
- * GET /mastery/weakest - READ ONLY endpoint
- *
- * Returns weakest skills sorted by stored accuracy.
- * Does NOT mutate mastery state or recalculate scores.
+ * @spec [Doc 05A §7.4 + AC#20 — tier-only weakest skills, mastery_score stripped at serialization]
+ * | @implemented [2026-06-23]
+ * plain English: returns weakest skills by canonical mastery_score ordering (ascending).
+ * ANTI-LEAK BOUNDARY: mastery_score/accuracy are server-side only (adaptiveSelector needs them);
+ * this route strips them before the response crosses to the client.
  */
 router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -242,10 +241,8 @@ router.get("/weakest", async (req: AuthenticatedRequest, res: Response) => {
       label: row.skill
         .replace(/_/g, " ")
         .replace(/\b\w/g, (c: string) => c.toUpperCase()),
-      attempts: row.attempts,
-      accuracy: Math.round(row.accuracy * 100), // accuracy still in 0-1 range
-      mastery_score: Math.round(row.mastery_score), // mastery_score now in 0-100 range
-      status: mapMasteryStatusFromLevel(row.mastery_level, row.attempts),
+      tier: masteryTierFromLevel(row.mastery_level),
+      masteryLevel: row.mastery_level,
     }));
 
     return res.json({ weakest: formatted });

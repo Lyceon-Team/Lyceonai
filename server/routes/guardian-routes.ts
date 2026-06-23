@@ -17,8 +17,8 @@ import {
 } from "../lib/account";
 // Intentional cross-boundary imports: guardian runtime routes reuse canonical apps/api services for shared exam/mastery reads.
 import * as fullLengthExamService from "../../apps/api/src/services/fullLengthExam";
-import { buildWeaknessSkillsView } from "../../apps/api/src/services/weakness-view";
-import { mapMasteryStatusFromLevel } from "../../apps/api/src/services/mastery-read";
+import { fetchDomainMasteryRows } from "../../apps/api/src/services/mastery-read";
+import { masteryTierFromLevel } from "../../packages/shared/src/mastery";
 import {
   buildStudentKpiViewFromCanonical,
   buildStudentFullLengthReportView,
@@ -839,8 +839,15 @@ router.get(
 );
 
 // ============================================================================
-// GUARDIAN WEAKNESS ROLLUPS - Shows student's weakest competency areas
+// GUARDIAN WEAKNESS ROLLUPS - Domain-grain only (AC#19: no per-skill mastery for guardians)
 // ============================================================================
+/**
+ * @spec [Parent AC#19 — guardian surfaces expose domain-grain only, never per-skill mastery;
+ *   Doc 05B §5.4 — student_domain_mastery is student-readable] | @implemented [2026-06-23]
+ * plain English: returns domain-level mastery tiers for a linked student. Per-skill rows and
+ * accuracyPercent are removed (AC#19 violation closure). mastery_score/mastery_pct never cross
+ * to the guardian surface.
+ */
 router.get(
   "/weaknesses/:studentId",
   requireSupabaseAuth,
@@ -853,13 +860,7 @@ router.get(
       const { studentId } = req.params;
       const section =
         typeof req.query.section === "string" ? req.query.section : undefined;
-      const limit = Number.parseInt(String(req.query.limit ?? ""), 10);
-      const minAttempts = Number.parseInt(
-        String(req.query.minAttempts ?? ""),
-        10,
-      );
 
-      // CANONICAL: Verify guardian-student link via guardian_links
       const linked = await isGuardianLinkedToStudent(guardianId, studentId);
       if (!linked && req.user!.role !== "admin") {
         logger.warn(
@@ -880,39 +881,34 @@ router.get(
           .json({ error: "Not authorized to view this student", requestId });
       }
 
-      const view = await buildWeaknessSkillsView({
+      const domainRows = await fetchDomainMasteryRows({
         userId: studentId,
         section,
-        limit: Number.isFinite(limit) ? limit : undefined,
-        minAttempts: Number.isFinite(minAttempts) ? minAttempts : undefined,
       });
-      const safeSkills = view.skills.map((skill) => ({
-        section: skill.section,
-        domain: skill.domain,
-        skill: skill.skill,
-        attempts: skill.attempts,
-        correct: skill.correct,
-        accuracyPercent: Math.round((skill.accuracy ?? 0) * 100),
-        status: mapMasteryStatusFromLevel(skill.mastery_level, skill.attempts),
+      const domains = domainRows.map((row) => ({
+        section: row.section,
+        domain: row.domain,
+        tier: masteryTierFromLevel(row.mastery_level),
+        masteryLevel: row.mastery_level,
       }));
       logger.info(
         "GUARDIAN",
         "weaknesses_view",
-        "Guardian viewed student weaknesses",
-        { guardianId, studentId, count: view.count, requestId },
+        "Guardian viewed student domain mastery",
+        { guardianId, studentId, count: domains.length, requestId },
       );
       await emitGuardianAccessEvent({
         eventType: "guardian_report_viewed",
         guardianId,
         studentId,
         requestId,
-        details: { surface: "weaknesses", count: view.count },
+        details: { surface: "weaknesses", count: domains.length },
       });
 
       return res.json({
-        ok: view.ok,
-        count: safeSkills.length,
-        skills: safeSkills,
+        ok: true,
+        count: domains.length,
+        domains,
         requestId,
       });
     } catch (err) {
