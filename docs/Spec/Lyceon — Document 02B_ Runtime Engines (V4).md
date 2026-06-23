@@ -297,7 +297,7 @@ This section maps runtime responsibilities to actual DB tables as verified throu
 | ----- | ----- | ----- |
 | Domain-tier mastery | `student_domain_mastery` | Read-only at runtime; written only via RPC |
 | Skill-tier mastery | `student_skill_mastery` | RLS `no_direct_write` policy; written only via RPC |
-| Cluster-tier mastery | `student_cluster_mastery` | RLS `no_direct_write` policy; written only via RPC |
+| Cluster-tier mastery | `student_cluster_mastery` | RLS `no_direct_write` policy; written only via RPC, this is post launch spec only, we will not build for cluster at launch |
 | Constants | `mastery_constants` | Mastery math configuration (alpha, deltas, multipliers, boundaries) |
 | KPI constants | `kpi_constants` | KPI weights and scaling |
 | Current rollups | `student_kpi_rollups_current` | Derived view |
