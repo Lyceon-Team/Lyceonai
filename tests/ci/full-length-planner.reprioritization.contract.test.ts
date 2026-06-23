@@ -317,22 +317,20 @@ describe("Full-length planner reprioritization", () => {
       ],
       student_skill_mastery: [
         {
-          user_id: "student-1",
+          student_id: "student-1",
           section: "Math",
           domain: "algebra",
           skill: "math.linear_equations",
           mastery_score: 0.3,
-          accuracy: 0.4,
-          last_attempt_at: "2026-03-30T00:00:00.000Z",
+          last_event_occurred_at: "2026-03-30T00:00:00.000Z",
         },
         {
-          user_id: "student-1",
+          student_id: "student-1",
           section: "Reading & Writing",
           domain: "information_and_ideas",
           skill: "rw.command_of_evidence",
           mastery_score: 0.6,
-          accuracy: 0.7,
-          last_attempt_at: "2026-03-29T00:00:00.000Z",
+          last_event_occurred_at: "2026-03-29T00:00:00.000Z",
         },
       ],
       student_study_plan_days: [
@@ -475,13 +473,12 @@ describe("Full-length planner reprioritization", () => {
       ],
       student_skill_mastery: [
         {
-          user_id: "student-2",
+          student_id: "student-2",
           section: "Math",
           domain: "problem_solving",
           skill: "math.problem_solving",
           mastery_score: 0.4,
-          accuracy: 0.5,
-          last_attempt_at: "2026-03-31T00:00:00.000Z",
+          last_event_occurred_at: "2026-03-31T00:00:00.000Z",
         },
       ],
       student_study_plan_days: [
