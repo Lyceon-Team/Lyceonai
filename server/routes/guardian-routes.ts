@@ -360,13 +360,11 @@ router.delete(
             "Guardian link no longer active at revoke time",
             { guardianId, studentId, requestId },
           );
-          return res
-            .status(409)
-            .json({
-              error: "Link is no longer active",
-              code: "LINK_NOT_ACTIVE",
-              requestId,
-            });
+          return res.status(409).json({
+            error: "Link is no longer active",
+            code: "LINK_NOT_ACTIVE",
+            requestId,
+          });
         }
         logger.error("GUARDIAN", "unlink_student", "Failed to unlink student", {
           error: revokeError.message,
@@ -895,11 +893,7 @@ router.get(
         attempts: skill.attempts,
         correct: skill.correct,
         accuracyPercent: Math.round((skill.accuracy ?? 0) * 100),
-        status: mapMasteryStatusFromLevel(
-          skill.mastery_level,
-          skill.attempts,
-          skill.mastery_score,
-        ),
+        status: mapMasteryStatusFromLevel(skill.mastery_level, skill.attempts),
       }));
       logger.info(
         "GUARDIAN",
