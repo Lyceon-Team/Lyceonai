@@ -224,7 +224,7 @@ Confirmed: exact same 23-key set as the serialized form. CTO-verified authoritat
 
 ## G. Cascade Target Inventory
 
-**Verdict: OPEN-GATE — 21 tables found vs spec's 10 (+ Q9 owner question)**
+**Verdict: OPEN-GATE — 21 tables found vs spec's 10 (Q9=(a) applied: event sources → Layer 2 anonymize)**
 
 ### Complete student-data surface (live, 21 tables)
 
@@ -273,9 +273,17 @@ In **anonymized-retention mode** (Q5 default once privacy sign-off clears), Laye
 
 **Asymmetry:** the ML-retention value of anonymized-retention lives in the event stream (per-question, per-difficulty, per-timestamp granularity), not in the pre-aggregated mastery scores. If the source events are hard-deleted while the aggregates are retained, the anonymized data has no re-derivation path and limited ML utility.
 
-**Q9: In anonymized-retention mode, do the raw event source tables (`practice_session_items`, `review_error_attempts`) get hard-deleted (Layer 1) or anonymized (Layer 2 surrogate)? The retention ruling's ML value lives in the per-event stream, not the pre-aggregated mastery scores. If anonymized: the `user_id` column in `practice_session_items` (not `student_id`) needs the same surrogate replacement, and the cascade function must handle the column-name difference.**
+**Q9: In anonymized-retention mode, do the raw event source tables (`practice_session_items`, `review_error_attempts`) get hard-deleted (Layer 1) or anonymized (Layer 2 surrogate)?**
 
-Do NOT resolve — this is an owner call tied to the Q5 retention purpose.
+**Q9=(a) ANSWERED:** Event-source tables are **anonymized-and-retained** (Layer 2). Owner ruling: every response is world-model training corpus — event-stream preservation is a platform invariant. The ML-retention value lives in the per-event stream (per-question, per-difficulty, per-timestamp granularity), not the pre-aggregated mastery scores.
+
+**Consequence applied:** The `user_id` column in `practice_session_items` (not `student_id`) gets the same surrogate replacement. The cascade function must parameterize the target column name per table (see INV-05D-18).
+
+**FK-cascade constraint (discovered):** Retaining event sources requires retaining their FK-parent session containers — deleting a parent would CASCADE-delete the retained children:
+- `review_error_attempts` FK → `review_session_items` FK → `review_sessions`: all three must be Layer 2 anonymized
+- `practice_session_items` FK → `practice_sessions`: both must be Layer 2 anonymized
+
+This means steps 1–3 and 5–6 are ALL Layer 2 in anonymized-retention mode (not just the event-source steps 1 and 5). Only step 4 (`review_schedule`, no FK from retained tables) remains Layer 1 hard-delete.
 
 ### Review-Table CASCADE FK Interaction
 
@@ -343,7 +351,18 @@ The function deletes in this exact order. Each step includes the column used for
 
 **No FK enforces** the ordering among the 13 mastery/KPI/projection tables (steps 7–19) — they use logical `student_id` references without DB-level FKs. The committed order above is the function's imposed ordering; the exact-target test (PR-3 rehearsal) must prove: (a) every step deletes exactly the target student's rows, (b) no step fails due to FK violation, (c) no CASCADE side-effect deletes rows not counted by the function.
 
-**Layer 2 (anonymized-retention mode):** Steps 18–19 (audit logs) and steps 7–17 (mastery/KPI/projection) are REPLACED with surrogate-update (anonymize `student_id` → `v_surrogate`). Steps 1–6 (event source + session tables) and steps 20–21 (legal) are hard-deleted in BOTH modes — **unless Q9 ruling changes the event-source treatment.** The `user_id` column in steps 5–6 requires the surrogate to target `user_id` instead of `student_id` if Q9 rules anonymize.
+**Layer 1 / Layer 2 Split (Q9=(a) applied):**
+
+| Steps | Tables | hard-delete mode | anonymized-retention mode |
+|-------|--------|-------------------|---------------------------|
+| 1–3 | `review_error_attempts`, `review_session_items`, `review_sessions` | Hard-delete | **Anonymize** (`student_id` → `v_surrogate`) — step 1 is event source; steps 2–3 retained as FK parents |
+| 4 | `review_schedule` | Hard-delete | Hard-delete — no FK from retained tables |
+| 5–6 | `practice_session_items`, `practice_sessions` | Hard-delete | **Anonymize** (`user_id` → `v_surrogate`) — step 5 is event source; step 6 retained as FK parent |
+| 7–17 | Projection, KPI, mastery tables | Hard-delete | Anonymize (`student_id` → `v_surrogate`) |
+| 18–19 | Audit logs | Hard-delete | Anonymize (`student_id` → `v_surrogate`) |
+| 20–21 | Legal tables | Hard-delete | Hard-delete — independent of mastery layer |
+
+**Column-name divergence in anonymize mode:** Steps 5–6 target `user_id` (not `student_id`); the cascade function must parameterize the surrogate-update column name per table. This is the same column-name difference that INV-05D-18 (canonical-ID invariant) tracks for deferred retrofit (GAP-HY-20).
 
 ---
 
@@ -460,7 +479,7 @@ Per owner ruling (R10): ship in degraded mode. The §9.2 outbox consumer deploys
 | **D** | PASS | Both audit write call sites confirmed |
 | **E** | PASS + OPEN-GATE | Existing tables correct; `mastery_constants_change_log` needs RLS at creation |
 | **F** | PASS | 23 formula keys byte-exact match; 12 operational confirmed |
-| **G** | OPEN-GATE + Q9 | 21-table inventory (17 via `student_id` + 4 via `user_id`); committed delete order; Q9 owner question on event-source treatment in anonymized-retention |
+| **G** | OPEN-GATE (Q9=(a) applied) | 21-table inventory; committed delete order (children-first, 21 steps); Q9=(a): event sources + FK parents → Layer 2 anonymize; seam contract documented; INV-05D-18 canonical-ID invariant |
 | **H** | OPEN-GATE | `BLOCKING_UPSTREAM_GAP` — 04B→05C seam |
 | **I** | OPEN-GATE | `BLOCKING_PRIVACY_GAP` — privacy sign-off gates Layer 2 default |
 | **J** | OPEN-GATE | All 9 CI guards are build items (PR-6) |
@@ -521,6 +540,100 @@ The CHECK constraint `IN ('event', 'backfill_recompute')` **cannot land** until:
 3. Both SET LOCALs and the CHECK constraint land in the **same migration**
 
 If the CHECK is added without #1, all existing event-time audit inserts will fail (triggered_by = NULL violates CHECK). This is a **breaking change** if not coordinated.
+
+---
+
+---
+
+## Deletion-Lifecycle Seam Map
+
+> Read-only audit of the live implementation (PRs #403–#411, merged to main 2026-06-22). Maps the 3-layer ownership model and identifies where 05D §10's `cascade_account_deletion` plugs into the existing lifecycle. NO code produced — audit + plan only.
+
+### 3-Layer Ownership Model
+
+| Layer | Owner | Scope | Status |
+|-------|-------|-------|--------|
+| **1. Identity/Platform** (Doc 01 §40) | Doc 01 | Full-account teardown orchestration: grace request/cancel/recover, profile PII scrub (`deidentify_user`), Stripe cancellation, auth disable, grace-expiry driver | PARTIALLY BUILT — request/cancel/recover BUILT (#403–#411); `deidentify_user` APPLIED (profiles PII only, HY-15); grace-expiry driver NOT autonomous (OP-01/OP-03) |
+| **2. Mastery Cascade** (Doc 05D §10) | Doc 05D | `cascade_account_deletion(p_student_id, p_mode)` — mastery-layer slice: 21 tables in committed order, Layer 1 hard-delete or Layer 2 anonymize per mode | NOT BUILT (GAP-MA-12) |
+| **3. Tutor/LISA Cascade** (Doc 03A) | Doc 03A | `tutor_conversations`, `tutor_messages`, `memory_summaries`, `instruction_*`, `question_links` — conversation-store feature-table cascade | NOT BUILT (GAP-HY-15 feature-table cascade, gated on Doc 03A V2 retention) |
+
+### Current Execution Flow (as-built)
+
+```
+[Vercel CRON or manual trigger]
+  → POST /api/internal/execute-deletions (CRON_SECRET + flag gate)
+    → executeDueDeletions(admin, requestId?)
+      → SELECT from account_deletion_requests
+          WHERE status='pending' AND scheduled_hard_delete_at <= now()
+      → FOR EACH expired request:
+          → admin.rpc('deidentify_user', { target_user_id, deleted_email })
+            → profiles PII scrub ONLY (name→'Deleted User', email→hash, dob→NULL, etc.)
+          → UPDATE account_deletion_requests SET status='completed'
+      ← returns { processed, failed, results[] }
+```
+
+**What's missing from the execution flow:**
+
+1. **Feature-table cascade** — `executeDueDeletions` calls `deidentify_user` which only scrubs `profiles` PII. The 21 mastery/KPI/projection/practice/review tables (§G inventory) are UNTOUCHED. Student data in these tables survives "deletion."
+2. **Tutor cascade** — `tutor_conversations`/`messages`/`memory_summaries` untouched (GAP-HY-15/TU-03). Verbatim minor–AI conversations survive de-identification.
+3. **Autonomous scheduling** — `POST /api/internal/execute-deletions` exists but is NOT scheduled in `vercel.json` (only `legal-acceptance-drain` is). The T+7 sweep never fires autonomously (GAP-OP-01/OP-03).
+
+### Where cascade_account_deletion Plugs In
+
+05D §10 builds `cascade_account_deletion(p_student_id uuid, p_mode text)` as a **callable unit** — a single RPC that handles the mastery-layer slice (21 tables, Layer 1 or Layer 2 per mode).
+
+**Integration point:** `executeDueDeletions()` in `server/lib/account-deletion-execute.ts` calls the cascade RPCs **before** `deidentify_user`:
+
+```
+→ executeDueDeletions(admin, requestId?)
+  → FOR EACH expired request:
+      → admin.rpc('cascade_account_deletion', { p_student_id, p_mode })  ← NEW (05D §10)
+      → admin.rpc('cascade_tutor_data', { ... })                        ← FUTURE (Doc 03A)
+      → admin.rpc('deidentify_user', { target_user_id, deleted_email }) ← EXISTING
+      → UPDATE account_deletion_requests SET status='completed'
+```
+
+**Ordering constraint:** Feature-table cascades (mastery + tutor) must run BEFORE `deidentify_user`. While `deidentify_user` does an UPDATE (not DELETE) so RESTRICT FKs don't block it, the cascade should run while the profile UUID is still resolvable for audit/logging purposes.
+
+**RESTRICT-gated tables (Doc 01 ownership):** `account_deletion_requests` itself has `profile_id FK → profiles.id RESTRICT` — the profile row can never be hard-deleted while deletion request rows exist. This is by design: the request is the audit trail. `deidentify_user` UPDATEs (not DELETEs) the profile, so RESTRICT is not triggered.
+
+---
+
+## Q10 — Grace-Expiry Driver Ownership (OWNER QUESTION)
+
+The account-deletion lifecycle has a gap at the **grace-expiry driver** — the autonomous process that selects expired pending requests and triggers the cascade chain.
+
+**Current state:**
+- `POST /api/internal/execute-deletions` EXISTS and is CRON_SECRET + flag gated
+- It calls `executeDueDeletions()` which selects `WHERE status='pending' AND scheduled_hard_delete_at <= now()`
+- But it is NOT scheduled — no `vercel.json` cron, no `pg_cron` job, no GHA schedule fires it
+- GAP-OP-01 (scheduling infrastructure) is OPEN; GAP-OP-03 (auto-execute) is PARTIAL
+
+**Q10: Who owns the grace-expiry driver that calls `cascade_account_deletion` when the 7-day grace expires?**
+
+- **(a) Doc 01 (identity/platform)** — the driver is platform infrastructure that orchestrates all three cascade layers. Doc 01 owns the `/execute-deletions` endpoint and `executeDueDeletions`. The driver is a scheduling concern (GAP-OP-01), not a mastery concern.
+- **(b) Doc 05D (mastery governance)** — 05D's cascade is the most complex (21 tables, two modes) and the driver's correctness is entangled with the cascade's ordering and mode selection.
+- **(c) Shared** — Doc 01 owns the scheduling/CRON trigger; 05D owns the cascade RPC called by it. The driver fires the cascade but doesn't own its internals.
+
+**Recommendation:** (c) matches the as-built seam — Doc 01 owns the endpoint/scheduling, 05D owns the callable cascade RPC. But the driver itself (the autonomous scheduler that fires it) is Doc 01/OP-01 scope.
+
+Do NOT resolve — this is an owner call on infrastructure ownership.
+
+---
+
+## INV-05D-18 — Canonical Profile-Reference Column Name
+
+**Invariant:** `student_id` is THE canonical column name for the per-profile UUID on every feature table. `user_id` as a profile-reference column name is **FORBIDDEN** for new tables going forward.
+
+**Rationale:** The cascade function targets student data across 21 tables. 17 use `student_id`; 4 use `user_id` (`practice_session_items`, `practice_sessions`, `legal_acceptances`, `legal_acceptance_outbox`). The column-name inconsistency forces the cascade function to parameterize the target column per table, complicates the surrogate-update in anonymized-retention mode, and creates a class of bugs where `WHERE student_id = p_student_id` silently misses `user_id` tables (the original §G inventory missed all 4 `user_id` tables for exactly this reason).
+
+**Enforcement:** CI guard (PR-6 scope) must reject any new migration adding a `user_id` column that references `profiles.id` — force `student_id` instead.
+
+**Existing violations:** 4 tables tracked as GAP-HY-20 (deferred retrofit, NOT in 05D scope):
+- `practice_session_items.user_id`
+- `practice_sessions.user_id`
+- `legal_acceptances.user_id`
+- `legal_acceptance_outbox.user_id`
 
 ---
 
