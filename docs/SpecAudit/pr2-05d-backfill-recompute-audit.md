@@ -487,4 +487,17 @@ Order matters: step 2 (recompute_skill_mastery) references `refresh_domain_maste
 
 ---
 
-**STOP. No code until this plan is audited together.**
+---
+
+## 10. Deferred Gaps (Tracked, Not in PR-2 Scope)
+
+| ID | Gap | Spec ref | Priority | Ruling |
+|---|---|---|---|---|
+| AF-1 | `mastery_domain_refresh_audit_log.last_event_id` column missing | Doc 05D §4.2 | LOW | Q-PR2-3: SKIP in PR-2. 05B's `refresh_domain_mastery` does not write these columns yet (they must be added as a coordinated 05B+05D change). Zero functional impact — the column is audit-only. |
+| AF-2 | `mastery_domain_refresh_audit_log.last_event_occurred_at` column missing | Doc 05D §4.2 | LOW | Q-PR2-3: SKIP in PR-2. Same coordination requirement as AF-1. |
+
+Both gaps are additive column additions + a coordinated 05B `refresh_domain_mastery` edit to populate them. No existing behavior affected.
+
+---
+
+**Phase 1 complete. Phase 2 migration built: `supabase/migrations/20260625000000_05d_backfill_recompute.sql`.**

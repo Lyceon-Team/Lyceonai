@@ -221,6 +221,10 @@ BEGIN
   -- projection-refresh throttle (Doc 05C §8.4 — fires compute_section_projection on the every-Nth
   -- event, else just increments the counter). Any failure rolls back the WHOLE event (Parent §7.8):
   -- skill + domain + 4 KPI + (throttled) projection are one atomic unit, or none. LYCEON-MIGRATION-REVIEWED
+  --
+  -- Q2 FIX: set GUC provenance BEFORE refresh_domain_mastery so the audit row records
+  -- triggered_by = 'event' (Doc 05D §4.2 constraint). Previously NULL (GUC was never set). LYCEON-MIGRATION-REVIEWED
+  SET LOCAL app.mastery_refresh_trigger = 'event';
   PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
   PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
 
@@ -228,6 +232,100 @@ BEGIN
   RETURN v_result_row;
 END;
 $$;
+
+
+--
+-- Name: backfill_recompute_student(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone DEFAULT now()) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $func$
+DECLARE
+  v_sec   text;
+  v_dom   text;
+  v_skl   text;
+BEGIN
+  -- Student-level advisory lock: serializes backfill against concurrent live events for
+  -- the same student (Doc 05D §7.2). lock_timeout is generous (10s) because the backfill
+  -- touches every entity for the student.
+  -- @reconciliation RB-05D-PR2-01: §7.2 spec body shows lock BEFORE lock_timeout; this
+  --   migration sets lock_timeout BEFORE the lock call (operationally correct — the timeout
+  --   must govern the subsequent lock attempt). Matches the established pattern in
+  --   apply_mastery_event §4.3/§4.4 and recompute_skill_mastery. The EXCEPTION handler is
+  --   also not in the spec body but matches the same established pattern. Spec body is an
+  --   editorial ordering error; the implementation is correct. LYCEON-MIGRATION-REVIEWED
+  SET LOCAL lock_timeout = '10s';
+  BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('backfill|' || p_student_id::text));
+  EXCEPTION WHEN lock_not_available OR query_canceled THEN
+    RAISE EXCEPTION 'MASTERY_LOCK_TIMEOUT: backfill_recompute_student (%)', p_student_id;
+  END;
+
+  -- GUC provenance: all downstream audit rows record 'backfill_recompute' (Doc 05D §4.2).
+  -- SET LOCAL scopes to this transaction — does not leak to concurrent sessions.
+  SET LOCAL app.mastery_refresh_trigger = 'backfill_recompute';
+
+  -- STRICT DEPENDENCY ORDER (INV-05D-17): skill → domain → KPI → projection.
+  -- Each step calls a sibling-owned RPC (INV-05D-A1 — 05D never reimplements a formula).
+
+  -- 1. Skill mastery: call 05A's locked recompute_skill_mastery (RB-05D-V1-A)
+  --    with p_chain_downstream := false — the backfill handles domain/KPI/projection
+  --    itself in steps 2–4 with lock-order monotonicity. NOT EXISTS selection: only
+  --    skills with events but no student_skill_mastery row.
+  FOR v_sec, v_dom, v_skl IN
+    SELECT DISTINCT e.section, e.domain, e.skill
+    FROM   public.canonical_mastery_events_for_student(p_student_id) e
+    WHERE  NOT EXISTS (
+               SELECT 1 FROM public.student_skill_mastery sm
+               WHERE  sm.student_id = p_student_id
+                 AND  sm.section = e.section
+                 AND  sm.domain  = e.domain
+                 AND  sm.skill   = e.skill)
+  LOOP
+    PERFORM public.recompute_skill_mastery(
+      p_student_id, v_sec, v_dom, v_skl,
+      false  -- p_chain_downstream := false (deadlock prevention)
+    );
+  END LOOP;
+
+  -- 2. Domain mastery: 05B's refresh_domain_mastery for every (section,domain) with
+  --    events but no student_domain_mastery row. refresh_domain_mastery internally
+  --    chains the 4 KPI refreshers (05B §4.9), so step 3 is partially satisfied
+  --    by step 2 for the domains it touches. NOT EXISTS selection: never-computed only.
+  --    SINGLE-FIRE PROOF: with p_chain_downstream=false in step 1, no domain refresh
+  --    has fired yet — step 2's NOT EXISTS correctly selects all domains that need it.
+  FOR v_sec, v_dom IN
+    SELECT DISTINCT e.section, e.domain
+    FROM   public.canonical_mastery_events_for_student(p_student_id) e
+    WHERE  NOT EXISTS (
+               SELECT 1 FROM public.student_domain_mastery dm
+               WHERE  dm.student_id = p_student_id
+                 AND  dm.section = e.section
+                 AND  dm.domain  = e.domain)
+  LOOP
+    PERFORM public.refresh_domain_mastery(p_student_id, v_sec, v_dom);
+  END LOOP;
+
+  -- 3. KPI rollups (TERMINAL SURFACE — refreshed unconditionally, RB-05D-V1-04).
+  --    refresh_domain_mastery (step 2) already chained the section/domain/skill/overall
+  --    KPI refreshers per 05B §4.9 for domains it touched; this terminal refresh
+  --    guarantees the four KPI surfaces reflect final derived state even when domain
+  --    rows pre-existed (partial-legacy student). Deterministic upsert, not a
+  --    reimplementation. p_t_now flows through for §8 determinism verification.
+  PERFORM public.refresh_section_kpi(p_student_id, 'M',  p_t_now);
+  PERFORM public.refresh_section_kpi(p_student_id, 'RW', p_t_now);
+  PERFORM public.refresh_overall_kpi(p_student_id, p_t_now);
+
+  -- 4. Projection (TERMINAL SURFACE — refreshed unconditionally, RB-05D-V1-04).
+  --    The Q4 gate inside compute_section_projection self-protects (emits NULL
+  --    projection if the 8-domain gate is not met), so calling it unconditionally
+  --    is correct and deterministic. p_t_now flows through for §8 determinism.
+  PERFORM public.compute_section_projection(p_student_id, 'M',  p_t_now);
+  PERFORM public.compute_section_projection(p_student_id, 'RW', p_t_now);
+END;
+$func$;
 
 
 --
@@ -351,6 +449,42 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
     AND ra.section    = p_section
     AND ra.domain     = p_domain
     AND (p_entity_type = 'domain' OR ra.skill = p_skill);
+$$;
+
+
+--
+-- Name: canonical_mastery_events_for_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) RETURNS TABLE(event_id uuid, event_source_kind text, source_family text, section text, domain text, skill text, difficulty smallint, correct boolean, occurred_at timestamp with time zone, question_id text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT
+    pi.id                       AS event_id,
+    'practice_attempt'::text    AS event_source_kind,
+    'practice'::text            AS source_family,
+    pi.question_section         AS section,
+    pi.question_domain          AS domain,
+    pi.question_skill           AS skill,
+    pi.question_difficulty      AS difficulty,
+    pi.is_correct               AS correct,
+    pi.occurred_at              AS occurred_at,
+    pi.question_id              AS question_id
+  FROM public.practice_session_items pi
+  WHERE pi.user_id = p_student_id
+    AND pi.status  = 'answered'
+    AND pi.question_section IN ('M','RW')
+
+  UNION ALL
+
+  SELECT
+    ra.id, 'review_error_attempt'::text, 'review'::text,
+    ra.section, ra.domain, ra.skill, ra.difficulty,
+    ra.is_correct, ra.occurred_at, ra.question_id
+  FROM public.review_error_attempts ra
+  WHERE ra.student_id = p_student_id
+    AND ra.section IN ('M','RW');
 $$;
 
 
@@ -1410,10 +1544,10 @@ $$;
 
 
 --
--- Name: recompute_skill_mastery(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: recompute_skill_mastery(uuid, text, text, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) RETURNS public.student_skill_mastery
+CREATE FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean DEFAULT true) RETURNS public.student_skill_mastery
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -1457,9 +1591,25 @@ BEGIN
     WHERE student_id=p_student_id AND section=p_section AND domain=p_domain AND skill=p_skill
     RETURNING * INTO v_row;
   END IF;
-  -- TODO(05B): refresh_domain_mastery(p_student_id,p_section,p_domain) is owned by 05B (a later
-  -- item) and MUST be called here once 05B lands, per Doc 05A §5.1 — else skill/domain drift.
-  -- Tracked in the B-WS3-1 contract §G as a hard sequential dependency; not in B-WS3-1 scope.
+
+  -- Q4 CLOSURE (Doc 05A §5.1): conditional downstream fan-out. When p_chain_downstream
+  -- is true (the default — event-time path via apply_mastery_event or standalone recompute),
+  -- fire refresh_domain_mastery + bump_projection_refresh_counter in this transaction.
+  -- When false (backfill path), the caller handles domain/KPI/projection in strict
+  -- skill→domain→KPI→projection order with lock-order monotonicity (Doc 05D §7.2).
+  -- Provenance GUC: COALESCE(NULLIF(...,''),'backfill_recompute') inherits an already-set
+  -- GUC (apply_mastery_event sets 'event') or defaults to 'backfill_recompute' for
+  -- standalone recompute calls. LYCEON-MIGRATION-REVIEWED
+  -- set_config(name, value, is_local) with is_local=true = SET LOCAL semantics.
+  -- SET LOCAL cannot evaluate expressions, so set_config is required here. LYCEON-MIGRATION-REVIEWED
+  IF p_chain_downstream THEN
+    PERFORM set_config('app.mastery_refresh_trigger',
+      COALESCE(NULLIF(current_setting('app.mastery_refresh_trigger', true), ''), 'backfill_recompute'),
+      true);
+    PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
+    PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
+  END IF;
+
   RETURN v_row;
 END;
 $$;
@@ -2880,10 +3030,11 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
     event_count_after integer NOT NULL,
     constants_snapshot_hash text NOT NULL,
     mastery_model_version text NOT NULL,
-    triggered_by text,
+    triggered_by text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
-    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
 );
 
 
@@ -6132,6 +6283,14 @@ GRANT ALL ON FUNCTION public.apply_mastery_event(p_student_id uuid, p_section te
 
 
 --
+-- Name: FUNCTION backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION bump_projection_refresh_counter(p_student_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -6153,6 +6312,14 @@ GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO servi
 
 REVOKE ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) TO service_role;
+
+
+--
+-- Name: FUNCTION canonical_mastery_events_for_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) TO service_role;
 
 
 --
@@ -6385,11 +6552,11 @@ GRANT ALL ON FUNCTION public.read_projection_constants(OUT target_qcount integer
 
 
 --
--- Name: FUNCTION recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) TO service_role;
+REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) TO service_role;
 
 
 --
