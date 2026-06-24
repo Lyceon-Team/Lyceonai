@@ -3,7 +3,7 @@
 Governance, rulings (R1: Doc 05 family controls; R2: guardian grace-period carve-out), severity scheme, status legend, dispositions: `README.md`.
 **V1.1 changes:** all six VERIFY entries finalized from the dual-agent Verification Pass (Claude Code + Codex, independent, corroborating on all items); constants dump (`mastery_constants` 25 rows, `kpi_constants` 2 rows — owner confirms these are the only constants tables) analyzed and folded in; 3 new gaps (MA-10, MA-11, ID-12); TU-08 reclassified CRITICAL→HIGH (broad claim refuted, narrow defect confirmed); ID-11 elevated HIGH→CRITICAL (consent forgery). This registry is self-contained: decisive evidence is inline; raw auditor reports are not committed to the repo.
 
-**Totals:** 71 gap entries — **7 CRITICAL, 28 HIGH, 24 MEDIUM, 12 LOW** — plus **21** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0; SP-18 rounding-decimals mislabel, SP-19 §12 mixed-fixture ordering — B-WS3-1 2026-06-10; SP-20 admin_role vs genesis 3-role model — B-WS3-1 spec-auditor pass 2026-06-10; SP-21 question_id TEXT-vs-uuid seam mismatch — B-WS2-1 2026-06-10; SP-22 §6.2 stale table name, SP-23 §4.3 stale audit column name — Lane C 2026-06-13; SP-24 cluster-mastery owner decision — 05B/05C wave 2026-06-13; SP-25 guardian/entitlement table-name drift — 05B 2026-06-13) and 9 conformant verifications. Zero entries remain in VERIFY status.
+**Totals:** 72 gap entries — **7 CRITICAL, 29 HIGH, 24 MEDIUM, 12 LOW** — plus **21** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0; SP-18 rounding-decimals mislabel, SP-19 §12 mixed-fixture ordering — B-WS3-1 2026-06-10; SP-20 admin_role vs genesis 3-role model — B-WS3-1 spec-auditor pass 2026-06-10; SP-21 question_id TEXT-vs-uuid seam mismatch — B-WS2-1 2026-06-10; SP-22 §6.2 stale table name, SP-23 §4.3 stale audit column name — Lane C 2026-06-13; SP-24 cluster-mastery owner decision — 05B/05C wave 2026-06-13; SP-25 guardian/entitlement table-name drift — 05B 2026-06-13) and 9 conformant verifications. Zero entries remain in VERIFY status.
 
 **The 7 CRITICALs:** GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-MA-01, GAP-EX-02, GAP-TU-03, GAP-ID-11.
 
@@ -301,10 +301,49 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
     **8 failures across 6 files**.
     Remaining 6 debt files: `adaptiveSelector.test.ts`, `fullLengthExam.runtime.contract.test.ts`,
     `fullLengthExam.test.ts`, `guardian-payment-access.test.ts`, `mastery.writepaths.guard.test.ts`,
-    `review-session.lifecycle.contract.test.ts`. Forward anchor: **8**. Tracked for systematic
-    triage in a future wave. Severity LOW.
-- **GAP-TU-05 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING: Doc 03B
-  §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
+    `review-session.lifecycle.contract.test.ts`. Forward anchor: **8 deterministic across 6 files**.
+    Tracked for systematic triage in a future wave. Severity LOW.
+  - **Anchor clarification (2026-06-24, Codex re-audit of #422):** a Codex full-suite run reported
+    **9/7**, not 8/6 — the 9th was `tests/ci/calendar.csrf.ci.test.ts` (`calendar_get_routes_not_csrf_blocked`)
+    **timing out**, NOT an assertion failure. Settled empirically: 5 local full-suite runs all = 8/6
+    (calendar.csrf green); calendar.csrf passes 3/3 **standalone** in ~1.6s (well under timeout). It
+    failed only 1 of 6 observed full-suite runs, under parallel load. **Verdict: flaky-on-timeout,
+    intermittent, unrelated to #422.** History (accurate, per `git log -- tests/ci/calendar.csrf.ci.test.ts`):
+    the CSRF test logic was established in `2ceaecb` (CSRF middleware); the file was later touched by
+    `463599e` (DOB soft-gate — test-mock/middleware wiring) and `1422539` (§40.3 deletion soft-lock —
+    added the `enforceDeletionLock` mock pass-through, a mechanical mock change). **None of those three
+    is a #422 anti-leak commit** (#422 = `7191a82`/`987e68b`/`69c4d9c`/`b311af9`/`333f977`/`a3aaadc`/`96bb913`),
+    and none changes the CSRF assertion itself — so the "unrelated to #422" conclusion holds on the
+    git record, not on a (false) "untouched since 2ceaecb" claim. The honest anchor is **8 deterministic
+    + calendar.csrf intermittent-on-timeout** — a 9/7 reading under load is the flaky test, not a
+    regression. (A real, deterministic CSRF-timeout break would be its own gap; this is not that.)
+- **GAP-HY-18 (NEW) — OPEN.** UNIFIED-ANTI-LEAK-PROBE. No single committed CI gate sweeps EVERY
+  pre-submit surface for ALL forbidden fields. Current coverage is split and surface-scoped:
+  `tests/ci/questions.anti-leak.ci.test.ts` covers the question-DTO endpoints (`correct_answer`,
+  `explanation`, `option_metadata` on `/api/questions/recent` + the `__test` question routes);
+  `tests/ci/ws2-antileak.ci.test.ts` covers EX-05 (`difficultyBucket` strip on full-length submit/
+  review serializers + client) + TU-04 (tutor chokepoint/substitution). Neither — nor the two
+  together — is the broad probe asserting that **practice, review, full-length-active, and tutor/
+  replay** ALL omit `correct_answer` / `explanation` / `difficultyBucket`/`difficulty_bucket` /
+  option-or-distractor metadata, for **anon AND authenticated** callers, in one reproducible gate.
+  Surfaced by the Codex re-audit of #422: the WS-2 gate proves the EX-05/TU-04 changes correctly,
+  but is NOT an all-surface probe; building that is broader than #422's scope. **Disposition:** build
+  as its own anti-leak-hardening cycle (one committed all-surface, all-field, both-roles gate). The
+  runtime is believed conformant today (each surface's serializer was audited); this gap is the
+  missing *consolidated proof*, not a known live leak. Severity MEDIUM (test/proof coverage).
+  _(Accounting note: HY-17, HY-18, HY-19 are session-discovered **addendum bullets** in this
+  Reconciliation addendum — NOT formal zoned-table rows — so they do not change the header gap-entry
+  total, which counts only the formal Zone TB/MA/EX/TU/ID/OP/AR/HY/SP table rows. (HY-14..16, by
+  contrast, ARE formal Zone HY table rows and are already counted.) Separately, the header was
+  reconciled **71 → 72 (28 → 29 HIGH)** for a pre-existing undercount: an independent grep of formal
+  non-SP rows yields 72 (7 CRITICAL / 29 HIGH / 24 MEDIUM / 12 LOW) — one formal HIGH row predating
+  this branch was uncounted. That reconciliation is independent of HY-18/19, which are addendum bullets.)_
+- **GAP-HY-19 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING. _(ID note:
+  this addendum gap was originally mislabeled `GAP-TU-05`, which collides with the formal Zone-TU
+  table row `GAP-TU-05` = tutor rate-limit structure. Renumbered into the addendum HY series
+  2026-06-24 — Codex re-audit of #422 — to break the collision; all cross-references in
+  `contracts/ws2-antileak-ex05-tu04.plan.md` and `server/routes/tutor-runtime.ts` updated to HY-19.)_
+  Doc 03B §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
   with `detection_layer = 'layer_4_output'` and (b) increment a `scanner_block_rate` metric.
   **Deferred (2026-06-24):** prod has NO tutor runtime persistence tables (`tutor_conversations`,
   `tutor_messages`, `tutor_injection_log` — none exist); the §16.4 forensic writer + migration

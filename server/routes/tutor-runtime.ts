@@ -1693,7 +1693,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     // acknowledgment that filtering occurred. The substituted turn is persisted
     // and returned through the same path as any other turn, so from the
     // student's perspective it is indistinguishable from a normal LISA reply.
-    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-TU-05) — tutor persistence tables not in prod.
+    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-HY-19) — tutor persistence tables not in prod.
     const safeContent =
       preSubmit && hasDirectAnswerLeak(cleaned)
         ? TUTOR_ANTI_LEAK_SUBSTITUTION
