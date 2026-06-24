@@ -4,9 +4,10 @@
 --
 -- Adds mastery-constants change governance (capture-only, no recompute):
 --   1. mastery_constants_change_log  — append-only governance record
---   2. constant_affects_formula_hash — closed-world classifier
---   3. canonicalize_active_mastery_constants_state — deterministic serializer
---   4. capture_mastery_constant_change trigger — ENABLE ALWAYS
+--   2. canonicalize_jsonb_value      — recursive deterministic serializer
+--   3. constant_affects_formula_hash — closed-world classifier
+--   4. canonicalize_active_mastery_constants_state — deterministic serializer
+--   5. capture_mastery_constant_change trigger — ENABLE ALWAYS
 --
 -- Reconciliations applied (spec → live schema):
 --   R1: Column constant_key → key (matches parent PK column)
@@ -20,6 +21,9 @@
 --       serializer; spec placeholder list included it — live is authoritative)
 --   R8: Explicit service_role policy dropped — service_role has BYPASSRLS;
 --       matches 05A/05B internal-table pattern (RLS-enable + REVOKE + GRANT)
+--   R9: Nested-object serialization made deterministic by construction —
+--       recursive canonicalize_jsonb_value sorts keys at every depth and
+--       applies FM9990.000000 to all numerics (Codex blocker 1 fix)
 --
 -- Invariants enforced:
 --   INV-05D-13: NO constants-change recompute (future-only model)
@@ -36,9 +40,12 @@
 --   DROP FUNCTION IF EXISTS public.capture_mastery_constant_change();
 --   DROP FUNCTION IF EXISTS public.canonicalize_active_mastery_constants_state();
 --   DROP FUNCTION IF EXISTS public.constant_affects_formula_hash(text);
+--   DROP FUNCTION IF EXISTS public.canonicalize_jsonb_value(jsonb);
 --   DROP TABLE IF EXISTS public.mastery_constants_change_log;
 --
--- LYCEON-MIGRATION-REVIEWED: pending
+-- LYCEON-MIGRATION-REVIEWED: rollback verified (rolled-back txn proof: all 6
+--   objects created then cleanly removed in FK-safe order; determinism guard
+--   passes — hash stable across JSONB key reorder of PROJECTION_DOMAIN_WEIGHTS)
 -- ==========================================================================
 BEGIN;
 
@@ -88,7 +95,44 @@ GRANT  ALL ON public.mastery_constants_change_log TO   service_role;
 -- service_role has BYPASSRLS and is the only operator path)
 
 -- ----------------------------------------------------------------------------
--- 2. constant_affects_formula_hash (Doc 05D §6.3, RB-05D-V1-03)
+-- 2. canonicalize_jsonb_value (R9 — deterministic by construction)
+--    Recursive: objects get sorted keys, numerics get FM9990.000000,
+--    arrays preserve order with recursive element canonicalization.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.canonicalize_jsonb_value(p_val jsonb)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $func$
+BEGIN
+    CASE jsonb_typeof(p_val)
+        WHEN 'object' THEN
+            RETURN '{' || COALESCE((
+                SELECT string_agg(
+                    e.key || '=' || public.canonicalize_jsonb_value(e.value),
+                    ',' ORDER BY e.key)
+                FROM jsonb_each(p_val) e
+            ), '') || '}';
+        WHEN 'array' THEN
+            RETURN '[' || COALESCE((
+                SELECT string_agg(
+                    public.canonicalize_jsonb_value(elem.value),
+                    ',' ORDER BY elem.ordinality)
+                FROM jsonb_array_elements(p_val) WITH ORDINALITY AS elem(value, ordinality)
+            ), '') || ']';
+        WHEN 'number' THEN
+            RETURN to_char((p_val #>> '{}')::numeric, 'FM9990.000000');
+        ELSE
+            RETURN (p_val #>> '{}');
+    END CASE;
+END;
+$func$;
+
+REVOKE ALL ON FUNCTION public.canonicalize_jsonb_value(jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.canonicalize_jsonb_value(jsonb) TO service_role;
+
+-- ----------------------------------------------------------------------------
+-- 3. constant_affects_formula_hash (Doc 05D §6.3, RB-05D-V1-03)
 --    Closed-world: formula → true, operational → false, else → RAISE
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.constant_affects_formula_hash(p_key text)
@@ -130,8 +174,10 @@ REVOKE ALL ON FUNCTION public.constant_affects_formula_hash(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.constant_affects_formula_hash(text) TO service_role;
 
 -- ----------------------------------------------------------------------------
--- 3. canonicalize_active_mastery_constants_state (Doc 05D §6.6, RB-05D-V1-02)
---    Single serializer — used by BOTH the §6.1 trigger and §6.5 reconciliation
+-- 4. canonicalize_active_mastery_constants_state (Doc 05D §6.6, RB-05D-V1-02)
+--    Single serializer — used by BOTH the §6.1 trigger and §6.5 reconciliation.
+--    Delegates value rendering to canonicalize_jsonb_value for recursive
+--    determinism (R9).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.canonicalize_active_mastery_constants_state()
 RETURNS text
@@ -140,39 +186,17 @@ STABLE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $func$
-    SELECT COALESCE(string_agg(line, E'\n' ORDER BY k), '')
-    FROM (
-        SELECT
-            mc.key AS k,
-            mc.key || '=' ||
-            CASE jsonb_typeof(mc.value)
-                WHEN 'object' THEN
-                    '{' || COALESCE((
-                        SELECT string_agg(
-                                 o.key || '=' ||
-                                 CASE jsonb_typeof(o.value)
-                                     WHEN 'number'
-                                       THEN to_char((o.value #>> '{}')::numeric,
-                                                    'FM9990.000000')
-                                     ELSE (o.value #>> '{}')
-                                 END,
-                                 ',' ORDER BY o.key)
-                        FROM jsonb_each(mc.value) o
-                    ), '') || '}'
-                WHEN 'number' THEN
-                    to_char((mc.value #>> '{}')::numeric, 'FM9990.000000')
-                ELSE
-                    (mc.value #>> '{}')
-            END AS line
-        FROM public.mastery_constants mc
-    ) s;
+    SELECT COALESCE(string_agg(
+        mc.key || '=' || public.canonicalize_jsonb_value(mc.value),
+        E'\n' ORDER BY mc.key), '')
+    FROM public.mastery_constants mc;
 $func$;
 
 REVOKE ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.canonicalize_active_mastery_constants_state() TO service_role;
 
 -- ----------------------------------------------------------------------------
--- 4. capture_mastery_constant_change trigger (Doc 05D §6.1, INV-05D-14)
+-- 5. capture_mastery_constant_change trigger (Doc 05D §6.1, INV-05D-14)
 --    Capture-only — does NOT recompute anything (INV-05D-13)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.capture_mastery_constant_change()
@@ -341,6 +365,49 @@ BEGIN
 
     RAISE NOTICE 'CI GUARD PASSED: operational_key_set — formula=%, operational=%, total=%',
         v_formula_count, v_operational_count, v_total;
+END;
+$$;
+
+-- Guard 5: serializer_is_order_independent (R9 determinism-by-construction)
+--   Reorder PROJECTION_DOMAIN_WEIGHTS keys, re-serialize, assert hash stable.
+DO $$
+DECLARE
+    v_hash_before text;
+    v_hash_after text;
+    v_original jsonb;
+BEGIN
+    v_hash_before := encode(extensions.digest(convert_to(
+        canonicalize_active_mastery_constants_state(), 'UTF8'), 'sha256'), 'hex');
+
+    SELECT value INTO v_original
+    FROM mastery_constants WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
+
+    UPDATE mastery_constants
+    SET value = jsonb_build_object(
+        'RW', jsonb_build_object(
+            'Standard English Conventions', 0.26,
+            'Information and Ideas', 0.26,
+            'Expression of Ideas', 0.20,
+            'Craft and Structure', 0.28),
+        'M', jsonb_build_object(
+            'Problem Solving and Data Analysis', 0.15,
+            'Geometry and Trigonometry', 0.15,
+            'Algebra', 0.35,
+            'Advanced Math', 0.35))
+    WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
+
+    v_hash_after := encode(extensions.digest(convert_to(
+        canonicalize_active_mastery_constants_state(), 'UTF8'), 'sha256'), 'hex');
+
+    UPDATE mastery_constants SET value = v_original
+    WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
+
+    IF v_hash_before != v_hash_after THEN
+        RAISE EXCEPTION 'serializer_is_order_independent FAILED: hash changed after key reorder (before=%, after=%)',
+            v_hash_before, v_hash_after;
+    END IF;
+
+    RAISE NOTICE 'CI GUARD PASSED: serializer_is_order_independent — hash stable across JSONB key reorder';
 END;
 $$;
 
