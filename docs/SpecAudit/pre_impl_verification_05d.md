@@ -224,9 +224,13 @@ Confirmed: exact same 23-key set as the serialized form. CTO-verified authoritat
 
 ## G. Cascade Target Inventory
 
-**Verdict: OPEN-GATE — 17 tables found vs spec's 10**
+**Verdict: OPEN-GATE — 21 tables found vs spec's 10 (+ Q9 owner question)**
 
-### All tables with `student_id` column (live, 17 total)
+### Complete student-data surface (live, 21 tables)
+
+The original §G inventory searched for `student_id` columns only. Two event-source tables and two session-container/legal tables use `user_id` instead — they were missed. The canonical cascade surface is **every table holding this student's data**, not just tables with a column named `student_id`.
+
+#### Tables via `student_id` (17)
 
 | # | Table | FK to profiles.id? | Delete Rule | Inter-table FKs |
 |---|-------|---------------------|-------------|-----------------|
@@ -248,17 +252,98 @@ Confirmed: exact same 23-key set as the serialized form. CTO-verified authoritat
 | 16 | `student_projection_refresh_state` | NO (logical ref) | — | — |
 | 17 | `projection_refresh_outbox` | NO (logical ref) | — | — |
 
-### FK-ordered cascade (Layer 1 hard-delete)
+#### Tables via `user_id` (4 — MISSED in original inventory)
 
-The review tables have internal cascading FKs:
-- `review_error_attempts` → `review_session_items` (CASCADE)
-- `review_session_items` → `review_sessions` (CASCADE)
+| # | Table | FK to profiles.id? | Delete Rule | Inter-table FKs | Role |
+|---|-------|---------------------|-------------|-----------------|------|
+| 18 | `practice_session_items` | YES (`user_id`) | NO ACTION | FK → `practice_sessions.id` (CASCADE), FK → `questions.id` (NO ACTION) | **Event source** — `canonical_mastery_events` reads `WHERE pi.user_id = p_student_id AND status='answered'` |
+| 19 | `practice_sessions` | YES (`user_id`) | NO ACTION | — | Session container for #18 |
+| 20 | `legal_acceptances` | YES (`user_id`) | **CASCADE** | — | Auto-deletes when profile deleted |
+| 21 | `legal_acceptance_outbox` | NO (logical ref) | — | — | Delivery queue for #20 |
 
-So deleting `review_sessions` cascades to `review_session_items` → `review_error_attempts`. But all 4 review tables also have direct `student_id` FK → `profiles.id` with NO ACTION, meaning explicit delete per table is needed.
+`mastery_constants_change_log` is NOT in this list (it has `actor_session_user`, not `student_id` — correctly excluded from cascade per owner ruling).
 
-The mastery/KPI/projection tables (13 tables) have NO FK constraints to each other or to `profiles` — `student_id` is a logical reference only. Delete order among them is unconstrained by DB FKs but logically should follow the dependency chain (projections → KPIs → domain mastery → skill mastery → audit logs).
+### Q9 — Event Source Table Treatment in Anonymized-Retention Mode (OWNER QUESTION)
 
-**OPEN-GATE:** The §10 cascade must be verified against this live 17-table inventory, not the spec's 10-table list. The build must enumerate all 17 and determine the safe delete order. `mastery_constants_change_log` is NOT in this list (it has `actor_session_user`, not `student_id` — correctly excluded from cascade per owner ruling).
+`canonical_mastery_events` derives from exactly **two source tables** (confirmed in live function body):
+1. `practice_session_items` — practice + diagnostic events (via `user_id`, `status='answered'`)
+2. `review_error_attempts` — review events (via `student_id`)
+
+In **anonymized-retention mode** (Q5 default once privacy sign-off clears), Layer 2 anonymizes the derived aggregates (`mastery_event_audit_log`, `mastery_domain_refresh_audit_log`, mastery/KPI/projection tables) with a one-way `gen_random_uuid()` surrogate. But Layer 1 **hard-deletes** these two event source tables — the raw event stream is destroyed while the derived aggregates survive anonymized.
+
+**Asymmetry:** the ML-retention value of anonymized-retention lives in the event stream (per-question, per-difficulty, per-timestamp granularity), not in the pre-aggregated mastery scores. If the source events are hard-deleted while the aggregates are retained, the anonymized data has no re-derivation path and limited ML utility.
+
+**Q9: In anonymized-retention mode, do the raw event source tables (`practice_session_items`, `review_error_attempts`) get hard-deleted (Layer 1) or anonymized (Layer 2 surrogate)? The retention ruling's ML value lives in the per-event stream, not the pre-aggregated mastery scores. If anonymized: the `user_id` column in `practice_session_items` (not `student_id`) needs the same surrogate replacement, and the cascade function must handle the column-name difference.**
+
+Do NOT resolve — this is an owner call tied to the Q5 retention purpose.
+
+### Review-Table CASCADE FK Interaction
+
+The review tables have **internal cascading FKs** that create an ordering constraint:
+
+```
+review_sessions
+  └─ CASCADE → review_session_items
+                  └─ CASCADE → review_error_attempts
+```
+
+All three also have direct `student_id` FK → `profiles.id` (NO ACTION). The cascade function must pick ONE deletion strategy and commit to it:
+
+**Strategy A — Children-first explicit:** Delete `review_error_attempts` → `review_session_items` → `review_sessions` → `review_schedule` in that order. Each DELETE returns a count. The CASCADE FKs are never triggered because children are already gone when the parent is deleted. **Pro:** every delete count is verifiable; no hidden side effects. **Con:** 4 explicit DELETE statements instead of 2.
+
+**Strategy B — Parent-first CASCADE-reliant:** Delete `review_sessions` (CASCADE auto-deletes `review_session_items` → `review_error_attempts`), then delete `review_schedule`. **Pro:** fewer statements. **Con:** CASCADE-deleted row counts are invisible to the function's delete verification; mixing explicit + implicit deletion makes targeting harder to prove in test.
+
+**Committed strategy: A (children-first explicit).** Rationale: for a PERMANENT irreversible hard-delete, every deleted row must be counted and verified. CASCADE hides row counts and makes the exact-target test (§10 rehearsal requirement) unable to assert per-table deletion counts. The same children-first approach applies to practice tables (`practice_session_items` → `practice_sessions`).
+
+### Practice-Table CASCADE FK Interaction
+
+```
+practice_sessions
+  └─ CASCADE → practice_session_items
+```
+
+Both have `user_id` FK → `profiles.id` (NO ACTION). Children-first: delete `practice_session_items` → `practice_sessions`.
+
+### Committed Delete Order — Layer 1 Hard-Delete (21 tables)
+
+The function deletes in this exact order. Each step includes the column used for targeting and the ordering rationale.
+
+| Step | Table | Target Column | Rationale |
+|------|-------|---------------|-----------|
+| 1 | `review_error_attempts` | `student_id` | Leaf child — FK CASCADE from `review_session_items`; must delete before parent |
+| 2 | `review_session_items` | `student_id` | Child of `review_sessions` (FK CASCADE); must delete before parent |
+| 3 | `review_sessions` | `student_id` | Parent of #2; safe now that children are gone |
+| 4 | `review_schedule` | `student_id` | Independent review table; FK to `questions` (NO ACTION on questions, we're deleting FROM here) |
+| 5 | `practice_session_items` | `user_id` | Leaf child — FK CASCADE from `practice_sessions`; **event source table** for `canonical_mastery_events`; must delete before parent |
+| 6 | `practice_sessions` | `user_id` | Parent of #5; safe now that children are gone |
+| 7 | `projection_refresh_outbox` | `student_id` | Outbox queue — delete pending refresh requests before the projections they reference |
+| 8 | `student_section_projection_snapshots` | `student_id` | Historical snapshots — no FK deps, delete before live projections |
+| 9 | `student_section_projections` | `student_id` | Live projections — logically depends on KPI/mastery; delete before KPIs |
+| 10 | `student_projection_refresh_state` | `student_id` | Refresh-tracking state for projections; delete alongside projections |
+| 11 | `student_skill_kpi` | `student_id` | Leaf KPI — most granular; delete before section/overall rollups |
+| 12 | `student_domain_kpi` | `student_id` | Domain-level KPI; delete before section rollup |
+| 13 | `student_section_kpi` | `student_id` | Section-level KPI; delete before overall |
+| 14 | `student_overall_kpi` | `student_id` | Top-level KPI rollup |
+| 15 | `student_kpi_rollups_current` | `student_id` | Denormalized KPI view; delete after source KPI tables |
+| 16 | `student_domain_mastery` | `student_id` | Domain mastery — logically aggregates skill mastery |
+| 17 | `student_skill_mastery` | `student_id` | Skill mastery — base mastery layer |
+| 18 | `mastery_domain_refresh_audit_log` | `student_id` | Audit log — append-only except cascade (INV-05D-15); delete after the tables it audits |
+| 19 | `mastery_event_audit_log` | `student_id` | Audit log — append-only except cascade (INV-05D-15); delete after the tables it audits |
+| 20 | `legal_acceptance_outbox` | `user_id` | Delivery queue — delete before the acceptance it references |
+| 21 | `legal_acceptances` | `user_id` | Has FK CASCADE to profiles — would auto-delete anyway, but explicit delete is safer for count verification |
+
+**Ordering constraints enforced:**
+- Steps 1–3: children-first for review FK CASCADE chain
+- Steps 5–6: children-first for practice FK CASCADE chain
+- Steps 7–10: projection layer before KPI layer (logical dependency)
+- Steps 11–15: KPI leaf-to-root
+- Steps 16–17: domain before skill mastery (logical dependency — domain aggregates skills)
+- Steps 18–19: audit logs LAST among mastery tables (they audit the tables deleted in steps 16–17)
+- Steps 20–21: legal tables last (independent of mastery layer)
+
+**No FK enforces** the ordering among the 13 mastery/KPI/projection tables (steps 7–19) — they use logical `student_id` references without DB-level FKs. The committed order above is the function's imposed ordering; the exact-target test (PR-3 rehearsal) must prove: (a) every step deletes exactly the target student's rows, (b) no step fails due to FK violation, (c) no CASCADE side-effect deletes rows not counted by the function.
+
+**Layer 2 (anonymized-retention mode):** Steps 18–19 (audit logs) and steps 7–17 (mastery/KPI/projection) are REPLACED with surrogate-update (anonymize `student_id` → `v_surrogate`). Steps 1–6 (event source + session tables) and steps 20–21 (legal) are hard-deleted in BOTH modes — **unless Q9 ruling changes the event-source treatment.** The `user_id` column in steps 5–6 requires the surrogate to target `user_id` instead of `student_id` if Q9 rules anonymize.
 
 ---
 
@@ -375,7 +460,7 @@ Per owner ruling (R10): ship in degraded mode. The §9.2 outbox consumer deploys
 | **D** | PASS | Both audit write call sites confirmed |
 | **E** | PASS + OPEN-GATE | Existing tables correct; `mastery_constants_change_log` needs RLS at creation |
 | **F** | PASS | 23 formula keys byte-exact match; 12 operational confirmed |
-| **G** | OPEN-GATE | 17-table inventory (vs spec 10); cascade must cover all 17 |
+| **G** | OPEN-GATE + Q9 | 21-table inventory (17 via `student_id` + 4 via `user_id`); committed delete order; Q9 owner question on event-source treatment in anonymized-retention |
 | **H** | OPEN-GATE | `BLOCKING_UPSTREAM_GAP` — 04B→05C seam |
 | **I** | OPEN-GATE | `BLOCKING_PRIVACY_GAP` — privacy sign-off gates Layer 2 default |
 | **J** | OPEN-GATE | All 9 CI guards are build items (PR-6) |
@@ -394,12 +479,48 @@ Per owner ruling (R10): ship in degraded mode. The §9.2 outbox consumer deploys
 
 - §11.K formula-key reconciliation: resolved (23 keys, live-verified)
 - §11.E RLS on new table: handled at creation time in PR-1
-- §11.G 17-table cascade inventory: cascade SQL must enumerate all 17 (not spec's 10)
+- §11.G 21-table cascade inventory: committed delete order (children-first, 21 steps); Q9 owner question on event-source anonymization
 - §11.L TODO closure: PR-4 build item per Q4
 
 ### Q2 triggered_by Path Analysis
 
-The `refresh_domain_mastery` audit insert uses `current_setting('app.mastery_refresh_trigger', true)` for `triggered_by`. On the **event-time path** (called via `apply_mastery_event`), no `SET LOCAL` is issued for this GUC — `current_setting` with `missing_ok=true` returns **NULL**. The CHECK constraint `IN ('event','backfill_recompute')` cannot be added until the event-time path sets `SET LOCAL app.mastery_refresh_trigger = 'event'` in `apply_mastery_event` before calling `refresh_domain_mastery`. Both the SET LOCAL and the CHECK must land in the **same migration** (PR-1 or dedicated follow-up).
+#### Caller audit (exhaustive — prod DB + repo grep)
+
+**Prod function bodies calling `refresh_domain_mastery` (live `pg_proc.prosrc LIKE` query):**
+
+| Caller | Active call? | Path |
+|--------|-------------|------|
+| `apply_mastery_event` | **YES** — `PERFORM public.refresh_domain_mastery(...)` at §4.9 | Event-time path |
+| `recompute_skill_mastery` | **NO** — reference is in a TODO comment only, not an active `PERFORM` | Pending Q4 closure (will become active) |
+
+**Repo grep (`*.ts`, `*.tsx`, `*.js`, `*.jsx`):** ZERO app-layer callers. `refresh_domain_mastery` is never called as a Supabase RPC from application code.
+
+**Future callers (build items, not yet in prod):**
+- `backfill_recompute_student` (§7.2) — will call `recompute_skill_mastery` per skill, which after Q4 closure chains to `refresh_domain_mastery`
+- No other planned callers identified in spec or contracts
+
+**Conclusion: exactly TWO callers will exist after Q4 closure** — `apply_mastery_event` (event-time) and `recompute_skill_mastery` (recompute-time, chained from backfill). Both must set the GUC before the CHECK can land. No third caller exists that would break the CHECK.
+
+#### Cross-doc edit: apply_mastery_event SET LOCAL (05A-owned)
+
+Adding `SET LOCAL app.mastery_refresh_trigger = 'event'` to `apply_mastery_event` before its `PERFORM public.refresh_domain_mastery(...)` call is a **05A-owned cross-doc edit** — same class as the Q4 TODO closure in `recompute_skill_mastery`. Both modify locked 05A functions per owner rulings (Q2=(a) and Q4=(a) respectively).
+
+This requires a **Karl spec annotation on 05A** acknowledging the cross-doc modification. The annotation should note: "05A §4.9 `apply_mastery_event` modified by 05D build per Q2=(a) ruling to set `app.mastery_refresh_trigger = 'event'` before calling `refresh_domain_mastery`, enabling the `triggered_by` CHECK constraint on `mastery_domain_refresh_audit_log`."
+
+#### GUC resolution by path
+
+| Path | Caller | SET LOCAL value | triggered_by resolves to |
+|------|--------|-----------------|--------------------------|
+| Event-time (current) | `apply_mastery_event` | **NONE** (no SET LOCAL in current code) | **NULL** (current_setting with missing_ok=true) |
+| Event-time (after fix) | `apply_mastery_event` | `'event'` | `'event'` |
+| Recompute-time (after Q4) | `recompute_skill_mastery` → `refresh_domain_mastery` | Must be set by either `recompute_skill_mastery` or the calling `backfill_recompute_student` | `'backfill_recompute'` |
+
+The CHECK constraint `IN ('event', 'backfill_recompute')` **cannot land** until:
+1. `apply_mastery_event` sets `SET LOCAL app.mastery_refresh_trigger = 'event'` (05A cross-doc edit)
+2. The backfill/recompute path sets `SET LOCAL app.mastery_refresh_trigger = 'backfill_recompute'`
+3. Both SET LOCALs and the CHECK constraint land in the **same migration**
+
+If the CHECK is added without #1, all existing event-time audit inserts will fail (triggered_by = NULL violates CHECK). This is a **breaking change** if not coordinated.
 
 ---
 
