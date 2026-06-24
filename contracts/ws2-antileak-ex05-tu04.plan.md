@@ -147,7 +147,7 @@ Apply this to:
 | test_review | Gated by completion (already enforced at line 1092-1104) | Return false |
 | dashboard | No question context | Return false |
 
-### §16.5 silent substitution (CLOSED IN-PR) — §16.4 forensic logging DEFERRED (GAP-TU-05)
+### §16.5 silent substitution (CLOSED IN-PR) — §16.4 forensic logging DEFERRED (GAP-HY-19)
 
 **Doc 03B §16.5 + INV-03-13:** scanner-blocked responses must be **silently substituted**
 with a pedagogical fallback ("From the student's perspective, a scanner-blocked response looks
@@ -162,7 +162,8 @@ persisted turn carries the fallback, never the leaking content.
 **§16.4 forensic logging (`tutor_injection_log` write + `scanner_block_rate` metric) was BUILT
 then REVERTED from this PR** — prod has no tutor runtime persistence tables, so the writer had no
 substrate. The enforcement layer (§16.5 silent substitution) ships; the observability layer
-(§16.4) is deferred to the tutor-vertical wave under **GAP-TU-05 (OPEN)**. This PR is code-only,
+(§16.4) is deferred to the tutor-vertical wave under **GAP-HY-19 (OPEN)** (originally mislabeled
+GAP-TU-05, which collided with the Zone-TU rate-limit gap; renumbered 2026-06-24). This PR is code-only,
 no migration.
 
 ## Six-Axis Self-Audit

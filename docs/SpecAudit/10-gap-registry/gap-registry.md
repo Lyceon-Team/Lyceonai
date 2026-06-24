@@ -308,12 +308,21 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
     **timing out**, NOT an assertion failure. Settled empirically: 5 local full-suite runs all = 8/6
     (calendar.csrf green); calendar.csrf passes 3/3 **standalone** in ~1.6s (well under timeout). It
     failed only 1 of 6 observed full-suite runs, under parallel load. **Verdict: flaky-on-timeout,
-    intermittent, unrelated to #422** (untouched since `2ceaecb` CSRF-middleware, pre-dates the WS-2
-    branch). The honest anchor is **8 deterministic + calendar.csrf intermittent-on-timeout** — a
-    9/7 reading under load is the flaky test, not a regression. (A real, deterministic CSRF-timeout
-    break would be its own gap; this is not that.)
-- **GAP-TU-05 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING: Doc 03B
-  §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
+    intermittent, unrelated to #422.** History (accurate, per `git log -- tests/ci/calendar.csrf.ci.test.ts`):
+    the CSRF test logic was established in `2ceaecb` (CSRF middleware); the file was later touched by
+    `463599e` (DOB soft-gate — test-mock/middleware wiring) and `1422539` (§40.3 deletion soft-lock —
+    added the `enforceDeletionLock` mock pass-through, a mechanical mock change). **None of those three
+    is a #422 anti-leak commit** (#422 = `7191a82`/`987e68b`/`69c4d9c`/`b311af9`/`333f977`/`a3aaadc`/`96bb913`),
+    and none changes the CSRF assertion itself — so the "unrelated to #422" conclusion holds on the
+    git record, not on a (false) "untouched since 2ceaecb" claim. The honest anchor is **8 deterministic
+    + calendar.csrf intermittent-on-timeout** — a 9/7 reading under load is the flaky test, not a
+    regression. (A real, deterministic CSRF-timeout break would be its own gap; this is not that.)
+- **GAP-HY-19 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING. _(ID note:
+  this addendum gap was originally mislabeled `GAP-TU-05`, which collides with the formal Zone-TU
+  table row `GAP-TU-05` = tutor rate-limit structure. Renumbered into the addendum HY series
+  2026-06-24 — Codex re-audit of #422 — to break the collision; all cross-references in
+  `contracts/ws2-antileak-ex05-tu04.plan.md` and `server/routes/tutor-runtime.ts` updated to HY-19.)_
+  Doc 03B §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
   with `detection_layer = 'layer_4_output'` and (b) increment a `scanner_block_rate` metric.
   **Deferred (2026-06-24):** prod has NO tutor runtime persistence tables (`tutor_conversations`,
   `tutor_messages`, `tutor_injection_log` — none exist); the §16.4 forensic writer + migration
@@ -335,3 +344,6 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   as its own anti-leak-hardening cycle (one committed all-surface, all-field, both-roles gate). The
   runtime is believed conformant today (each surface's serializer was audited); this gap is the
   missing *consolidated proof*, not a known live leak. Severity MEDIUM (test/proof coverage).
+  _(Accounting note: HY-18 — like HY-14..17 and HY-19 — is a session-discovered **addendum** gap in
+  this Reconciliation addendum, NOT a formal zoned-table row, so the header "71 gap entries" total is
+  intentionally unchanged. The 71 counts only the formal Zone TB/MA/EX/TU/ID/OP/AR/HY/SP table rows.)_
