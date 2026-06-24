@@ -66,7 +66,10 @@ SQL
 
 echo "==> SMOKE: refresh_domain_mastery writes domain mastery + all 4 KPI rows (§4.9 chain)"
 psql_db "$DB" -q >/dev/null <<'SQL'
+BEGIN;
+SET LOCAL app.mastery_refresh_trigger = 'event';
 SELECT public.refresh_domain_mastery('aaaa1111-1111-1111-1111-111111111111','M','Algebra');
+COMMIT;
 SQL
 SMOKE=$(psql_db "$DB" -tAc "
   SELECT (SELECT count(*) FROM public.student_domain_mastery WHERE student_id='aaaa1111-1111-1111-1111-111111111111' AND mastery_level IS NOT NULL)::text

@@ -241,7 +241,7 @@ $$;
 CREATE FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone DEFAULT now()) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
-    AS $func$
+    AS $$
 DECLARE
   v_sec   text;
   v_dom   text;
@@ -325,7 +325,7 @@ BEGIN
   PERFORM public.compute_section_projection(p_student_id, 'M',  p_t_now);
   PERFORM public.compute_section_projection(p_student_id, 'RW', p_t_now);
 END;
-$func$;
+$$;
 
 
 --
