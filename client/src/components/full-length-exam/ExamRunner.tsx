@@ -1,6 +1,6 @@
 /**
  * Full-Length SAT Exam Runner
- * 
+ *
  * Main component for taking a full-length SAT exam.
  * Handles:
  * - Session state management
@@ -29,10 +29,10 @@ import {
   parseRuntimeContractDisabledFromError,
   type RuntimeContractDisabledState,
 } from "@/lib/runtime-contract-disable";
-import { 
-  Clock, 
-  ChevronRight, 
-  CheckCircle2, 
+import {
+  Clock,
+  ChevronRight,
+  CheckCircle2,
   AlertCircle,
   Coffee,
   ArrowRight,
@@ -95,7 +95,6 @@ interface SubmitModuleResult {
   nextModule: {
     section: string;
     moduleIndex: number;
-    difficultyBucket?: string;
   } | null;
   isBreak: boolean;
 }
@@ -133,7 +132,7 @@ interface ExamRunnerProps {
 
 export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const { toast } = useToast();
-  
+
   // State
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,35 +141,41 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   const [results, setResults] = useState<CompleteExamResult | null>(null);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = useState(false);
-  const [calculatorStatesByModule, setCalculatorStatesByModule] = useState<Record<string, unknown>>({});
-  const [runtimeDisabled, setRuntimeDisabled] = useState<RuntimeContractDisabledState | null>(null);
+  const [calculatorStatesByModule, setCalculatorStatesByModule] = useState<
+    Record<string, unknown>
+  >({});
+  const [runtimeDisabled, setRuntimeDisabled] =
+    useState<RuntimeContractDisabledState | null>(null);
   const calculatorPersistTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Timer sync
   const [displayTime, setDisplayTime] = useState<number | null>(null);
   const lastSyncRef = useRef<number>(Date.now());
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Track last question ID to avoid clearing answers when re-fetching same question
   const lastQuestionIdRef = useRef<string | null>(null);
   const markRuntimeDisabled = useCallback((error: unknown): boolean => {
-    const disabled = parseRuntimeContractDisabledFromError("full-length", error);
+    const disabled = parseRuntimeContractDisabledFromError(
+      "full-length",
+      error,
+    );
     if (!disabled) return false;
     setRuntimeDisabled(disabled);
     return true;
   }, []);
-  
+
   // ============================================================================
   // SESSION MANAGEMENT
   // ============================================================================
-  
+
   const fetchSessionState = useCallback(async () => {
     try {
       const response = await apiRequest(
         `/api/full-length/sessions/current?sessionId=${sessionId}`,
-        { method: "GET" }
+        { method: "GET" },
       );
-      
+
       const payload = await response.json();
       if (!payload || typeof payload !== "object" || !("session" in payload)) {
         // Ignore malformed refresh payloads so we never clobber current UI state with non-session data.
@@ -182,9 +187,16 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       setSessionState(data);
 
       const moduleId = data.currentModule?.id;
-      const moduleSection = String(data.currentModule?.section ?? "").toLowerCase();
-      const moduleCalculatorState = (data.currentModule as any)?.calculator_state;
-      if (moduleId && moduleSection === "math" && moduleCalculatorState !== undefined) {
+      const moduleSection = String(
+        data.currentModule?.section ?? "",
+      ).toLowerCase();
+      const moduleCalculatorState = (data.currentModule as any)
+        ?.calculator_state;
+      if (
+        moduleId &&
+        moduleSection === "math" &&
+        moduleCalculatorState !== undefined
+      ) {
         setCalculatorStatesByModule((prev) => {
           if (Object.prototype.hasOwnProperty.call(prev, moduleId)) {
             return prev;
@@ -192,7 +204,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           return { ...prev, [moduleId]: moduleCalculatorState };
         });
       }
-      
+
       // Set display time from server
       if (data.timeRemaining !== null) {
         setDisplayTime(data.timeRemaining);
@@ -201,19 +213,21 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         setDisplayTime(data.breakTimeRemaining);
         lastSyncRef.current = Date.now();
       }
-      
+
       // Handle answer state restoration
       if (data.currentQuestion) {
         const currentQuestionId = data.currentQuestion.id;
         const questionChanged = lastQuestionIdRef.current !== currentQuestionId;
-        
+
         if (questionChanged) {
           // Question changed - restore submitted answer if it exists, otherwise clear
           lastQuestionIdRef.current = currentQuestionId;
-          
+
           if (data.currentQuestion.submittedAnswer) {
             // Resume: restore previously submitted answer
-            setSelectedAnswer(data.currentQuestion.submittedAnswer.selectedAnswer || null);
+            setSelectedAnswer(
+              data.currentQuestion.submittedAnswer.selectedAnswer || null,
+            );
           } else {
             // New question: clear inputs
             setSelectedAnswer(null);
@@ -221,7 +235,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         }
         // If same question, keep current UI state (don't wipe on every poll)
       }
-      
+
       setLoading(false);
     } catch (error: unknown) {
       if (markRuntimeDisabled(error)) {
@@ -229,7 +243,8 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         return;
       }
       console.error("Failed to fetch session state:", error);
-      const message = error instanceof Error ? error.message : "Failed to load exam session";
+      const message =
+        error instanceof Error ? error.message : "Failed to load exam session";
       toast({
         title: "Unable to load exam session",
         description: message,
@@ -237,38 +252,41 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       setLoading(false);
     }
   }, [sessionId, toast]);
-  
+
   // Initial load
   useEffect(() => {
     fetchSessionState();
   }, [fetchSessionState]);
-  
+
   // Timer countdown
   useEffect(() => {
     if (displayTime === null || displayTime <= 0) return;
-    
+
     const interval = setInterval(() => {
       setDisplayTime((prev) => {
         if (prev === null || prev <= 0) return 0;
         return Math.max(0, prev - 1000);
       });
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [displayTime]);
-  
+
   // Periodic server sync (every 30 seconds)
   useEffect(() => {
-    if (!sessionState?.currentModule || sessionState.session.status !== "in_progress") {
+    if (
+      !sessionState?.currentModule ||
+      sessionState.session.status !== "in_progress"
+    ) {
       return;
     }
-    
+
     const syncInterval = setInterval(() => {
       fetchSessionState();
     }, 30000); // 30 seconds
-    
+
     syncIntervalRef.current = syncInterval;
-    
+
     return () => {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current);
@@ -284,85 +302,95 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       }
     };
   }, []);
-  
+
   // ============================================================================
   // ANSWER SUBMISSION
   // ============================================================================
-  
-  const submitAnswer = useCallback(async (questionId: string) => {
-    if (!sessionId || runtimeDisabled) return;
-    
-    setSubmitting(true);
-    
-    try {
-      const response = await apiRequest(
-        `/api/full-length/sessions/${sessionId}/answer`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            questionId,
-            selectedAnswer: selectedAnswer || undefined,
-          }),
+
+  const submitAnswer = useCallback(
+    async (questionId: string) => {
+      if (!sessionId || runtimeDisabled) return;
+
+      setSubmitting(true);
+
+      try {
+        const response = await apiRequest(
+          `/api/full-length/sessions/${sessionId}/answer`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              questionId,
+              selectedAnswer: selectedAnswer || undefined,
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to submit answer");
         }
-      );
-      
-      if (!response.ok) {
-        throw new Error("Failed to submit answer");
+
+        // Refresh session state to get next question
+        await fetchSessionState();
+      } catch (error: unknown) {
+        if (markRuntimeDisabled(error)) {
+          return;
+        }
+        console.error("Failed to submit answer:", error);
+        const message =
+          error instanceof Error ? error.message : "Failed to submit answer";
+        toast({
+          title: "Unable to submit answer",
+          description: message,
+        });
+      } finally {
+        setSubmitting(false);
       }
-      
-      // Refresh session state to get next question
-      await fetchSessionState();
-      
-    } catch (error: unknown) {
-      if (markRuntimeDisabled(error)) {
-        return;
-      }
-      console.error("Failed to submit answer:", error);
-      const message = error instanceof Error ? error.message : "Failed to submit answer";
-      toast({
-        title: "Unable to submit answer",
-        description: message,
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, selectedAnswer, sessionId, toast]);
-  
+    },
+    [
+      fetchSessionState,
+      markRuntimeDisabled,
+      runtimeDisabled,
+      selectedAnswer,
+      sessionId,
+      toast,
+    ],
+  );
+
   // ============================================================================
   // MODULE SUBMISSION
   // ============================================================================
-  
+
   const submitModule = useCallback(async () => {
     if (!sessionId || runtimeDisabled) return;
-    
+
     setSubmitting(true);
-    
+
     try {
       const response = await apiRequest(
         `/api/full-length/sessions/${sessionId}/module/submit`,
-        { method: "POST", body: JSON.stringify({}) }
+        { method: "POST", body: JSON.stringify({}) },
       );
-      
+
       if (!response.ok) {
         throw new Error("Failed to submit module");
       }
-      
+
       const result: SubmitModuleResult = await response.json();
-      
+
       toast({
         title: "Module Complete",
         description: `You answered ${result.correctCount} out of ${result.totalCount} questions correctly.`,
       });
-      
+
       // Refresh session state
       await fetchSessionState();
-      
     } catch (error: unknown) {
       if (markRuntimeDisabled(error)) {
         return;
       }
       console.error("Failed to submit module:", error);
-      const message = error instanceof Error ? error.message : "Failed to submit module";
+      const message =
+        error instanceof Error ? error.message : "Failed to submit module";
       toast({
         title: "Unable to submit module",
         description: message,
@@ -370,41 +398,49 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, sessionId, toast]);
-  
+  }, [
+    fetchSessionState,
+    markRuntimeDisabled,
+    runtimeDisabled,
+    sessionId,
+    toast,
+  ]);
+
   // ============================================================================
   // BREAK CONTINUATION
   // ============================================================================
-  
+
   const continueFromBreak = useCallback(async () => {
     if (!sessionId || runtimeDisabled) return;
-    
+
     setSubmitting(true);
-    
+
     try {
       const response = await apiRequest(
         `/api/full-length/sessions/${sessionId}/break/continue`,
-        { method: "POST", body: JSON.stringify({}) }
+        { method: "POST", body: JSON.stringify({}) },
       );
-      
+
       if (!response.ok) {
         throw new Error("Failed to continue from break");
       }
-      
+
       toast({
         title: "Break Complete",
         description: "Starting Math Module 1",
       });
-      
+
       // Refresh session state
       await fetchSessionState();
-      
     } catch (error: unknown) {
       if (markRuntimeDisabled(error)) {
         return;
       }
       console.error("Failed to continue from break:", error);
-      const message = error instanceof Error ? error.message : "Failed to continue from break";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to continue from break";
       toast({
         title: "Unable to continue from break",
         description: message,
@@ -412,47 +448,56 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [fetchSessionState, markRuntimeDisabled, runtimeDisabled, sessionId, toast]);
-  
+  }, [
+    fetchSessionState,
+    markRuntimeDisabled,
+    runtimeDisabled,
+    sessionId,
+    toast,
+  ]);
+
   // ============================================================================
   // EXAM COMPLETION
   // ============================================================================
-  
+
   const completeExam = useCallback(async () => {
     if (!sessionId || runtimeDisabled) return;
-    
+
     setSubmitting(true);
-    
+
     try {
       const response = await apiRequest(
         `/api/full-length/sessions/${sessionId}/complete`,
-        { method: "POST", body: JSON.stringify({}) }
+        { method: "POST", body: JSON.stringify({}) },
       );
-      
+
       if (!response.ok) {
         throw new Error("Failed to complete exam");
       }
-      
+
       const result: CompleteExamResult = await response.json();
       setResults(result);
 
       try {
-        window.localStorage.setItem("lyceon:lastFullLengthSessionId", result.sessionId);
+        window.localStorage.setItem(
+          "lyceon:lastFullLengthSessionId",
+          result.sessionId,
+        );
       } catch {
         // Ignore storage failures; session/runtime truth remains server-authoritative.
       }
-      
+
       toast({
         title: "Exam Complete!",
         description: `Overall: ${result.overallScore.percentageCorrect.toFixed(1)}% correct`,
       });
-      
     } catch (error: unknown) {
       if (markRuntimeDisabled(error)) {
         return;
       }
       console.error("Failed to complete exam:", error);
-      const message = error instanceof Error ? error.message : "Failed to complete exam";
+      const message =
+        error instanceof Error ? error.message : "Failed to complete exam";
       toast({
         title: "Unable to complete exam",
         description: message,
@@ -465,9 +510,12 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
   // ============================================================================
   // AUTO-SUBMIT ON TIME EXPIRY
   // ============================================================================
-  
+
   useEffect(() => {
-    if (displayTime === 0 && sessionState?.currentModule?.status === "in_progress") {
+    if (
+      displayTime === 0 &&
+      sessionState?.currentModule?.status === "in_progress"
+    ) {
       // Time expired - auto submit module
       toast({
         title: "Time's Up!",
@@ -476,11 +524,11 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       submitModule();
     }
   }, [displayTime, sessionState, submitModule, toast]);
-  
+
   // ============================================================================
   // RENDER HELPERS
   // ============================================================================
-  
+
   const formatTime = (ms: number | null): string => {
     if (ms === null) return "--:--";
     const totalSeconds = Math.floor(ms / 1000);
@@ -488,23 +536,29 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
-  
-  const getSectionLabel = (section: string | null, moduleIndex: number | null): string => {
+
+  const getSectionLabel = (
+    section: string | null,
+    moduleIndex: number | null,
+  ): string => {
     if (!section || !moduleIndex) return "";
     if (section === "rw") return `Reading & Writing Module ${moduleIndex}`;
     if (section === "math") return `Math Module ${moduleIndex}`;
     return "";
   };
-  
+
   // ============================================================================
   // RENDER
   // ============================================================================
-  
+
   if (runtimeDisabled) {
     return (
       <AppShell>
         <div className="container mx-auto px-4 py-8 max-w-5xl">
-          <RuntimeContractDisabledCard domain="full-length" code={runtimeDisabled.code} />
+          <RuntimeContractDisabledCard
+            domain="full-length"
+            code={runtimeDisabled.code}
+          />
         </div>
       </AppShell>
     );
@@ -522,7 +576,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       </AppShell>
     );
   }
-  
+
   // No session state
   if (!sessionState) {
     return (
@@ -531,7 +585,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
           <div className="text-center py-12">
             <AlertCircle className="h-16 w-16 text-amber-600 mx-auto mb-4" />
             <h1 className="text-2xl font-bold mb-4">Session Not Found</h1>
-            <Button onClick={onExit || (() => window.location.href = "/full-test")}>
+            <Button
+              onClick={onExit || (() => (window.location.href = "/full-test"))}
+            >
               Return to Full Test
             </Button>
           </div>
@@ -539,7 +595,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       </AppShell>
     );
   }
-  
+
   // Results screen
   if (results) {
     return (
@@ -553,14 +609,21 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             actions={
               <>
                 <Button asChild>
-                  <Link href={`/full-test?reportSessionId=${encodeURIComponent(results.sessionId)}&reviewSessionId=${encodeURIComponent(results.sessionId)}`}>
+                  <Link
+                    href={`/full-test?reportSessionId=${encodeURIComponent(results.sessionId)}&reviewSessionId=${encodeURIComponent(results.sessionId)}`}
+                  >
                     Open Report Surface
                   </Link>
                 </Button>
                 <Button asChild variant="outline">
                   <Link href="/dashboard">Return to Dashboard</Link>
                 </Button>
-                <Button variant="outline" onClick={onExit || (() => (window.location.href = "/full-test"))}>
+                <Button
+                  variant="outline"
+                  onClick={
+                    onExit || (() => (window.location.href = "/full-test"))
+                  }
+                >
                   Start New Exam
                 </Button>
               </>
@@ -570,7 +633,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       </AppShell>
     );
   }
-  
+
   // Break screen
   if (sessionState.session.current_section === "break") {
     return (
@@ -580,10 +643,11 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             <Coffee className="h-20 w-20 text-primary mx-auto mb-4" />
             <h1 className="text-3xl font-bold mb-2">Break Time</h1>
             <p className="text-muted-foreground">
-              You've completed the Reading & Writing section. Take a 10-minute break.
+              You've completed the Reading & Writing section. Take a 10-minute
+              break.
             </p>
           </div>
-          
+
           <Card className="mb-8">
             <CardContent className="pt-6">
               <div className="text-center mb-6">
@@ -592,12 +656,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
                 </div>
                 <p className="text-sm text-muted-foreground">Time remaining</p>
               </div>
-              
+
               <div className="space-y-4">
                 <p className="text-center text-sm">
-                  You can continue to the Math section at any time, or wait for the break to end.
+                  You can continue to the Math section at any time, or wait for
+                  the break to end.
                 </p>
-                
+
                 <div className="flex justify-center">
                   <Button
                     size="lg"
@@ -615,11 +680,11 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       </AppShell>
     );
   }
-  
+
   // Question screen
   const currentQuestion = sessionState.currentQuestion;
   const currentModule = sessionState.currentModule;
-  
+
   if (!currentQuestion || !currentModule) {
     return (
       <AppShell>
@@ -631,15 +696,25 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       </AppShell>
     );
   }
-  
-  const allAnswered = currentQuestion.answeredCount >= currentQuestion.moduleQuestionCount;
-  const progressPercent = (currentQuestion.answeredCount / currentQuestion.moduleQuestionCount) * 100;
-  const isMathModule = String(currentModule.section ?? sessionState.session.current_section ?? "").toLowerCase() === "math";
-  const calculatorModuleKey = currentModule.id || `${sessionState.session.current_section ?? "none"}:${sessionState.session.current_module ?? 0}`;
+
+  const allAnswered =
+    currentQuestion.answeredCount >= currentQuestion.moduleQuestionCount;
+  const progressPercent =
+    (currentQuestion.answeredCount / currentQuestion.moduleQuestionCount) * 100;
+  const isMathModule =
+    String(
+      currentModule.section ?? sessionState.session.current_section ?? "",
+    ).toLowerCase() === "math";
+  const calculatorModuleKey =
+    currentModule.id ||
+    `${sessionState.session.current_section ?? "none"}:${sessionState.session.current_module ?? 0}`;
   const calculatorState = calculatorStatesByModule[calculatorModuleKey] ?? null;
 
   const handleCalculatorStateChange = (nextState: unknown) => {
-    setCalculatorStatesByModule((prev) => ({ ...prev, [calculatorModuleKey]: nextState }));
+    setCalculatorStatesByModule((prev) => ({
+      ...prev,
+      [calculatorModuleKey]: nextState,
+    }));
 
     if (!isMathModule || !currentModule?.id) {
       return;
@@ -658,7 +733,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             body: JSON.stringify({
               calculator_state: nextState ?? null,
             }),
-          }
+          },
         );
       } catch (error) {
         if (markRuntimeDisabled(error)) {
@@ -668,7 +743,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       }
     }, 500);
   };
-  
+
   return (
     <AppShell>
       <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -676,10 +751,13 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">
-              {getSectionLabel(sessionState.session.current_section, sessionState.session.current_module)}
+              {getSectionLabel(
+                sessionState.session.current_section,
+                sessionState.session.current_module,
+              )}
             </h1>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-muted-foreground" />
@@ -688,27 +766,31 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
               </span>
             </div>
             {displayTime !== null && displayTime < 5 * 60 * 1000 && (
-              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-800"
+              >
                 Low Time
               </Badge>
             )}
           </div>
         </div>
-        
+
         {/* Progress */}
         <div className="mb-6">
           <div className="flex justify-between text-sm text-muted-foreground mb-2">
             <span>
-              Question {currentQuestion.orderIndex + 1} of {currentQuestion.moduleQuestionCount}
+              Question {currentQuestion.orderIndex + 1} of{" "}
+              {currentQuestion.moduleQuestionCount}
             </span>
-            <span>
-              {currentQuestion.answeredCount} answered
-            </span>
+            <span>{currentQuestion.answeredCount} answered</span>
           </div>
           <Progress value={progressPercent} className="h-2" />
         </div>
-        
-        <div className={`mb-6 ${isMathModule && isCalculatorExpanded ? "grid lg:grid-cols-2 gap-6" : "space-y-6"}`}>
+
+        <div
+          className={`mb-6 ${isMathModule && isCalculatorExpanded ? "grid lg:grid-cols-2 gap-6" : "space-y-6"}`}
+        >
           {/* Question */}
           <Card>
             <CardContent className="pt-6">
@@ -733,9 +815,15 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             <Card>
               <CardContent className="pt-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Calculator</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    Calculator
+                  </p>
                   <div className="flex gap-2">
-                    <Button variant="outline" type="button" onClick={() => setIsReferenceOpen(true)}>
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => setIsReferenceOpen(true)}
+                    >
                       Reference Sheet
                     </Button>
                     <Button
@@ -745,7 +833,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
                       aria-expanded={isCalculatorExpanded}
                       data-testid="full-length-calculator-toggle"
                     >
-                      {isCalculatorExpanded ? "Hide Calculator" : "Open Calculator"}
+                      {isCalculatorExpanded
+                        ? "Hide Calculator"
+                        : "Open Calculator"}
                     </Button>
                   </div>
                 </div>
@@ -758,7 +848,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             </Card>
           )}
         </div>
-        
+
         {/* Navigation */}
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground">
@@ -771,7 +861,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
               <span>Select an answer to continue</span>
             )}
           </div>
-          
+
           <div className="flex gap-3">
             {!allAnswered && (
               <Button
@@ -783,7 +873,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
             )}
-            
+
             {allAnswered && (
               <Button
                 onClick={submitModule}
@@ -797,21 +887,22 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
             )}
           </div>
         </div>
-        
+
         {/* Module end check */}
-        {sessionState.currentModule?.status === "submitted" && 
-          sessionState.session.current_section === "math" && 
+        {sessionState.currentModule?.status === "submitted" &&
+          sessionState.session.current_section === "math" &&
           sessionState.session.current_module === 2 && (
-          <div className="mt-8 text-center">
-            <Button onClick={completeExam} size="lg" disabled={submitting}>
-              Complete Exam
-            </Button>
-          </div>
-        )}
+            <div className="mt-8 text-center">
+              <Button onClick={completeExam} size="lg" disabled={submitting}>
+                Complete Exam
+              </Button>
+            </div>
+          )}
       </div>
-      <MathReferenceSheet open={isReferenceOpen} onOpenChange={setIsReferenceOpen} />
+      <MathReferenceSheet
+        open={isReferenceOpen}
+        onOpenChange={setIsReferenceOpen}
+      />
     </AppShell>
   );
 }
-
-

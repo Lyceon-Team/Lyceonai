@@ -22,11 +22,16 @@ import {
 } from "../middleware/supabase-auth";
 import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+
 import { z } from "zod";
 
 const router = Router();
 
-const ACTIVE_FULL_TEST_STATUSES = ["not_started", "in_progress", "break"] as const;
+const ACTIVE_FULL_TEST_STATUSES = [
+  "not_started",
+  "in_progress",
+  "break",
+] as const;
 const STUDENT_THROTTLE_WINDOW_MS = 60_000;
 const STUDENT_THROTTLE_LIMIT = 24;
 const IP_THROTTLE_WINDOW_MS = 60_000;
@@ -109,8 +114,10 @@ type MemorySummaryNormalization = {
   rejected_count: number;
 };
 
-const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY = "__internal_question_links_snapshot";
-const INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY = "__internal_instruction_exposures_snapshot";
+const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY =
+  "__internal_question_links_snapshot";
+const INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY =
+  "__internal_instruction_exposures_snapshot";
 
 const orchestrationMetaSchema = z.object({
   model_name: z.string(),
@@ -156,12 +163,18 @@ const tutorReplayContentSchema = z.object({
   suggested_action: TutorSuggestedActionSchema,
   ui_hints: TutorUiHintsSchema,
   orchestration_meta: orchestrationMetaSchema.optional(),
-  [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: z.array(questionLinkSnapshotSchema).optional(),
-  [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: z.array(instructionExposureSnapshotSchema).optional(),
+  [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: z
+    .array(questionLinkSnapshotSchema)
+    .optional(),
+  [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: z
+    .array(instructionExposureSnapshotSchema)
+    .optional(),
 });
 
 type QuestionLinkSnapshot = z.infer<typeof questionLinkSnapshotSchema>;
-type InstructionExposureSnapshot = z.infer<typeof instructionExposureSnapshotSchema>;
+type InstructionExposureSnapshot = z.infer<
+  typeof instructionExposureSnapshotSchema
+>;
 type TutorReplayContent = z.infer<typeof tutorReplayContentSchema>;
 
 function emptyScope(): ScopeShape {
@@ -173,9 +186,12 @@ function emptyScope(): ScopeShape {
   };
 }
 
-function normalizeScope(source: Record<string, unknown> | null | undefined): ScopeShape {
+function normalizeScope(
+  source: Record<string, unknown> | null | undefined,
+): ScopeShape {
   const safe = source ?? {};
-  const toText = (v: unknown) => (typeof v === "string" && v.trim().length > 0 ? v.trim() : null);
+  const toText = (v: unknown) =>
+    typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
   return {
     source_session_id: toText(safe.source_session_id),
     source_session_item_id: toText(safe.source_session_item_id),
@@ -187,8 +203,10 @@ function normalizeScope(source: Record<string, unknown> | null | undefined): Sco
 function getClientIp(req: AuthenticatedRequest): string {
   if (typeof req.ip === "string" && req.ip.length > 0) return req.ip;
   const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) return forwarded.split(",")[0].trim();
-  if (Array.isArray(forwarded) && forwarded.length > 0) return String(forwarded[0]);
+  if (typeof forwarded === "string" && forwarded.length > 0)
+    return forwarded.split(",")[0].trim();
+  if (Array.isArray(forwarded) && forwarded.length > 0)
+    return String(forwarded[0]);
   return "unknown";
 }
 
@@ -211,7 +229,11 @@ function sendTutorError(
   retryable?: boolean,
 ) {
   return res.status(status).json({
-    error: { code, message, ...(typeof retryable === "boolean" ? { retryable } : {}) },
+    error: {
+      code,
+      message,
+      ...(typeof retryable === "boolean" ? { retryable } : {}),
+    },
     ...(requestId ? { requestId } : {}),
   });
 }
@@ -235,17 +257,28 @@ function isAdminUser(req: AuthenticatedRequest): boolean {
   return Boolean(req.user?.isAdmin || req.user?.role === "admin");
 }
 
-function tutorHardThrottle(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+function tutorHardThrottle(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) {
   const userId = req.user?.id;
   if (!userId) return next();
 
-  const studentCount = touchRateBucket(`tutor:student:${userId}`, STUDENT_THROTTLE_WINDOW_MS);
-  const ipCount = touchRateBucket(`tutor:ip:${getClientIp(req)}`, IP_THROTTLE_WINDOW_MS);
+  const studentCount = touchRateBucket(
+    `tutor:student:${userId}`,
+    STUDENT_THROTTLE_WINDOW_MS,
+  );
+  const ipCount = touchRateBucket(
+    `tutor:ip:${getClientIp(req)}`,
+    IP_THROTTLE_WINDOW_MS,
+  );
   if (studentCount > STUDENT_THROTTLE_LIMIT || ipCount > IP_THROTTLE_LIMIT) {
     return res.status(429).json({
       error: {
         code: "TUTOR_ABUSE_THROTTLED",
-        message: "Tutor request rate is temporarily limited. Please retry shortly.",
+        message:
+          "Tutor request rate is temporarily limited. Please retry shortly.",
         retryable: true,
       },
       limitType: "tutor",
@@ -262,8 +295,15 @@ function tutorHardThrottle(req: AuthenticatedRequest, res: Response, next: NextF
 
 router.use(tutorHardThrottle);
 
-async function ensureTutorEntitlement(req: AuthenticatedRequest, res: Response, userId: string): Promise<boolean> {
-  const role = (req.user?.role ?? "student") as "student" | "guardian" | "admin";
+async function ensureTutorEntitlement(
+  req: AuthenticatedRequest,
+  res: Response,
+  userId: string,
+): Promise<boolean> {
+  const role = (req.user?.role ?? "student") as
+    | "student"
+    | "guardian"
+    | "admin";
   const access = await resolvePaidKpiAccessForUser(userId, role);
   if (access.hasPaidAccess) return true;
   sendTutorError(
@@ -291,11 +331,20 @@ async function loadConversationOrDeny(
     .limit(1)
     .maybeSingle();
   if (error || !data) {
-    sendTutorError(res, 404, "TUTOR_CONVERSATION_NOT_FOUND", "Tutor conversation not found.", req.requestId);
+    sendTutorError(
+      res,
+      404,
+      "TUTOR_CONVERSATION_NOT_FOUND",
+      "Tutor conversation not found.",
+      req.requestId,
+    );
     return null;
   }
 
-  if (String((data as ConversationRow).student_id) !== String(user.id) && !isAdminUser(req)) {
+  if (
+    String((data as ConversationRow).student_id) !== String(user.id) &&
+    !isAdminUser(req)
+  ) {
     sendForbidden(res, {
       error: "Forbidden",
       message: "You do not own this tutor conversation.",
@@ -319,7 +368,10 @@ async function hasActiveFullLengthExam(userId: string): Promise<boolean> {
   return Boolean(data);
 }
 
-async function isFullLengthReviewUnlocked(userId: string, sessionId: string | null): Promise<boolean> {
+async function isFullLengthReviewUnlocked(
+  userId: string,
+  sessionId: string | null,
+): Promise<boolean> {
   if (!sessionId) return false;
   const { data, error } = await supabaseServer
     .from("full_length_exam_sessions")
@@ -332,7 +384,9 @@ async function isFullLengthReviewUnlocked(userId: string, sessionId: string | nu
   return String((data as { status: string }).status) === "completed";
 }
 
-async function questionExistsByRowId(questionRowId: string | null): Promise<boolean> {
+async function questionExistsByRowId(
+  questionRowId: string | null,
+): Promise<boolean> {
   if (!questionRowId) return false;
   const { data, error } = await supabaseServer
     .from("questions")
@@ -343,7 +397,9 @@ async function questionExistsByRowId(questionRowId: string | null): Promise<bool
   return !error && Boolean(data);
 }
 
-async function questionExistsByCanonicalId(canonicalId: string | null): Promise<boolean> {
+async function questionExistsByCanonicalId(
+  canonicalId: string | null,
+): Promise<boolean> {
   if (!canonicalId) return false;
   const { data, error } = await supabaseServer
     .from("questions")
@@ -354,7 +410,9 @@ async function questionExistsByCanonicalId(canonicalId: string | null): Promise<
   return !error && Boolean(data);
 }
 
-async function canonicalIdForQuestionRow(rowId: string | null): Promise<string | null> {
+async function canonicalIdForQuestionRow(
+  rowId: string | null,
+): Promise<string | null> {
   if (!rowId) return null;
   const { data, error } = await supabaseServer
     .from("questions")
@@ -436,10 +494,14 @@ async function sessionItemExistsForScope(
   return false;
 }
 
-async function loadRecentValidScope(conversationId: string): Promise<ScopeShape | null> {
+async function loadRecentValidScope(
+  conversationId: string,
+): Promise<ScopeShape | null> {
   const { data, error } = await supabaseServer
     .from("tutor_messages")
-    .select("source_session_id,source_session_item_id,source_question_row_id,source_question_canonical_id,created_at")
+    .select(
+      "source_session_id,source_session_item_id,source_question_row_id,source_question_canonical_id,created_at",
+    )
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(25);
@@ -447,7 +509,9 @@ async function loadRecentValidScope(conversationId: string): Promise<ScopeShape 
 
   for (const row of data) {
     const scope = normalizeScope(row as Record<string, unknown>);
-    const hasQuestion = (await questionExistsByRowId(scope.source_question_row_id)) || (await questionExistsByCanonicalId(scope.source_question_canonical_id));
+    const hasQuestion =
+      (await questionExistsByRowId(scope.source_question_row_id)) ||
+      (await questionExistsByCanonicalId(scope.source_question_canonical_id));
     if (hasQuestion) return scope;
   }
 
@@ -459,7 +523,9 @@ async function resolveScope(args: {
   client_scope?: Record<string, unknown> | null;
   student_id: string;
 }): Promise<ScopeResolution> {
-  const stored = normalizeScope(args.conversation as unknown as Record<string, unknown>);
+  const stored = normalizeScope(
+    args.conversation as unknown as Record<string, unknown>,
+  );
   const supplied = normalizeScope(args.client_scope);
   const resolved = { ...stored };
   const conflictFields: string[] = [];
@@ -467,30 +533,49 @@ async function resolveScope(args: {
   for (const key of Object.keys(stored) as Array<keyof ScopeShape>) {
     if (!resolved[key] && supplied[key]) {
       resolved[key] = supplied[key];
-    } else if (resolved[key] && supplied[key] && resolved[key] !== supplied[key]) {
+    } else if (
+      resolved[key] &&
+      supplied[key] &&
+      resolved[key] !== supplied[key]
+    ) {
       conflictFields.push(String(key));
     }
   }
 
-  if (resolved.source_question_row_id && !resolved.source_question_canonical_id) {
-    resolved.source_question_canonical_id = await canonicalIdForQuestionRow(resolved.source_question_row_id);
+  if (
+    resolved.source_question_row_id &&
+    !resolved.source_question_canonical_id
+  ) {
+    resolved.source_question_canonical_id = await canonicalIdForQuestionRow(
+      resolved.source_question_row_id,
+    );
   }
 
   let fallbackReason: string | null = null;
   const questionValid =
-    (await questionExistsByRowId(resolved.source_question_row_id))
-    || (await questionExistsByCanonicalId(resolved.source_question_canonical_id));
+    (await questionExistsByRowId(resolved.source_question_row_id)) ||
+    (await questionExistsByCanonicalId(resolved.source_question_canonical_id));
 
-  if (!questionValid && (resolved.source_question_row_id || resolved.source_question_canonical_id)) {
+  if (
+    !questionValid &&
+    (resolved.source_question_row_id || resolved.source_question_canonical_id)
+  ) {
     const recent = await loadRecentValidScope(args.conversation.id);
     if (recent) {
       resolved.source_question_row_id = recent.source_question_row_id;
-      resolved.source_question_canonical_id = recent.source_question_canonical_id;
-      resolved.source_session_id = recent.source_session_id ?? resolved.source_session_id;
-      resolved.source_session_item_id = recent.source_session_item_id ?? resolved.source_session_item_id;
+      resolved.source_question_canonical_id =
+        recent.source_question_canonical_id;
+      resolved.source_session_id =
+        recent.source_session_id ?? resolved.source_session_id;
+      resolved.source_session_item_id =
+        recent.source_session_item_id ?? resolved.source_session_item_id;
       fallbackReason = "reused_recent_conversation_scope";
     } else if (
-      await sessionExistsForScope(args.student_id, args.conversation.source_surface, resolved.source_session_id)
+      await sessionExistsForScope(
+        args.student_id,
+        args.conversation.source_surface,
+        resolved.source_session_id,
+      )
     ) {
       resolved.source_question_row_id = null;
       resolved.source_question_canonical_id = null;
@@ -501,8 +586,16 @@ async function resolveScope(args: {
     }
   }
 
-  const sessionValid = await sessionExistsForScope(args.student_id, args.conversation.source_surface, resolved.source_session_id);
-  const itemValid = await sessionItemExistsForScope(args.student_id, args.conversation.source_surface, resolved.source_session_item_id);
+  const sessionValid = await sessionExistsForScope(
+    args.student_id,
+    args.conversation.source_surface,
+    resolved.source_session_id,
+  );
+  const itemValid = await sessionItemExistsForScope(
+    args.student_id,
+    args.conversation.source_surface,
+    resolved.source_session_item_id,
+  );
   if (!sessionValid || (resolved.source_session_item_id && !itemValid)) {
     Object.assign(resolved, emptyScope());
     fallbackReason = fallbackReason ?? "degraded_to_general";
@@ -515,15 +608,33 @@ async function resolveScope(args: {
     });
   }
 
-  return { resolved_scope: resolved, fallback_reason: fallbackReason, conflict_fields: conflictFields };
+  return {
+    resolved_scope: resolved,
+    fallback_reason: fallbackReason,
+    conflict_fields: conflictFields,
+  };
 }
 
 function removeInternalMetadataMentions(text: string): string {
   return text
-    .replace(/\b(canonical id|canonical_id|internal metadata|distractor taxonomy|policy flags|reason codes)\b/gi, "")
+    .replace(
+      /\b(canonical id|canonical_id|internal metadata|distractor taxonomy|policy flags|reason codes)\b/gi,
+      "",
+    )
     .replace(/\s{2,}/g, " ")
     .trim();
 }
+
+/**
+ * @spec [Doc-03B_V4.1, §16.4-5; INV-03-13] | @implemented [2026-06-24]
+ * Shared silent-substitution fallback for a blocked pre-submit tutor turn. Per
+ * §16.5 + INV-03-13, a scanner-blocked response must look like a normal LISA
+ * turn — no acknowledgment that filtering occurred. BOTH block paths (append-turn
+ * delivery and conversation replay) emit THIS one substitution, the same way
+ * (parallel-paths rule). It is pedagogical, never an error message.
+ */
+const TUTOR_ANTI_LEAK_SUBSTITUTION =
+  "Let me think about this differently. Can you walk me through how you approached this problem?";
 
 function hasDirectAnswerLeak(text: string): boolean {
   const patterns = [
@@ -552,8 +663,10 @@ function normalizeMemorySummaries(rows: unknown): MemorySummaryNormalization {
       summary_type: (row as Record<string, unknown>)?.summary_type,
       summary_version: (row as Record<string, unknown>)?.summary_version,
       content_json: (row as Record<string, unknown>)?.content_json ?? {},
-      source_window_start: (row as Record<string, unknown>)?.source_window_start ?? null,
-      source_window_end: (row as Record<string, unknown>)?.source_window_end ?? null,
+      source_window_start:
+        (row as Record<string, unknown>)?.source_window_start ?? null,
+      source_window_end:
+        (row as Record<string, unknown>)?.source_window_end ?? null,
     });
     if (!parsed.success) {
       rejectedCount += 1;
@@ -569,7 +682,10 @@ function normalizeMemorySummaries(rows: unknown): MemorySummaryNormalization {
   };
 }
 
-async function getPracticeItemStatus(studentId: string, itemId: string | null): Promise<string | null> {
+async function getPracticeItemStatus(
+  studentId: string,
+  itemId: string | null,
+): Promise<string | null> {
   if (!itemId) return null;
   const { data, error } = await supabaseServer
     .from("practice_session_items")
@@ -582,12 +698,32 @@ async function getPracticeItemStatus(studentId: string, itemId: string | null): 
   return typeof data.status === "string" ? data.status : null;
 }
 
+/**
+ * @spec [Doc-03B_V4.1, §16] | @implemented [2026-06-24]
+ * Structural chokepoint: determines pre-submit state for any source_surface.
+ * practice → check item status; review/test_review/dashboard → inherently post-submit.
+ */
+async function isPreSubmitForSurface(
+  surface: ConversationRow["source_surface"],
+  studentId: string,
+  sessionItemId: string | null,
+): Promise<boolean> {
+  if (surface === "practice") {
+    const status = await getPracticeItemStatus(studentId, sessionItemId);
+    return status !== "answered" && status !== "skipped";
+  }
+  // review, test_review, dashboard are inherently post-submit
+  return false;
+}
+
 function asJsonObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
 }
 
-function publicTutorMessageContentJson(value: unknown): Record<string, unknown> {
+function publicTutorMessageContentJson(
+  value: unknown,
+): Record<string, unknown> {
   const contentJson = { ...asJsonObject(value) };
   delete contentJson[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
   delete contentJson[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
@@ -626,7 +762,9 @@ function normalizeNullableInt(value: unknown): number | null {
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
-function isDuplicateKeyError(error: { code?: string | null } | null | undefined): boolean {
+function isDuplicateKeyError(
+  error: { code?: string | null } | null | undefined,
+): boolean {
   return String(error?.code ?? "") === "23505";
 }
 
@@ -635,14 +773,20 @@ function questionLinkMatchesSnapshot(
   snapshot: QuestionLinkSnapshot,
 ): boolean {
   return (
-    normalizeNullableString(row.source_question_row_id) === snapshot.source_question_row_id
-    && normalizeNullableString(row.source_question_canonical_id) === snapshot.source_question_canonical_id
-    && normalizeNullableString(row.related_question_row_id) === snapshot.related_question_row_id
-    && normalizeNullableString(row.related_question_canonical_id) === snapshot.related_question_canonical_id
-    && normalizeNullableString(row.relationship_type) === snapshot.relationship_type
-    && normalizeNullableInt(row.difficulty_delta) === snapshot.difficulty_delta
-    && normalizeNullableString(row.reason_code) === snapshot.reason_code
-    && canonicalizeJsonString(asJsonObject(row.link_snapshot)) === canonicalizeJsonString(snapshot.link_snapshot)
+    normalizeNullableString(row.source_question_row_id) ===
+      snapshot.source_question_row_id &&
+    normalizeNullableString(row.source_question_canonical_id) ===
+      snapshot.source_question_canonical_id &&
+    normalizeNullableString(row.related_question_row_id) ===
+      snapshot.related_question_row_id &&
+    normalizeNullableString(row.related_question_canonical_id) ===
+      snapshot.related_question_canonical_id &&
+    normalizeNullableString(row.relationship_type) ===
+      snapshot.relationship_type &&
+    normalizeNullableInt(row.difficulty_delta) === snapshot.difficulty_delta &&
+    normalizeNullableString(row.reason_code) === snapshot.reason_code &&
+    canonicalizeJsonString(asJsonObject(row.link_snapshot)) ===
+      canonicalizeJsonString(snapshot.link_snapshot)
   );
 }
 
@@ -651,13 +795,15 @@ function exposureMatchesSnapshot(
   snapshot: InstructionExposureSnapshot,
 ): boolean {
   return (
-    normalizeNullableString(row.exposure_type) === snapshot.exposure_type
-    && normalizeNullableString(row.content_variant_key) === snapshot.content_variant_key
-    && normalizeNullableString(row.content_version) === snapshot.content_version
-    && normalizeNullableInt(row.rendered_difficulty) === snapshot.rendered_difficulty
-    && normalizeNullableInt(row.hint_depth) === snapshot.hint_depth
-    && normalizeNullableString(row.tone_style) === snapshot.tone_style
-    && normalizeNullableInt(row.sequence_ordinal) === snapshot.sequence_ordinal
+    normalizeNullableString(row.exposure_type) === snapshot.exposure_type &&
+    normalizeNullableString(row.content_variant_key) ===
+      snapshot.content_variant_key &&
+    normalizeNullableString(row.content_version) === snapshot.content_version &&
+    normalizeNullableInt(row.rendered_difficulty) ===
+      snapshot.rendered_difficulty &&
+    normalizeNullableInt(row.hint_depth) === snapshot.hint_depth &&
+    normalizeNullableString(row.tone_style) === snapshot.tone_style &&
+    normalizeNullableInt(row.sequence_ordinal) === snapshot.sequence_ordinal
   );
 }
 
@@ -678,7 +824,8 @@ async function ensureQuestionLinksPersisted(args: {
   const knownRows = [...existingRows] as Record<string, unknown>[];
 
   for (const link of args.links) {
-    if (knownRows.some((row) => questionLinkMatchesSnapshot(row, link))) continue;
+    if (knownRows.some((row) => questionLinkMatchesSnapshot(row, link)))
+      continue;
 
     const { data: inserted, error: insertError } = await supabaseServer
       .from("tutor_question_links")
@@ -714,7 +861,8 @@ async function ensureInstructionExposuresPersisted(args: {
   studentId: string;
   exposures: InstructionExposureSnapshot[];
 }): Promise<boolean> {
-  if (!Array.isArray(args.exposures) || args.exposures.length === 0) return true;
+  if (!Array.isArray(args.exposures) || args.exposures.length === 0)
+    return true;
 
   const { data: existingRows, error: existingError } = await supabaseServer
     .from("tutor_instruction_exposures")
@@ -727,7 +875,8 @@ async function ensureInstructionExposuresPersisted(args: {
   const knownRows = [...existingRows] as Record<string, unknown>[];
 
   for (const exposure of args.exposures) {
-    if (knownRows.some((row) => exposureMatchesSnapshot(row, exposure))) continue;
+    if (knownRows.some((row) => exposureMatchesSnapshot(row, exposure)))
+      continue;
 
     const { data: inserted, error: insertError } = await supabaseServer
       .from("tutor_instruction_exposures")
@@ -786,253 +935,392 @@ function parseReplayTutorContent(value: unknown): TutorReplayContent | null {
   return parsed.success ? parsed.data : null;
 }
 
-router.post("/conversations", async (req: AuthenticatedRequest, res: Response) => {
-  try {
+router.post(
+  "/conversations",
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const user = requireRequestUser(req, res);
+      if (!user) return;
+      if (isGuardianUser(req) && !isAdminUser(req)) {
+        sendForbidden(res, {
+          error: "Student access required",
+          message: "Guardians cannot access tutor.",
+          requestId: req.requestId,
+        });
+        return;
+      }
+      if (!(await ensureTutorEntitlement(req, res, user.id))) return;
+
+      const parsed = TutorStartConversationRequestSchema.safeParse(
+        req.body ?? {},
+      );
+      if (!parsed.success) {
+        sendTutorError(
+          res,
+          400,
+          "TUTOR_INVALID_REQUEST",
+          "Invalid tutor conversation request.",
+          req.requestId,
+        );
+        return;
+      }
+      const body = parsed.data;
+      const resolved = normalizeScope(
+        body as unknown as Record<string, unknown>,
+      );
+      const defaults = {
+        policy_family: DEFAULT_POLICY_FAMILY,
+        policy_variant: DEFAULT_POLICY_VARIANT,
+        policy_version: DEFAULT_POLICY_VERSION,
+        prompt_version: DEFAULT_PROMPT_VERSION,
+        assignment_mode: DEFAULT_ASSIGNMENT_MODE,
+        assignment_key: DEFAULT_ASSIGNMENT_KEY,
+        initialization_snapshot: {},
+        status: "active",
+      };
+
+      const { data: existing, error: existingError } = await supabaseServer
+        .from("tutor_conversations")
+        .select("*")
+        .eq("student_id", user.id)
+        .eq("status", "active")
+        .eq("entry_mode", body.entry_mode)
+        .eq("source_surface", body.source_surface)
+        .eq("source_session_id", resolved.source_session_id)
+        .eq("source_session_item_id", resolved.source_session_item_id)
+        .eq("source_question_row_id", resolved.source_question_row_id)
+        .eq(
+          "source_question_canonical_id",
+          resolved.source_question_canonical_id,
+        )
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      if (!existingError && Array.isArray(existing) && existing.length > 0) {
+        const row = existing[0] as ConversationRow;
+        return res.json({
+          data: {
+            conversation_id: row.id,
+            entry_mode: row.entry_mode,
+            source_surface: row.source_surface,
+            status: row.status,
+            resolved_scope: normalizeScope(
+              row as unknown as Record<string, unknown>,
+            ),
+          },
+        });
+      }
+
+      const { data: inserted, error: insertError } = await supabaseServer
+        .from("tutor_conversations")
+        .insert({
+          student_id: user.id,
+          entry_mode: body.entry_mode,
+          source_surface: body.source_surface,
+          source_session_id: resolved.source_session_id,
+          source_session_item_id: resolved.source_session_item_id,
+          source_question_row_id: resolved.source_question_row_id,
+          source_question_canonical_id: resolved.source_question_canonical_id,
+          ...defaults,
+        })
+        .select("*")
+        .single();
+
+      if (insertError || !inserted) {
+        sendTutorError(
+          res,
+          500,
+          "TUTOR_CONVERSATION_CREATE_FAILED",
+          "Failed to create tutor conversation.",
+          req.requestId,
+        );
+        return;
+      }
+
+      return res.json({
+        data: {
+          conversation_id: inserted.id,
+          entry_mode: inserted.entry_mode,
+          source_surface: inserted.source_surface,
+          status: inserted.status,
+          resolved_scope: normalizeScope(
+            inserted as unknown as Record<string, unknown>,
+          ),
+        },
+      });
+    } catch (error: any) {
+      sendTutorError(
+        res,
+        500,
+        "TUTOR_CONVERSATION_CREATE_FAILED",
+        error?.message || "Failed to create tutor conversation.",
+        req.requestId,
+      );
+    }
+  },
+);
+
+router.get(
+  "/conversations/:conversationId",
+  async (req: AuthenticatedRequest, res: Response) => {
     const user = requireRequestUser(req, res);
     if (!user) return;
     if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, { error: "Student access required", message: "Guardians cannot access tutor.", requestId: req.requestId });
+      sendForbidden(res, {
+        error: "Student access required",
+        message: "Guardians cannot access tutor.",
+        requestId: req.requestId,
+      });
       return;
     }
     if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
-    const parsed = TutorStartConversationRequestSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      sendTutorError(res, 400, "TUTOR_INVALID_REQUEST", "Invalid tutor conversation request.", req.requestId);
-      return;
-    }
-    const body = parsed.data;
-    const resolved = normalizeScope(body as unknown as Record<string, unknown>);
-    const defaults = {
-      policy_family: DEFAULT_POLICY_FAMILY,
-      policy_variant: DEFAULT_POLICY_VARIANT,
-      policy_version: DEFAULT_POLICY_VERSION,
-      prompt_version: DEFAULT_PROMPT_VERSION,
-      assignment_mode: DEFAULT_ASSIGNMENT_MODE,
-      assignment_key: DEFAULT_ASSIGNMENT_KEY,
-      initialization_snapshot: {},
-      status: "active",
-    };
+    const conversation = await loadConversationOrDeny(
+      req,
+      res,
+      req.params.conversationId,
+    );
+    if (!conversation) return;
 
-    const { data: existing, error: existingError } = await supabaseServer
-      .from("tutor_conversations")
+    const replayIsPreSubmit = await isPreSubmitForSurface(
+      conversation.source_surface,
+      user.id,
+      conversation.source_session_item_id ?? null,
+    );
+
+    const { data: messages, error: msgError } = await supabaseServer
+      .from("tutor_messages")
       .select("*")
-      .eq("student_id", user.id)
-      .eq("status", "active")
-      .eq("entry_mode", body.entry_mode)
-      .eq("source_surface", body.source_surface)
-      .eq("source_session_id", resolved.source_session_id)
-      .eq("source_session_item_id", resolved.source_session_item_id)
-      .eq("source_question_row_id", resolved.source_question_row_id)
-      .eq("source_question_canonical_id", resolved.source_question_canonical_id)
-      .order("updated_at", { ascending: false })
-      .limit(1);
-
-    if (!existingError && Array.isArray(existing) && existing.length > 0) {
-      const row = existing[0] as ConversationRow;
-      return res.json({
-        data: {
-          conversation_id: row.id,
-          entry_mode: row.entry_mode,
-          source_surface: row.source_surface,
-          status: row.status,
-          resolved_scope: normalizeScope(row as unknown as Record<string, unknown>),
-        },
-      });
-    }
-
-    const { data: inserted, error: insertError } = await supabaseServer
-      .from("tutor_conversations")
-      .insert({
-        student_id: user.id,
-        entry_mode: body.entry_mode,
-        source_surface: body.source_surface,
-        source_session_id: resolved.source_session_id,
-        source_session_item_id: resolved.source_session_item_id,
-        source_question_row_id: resolved.source_question_row_id,
-        source_question_canonical_id: resolved.source_question_canonical_id,
-        ...defaults,
-      })
-      .select("*")
-      .single();
-
-    if (insertError || !inserted) {
-      sendTutorError(res, 500, "TUTOR_CONVERSATION_CREATE_FAILED", "Failed to create tutor conversation.", req.requestId);
+      .eq("conversation_id", conversation.id)
+      .order("created_at", { ascending: true });
+    if (msgError) {
+      sendTutorError(
+        res,
+        500,
+        "TUTOR_MESSAGES_READ_FAILED",
+        "Failed to read tutor messages.",
+        req.requestId,
+      );
       return;
     }
 
     return res.json({
       data: {
-        conversation_id: inserted.id,
-        entry_mode: inserted.entry_mode,
-        source_surface: inserted.source_surface,
-        status: inserted.status,
-        resolved_scope: normalizeScope(inserted as unknown as Record<string, unknown>),
+        conversation: {
+          conversation_id: conversation.id,
+          entry_mode: conversation.entry_mode,
+          source_surface: conversation.source_surface,
+          status: conversation.status,
+          resolved_scope: normalizeScope(
+            conversation as unknown as Record<string, unknown>,
+          ),
+          created_at: conversation.created_at,
+          updated_at: conversation.updated_at,
+        },
+        messages: (messages ?? []).map((row: any) => {
+          const message =
+            row.role === "tutor" &&
+            replayIsPreSubmit &&
+            hasDirectAnswerLeak(row.message ?? "")
+              ? TUTOR_ANTI_LEAK_SUBSTITUTION
+              : row.message;
+          return {
+            id: row.id,
+            role: row.role,
+            content_kind: row.content_kind,
+            message,
+            content_json: publicTutorMessageContentJson(row.content_json),
+            client_turn_id: row.client_turn_id ?? null,
+            created_at: row.created_at,
+          };
+        }),
       },
     });
-  } catch (error: any) {
-    sendTutorError(res, 500, "TUTOR_CONVERSATION_CREATE_FAILED", error?.message || "Failed to create tutor conversation.", req.requestId);
-  }
-});
+  },
+);
 
-router.get("/conversations/:conversationId", async (req: AuthenticatedRequest, res: Response) => {
-  const user = requireRequestUser(req, res);
-  if (!user) return;
-  if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, { error: "Student access required", message: "Guardians cannot access tutor.", requestId: req.requestId });
-    return;
-  }
-  if (!(await ensureTutorEntitlement(req, res, user.id))) return;
+router.get(
+  "/conversations",
+  async (req: AuthenticatedRequest, res: Response) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+    if (isGuardianUser(req) && !isAdminUser(req)) {
+      sendForbidden(res, {
+        error: "Student access required",
+        message: "Guardians cannot access tutor.",
+        requestId: req.requestId,
+      });
+      return;
+    }
+    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
-  const conversation = await loadConversationOrDeny(req, res, req.params.conversationId);
-  if (!conversation) return;
+    const parsed = TutorListConversationsQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      sendTutorError(
+        res,
+        400,
+        "TUTOR_INVALID_QUERY",
+        "Invalid tutor conversation list query.",
+        req.requestId,
+      );
+      return;
+    }
 
-  const { data: messages, error: msgError } = await supabaseServer
-    .from("tutor_messages")
-    .select("*")
-    .eq("conversation_id", conversation.id)
-    .order("created_at", { ascending: true });
-  if (msgError) {
-    sendTutorError(res, 500, "TUTOR_MESSAGES_READ_FAILED", "Failed to read tutor messages.", req.requestId);
-    return;
-  }
+    const limit = parsed.data.limit ?? 20;
+    let query = supabaseServer
+      .from("tutor_conversations")
+      .select("*")
+      .eq("student_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(limit + 1);
 
-  return res.json({
-    data: {
-      conversation: {
-        conversation_id: conversation.id,
-        entry_mode: conversation.entry_mode,
-        source_surface: conversation.source_surface,
-        status: conversation.status,
-        resolved_scope: normalizeScope(conversation as unknown as Record<string, unknown>),
-        created_at: conversation.created_at,
-        updated_at: conversation.updated_at,
+    if (parsed.data.status) query = query.eq("status", parsed.data.status);
+    if (parsed.data.source_surface)
+      query = query.eq("source_surface", parsed.data.source_surface);
+    if (parsed.data.cursor) query = query.lt("updated_at", parsed.data.cursor);
+
+    const { data, error } = await query;
+    if (error) {
+      sendTutorError(
+        res,
+        500,
+        "TUTOR_CONVERSATION_LIST_FAILED",
+        "Failed to list tutor conversations.",
+        req.requestId,
+      );
+      return;
+    }
+
+    const rows = (data ?? []) as ConversationRow[];
+    const selected = rows.slice(0, limit);
+    const nextCursor =
+      rows.length > limit
+        ? String(selected[selected.length - 1].updated_at)
+        : null;
+    return res.json({
+      data: {
+        conversations: selected.map((row) => ({
+          conversation_id: row.id,
+          entry_mode: row.entry_mode,
+          source_surface: row.source_surface,
+          status: row.status,
+          resolved_scope: normalizeScope(
+            row as unknown as Record<string, unknown>,
+          ),
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        })),
+        next_cursor: nextCursor,
       },
-      messages: (messages ?? []).map((row: any) => ({
-        id: row.id,
-        role: row.role,
-        content_kind: row.content_kind,
-        message: row.message,
-        content_json: publicTutorMessageContentJson(row.content_json),
-        client_turn_id: row.client_turn_id ?? null,
-        created_at: row.created_at,
-      })),
-    },
-  });
-});
+    });
+  },
+);
 
-router.get("/conversations", async (req: AuthenticatedRequest, res: Response) => {
-  const user = requireRequestUser(req, res);
-  if (!user) return;
-  if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, { error: "Student access required", message: "Guardians cannot access tutor.", requestId: req.requestId });
-    return;
-  }
-  if (!(await ensureTutorEntitlement(req, res, user.id))) return;
+router.post(
+  "/conversations/:conversationId/close",
+  async (req: AuthenticatedRequest, res: Response) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+    if (isGuardianUser(req) && !isAdminUser(req)) {
+      sendForbidden(res, {
+        error: "Student access required",
+        message: "Guardians cannot access tutor.",
+        requestId: req.requestId,
+      });
+      return;
+    }
+    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
-  const parsed = TutorListConversationsQuerySchema.safeParse(req.query ?? {});
-  if (!parsed.success) {
-    sendTutorError(res, 400, "TUTOR_INVALID_QUERY", "Invalid tutor conversation list query.", req.requestId);
-    return;
-  }
+    const parsed = TutorCloseConversationRequestSchema.safeParse(
+      req.body ?? {},
+    );
+    if (!parsed.success) {
+      sendTutorError(
+        res,
+        400,
+        "TUTOR_INVALID_REQUEST",
+        "Invalid close conversation request.",
+        req.requestId,
+      );
+      return;
+    }
 
-  const limit = parsed.data.limit ?? 20;
-  let query = supabaseServer
-    .from("tutor_conversations")
-    .select("*")
-    .eq("student_id", user.id)
-    .order("updated_at", { ascending: false })
-    .limit(limit + 1);
+    const conversation = await loadConversationOrDeny(
+      req,
+      res,
+      req.params.conversationId,
+    );
+    if (!conversation) return;
 
-  if (parsed.data.status) query = query.eq("status", parsed.data.status);
-  if (parsed.data.source_surface) query = query.eq("source_surface", parsed.data.source_surface);
-  if (parsed.data.cursor) query = query.lt("updated_at", parsed.data.cursor);
+    const { data, error } = await supabaseServer
+      .from("tutor_conversations")
+      .update({
+        status: parsed.data.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversation.id)
+      .select("id,status")
+      .single();
+    if (error || !data) {
+      sendTutorError(
+        res,
+        500,
+        "TUTOR_CONVERSATION_CLOSE_FAILED",
+        "Failed to close tutor conversation.",
+        req.requestId,
+      );
+      return;
+    }
 
-  const { data, error } = await query;
-  if (error) {
-    sendTutorError(res, 500, "TUTOR_CONVERSATION_LIST_FAILED", "Failed to list tutor conversations.", req.requestId);
-    return;
-  }
-
-  const rows = (data ?? []) as ConversationRow[];
-  const selected = rows.slice(0, limit);
-  const nextCursor = rows.length > limit ? String(selected[selected.length - 1].updated_at) : null;
-  return res.json({
-    data: {
-      conversations: selected.map((row) => ({
-        conversation_id: row.id,
-        entry_mode: row.entry_mode,
-        source_surface: row.source_surface,
-        status: row.status,
-        resolved_scope: normalizeScope(row as unknown as Record<string, unknown>),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      })),
-      next_cursor: nextCursor,
-    },
-  });
-});
-
-router.post("/conversations/:conversationId/close", async (req: AuthenticatedRequest, res: Response) => {
-  const user = requireRequestUser(req, res);
-  if (!user) return;
-  if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, { error: "Student access required", message: "Guardians cannot access tutor.", requestId: req.requestId });
-    return;
-  }
-  if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-  const parsed = TutorCloseConversationRequestSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    sendTutorError(res, 400, "TUTOR_INVALID_REQUEST", "Invalid close conversation request.", req.requestId);
-    return;
-  }
-
-  const conversation = await loadConversationOrDeny(req, res, req.params.conversationId);
-  if (!conversation) return;
-
-  const { data, error } = await supabaseServer
-    .from("tutor_conversations")
-    .update({
-      status: parsed.data.status,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", conversation.id)
-    .select("id,status")
-    .single();
-  if (error || !data) {
-    sendTutorError(res, 500, "TUTOR_CONVERSATION_CLOSE_FAILED", "Failed to close tutor conversation.", req.requestId);
-    return;
-  }
-
-  return res.json({
-    data: {
-      conversation_id: data.id,
-      status: data.status,
-    },
-  });
-});
+    return res.json({
+      data: {
+        conversation_id: data.id,
+        status: data.status,
+      },
+    });
+  },
+);
 
 router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
   const user = requireRequestUser(req, res);
   if (!user) return;
   if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, { error: "Student access required", message: "Guardians cannot access tutor.", requestId: req.requestId });
+    sendForbidden(res, {
+      error: "Student access required",
+      message: "Guardians cannot access tutor.",
+      requestId: req.requestId,
+    });
     return;
   }
   if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
   const parsed = TutorAppendMessageRequestSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    sendTutorError(res, 400, "TUTOR_INVALID_REQUEST", "Invalid tutor append request.", req.requestId);
+    sendTutorError(
+      res,
+      400,
+      "TUTOR_INVALID_REQUEST",
+      "Invalid tutor append request.",
+      req.requestId,
+    );
     return;
   }
   const body = parsed.data;
 
-  const conversation = await loadConversationOrDeny(req, res, body.conversation_id);
+  const conversation = await loadConversationOrDeny(
+    req,
+    res,
+    body.conversation_id,
+  );
   if (!conversation) return;
   if (conversation.status !== "active") {
-    sendTutorError(res, 409, "TUTOR_CONVERSATION_NOT_ACTIVE", "Tutor conversation is not active.", req.requestId);
+    sendTutorError(
+      res,
+      409,
+      "TUTOR_CONVERSATION_NOT_ACTIVE",
+      "Tutor conversation is not active.",
+      req.requestId,
+    );
     return;
   }
 
@@ -1045,13 +1333,18 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       studentUserId: user.id,
       role: req.user?.role ?? null,
       sessionKey: conversation.id,
-      reservedInputTokens: Math.max(1200, estimateTokenCount(body.message) + 900),
+      reservedInputTokens: Math.max(
+        1200,
+        estimateTokenCount(body.message) + 900,
+      ),
       reservedOutputTokens: 1200,
       requestId: req.requestId ?? null,
     });
 
     if (!reservation.allowed) {
-      const isThrottle = reservation.code === "TUTOR_COOLDOWN_ACTIVE" || reservation.code === "TUTOR_DENSITY_LIMIT_EXCEEDED";
+      const isThrottle =
+        reservation.code === "TUTOR_COOLDOWN_ACTIVE" ||
+        reservation.code === "TUTOR_DENSITY_LIMIT_EXCEEDED";
       return res.status(isThrottle ? 429 : 402).json({
         error: {
           code: reservation.code,
@@ -1090,7 +1383,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     const resolvedScope = scopeResolution.resolved_scope;
 
     if (conversation.source_surface === "test_review") {
-      const unlocked = await isFullLengthReviewUnlocked(user.id, resolvedScope.source_session_id);
+      const unlocked = await isFullLengthReviewUnlocked(
+        user.id,
+        resolvedScope.source_session_id,
+      );
       if (!unlocked) {
         sendTutorError(
           res,
@@ -1106,15 +1402,16 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     let studentMessage: MessageRow | null = null;
     let policyAssignmentId: string | null = null;
 
-    const { data: existingStudentMessage, error: existingStudentError } = await supabaseServer
-      .from("tutor_messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .eq("student_id", user.id)
-      .eq("role", "student")
-      .eq("client_turn_id", body.client_turn_id)
-      .limit(1)
-      .maybeSingle();
+    const { data: existingStudentMessage, error: existingStudentError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .select("*")
+        .eq("conversation_id", conversation.id)
+        .eq("student_id", user.id)
+        .eq("role", "student")
+        .eq("client_turn_id", body.client_turn_id)
+        .limit(1)
+        .maybeSingle();
 
     if (existingStudentError) {
       sendRecoverableRetry(res, req.requestId);
@@ -1124,24 +1421,26 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     if (existingStudentMessage) {
       studentMessage = existingStudentMessage as MessageRow;
     } else {
-      const { data: insertedStudentMessage, error: insertStudentError } = await supabaseServer
-        .from("tutor_messages")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: user.id,
-          role: "student",
-          content_kind: body.content_kind,
-          message: body.message,
-          content_json: {},
-          client_turn_id: body.client_turn_id,
-          explanation_level: null,
-          source_session_id: resolvedScope.source_session_id,
-          source_session_item_id: resolvedScope.source_session_item_id,
-          source_question_row_id: resolvedScope.source_question_row_id,
-          source_question_canonical_id: resolvedScope.source_question_canonical_id,
-        })
-        .select("*")
-        .single();
+      const { data: insertedStudentMessage, error: insertStudentError } =
+        await supabaseServer
+          .from("tutor_messages")
+          .insert({
+            conversation_id: conversation.id,
+            student_id: user.id,
+            role: "student",
+            content_kind: body.content_kind,
+            message: body.message,
+            content_json: {},
+            client_turn_id: body.client_turn_id,
+            explanation_level: null,
+            source_session_id: resolvedScope.source_session_id,
+            source_session_item_id: resolvedScope.source_session_item_id,
+            source_question_row_id: resolvedScope.source_question_row_id,
+            source_question_canonical_id:
+              resolvedScope.source_question_canonical_id,
+          })
+          .select("*")
+          .single();
 
       if (insertStudentError || !insertedStudentMessage) {
         sendRecoverableRetry(res, req.requestId);
@@ -1150,14 +1449,15 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       studentMessage = insertedStudentMessage as MessageRow;
     }
 
-    const { data: existingAssignment, error: existingAssignmentError } = await supabaseServer
-      .from("tutor_instruction_assignments")
-      .select("id")
-      .eq("conversation_id", conversation.id)
-      .eq("student_id", user.id)
-      .eq("related_message_id", studentMessage.id)
-      .limit(1)
-      .maybeSingle();
+    const { data: existingAssignment, error: existingAssignmentError } =
+      await supabaseServer
+        .from("tutor_instruction_assignments")
+        .select("id")
+        .eq("conversation_id", conversation.id)
+        .eq("student_id", user.id)
+        .eq("related_message_id", studentMessage.id)
+        .limit(1)
+        .maybeSingle();
     if (existingAssignmentError) {
       sendRecoverableRetry(res, req.requestId);
       return;
@@ -1166,36 +1466,41 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     if (existingAssignment?.id) {
       policyAssignmentId = String(existingAssignment.id);
     } else {
-      const { data: insertedAssignment, error: insertAssignmentError } = await supabaseServer
-        .from("tutor_instruction_assignments")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: user.id,
-          related_message_id: studentMessage.id,
-          source_session_id: resolvedScope.source_session_id,
-          source_session_item_id: resolvedScope.source_session_item_id,
-          source_question_row_id: resolvedScope.source_question_row_id,
-          source_question_canonical_id: resolvedScope.source_question_canonical_id,
-          policy_family: conversation.policy_family,
-          policy_variant: conversation.policy_variant,
-          policy_version: conversation.policy_version,
-          prompt_version: conversation.prompt_version,
-          assignment_mode: conversation.assignment_mode,
-          assignment_key: conversation.assignment_key,
-          reason_snapshot: {
-            trigger_type: "student_turn",
-            source_surface: conversation.source_surface,
-            entry_mode: conversation.entry_mode,
-            scoped_anchor: resolvedScope.source_question_canonical_id ?? resolvedScope.source_question_row_id ?? null,
-            policy_inputs: {
-              content_kind: body.content_kind,
+      const { data: insertedAssignment, error: insertAssignmentError } =
+        await supabaseServer
+          .from("tutor_instruction_assignments")
+          .insert({
+            conversation_id: conversation.id,
+            student_id: user.id,
+            related_message_id: studentMessage.id,
+            source_session_id: resolvedScope.source_session_id,
+            source_session_item_id: resolvedScope.source_session_item_id,
+            source_question_row_id: resolvedScope.source_question_row_id,
+            source_question_canonical_id:
+              resolvedScope.source_question_canonical_id,
+            policy_family: conversation.policy_family,
+            policy_variant: conversation.policy_variant,
+            policy_version: conversation.policy_version,
+            prompt_version: conversation.prompt_version,
+            assignment_mode: conversation.assignment_mode,
+            assignment_key: conversation.assignment_key,
+            reason_snapshot: {
+              trigger_type: "student_turn",
+              source_surface: conversation.source_surface,
+              entry_mode: conversation.entry_mode,
+              scoped_anchor:
+                resolvedScope.source_question_canonical_id ??
+                resolvedScope.source_question_row_id ??
+                null,
+              policy_inputs: {
+                content_kind: body.content_kind,
+              },
+              fallback_used: scopeResolution.fallback_reason,
+              ignored_conflicts: scopeResolution.conflict_fields,
             },
-            fallback_used: scopeResolution.fallback_reason,
-            ignored_conflicts: scopeResolution.conflict_fields,
-          },
-        })
-        .select("id")
-        .single();
+          })
+          .select("id")
+          .single();
       if (insertAssignmentError || !insertedAssignment?.id) {
         sendRecoverableRetry(res, req.requestId);
         return;
@@ -1215,15 +1520,22 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       .maybeSingle();
 
     if (existingTutorResponse) {
-      const replayContent = parseReplayTutorContent((existingTutorResponse as MessageRow).content_json);
+      const replayContent = parseReplayTutorContent(
+        (existingTutorResponse as MessageRow).content_json,
+      );
       if (!replayContent || !policyAssignmentId) {
         sendRecoverableRetry(res, req.requestId);
         return;
       }
 
-      const replayQuestionLinks = replayContent[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
-      const replayExposures = replayContent[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
-      if (!Array.isArray(replayQuestionLinks) || !Array.isArray(replayExposures)) {
+      const replayQuestionLinks =
+        replayContent[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
+      const replayExposures =
+        replayContent[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
+      if (
+        !Array.isArray(replayQuestionLinks) ||
+        !Array.isArray(replayExposures)
+      ) {
         sendRecoverableRetry(res, req.requestId);
         return;
       }
@@ -1247,10 +1559,14 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           reservationId: tutorReservationId,
           success: true,
           finalInputTokens: estimateTokenCount(body.message),
-          finalOutputTokens: estimateTokenCount(String((existingTutorResponse as MessageRow).message ?? "")),
+          finalOutputTokens: estimateTokenCount(
+            String((existingTutorResponse as MessageRow).message ?? ""),
+          ),
           finalCostMicros: estimateTutorCostMicros(
             estimateTokenCount(body.message),
-            estimateTokenCount(String((existingTutorResponse as MessageRow).message ?? "")),
+            estimateTokenCount(
+              String((existingTutorResponse as MessageRow).message ?? ""),
+            ),
           ),
         });
       }
@@ -1259,7 +1575,9 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           conversation_id: conversation.id,
           message_id: (existingTutorResponse as MessageRow).id,
           response: {
-            content: String((existingTutorResponse as MessageRow).message ?? ""),
+            content: String(
+              (existingTutorResponse as MessageRow).message ?? "",
+            ),
             content_kind: (existingTutorResponse as MessageRow).content_kind,
             suggested_action: replayContent.suggested_action,
             ui_hints: replayContent.ui_hints,
@@ -1277,7 +1595,9 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
 
     const { data: memoryRows } = await supabaseServer
       .from("tutor_memory_summaries")
-      .select("summary_type, summary_version, content_json, source_window_start, source_window_end")
+      .select(
+        "summary_type, summary_version, content_json, source_window_start, source_window_end",
+      )
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3);
@@ -1300,7 +1620,8 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         source_session_id: resolvedScope.source_session_id,
         source_session_item_id: resolvedScope.source_session_item_id,
         source_question_row_id: resolvedScope.source_question_row_id,
-        source_question_canonical_id: resolvedScope.source_question_canonical_id,
+        source_question_canonical_id:
+          resolvedScope.source_question_canonical_id,
       },
       recent_messages: ((historyRows ?? []) as MessageRow[])
         .reverse()
@@ -1332,9 +1653,9 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           source_surface: conversation.source_surface,
           entry_mode: conversation.entry_mode,
           scoped_anchor:
-            resolvedScope.source_question_canonical_id
-            ?? resolvedScope.source_question_row_id
-            ?? null,
+            resolvedScope.source_question_canonical_id ??
+            resolvedScope.source_question_row_id ??
+            null,
           policy_inputs: {
             content_kind: body.content_kind,
             memory_summary_counts: {
@@ -1354,7 +1675,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
 
     const orchestratorResult = await callTutorOrchestrator(orchestratorPayload);
 
-    let cleaned = removeInternalMetadataMentions(
+    const cleaned = removeInternalMetadataMentions(
       String(orchestratorResult.response.content ?? "").trim(),
     );
     if (!cleaned) {
@@ -1362,50 +1683,55 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    if (conversation.source_surface === "practice") {
-      const itemStatus = await getPracticeItemStatus(user.id, resolvedScope.source_session_item_id);
-      const isPreSubmit = itemStatus !== "answered" && itemStatus !== "skipped";
-      if (isPreSubmit && hasDirectAnswerLeak(cleaned)) {
-        sendTutorError(
-          res,
-          422,
-          "TUTOR_ANTI_LEAK_BLOCKED",
-          "Tutor response was blocked to prevent answer leakage.",
-          req.requestId,
-        );
-        return;
-      }
-    }
+    const preSubmit = await isPreSubmitForSurface(
+      conversation.source_surface,
+      user.id,
+      resolvedScope.source_session_item_id,
+    );
+    // §16.5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
+    // shared pedagogical fallback and deliver it as a normal turn — no 422, no
+    // acknowledgment that filtering occurred. The substituted turn is persisted
+    // and returned through the same path as any other turn, so from the
+    // student's perspective it is indistinguishable from a normal LISA reply.
+    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-TU-05) — tutor persistence tables not in prod.
+    const safeContent =
+      preSubmit && hasDirectAnswerLeak(cleaned)
+        ? TUTOR_ANTI_LEAK_SUBSTITUTION
+        : cleaned;
 
     const suggestedAction = orchestratorResult.response.suggested_action;
     const orchestratorUiHints = orchestratorResult.response.ui_hints;
     const questionLinksSnapshot = orchestratorResult.question_links;
-    const instructionExposureSnapshot = orchestratorResult.instruction_exposures;
+    const instructionExposureSnapshot =
+      orchestratorResult.instruction_exposures;
 
-    const { data: insertedTutorMessage, error: insertTutorError } = await supabaseServer
-      .from("tutor_messages")
-      .insert({
-        conversation_id: conversation.id,
-        student_id: user.id,
-        role: "tutor",
-        content_kind: "message",
-        message: cleaned,
-        content_json: {
-          suggested_action: suggestedAction,
-          ui_hints: orchestratorUiHints,
-          orchestration_meta: orchestratorResult.orchestration_meta,
-          [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: questionLinksSnapshot,
-          [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: instructionExposureSnapshot,
-        },
-        client_turn_id: null,
-        explanation_level: null,
-        source_session_id: resolvedScope.source_session_id,
-        source_session_item_id: resolvedScope.source_session_item_id,
-        source_question_row_id: resolvedScope.source_question_row_id,
-        source_question_canonical_id: resolvedScope.source_question_canonical_id,
-      })
-      .select("*")
-      .single();
+    const { data: insertedTutorMessage, error: insertTutorError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .insert({
+          conversation_id: conversation.id,
+          student_id: user.id,
+          role: "tutor",
+          content_kind: "message",
+          message: safeContent,
+          content_json: {
+            suggested_action: suggestedAction,
+            ui_hints: orchestratorUiHints,
+            orchestration_meta: orchestratorResult.orchestration_meta,
+            [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: questionLinksSnapshot,
+            [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]:
+              instructionExposureSnapshot,
+          },
+          client_turn_id: null,
+          explanation_level: null,
+          source_session_id: resolvedScope.source_session_id,
+          source_session_item_id: resolvedScope.source_session_item_id,
+          source_question_row_id: resolvedScope.source_question_row_id,
+          source_question_canonical_id:
+            resolvedScope.source_question_canonical_id,
+        })
+        .select("*")
+        .single();
 
     if (insertTutorError || !insertedTutorMessage) {
       sendRecoverableRetry(res, req.requestId);
@@ -1440,8 +1766,11 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         reservationId: tutorReservationId,
         success: true,
         finalInputTokens: estimateTokenCount(body.message),
-        finalOutputTokens: estimateTokenCount(cleaned),
-        finalCostMicros: estimateTutorCostMicros(estimateTokenCount(body.message), estimateTokenCount(cleaned)),
+        finalOutputTokens: estimateTokenCount(safeContent),
+        finalCostMicros: estimateTutorCostMicros(
+          estimateTokenCount(body.message),
+          estimateTokenCount(safeContent),
+        ),
       });
     }
 
@@ -1450,7 +1779,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         conversation_id: conversation.id,
         message_id: insertedTutorMessage.id,
         response: {
-          content: cleaned,
+          content: safeContent,
           content_kind: "message",
           suggested_action: suggestedAction,
           ui_hints: orchestratorUiHints,
@@ -1480,10 +1809,13 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           finalCostMicros: finalizedWithSuccess ? undefined : 0,
         });
       } catch (finalizeError: any) {
-        console.warn("[tutor-runtime] finalize_tutor_usage failure-mark degraded", {
-          message: finalizeError?.message ?? String(finalizeError),
-          requestId: req.requestId,
-        });
+        console.warn(
+          "[tutor-runtime] finalize_tutor_usage failure-mark degraded",
+          {
+            message: finalizeError?.message ?? String(finalizeError),
+            requestId: req.requestId,
+          },
+        );
       }
     }
   }
