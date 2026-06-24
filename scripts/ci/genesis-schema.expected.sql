@@ -362,32 +362,42 @@ CREATE FUNCTION public.canonicalize_active_mastery_constants_state() RETURNS tex
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-    SELECT COALESCE(string_agg(line, E'\n' ORDER BY k), '')
-    FROM (
-        SELECT
-            mc.key AS k,
-            mc.key || '=' ||
-            CASE jsonb_typeof(mc.value)
-                WHEN 'object' THEN
-                    '{' || COALESCE((
-                        SELECT string_agg(
-                                 o.key || '=' ||
-                                 CASE jsonb_typeof(o.value)
-                                     WHEN 'number'
-                                       THEN to_char((o.value #>> '{}')::numeric,
-                                                    'FM9990.000000')
-                                     ELSE (o.value #>> '{}')
-                                 END,
-                                 ',' ORDER BY o.key)
-                        FROM jsonb_each(mc.value) o
-                    ), '') || '}'
-                WHEN 'number' THEN
-                    to_char((mc.value #>> '{}')::numeric, 'FM9990.000000')
-                ELSE
-                    (mc.value #>> '{}')
-            END AS line
-        FROM public.mastery_constants mc
-    ) s;
+    SELECT COALESCE(string_agg(
+        mc.key || '=' || public.canonicalize_jsonb_value(mc.value),
+        E'\n' ORDER BY mc.key), '')
+    FROM public.mastery_constants mc;
+$$;
+
+
+--
+-- Name: canonicalize_jsonb_value(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_jsonb_value(p_val jsonb) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+BEGIN
+    CASE jsonb_typeof(p_val)
+        WHEN 'object' THEN
+            RETURN '{' || COALESCE((
+                SELECT string_agg(
+                    e.key || '=' || public.canonicalize_jsonb_value(e.value),
+                    ',' ORDER BY e.key)
+                FROM jsonb_each(p_val) e
+            ), '') || '}';
+        WHEN 'array' THEN
+            RETURN '[' || COALESCE((
+                SELECT string_agg(
+                    public.canonicalize_jsonb_value(elem.value),
+                    ',' ORDER BY elem.ordinality)
+                FROM jsonb_array_elements(p_val) WITH ORDINALITY AS elem(value, ordinality)
+            ), '') || ']';
+        WHEN 'number' THEN
+            RETURN to_char((p_val #>> '{}')::numeric, 'FM9990.000000');
+        ELSE
+            RETURN (p_val #>> '{}');
+    END CASE;
+END;
 $$;
 
 
@@ -6151,6 +6161,14 @@ GRANT ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entit
 
 REVOKE ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() TO service_role;
+
+
+--
+-- Name: FUNCTION canonicalize_jsonb_value(p_val jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_jsonb_value(p_val jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_jsonb_value(p_val jsonb) TO service_role;
 
 
 --
