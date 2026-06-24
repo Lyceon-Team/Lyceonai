@@ -3,7 +3,7 @@
 Governance, rulings (R1: Doc 05 family controls; R2: guardian grace-period carve-out), severity scheme, status legend, dispositions: `README.md`.
 **V1.1 changes:** all six VERIFY entries finalized from the dual-agent Verification Pass (Claude Code + Codex, independent, corroborating on all items); constants dump (`mastery_constants` 25 rows, `kpi_constants` 2 rows — owner confirms these are the only constants tables) analyzed and folded in; 3 new gaps (MA-10, MA-11, ID-12); TU-08 reclassified CRITICAL→HIGH (broad claim refuted, narrow defect confirmed); ID-11 elevated HIGH→CRITICAL (consent forgery). This registry is self-contained: decisive evidence is inline; raw auditor reports are not committed to the repo.
 
-**Totals:** 71 gap entries — **7 CRITICAL, 28 HIGH, 24 MEDIUM, 12 LOW** — plus **21** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0; SP-18 rounding-decimals mislabel, SP-19 §12 mixed-fixture ordering — B-WS3-1 2026-06-10; SP-20 admin_role vs genesis 3-role model — B-WS3-1 spec-auditor pass 2026-06-10; SP-21 question_id TEXT-vs-uuid seam mismatch — B-WS2-1 2026-06-10; SP-22 §6.2 stale table name, SP-23 §4.3 stale audit column name — Lane C 2026-06-13; SP-24 cluster-mastery owner decision — 05B/05C wave 2026-06-13; SP-25 guardian/entitlement table-name drift — 05B 2026-06-13) and 9 conformant verifications. Zero entries remain in VERIFY status.
+**Totals:** 72 gap entries — **7 CRITICAL, 29 HIGH, 24 MEDIUM, 12 LOW** — plus **21** spec-revision items (SP-06..SP-11 genesis re-cut 2026-06-09; SP-12..SP-17 WS-2/3 Phase-0; SP-18 rounding-decimals mislabel, SP-19 §12 mixed-fixture ordering — B-WS3-1 2026-06-10; SP-20 admin_role vs genesis 3-role model — B-WS3-1 spec-auditor pass 2026-06-10; SP-21 question_id TEXT-vs-uuid seam mismatch — B-WS2-1 2026-06-10; SP-22 §6.2 stale table name, SP-23 §4.3 stale audit column name — Lane C 2026-06-13; SP-24 cluster-mastery owner decision — 05B/05C wave 2026-06-13; SP-25 guardian/entitlement table-name drift — 05B 2026-06-13) and 9 conformant verifications. Zero entries remain in VERIFY status.
 
 **The 7 CRITICALs:** GAP-TB-01, GAP-TB-02, GAP-TB-03, GAP-MA-01, GAP-EX-02, GAP-TU-03, GAP-ID-11.
 
@@ -317,19 +317,6 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
     git record, not on a (false) "untouched since 2ceaecb" claim. The honest anchor is **8 deterministic
     + calendar.csrf intermittent-on-timeout** — a 9/7 reading under load is the flaky test, not a
     regression. (A real, deterministic CSRF-timeout break would be its own gap; this is not that.)
-- **GAP-HY-19 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING. _(ID note:
-  this addendum gap was originally mislabeled `GAP-TU-05`, which collides with the formal Zone-TU
-  table row `GAP-TU-05` = tutor rate-limit structure. Renumbered into the addendum HY series
-  2026-06-24 — Codex re-audit of #422 — to break the collision; all cross-references in
-  `contracts/ws2-antileak-ex05-tu04.plan.md` and `server/routes/tutor-runtime.ts` updated to HY-19.)_
-  Doc 03B §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
-  with `detection_layer = 'layer_4_output'` and (b) increment a `scanner_block_rate` metric.
-  **Deferred (2026-06-24):** prod has NO tutor runtime persistence tables (`tutor_conversations`,
-  `tutor_messages`, `tutor_injection_log` — none exist); the §16.4 forensic writer + migration
-  were built and proven against mocks in WS-2 PR #422, then REVERTED because the persistence
-  substrate does not exist. The anti-leak substitution itself (§16.5, INV-03-13) ships without
-  forensic logging — the scanner silently substitutes, but does not yet log. Lands with the
-  tutor-vertical wave that stands up the persistence tables. Severity HIGH (residual).
 - **GAP-HY-18 (NEW) — OPEN.** UNIFIED-ANTI-LEAK-PROBE. No single committed CI gate sweeps EVERY
   pre-submit surface for ALL forbidden fields. Current coverage is split and surface-scoped:
   `tests/ci/questions.anti-leak.ci.test.ts` covers the question-DTO endpoints (`correct_answer`,
@@ -344,6 +331,23 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   as its own anti-leak-hardening cycle (one committed all-surface, all-field, both-roles gate). The
   runtime is believed conformant today (each surface's serializer was audited); this gap is the
   missing *consolidated proof*, not a known live leak. Severity MEDIUM (test/proof coverage).
-  _(Accounting note: HY-18 — like HY-14..17 and HY-19 — is a session-discovered **addendum** gap in
-  this Reconciliation addendum, NOT a formal zoned-table row, so the header "71 gap entries" total is
-  intentionally unchanged. The 71 counts only the formal Zone TB/MA/EX/TU/ID/OP/AR/HY/SP table rows.)_
+  _(Accounting note: HY-17, HY-18, HY-19 are session-discovered **addendum bullets** in this
+  Reconciliation addendum — NOT formal zoned-table rows — so they do not change the header gap-entry
+  total, which counts only the formal Zone TB/MA/EX/TU/ID/OP/AR/HY/SP table rows. (HY-14..16, by
+  contrast, ARE formal Zone HY table rows and are already counted.) Separately, the header was
+  reconciled **71 → 72 (28 → 29 HIGH)** for a pre-existing undercount: an independent grep of formal
+  non-SP rows yields 72 (7 CRITICAL / 29 HIGH / 24 MEDIUM / 12 LOW) — one formal HIGH row predating
+  this branch was uncounted. That reconciliation is independent of HY-18/19, which are addendum bullets.)_
+- **GAP-HY-19 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING. _(ID note:
+  this addendum gap was originally mislabeled `GAP-TU-05`, which collides with the formal Zone-TU
+  table row `GAP-TU-05` = tutor rate-limit structure. Renumbered into the addendum HY series
+  2026-06-24 — Codex re-audit of #422 — to break the collision; all cross-references in
+  `contracts/ws2-antileak-ex05-tu04.plan.md` and `server/routes/tutor-runtime.ts` updated to HY-19.)_
+  Doc 03B §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
+  with `detection_layer = 'layer_4_output'` and (b) increment a `scanner_block_rate` metric.
+  **Deferred (2026-06-24):** prod has NO tutor runtime persistence tables (`tutor_conversations`,
+  `tutor_messages`, `tutor_injection_log` — none exist); the §16.4 forensic writer + migration
+  were built and proven against mocks in WS-2 PR #422, then REVERTED because the persistence
+  substrate does not exist. The anti-leak substitution itself (§16.5, INV-03-13) ships without
+  forensic logging — the scanner silently substitutes, but does not yet log. Lands with the
+  tutor-vertical wave that stands up the persistence tables. Severity HIGH (residual).
