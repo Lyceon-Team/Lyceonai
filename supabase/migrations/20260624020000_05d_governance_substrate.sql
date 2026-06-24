@@ -369,21 +369,29 @@ END;
 $$;
 
 -- Guard 5: serializer_is_order_independent (R9 determinism-by-construction)
---   Reorder PROJECTION_DOMAIN_WEIGHTS keys, re-serialize, assert hash stable.
+--   Prove canonicalize_jsonb_value produces identical output regardless of JSONB
+--   key insertion order. Uses synthetic literals — no table mutation, so the
+--   capture trigger is never fired and no spurious change-log rows are written.
+-- LYCEON-MIGRATION-REVIEWED
 DO $$
 DECLARE
-    v_hash_before text;
-    v_hash_after text;
-    v_original jsonb;
+    v_order_a text;
+    v_order_b text;
+    v_nested_a jsonb;
+    v_nested_b jsonb;
 BEGIN
-    v_hash_before := encode(extensions.digest(convert_to(
-        canonicalize_active_mastery_constants_state(), 'UTF8'), 'sha256'), 'hex');
-
-    SELECT value INTO v_original
-    FROM mastery_constants WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
-
-    UPDATE mastery_constants
-    SET value = jsonb_build_object(
+    v_nested_a := jsonb_build_object(
+        'M', jsonb_build_object(
+            'Algebra', 0.35,
+            'Advanced Math', 0.35,
+            'Problem Solving and Data Analysis', 0.15,
+            'Geometry and Trigonometry', 0.15),
+        'RW', jsonb_build_object(
+            'Craft and Structure', 0.28,
+            'Expression of Ideas', 0.20,
+            'Information and Ideas', 0.26,
+            'Standard English Conventions', 0.26));
+    v_nested_b := jsonb_build_object(
         'RW', jsonb_build_object(
             'Standard English Conventions', 0.26,
             'Information and Ideas', 0.26,
@@ -393,18 +401,14 @@ BEGIN
             'Problem Solving and Data Analysis', 0.15,
             'Geometry and Trigonometry', 0.15,
             'Algebra', 0.35,
-            'Advanced Math', 0.35))
-    WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
+            'Advanced Math', 0.35));
 
-    v_hash_after := encode(extensions.digest(convert_to(
-        canonicalize_active_mastery_constants_state(), 'UTF8'), 'sha256'), 'hex');
+    v_order_a := canonicalize_jsonb_value(v_nested_a);
+    v_order_b := canonicalize_jsonb_value(v_nested_b);
 
-    UPDATE mastery_constants SET value = v_original
-    WHERE key = 'PROJECTION_DOMAIN_WEIGHTS';
-
-    IF v_hash_before != v_hash_after THEN
-        RAISE EXCEPTION 'serializer_is_order_independent FAILED: hash changed after key reorder (before=%, after=%)',
-            v_hash_before, v_hash_after;
+    IF v_order_a != v_order_b THEN
+        RAISE EXCEPTION 'serializer_is_order_independent FAILED: canonicalize_jsonb_value produced different output for same data in different key order (a=%, b=%)',
+            v_order_a, v_order_b;
     END IF;
 
     RAISE NOTICE 'CI GUARD PASSED: serializer_is_order_independent — hash stable across JSONB key reorder';
