@@ -536,7 +536,7 @@ BEGIN
 END;
 $ci_guard$;
 
--- 6.3 q2_atomicity_proof
+-- 6.3 q2_atomicity_proof LYCEON-MIGRATION-REVIEWED
 -- Asserts apply_mastery_event sets GUC 'event' before calling refresh_domain_mastery,
 -- and mastery_domain_refresh_audit_log.triggered_by is NOT NULL with a CHECK constraint.
 DO $ci_guard$
@@ -552,13 +552,13 @@ BEGIN
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: apply_mastery_event not found';
   END IF;
-  v_guc_pos := position('mastery_refresh_trigger' in v_body);
-  v_refresh_pos := position('refresh_domain_mastery' in v_body);
+  v_guc_pos := position('SET LOCAL app.mastery_refresh_trigger' in v_body);
+  v_refresh_pos := position('PERFORM public.refresh_domain_mastery' in v_body);
   IF v_guc_pos = 0 THEN
-    RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: apply_mastery_event must SET app.mastery_refresh_trigger before refresh_domain_mastery';
+    RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: apply_mastery_event must SET LOCAL app.mastery_refresh_trigger before refresh_domain_mastery';
   END IF;
   IF v_refresh_pos = 0 OR v_guc_pos >= v_refresh_pos THEN
-    RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: GUC set must precede refresh_domain_mastery call';
+    RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: SET LOCAL must precede PERFORM public.refresh_domain_mastery';
   END IF;
   -- Column NOT NULL check
   SELECT (is_nullable = 'NO') INTO v_is_nullable
