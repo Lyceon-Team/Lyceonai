@@ -18,6 +18,8 @@
 --       COUNT_PER_SECTION confirmed in prod via 05C seed)
 --   R7: DIAGNOSTIC_TOTAL_QUESTIONS classified operational (not in formula
 --       serializer; spec placeholder list included it — live is authoritative)
+--   R8: Explicit service_role policy dropped — service_role has BYPASSRLS;
+--       matches 05A/05B internal-table pattern (RLS-enable + REVOKE + GRANT)
 --
 -- Invariants enforced:
 --   INV-05D-13: NO constants-change recompute (future-only model)
@@ -26,6 +28,7 @@
 -- Runbook references:
 --   RB-05D-V1-02: Single serializer for trigger and reconciliation
 --   RB-05D-V1-03: Closed-world classifier — unknown key RAISES
+--   RB-05D-V1-11: Precondition guard — extensions.digest() available
 --
 -- Rollback:
 --   ALTER TABLE public.mastery_constants DISABLE TRIGGER trg_capture_mastery_constant_change;
@@ -38,6 +41,19 @@
 -- LYCEON-MIGRATION-REVIEWED: pending
 -- ==========================================================================
 BEGIN;
+
+-- ----------------------------------------------------------------------------
+-- 0. Precondition: pgcrypto available (RB-05D-V1-11)
+--    The capture trigger depends on extensions.digest(); fail here, not at
+--    first constants-change.
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+    PERFORM extensions.digest('probe', 'sha256');
+EXCEPTION WHEN undefined_function OR invalid_schema_name THEN
+    RAISE EXCEPTION 'PRECONDITION FAILED: extensions.digest() unavailable — enable pgcrypto in the extensions schema before applying this migration';
+END;
+$$;
 
 -- ----------------------------------------------------------------------------
 -- 1. mastery_constants_change_log (Doc 05D §5.2)
@@ -66,9 +82,8 @@ ALTER TABLE public.mastery_constants_change_log ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.mastery_constants_change_log FROM PUBLIC;
 GRANT  ALL ON public.mastery_constants_change_log TO   service_role;
 
-CREATE POLICY service_role_all ON public.mastery_constants_change_log
-    FOR ALL TO service_role USING (true) WITH CHECK (true);
-
+-- R8: Explicit service_role policy dropped — service_role has BYPASSRLS
+-- (matches 05A/05B internal-table pattern: RLS-enable + REVOKE + GRANT)
 -- R4: admin_role GRANT + policy omitted (SP-20: Supabase 3-role model;
 -- service_role has BYPASSRLS and is the only operator path)
 
@@ -107,7 +122,7 @@ DECLARE
 BEGIN
     IF p_key = ANY(v_formula) THEN RETURN true; END IF;
     IF p_key = ANY(v_operational) THEN RETURN false; END IF;
-    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: % is in neither the formula nor the operational registry', p_key;
+    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: "%" is not in the formula (24) or operational (13) registry', p_key;
 END;
 $func$;
 

@@ -1089,7 +1089,7 @@ DECLARE
 BEGIN
     IF p_key = ANY(v_formula) THEN RETURN true; END IF;
     IF p_key = ANY(v_operational) THEN RETURN false; END IF;
-    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: % is in neither the formula nor the operational registry', p_key;
+    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: "%" is not in the formula (24) or operational (13) registry', p_key;
 END;
 $$;
 
@@ -5886,13 +5886,6 @@ CREATE POLICY sections_read ON public.sections FOR SELECT TO anon, authenticated
 --
 
 ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
-
---
--- Name: mastery_constants_change_log service_role_all; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY service_role_all ON public.mastery_constants_change_log TO service_role USING (true) WITH CHECK (true);
-
 
 --
 -- Name: source_types; Type: ROW SECURITY; Schema: public; Owner: -
