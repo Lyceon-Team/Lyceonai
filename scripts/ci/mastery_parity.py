@@ -125,7 +125,7 @@ $fn$;""")
             f"AND r.acc_practice IS NOT DISTINCT FROM c.acc_practice "
             f"AND r.acc_review IS NOT DISTINCT FROM c.acc_review "
             f"AND r.event_count_total = c.total_events AS equal "
-            f"FROM public.recompute_skill_mastery({_sql_lit(sid)}, 'M', 'd', 's') r "
+            f"FROM public.recompute_skill_mastery({_sql_lit(sid)}, 'M', 'd', 's', false) r "
             f"CROSS JOIN public.compute_mastery_for_entity({_sql_lit(sid)}, 'skill', 'M', 'd', 's') c"
         )
     out.append("\\echo __RECOMPUTE_BEGIN__")
