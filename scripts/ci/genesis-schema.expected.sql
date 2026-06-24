@@ -355,6 +355,43 @@ $$;
 
 
 --
+-- Name: canonicalize_active_mastery_constants_state(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_active_mastery_constants_state() RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT COALESCE(string_agg(line, E'\n' ORDER BY k), '')
+    FROM (
+        SELECT
+            mc.key AS k,
+            mc.key || '=' ||
+            CASE jsonb_typeof(mc.value)
+                WHEN 'object' THEN
+                    '{' || COALESCE((
+                        SELECT string_agg(
+                                 o.key || '=' ||
+                                 CASE jsonb_typeof(o.value)
+                                     WHEN 'number'
+                                       THEN to_char((o.value #>> '{}')::numeric,
+                                                    'FM9990.000000')
+                                     ELSE (o.value #>> '{}')
+                                 END,
+                                 ',' ORDER BY o.key)
+                        FROM jsonb_each(mc.value) o
+                    ), '') || '}'
+                WHEN 'number' THEN
+                    to_char((mc.value #>> '{}')::numeric, 'FM9990.000000')
+                ELSE
+                    (mc.value #>> '{}')
+            END AS line
+        FROM public.mastery_constants mc
+    ) s;
+$$;
+
+
+--
 -- Name: canonicalize_mastery_constants(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -444,6 +481,56 @@ BEGIN
    || ';section_min='  || v_section_min::text
    || ';section_max='  || v_section_max::text
    || ';weights='      || COALESCE(v_weights_canon, '');
+END;
+$$;
+
+
+--
+-- Name: capture_mastery_constant_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.capture_mastery_constant_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_key          text;
+    v_old          jsonb;
+    v_new          jsonb;
+    v_affects      boolean;
+    v_state_hash   text;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        v_key := NEW.key;  v_old := NULL;        v_new := NEW.value;
+    ELSIF TG_OP = 'UPDATE' THEN
+        v_key := NEW.key;  v_old := OLD.value;   v_new := NEW.value;
+    ELSE
+        v_key := OLD.key;  v_old := OLD.value;   v_new := NULL;
+    END IF;
+
+    v_affects := public.constant_affects_formula_hash(v_key);
+
+    v_state_hash := encode(
+        extensions.digest(
+            convert_to(
+                public.canonicalize_active_mastery_constants_state(),
+                'UTF8'),
+            'sha256'),
+        'hex');
+
+    INSERT INTO public.mastery_constants_change_log (
+        key, op, old_value, new_value,
+        affects_formula_hash,
+        actor_role, actor_session_user, txid,
+        resulting_state_hash, changed_at
+    ) VALUES (
+        v_key, TG_OP, v_old, v_new,
+        v_affects,
+        current_user, session_user, txid_current(),
+        v_state_hash, now()
+    );
+
+    RETURN NULL;
 END;
 $$;
 
@@ -965,6 +1052,44 @@ BEGIN
   END LOOP;
 
   RETURN v_streak;
+END;
+$$;
+
+
+--
+-- Name: constant_affects_formula_hash(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.constant_affects_formula_hash(p_key text) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+    v_formula text[] := ARRAY[
+        'difficulty_weight_easy','difficulty_weight_hard','difficulty_weight_medium',
+        'mastery_level_0_max','mastery_level_1_max','mastery_level_1_min',
+        'mastery_level_2_max','mastery_level_2_min','mastery_level_3_max',
+        'mastery_level_3_min','mastery_level_4_min',
+        'mastery_max','mastery_min','mastery_model_version',
+        'MIN_EVENTS_FOR_MASTERY','POSITION_HALF_LIFE',
+        'ROUND_ACCURACY_DECIMALS','ROUND_EVIDENCE_DECIMALS',
+        'ROUND_MASTERY_PCT_DECIMALS','ROUND_MASTERY_SCORE_DECIMALS',
+        'ROUNDING_MODE',
+        'weight_source_practice','weight_source_review','weight_source_test'
+    ];
+    v_operational text[] := ARRAY[
+        'DIAGNOSTIC_TOTAL_QUESTIONS',
+        'KPI_RECENCY_WINDOW_LONG_DAYS','KPI_RECENCY_WINDOW_SHORT_DAYS',
+        'PROJECTION_BOUND_ROUND_TO','PROJECTION_DOMAIN_WEIGHTS',
+        'PROJECTION_MAX_DELTA','PROJECTION_MIDPOINT_ROUND_TO',
+        'PROJECTION_MIN_DELTA','PROJECTION_REFRESH_EVENT_THRESHOLD',
+        'PROJECTION_REFRESH_TIME_THRESHOLD_HOURS',
+        'PROJECTION_SECTION_MAX_SCORE','PROJECTION_SECTION_MIN_SCORE',
+        'PROJECTION_TARGET_QUESTION_COUNT_PER_SECTION'
+    ];
+BEGIN
+    IF p_key = ANY(v_formula) THEN RETURN true; END IF;
+    IF p_key = ANY(v_operational) THEN RETURN false; END IF;
+    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: "%" is not in the formula (24) or operational (13) registry', p_key;
 END;
 $$;
 
@@ -2680,6 +2805,40 @@ CREATE TABLE public.mastery_constants (
 
 
 --
+-- Name: mastery_constants_change_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_constants_change_log (
+    change_id bigint NOT NULL,
+    key text NOT NULL,
+    op text NOT NULL,
+    old_value jsonb,
+    new_value jsonb,
+    affects_formula_hash boolean NOT NULL,
+    actor_role text NOT NULL,
+    actor_session_user text NOT NULL,
+    txid bigint NOT NULL,
+    resulting_state_hash text NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT mastery_constants_change_log_op_check CHECK ((op = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))
+);
+
+
+--
+-- Name: mastery_constants_change_log_change_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants_change_log ALTER COLUMN change_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.mastery_constants_change_log_change_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: mastery_constants_history; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3701,6 +3860,14 @@ ALTER TABLE ONLY public.legal_acceptances
 
 
 --
+-- Name: mastery_constants_change_log mastery_constants_change_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants_change_log
+    ADD CONSTRAINT mastery_constants_change_log_pkey PRIMARY KEY (change_id);
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4185,6 +4352,20 @@ CREATE INDEX idx_legal_acceptances_user ON public.legal_acceptances USING btree 
 --
 
 CREATE INDEX idx_mastery_domain_refresh_audit_student ON public.mastery_domain_refresh_audit_log USING btree (student_id, section, domain, applied_at DESC);
+
+
+--
+-- Name: idx_mccl_key_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mccl_key_time ON public.mastery_constants_change_log USING btree (key, changed_at DESC);
+
+
+--
+-- Name: idx_mccl_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mccl_time ON public.mastery_constants_change_log USING btree (changed_at DESC);
 
 
 --
@@ -4682,6 +4863,15 @@ CREATE TRIGGER review_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.review_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: mastery_constants trg_capture_mastery_constant_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_capture_mastery_constant_change AFTER INSERT OR DELETE OR UPDATE ON public.mastery_constants FOR EACH ROW EXECUTE FUNCTION public.capture_mastery_constant_change();
+
+ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_constant_change;
 
 
 --
@@ -5466,6 +5656,12 @@ ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mastery_constants ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mastery_constants_change_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants_change_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mastery_constants_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5950,6 +6146,14 @@ GRANT ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entit
 
 
 --
+-- Name: FUNCTION canonicalize_active_mastery_constants_state(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() TO service_role;
+
+
+--
 -- Name: FUNCTION canonicalize_mastery_constants(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -6066,6 +6270,14 @@ GRANT ALL ON FUNCTION public.compute_section_projection(p_student_id uuid, p_sec
 
 REVOKE ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section text, p_domain text, p_skill text, p_t_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION constant_affects_formula_hash(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO service_role;
 
 
 --
@@ -6751,6 +6963,13 @@ GRANT ALL ON TABLE public.legal_acceptances TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_constants TO service_role;
+
+
+--
+-- Name: TABLE mastery_constants_change_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mastery_constants_change_log TO service_role;
 
 
 --
