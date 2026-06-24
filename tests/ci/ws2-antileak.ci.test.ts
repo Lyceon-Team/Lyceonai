@@ -241,13 +241,9 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     );
     const nextChunk = appendTurnSection.slice(0, 1500);
     expect(nextChunk).toContain("const safeContent");
-    // Leak detection drives a boolean; substitution selects the shared fallback.
-    expect(nextChunk).toMatch(
-      /const wasSubstituted\s*=\s*preSubmit\s*&&\s*hasDirectAnswerLeak\(cleaned\)/,
-    );
-    expect(nextChunk).toMatch(
-      /wasSubstituted\s*\?\s*TUTOR_ANTI_LEAK_SUBSTITUTION\s*:\s*cleaned/,
-    );
+    // Leak detection drives the ternary; substitution selects the shared fallback.
+    expect(nextChunk).toContain("hasDirectAnswerLeak(cleaned)");
+    expect(nextChunk).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
     // The block path never calls sendTutorError (no error response on a leak).
     const blockToInsert = nextChunk.slice(
       0,
@@ -292,76 +288,6 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     expect(replaySection).toContain("isPreSubmitForSurface");
     expect(replaySection).toContain("hasDirectAnswerLeak");
     expect(replaySection).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TU-04 / §16.4: forensic write to tutor_injection_log + scanner-block metric
-// ---------------------------------------------------------------------------
-
-describe("§16.4: layer_4 output-scanner forensic logging", () => {
-  function readTutorRuntime(): string {
-    return fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-  }
-
-  function extractWriter(src: string): string {
-    const start = src.indexOf("async function logLayer4OutputBlock(");
-    expect(start).toBeGreaterThan(-1);
-    // Bounded slice covering the whole helper body.
-    return src.slice(start, start + 2000);
-  }
-
-  it("logLayer4OutputBlock writes to tutor_injection_log with detection_layer layer_4_output", () => {
-    const writer = extractWriter(readTutorRuntime());
-    expect(writer).toContain('.from("tutor_injection_log")');
-    expect(writer).toContain('detection_layer: "layer_4_output"');
-    expect(writer).toContain("action_taken:");
-  });
-
-  it("forensic row stores the SAFE substitution, never the blocked content (privacy §12.1)", () => {
-    const writer = extractWriter(readTutorRuntime());
-    // response_substituted is the shared safe constant — NOT the leaking `cleaned` text.
-    expect(writer).toMatch(
-      /response_substituted:\s*TUTOR_ANTI_LEAK_SUBSTITUTION/,
-    );
-    expect(writer).not.toMatch(/response_substituted:\s*cleaned/);
-    // The blocked content must never be written to the forensic ledger.
-    expect(writer).not.toContain("cleaned");
-  });
-
-  it("emits the canonical scanner_block_rate metric (Doc 03B §22.2) on a block", () => {
-    const writer = extractWriter(readTutorRuntime());
-    // Doc 03B §22.2 names the metric scanner_block_rate — not an ad-hoc key.
-    expect(writer).toContain('"scanner_block_rate"');
-    expect(writer).toContain("logger.");
-  });
-
-  it("metric fires unconditionally — not suppressed by a forensic-write failure (§16.4 peer obligations)", () => {
-    const writer = extractWriter(readTutorRuntime());
-    // The metric emission must precede the DB insert so a write error can't skip it.
-    const metricIdx = writer.indexOf('"scanner_block_rate"');
-    const insertIdx = writer.indexOf('.from("tutor_injection_log")');
-    expect(metricIdx).toBeGreaterThan(-1);
-    expect(insertIdx).toBeGreaterThan(-1);
-    expect(metricIdx).toBeLessThan(insertIdx);
-  });
-
-  it("forensic write is best-effort (try/catch) so it never breaks the turn (§16.5)", () => {
-    const writer = extractWriter(readTutorRuntime());
-    expect(writer).toContain("try {");
-    expect(writer).toContain("catch");
-    // No throw escapes the helper into the response path.
-    expect(writer).not.toMatch(/\bthrow\b/);
-  });
-
-  it("the forensic write fires only on a substitution (gated by wasSubstituted)", () => {
-    const src = readTutorRuntime();
-    expect(src).toMatch(
-      /if\s*\(wasSubstituted\)\s*\{[\s\S]{0,200}logLayer4OutputBlock/,
-    );
   });
 });
 

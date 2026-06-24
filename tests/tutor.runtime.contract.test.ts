@@ -103,18 +103,6 @@ type QuestionRow = {
   canonical_id: string;
 };
 
-type InjectionLogRow = {
-  id: string;
-  conversation_id: string | null;
-  student_id: string | null;
-  message_id: string | null;
-  signature_matched: string | null;
-  detection_layer: string;
-  action_taken: string;
-  response_substituted: string | null;
-  detected_at: string;
-};
-
 type FullLengthSessionRow = {
   id: string;
   user_id: string;
@@ -173,7 +161,6 @@ const state = vi.hoisted(() => ({
   assignments: [] as InstructionAssignmentRow[],
   questionLinks: [] as QuestionLinkRow[],
   exposures: [] as InstructionExposureRow[],
-  injectionLog: [] as InjectionLogRow[],
   memorySummaries: [] as Array<{
     student_id: string;
     summary_type: string;
@@ -309,8 +296,6 @@ function tableStore(table: string): AnyRow[] {
       return state.questionLinks as unknown as AnyRow[];
     case "tutor_instruction_exposures":
       return state.exposures as unknown as AnyRow[];
-    case "tutor_injection_log":
-      return state.injectionLog as unknown as AnyRow[];
     case "tutor_memory_summaries":
       return state.memorySummaries as unknown as AnyRow[];
     case "questions":
@@ -697,7 +682,6 @@ describe("Tutor Runtime Contract Cutover", () => {
     state.assignments = [];
     state.questionLinks = [];
     state.exposures = [];
-    state.injectionLog = [];
     state.memorySummaries = [];
     state.fullLengthSessions = [];
     state.failStudentMessageInsert = false;
@@ -1393,20 +1377,6 @@ describe("Tutor Runtime Contract Cutover", () => {
       expect(tutorMessages).toHaveLength(1);
       expect(tutorMessages[0].message).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
       expect(tutorMessages[0].message).not.toContain(content);
-
-      // §16.4: exactly one forensic row is written for the layer_4 block. It stores
-      // the SUBSTITUTED safe response, never the blocked/leaking content (§12.1).
-      expect(state.injectionLog).toHaveLength(1);
-      const forensic = state.injectionLog[0];
-      expect(forensic.detection_layer).toBe("layer_4_output");
-      expect(forensic.action_taken).toBe("silent_substitute");
-      expect(forensic.conversation_id).toBe(conversationId);
-      expect(forensic.student_id).toBe(state.currentUserId);
-      expect(forensic.message_id).toBe(tutorMessages[0].id);
-      expect(forensic.response_substituted).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
-      // The blocked content is NEVER persisted to the forensic ledger.
-      expect(forensic.response_substituted).not.toContain(content);
-      expect(forensic.signature_matched).not.toContain(content);
     },
   );
 
@@ -1468,9 +1438,6 @@ describe("Tutor Runtime Contract Cutover", () => {
 
     expect(turn.status).toBe(200);
     expect(turn.body.data.response.content).toContain("eliminating");
-    // §16.4: a clean (non-leaking) turn writes NO forensic row — the scanner only
-    // logs on an actual block, so the block-rate metric is not inflated.
-    expect(state.injectionLog).toHaveLength(0);
   });
 
   it("blocks tutor while a full-length exam is live", async () => {

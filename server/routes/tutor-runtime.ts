@@ -22,7 +22,7 @@ import {
 } from "../middleware/supabase-auth";
 import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
-import { logger } from "../logger";
+
 import { z } from "zod";
 
 const router = Router();
@@ -714,65 +714,6 @@ async function isPreSubmitForSurface(
   }
   // review, test_review, dashboard are inherently post-submit
   return false;
-}
-
-/**
- * @spec [Doc-03A_V3 §18.7 tutor_injection_log; Doc-03B_V4.1 §16.4 scanner fail behavior; INV-03-13]
- * | @implemented [2026-06-24]
- * §16.4 forensic write for an output-scanner (layer_4) block: records the incident to
- * tutor_injection_log AND emits the scanner-block-rate metric. PRIVACY (§12.1): the blocked
- * (leaking) content is NEVER stored — `response_substituted` holds the safe shared fallback
- * (a constant), per §18.7 / §16.4 ("persist the SUBSTITUTED response, not the blocked one").
- * BEST-EFFORT: a forensic-log failure must never break the student's turn (§16.5) — log and
- * continue, never throw into the response path.
- */
-async function logLayer4OutputBlock(params: {
-  conversationId: string;
-  studentId: string;
-  messageId: string;
-  surface: ConversationRow["source_surface"];
-}): Promise<void> {
-  // §16.4 + Doc-03B §22.2: the scanner_block_rate metric and the forensic write are
-  // INDEPENDENT peer obligations. Emit the metric FIRST and unconditionally so it
-  // fires on EVERY block — a forensic DB-write failure must not under-count the rate.
-  // Structured + redacted; metadata only, never content.
-  logger.warn(
-    "TUTOR",
-    "scanner_block_rate",
-    "Output scanner substituted a pre-submit answer leak",
-    { detection_layer: "layer_4_output", surface: params.surface },
-  );
-  // §16.4 forensic write (best-effort) — PRIVACY (§12.1): response_substituted holds
-  // the SAFE fallback constant, never the blocked content. A failure here is logged
-  // and swallowed so it never breaks the (already-substituted, persisted) turn (§16.5).
-  try {
-    const { error } = await supabaseServer.from("tutor_injection_log").insert({
-      conversation_id: params.conversationId,
-      student_id: params.studentId,
-      message_id: params.messageId,
-      signature_matched: "output_answer_leak",
-      detection_layer: "layer_4_output",
-      action_taken: "silent_substitute",
-      response_substituted: TUTOR_ANTI_LEAK_SUBSTITUTION,
-    });
-    if (error) {
-      logger.error(
-        "TUTOR",
-        "injection_log_write_failed",
-        "tutor_injection_log forensic write returned an error",
-        error,
-        { detection_layer: "layer_4_output" },
-      );
-    }
-  } catch (error) {
-    logger.error(
-      "TUTOR",
-      "injection_log_write_failed",
-      "tutor_injection_log forensic write threw",
-      error,
-      { detection_layer: "layer_4_output" },
-    );
-  }
 }
 
 function asJsonObject(value: unknown): Record<string, unknown> {
@@ -1747,15 +1688,16 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       user.id,
       resolvedScope.source_session_item_id,
     );
-    // §16.4-5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
+    // §16.5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
     // shared pedagogical fallback and deliver it as a normal turn — no 422, no
     // acknowledgment that filtering occurred. The substituted turn is persisted
     // and returned through the same path as any other turn, so from the
     // student's perspective it is indistinguishable from a normal LISA reply.
-    // The §16.4 forensic write + scanner-block metric fire AFTER the message
-    // insert (below), once we have the persisted message_id.
-    const wasSubstituted = preSubmit && hasDirectAnswerLeak(cleaned);
-    const safeContent = wasSubstituted ? TUTOR_ANTI_LEAK_SUBSTITUTION : cleaned;
+    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-TU-05) — tutor persistence tables not in prod.
+    const safeContent =
+      preSubmit && hasDirectAnswerLeak(cleaned)
+        ? TUTOR_ANTI_LEAK_SUBSTITUTION
+        : cleaned;
 
     const suggestedAction = orchestratorResult.response.suggested_action;
     const orchestratorUiHints = orchestratorResult.response.ui_hints;
@@ -1794,18 +1736,6 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     if (insertTutorError || !insertedTutorMessage) {
       sendRecoverableRetry(res, req.requestId);
       return;
-    }
-
-    // §16.4: when the output scanner substituted (leak blocked), write the forensic
-    // row + emit the scanner-block metric now that the persisted message_id exists.
-    // Best-effort — never breaks the (already-substituted, already-persisted) turn.
-    if (wasSubstituted) {
-      await logLayer4OutputBlock({
-        conversationId: conversation.id,
-        studentId: user.id,
-        messageId: insertedTutorMessage.id,
-        surface: conversation.source_surface,
-      });
     }
 
     if (!policyAssignmentId) {
