@@ -277,7 +277,6 @@ export interface SubmitModuleResult {
   nextModule: {
     section: SectionType;
     moduleIndex: ModuleIndex;
-    difficultyBucket?: DifficultyBucket;
   } | null;
   isBreak: boolean;
 }
@@ -2662,7 +2661,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     const currentSection = session.current_section as SectionType;
     const currentModuleIndex = session.current_module as ModuleIndex;
 
-    let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+    let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null = null;
     let isBreak = false;
 
     if (currentModuleIndex === 1) {
@@ -2676,7 +2675,6 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       nextModule = {
         section: currentSection,
         moduleIndex: 2,
-        difficultyBucket: deferred.difficultyBucket,
       };
     } else if (currentSection === "rw") {
       isBreak = true;
@@ -2766,7 +2764,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   const currentSection = session.current_section as SectionType;
   const currentModuleIndex = session.current_module as ModuleIndex;
 
-  let nextModule: { section: SectionType; moduleIndex: ModuleIndex; difficultyBucket?: DifficultyBucket } | null = null;
+  let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null = null;
   let isBreak = false;
 
   if (currentModuleIndex === 1) {
@@ -2780,7 +2778,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
       module1CorrectCount: correctCount,
     });
 
-    nextModule = { section: currentSection, moduleIndex: 2, difficultyBucket: deferred.difficultyBucket };
+    nextModule = { section: currentSection, moduleIndex: 2 };
 
     // Update session
     await supabase
@@ -3236,7 +3234,6 @@ export interface ExamReviewModule {
   section: string;
   moduleIndex: number;
   status: string;
-  difficultyBucket: string | null;
   startedAt: string | null;
   submittedAt: string | null;
 }
@@ -3545,7 +3542,6 @@ export async function getExamReview(
     section: m.section,
     moduleIndex: m.module_index,
     status: m.status,
-    difficultyBucket: m.difficulty_bucket,
     startedAt: m.started_at,
     submittedAt: m.submitted_at,
   }));
