@@ -732,6 +732,19 @@ async function logLayer4OutputBlock(params: {
   messageId: string;
   surface: ConversationRow["source_surface"];
 }): Promise<void> {
+  // §16.4 + Doc-03B §22.2: the scanner_block_rate metric and the forensic write are
+  // INDEPENDENT peer obligations. Emit the metric FIRST and unconditionally so it
+  // fires on EVERY block — a forensic DB-write failure must not under-count the rate.
+  // Structured + redacted; metadata only, never content.
+  logger.warn(
+    "TUTOR",
+    "scanner_block_rate",
+    "Output scanner substituted a pre-submit answer leak",
+    { detection_layer: "layer_4_output", surface: params.surface },
+  );
+  // §16.4 forensic write (best-effort) — PRIVACY (§12.1): response_substituted holds
+  // the SAFE fallback constant, never the blocked content. A failure here is logged
+  // and swallowed so it never breaks the (already-substituted, persisted) turn (§16.5).
   try {
     const { error } = await supabaseServer.from("tutor_injection_log").insert({
       conversation_id: params.conversationId,
@@ -750,15 +763,7 @@ async function logLayer4OutputBlock(params: {
         error,
         { detection_layer: "layer_4_output" },
       );
-      return;
     }
-    // §16.4 scanner-block-rate metric — structured + redacted; metadata only, never content.
-    logger.warn(
-      "TUTOR",
-      "anti_leak_output_block",
-      "Output scanner substituted a pre-submit answer leak",
-      { detection_layer: "layer_4_output", surface: params.surface },
-    );
   } catch (error) {
     logger.error(
       "TUTOR",

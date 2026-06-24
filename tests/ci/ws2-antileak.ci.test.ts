@@ -332,10 +332,21 @@ describe("§16.4: layer_4 output-scanner forensic logging", () => {
     expect(writer).not.toContain("cleaned");
   });
 
-  it("emits the scanner-block-rate metric on a block", () => {
+  it("emits the canonical scanner_block_rate metric (Doc 03B §22.2) on a block", () => {
     const writer = extractWriter(readTutorRuntime());
-    expect(writer).toContain("anti_leak_output_block");
+    // Doc 03B §22.2 names the metric scanner_block_rate — not an ad-hoc key.
+    expect(writer).toContain('"scanner_block_rate"');
     expect(writer).toContain("logger.");
+  });
+
+  it("metric fires unconditionally — not suppressed by a forensic-write failure (§16.4 peer obligations)", () => {
+    const writer = extractWriter(readTutorRuntime());
+    // The metric emission must precede the DB insert so a write error can't skip it.
+    const metricIdx = writer.indexOf('"scanner_block_rate"');
+    const insertIdx = writer.indexOf('.from("tutor_injection_log")');
+    expect(metricIdx).toBeGreaterThan(-1);
+    expect(insertIdx).toBeGreaterThan(-1);
+    expect(metricIdx).toBeLessThan(insertIdx);
   });
 
   it("forensic write is best-effort (try/catch) so it never breaks the turn (§16.5)", () => {
