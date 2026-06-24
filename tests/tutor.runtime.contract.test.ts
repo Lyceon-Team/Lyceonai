@@ -603,7 +603,11 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   sendForbidden: (res: any, body: any) => res.status(403).json(body),
   // Dormant deletion-lock middleware (gated behind ACCOUNT_DELETION_LIFECYCLE_V2);
   // pass-through in tests so server/index.ts `app.use(enforceDeletionLock)` resolves.
-  enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
+  enforceDeletionLock: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
   getSupabaseAdmin: () => ({
     rpc: vi.fn(async () => ({ data: null, error: null })),
   }),

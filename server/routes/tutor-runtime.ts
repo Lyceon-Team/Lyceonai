@@ -1692,6 +1692,11 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     // acknowledgment that filtering occurred. The substituted turn is persisted
     // and returned through the same path as any other turn, so from the
     // student's perspective it is indistinguishable from a normal LISA reply.
+    // DEFERRED (GAP-TU-05): §16.4 also requires a forensic write to
+    // `tutor_injection_log` (detection_layer = 'layer_4_output') + a scanner-block
+    // metric. That table/logging path is unimplemented system-wide (no detection
+    // layer writes it yet) — tracked as GAP-TU-05, not built here to avoid a
+    // table+migration expansion inside this anti-leak PR.
     const safeContent =
       preSubmit && hasDirectAnswerLeak(cleaned)
         ? TUTOR_ANTI_LEAK_SUBSTITUTION
