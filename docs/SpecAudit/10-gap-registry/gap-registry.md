@@ -301,8 +301,17 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
     **8 failures across 6 files**.
     Remaining 6 debt files: `adaptiveSelector.test.ts`, `fullLengthExam.runtime.contract.test.ts`,
     `fullLengthExam.test.ts`, `guardian-payment-access.test.ts`, `mastery.writepaths.guard.test.ts`,
-    `review-session.lifecycle.contract.test.ts`. Forward anchor: **8**. Tracked for systematic
-    triage in a future wave. Severity LOW.
+    `review-session.lifecycle.contract.test.ts`. Forward anchor: **8 deterministic across 6 files**.
+    Tracked for systematic triage in a future wave. Severity LOW.
+  - **Anchor clarification (2026-06-24, Codex re-audit of #422):** a Codex full-suite run reported
+    **9/7**, not 8/6 — the 9th was `tests/ci/calendar.csrf.ci.test.ts` (`calendar_get_routes_not_csrf_blocked`)
+    **timing out**, NOT an assertion failure. Settled empirically: 5 local full-suite runs all = 8/6
+    (calendar.csrf green); calendar.csrf passes 3/3 **standalone** in ~1.6s (well under timeout). It
+    failed only 1 of 6 observed full-suite runs, under parallel load. **Verdict: flaky-on-timeout,
+    intermittent, unrelated to #422** (untouched since `2ceaecb` CSRF-middleware, pre-dates the WS-2
+    branch). The honest anchor is **8 deterministic + calendar.csrf intermittent-on-timeout** — a
+    9/7 reading under load is the flaky test, not a regression. (A real, deterministic CSRF-timeout
+    break would be its own gap; this is not that.)
 - **GAP-TU-05 (NEW) — OPEN, deferred to tutor-vertical wave.** LISA-FORENSIC-LOGGING: Doc 03B
   §16.4 requires every output-scanner block to (a) write forensic detail to `tutor_injection_log`
   with `detection_layer = 'layer_4_output'` and (b) increment a `scanner_block_rate` metric.
@@ -312,3 +321,17 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   substrate does not exist. The anti-leak substitution itself (§16.5, INV-03-13) ships without
   forensic logging — the scanner silently substitutes, but does not yet log. Lands with the
   tutor-vertical wave that stands up the persistence tables. Severity HIGH (residual).
+- **GAP-HY-18 (NEW) — OPEN.** UNIFIED-ANTI-LEAK-PROBE. No single committed CI gate sweeps EVERY
+  pre-submit surface for ALL forbidden fields. Current coverage is split and surface-scoped:
+  `tests/ci/questions.anti-leak.ci.test.ts` covers the question-DTO endpoints (`correct_answer`,
+  `explanation`, `option_metadata` on `/api/questions/recent` + the `__test` question routes);
+  `tests/ci/ws2-antileak.ci.test.ts` covers EX-05 (`difficultyBucket` strip on full-length submit/
+  review serializers + client) + TU-04 (tutor chokepoint/substitution). Neither — nor the two
+  together — is the broad probe asserting that **practice, review, full-length-active, and tutor/
+  replay** ALL omit `correct_answer` / `explanation` / `difficultyBucket`/`difficulty_bucket` /
+  option-or-distractor metadata, for **anon AND authenticated** callers, in one reproducible gate.
+  Surfaced by the Codex re-audit of #422: the WS-2 gate proves the EX-05/TU-04 changes correctly,
+  but is NOT an all-surface probe; building that is broader than #422's scope. **Disposition:** build
+  as its own anti-leak-hardening cycle (one committed all-surface, all-field, both-roles gate). The
+  runtime is believed conformant today (each surface's serializer was audited); this gap is the
+  missing *consolidated proof*, not a known live leak. Severity MEDIUM (test/proof coverage).

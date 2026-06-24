@@ -147,9 +147,9 @@ Apply this to:
 | test_review | Gated by completion (already enforced at line 1092-1104) | Return false |
 | dashboard | No question context | Return false |
 
-### §16.4-5 silent substitution (CLOSED IN-PR — scope ruling 2026-06-24)
+### §16.5 silent substitution (CLOSED IN-PR) — §16.4 forensic logging DEFERRED (GAP-TU-05)
 
-**Doc 03B §16.4-5 + INV-03-13:** scanner-blocked responses must be **silently substituted**
+**Doc 03B §16.5 + INV-03-13:** scanner-blocked responses must be **silently substituted**
 with a pedagogical fallback ("From the student's perspective, a scanner-blocked response looks
 like a normal LISA turn"). The append-turn path previously returned a `422
 TUTOR_ANTI_LEAK_BLOCKED` — a violation. Folded into TU-04: both block paths (append-turn
@@ -158,6 +158,12 @@ same way (parallel-paths rule). No caller branched on the 422 (client only speci
 `TUTOR_RECOVERABLE_RETRY_REQUIRED`), so the contract change is safe. The CI gate asserts silent
 substitution on every pre-submit block path; the runtime contract test asserts the delivered +
 persisted turn carries the fallback, never the leaking content.
+
+**§16.4 forensic logging (`tutor_injection_log` write + `scanner_block_rate` metric) was BUILT
+then REVERTED from this PR** — prod has no tutor runtime persistence tables, so the writer had no
+substrate. The enforcement layer (§16.5 silent substitution) ships; the observability layer
+(§16.4) is deferred to the tutor-vertical wave under **GAP-TU-05 (OPEN)**. This PR is code-only,
+no migration.
 
 ## Six-Axis Self-Audit
 
@@ -177,13 +183,24 @@ persisted turn carries the fallback, never the leaking content.
 - TU-04: The replay endpoint at line 900-921 builds an explicit response object (not a spread).
   The filter function will be applied to the message text. No spread risk.
 
-## CI Gate (anti-leak probe)
+## CI Gate — TRUE scope (EX-05 difficultyBucket + TU-04 chokepoint/substitution)
 
-New test file: anti-leak probe asserting:
-1. `POST /sessions/:id/module/submit` response does NOT contain `difficultyBucket`
-2. `GET /sessions/:id/review` response does NOT contain `difficultyBucket`
-3. Tutor replay for practice pre-submit conversation does NOT contain leaked answer text
-4. `FullLengthReviewView` does NOT render any adaptive/difficulty badge
+`tests/ci/ws2-antileak.ci.test.ts`. **Scope is exactly the two gaps this PR closes** — it is
+NOT, and does not claim to be, an all-surface / all-field anti-leak probe:
+
+1. EX-05: `SubmitModuleResult.nextModule`, `ExamReviewModule`, the review mapping, and the
+   client components (`FullLengthReviewView.tsx`, `ExamRunner.tsx`) contain no `difficultyBucket`;
+   full `client/src` walk for `difficultyBucket`/`difficulty_bucket`.
+2. TU-04: `hasDirectAnswerLeak` pattern coverage; `isPreSubmitForSurface` is the structural
+   (surface-agnostic) chokepoint; both block paths (append-turn + replay) share one
+   `TUTOR_ANTI_LEAK_SUBSTITUTION` constant; no `422 TUTOR_ANTI_LEAK_BLOCKED` / `sendTutorError`
+   on the leak path (§16.5 silent substitution).
+
+**Out of scope (registered separately as GAP-HY-18):** a single committed probe asserting that
+EVERY pre-submit surface (practice, review, full-length-active, tutor/replay), for anon AND
+authenticated callers, omits `correct_answer` / `explanation` / `difficultyBucket` / option-or-
+distractor metadata. That broad probe is its own anti-leak-hardening cycle, not this PR. The
+question-DTO surface is separately covered by `tests/ci/questions.anti-leak.ci.test.ts`.
 
 ## Files to modify
 
