@@ -15,8 +15,9 @@
 --       before refresh_domain_mastery, closing the NULL provenance bug.
 --   (3) mastery_domain_refresh_audit_log.triggered_by gets NOT NULL + CHECK
 --       constraint (table is empty at deploy time — zero data migration).
---   (4) canonical_mastery_events_for_student: per-student accessor (R3) wrapping
---       canonical_mastery_events with no entity filter.
+--   (4) canonical_mastery_events_for_student: per-student accessor (R3) querying LYCEON-MIGRATION-REVIEWED
+--       the canonical source tables directly (practice_session_items +
+--       review_error_attempts) with student-only filter, no entity-level params.
 --   (5) backfill_recompute_student (§7.2): the 05D-owned never-computed backfill
 --       RPC, strict dependency order, idempotent (NOT EXISTS selection).
 --
@@ -489,32 +490,41 @@ GRANT EXECUTE ON FUNCTION public.backfill_recompute_student(uuid, timestamptz) T
 -- §6. CI Guards — structural assertions (Doc 05D §11.1-J / pr2-05d-backfill-recompute-audit.md §3)
 -- ============================================================================
 
+-- ALL guards below strip single-line SQL comments from pg_proc.prosrc before matching,
+-- so they assert EXECUTABLE call order and cannot be false-matched by comment text
+-- (Codex REVISE §1 hardening). LYCEON-MIGRATION-REVIEWED
+
 -- 6.1 backfill_calls_recompute_skill_mastery (RB-05D-V1-A)
 -- Asserts backfill_recompute_student calls 05A's locked recompute_skill_mastery RPC,
 -- NOT the pure compute_mastery_for_entity (which computes but never persists).
 DO $ci_guard$
 DECLARE
   v_body text;
+  v_clean text;
 BEGIN
   SELECT prosrc INTO v_body FROM pg_proc
   WHERE proname = 'backfill_recompute_student' AND pronamespace = 'public'::regnamespace;
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: backfill_recompute_student not found';
   END IF;
-  IF v_body NOT LIKE '%recompute_skill_mastery%' THEN
-    RAISE EXCEPTION 'CI_GUARD_FAIL [backfill_calls_recompute_skill_mastery]: backfill must call recompute_skill_mastery, not compute_mastery_for_entity';
+  v_clean := regexp_replace(v_body, '--[^\n]*', '', 'g');
+  IF position('PERFORM public.recompute_skill_mastery(' in v_clean) = 0 THEN
+    RAISE EXCEPTION 'CI_GUARD_FAIL [backfill_calls_recompute_skill_mastery]: backfill must PERFORM public.recompute_skill_mastery, not compute_mastery_for_entity';
   END IF;
 END;
 $ci_guard$;
 
 -- 6.2 lock_order_monotonicity
 -- Asserts backfill_recompute_student calls recompute_skill_mastery with
--- p_chain_downstream := false (or literal false), ensuring ALL skill locks
--- are acquired (step 1) before ANY domain lock (step 2). Without this,
--- AB/BA deadlock between backfill and concurrent events.
+-- p_chain_downstream := false, ensuring ALL skill locks are acquired (step 1)
+-- before ANY domain lock (step 2). Without this, AB/BA deadlock between
+-- backfill and concurrent events. Uses comment-stripped prosrc and specific
+-- PERFORM patterns to prove executable order, not incidental text order.
 DO $ci_guard$
 DECLARE
   v_body text;
+  v_clean text;
+  v_recompute_call text;
   v_skill_pos integer;
   v_domain_pos integer;
 BEGIN
@@ -523,25 +533,32 @@ BEGIN
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: backfill_recompute_student not found';
   END IF;
-  -- p_chain_downstream must be false in the recompute_skill_mastery call
-  IF v_body NOT LIKE '%recompute_skill_mastery%false%' THEN
+  v_clean := regexp_replace(v_body, '--[^\n]*', '', 'g');
+  v_recompute_call := substring(v_clean FROM 'PERFORM\s+public\.recompute_skill_mastery\([^;]*\);');
+  IF v_recompute_call IS NULL THEN
+    RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_monotonicity]: backfill must PERFORM public.recompute_skill_mastery(...)';
+  END IF;
+  IF v_recompute_call NOT LIKE '%false%' THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_monotonicity]: recompute_skill_mastery must be called with p_chain_downstream := false in backfill';
   END IF;
-  -- Skill loop must appear before domain loop (positional order in the body)
-  v_skill_pos := position('recompute_skill_mastery' in v_body);
-  v_domain_pos := position('refresh_domain_mastery' in v_body);
+  v_skill_pos := position('PERFORM public.recompute_skill_mastery(' in v_clean);
+  v_domain_pos := position('PERFORM public.refresh_domain_mastery(' in v_clean);
   IF v_skill_pos = 0 OR v_domain_pos = 0 OR v_skill_pos >= v_domain_pos THEN
-    RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_monotonicity]: skill loop must precede domain loop in backfill_recompute_student';
+    RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_monotonicity]: PERFORM recompute_skill_mastery must precede PERFORM refresh_domain_mastery in backfill';
   END IF;
 END;
 $ci_guard$;
 
--- 6.3 q2_atomicity_proof LYCEON-MIGRATION-REVIEWED
+-- 6.3 q2_atomicity_proof
 -- Asserts apply_mastery_event sets GUC 'event' before calling refresh_domain_mastery,
 -- and mastery_domain_refresh_audit_log.triggered_by is NOT NULL with a CHECK constraint.
+-- GUC write pattern: apply_mastery_event uses SET LOCAL (constant value, idiomatic);
+-- recompute_skill_mastery uses set_config() (required for COALESCE expression). Both
+-- are valid PL/pgSQL — this guard checks the event path's SET LOCAL specifically.
 DO $ci_guard$
 DECLARE
   v_body text;
+  v_clean text;
   v_guc_pos integer;
   v_refresh_pos integer;
   v_is_nullable boolean;
@@ -552,22 +569,21 @@ BEGIN
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: apply_mastery_event not found';
   END IF;
-  v_guc_pos := position('SET LOCAL app.mastery_refresh_trigger' in v_body);
-  v_refresh_pos := position('PERFORM public.refresh_domain_mastery' in v_body);
+  v_clean := regexp_replace(v_body, '--[^\n]*', '', 'g');
+  v_guc_pos := position('SET LOCAL app.mastery_refresh_trigger' in v_clean);
+  v_refresh_pos := position('PERFORM public.refresh_domain_mastery' in v_clean);
   IF v_guc_pos = 0 THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: apply_mastery_event must SET LOCAL app.mastery_refresh_trigger before refresh_domain_mastery';
   END IF;
   IF v_refresh_pos = 0 OR v_guc_pos >= v_refresh_pos THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: SET LOCAL must precede PERFORM public.refresh_domain_mastery';
   END IF;
-  -- Column NOT NULL check
   SELECT (is_nullable = 'NO') INTO v_is_nullable
   FROM information_schema.columns
   WHERE table_schema = 'public' AND table_name = 'mastery_domain_refresh_audit_log' AND column_name = 'triggered_by';
   IF NOT v_is_nullable THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [q2_atomicity]: triggered_by must be NOT NULL';
   END IF;
-  -- CHECK constraint exists
   SELECT EXISTS (
     SELECT 1 FROM information_schema.check_constraints cc
     JOIN information_schema.constraint_column_usage ccu USING (constraint_schema, constraint_name)
@@ -589,6 +605,7 @@ $ci_guard$;
 DO $ci_guard$
 DECLARE
   v_body text;
+  v_clean text;
   v_not_exists_count integer;
 BEGIN
   SELECT prosrc INTO v_body FROM pg_proc
@@ -596,8 +613,8 @@ BEGIN
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: backfill_recompute_student not found';
   END IF;
-  -- Must have at least 2 NOT EXISTS (one for skill, one for domain)
-  v_not_exists_count := (length(v_body) - length(replace(lower(v_body), 'not exists', ''))) / length('not exists');
+  v_clean := regexp_replace(v_body, '--[^\n]*', '', 'g');
+  v_not_exists_count := (length(v_clean) - length(replace(lower(v_clean), 'not exists', ''))) / length('not exists');
   IF v_not_exists_count < 2 THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [single_fire_not_exists]: backfill must use NOT EXISTS for both skill and domain loops (found %)', v_not_exists_count;
   END IF;
@@ -610,6 +627,7 @@ $ci_guard$;
 DO $ci_guard$
 DECLARE
   v_body text;
+  v_clean text;
   v_has_param boolean;
 BEGIN
   SELECT prosrc INTO v_body FROM pg_proc
@@ -617,13 +635,13 @@ BEGIN
   IF v_body IS NULL THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL: recompute_skill_mastery not found';
   END IF;
-  IF v_body NOT LIKE '%p_chain_downstream%' THEN
+  v_clean := regexp_replace(v_body, '--[^\n]*', '', 'g');
+  IF v_clean NOT LIKE '%p_chain_downstream%' THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [recompute_conditional_chain]: recompute_skill_mastery must reference p_chain_downstream';
   END IF;
-  IF v_body NOT LIKE '%refresh_domain_mastery%' THEN
+  IF position('PERFORM public.refresh_domain_mastery(' in v_clean) = 0 THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [recompute_conditional_chain]: recompute_skill_mastery must call refresh_domain_mastery when p_chain_downstream is true';
   END IF;
-  -- Verify the boolean param exists in the function signature
   SELECT EXISTS (
     SELECT 1 FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -633,6 +651,40 @@ BEGIN
   ) INTO v_has_param;
   IF NOT v_has_param THEN
     RAISE EXCEPTION 'CI_GUARD_FAIL [recompute_conditional_chain]: recompute_skill_mastery must have boolean parameter in signature';
+  END IF;
+END;
+$ci_guard$;
+
+-- 6.6 lock_order_guard_proof (Codex REVISE §1 — proves 6.2 is comment-immune + order-sensitive)
+-- TEST 1: comment containing 'refresh_domain_mastery' before the recompute PERFORM → guard
+--   must PASS on the comment-stripped body (comment does not affect executable order).
+-- TEST 2: real PERFORM calls reordered (domain before skill) → guard must FAIL (catches
+--   real interleaving). Both tests use synthetic function bodies, not pg_proc.
+DO $ci_guard$
+DECLARE
+  v_test_body text;
+  v_clean text;
+  v_skill_pos integer;
+  v_domain_pos integer;
+BEGIN
+  -- TEST 1: comment-immune
+  v_test_body := E'  -- This calls refresh_domain_mastery later in the body\n  PERFORM public.recompute_skill_mastery(\n    p_student_id, v_sec, v_dom, v_skl,\n    false\n  );\n  PERFORM public.refresh_domain_mastery(p_student_id, v_sec, v_dom);';
+  v_clean := regexp_replace(v_test_body, '--[^\n]*', '', 'g');
+  v_skill_pos := position('PERFORM public.recompute_skill_mastery(' in v_clean);
+  v_domain_pos := position('PERFORM public.refresh_domain_mastery(' in v_clean);
+  IF v_skill_pos = 0 OR v_domain_pos = 0 OR v_skill_pos >= v_domain_pos THEN
+    RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_guard_proof]: TEST 1 FAILED — comment-immune check: comment before recompute must not affect guard';
+  END IF;
+  RAISE NOTICE 'CI GUARD PROOF TEST 1 PASSED: comment-immune (comment text does not affect executable order check)';
+  -- TEST 2: catches real interleaving
+  v_test_body := E'  PERFORM public.refresh_domain_mastery(p_student_id, v_sec, v_dom);\n  PERFORM public.recompute_skill_mastery(\n    p_student_id, v_sec, v_dom, v_skl,\n    false\n  );';
+  v_clean := regexp_replace(v_test_body, '--[^\n]*', '', 'g');
+  v_skill_pos := position('PERFORM public.recompute_skill_mastery(' in v_clean);
+  v_domain_pos := position('PERFORM public.refresh_domain_mastery(' in v_clean);
+  IF v_skill_pos = 0 OR v_domain_pos = 0 OR v_skill_pos >= v_domain_pos THEN
+    RAISE NOTICE 'CI GUARD PROOF TEST 2 PASSED: reordered PERFORM calls correctly detected as violation';
+  ELSE
+    RAISE EXCEPTION 'CI_GUARD_FAIL [lock_order_guard_proof]: TEST 2 FAILED — reordered calls NOT detected';
   END IF;
 END;
 $ci_guard$;
