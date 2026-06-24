@@ -624,6 +624,17 @@ function removeInternalMetadataMentions(text: string): string {
     .trim();
 }
 
+/**
+ * @spec [Doc-03B_V4.1, §16.4-5; INV-03-13] | @implemented [2026-06-24]
+ * Shared silent-substitution fallback for a blocked pre-submit tutor turn. Per
+ * §16.5 + INV-03-13, a scanner-blocked response must look like a normal LISA
+ * turn — no acknowledgment that filtering occurred. BOTH block paths (append-turn
+ * delivery and conversation replay) emit THIS one substitution, the same way
+ * (parallel-paths rule). It is pedagogical, never an error message.
+ */
+const TUTOR_ANTI_LEAK_SUBSTITUTION =
+  "Let me think about this differently. Can you walk me through how you approached this problem?";
+
 function hasDirectAnswerLeak(text: string): boolean {
   const patterns = [
     /\bthe correct answer is\b/i,
@@ -1110,7 +1121,7 @@ router.get(
             row.role === "tutor" &&
             replayIsPreSubmit &&
             hasDirectAnswerLeak(row.message ?? "")
-              ? "Let me think about this differently. Can you walk me through how you approached this problem?"
+              ? TUTOR_ANTI_LEAK_SUBSTITUTION
               : row.message;
           return {
             id: row.id,
@@ -1676,16 +1687,15 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       user.id,
       resolvedScope.source_session_item_id,
     );
-    if (preSubmit && hasDirectAnswerLeak(cleaned)) {
-      sendTutorError(
-        res,
-        422,
-        "TUTOR_ANTI_LEAK_BLOCKED",
-        "Tutor response was blocked to prevent answer leakage.",
-        req.requestId,
-      );
-      return;
-    }
+    // §16.4-5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
+    // shared pedagogical fallback and deliver it as a normal turn — no 422, no
+    // acknowledgment that filtering occurred. The substituted turn is persisted
+    // and returned through the same path as any other turn, so from the
+    // student's perspective it is indistinguishable from a normal LISA reply.
+    const safeContent =
+      preSubmit && hasDirectAnswerLeak(cleaned)
+        ? TUTOR_ANTI_LEAK_SUBSTITUTION
+        : cleaned;
 
     const suggestedAction = orchestratorResult.response.suggested_action;
     const orchestratorUiHints = orchestratorResult.response.ui_hints;
@@ -1701,7 +1711,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           student_id: user.id,
           role: "tutor",
           content_kind: "message",
-          message: cleaned,
+          message: safeContent,
           content_json: {
             suggested_action: suggestedAction,
             ui_hints: orchestratorUiHints,
@@ -1754,10 +1764,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         reservationId: tutorReservationId,
         success: true,
         finalInputTokens: estimateTokenCount(body.message),
-        finalOutputTokens: estimateTokenCount(cleaned),
+        finalOutputTokens: estimateTokenCount(safeContent),
         finalCostMicros: estimateTutorCostMicros(
           estimateTokenCount(body.message),
-          estimateTokenCount(cleaned),
+          estimateTokenCount(safeContent),
         ),
       });
     }
@@ -1767,7 +1777,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         conversation_id: conversation.id,
         message_id: insertedTutorMessage.id,
         response: {
-          content: cleaned,
+          content: safeContent,
           content_kind: "message",
           suggested_action: suggestedAction,
           ui_hints: orchestratorUiHints,

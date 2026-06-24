@@ -287,7 +287,17 @@ Logged during WS-1 implementation so each item has an owner and a closing wave (
   (carrying `mastery_score`) stripped at `rag-v2.ts:55` serialization boundary. Dead
   `getDerivedWeaknessSignals` + `mapMasteryStatusFromLevel` deleted. Severity HIGH (same class as
   MA-06 drift). PRs #419 + step-6 close-out → `cleanup`.
-- **GAP-HY-17 (NEW) — OPEN.** BASELINE-TEST-DEBT: **36 pre-existing test failures** across 15
-  test files as of 2026-06-23 (pinned by Codex audit of #419). These are NOT regressions from
-  the MA-07 work — they predate it. The 36 are the honest baseline; any work that increases the
-  count is a regression. Tracked for systematic triage in a future wave. Severity LOW.
+- **GAP-HY-17 (NEW) — OPEN.** BASELINE-TEST-DEBT. These are NOT regressions — they predate the
+  MA-07/WS-2 work. Honest-baseline history (any work that *increases* the count is a regression):
+  - **36 → 35** (2026-06-24): step-6 PR #420 deleted a 0-failure test file
+    (`tests/ci/mastery.status-mapping.test.ts`), dropping the file count; traced, not a regression.
+  - **35 → 8** (2026-06-24, WS-2 PR #422): the WS-2 §16.5 silent-substitution proof requires
+    `tests/tutor.runtime.contract.test.ts` to run, but it failed at app-import because its
+    `supabase-auth` mock omitted the `enforceDeletionLock` export added to `server/index.ts`.
+    Adding the one-line dormant-middleware pass-through to the mock brought that file's 27 tests
+    green (incl. the 4 silent-substitution behavioral proofs), lowering the live baseline to
+    **8 failures across 6 files**.
+  Remaining 6 debt files: `adaptiveSelector.test.ts`, `fullLengthExam.runtime.contract.test.ts`,
+  `fullLengthExam.test.ts`, `guardian-payment-access.test.ts`, `mastery.writepaths.guard.test.ts`,
+  `review-session.lifecycle.contract.test.ts`. Forward anchor: **8**. Tracked for systematic
+  triage in a future wave. Severity LOW.

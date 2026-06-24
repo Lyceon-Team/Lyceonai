@@ -224,6 +224,58 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     );
   });
 
+  // §16.4-5 + INV-03-13: the append-turn block path must SILENTLY substitute the
+  // shared pedagogical fallback, NOT return a 422 error. The violating 422 block
+  // code must not exist anywhere in the route.
+  it("append-turn block path silently substitutes (no 422 TUTOR_ANTI_LEAK_BLOCKED)", () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
+      "utf-8",
+    );
+    // The violating error code is fully removed from the route.
+    expect(src).not.toContain("TUTOR_ANTI_LEAK_BLOCKED");
+
+    // The append-turn path computes a safeContent substitution from the leak check.
+    const appendTurnSection = src.slice(
+      src.indexOf("const cleaned = removeInternalMetadataMentions"),
+    );
+    const nextChunk = appendTurnSection.slice(0, 1500);
+    expect(nextChunk).toContain("const safeContent");
+    expect(nextChunk).toMatch(
+      /preSubmit\s*&&\s*hasDirectAnswerLeak\(cleaned\)\s*\?\s*TUTOR_ANTI_LEAK_SUBSTITUTION/,
+    );
+    // The block path never calls sendTutorError (no error response on a leak).
+    const blockToInsert = nextChunk.slice(
+      0,
+      nextChunk.indexOf("tutor_messages"),
+    );
+    expect(blockToInsert).not.toContain("sendTutorError");
+  });
+
+  // Parallel-paths rule: both block paths (append-turn + replay) emit ONE shared
+  // substitution, the same way.
+  it("both block paths use the single shared TUTOR_ANTI_LEAK_SUBSTITUTION constant", () => {
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
+      "utf-8",
+    );
+    // Defined exactly once as a module-level constant.
+    const defMatches =
+      src.match(/const TUTOR_ANTI_LEAK_SUBSTITUTION\s*=/g) ?? [];
+    expect(defMatches).toHaveLength(1);
+
+    // Referenced by both the append-turn path and the replay path.
+    const refMatches = src.match(/TUTOR_ANTI_LEAK_SUBSTITUTION/g) ?? [];
+    // 1 definition + 2 usages (append-turn safeContent, replay message).
+    expect(refMatches.length).toBeGreaterThanOrEqual(3);
+
+    // The literal pedagogical fallback appears exactly once (the constant), never
+    // duplicated inline at a usage site.
+    const literalMatches =
+      src.match(/Let me think about this differently\./g) ?? [];
+    expect(literalMatches).toHaveLength(1);
+  });
+
   it("replay endpoint applies defense-in-depth leak filter", () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
@@ -235,7 +287,7 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     const replaySection = src.slice(replayIdx, replayIdx + 3000);
     expect(replaySection).toContain("isPreSubmitForSurface");
     expect(replaySection).toContain("hasDirectAnswerLeak");
-    expect(replaySection).toContain("Let me think about this differently.");
+    expect(replaySection).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
   });
 });
 

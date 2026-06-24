@@ -147,13 +147,17 @@ Apply this to:
 | test_review | Gated by completion (already enforced at line 1092-1104) | Return false |
 | dashboard | No question context | Return false |
 
-### Out-of-scope finding (record for follow-up)
+### §16.4-5 silent substitution (CLOSED IN-PR — scope ruling 2026-06-24)
 
-**Doc 03B §16.4-5 violation:** The current filter returns a `422 TUTOR_ANTI_LEAK_BLOCKED`
-error. The spec says scanner-blocked responses must be **silently substituted** with a safe
-fallback ("From the student's perspective, a scanner-blocked response looks like a normal
-LISA turn"). This is a separate spec gap from the scope-widening fix. Noted for follow-up
-but not in scope for this PR (the user said "HALT on ambiguity, don't expand").
+**Doc 03B §16.4-5 + INV-03-13:** scanner-blocked responses must be **silently substituted**
+with a pedagogical fallback ("From the student's perspective, a scanner-blocked response looks
+like a normal LISA turn"). The append-turn path previously returned a `422
+TUTOR_ANTI_LEAK_BLOCKED` — a violation. Folded into TU-04: both block paths (append-turn
+delivery + conversation replay) now emit ONE shared `TUTOR_ANTI_LEAK_SUBSTITUTION` constant the
+same way (parallel-paths rule). No caller branched on the 422 (client only special-cases
+`TUTOR_RECOVERABLE_RETRY_REQUIRED`), so the contract change is safe. The CI gate asserts silent
+substitution on every pre-submit block path; the runtime contract test asserts the delivered +
+persisted turn carries the fallback, never the leaking content.
 
 ## Six-Axis Self-Audit
 
