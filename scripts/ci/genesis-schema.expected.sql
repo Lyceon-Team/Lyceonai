@@ -1286,10 +1286,11 @@ $$;
 CREATE FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text DEFAULT 'hard_delete'::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
-    AS $$
+    AS $_$
 DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
+  v_op_ref   record;  -- LYCEON-MIGRATION-REVIEWED (operator-FK preflight guard)
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
@@ -1334,6 +1335,80 @@ BEGIN
       'The cron driver must mark the request completed (after deidentify_user) before calling cascade.',
       p_profile_id;
   END IF;
+
+  -- ========================================================================
+  -- OPERATOR-FK PREFLIGHT GUARD (fail-closed, before ANY destructive step)
+  -- ========================================================================
+  -- 36 operator-identity FK edges (updated_by_profile_id / changed_by_profile_id
+  -- across 18 *_config + 18 *_config_history governance tables). Operator
+  -- attribution is governance data — must BLOCK deletion until consciously
+  -- reassigned (same posture as the RESTRICT identity seam). The guard
+  -- refuses cascade with a clear error BEFORE any rows are deleted.
+  --
+  -- FK-surface exhaustive partition (59 edges total, proven 2026-06-25):
+  --   5 auto-CASCADE  (abuse_score_incidents, abuse_scores, legal_acceptances,
+  --                     notification_outbox, rate_limit_ledger)
+  --   1 auto-SET-NULL (profiles.guardian_profile_id self-FK)
+  --   9 pre-cleared   (entitlements, 4×guardian_links, 2×guardian_consent_requests,
+  --                     2×account_deletion_requests)
+  --   6 L1/L2-deleted (review_schedule, practice_sessions, practice_session_items,
+  --                     review_sessions, review_session_items, review_error_attempts)
+  --   2 dropped       (audit_logs actor/target — Q6 ruling)
+  --  36 operator-guarded (this preflight)
+  --  ── ─────────────────────────────────────────────────────
+  --  59 total = complete partition, no edge unaccounted
+  -- LYCEON-MIGRATION-REVIEWED
+  FOR v_op_ref IN
+    SELECT * FROM (VALUES
+      ('abuse_score_runtime_config'::text,              'updated_by_profile_id'::text),
+      ('abuse_score_runtime_config_history',            'changed_by_profile_id'),
+      ('account_deletion_runtime_config',               'updated_by_profile_id'),
+      ('account_deletion_runtime_config_history',       'changed_by_profile_id'),
+      ('auth_mfa_config',                               'updated_by_profile_id'),
+      ('auth_mfa_config_history',                       'changed_by_profile_id'),
+      ('auth_runtime_config',                           'updated_by_profile_id'),
+      ('auth_runtime_config_history',                   'changed_by_profile_id'),
+      ('caching_runtime_config',                        'updated_by_profile_id'),
+      ('caching_runtime_config_history',                'changed_by_profile_id'),
+      ('consent_runtime_config',                        'updated_by_profile_id'),
+      ('consent_runtime_config_history',                'changed_by_profile_id'),
+      ('entitlement_runtime_config',                    'updated_by_profile_id'),
+      ('entitlement_runtime_config_history',            'changed_by_profile_id'),
+      ('exam_runtime_config',                           'updated_by_profile_id'),
+      ('exam_runtime_config_history',                   'changed_by_profile_id'),
+      ('full_length_adaptive_config',                   'updated_by_profile_id'),
+      ('full_length_adaptive_config_history',           'changed_by_profile_id'),
+      ('idempotency_runtime_config',                    'updated_by_profile_id'),
+      ('idempotency_runtime_config_history',            'changed_by_profile_id'),
+      ('internal_service_auth_config',                  'updated_by_profile_id'),
+      ('internal_service_auth_config_history',          'changed_by_profile_id'),
+      ('mastery_constants',                             'updated_by_profile_id'),
+      ('mastery_constants_history',                     'changed_by_profile_id'),
+      ('mobile_auth_config',                            'updated_by_profile_id'),
+      ('mobile_auth_config_history',                    'changed_by_profile_id'),
+      ('observability_runtime_config',                  'updated_by_profile_id'),
+      ('observability_runtime_config_history',          'changed_by_profile_id'),
+      ('practice_runtime_config',                       'updated_by_profile_id'),
+      ('practice_runtime_config_history',               'changed_by_profile_id'),
+      ('rate_limit_runtime_config',                     'updated_by_profile_id'),
+      ('rate_limit_runtime_config_history',             'changed_by_profile_id'),
+      ('review_runtime_config',                         'updated_by_profile_id'),
+      ('review_runtime_config_history',                 'changed_by_profile_id'),
+      ('tutor_context_runtime_config',                  'updated_by_profile_id'),
+      ('tutor_context_runtime_config_history',          'changed_by_profile_id')
+    ) AS t(tbl, col)
+  LOOP
+    EXECUTE format(
+      'SELECT count(*) FROM public.%I WHERE %I = $1',
+      v_op_ref.tbl, v_op_ref.col
+    ) INTO v_count USING p_profile_id;
+    IF v_count > 0 THEN
+      RAISE EXCEPTION 'PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES: '
+        'profile % is referenced as an operator in %.% '
+        '— reassign config attributions before deletion',
+        p_profile_id, v_op_ref.tbl, v_op_ref.col;
+    END IF;
+  END LOOP;
 
   -- ========================================================================
   -- PRE-CLEAR: RESTRICT + NO ACTION FKs that block profile deletion
@@ -1493,6 +1568,8 @@ BEGIN
   -- audit_logs FKs were dropped (DDL above) — rows remain as opaque refs.
   -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles
   -- that reference this profile as their guardian.
+  -- Operator-FK edges (36 config/history tables) were preflight-guarded above.
+  -- LYCEON-MIGRATION-REVIEWED
 
   DELETE FROM public.profiles WHERE id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
@@ -1522,7 +1599,7 @@ BEGIN
     'rows_affected', v_result
   );
 END;
-$$;
+$_$;
 
 
 --
