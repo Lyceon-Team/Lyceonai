@@ -704,6 +704,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
     const userId = user?.id;
     const actorId = user?.actor_id;
     if (!userId) return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED", requestId });
+    if (!actorId) return res.status(500).json({ error: "actor_id not available for user", code: "ACTOR_ID_MISSING", requestId });
 
     if (hasLegacyFreeResponseKeys(req.body)) {
       return res.status(400).json({

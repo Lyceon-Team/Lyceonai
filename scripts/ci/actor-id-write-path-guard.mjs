@@ -2,7 +2,7 @@
 // ============================================================================
 // INV-05E-06 actor_id write-path guard (static grep)
 // ============================================================================
-// @spec [Doc-05E §8 step 2, INV-05E-06]
+// @spec [Doc-05E §8 step 2, INV-05E-03/INV-05E-06 | SCL-011]
 // Scans every .insert({ targeting the 5 activity tables for the presence of
 // actor_id in the insert object. Catches omissions at CI time.
 //
@@ -38,8 +38,8 @@ function walk(dir) {
         results.push(full);
       }
     }
-  } catch {
-    // directory may not exist in all environments
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
   }
   return results;
 }
