@@ -15,6 +15,7 @@
 --   (E) Idempotent re-run: returns 'no_op' with no side effects
 --   (F) Status guard: cascade without a completed request RAISEs
 --   (G) Privacy mode guard: 'anonymize' RAISEs BLOCKING_PRIVACY_GAP
+--   (I) Operator-FK preflight guard: config references block cascade fail-closed
 --
 -- Self-contained DO block. Zero residue on success. Any assertion failure
 -- RAISEs and rolls everything back.
@@ -315,6 +316,40 @@ BEGIN
   RAISE NOTICE '(G) OK  anonymize mode raises BLOCKING_PRIVACY_GAP';
 
   -- ==================================================================
+  -- (I) OPERATOR-FK PREFLIGHT GUARD: config references block cascade
+  -- ==================================================================
+  -- Seed TARGET as an operator in mastery_constants, run cascade, assert
+  -- PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES raised and NOTHING deleted
+  -- (fail-closed proof). Then clear the ref so (B) cascade proceeds.
+  UPDATE public.mastery_constants SET updated_by_profile_id = v_target
+   WHERE key = 'POSITION_HALF_LIFE';
+
+  BEGIN
+    v_blocked := false;
+    SELECT (public.execute_account_deletion_cascade(v_target, 'hard_delete')) INTO v_result;
+    RAISE EXCEPTION '(I) cascade did NOT raise for profile with operator config references';
+  EXCEPTION WHEN OTHERS THEN
+    v_blocked := true;
+    IF SQLERRM NOT LIKE '%PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES%' THEN
+      RAISE EXCEPTION '(I) wrong error message: %', SQLERRM;
+    END IF;
+  END;
+  IF NOT v_blocked THEN
+    RAISE EXCEPTION '(I) operator-FK guard should have blocked cascade';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM public.student_skill_mastery WHERE student_id = v_target;
+  IF v_count = 0 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET student_skill_mastery deleted despite guard'; END IF;
+
+  SELECT count(*) INTO v_count FROM public.profiles WHERE id = v_target;
+  IF v_count <> 1 THEN RAISE EXCEPTION '(I) FAIL-CLOSED VIOLATED: TARGET profile missing despite guard'; END IF;
+
+  UPDATE public.mastery_constants SET updated_by_profile_id = NULL
+   WHERE updated_by_profile_id = v_target;
+
+  RAISE NOTICE '(I) OK  operator-FK preflight guard fires and is fail-closed (TARGET intact); cleared for cascade';
+
+  -- ==================================================================
   -- (B) EXECUTE CASCADE on TARGET
   -- ==================================================================
   SELECT public.execute_account_deletion_cascade(v_target, 'hard_delete') INTO v_result;
@@ -556,5 +591,5 @@ BEGIN
   DELETE FROM public.profiles WHERE id = v_control;
   DELETE FROM auth.users WHERE id = v_control;
 
-  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards + storage proven (zero residue)';
+  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards + storage + operator-FK-guard proven (zero residue)';
 END $$;
