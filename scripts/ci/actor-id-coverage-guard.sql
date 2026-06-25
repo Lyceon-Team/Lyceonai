@@ -133,6 +133,40 @@ BEGIN
   END IF;
   RAISE NOTICE 'INV-05E-03 [G5] OK: 2 audit-table student_id columns remain NOT NULL';
 
+  -- ========================================================================
+  -- G6: Defense-in-depth — no row may have non-null identity + null actor_id
+  -- ========================================================================
+  -- Structural check: for every activity table, verify that the column DEFAULT
+  -- or constraint setup makes it impossible to have identity present but
+  -- actor_id absent. At genesis-fresh-apply there are no rows, so this guard
+  -- checks the schema: actor_id column must exist (covered by G1) and must NOT
+  -- have a DEFAULT that would silently supply a value (which would hide a
+  -- missing app-layer stamp). The row-level invariant is:
+  --   NOT (identity IS NOT NULL AND actor_id IS NULL)
+  -- Enforced at runtime by the app-layer stamp (TS inserts) and SQL RAISE
+  -- (audit functions). NOT NULL constraint deferred to 5c-tail after backfill.
+  SELECT string_agg(t, ', ')
+    INTO v_missing
+    FROM unnest(ARRAY[
+      'practice_sessions',
+      'practice_session_items',
+      'review_sessions',
+      'review_session_items',
+      'review_error_attempts'
+    ]) AS t
+   WHERE EXISTS (
+     SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.table_name   = t
+        AND c.column_name  = 'actor_id'
+        AND c.column_default IS NOT NULL
+   );
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'INV-05E-03 FAIL [G6]: activity-table actor_id must NOT have a DEFAULT (app-layer stamps it): %', v_missing;
+  END IF;
+  RAISE NOTICE 'INV-05E-03 [G6] OK: 5 activity-table actor_id columns have no DEFAULT (app-layer responsibility)';
+
   RAISE NOTICE 'INV-05E-03 COVERAGE GUARD: ALL PASS';
 
 END $guard$;

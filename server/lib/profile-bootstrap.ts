@@ -26,7 +26,7 @@ const ACCOUNT_EMAIL_CONFLICT_MESSAGE =
   "An account already exists for this email. Sign in with your original method.";
 
 const PROFILE_SELECT =
-  "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at";
+  "id, email, display_name, role, is_under_13, guardian_consent, guardian_email, student_link_code, profile_completed_at, actor_id";
 
 type ProfileRow = {
   id: string;
@@ -38,6 +38,7 @@ type ProfileRow = {
   guardian_email: string | null;
   student_link_code: string | null;
   profile_completed_at: string | null;
+  actor_id: string;
 };
 
 type EnsureProfileContext = {

@@ -160,6 +160,7 @@ export interface SupabaseUser {
   username?: string;
   name?: string;
   student_link_code?: string | null;
+  actor_id: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -564,6 +565,7 @@ export async function supabaseAuthMiddleware(
       guardian_consent: profile.guardian_consent,
       profile_completed_at: profile.profile_completed_at ?? null,
       student_link_code: profile.student_link_code,
+      actor_id: profile.actor_id,
       // Legacy fields for backward compatibility with old auth
       username: profile.email.split("@")[0], // Use email prefix as username
       name: profile.display_name || profile.email.split("@")[0],
