@@ -18,6 +18,7 @@
 #   (E) Idempotent re-run returns no_op
 #   (F) Status guard blocks cascade without completed deletion request
 #   (G) Anonymize mode raises BLOCKING_PRIVACY_GAP
+#   (I) Operator-FK preflight guard: config references block cascade fail-closed
 #
 # Connection via standard PG* env (PGHOST/PGPORT/PGUSER/PGPASSWORD). Defaults
 # to a local cluster on :5432.
