@@ -231,6 +231,13 @@ BEGIN
     (v_target, now() - interval '8 days', now() - interval '1 day', v_target, 'completed', 'completed', now());
 
   -- ==================================================================
+  -- SEED: storage.objects (Supabase Storage — avatar uploads expected post-launch)
+  -- ==================================================================
+  INSERT INTO storage.objects (id, bucket_id, name, owner, owner_id) VALUES
+    (gen_random_uuid(), 'avatars', 'target-avatar.png', v_target, v_target::text),
+    (gen_random_uuid(), 'avatars', 'control-avatar.png', v_control, v_control::text);
+
+  -- ==================================================================
   -- (A) PRE-CASCADE: verify both TARGET and CONTROL have rows
   -- ==================================================================
   SELECT count(*) INTO v_count FROM public.student_skill_mastery WHERE student_id = v_target;
@@ -267,7 +274,8 @@ BEGIN
     'meal',  (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mdral', (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'ent',   (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control)
+    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control),
+    'sto',   (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
   ) INTO v_control_snapshot;
 
   -- ==================================================================
@@ -389,7 +397,11 @@ BEGIN
   SELECT count(*) INTO v_count FROM auth.users WHERE id = v_target;
   IF v_count > 0 THEN RAISE EXCEPTION '(C) auth.users not deleted: %', v_count; END IF;
 
-  RAISE NOTICE '(C) OK  TARGET has 0 rows in ALL in-scope tables (L1 + L2 + pre-clear + profile + auth)';
+  -- Storage
+  SELECT count(*) INTO v_count FROM storage.objects WHERE owner = v_target OR owner_id = v_target::text;
+  IF v_count > 0 THEN RAISE EXCEPTION '(C) storage.objects not purged: %', v_count; END IF;
+
+  RAISE NOTICE '(C) OK  TARGET has 0 rows in ALL in-scope tables (L1 + L2 + pre-clear + storage + profile + auth)';
 
   -- ==================================================================
   -- (D) POST-CASCADE: CONTROL row counts UNCHANGED
@@ -414,7 +426,8 @@ BEGIN
     'meal',  (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mdral', (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'ent',   (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control)
+    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control),
+    'sto',   (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
   ) INTO v_control_post;
 
   IF v_control_snapshot <> v_control_post THEN
@@ -481,16 +494,22 @@ BEGIN
     CREATE TRIGGER _trg_d18_block BEFORE DELETE ON public.mastery_event_audit_log FOR EACH ROW EXECUTE FUNCTION public._test_block_audit_delete();
 
     BEGIN
-      SELECT public.execute_account_deletion_cascade(v_rollback, 'hard_delete') INTO v_result;
-      RAISE EXCEPTION '(H) cascade should have failed due to injected trigger';
+      BEGIN
+        SELECT public.execute_account_deletion_cascade(v_rollback, 'hard_delete') INTO v_result;
+        RAISE EXCEPTION '(H) cascade should have failed due to injected trigger';
+      EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM NOT LIKE '%D18 injected failure%' THEN
+          RAISE EXCEPTION '(H) unexpected error: %', SQLERRM;
+        END IF;
+      END;
     EXCEPTION WHEN OTHERS THEN
-      IF SQLERRM NOT LIKE '%D18 injected failure%' THEN
-        RAISE EXCEPTION '(H) unexpected error: %', SQLERRM;
-      END IF;
+      DROP TRIGGER IF EXISTS _trg_d18_block ON public.mastery_event_audit_log;
+      DROP FUNCTION IF EXISTS public._test_block_audit_delete();
+      RAISE;
     END;
 
-    DROP TRIGGER _trg_d18_block ON public.mastery_event_audit_log;
-    DROP FUNCTION public._test_block_audit_delete();
+    DROP TRIGGER IF EXISTS _trg_d18_block ON public.mastery_event_audit_log;
+    DROP FUNCTION IF EXISTS public._test_block_audit_delete();
 
     SELECT count(*) INTO v_l1_post FROM public.student_skill_mastery WHERE student_id = v_rollback;
     IF v_l1_post <> v_l1_pre THEN
@@ -533,8 +552,9 @@ BEGIN
   DELETE FROM public.student_domain_mastery WHERE student_id = v_control;
   DELETE FROM public.student_skill_mastery WHERE student_id = v_control;
   DELETE FROM public.entitlements WHERE profile_id = v_control;
+  DELETE FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text;
   DELETE FROM public.profiles WHERE id = v_control;
   DELETE FROM auth.users WHERE id = v_control;
 
-  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards proven (zero residue)';
+  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards + storage proven (zero residue)';
 END $$;

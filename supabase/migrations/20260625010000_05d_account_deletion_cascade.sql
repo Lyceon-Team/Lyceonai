@@ -269,6 +269,17 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('profiles', v_count);
 
+  -- STORAGE PURGE — Supabase storage.objects has owner (uuid, legacy) and
+  -- owner_id (text, current) columns referencing auth.users. Owning objects
+  -- BLOCKS auth.users deletion. Neither is populated yet (no uploads), so
+  -- purge on BOTH to be correct regardless of which the app writes.
+  -- SECURITY DEFINER runs as postgres ⟹ storage RLS bypassed.
+  -- LYCEON-MIGRATION-REVIEWED (load-bearing for avatars post-launch)
+  DELETE FROM storage.objects
+   WHERE owner = p_profile_id OR owner_id = p_profile_id::text;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('storage_objects', v_count);
+
   -- auth.users — profiles.id REFERENCES auth.users(id) ON DELETE RESTRICT.
   -- The profile row is gone, so the RESTRICT is released.
   DELETE FROM auth.users WHERE id = p_profile_id;
