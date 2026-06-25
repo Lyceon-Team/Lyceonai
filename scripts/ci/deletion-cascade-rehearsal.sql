@@ -231,12 +231,8 @@ BEGIN
   VALUES
     (v_target, now() - interval '8 days', now() - interval '1 day', v_target, 'completed', 'completed', now());
 
-  -- ==================================================================
-  -- SEED: storage.objects (Supabase Storage — avatar uploads expected post-launch)
-  -- ==================================================================
-  INSERT INTO storage.objects (id, bucket_id, name, owner, owner_id) VALUES
-    (gen_random_uuid(), 'avatars', 'target-avatar.png', v_target, v_target::text),
-    (gen_random_uuid(), 'avatars', 'control-avatar.png', v_control, v_control::text);
+  -- Storage seed REMOVED: storage purge is owned by PR-4 orchestration layer
+  -- (Supabase Storage API, not SQL). See GAP-PR4-STORAGE.
 
   -- ==================================================================
   -- (A) PRE-CASCADE: verify both TARGET and CONTROL have rows
@@ -275,8 +271,7 @@ BEGIN
     'meal',  (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mdral', (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'ent',   (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control),
-    'sto',   (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
+    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control)
   ) INTO v_control_snapshot;
 
   -- ==================================================================
@@ -432,11 +427,9 @@ BEGIN
   SELECT count(*) INTO v_count FROM auth.users WHERE id = v_target;
   IF v_count > 0 THEN RAISE EXCEPTION '(C) auth.users not deleted: %', v_count; END IF;
 
-  -- Storage
-  SELECT count(*) INTO v_count FROM storage.objects WHERE owner = v_target OR owner_id = v_target::text;
-  IF v_count > 0 THEN RAISE EXCEPTION '(C) storage.objects not purged: %', v_count; END IF;
+  -- Storage purge is NOT tested here — owned by PR-4 orchestration layer (GAP-PR4-STORAGE).
 
-  RAISE NOTICE '(C) OK  TARGET has 0 rows in ALL in-scope tables (L1 + L2 + pre-clear + storage + profile + auth)';
+  RAISE NOTICE '(C) OK  TARGET has 0 rows in ALL in-scope tables (L1 + L2 + pre-clear + profile + auth)';
 
   -- ==================================================================
   -- (D) POST-CASCADE: CONTROL row counts UNCHANGED
@@ -461,8 +454,7 @@ BEGIN
     'meal',  (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mdral', (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'ent',   (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control),
-    'sto',   (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
+    'prof',  (SELECT count(*) FROM public.profiles WHERE id = v_control)
   ) INTO v_control_post;
 
   IF v_control_snapshot <> v_control_post THEN
@@ -587,9 +579,8 @@ BEGIN
   DELETE FROM public.student_domain_mastery WHERE student_id = v_control;
   DELETE FROM public.student_skill_mastery WHERE student_id = v_control;
   DELETE FROM public.entitlements WHERE profile_id = v_control;
-  DELETE FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text;
   DELETE FROM public.profiles WHERE id = v_control;
   DELETE FROM auth.users WHERE id = v_control;
 
-  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards + storage + operator-FK-guard proven (zero residue)';
+  RAISE NOTICE '==> CASCADE REHEARSAL PASSED: exact-target + control-untouched + idempotent + guards + operator-FK-guard proven (zero residue; storage purge deferred to PR-4 API layer)';
 END $$;
