@@ -1,7 +1,7 @@
 -- ============================================================================
--- INV-05E-03 Coverage Guard — actor_id substrate (PR-5a stub)
+-- INV-05E-03 Coverage Guard — actor_id substrate + write-path stamping (PR-5a/5b)
 -- ============================================================================
--- @spec [Doc-05E §6 INV-05E-03, SCL-011 authoritative 66-table partition]
+-- @spec [Doc-05E §6 INV-05E-03, SCL-011] | @implemented [2026-06-25]
 -- Asserts that the actor_id substrate is correctly applied:
 --   1. All 7 target tables (5 activity + 2 audit) have actor_id uuid
 --   2. profiles.actor_id exists, is NOT NULL, uuid
