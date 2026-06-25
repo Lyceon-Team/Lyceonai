@@ -2758,6 +2758,16 @@ CREATE TABLE public.account_deletion_runtime_config_history (
 
 
 --
+-- Name: anonymized_actors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anonymized_actors (
+    actor_id uuid NOT NULL,
+    anonymized_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3354,6 +3364,7 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
     mastery_model_version text NOT NULL,
     triggered_by text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid,
     CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
@@ -3385,6 +3396,7 @@ CREATE TABLE public.mastery_event_audit_log (
     constants_snapshot_hash text NOT NULL,
     mastery_model_version text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid,
     CONSTRAINT mastery_event_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_event_audit_log_event_source_kind_check CHECK ((event_source_kind = ANY (ARRAY['practice_attempt'::text, 'diagnostic_attempt'::text, 'review_error_attempt'::text, 'full_length_answer'::text]))),
     CONSTRAINT mastery_event_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3529,7 +3541,7 @@ CREATE TABLE public.practice_runtime_config_history (
 CREATE TABLE public.practice_session_items (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_id uuid NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     ordinal integer NOT NULL,
     question_id text NOT NULL,
     question_stem text NOT NULL,
@@ -3551,6 +3563,7 @@ CREATE TABLE public.practice_session_items (
     answered_at timestamp with time zone,
     served_at timestamp with time zone,
     occurred_at timestamp with time zone,
+    actor_id uuid,
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3564,7 +3577,7 @@ CREATE TABLE public.practice_session_items (
 
 CREATE TABLE public.practice_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     mode text NOT NULL,
     filters jsonb DEFAULT '{}'::jsonb NOT NULL,
     target_count integer NOT NULL,
@@ -3575,6 +3588,7 @@ CREATE TABLE public.practice_sessions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
+    actor_id uuid,
     CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
@@ -3607,7 +3621,8 @@ CREATE TABLE public.profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     student_link_code text,
     profile_completed_at timestamp with time zone,
-    marketing_opt_in boolean DEFAULT false NOT NULL
+    marketing_opt_in boolean DEFAULT false NOT NULL,
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
 );
 
 
@@ -3735,7 +3750,7 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 CREATE TABLE public.review_error_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_item_id uuid,
-    student_id uuid NOT NULL,
+    student_id uuid,
     question_id text NOT NULL,
     selected_answer text,
     is_correct boolean NOT NULL,
@@ -3747,6 +3762,7 @@ CREATE TABLE public.review_error_attempts (
     skill text NOT NULL,
     difficulty smallint NOT NULL,
     occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid,
     CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
     CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
@@ -3816,7 +3832,7 @@ CREATE TABLE public.review_schedule (
 CREATE TABLE public.review_session_items (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     ordinal integer NOT NULL,
     question_id text NOT NULL,
     question_stem text NOT NULL,
@@ -3834,6 +3850,7 @@ CREATE TABLE public.review_session_items (
     served_at timestamp with time zone,
     answered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid,
     CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
@@ -3847,12 +3864,13 @@ CREATE TABLE public.review_session_items (
 
 CREATE TABLE public.review_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     status text DEFAULT 'active'::text NOT NULL,
     source_origin text NOT NULL,
     client_instance_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid,
     CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
     CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
 );
@@ -4092,6 +4110,14 @@ ALTER TABLE ONLY public.account_deletion_runtime_config_history
 
 ALTER TABLE ONLY public.account_deletion_runtime_config
     ADD CONSTRAINT account_deletion_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: anonymized_actors anonymized_actors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anonymized_actors
+    ADD CONSTRAINT anonymized_actors_pkey PRIMARY KEY (actor_id);
 
 
 --
@@ -4891,6 +4917,13 @@ CREATE INDEX idx_practice_sessions_active ON public.practice_sessions USING btre
 --
 
 CREATE INDEX idx_practice_sessions_user ON public.practice_sessions USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_profiles_actor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_profiles_actor_id ON public.profiles USING btree (actor_id);
 
 
 --
@@ -5940,6 +5973,12 @@ ALTER TABLE public.account_deletion_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.account_deletion_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: anonymized_actors; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.anonymized_actors ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7271,6 +7310,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_confi
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE anonymized_actors; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.anonymized_actors TO service_role;
 
 
 --
