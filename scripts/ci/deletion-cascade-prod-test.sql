@@ -5,8 +5,8 @@
 --
 -- FOR KARL ONLY. This script runs against PROD data. It is NOT auto-run by CI.
 --
--- TARGET: 2be9e01e-eaf5-40f1-bcf7-f6894682075d  (will be cascade-deleted)
--- CONTROL: 30d5d035-ab51-4b2f-9882-4ce87219a054  (must survive untouched)
+-- USAGE:
+--   psql -v target_id="'<target-uuid>'" -v control_id="'<control-uuid>'" -f deletion-cascade-prod-test.sql
 --
 -- STEPS:
 --   1. Pre-snapshot both profiles (row counts in all in-scope tables)
@@ -18,10 +18,23 @@
 -- Karl triggers the destructive exec.
 -- ============================================================================
 
+-- psql variables: pass via -v target_id="'uuid'" -v control_id="'uuid'"
+-- Fail fast if not provided.
+\if :{?target_id}
+\else
+  \echo 'FATAL: -v target_id required'
+  \quit
+\endif
+\if :{?control_id}
+\else
+  \echo 'FATAL: -v control_id required'
+  \quit
+\endif
+
 DO $$
 DECLARE
-  v_target  uuid := '2be9e01e-eaf5-40f1-bcf7-f6894682075d';
-  v_control uuid := '30d5d035-ab51-4b2f-9882-4ce87219a054';
+  v_target  uuid := :target_id;
+  v_control uuid := :control_id;
   v_result  jsonb;
   v_count   bigint;
   v_target_snapshot  jsonb;

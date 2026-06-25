@@ -20,6 +20,14 @@
 --
 -- PR-4 reuse: the cron driver (grace-expiry) selects qualifying profiles and calls
 --   this function in a loop. PR-4 adds ZERO schema.
+--
+-- OWNER RULINGS (applied):
+--   Q2: deletion request row is DELETED (not preserved) by the cascade. §10.5
+--       "remains in soft-delete state" is satisfied by transactional rollback on
+--       failure — the request survives if cascade fails. On success, the request
+--       row is consumed and gone with the profile.
+--   Q3: review_schedule added as L1 table #11 (spec §10.2 lists 10; Q3 ruling
+--       classifies review_schedule as identity-linked SM-2 state, not event data).
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -72,6 +80,13 @@ BEGIN
   -- ========================================================================
   -- IDEMPOTENCY: profile already gone → clean no-op (§10.5)
   -- ========================================================================
+  -- §10.5 defines idempotency as "the function may be called again … identical
+  -- result." In hard-delete mode the profile row IS the idempotency signal:
+  -- absent profile ⟹ cascade already completed ⟹ return no_op. The deletion
+  -- request row is also gone (Q2 ruling), so profile absence is the only
+  -- durable signal. This deviates from §10.5's assumption that the request
+  -- "remains in soft-delete state," which is satisfied instead by
+  -- transactional rollback on failure. LYCEON-MIGRATION-REVIEWED
   IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_profile_id) THEN
     RETURN jsonb_build_object('status', 'no_op', 'reason', 'profile does not exist (already cascaded)');
   END IF;

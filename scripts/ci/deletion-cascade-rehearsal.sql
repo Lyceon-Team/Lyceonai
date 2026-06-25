@@ -444,6 +444,74 @@ BEGIN
   RAISE NOTICE '(E) OK  idempotent re-run returned no_op; CONTROL still unchanged';
 
   -- ==================================================================
+  -- (H) D18 ROLLBACK PROOF: mid-cascade failure rolls back ALL changes
+  -- ==================================================================
+  -- INV-05D-16/D18: cascade is atomic — partial completion is not possible.
+  -- Inject a BEFORE DELETE trigger on a late L2 table that forces failure,
+  -- then verify L1 rows survive (proving the transaction rolled back).
+  DECLARE
+    v_rollback uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    v_l1_pre   bigint;
+    v_l1_post  bigint;
+  BEGIN
+    INSERT INTO auth.users (id, email) VALUES (v_rollback, 'rollback@example.com');
+    UPDATE public.profiles SET display_name = 'Rollback', deleted_at = now() - interval '8 days' WHERE id = v_rollback;
+
+    INSERT INTO public.student_skill_mastery (student_id, section, domain, skill, mastery_score, mastery_level, event_count_total, mastery_model_version, constants_snapshot_hash, computed_at)
+    VALUES (v_rollback, 'M', 'Algebra', 'ALG.01', 0.7500, 3, 5, 'v1.0', 'testhash', now());
+
+    INSERT INTO public.mastery_event_audit_log (
+      student_id, section, domain, skill, source_family, event_source_kind,
+      event_id, correct, difficulty, occurred_at,
+      event_count_after, constants_snapshot_hash, mastery_model_version, applied_at
+    ) VALUES (
+      v_rollback, 'M', 'Algebra', 'ALG.01', 'practice', 'practice_attempt',
+      gen_random_uuid(), true, 2, now(),
+      1, 'testhash', 'v1.0', now()
+    );
+
+    INSERT INTO public.account_deletion_requests
+      (profile_id, requested_at, scheduled_hard_delete_at, actor_profile_id, status, stripe_cancellation_status, completion_at)
+    VALUES (v_rollback, now(), now() - interval '1 day', v_rollback, 'completed', 'completed', now());
+
+    SELECT count(*) INTO v_l1_pre FROM public.student_skill_mastery WHERE student_id = v_rollback;
+
+    CREATE OR REPLACE FUNCTION public._test_block_audit_delete() RETURNS trigger LANGUAGE plpgsql AS $t$
+    BEGIN RAISE EXCEPTION 'D18 injected failure'; END; $t$;
+    CREATE TRIGGER _trg_d18_block BEFORE DELETE ON public.mastery_event_audit_log FOR EACH ROW EXECUTE FUNCTION public._test_block_audit_delete();
+
+    BEGIN
+      SELECT public.execute_account_deletion_cascade(v_rollback, 'hard_delete') INTO v_result;
+      RAISE EXCEPTION '(H) cascade should have failed due to injected trigger';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%D18 injected failure%' THEN
+        RAISE EXCEPTION '(H) unexpected error: %', SQLERRM;
+      END IF;
+    END;
+
+    DROP TRIGGER _trg_d18_block ON public.mastery_event_audit_log;
+    DROP FUNCTION public._test_block_audit_delete();
+
+    SELECT count(*) INTO v_l1_post FROM public.student_skill_mastery WHERE student_id = v_rollback;
+    IF v_l1_post <> v_l1_pre THEN
+      RAISE EXCEPTION '(H) D18 VIOLATED: L1 rows changed after mid-cascade failure (pre=%, post=%)', v_l1_pre, v_l1_post;
+    END IF;
+
+    SELECT count(*) INTO v_count FROM public.profiles WHERE id = v_rollback;
+    IF v_count <> 1 THEN
+      RAISE EXCEPTION '(H) D18: profile should survive rollback (count=%)', v_count;
+    END IF;
+
+    DELETE FROM public.mastery_event_audit_log WHERE student_id = v_rollback;
+    DELETE FROM public.student_skill_mastery WHERE student_id = v_rollback;
+    DELETE FROM public.account_deletion_requests WHERE profile_id = v_rollback;
+    DELETE FROM public.profiles WHERE id = v_rollback;
+    DELETE FROM auth.users WHERE id = v_rollback;
+
+    RAISE NOTICE '(H) OK  D18 rollback proof: mid-cascade failure preserved all L1 rows + profile';
+  END;
+
+  -- ==================================================================
   -- SELF-CLEAN: remove CONTROL seed (TARGET already gone from cascade)
   -- ==================================================================
   DELETE FROM public.review_error_attempts WHERE student_id = v_control;
