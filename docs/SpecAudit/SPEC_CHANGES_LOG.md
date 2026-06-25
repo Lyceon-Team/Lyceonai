@@ -25,6 +25,39 @@
 
 ## Entries
 
+### SCL-011 — Authoritative user-scoped table partition (66 tables, proven 2026-06-25)
+**Date:** 2026-06-25 · **Status:** OPEN · **Touches:** 05E §5/§6 (INV-05E-03), INV-DELETION-COMPLETE
+**Change:** Live enumeration proves 66 user-scoped tables, partitioned: 5 ACTIVITY (need actor_id:
+practice_sessions, practice_session_items, review_sessions, review_session_items,
+review_error_attempts) + 2 AUDIT-LAYER (actor_id for grouping, one-way anonymized per 05D §10:
+mastery_event_audit_log, mastery_domain_refresh_audit_log) + 12 DERIVED (deleted at anonymize) +
+34 OPERATOR-CONFIG (updated_by/changed_by — operator-FK preflight guard, NOT user activity, no
+actor_id) + 7 IDENTITY/BILLING/CONSENT (pre-clear/scrub) + 4 OPERATIONAL (auto-cascade) + 2
+governance-constants (mastery_constants/_history). Zero unclassified-with-student-data.
+**CORRECTION captured here:** the audit layer is 2 tables, not 1 — an earlier PR-5a scope pass named
+only mastery_event_audit_log and missed mastery_domain_refresh_audit_log. Surfaced by the owner's
+demand for exhaustive enumeration ("are there truly only these"). PR-5a actor_id column-add covers 7
+tables (5 activity + 2 audit). This partition is the authoritative enumeration that
+INV-DELETION-COMPLETE / INV-05E-03 must encode; prose lists elsewhere are non-authoritative.
+**Artifact:** Live-proven partition (Supabase introspection 2026-06-25). CI guard:
+scripts/ci/actor-id-coverage-guard.sql (PR-5a stub asserts the 7 tables + profiles + ledger +
+nullability split). Migration: 20260625020000_05e_actor_id_substrate.sql (applied + verified live).
+
+### SCL-010 — Doc 05E supersedes Doc 05D §10.2 Layer-2 mechanism (v_surrogate → actor_id)
+**Date:** 2026-06-25 · **Status:** OPEN · **Touches:** 05D §10.2, 05E §3/§5
+**Change:** Doc 05D §10.2 specifies Layer-2 anonymization via `v_surrogate` — re-key the identity
+column IN PLACE to one gen_random_uuid() generated AT anonymization time, reused across Layer-2
+tables. Doc 05E SUPERSEDES this with the decoupled actor_id mechanism: a SEPARATE actor_id column,
+assigned at PROFILE-CREATION time, with the identity column SET NULL at anonymization. Reason: (1)
+actor_id enables pre-anonymization trajectory grouping (world-model value — the surrogate only
+existed post-anonymization); (2) actor_id is true-anonymization (born dissociated from identity)
+whereas the in-place surrogate briefly co-exists in the identity column. Doc 05E §3 is now canonical
+for the Layer-2 anonymize mechanism; 05D §10.2 Layer-2 v_surrogate is retired. The 05D §10
+HARD-DELETE cascade is UNAFFECTED — it DELETEs rows, does not re-key, and remains the service_role
+admin tool.
+**Artifact:** Doc 05E committed to docs/Spec (cleanup+main). Build: PR-5 wave (PR-5a substrate
+applied + verified live 2026-06-25; 5b write-path stamping next).
+
 ### SCL-009 — Doc 05E created (anonymized-retention governance)
 **Date:** 2026-06-25 · **Status:** OPEN · **Touches:** new Doc 05E; references 05D §10
 **Change:** New governance doc `Doc_05E_Anonymization_Actor_ID.md` defines the anonymize disposition (decoupled synthetic identifier, lifelong cross-service grouping, linkage-destroyed-at-deletion, structured-only retention). Governance-level: owns doctrine/invariants/procedure, not schema.
