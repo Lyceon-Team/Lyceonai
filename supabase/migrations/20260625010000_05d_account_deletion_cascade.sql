@@ -6,8 +6,11 @@
 -- plain English: single-transaction cascade that hard-deletes ALL derived state
 --   (Layer 1: mastery/KPI/projections, Layer 2: practice/review event + audit rows)
 --   for a completed deletion request. Clears RESTRICT FKs, deletes event sources,
---   then deletes the profile + auth.users row. Idempotent: re-run on an already-
---   deleted profile is a clean no-op. The 'anonymize' privacy mode is stubbed but
+--   then deletes the profile + auth.users row. Storage purge is NOT done here —
+--   storage.protect_delete() blocks direct SQL; PR-4 orchestration purges via API.
+--   LYCEON-MIGRATION-REVIEWED (storage-purge removal — protect_delete trigger)
+--   Idempotent: re-run on an already-deleted profile is a clean no-op.
+--   The 'anonymize' privacy mode is stubbed but
 --   not enabled (BLOCKING_PRIVACY_GAP §10.4 — requires privacy/compliance sign-off).
 --
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
@@ -349,16 +352,15 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('profiles', v_count);
 
-  -- STORAGE PURGE — Supabase storage.objects has owner (uuid, legacy) and
-  -- owner_id (text, current) columns referencing auth.users. Owning objects
-  -- BLOCKS auth.users deletion. Neither is populated yet (no uploads), so
-  -- purge on BOTH to be correct regardless of which the app writes.
-  -- SECURITY DEFINER runs as postgres ⟹ storage RLS bypassed.
-  -- LYCEON-MIGRATION-REVIEWED (load-bearing for avatars post-launch)
-  DELETE FROM storage.objects
-   WHERE owner = p_profile_id OR owner_id = p_profile_id::text;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('storage_objects', v_count);
+  -- Storage purge is OWNED BY THE PR-4 orchestration layer: the grace-expiry
+  -- edge function calls the Supabase Storage API to delete the user's objects
+  -- BEFORE invoking this cascade. Direct DELETE FROM storage.objects is blocked
+  -- by storage.protect_delete() — storage deletion is an API operation, not a
+  -- SQL one. See §10 storage-purge seam (PR-4).
+  -- GAP-PR4-STORAGE: PR-4 grace-expiry driver must purge storage.objects via
+  -- the Supabase Storage API BEFORE calling execute_account_deletion_cascade;
+  -- SQL cascade cannot delete storage (protect_delete trigger).
+  -- LYCEON-MIGRATION-REVIEWED
 
   -- auth.users — profiles.id REFERENCES auth.users(id) ON DELETE RESTRICT.
   -- The profile row is gone, so the RESTRICT is released.
