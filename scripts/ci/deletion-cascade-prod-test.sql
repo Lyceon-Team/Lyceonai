@@ -74,8 +74,7 @@ BEGIN
     'mastery_event_audit_log',              (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_target),
     'mastery_domain_refresh_audit_log',     (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_target),
     'entitlements',                         (SELECT count(*) FROM public.entitlements WHERE profile_id = v_target),
-    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_target),
-    'storage_objects',                      (SELECT count(*) FROM storage.objects WHERE owner = v_target OR owner_id = v_target::text)
+    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_target)
   ) INTO v_target_snapshot;
 
   SELECT jsonb_build_object(
@@ -98,8 +97,7 @@ BEGIN
     'mastery_event_audit_log',              (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mastery_domain_refresh_audit_log',     (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'entitlements',                         (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_control),
-    'storage_objects',                      (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
+    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_control)
   ) INTO v_control_snapshot;
 
   RAISE NOTICE 'PRE-SNAPSHOT TARGET:  %', v_target_snapshot;
@@ -186,8 +184,8 @@ BEGIN
   IF v_count > 0 THEN RAISE EXCEPTION 'TARGET profile not deleted: %', v_count; END IF;
   SELECT count(*) INTO v_count FROM auth.users WHERE id = v_target;
   IF v_count > 0 THEN RAISE EXCEPTION 'TARGET auth.users not deleted: %', v_count; END IF;
-  SELECT count(*) INTO v_count FROM storage.objects WHERE owner = v_target OR owner_id = v_target::text;
-  IF v_count > 0 THEN RAISE EXCEPTION 'TARGET storage.objects not purged: %', v_count; END IF;
+  -- Storage purge is NOT tested here — owned by PR-4 orchestration layer (GAP-PR4-STORAGE).
+  -- PR-4 driver must call the Supabase Storage API to purge objects BEFORE this cascade.
 
   RAISE NOTICE 'TARGET: all in-scope tables = 0 rows';
 
@@ -214,8 +212,7 @@ BEGIN
     'mastery_event_audit_log',              (SELECT count(*) FROM public.mastery_event_audit_log WHERE student_id = v_control),
     'mastery_domain_refresh_audit_log',     (SELECT count(*) FROM public.mastery_domain_refresh_audit_log WHERE student_id = v_control),
     'entitlements',                         (SELECT count(*) FROM public.entitlements WHERE profile_id = v_control),
-    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_control),
-    'storage_objects',                      (SELECT count(*) FROM storage.objects WHERE owner = v_control OR owner_id = v_control::text)
+    'profiles',                             (SELECT count(*) FROM public.profiles WHERE id = v_control)
   ) INTO v_control_post;
 
   IF v_control_snapshot <> v_control_post THEN

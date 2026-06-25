@@ -8,8 +8,9 @@
 --   for a completed deletion request. Clears RESTRICT FKs, deletes event sources,
 --   then deletes the profile + auth.users row. Storage purge is NOT done here —
 --   storage.protect_delete() blocks direct SQL; PR-4 orchestration purges via API.
---   LYCEON-MIGRATION-REVIEWED (storage-purge removal — protect_delete trigger) Idempotent: re-run on an already-
---   deleted profile is a clean no-op. The 'anonymize' privacy mode is stubbed but
+--   LYCEON-MIGRATION-REVIEWED (storage-purge removal — protect_delete trigger)
+--   Idempotent: re-run on an already-deleted profile is a clean no-op.
+--   The 'anonymize' privacy mode is stubbed but
 --   not enabled (BLOCKING_PRIVACY_GAP §10.4 — requires privacy/compliance sign-off).
 --
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
