@@ -134,17 +134,44 @@ BEGIN
   RAISE NOTICE 'INV-05E-03 [G5] OK: 2 audit-table student_id columns remain NOT NULL';
 
   -- ========================================================================
-  -- G6: Defense-in-depth — no row may have non-null identity + null actor_id
+  -- G6: Row-level — no row may have identity present + actor_id absent
   -- ========================================================================
-  -- Structural check: for every activity table, verify that the column DEFAULT
-  -- or constraint setup makes it impossible to have identity present but
-  -- actor_id absent. At genesis-fresh-apply there are no rows, so this guard
-  -- checks the schema: actor_id column must exist (covered by G1) and must NOT
-  -- have a DEFAULT that would silently supply a value (which would hide a
-  -- missing app-layer stamp). The row-level invariant is:
-  --   NOT (identity IS NOT NULL AND actor_id IS NULL)
-  -- Enforced at runtime by the app-layer stamp (TS inserts) and SQL RAISE
-  -- (audit functions). NOT NULL constraint deferred to 5c-tail after backfill.
+  -- For each of the 7 target tables: FAIL if any row has its identity column
+  -- IS NOT NULL but actor_id IS NULL. Vacuously true on empty tables;
+  -- load-bearing once seeds/data exist (proves write-path stamps are wired).
+  DECLARE
+    v_g6_tbl text;
+    v_g6_col text;
+    v_g6_cnt bigint;
+  BEGIN
+    FOR v_g6_tbl, v_g6_col IN
+      VALUES
+        ('practice_sessions',                'user_id'),
+        ('practice_session_items',           'user_id'),
+        ('review_sessions',                  'student_id'),
+        ('review_session_items',             'student_id'),
+        ('review_error_attempts',            'student_id'),
+        ('mastery_event_audit_log',          'student_id'),
+        ('mastery_domain_refresh_audit_log', 'student_id')
+    LOOP
+      EXECUTE format(
+        'SELECT count(*) FROM public.%I WHERE %I IS NOT NULL AND actor_id IS NULL',
+        v_g6_tbl, v_g6_col
+      ) INTO v_g6_cnt;
+      IF v_g6_cnt > 0 THEN
+        RAISE EXCEPTION 'INV-05E-03 FAIL [G6]: % row(s) in %.% have identity present but actor_id IS NULL',
+          v_g6_cnt, v_g6_tbl, v_g6_col;
+      END IF;
+    END LOOP;
+    RAISE NOTICE 'INV-05E-03 [G6] OK: no row in 7 tables has identity present + actor_id absent';
+  END;
+
+  -- ========================================================================
+  -- G7: Defense-in-depth — activity-table actor_id must have no DEFAULT
+  -- ========================================================================
+  -- actor_id column must NOT have a DEFAULT that would silently supply a value
+  -- (which would hide a missing app-layer stamp). The app layer is responsible
+  -- for stamping; a DEFAULT would defeat that signal.
   SELECT string_agg(t, ', ')
     INTO v_missing
     FROM unnest(ARRAY[
@@ -163,9 +190,9 @@ BEGIN
    );
 
   IF v_missing IS NOT NULL THEN
-    RAISE EXCEPTION 'INV-05E-03 FAIL [G6]: activity-table actor_id must NOT have a DEFAULT (app-layer stamps it): %', v_missing;
+    RAISE EXCEPTION 'INV-05E-03 FAIL [G7]: activity-table actor_id must NOT have a DEFAULT (app-layer stamps it): %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G6] OK: 5 activity-table actor_id columns have no DEFAULT (app-layer responsibility)';
+  RAISE NOTICE 'INV-05E-03 [G7] OK: 5 activity-table actor_id columns have no DEFAULT (app-layer responsibility)';
 
   RAISE NOTICE 'INV-05E-03 COVERAGE GUARD: ALL PASS';
 

@@ -49,16 +49,17 @@ INSERT INTO auth.users (id,email) VALUES
   ('11111111-1111-1111-1111-111111111111','r@ci'),('22222222-2222-2222-2222-222222222222','a@ci');
 INSERT INTO public.profiles (id,email) VALUES
   ('11111111-1111-1111-1111-111111111111','r@ci'),('22222222-2222-2222-2222-222222222222','a@ci');
-INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id) VALUES
-  ('1111aaaa-0000-0000-0000-000000000000','11111111-1111-1111-1111-111111111111','flow',5,'web','ci'),
-  ('2222aaaa-0000-0000-0000-000000000000','22222222-2222-2222-2222-222222222222','flow',5,'web','ci');
+INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id,actor_id) VALUES
+  ('1111aaaa-0000-0000-0000-000000000000','11111111-1111-1111-1111-111111111111','flow',5,'web','ci',(SELECT actor_id FROM public.profiles WHERE id = '11111111-1111-1111-1111-111111111111')),
+  ('2222aaaa-0000-0000-0000-000000000000','22222222-2222-2222-2222-222222222222','flow',5,'web','ci',(SELECT actor_id FROM public.profiles WHERE id = '22222222-2222-2222-2222-222222222222'));
 -- 5 answered practice items for R (events e0..e4), recency by occurred_at.
 INSERT INTO public.practice_session_items
   (id,session_id,user_id,ordinal,question_id,question_stem,question_options,question_correct_answer,
-   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at)
+   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at,actor_id)
 SELECT ('11110000-0000-0000-0000-00000000000'||g)::uuid, '1111aaaa-0000-0000-0000-000000000000','11111111-1111-1111-1111-111111111111',
        g,'SATM1ZZZZZZ','stem','[]'::jsonb,'A','expl','Algebra','s',2,'M','answered',true,
-       TIMESTAMPTZ '2026-01-01T00:00:00Z' - (INTERVAL '1 minute' * g)
+       TIMESTAMPTZ '2026-01-01T00:00:00Z' - (INTERVAL '1 minute' * g),
+       (SELECT actor_id FROM public.profiles WHERE id = '11111111-1111-1111-1111-111111111111')
 FROM generate_series(0,4) g;
 SQL
 
@@ -88,10 +89,10 @@ DO $$
 BEGIN
   INSERT INTO public.practice_session_items
     (id,session_id,user_id,ordinal,question_id,question_stem,question_options,question_correct_answer,
-     question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at)
+     question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at,actor_id)
   VALUES ('2222000a-0000-0000-0000-000000000000','2222aaaa-0000-0000-0000-000000000000',
      '22222222-2222-2222-2222-222222222222',0,'SATM1ZZZZZZ','stem','[]'::jsonb,'A','expl','Algebra','s',2,'M','answered',true,
-     TIMESTAMPTZ '2026-01-01T00:00:00Z');
+     TIMESTAMPTZ '2026-01-01T00:00:00Z',(SELECT actor_id FROM public.profiles WHERE id = '22222222-2222-2222-2222-222222222222'));
   PERFORM public.apply_mastery_event(
     '22222222-2222-2222-2222-222222222222','M','Algebra','s',2::smallint,'practice','practice_attempt',
      true, TIMESTAMPTZ '2026-01-01T00:00:00Z', '2222000a-0000-0000-0000-000000000000'::uuid, 'SATM1ZZZZZZ');
@@ -140,14 +141,15 @@ echo "==> F3: hot-path latency — common path AND every-40th spike path (HALT-4
 psql_db "$DB" -q >/dev/null <<'SQL'
 INSERT INTO auth.users (id,email) VALUES ('33333333-3333-3333-3333-333333333333','c@ci');
 INSERT INTO public.profiles (id,email) VALUES ('33333333-3333-3333-3333-333333333333','c@ci');
-INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id) VALUES
-  ('3333aaaa-0000-0000-0000-000000000000','33333333-3333-3333-3333-333333333333','flow',40,'web','ci');
+INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id,actor_id) VALUES
+  ('3333aaaa-0000-0000-0000-000000000000','33333333-3333-3333-3333-333333333333','flow',40,'web','ci',(SELECT actor_id FROM public.profiles WHERE id = '33333333-3333-3333-3333-333333333333'));
 INSERT INTO public.practice_session_items
   (id,session_id,user_id,ordinal,question_id,question_stem,question_options,question_correct_answer,
-   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at)
+   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at,actor_id)
 SELECT ('33330000-0000-0000-0000-0000000000'||lpad(g::text,2,'0'))::uuid, '3333aaaa-0000-0000-0000-000000000000',
        '33333333-3333-3333-3333-333333333333', g,'SATM1ZZZZZZ','stem','[]'::jsonb,'A','expl','Algebra','s',2,'M','answered',true,
-       TIMESTAMPTZ '2026-01-01T00:00:00Z' - (INTERVAL '1 minute' * g)
+       TIMESTAMPTZ '2026-01-01T00:00:00Z' - (INTERVAL '1 minute' * g),
+       (SELECT actor_id FROM public.profiles WHERE id = '33333333-3333-3333-3333-333333333333')
 FROM generate_series(0,39) g;
 SQL
 if psql_db "$DB" -q 2>/tmp/lanec_lat.txt <<'SQL'
