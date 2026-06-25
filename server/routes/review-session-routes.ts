@@ -521,6 +521,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
       .from("review_sessions")
       .insert({
         student_id: user.id,
+        actor_id: user.actor_id,
         status: "active",
         source_context: "review_errors",
         started_at: nowIso,
@@ -596,6 +597,7 @@ export async function startReviewErrorSession(req: AuthenticatedRequest, res: Re
       return {
         review_session_id: session.id,
         student_id: user.id,
+        actor_id: user.actor_id,
         ordinal: index + 1,
         question_canonical_id: canonicalId,
         source_question_id: snapshot.questionId,
@@ -698,8 +700,11 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
       return sendReviewRuntimeUnavailable(res, requestId, availability.missingTable);
     }
 
-    const userId = (req as any).user?.id;
+    const user = (req as any).user;
+    const userId = user?.id;
+    const actorId = user?.actor_id;
     if (!userId) return res.status(401).json({ error: "Unauthorized", code: "AUTH_REQUIRED", requestId });
+    if (!actorId) return res.status(500).json({ error: "actor_id not available for user", code: "ACTOR_ID_MISSING", requestId });
 
     if (hasLegacyFreeResponseKeys(req.body)) {
       return res.status(400).json({
@@ -806,6 +811,7 @@ export async function submitReviewSessionAnswer(req: Request, res: Response) {
 
     const { data: insertedAttempt, error: insertError } = await supabaseServer.from("review_error_attempts").insert({
       student_id: userId,
+      actor_id: actorId,
       question_id: resolvedQuestionId,
       context: "review_errors",
       selected_answer: selectedAnswerKey,

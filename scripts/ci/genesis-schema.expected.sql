@@ -90,6 +90,7 @@ DECLARE
   v_result_row public.student_skill_mastery;
   v_expected_family text;
   v_event_present integer;   -- self-enforcing seam guard (LC-D1-001); LYCEON-MIGRATION-REVIEWED
+  v_actor_id uuid;           -- 05E §8 step 2: decoupled synthetic identifier for audit stamping
 BEGIN
   -- §4.2 Step 1: required fields
   IF p_student_id IS NULL OR p_section IS NULL OR p_domain IS NULL OR p_skill IS NULL
@@ -123,6 +124,13 @@ BEGIN
     RAISE EXCEPTION 'MASTERY_VALIDATION_FAILED: occurred_at beyond 5-minute skew tolerance';
   END IF;
   -- §4.2 Step 4 (domain/skill canonicality): consultative, non-blocking in V1.0 — skipped.
+
+  -- 05E §8 step 2: look up the decoupled actor_id for audit stamping.
+  -- RAISE if NULL — profile must have actor_id assigned at creation (PR-5a substrate).
+  SELECT actor_id INTO v_actor_id FROM public.profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'MASTERY_EVENT_NO_ACTOR_ID: profile % has no actor_id', p_student_id;
+  END IF;
 
   -- §4.3 Step 1: event-level advisory lock (serializes concurrent submissions of the SAME event)
   SET LOCAL lock_timeout = '5s';
@@ -204,12 +212,12 @@ BEGIN
       (student_id, section, domain, skill, source_family, event_source_kind, event_id, question_id,
        difficulty, correct, occurred_at, mastery_score_before, mastery_score_after,
        mastery_level_before, mastery_level_after, event_count_after, constants_snapshot_hash, mastery_model_version,
-       applied_at)
+       actor_id, applied_at)
     VALUES
       (p_student_id, p_section, p_domain, p_skill, p_source_family, p_event_source_kind, p_event_id, p_question_id,
        p_difficulty, p_correct, p_occurred_at, v_before_score, v_score,
        v_before_level, v_level, v_total, v_constants_hash, v_active_version,
-       now());
+       v_actor_id, now());
   EXCEPTION WHEN unique_violation THEN
     SELECT * INTO v_result_row FROM public.student_skill_mastery
     WHERE student_id = p_student_id AND section = p_section AND domain = p_domain AND skill = p_skill;
@@ -2098,6 +2106,7 @@ DECLARE
   v_last_event_id          uuid;          -- RB-05B-V1-08
   v_last_event_occurred_at timestamptz;   -- RB-05B-V1-08
   v_result_row             public.student_domain_mastery;
+  v_actor_id               uuid;          -- 05E §8 step 2: decoupled synthetic identifier for audit stamping
 BEGIN
   -- §4.2 Step 1: required fields
   IF p_student_id IS NULL OR p_section IS NULL OR p_domain IS NULL THEN
@@ -2116,6 +2125,12 @@ BEGIN
   IF p_section = 'RW' AND p_domain NOT IN
        ('Information and Ideas','Craft and Structure','Expression of Ideas','Standard English Conventions') THEN
     RAISE EXCEPTION 'DOMAIN_SECTION_MISMATCH: domain % is not a canonical RW domain', p_domain;
+  END IF;
+
+  -- 05E §8 step 2: look up the decoupled actor_id for audit stamping.
+  SELECT actor_id INTO v_actor_id FROM public.profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'MASTERY_EVENT_NO_ACTOR_ID: profile % has no actor_id', p_student_id;
   END IF;
 
   -- §4.3 student-domain advisory transaction lock (prefix 'mastery_domain|' — cannot collide
@@ -2186,12 +2201,14 @@ BEGIN
   INSERT INTO public.mastery_domain_refresh_audit_log (
     audit_row_id, student_id, section, domain,
     mastery_score_before, mastery_score_after, mastery_level_before, mastery_level_after,
-    event_count_after, constants_snapshot_hash, mastery_model_version, triggered_by, applied_at
+    event_count_after, constants_snapshot_hash, mastery_model_version, triggered_by,
+    actor_id, applied_at
   ) VALUES (
     gen_random_uuid(), p_student_id, p_section, p_domain,
     v_before_score, v_mastery_score, v_before_level, v_mastery_level,
     v_total_events, v_constants_hash, v_active_version,
-    current_setting('app.mastery_refresh_trigger', true), now()
+    current_setting('app.mastery_refresh_trigger', true),
+    v_actor_id, now()
   );
 
   -- §4.9 downstream KPI refreshes — all four, SAME transaction (§2.3 / §8.1). Any failure rolls

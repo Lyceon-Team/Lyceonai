@@ -1174,6 +1174,7 @@ async function updateSessionLifecycle(
 
 async function startOrReplaySession(args: {
   userId: string;
+  actorId: string;
   role: string | undefined;
   section: "Math" | "RW" | "Random";
   mode: string;
@@ -1424,6 +1425,7 @@ async function startOrReplaySession(args: {
       .from("practice_sessions")
       .insert({
         user_id: args.userId,
+        actor_id: args.actorId,
         section: args.section,
         mode: args.mode,
         status: "in_progress",
@@ -1469,6 +1471,7 @@ async function startOrReplaySession(args: {
   const insertRows = selection.selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
+    actor_id: args.actorId,
     question_id: question.id,
     question_canonical_id: question.canonical_id,
     question_section: question.section_code,
@@ -2159,6 +2162,7 @@ router.post(
 
     const sessionResult = await startOrReplaySession({
       userId,
+      actorId: user.actor_id,
       role: user?.role,
       section,
       mode,
