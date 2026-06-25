@@ -567,12 +567,10 @@ vi.mock("../server/middleware/supabase-auth", () => ({
     if (!user)
       return res.status(401).json({ error: "Authentication required" });
     if (user.role === "guardian" && !user.isAdmin) {
-      return res
-        .status(403)
-        .json({
-          error: "Student access required",
-          message: "Guardian access is denied.",
-        });
+      return res.status(403).json({
+        error: "Student access required",
+        message: "Guardian access is denied.",
+      });
     }
     return next();
   },
@@ -594,17 +592,22 @@ vi.mock("../server/middleware/supabase-auth", () => ({
   }),
   requireRequestUser: (req: any, res: any) => {
     if (!req.user?.id) {
-      res
-        .status(401)
-        .json({
-          error: "Authentication required",
-          message: "You must be signed in to access this resource",
-        });
+      res.status(401).json({
+        error: "Authentication required",
+        message: "You must be signed in to access this resource",
+      });
       return null;
     }
     return req.user;
   },
   sendForbidden: (res: any, body: any) => res.status(403).json(body),
+  // Dormant deletion-lock middleware (gated behind ACCOUNT_DELETION_LIFECYCLE_V2);
+  // pass-through in tests so server/index.ts `app.use(enforceDeletionLock)` resolves.
+  enforceDeletionLock: (
+    _req: import("express").Request,
+    _res: import("express").Response,
+    next: import("express").NextFunction,
+  ) => next(),
   getSupabaseAdmin: () => ({
     rpc: vi.fn(async () => ({ data: null, error: null })),
   }),
@@ -1318,13 +1321,20 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(handleRagQueryMock).not.toHaveBeenCalled();
   });
 
+  // §16.4-5 + INV-03-13: a pre-submit answer leak is SILENTLY substituted with the
+  // shared pedagogical fallback and delivered as a normal 200 turn — NOT a 422 error.
+  // From the student's perspective the substituted turn is indistinguishable from a
+  // normal LISA reply: the leaking content never reaches the client or persistence.
+  const TUTOR_ANTI_LEAK_SUBSTITUTION =
+    "Let me think about this differently. Can you walk me through how you approached this problem?";
+
   it.each([
     "The correct answer is A.",
     "Choose option C.",
     "Option B is correct.",
     "Eliminate all but option D.",
   ])(
-    "blocks anti-leak answer reveal in pre-submit practice for '%s'",
+    "silently substitutes anti-leak answer reveal in pre-submit practice for '%s'",
     async (content) => {
       const start = await createConversation(agent);
       const conversationId = start.body.data.conversation_id;
@@ -1350,13 +1360,23 @@ describe("Tutor Runtime Contract Cutover", () => {
         client_turn_id: "f6666666-6666-4666-8666-666666666666",
       });
 
-      expect(turn.status).toBe(422);
-      expect(turn.body.error.code).toBe("TUTOR_ANTI_LEAK_BLOCKED");
+      // Delivered as a normal turn — no error status, no block code.
+      expect(turn.status).toBe(200);
+      expect(turn.body.error).toBeUndefined();
+      // The delivered content is the pedagogical fallback, NOT the leaking content.
+      expect(turn.body.data.response.content).toBe(
+        TUTOR_ANTI_LEAK_SUBSTITUTION,
+      );
+      expect(turn.body.data.response.content).not.toContain(content);
       expect(callTutorOrchestratorMock).toHaveBeenCalledTimes(1);
       expect(state.assignments).toHaveLength(1);
-      expect(state.messages.filter((m) => m.role === "tutor")).toHaveLength(0);
-      expect(state.questionLinks).toHaveLength(0);
-      expect(state.exposures).toHaveLength(0);
+
+      // Exactly one tutor message is persisted, carrying the substitution — the
+      // raw leaking content is never written to the transcript.
+      const tutorMessages = state.messages.filter((m) => m.role === "tutor");
+      expect(tutorMessages).toHaveLength(1);
+      expect(tutorMessages[0].message).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
+      expect(tutorMessages[0].message).not.toContain(content);
     },
   );
 

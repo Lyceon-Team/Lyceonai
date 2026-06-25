@@ -221,11 +221,109 @@ BEGIN
   -- projection-refresh throttle (Doc 05C §8.4 — fires compute_section_projection on the every-Nth
   -- event, else just increments the counter). Any failure rolls back the WHOLE event (Parent §7.8):
   -- skill + domain + 4 KPI + (throttled) projection are one atomic unit, or none. LYCEON-MIGRATION-REVIEWED
+  --
+  -- Q2 FIX: set GUC provenance BEFORE refresh_domain_mastery so the audit row records
+  -- triggered_by = 'event' (Doc 05D §4.2 constraint). Previously NULL (GUC was never set). LYCEON-MIGRATION-REVIEWED
+  SET LOCAL app.mastery_refresh_trigger = 'event';
   PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
   PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
 
   -- §4.10 return
   RETURN v_result_row;
+END;
+$$;
+
+
+--
+-- Name: backfill_recompute_student(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone DEFAULT now()) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_sec   text;
+  v_dom   text;
+  v_skl   text;
+BEGIN
+  -- Student-level advisory lock: serializes backfill against concurrent live events for
+  -- the same student (Doc 05D §7.2). lock_timeout is generous (10s) because the backfill
+  -- touches every entity for the student.
+  -- @reconciliation RB-05D-PR2-01: §7.2 spec body shows lock BEFORE lock_timeout; this
+  --   migration sets lock_timeout BEFORE the lock call (operationally correct — the timeout
+  --   must govern the subsequent lock attempt). Matches the established pattern in
+  --   apply_mastery_event §4.3/§4.4 and recompute_skill_mastery. The EXCEPTION handler is
+  --   also not in the spec body but matches the same established pattern. Spec body is an
+  --   editorial ordering error; the implementation is correct. LYCEON-MIGRATION-REVIEWED
+  SET LOCAL lock_timeout = '10s';
+  BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('backfill|' || p_student_id::text));
+  EXCEPTION WHEN lock_not_available OR query_canceled THEN
+    RAISE EXCEPTION 'MASTERY_LOCK_TIMEOUT: backfill_recompute_student (%)', p_student_id;
+  END;
+
+  -- GUC provenance: all downstream audit rows record 'backfill_recompute' (Doc 05D §4.2).
+  -- SET LOCAL scopes to this transaction — does not leak to concurrent sessions.
+  SET LOCAL app.mastery_refresh_trigger = 'backfill_recompute';
+
+  -- STRICT DEPENDENCY ORDER (INV-05D-17): skill → domain → KPI → projection.
+  -- Each step calls a sibling-owned RPC (INV-05D-A1 — 05D never reimplements a formula).
+
+  -- 1. Skill mastery: call 05A's locked recompute_skill_mastery (RB-05D-V1-A)
+  --    with p_chain_downstream := false — the backfill handles domain/KPI/projection
+  --    itself in steps 2–4 with lock-order monotonicity. NOT EXISTS selection: only
+  --    skills with events but no student_skill_mastery row.
+  FOR v_sec, v_dom, v_skl IN
+    SELECT DISTINCT e.section, e.domain, e.skill
+    FROM   public.canonical_mastery_events_for_student(p_student_id) e
+    WHERE  NOT EXISTS (
+               SELECT 1 FROM public.student_skill_mastery sm
+               WHERE  sm.student_id = p_student_id
+                 AND  sm.section = e.section
+                 AND  sm.domain  = e.domain
+                 AND  sm.skill   = e.skill)
+  LOOP
+    PERFORM public.recompute_skill_mastery(
+      p_student_id, v_sec, v_dom, v_skl,
+      false  -- p_chain_downstream := false (deadlock prevention)
+    );
+  END LOOP;
+
+  -- 2. Domain mastery: 05B's refresh_domain_mastery for every (section,domain) with
+  --    events but no student_domain_mastery row. refresh_domain_mastery internally
+  --    chains the 4 KPI refreshers (05B §4.9), so step 3 is partially satisfied
+  --    by step 2 for the domains it touches. NOT EXISTS selection: never-computed only.
+  --    SINGLE-FIRE PROOF: with p_chain_downstream=false in step 1, no domain refresh
+  --    has fired yet — step 2's NOT EXISTS correctly selects all domains that need it.
+  FOR v_sec, v_dom IN
+    SELECT DISTINCT e.section, e.domain
+    FROM   public.canonical_mastery_events_for_student(p_student_id) e
+    WHERE  NOT EXISTS (
+               SELECT 1 FROM public.student_domain_mastery dm
+               WHERE  dm.student_id = p_student_id
+                 AND  dm.section = e.section
+                 AND  dm.domain  = e.domain)
+  LOOP
+    PERFORM public.refresh_domain_mastery(p_student_id, v_sec, v_dom);
+  END LOOP;
+
+  -- 3. KPI rollups (TERMINAL SURFACE — refreshed unconditionally, RB-05D-V1-04).
+  --    refresh_domain_mastery (step 2) already chained the section/domain/skill/overall
+  --    KPI refreshers per 05B §4.9 for domains it touched; this terminal refresh
+  --    guarantees the four KPI surfaces reflect final derived state even when domain
+  --    rows pre-existed (partial-legacy student). Deterministic upsert, not a
+  --    reimplementation. p_t_now flows through for §8 determinism verification.
+  PERFORM public.refresh_section_kpi(p_student_id, 'M',  p_t_now);
+  PERFORM public.refresh_section_kpi(p_student_id, 'RW', p_t_now);
+  PERFORM public.refresh_overall_kpi(p_student_id, p_t_now);
+
+  -- 4. Projection (TERMINAL SURFACE — refreshed unconditionally, RB-05D-V1-04).
+  --    The Q4 gate inside compute_section_projection self-protects (emits NULL
+  --    projection if the 8-domain gate is not met), so calling it unconditionally
+  --    is correct and deterministic. p_t_now flows through for §8 determinism.
+  PERFORM public.compute_section_projection(p_student_id, 'M',  p_t_now);
+  PERFORM public.compute_section_projection(p_student_id, 'RW', p_t_now);
 END;
 $$;
 
@@ -355,6 +453,89 @@ $$;
 
 
 --
+-- Name: canonical_mastery_events_for_student(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) RETURNS TABLE(event_id uuid, event_source_kind text, source_family text, section text, domain text, skill text, difficulty smallint, correct boolean, occurred_at timestamp with time zone, question_id text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT
+    pi.id                       AS event_id,
+    'practice_attempt'::text    AS event_source_kind,
+    'practice'::text            AS source_family,
+    pi.question_section         AS section,
+    pi.question_domain          AS domain,
+    pi.question_skill           AS skill,
+    pi.question_difficulty      AS difficulty,
+    pi.is_correct               AS correct,
+    pi.occurred_at              AS occurred_at,
+    pi.question_id              AS question_id
+  FROM public.practice_session_items pi
+  WHERE pi.user_id = p_student_id
+    AND pi.status  = 'answered'
+    AND pi.question_section IN ('M','RW')
+
+  UNION ALL
+
+  SELECT
+    ra.id, 'review_error_attempt'::text, 'review'::text,
+    ra.section, ra.domain, ra.skill, ra.difficulty,
+    ra.is_correct, ra.occurred_at, ra.question_id
+  FROM public.review_error_attempts ra
+  WHERE ra.student_id = p_student_id
+    AND ra.section IN ('M','RW');
+$$;
+
+
+--
+-- Name: canonicalize_active_mastery_constants_state(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_active_mastery_constants_state() RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT COALESCE(string_agg(
+        mc.key || '=' || public.canonicalize_jsonb_value(mc.value),
+        E'\n' ORDER BY mc.key), '')
+    FROM public.mastery_constants mc;
+$$;
+
+
+--
+-- Name: canonicalize_jsonb_value(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.canonicalize_jsonb_value(p_val jsonb) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+BEGIN
+    CASE jsonb_typeof(p_val)
+        WHEN 'object' THEN
+            RETURN '{' || COALESCE((
+                SELECT string_agg(
+                    e.key || '=' || public.canonicalize_jsonb_value(e.value),
+                    ',' ORDER BY e.key)
+                FROM jsonb_each(p_val) e
+            ), '') || '}';
+        WHEN 'array' THEN
+            RETURN '[' || COALESCE((
+                SELECT string_agg(
+                    public.canonicalize_jsonb_value(elem.value),
+                    ',' ORDER BY elem.ordinality)
+                FROM jsonb_array_elements(p_val) WITH ORDINALITY AS elem(value, ordinality)
+            ), '') || ']';
+        WHEN 'number' THEN
+            RETURN to_char((p_val #>> '{}')::numeric, 'FM9990.000000');
+        ELSE
+            RETURN (p_val #>> '{}');
+    END CASE;
+END;
+$$;
+
+
+--
 -- Name: canonicalize_mastery_constants(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -444,6 +625,56 @@ BEGIN
    || ';section_min='  || v_section_min::text
    || ';section_max='  || v_section_max::text
    || ';weights='      || COALESCE(v_weights_canon, '');
+END;
+$$;
+
+
+--
+-- Name: capture_mastery_constant_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.capture_mastery_constant_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    v_key          text;
+    v_old          jsonb;
+    v_new          jsonb;
+    v_affects      boolean;
+    v_state_hash   text;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        v_key := NEW.key;  v_old := NULL;        v_new := NEW.value;
+    ELSIF TG_OP = 'UPDATE' THEN
+        v_key := NEW.key;  v_old := OLD.value;   v_new := NEW.value;
+    ELSE
+        v_key := OLD.key;  v_old := OLD.value;   v_new := NULL;
+    END IF;
+
+    v_affects := public.constant_affects_formula_hash(v_key);
+
+    v_state_hash := encode(
+        extensions.digest(
+            convert_to(
+                public.canonicalize_active_mastery_constants_state(),
+                'UTF8'),
+            'sha256'),
+        'hex');
+
+    INSERT INTO public.mastery_constants_change_log (
+        key, op, old_value, new_value,
+        affects_formula_hash,
+        actor_role, actor_session_user, txid,
+        resulting_state_hash, changed_at
+    ) VALUES (
+        v_key, TG_OP, v_old, v_new,
+        v_affects,
+        current_user, session_user, txid_current(),
+        v_state_hash, now()
+    );
+
+    RETURN NULL;
 END;
 $$;
 
@@ -970,6 +1201,44 @@ $$;
 
 
 --
+-- Name: constant_affects_formula_hash(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.constant_affects_formula_hash(p_key text) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+    v_formula text[] := ARRAY[
+        'difficulty_weight_easy','difficulty_weight_hard','difficulty_weight_medium',
+        'mastery_level_0_max','mastery_level_1_max','mastery_level_1_min',
+        'mastery_level_2_max','mastery_level_2_min','mastery_level_3_max',
+        'mastery_level_3_min','mastery_level_4_min',
+        'mastery_max','mastery_min','mastery_model_version',
+        'MIN_EVENTS_FOR_MASTERY','POSITION_HALF_LIFE',
+        'ROUND_ACCURACY_DECIMALS','ROUND_EVIDENCE_DECIMALS',
+        'ROUND_MASTERY_PCT_DECIMALS','ROUND_MASTERY_SCORE_DECIMALS',
+        'ROUNDING_MODE',
+        'weight_source_practice','weight_source_review','weight_source_test'
+    ];
+    v_operational text[] := ARRAY[
+        'DIAGNOSTIC_TOTAL_QUESTIONS',
+        'KPI_RECENCY_WINDOW_LONG_DAYS','KPI_RECENCY_WINDOW_SHORT_DAYS',
+        'PROJECTION_BOUND_ROUND_TO','PROJECTION_DOMAIN_WEIGHTS',
+        'PROJECTION_MAX_DELTA','PROJECTION_MIDPOINT_ROUND_TO',
+        'PROJECTION_MIN_DELTA','PROJECTION_REFRESH_EVENT_THRESHOLD',
+        'PROJECTION_REFRESH_TIME_THRESHOLD_HOURS',
+        'PROJECTION_SECTION_MAX_SCORE','PROJECTION_SECTION_MIN_SCORE',
+        'PROJECTION_TARGET_QUESTION_COUNT_PER_SECTION'
+    ];
+BEGIN
+    IF p_key = ANY(v_formula) THEN RETURN true; END IF;
+    IF p_key = ANY(v_operational) THEN RETURN false; END IF;
+    RAISE EXCEPTION 'CONSTANT_KEY_UNKNOWN: "%" is not in the formula (24) or operational (13) registry', p_key;
+END;
+$$;
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1008,6 +1277,328 @@ CREATE FUNCTION public.entitlement_active(p_profile_id uuid) RETURNS boolean
     WHERE e.profile_id = p_profile_id AND e.status IN ('active','past_due','trialing')
   );
 $$;
+
+
+--
+-- Name: execute_account_deletion_cascade(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text DEFAULT 'hard_delete'::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_result    jsonb := '{}'::jsonb;
+  v_count     bigint;
+  v_op_ref   record;  -- LYCEON-MIGRATION-REVIEWED (operator-FK preflight guard)
+BEGIN
+  -- ========================================================================
+  -- PRIVACY MODE GUARD
+  -- ========================================================================
+  -- 'anonymize' mode deferred: BLOCKING_PRIVACY_GAP (§10.4). The surrogate/FK
+  -- design (Layer 2 UPDATE with v_surrogate) requires either FK drops or a
+  -- tombstone profile row — deferred to a post-counsel PR.
+  IF p_privacy_mode = 'anonymize' THEN
+    RAISE EXCEPTION 'anonymize mode not yet enabled — BLOCKING_PRIVACY_GAP (§10.4). '
+      'Layer 2 anonymization requires privacy/compliance sign-off + FK resolution. '
+      'Use hard_delete (default) until then.';
+  END IF;
+  IF p_privacy_mode <> 'hard_delete' THEN
+    RAISE EXCEPTION 'unknown p_privacy_mode: %. Valid: hard_delete', p_privacy_mode;
+  END IF;
+
+  -- ========================================================================
+  -- IDEMPOTENCY: profile already gone → clean no-op (§10.5)
+  -- ========================================================================
+  -- §10.5 defines idempotency as "the function may be called again … identical
+  -- result." In hard-delete mode the profile row IS the idempotency signal:
+  -- absent profile ⟹ cascade already completed ⟹ return no_op. The deletion
+  -- request row is also gone (Q2 ruling), so profile absence is the only
+  -- durable signal. This deviates from §10.5's assumption that the request
+  -- "remains in soft-delete state," which is satisfied instead by
+  -- transactional rollback on failure. LYCEON-MIGRATION-REVIEWED
+  IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_profile_id) THEN
+    RETURN jsonb_build_object('status', 'no_op', 'reason', 'profile does not exist (already cascaded)');
+  END IF;
+
+  -- ========================================================================
+  -- STATUS GUARD: require a completed deletion request
+  -- ========================================================================
+  -- The cron driver (PR-4) updates the request to 'completed' after running
+  -- deidentify_user, then calls this function. Prevents accidental cascade
+  -- of profiles that haven't gone through the full grace-period flow.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.account_deletion_requests
+     WHERE profile_id = p_profile_id AND status = 'completed'
+  ) THEN
+    RAISE EXCEPTION 'no completed deletion request for profile %. '
+      'The cron driver must mark the request completed (after deidentify_user) before calling cascade.',
+      p_profile_id;
+  END IF;
+
+  -- ========================================================================
+  -- OPERATOR-FK PREFLIGHT GUARD (fail-closed, before ANY destructive step)
+  -- ========================================================================
+  -- 36 operator-identity FK edges (updated_by_profile_id / changed_by_profile_id
+  -- across 18 *_config + 18 *_config_history governance tables). Operator
+  -- attribution is governance data — must BLOCK deletion until consciously
+  -- reassigned (same posture as the RESTRICT identity seam). The guard
+  -- refuses cascade with a clear error BEFORE any rows are deleted.
+  --
+  -- FK-surface exhaustive partition (59 edges total, proven 2026-06-25):
+  --   5 auto-CASCADE  (abuse_score_incidents, abuse_scores, legal_acceptances,
+  --                     notification_outbox, rate_limit_ledger)
+  --   1 auto-SET-NULL (profiles.guardian_profile_id self-FK)
+  --   9 pre-cleared   (entitlements, 4×guardian_links, 2×guardian_consent_requests,
+  --                     2×account_deletion_requests)
+  --   6 L1/L2-deleted (review_schedule, practice_sessions, practice_session_items,
+  --                     review_sessions, review_session_items, review_error_attempts)
+  --   2 dropped       (audit_logs actor/target — Q6 ruling)
+  --  36 operator-guarded (this preflight)
+  --  ── ─────────────────────────────────────────────────────
+  --  59 total = complete partition, no edge unaccounted
+  -- LYCEON-MIGRATION-REVIEWED
+  FOR v_op_ref IN
+    SELECT * FROM (VALUES
+      ('abuse_score_runtime_config'::text,              'updated_by_profile_id'::text),
+      ('abuse_score_runtime_config_history',            'changed_by_profile_id'),
+      ('account_deletion_runtime_config',               'updated_by_profile_id'),
+      ('account_deletion_runtime_config_history',       'changed_by_profile_id'),
+      ('auth_mfa_config',                               'updated_by_profile_id'),
+      ('auth_mfa_config_history',                       'changed_by_profile_id'),
+      ('auth_runtime_config',                           'updated_by_profile_id'),
+      ('auth_runtime_config_history',                   'changed_by_profile_id'),
+      ('caching_runtime_config',                        'updated_by_profile_id'),
+      ('caching_runtime_config_history',                'changed_by_profile_id'),
+      ('consent_runtime_config',                        'updated_by_profile_id'),
+      ('consent_runtime_config_history',                'changed_by_profile_id'),
+      ('entitlement_runtime_config',                    'updated_by_profile_id'),
+      ('entitlement_runtime_config_history',            'changed_by_profile_id'),
+      ('exam_runtime_config',                           'updated_by_profile_id'),
+      ('exam_runtime_config_history',                   'changed_by_profile_id'),
+      ('full_length_adaptive_config',                   'updated_by_profile_id'),
+      ('full_length_adaptive_config_history',           'changed_by_profile_id'),
+      ('idempotency_runtime_config',                    'updated_by_profile_id'),
+      ('idempotency_runtime_config_history',            'changed_by_profile_id'),
+      ('internal_service_auth_config',                  'updated_by_profile_id'),
+      ('internal_service_auth_config_history',          'changed_by_profile_id'),
+      ('mastery_constants',                             'updated_by_profile_id'),
+      ('mastery_constants_history',                     'changed_by_profile_id'),
+      ('mobile_auth_config',                            'updated_by_profile_id'),
+      ('mobile_auth_config_history',                    'changed_by_profile_id'),
+      ('observability_runtime_config',                  'updated_by_profile_id'),
+      ('observability_runtime_config_history',          'changed_by_profile_id'),
+      ('practice_runtime_config',                       'updated_by_profile_id'),
+      ('practice_runtime_config_history',               'changed_by_profile_id'),
+      ('rate_limit_runtime_config',                     'updated_by_profile_id'),
+      ('rate_limit_runtime_config_history',             'changed_by_profile_id'),
+      ('review_runtime_config',                         'updated_by_profile_id'),
+      ('review_runtime_config_history',                 'changed_by_profile_id'),
+      ('tutor_context_runtime_config',                  'updated_by_profile_id'),
+      ('tutor_context_runtime_config_history',          'changed_by_profile_id')
+    ) AS t(tbl, col)
+  LOOP
+    EXECUTE format(
+      'SELECT count(*) FROM public.%I WHERE %I = $1',
+      v_op_ref.tbl, v_op_ref.col
+    ) INTO v_count USING p_profile_id;
+    IF v_count > 0 THEN
+      RAISE EXCEPTION 'PROFILE_HAS_OPERATIONAL_CONFIG_REFERENCES: '
+        'profile % is referenced as an operator in %.% '
+        '— reassign config attributions before deletion',
+        p_profile_id, v_op_ref.tbl, v_op_ref.col;
+    END IF;
+  END LOOP;
+
+  -- ========================================================================
+  -- PRE-CLEAR: RESTRICT + NO ACTION FKs that block profile deletion
+  -- ========================================================================
+  -- Doc-01 identity seam. Raw DELETE for now; if Doc-01 later adds
+  -- entitlement/Stripe teardown logic, this seam calls into it.
+
+  -- PS-1. entitlements (profile_id → profiles ON DELETE RESTRICT)
+  DELETE FROM public.entitlements WHERE profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('entitlements', v_count);
+
+  -- PS-2. guardian_links — nullable NO ACTION refs first, then RESTRICT
+  UPDATE public.guardian_links SET accepted_by_profile_id = NULL
+   WHERE accepted_by_profile_id = p_profile_id;
+  UPDATE public.guardian_links SET revoked_by_profile_id = NULL
+   WHERE revoked_by_profile_id = p_profile_id;
+  DELETE FROM public.guardian_links WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_student', v_count);
+  DELETE FROM public.guardian_links WHERE guardian_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_links_as_guardian', v_count);
+
+  -- PS-3. guardian_consent_requests — nullable NO ACTION ref first, then RESTRICT
+  UPDATE public.guardian_consent_requests SET guardian_profile_id = NULL
+   WHERE guardian_profile_id = p_profile_id;
+  DELETE FROM public.guardian_consent_requests WHERE student_profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
+
+  -- PS-4. account_deletion_requests — actor_profile_id edge case
+  -- If this profile is the actor for ANOTHER profile's deletion request
+  -- (e.g., guardian requested student's deletion, now guardian is being deleted),
+  -- reassign actor to the other request's own profile (self-requested). The
+  -- NOT NULL constraint prevents SET NULL; this preserves the pending deletion.
+  UPDATE public.account_deletion_requests
+     SET actor_profile_id = profile_id
+   WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
+
+  -- PS-5. account_deletion_requests — delete THIS profile's request rows
+  -- (profile_id → profiles ON DELETE RESTRICT; actor_profile_id → profiles NO ACTION)
+  -- Deleting the row releases both FKs.
+  DELETE FROM public.account_deletion_requests WHERE profile_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('account_deletion_requests', v_count);
+
+  -- ========================================================================
+  -- LAYER 1: Hard-delete identity-linked derived state (§10.2 steps 1–10 + review_schedule)
+  -- ========================================================================
+  -- No FK between these tables; the listed order is canonical per spec.
+  -- None have FK to profiles (student_id is by convention only).
+
+  -- L1-01. student_section_projection_snapshots (05C)
+  DELETE FROM public.student_section_projection_snapshots WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_section_projection_snapshots', v_count);
+
+  -- L1-02. student_section_projections (05C)
+  DELETE FROM public.student_section_projections WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_section_projections', v_count);
+
+  -- L1-03. student_projection_refresh_state (05C)
+  DELETE FROM public.student_projection_refresh_state WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_projection_refresh_state', v_count);
+
+  -- L1-04. projection_refresh_outbox (05C)
+  DELETE FROM public.projection_refresh_outbox WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('projection_refresh_outbox', v_count);
+
+  -- L1-05. student_section_kpi (05B)
+  DELETE FROM public.student_section_kpi WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_section_kpi', v_count);
+
+  -- L1-06. student_domain_kpi (05B)
+  DELETE FROM public.student_domain_kpi WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_domain_kpi', v_count);
+
+  -- L1-07. student_skill_kpi (05B)
+  DELETE FROM public.student_skill_kpi WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_skill_kpi', v_count);
+
+  -- L1-08. student_overall_kpi (05B)
+  DELETE FROM public.student_overall_kpi WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_overall_kpi', v_count);
+
+  -- L1-09. student_domain_mastery (05B)
+  DELETE FROM public.student_domain_mastery WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_domain_mastery', v_count);
+
+  -- L1-10. student_skill_mastery (05A)
+  DELETE FROM public.student_skill_mastery WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_skill_mastery', v_count);
+
+  -- L1-11. review_schedule (Q3 ruling: L1 hard-delete — identity-linked SM-2 state, not event data)
+  DELETE FROM public.review_schedule WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('review_schedule', v_count);
+
+  -- ========================================================================
+  -- LAYER 2: Hard-delete event/audit sources (§10.4 conservative fallback)
+  -- ========================================================================
+  -- Children-before-parent FK-safe order. practice_session_items and
+  -- review_error_attempts are the canonical mastery event sources (seam §2 R1).
+  -- In hard-delete mode, all event + session + audit rows are removed.
+
+  -- L2-01. practice_session_items (child of practice_sessions via ON DELETE CASCADE)
+  DELETE FROM public.practice_session_items WHERE user_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('practice_session_items', v_count);
+
+  -- L2-02. practice_sessions (parent — children already deleted in L2-01)
+  DELETE FROM public.practice_sessions WHERE user_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('practice_sessions', v_count);
+
+  -- L2-03. review_error_attempts (child of review_session_items via ON DELETE CASCADE)
+  DELETE FROM public.review_error_attempts WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
+
+  -- L2-04. review_session_items (child of review_sessions via ON DELETE CASCADE)
+  DELETE FROM public.review_session_items WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('review_session_items', v_count);
+
+  -- L2-05. review_sessions (parent — children already deleted in L2-03/L2-04)
+  DELETE FROM public.review_sessions WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('review_sessions', v_count);
+
+  -- L2-06. mastery_event_audit_log (no FK; student_id by convention)
+  DELETE FROM public.mastery_event_audit_log WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('mastery_event_audit_log', v_count);
+
+  -- L2-07. mastery_domain_refresh_audit_log (no FK; student_id by convention)
+  DELETE FROM public.mastery_domain_refresh_audit_log WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
+
+  -- ========================================================================
+  -- PROFILE + AUTH DELETE
+  -- ========================================================================
+  -- All child rows with FKs to profiles are now deleted. The remaining CASCADE
+  -- FKs fire automatically: rate_limit_ledger, abuse_score_incidents,
+  -- abuse_scores, notification_outbox, legal_acceptances.
+  -- audit_logs FKs were dropped (DDL above) — rows remain as opaque refs.
+  -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles
+  -- that reference this profile as their guardian.
+  -- Operator-FK edges (36 config/history tables) were preflight-guarded above.
+  -- LYCEON-MIGRATION-REVIEWED
+
+  DELETE FROM public.profiles WHERE id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('profiles', v_count);
+
+  -- Storage purge is OWNED BY THE PR-4 orchestration layer: the grace-expiry
+  -- edge function calls the Supabase Storage API to delete the user's objects
+  -- BEFORE invoking this cascade. Direct DELETE FROM storage.objects is blocked
+  -- by storage.protect_delete() — storage deletion is an API operation, not a
+  -- SQL one. See §10 storage-purge seam (PR-4).
+  -- GAP-PR4-STORAGE: PR-4 grace-expiry driver must purge storage.objects via
+  -- the Supabase Storage API BEFORE calling execute_account_deletion_cascade;
+  -- SQL cascade cannot delete storage (protect_delete trigger).
+  -- LYCEON-MIGRATION-REVIEWED
+
+  -- auth.users — profiles.id REFERENCES auth.users(id) ON DELETE RESTRICT.
+  -- The profile row is gone, so the RESTRICT is released.
+  DELETE FROM auth.users WHERE id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('auth_users', v_count);
+
+  RETURN jsonb_build_object(
+    'status', 'completed',
+    'profile_id', p_profile_id,
+    'privacy_mode', p_privacy_mode,
+    'rows_affected', v_result
+  );
+END;
+$_$;
 
 
 --
@@ -1275,10 +1866,10 @@ $$;
 
 
 --
--- Name: recompute_skill_mastery(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: recompute_skill_mastery(uuid, text, text, text, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) RETURNS public.student_skill_mastery
+CREATE FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean DEFAULT true) RETURNS public.student_skill_mastery
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -1322,9 +1913,25 @@ BEGIN
     WHERE student_id=p_student_id AND section=p_section AND domain=p_domain AND skill=p_skill
     RETURNING * INTO v_row;
   END IF;
-  -- TODO(05B): refresh_domain_mastery(p_student_id,p_section,p_domain) is owned by 05B (a later
-  -- item) and MUST be called here once 05B lands, per Doc 05A §5.1 — else skill/domain drift.
-  -- Tracked in the B-WS3-1 contract §G as a hard sequential dependency; not in B-WS3-1 scope.
+
+  -- Q4 CLOSURE (Doc 05A §5.1): conditional downstream fan-out. When p_chain_downstream
+  -- is true (the default — event-time path via apply_mastery_event or standalone recompute),
+  -- fire refresh_domain_mastery + bump_projection_refresh_counter in this transaction.
+  -- When false (backfill path), the caller handles domain/KPI/projection in strict
+  -- skill→domain→KPI→projection order with lock-order monotonicity (Doc 05D §7.2).
+  -- Provenance GUC: COALESCE(NULLIF(...,''),'backfill_recompute') inherits an already-set
+  -- GUC (apply_mastery_event sets 'event') or defaults to 'backfill_recompute' for
+  -- standalone recompute calls. LYCEON-MIGRATION-REVIEWED
+  -- set_config(name, value, is_local) with is_local=true = SET LOCAL semantics.
+  -- SET LOCAL cannot evaluate expressions, so set_config is required here. LYCEON-MIGRATION-REVIEWED
+  IF p_chain_downstream THEN
+    PERFORM set_config('app.mastery_refresh_trigger',
+      COALESCE(NULLIF(current_setting('app.mastery_refresh_trigger', true), ''), 'backfill_recompute'),
+      true);
+    PERFORM public.refresh_domain_mastery(p_student_id, p_section, p_domain);
+    PERFORM public.bump_projection_refresh_counter(p_student_id, p_section);
+  END IF;
+
   RETURN v_row;
 END;
 $$;
@@ -2680,6 +3287,40 @@ CREATE TABLE public.mastery_constants (
 
 
 --
+-- Name: mastery_constants_change_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mastery_constants_change_log (
+    change_id bigint NOT NULL,
+    key text NOT NULL,
+    op text NOT NULL,
+    old_value jsonb,
+    new_value jsonb,
+    affects_formula_hash boolean NOT NULL,
+    actor_role text NOT NULL,
+    actor_session_user text NOT NULL,
+    txid bigint NOT NULL,
+    resulting_state_hash text NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT mastery_constants_change_log_op_check CHECK ((op = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))
+);
+
+
+--
+-- Name: mastery_constants_change_log_change_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants_change_log ALTER COLUMN change_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.mastery_constants_change_log_change_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: mastery_constants_history; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2711,10 +3352,11 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
     event_count_after integer NOT NULL,
     constants_snapshot_hash text NOT NULL,
     mastery_model_version text NOT NULL,
-    triggered_by text,
+    triggered_by text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
-    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+    CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
 );
 
 
@@ -3701,6 +4343,14 @@ ALTER TABLE ONLY public.legal_acceptances
 
 
 --
+-- Name: mastery_constants_change_log mastery_constants_change_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mastery_constants_change_log
+    ADD CONSTRAINT mastery_constants_change_log_pkey PRIMARY KEY (change_id);
+
+
+--
 -- Name: mastery_constants_history mastery_constants_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4185,6 +4835,20 @@ CREATE INDEX idx_legal_acceptances_user ON public.legal_acceptances USING btree 
 --
 
 CREATE INDEX idx_mastery_domain_refresh_audit_student ON public.mastery_domain_refresh_audit_log USING btree (student_id, section, domain, applied_at DESC);
+
+
+--
+-- Name: idx_mccl_key_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mccl_key_time ON public.mastery_constants_change_log USING btree (key, changed_at DESC);
+
+
+--
+-- Name: idx_mccl_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mccl_time ON public.mastery_constants_change_log USING btree (changed_at DESC);
 
 
 --
@@ -4685,6 +5349,15 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 
 
 --
+-- Name: mastery_constants trg_capture_mastery_constant_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_capture_mastery_constant_change AFTER INSERT OR DELETE OR UPDATE ON public.mastery_constants FOR EACH ROW EXECUTE FUNCTION public.capture_mastery_constant_change();
+
+ALTER TABLE public.mastery_constants ENABLE ALWAYS TRIGGER trg_capture_mastery_constant_change;
+
+
+--
 -- Name: tutor_context_runtime_config_history tutor_context_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4760,22 +5433,6 @@ ALTER TABLE ONLY public.account_deletion_runtime_config_history
 
 ALTER TABLE ONLY public.account_deletion_runtime_config
     ADD CONSTRAINT account_deletion_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
-
-
---
--- Name: audit_logs audit_logs_actor_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.audit_logs
-    ADD CONSTRAINT audit_logs_actor_profile_id_fkey FOREIGN KEY (actor_profile_id) REFERENCES public.profiles(id);
-
-
---
--- Name: audit_logs audit_logs_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.audit_logs
-    ADD CONSTRAINT audit_logs_target_profile_id_fkey FOREIGN KEY (target_profile_id) REFERENCES public.profiles(id);
 
 
 --
@@ -5466,6 +6123,12 @@ ALTER TABLE public.legal_acceptances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mastery_constants ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: mastery_constants_change_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mastery_constants_change_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: mastery_constants_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -5926,6 +6589,14 @@ GRANT ALL ON FUNCTION public.apply_mastery_event(p_student_id uuid, p_section te
 
 
 --
+-- Name: FUNCTION backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION bump_projection_refresh_counter(p_student_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -5947,6 +6618,30 @@ GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO servi
 
 REVOKE ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text) TO service_role;
+
+
+--
+-- Name: FUNCTION canonical_mastery_events_for_student(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION canonicalize_active_mastery_constants_state(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_active_mastery_constants_state() TO service_role;
+
+
+--
+-- Name: FUNCTION canonicalize_jsonb_value(p_val jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.canonicalize_jsonb_value(p_val jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.canonicalize_jsonb_value(p_val jsonb) TO service_role;
 
 
 --
@@ -6069,6 +6764,14 @@ GRANT ALL ON FUNCTION public.compute_streak_days(p_student_id uuid, p_section te
 
 
 --
+-- Name: FUNCTION constant_affects_formula_hash(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.constant_affects_formula_hash(p_key text) TO service_role;
+
+
+--
 -- Name: FUNCTION deidentify_user(target_user_id uuid, deleted_email text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -6082,6 +6785,14 @@ GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email 
 
 REVOKE ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.entitlement_active(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_privacy_mode text) TO service_role;
 
 
 --
@@ -6155,11 +6866,11 @@ GRANT ALL ON FUNCTION public.read_projection_constants(OUT target_qcount integer
 
 
 --
--- Name: FUNCTION recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text) TO service_role;
+REVOKE ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.recompute_skill_mastery(p_student_id uuid, p_section text, p_domain text, p_skill text, p_chain_downstream boolean) TO service_role;
 
 
 --
@@ -6751,6 +7462,13 @@ GRANT ALL ON TABLE public.legal_acceptances TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.mastery_constants TO service_role;
+
+
+--
+-- Name: TABLE mastery_constants_change_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.mastery_constants_change_log TO service_role;
 
 
 --
