@@ -1,14 +1,16 @@
 -- ============================================================================
--- INV-05E-03 Coverage Guard — actor_id substrate + write-path stamping (PR-5a/5b)
+-- INV-05E-03 Coverage Guard — actor_id substrate + write-path stamping (PR-5a/5b/5d)
 -- ============================================================================
--- @spec [Doc-05E §6 INV-05E-03, SCL-011] | @implemented [2026-06-25]
+-- @spec [Doc-05E §6 INV-05E-03, SCL-011] | @implemented [2026-06-25] | @updated [2026-06-26]
 -- Asserts that the actor_id substrate is correctly applied:
 --   1. All 7 target tables (5 activity + 2 audit) have actor_id uuid
 --   2. profiles.actor_id exists, is NOT NULL, uuid
 --   3. anonymized_actors table exists with actor_id PK
---   4. Activity-table identity cols are nullable (DROP NOT NULL applied)
---   5. Audit-table identity cols remain NOT NULL (unchanged)
+--   4. All 7 identity columns are nullable (5 activity from 5a, 2 audit from 5d)
+--   5. All 7 actor_id columns are NOT NULL (PR-5c seal intact)
 -- Extended in 5b to cover write-path stamping invariant.
+-- Updated in 5d: G5 merged into G4 (audit student_id now nullable for anonymize §5).
+--   G8 added: schema-level NOT NULL assertion on actor_id (PR-5c seal defense-in-depth).
 -- Run against a genesis-fresh-apply database.
 
 DO $guard$
@@ -82,19 +84,20 @@ BEGIN
   RAISE NOTICE 'INV-05E-03 [G3] OK: anonymized_actors table with actor_id PK';
 
   -- ========================================================================
-  -- G4: Activity-table identity columns are nullable (DROP NOT NULL applied)
+  -- G4: All 7 identity columns are nullable (5 activity from 5a, 2 audit from 5d)
   -- ========================================================================
-  -- practice_sessions.user_id, practice_session_items.user_id,
-  -- review_sessions.student_id, review_session_items.student_id,
-  -- review_error_attempts.student_id
+  -- PR-5d merged G5 into G4: audit student_id DROP NOT NULL enables anonymize
+  -- disposition SET NULL (§5 "one-way anonymized"). All 7 now nullable.
   SELECT string_agg(pair, ', ')
     INTO v_missing
     FROM (VALUES
-      ('practice_sessions',     'user_id'),
-      ('practice_session_items', 'user_id'),
-      ('review_sessions',       'student_id'),
-      ('review_session_items',  'student_id'),
-      ('review_error_attempts', 'student_id')
+      ('practice_sessions',                'user_id'),
+      ('practice_session_items',           'user_id'),
+      ('review_sessions',                  'student_id'),
+      ('review_session_items',             'student_id'),
+      ('review_error_attempts',            'student_id'),
+      ('mastery_event_audit_log',          'student_id'),
+      ('mastery_domain_refresh_audit_log', 'student_id')
     ) AS targets(tbl, col)
     CROSS JOIN LATERAL (SELECT tbl || '.' || col AS pair) x
    WHERE NOT EXISTS (
@@ -108,30 +111,7 @@ BEGIN
   IF v_missing IS NOT NULL THEN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G4]: identity columns must be nullable after DROP NOT NULL: %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G4] OK: 5 activity-table identity columns are nullable';
-
-  -- ========================================================================
-  -- G5: Audit-table identity columns remain NOT NULL (unchanged)
-  -- ========================================================================
-  SELECT string_agg(pair, ', ')
-    INTO v_missing
-    FROM (VALUES
-      ('mastery_event_audit_log',          'student_id'),
-      ('mastery_domain_refresh_audit_log', 'student_id')
-    ) AS targets(tbl, col)
-    CROSS JOIN LATERAL (SELECT tbl || '.' || col AS pair) x
-   WHERE NOT EXISTS (
-     SELECT 1 FROM information_schema.columns c
-      WHERE c.table_schema = 'public'
-        AND c.table_name   = targets.tbl
-        AND c.column_name  = targets.col
-        AND c.is_nullable  = 'NO'
-   );
-
-  IF v_missing IS NOT NULL THEN
-    RAISE EXCEPTION 'INV-05E-03 FAIL [G5]: audit-table student_id must remain NOT NULL: %', v_missing;
-  END IF;
-  RAISE NOTICE 'INV-05E-03 [G5] OK: 2 audit-table student_id columns remain NOT NULL';
+  RAISE NOTICE 'INV-05E-03 [G4] OK: all 7 identity columns are nullable';
 
   -- ========================================================================
   -- G6: Row-level — no row may have identity present + actor_id absent
@@ -195,6 +175,33 @@ BEGIN
     RAISE EXCEPTION 'INV-05E-03 FAIL [G7]: actor_id must NOT have a DEFAULT (app/moat stamps it): %', v_missing;
   END IF;
   RAISE NOTICE 'INV-05E-03 [G7] OK: 7 table actor_id columns have no DEFAULT (app/moat-layer responsibility)';
+
+  -- ========================================================================
+  -- G8: actor_id must be NOT NULL on all 7 tables (PR-5c seal intact)
+  -- ========================================================================
+  SELECT string_agg(t, ', ')
+    INTO v_missing
+    FROM unnest(ARRAY[
+      'practice_sessions',
+      'practice_session_items',
+      'review_sessions',
+      'review_session_items',
+      'review_error_attempts',
+      'mastery_event_audit_log',
+      'mastery_domain_refresh_audit_log'
+    ]) AS t
+   WHERE NOT EXISTS (
+     SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.table_name   = t
+        AND c.column_name  = 'actor_id'
+        AND c.is_nullable  = 'NO'
+   );
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'INV-05E-03 FAIL [G8]: actor_id must be NOT NULL (PR-5c seal) on: %', v_missing;
+  END IF;
+  RAISE NOTICE 'INV-05E-03 [G8] OK: all 7 actor_id columns are NOT NULL (PR-5c seal intact)';
 
   RAISE NOTICE 'INV-05E-03 COVERAGE GUARD: ALL PASS';
 
