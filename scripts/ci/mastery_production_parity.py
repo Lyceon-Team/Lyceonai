@@ -55,8 +55,9 @@ def cmd_gen() -> int:
         has_practice = any(e["source_family"] == "practice" for e in events)
         if has_practice:
             out.append(
-                "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id) "
-                f"VALUES ({_lit(_sess(fid))}, {_lit(sid)}, 'flow', {max(1,len(events))}, 'web', 'ci') ON CONFLICT (id) DO NOTHING;"
+                "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id, actor_id) "
+                f"VALUES ({_lit(_sess(fid))}, {_lit(sid)}, 'flow', {max(1,len(events))}, 'web', 'ci', "
+                f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)})) ON CONFLICT (id) DO NOTHING;"
             )
         for i, e in enumerate(events):
             # recency order: idx 0 is most recent -> strictly-decreasing occurred_at
@@ -68,15 +69,17 @@ def cmd_gen() -> int:
                     "INSERT INTO public.practice_session_items "
                     "(id, session_id, user_id, ordinal, question_id, question_stem, question_options, "
                     " question_correct_answer, question_explanation, question_domain, question_skill, "
-                    " question_difficulty, question_section, status, is_correct, occurred_at) VALUES ("
+                    " question_difficulty, question_section, status, is_correct, occurred_at, actor_id) VALUES ("
                     f"{_lit(_evt(fid,i))}, {_lit(_sess(fid))}, {_lit(sid)}, {i}, {_lit(_QID)}, 'stem', '[]'::jsonb, "
-                    f"'A', 'expl', 'd', 's', {diff}::smallint, 'M', 'answered', {correct}, {occ});"
+                    f"'A', 'expl', 'd', 's', {diff}::smallint, 'M', 'answered', {correct}, {occ}, "
+                    f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
                 )
             else:  # review
                 out.append(
                     "INSERT INTO public.review_error_attempts "
-                    "(id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at) VALUES ("
-                    f"{_lit(_evt(fid,i))}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', 'd', 's', {diff}::smallint, {occ});"
+                    "(id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at, actor_id) VALUES ("
+                    f"{_lit(_evt(fid,i))}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', 'd', 's', {diff}::smallint, {occ}, "
+                    f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
                 )
     # compute via PRODUCTION canonical_mastery_events, COPYed as TSV
     selects = [

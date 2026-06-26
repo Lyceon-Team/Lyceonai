@@ -53,17 +53,19 @@ def _practice_item(eid: str, sess: str, sid: str, ordinal: int, skill: str, diff
         "INSERT INTO public.practice_session_items "
         "(id, session_id, user_id, ordinal, question_id, question_stem, question_options, "
         " question_correct_answer, question_explanation, question_domain, question_skill, "
-        " question_difficulty, question_section, status, is_correct, occurred_at) VALUES ("
+        " question_difficulty, question_section, status, is_correct, occurred_at, actor_id) VALUES ("
         f"{_lit(eid)}, {_lit(sess)}, {_lit(sid)}, {ordinal}, {_lit(_QID)}, 'stem', '[]'::jsonb, "
-        f"'A', 'expl', {_lit(_DOMAIN)}, {_lit(skill)}, {diff}::smallint, 'M', 'answered', {correct}, {occ});"
+        f"'A', 'expl', {_lit(_DOMAIN)}, {_lit(skill)}, {diff}::smallint, 'M', 'answered', {correct}, {occ}, "
+        f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
     )
 
 
 def _review_attempt(eid: str, sid: str, skill: str, diff: int, correct: str, occ: str) -> str:
     return (
         "INSERT INTO public.review_error_attempts "
-        "(id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at) VALUES ("
-        f"{_lit(eid)}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', {_lit(_DOMAIN)}, {_lit(skill)}, {diff}::smallint, {occ});"
+        "(id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at, actor_id) VALUES ("
+        f"{_lit(eid)}, {_lit(sid)}, {_lit(_QID)}, {correct}, 'M', {_lit(_DOMAIN)}, {_lit(skill)}, {diff}::smallint, {occ}, "
+        f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)}));"
     )
 
 
@@ -86,8 +88,9 @@ def cmd_gen() -> int:
         events = fx["events"]
         if any(e["source_family"] == "practice" for e in events):
             out.append(
-                "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id) "
-                f"VALUES ({_lit(_sess(fid))}, {_lit(sid)}, 'flow', {max(1,len(events))}, 'web', 'ci') ON CONFLICT (id) DO NOTHING;"
+                "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id, actor_id) "
+                f"VALUES ({_lit(_sess(fid))}, {_lit(sid)}, 'flow', {max(1,len(events))}, 'web', 'ci', "
+                f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(sid)})) ON CONFLICT (id) DO NOTHING;"
             )
         for i, e in enumerate(events):
             occ = f"(TIMESTAMPTZ {_lit(_BASE)} - (INTERVAL '1 minute' * {i}))"
@@ -113,8 +116,9 @@ def cmd_gen() -> int:
     out.append(f"INSERT INTO auth.users (id, email) VALUES ({_lit(_AGG_STUDENT)}, 'inv13@cid') ON CONFLICT (id) DO NOTHING;")
     out.append(f"INSERT INTO public.profiles (id, email) VALUES ({_lit(_AGG_STUDENT)}, 'inv13@cid') ON CONFLICT (id) DO NOTHING;")
     out.append(
-        "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id) "
-        f"VALUES ({_lit(_AGG_SESS)}, {_lit(_AGG_STUDENT)}, 'flow', 5, 'web', 'ci') ON CONFLICT (id) DO NOTHING;"
+        "INSERT INTO public.practice_sessions (id, user_id, mode, target_count, platform, client_instance_id, actor_id) "
+        f"VALUES ({_lit(_AGG_SESS)}, {_lit(_AGG_STUDENT)}, 'flow', 5, 'web', 'ci', "
+        f"(SELECT actor_id FROM public.profiles WHERE id = {_lit(_AGG_STUDENT)})) ON CONFLICT (id) DO NOTHING;"
     )
     skill_alloc = [_AGG_SKILLS[0], _AGG_SKILLS[0], _AGG_SKILLS[0], _AGG_SKILLS[1], _AGG_SKILLS[1]]
     for i, skill in enumerate(skill_alloc):

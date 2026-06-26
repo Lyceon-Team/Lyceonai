@@ -51,16 +51,17 @@ INSERT INTO public.questions (id, section, source_type, domain, skill_codes, dif
   VALUES ('SATM1SMOKE0','M',1,'Algebra',ARRAY['s'],2,'stem','[]'::jsonb,'A','expl') ON CONFLICT DO NOTHING;
 INSERT INTO auth.users (id,email) VALUES ('aaaa1111-1111-1111-1111-111111111111','smoke@ci');
 INSERT INTO public.profiles (id,email) VALUES ('aaaa1111-1111-1111-1111-111111111111','smoke@ci');
-INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id) VALUES
-  ('aaaa2222-0000-0000-0000-000000000000','aaaa1111-1111-1111-1111-111111111111','flow',6,'web','ci');
+INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id,actor_id) VALUES
+  ('aaaa2222-0000-0000-0000-000000000000','aaaa1111-1111-1111-1111-111111111111','flow',6,'web','ci',(SELECT actor_id FROM public.profiles WHERE id = 'aaaa1111-1111-1111-1111-111111111111'));
 -- 6 answered Algebra practice items (2 skills) so domain crosses 5-event threshold; recency by occurred_at.
 INSERT INTO public.practice_session_items
   (id,session_id,user_id,ordinal,question_id,question_stem,question_options,question_correct_answer,
-   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at)
+   question_explanation,question_domain,question_skill,question_difficulty,question_section,status,is_correct,occurred_at,actor_id)
 SELECT ('aaaa3333-0000-0000-0000-00000000000'||g)::uuid, 'aaaa2222-0000-0000-0000-000000000000','aaaa1111-1111-1111-1111-111111111111',
        g,'SATM1SMOKE0','stem','[]'::jsonb,'A','expl','Algebra',
        CASE WHEN g < 3 THEN 'Linear equations in one variable' ELSE 'Linear equations in two variables' END,
-       2,'M','answered',true, TIMESTAMPTZ '2026-03-01T00:00:00Z' - (INTERVAL '1 minute' * g)
+       2,'M','answered',true, TIMESTAMPTZ '2026-03-01T00:00:00Z' - (INTERVAL '1 minute' * g),
+       (SELECT actor_id FROM public.profiles WHERE id = 'aaaa1111-1111-1111-1111-111111111111')
 FROM generate_series(0,5) g;
 SQL
 
@@ -97,21 +98,21 @@ echo "==> KPI STRUCT (§14 K-fixtures, injected T_now — recency boundary + str
 psql_db "$DB" -q >/dev/null <<'SQL'
 INSERT INTO auth.users (id,email) VALUES ('bbbb1111-1111-1111-1111-111111111111','kpi@ci');
 INSERT INTO public.profiles (id,email) VALUES ('bbbb1111-1111-1111-1111-111111111111','kpi@ci');
-INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id) VALUES
-  ('bbbb2222-0000-0000-0000-000000000000','bbbb1111-1111-1111-1111-111111111111','flow',8,'web','ci');
+INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id,actor_id) VALUES
+  ('bbbb2222-0000-0000-0000-000000000000','bbbb1111-1111-1111-1111-111111111111','flow',8,'web','ci',(SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111'));
 -- K3 boundary: event exactly 7d before T_now (inclusive). K4: 7d+1s (excluded).
 -- K5/K2: events at T_now, T_now-1d..-4d (5-day streak), plus T_now-30d (in 30d window inclusive-ish).
 -- T_now := 2026-04-15T12:00:00Z (injected). Events placed relative to it.
 INSERT INTO public.review_error_attempts
-  (id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at)
+  (id, student_id, question_id, is_correct, section, domain, skill, difficulty, occurred_at, actor_id)
 VALUES
-  ('bbbb0000-0000-0000-0000-000000000000','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-15T11:55:00Z'),  -- today (5m ago)
-  ('bbbb0000-0000-0000-0000-000000000001','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-14T10:00:00Z'),  -- -1d
-  ('bbbb0000-0000-0000-0000-000000000002','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',false,'M','Algebra','s1',2,TIMESTAMPTZ '2026-04-13T10:00:00Z'), -- -2d
-  ('bbbb0000-0000-0000-0000-000000000003','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-12T10:00:00Z'),  -- -3d
-  ('bbbb0000-0000-0000-0000-000000000004','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-11T10:00:00Z'),  -- -4d (streak=5 incl today)
-  ('bbbb0000-0000-0000-0000-000000000005','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-08T12:00:00Z'),  -- exactly -7d (K3, in 7d window)
-  ('bbbb0000-0000-0000-0000-000000000006','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-08T11:59:59Z');  -- -7d-1s (K4, OUT of 7d window)
+  ('bbbb0000-0000-0000-0000-000000000000','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-15T11:55:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')),  -- today (5m ago)
+  ('bbbb0000-0000-0000-0000-000000000001','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-14T10:00:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')),  -- -1d
+  ('bbbb0000-0000-0000-0000-000000000002','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',false,'M','Algebra','s1',2,TIMESTAMPTZ '2026-04-13T10:00:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')), -- -2d
+  ('bbbb0000-0000-0000-0000-000000000003','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-12T10:00:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')),  -- -3d
+  ('bbbb0000-0000-0000-0000-000000000004','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-11T10:00:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')),  -- -4d (streak=5 incl today)
+  ('bbbb0000-0000-0000-0000-000000000005','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-08T12:00:00Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111')),  -- exactly -7d (K3, in 7d window)
+  ('bbbb0000-0000-0000-0000-000000000006','bbbb1111-1111-1111-1111-111111111111','SATM1SMOKE0',true,'M','Algebra','s1',2, TIMESTAMPTZ '2026-04-08T11:59:59Z', (SELECT actor_id FROM public.profiles WHERE id = 'bbbb1111-1111-1111-1111-111111111111'));  -- -7d-1s (K4, OUT of 7d window)
 -- refresh section KPI with injected T_now (determinism, §7.1/§8.3).
 SELECT public.refresh_section_kpi('bbbb1111-1111-1111-1111-111111111111','M', TIMESTAMPTZ '2026-04-15T12:00:00Z');
 SQL
