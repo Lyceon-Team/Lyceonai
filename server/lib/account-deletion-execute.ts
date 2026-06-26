@@ -7,7 +7,7 @@ import { logger } from "../logger";
 // Kept OUT of the route module (account-deletion-routes.ts) so the cron router can consume
 // executeDueDeletions WITHOUT transitively loading auth/CSRF/email route wiring (layering rule:
 // routes stay thin; domain logic is pure + importable). The irreversible path is reachable only from
-// the cron-secret + flag gated POST /api/internal/execute-deletions.
+// the cron-secret + flag gated GET /api/internal/execute-deletions.
 
 type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
 
@@ -54,7 +54,7 @@ async function pauseStripeBilling(
   const { data: entitlement, error } = await admin
     .from("entitlements")
     .select("stripe_subscription_id")
-    .eq("account_id", profileId)
+    .eq("profile_id", profileId)
     .maybeSingle();
 
   if (error) {
@@ -125,8 +125,8 @@ async function assertNoStorageObjects(
 //   1. Stripe pause (prevent post-deletion billing)
 //   2. Storage purge assertion (fail-fast if objects exist)
 //   3. deidentify_user (scrub profile PII)
-//   4. Mark status='completed' (unlocks cascade's status guard)
-//   5. anonymizeAccount — cascade with 'anonymize' hardcoded (the wiring)
+//   4+5. complete_and_anonymize_account — atomic mark-completed + cascade('anonymize') in one SQL
+//        transaction. Cascade RAISE → status rolls back to 'pending' → retried next cron.
 //   6. Auth ban (100yr defense-in-depth)
 // Failure at any step: log, skip to next request (stays 'pending', retries next cron run).
 export async function executeDueDeletions(
@@ -176,20 +176,20 @@ export async function executeDueDeletions(
         throw new Error(`deidentify_user failed: ${rpcError.message}`);
       }
 
-      // Step 4: Mark status='completed' — unlocks cascade's status guard
-      const { error: markError } = await admin
-        .from("account_deletion_requests")
-        .update({
-          status: "completed",
-          completion_at: new Date().toISOString(),
-        })
-        .eq("id", pending.id);
-      if (markError) {
-        throw new Error(`mark-completed failed: ${markError.message}`);
+      // Steps 4+5 (atomic): mark-completed + cascade('anonymize') in one SQL transaction.
+      // If cascade RAISEs, the status update rolls back → row stays 'pending' → retried next cron.
+      const { error: atomicError } = await admin.rpc(
+        "complete_and_anonymize_account",
+        {
+          p_request_id: pending.id,
+          p_profile_id: pending.profile_id,
+        },
+      );
+      if (atomicError) {
+        throw new Error(
+          `atomic complete+anonymize failed: ${atomicError.message}`,
+        );
       }
-
-      // Step 5: Anonymize cascade — hardcoded 'anonymize', never 'hard_delete'
-      await anonymizeAccount(admin, pending.profile_id);
 
       // Step 6: Auth ban — defense-in-depth (Q-PR4a-1: keep)
       const { error: authError } = await admin.auth.admin.updateUserById(
