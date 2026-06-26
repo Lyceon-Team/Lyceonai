@@ -167,11 +167,11 @@ BEGIN
   END;
 
   -- ========================================================================
-  -- G7: Defense-in-depth — activity-table actor_id must have no DEFAULT
+  -- G7: Defense-in-depth — actor_id must have no DEFAULT on all 7 tables
   -- ========================================================================
   -- actor_id column must NOT have a DEFAULT that would silently supply a value
-  -- (which would hide a missing app-layer stamp). The app layer is responsible
-  -- for stamping; a DEFAULT would defeat that signal.
+  -- (which would hide a missing app-layer or moat-function stamp). A DEFAULT
+  -- would defeat the write-path signal on activity tables AND audit tables.
   SELECT string_agg(t, ', ')
     INTO v_missing
     FROM unnest(ARRAY[
@@ -179,7 +179,9 @@ BEGIN
       'practice_session_items',
       'review_sessions',
       'review_session_items',
-      'review_error_attempts'
+      'review_error_attempts',
+      'mastery_event_audit_log',
+      'mastery_domain_refresh_audit_log'
     ]) AS t
    WHERE EXISTS (
      SELECT 1 FROM information_schema.columns c
@@ -190,9 +192,9 @@ BEGIN
    );
 
   IF v_missing IS NOT NULL THEN
-    RAISE EXCEPTION 'INV-05E-03 FAIL [G7]: activity-table actor_id must NOT have a DEFAULT (app-layer stamps it): %', v_missing;
+    RAISE EXCEPTION 'INV-05E-03 FAIL [G7]: actor_id must NOT have a DEFAULT (app/moat stamps it): %', v_missing;
   END IF;
-  RAISE NOTICE 'INV-05E-03 [G7] OK: 5 activity-table actor_id columns have no DEFAULT (app-layer responsibility)';
+  RAISE NOTICE 'INV-05E-03 [G7] OK: 7 table actor_id columns have no DEFAULT (app/moat-layer responsibility)';
 
   RAISE NOTICE 'INV-05E-03 COVERAGE GUARD: ALL PASS';
 

@@ -3381,7 +3381,7 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
     mastery_model_version text NOT NULL,
     triggered_by text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
@@ -3413,7 +3413,7 @@ CREATE TABLE public.mastery_event_audit_log (
     constants_snapshot_hash text NOT NULL,
     mastery_model_version text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT mastery_event_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_event_audit_log_event_source_kind_check CHECK ((event_source_kind = ANY (ARRAY['practice_attempt'::text, 'diagnostic_attempt'::text, 'review_error_attempt'::text, 'full_length_answer'::text]))),
     CONSTRAINT mastery_event_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3580,7 +3580,7 @@ CREATE TABLE public.practice_session_items (
     answered_at timestamp with time zone,
     served_at timestamp with time zone,
     occurred_at timestamp with time zone,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3605,7 +3605,7 @@ CREATE TABLE public.practice_sessions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
@@ -3779,7 +3779,7 @@ CREATE TABLE public.review_error_attempts (
     skill text NOT NULL,
     difficulty smallint NOT NULL,
     occurred_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
     CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
@@ -3867,7 +3867,7 @@ CREATE TABLE public.review_session_items (
     served_at timestamp with time zone,
     answered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
@@ -3887,7 +3887,7 @@ CREATE TABLE public.review_sessions (
     client_instance_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    actor_id uuid,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
     CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
 );
