@@ -90,6 +90,7 @@ DECLARE
   v_result_row public.student_skill_mastery;
   v_expected_family text;
   v_event_present integer;   -- self-enforcing seam guard (LC-D1-001); LYCEON-MIGRATION-REVIEWED
+  v_actor_id uuid;           -- 05E §8 step 2: decoupled synthetic identifier for audit stamping
 BEGIN
   -- §4.2 Step 1: required fields
   IF p_student_id IS NULL OR p_section IS NULL OR p_domain IS NULL OR p_skill IS NULL
@@ -123,6 +124,13 @@ BEGIN
     RAISE EXCEPTION 'MASTERY_VALIDATION_FAILED: occurred_at beyond 5-minute skew tolerance';
   END IF;
   -- §4.2 Step 4 (domain/skill canonicality): consultative, non-blocking in V1.0 — skipped.
+
+  -- 05E §8 step 2: look up the decoupled actor_id for audit stamping.
+  -- RAISE if NULL — profile must have actor_id assigned at creation (PR-5a substrate).
+  SELECT actor_id INTO v_actor_id FROM public.profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'MASTERY_EVENT_NO_ACTOR_ID: profile % has no actor_id', p_student_id;
+  END IF;
 
   -- §4.3 Step 1: event-level advisory lock (serializes concurrent submissions of the SAME event)
   SET LOCAL lock_timeout = '5s';
@@ -204,12 +212,12 @@ BEGIN
       (student_id, section, domain, skill, source_family, event_source_kind, event_id, question_id,
        difficulty, correct, occurred_at, mastery_score_before, mastery_score_after,
        mastery_level_before, mastery_level_after, event_count_after, constants_snapshot_hash, mastery_model_version,
-       applied_at)
+       actor_id, applied_at)
     VALUES
       (p_student_id, p_section, p_domain, p_skill, p_source_family, p_event_source_kind, p_event_id, p_question_id,
        p_difficulty, p_correct, p_occurred_at, v_before_score, v_score,
        v_before_level, v_level, v_total, v_constants_hash, v_active_version,
-       now());
+       v_actor_id, now());
   EXCEPTION WHEN unique_violation THEN
     SELECT * INTO v_result_row FROM public.student_skill_mastery
     WHERE student_id = p_student_id AND section = p_section AND domain = p_domain AND skill = p_skill;
@@ -675,6 +683,35 @@ BEGIN
     );
 
     RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: complete_and_anonymize_account(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cascade_result jsonb;
+BEGIN
+  -- Mark completed — unlocks cascade's status guard (requires 'completed').
+  -- Both this UPDATE and the cascade below run in the same implicit transaction.
+  -- If cascade RAISEs, this UPDATE rolls back → row stays 'pending' → retryable.
+  UPDATE public.account_deletion_requests
+     SET status        = 'completed',
+         completion_at = now()
+   WHERE id     = p_request_id
+     AND status = 'pending';
+
+  -- Cascade with hardcoded 'anonymize' — no mode parameter, no DEFAULT trap.
+  SELECT public.execute_account_deletion_cascade(p_profile_id, 'anonymize')
+    INTO v_cascade_result;
+
+  RETURN v_cascade_result;
 END;
 $$;
 
@@ -1290,33 +1327,19 @@ CREATE FUNCTION public.execute_account_deletion_cascade(p_profile_id uuid, p_pri
 DECLARE
   v_result    jsonb := '{}'::jsonb;
   v_count     bigint;
-  v_op_ref   record;  -- LYCEON-MIGRATION-REVIEWED (operator-FK preflight guard)
+  v_op_ref   record;
+  v_actor_id  uuid;
 BEGIN
   -- ========================================================================
   -- PRIVACY MODE GUARD
   -- ========================================================================
-  -- 'anonymize' mode deferred: BLOCKING_PRIVACY_GAP (§10.4). The surrogate/FK
-  -- design (Layer 2 UPDATE with v_surrogate) requires either FK drops or a
-  -- tombstone profile row — deferred to a post-counsel PR.
-  IF p_privacy_mode = 'anonymize' THEN
-    RAISE EXCEPTION 'anonymize mode not yet enabled — BLOCKING_PRIVACY_GAP (§10.4). '
-      'Layer 2 anonymization requires privacy/compliance sign-off + FK resolution. '
-      'Use hard_delete (default) until then.';
-  END IF;
-  IF p_privacy_mode <> 'hard_delete' THEN
-    RAISE EXCEPTION 'unknown p_privacy_mode: %. Valid: hard_delete', p_privacy_mode;
+  IF p_privacy_mode NOT IN ('hard_delete', 'anonymize') THEN
+    RAISE EXCEPTION 'unknown p_privacy_mode: %. Valid: hard_delete, anonymize', p_privacy_mode;
   END IF;
 
   -- ========================================================================
   -- IDEMPOTENCY: profile already gone → clean no-op (§10.5)
   -- ========================================================================
-  -- §10.5 defines idempotency as "the function may be called again … identical
-  -- result." In hard-delete mode the profile row IS the idempotency signal:
-  -- absent profile ⟹ cascade already completed ⟹ return no_op. The deletion
-  -- request row is also gone (Q2 ruling), so profile absence is the only
-  -- durable signal. This deviates from §10.5's assumption that the request
-  -- "remains in soft-delete state," which is satisfied instead by
-  -- transactional rollback on failure. LYCEON-MIGRATION-REVIEWED
   IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = p_profile_id) THEN
     RETURN jsonb_build_object('status', 'no_op', 'reason', 'profile does not exist (already cascaded)');
   END IF;
@@ -1324,9 +1347,6 @@ BEGIN
   -- ========================================================================
   -- STATUS GUARD: require a completed deletion request
   -- ========================================================================
-  -- The cron driver (PR-4) updates the request to 'completed' after running
-  -- deidentify_user, then calls this function. Prevents accidental cascade
-  -- of profiles that haven't gone through the full grace-period flow.
   IF NOT EXISTS (
     SELECT 1 FROM public.account_deletion_requests
      WHERE profile_id = p_profile_id AND status = 'completed'
@@ -1337,27 +1357,25 @@ BEGIN
   END IF;
 
   -- ========================================================================
+  -- CAPTURE actor_id (anonymize mode: needed for sentinel + ledger;
+  -- must be read BEFORE profile deletion destroys the mapping — §3 Rule 4)
+  -- ========================================================================
+  IF p_privacy_mode = 'anonymize' THEN
+    SELECT actor_id INTO v_actor_id FROM public.profiles WHERE id = p_profile_id;
+    IF v_actor_id IS NULL THEN
+      RAISE EXCEPTION '05E-5d: profiles.actor_id IS NULL for profile % — cannot anonymize without grouping identifier (INV-05E-06)',
+        p_profile_id;
+    END IF;
+  END IF;
+
+  -- ========================================================================
   -- OPERATOR-FK PREFLIGHT GUARD (fail-closed, before ANY destructive step)
   -- ========================================================================
   -- 36 operator-identity FK edges (updated_by_profile_id / changed_by_profile_id
   -- across 18 *_config + 18 *_config_history governance tables). Operator
   -- attribution is governance data — must BLOCK deletion until consciously
-  -- reassigned (same posture as the RESTRICT identity seam). The guard
-  -- refuses cascade with a clear error BEFORE any rows are deleted.
-  --
-  -- FK-surface exhaustive partition (59 edges total, proven 2026-06-25):
-  --   5 auto-CASCADE  (abuse_score_incidents, abuse_scores, legal_acceptances,
-  --                     notification_outbox, rate_limit_ledger)
-  --   1 auto-SET-NULL (profiles.guardian_profile_id self-FK)
-  --   9 pre-cleared   (entitlements, 4×guardian_links, 2×guardian_consent_requests,
-  --                     2×account_deletion_requests)
-  --   6 L1/L2-deleted (review_schedule, practice_sessions, practice_session_items,
-  --                     review_sessions, review_session_items, review_error_attempts)
-  --   2 dropped       (audit_logs actor/target — Q6 ruling)
-  --  36 operator-guarded (this preflight)
-  --  ── ─────────────────────────────────────────────────────
-  --  59 total = complete partition, no edge unaccounted
-  -- LYCEON-MIGRATION-REVIEWED
+  -- reassigned. The guard refuses cascade with a clear error BEFORE any rows
+  -- are deleted. LYCEON-MIGRATION-REVIEWED
   FOR v_op_ref IN
     SELECT * FROM (VALUES
       ('abuse_score_runtime_config'::text,              'updated_by_profile_id'::text),
@@ -1413,8 +1431,6 @@ BEGIN
   -- ========================================================================
   -- PRE-CLEAR: RESTRICT + NO ACTION FKs that block profile deletion
   -- ========================================================================
-  -- Doc-01 identity seam. Raw DELETE for now; if Doc-01 later adds
-  -- entitlement/Stripe teardown logic, this seam calls into it.
 
   -- PS-1. entitlements (profile_id → profiles ON DELETE RESTRICT)
   DELETE FROM public.entitlements WHERE profile_id = p_profile_id;
@@ -1441,26 +1457,21 @@ BEGIN
   v_result := v_result || jsonb_build_object('guardian_consent_requests', v_count);
 
   -- PS-4. account_deletion_requests — actor_profile_id edge case
-  -- If this profile is the actor for ANOTHER profile's deletion request
-  -- (e.g., guardian requested student's deletion, now guardian is being deleted),
-  -- reassign actor to the other request's own profile (self-requested). The
-  -- NOT NULL constraint prevents SET NULL; this preserves the pending deletion.
   UPDATE public.account_deletion_requests
      SET actor_profile_id = profile_id
    WHERE actor_profile_id = p_profile_id AND profile_id <> p_profile_id;
 
   -- PS-5. account_deletion_requests — delete THIS profile's request rows
-  -- (profile_id → profiles ON DELETE RESTRICT; actor_profile_id → profiles NO ACTION)
-  -- Deleting the row releases both FKs.
   DELETE FROM public.account_deletion_requests WHERE profile_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('account_deletion_requests', v_count);
 
   -- ========================================================================
-  -- LAYER 1: Hard-delete identity-linked derived state (§10.2 steps 1–10 + review_schedule)
+  -- LAYER 1: DELETE derived state (SHARED — both modes; INV-05E-09 proven safe)
   -- ========================================================================
-  -- No FK between these tables; the listed order is canonical per spec.
-  -- None have FK to profiles (student_id is by convention only).
+  -- All derived state: mastery, KPI, projections, scheduling. Recomputable from
+  -- retained activity if ever needed (§5). No FK to profiles (convention only).
+  -- Zero triggers on any L1 table. Zero FKs from L1 to L2.
 
   -- L1-01. student_section_projection_snapshots (05C)
   DELETE FROM public.student_section_projection_snapshots WHERE student_id = p_profile_id;
@@ -1512,81 +1523,200 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('student_skill_mastery', v_count);
 
-  -- L1-11. review_schedule (Q3 ruling: L1 hard-delete — identity-linked SM-2 state, not event data)
+  -- L1-11. review_schedule (Q3 ruling: L1 — identity-linked SM-2 state, not event data)
   DELETE FROM public.review_schedule WHERE student_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('review_schedule', v_count);
 
-  -- ========================================================================
-  -- LAYER 2: Hard-delete event/audit sources (§10.4 conservative fallback)
-  -- ========================================================================
-  -- Children-before-parent FK-safe order. practice_session_items and
-  -- review_error_attempts are the canonical mastery event sources (seam §2 R1).
-  -- In hard-delete mode, all event + session + audit rows are removed.
-
-  -- L2-01. practice_session_items (child of practice_sessions via ON DELETE CASCADE)
-  DELETE FROM public.practice_session_items WHERE user_id = p_profile_id;
+  -- L1-12. student_kpi_rollups_current (SCL-004: was missing from L1 in both modes)
+  DELETE FROM public.student_kpi_rollups_current WHERE student_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('practice_session_items', v_count);
-
-  -- L2-02. practice_sessions (parent — children already deleted in L2-01)
-  DELETE FROM public.practice_sessions WHERE user_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('practice_sessions', v_count);
-
-  -- L2-03. review_error_attempts (child of review_session_items via ON DELETE CASCADE)
-  DELETE FROM public.review_error_attempts WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
-
-  -- L2-04. review_session_items (child of review_sessions via ON DELETE CASCADE)
-  DELETE FROM public.review_session_items WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('review_session_items', v_count);
-
-  -- L2-05. review_sessions (parent — children already deleted in L2-03/L2-04)
-  DELETE FROM public.review_sessions WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('review_sessions', v_count);
-
-  -- L2-06. mastery_event_audit_log (no FK; student_id by convention)
-  DELETE FROM public.mastery_event_audit_log WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('mastery_event_audit_log', v_count);
-
-  -- L2-07. mastery_domain_refresh_audit_log (no FK; student_id by convention)
-  DELETE FROM public.mastery_domain_refresh_audit_log WHERE student_id = p_profile_id;
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
+  v_result := v_result || jsonb_build_object('student_kpi_rollups_current', v_count);
 
   -- ========================================================================
-  -- PROFILE + AUTH DELETE
+  -- MODE BRANCH: hard_delete vs anonymize diverge at L2
   -- ========================================================================
-  -- All child rows with FKs to profiles are now deleted. The remaining CASCADE
-  -- FKs fire automatically: rate_limit_ledger, abuse_score_incidents,
+
+  IF p_privacy_mode = 'hard_delete' THEN
+    -- ====================================================================
+    -- LAYER 2 (hard_delete): Hard-delete event/audit sources
+    -- ====================================================================
+    -- Children-before-parent FK-safe order. All event + session + audit rows removed.
+
+    -- L2-01. practice_session_items (child of practice_sessions via ON DELETE CASCADE)
+    DELETE FROM public.practice_session_items WHERE user_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('practice_session_items', v_count);
+
+    -- L2-02. practice_sessions
+    DELETE FROM public.practice_sessions WHERE user_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('practice_sessions', v_count);
+
+    -- L2-03. review_error_attempts (child of review_session_items via ON DELETE CASCADE)
+    DELETE FROM public.review_error_attempts WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
+
+    -- L2-04. review_session_items (child of review_sessions via ON DELETE CASCADE)
+    DELETE FROM public.review_session_items WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_session_items', v_count);
+
+    -- L2-05. review_sessions
+    DELETE FROM public.review_sessions WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_sessions', v_count);
+
+    -- L2-06. mastery_event_audit_log (no FK; student_id by convention)
+    DELETE FROM public.mastery_event_audit_log WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('mastery_event_audit_log', v_count);
+
+    -- L2-07. mastery_domain_refresh_audit_log (no FK; student_id by convention)
+    DELETE FROM public.mastery_domain_refresh_audit_log WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
+
+  ELSIF p_privacy_mode = 'anonymize' THEN
+    -- ====================================================================
+    -- FAIL-CLOSED SENTINEL (INV-05E-07): before severing identity, verify
+    -- every retained row for this user has its grouping identifier.
+    -- ====================================================================
+    -- Defense-in-depth: actor_id is DB-enforced NOT NULL (PR-5c seal), so
+    -- this cannot fire under normal operation. But INV-05E-07 requires
+    -- explicit verification before the identity ↔ actor_id linkage is
+    -- destroyed. Runs BEFORE SET NULL so identity col is still queryable.
+    DECLARE
+      v_sentinel_tbl text;
+      v_sentinel_col text;
+      v_sentinel_cnt bigint;
+    BEGIN
+      FOR v_sentinel_tbl, v_sentinel_col IN VALUES
+        ('practice_sessions',                'user_id'),
+        ('practice_session_items',           'user_id'),
+        ('review_sessions',                  'student_id'),
+        ('review_session_items',             'student_id'),
+        ('review_error_attempts',            'student_id'),
+        ('mastery_event_audit_log',          'student_id'),
+        ('mastery_domain_refresh_audit_log', 'student_id')
+      LOOP
+        EXECUTE format(
+          'SELECT count(*) FROM public.%I WHERE %I = $1 AND actor_id IS NULL',
+          v_sentinel_tbl, v_sentinel_col
+        ) INTO v_sentinel_cnt USING p_profile_id;
+        IF v_sentinel_cnt > 0 THEN
+          RAISE EXCEPTION '05E-5d SENTINEL (INV-05E-07): % row(s) in public.% have identity present but actor_id IS NULL — refusing to sever identity from ungrouped row',
+            v_sentinel_cnt, v_sentinel_tbl;
+        END IF;
+      END LOOP;
+    END;
+
+    -- ====================================================================
+    -- LAYER 2 (anonymize): Sever identity + remove fingerprints on
+    -- activity tables — rows RETAINED for world-model training (§5)
+    -- ====================================================================
+    -- §5.1: "Removed: the identity link and any client/device/session
+    --   fingerprint that could enable re-identification."
+    -- §5.1: "Retained: the learning interaction — item answered, response
+    --   chosen, correctness, difficulty/domain/skill/section, ordering,
+    --   timing, and shared question-bank content."
+    -- actor_id (NOT NULL, PR-5c) is the surviving synthetic grouping id.
+    -- Children before parents (convention match with hard-delete ordering).
+    --
+    -- Partial unique indexes (uq_practice_items_idem, uq_review_attempts_idem)
+    -- are on (identity, client_attempt_id) WHERE client_attempt_id IS NOT NULL.
+    -- Setting client_attempt_id = NULL removes rows from the partial index;
+    -- no uniqueness violation. Live write path unaffected (non-anonymized
+    -- users retain non-NULL identity and client_attempt_id).
+
+    -- L2-01. practice_session_items (identity + fingerprint)
+    UPDATE public.practice_session_items
+       SET user_id = NULL, client_attempt_id = NULL
+     WHERE user_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('practice_session_items', v_count);
+
+    -- L2-02. practice_sessions (identity + fingerprint)
+    UPDATE public.practice_sessions
+       SET user_id = NULL, client_instance_id = NULL
+     WHERE user_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('practice_sessions', v_count);
+
+    -- L2-03. review_error_attempts (identity + fingerprint)
+    UPDATE public.review_error_attempts
+       SET student_id = NULL, client_attempt_id = NULL
+     WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_error_attempts', v_count);
+
+    -- L2-04. review_session_items (identity only — no fingerprint columns)
+    UPDATE public.review_session_items
+       SET student_id = NULL
+     WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_session_items', v_count);
+
+    -- L2-05. review_sessions (identity + fingerprint)
+    UPDATE public.review_sessions
+       SET student_id = NULL, client_instance_id = NULL
+     WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('review_sessions', v_count);
+
+    -- ====================================================================
+    -- LAYER 3 (anonymize): Sever identity on audit tables
+    -- ====================================================================
+    -- §5: "Audit layer: one-way anonymized per Doc 05D §10, idempotency
+    --   guarantees untouched."
+    -- mastery_event_audit_log_dedup_uq is UNIQUE on (event_source_kind,
+    -- event_id) — does NOT include student_id. SET NULL is safe; the
+    -- idempotency anchor (INV-05A-10) is preserved.
+    -- No FK to profiles (denormalized, convention only).
+
+    -- L3-01. mastery_event_audit_log
+    UPDATE public.mastery_event_audit_log
+       SET student_id = NULL
+     WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('mastery_event_audit_log', v_count);
+
+    -- L3-02. mastery_domain_refresh_audit_log
+    UPDATE public.mastery_domain_refresh_audit_log
+       SET student_id = NULL
+     WHERE student_id = p_profile_id;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    v_result := v_result || jsonb_build_object('mastery_domain_refresh_audit_log', v_count);
+
+    -- ====================================================================
+    -- ANONYMIZED_ACTORS LEDGER (§3.1): record that this actor_id is
+    -- anonymized, BEFORE profile deletion destroys the mapping
+    -- ====================================================================
+    INSERT INTO public.anonymized_actors (actor_id, anonymized_at)
+    VALUES (v_actor_id, now())
+    ON CONFLICT (actor_id) DO NOTHING;
+    v_result := v_result || jsonb_build_object('anonymized_actors', 1);
+
+  END IF;
+
+  -- ========================================================================
+  -- PROFILE + AUTH DELETE (shared — both modes destroy the profile row)
+  -- ========================================================================
+  -- §3 Rule 4: "Linkage destroyed at anonymization." The profile row
+  -- contains profiles.actor_id — the ONLY surface linking identity to the
+  -- synthetic identifier. Deleting the row makes the link irreversible.
+  -- auto-CASCADE FKs fire: rate_limit_ledger, abuse_score_incidents,
   -- abuse_scores, notification_outbox, legal_acceptances.
-  -- audit_logs FKs were dropped (DDL above) — rows remain as opaque refs.
-  -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles
-  -- that reference this profile as their guardian.
-  -- Operator-FK edges (36 config/history tables) were preflight-guarded above.
-  -- LYCEON-MIGRATION-REVIEWED
+  -- profiles.guardian_profile_id SET NULL self-FK fires for other profiles.
+  -- Operator-FK edges (36 config/history) were preflight-guarded above.
+  -- In anonymize mode, L2/L3 identity columns are already NULL — no FK
+  -- from those tables blocks this DELETE (FKs are NO ACTION, nullable).
 
   DELETE FROM public.profiles WHERE id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('profiles', v_count);
 
-  -- Storage purge is OWNED BY THE PR-4 orchestration layer: the grace-expiry
-  -- edge function calls the Supabase Storage API to delete the user's objects
-  -- BEFORE invoking this cascade. Direct DELETE FROM storage.objects is blocked
-  -- by storage.protect_delete() — storage deletion is an API operation, not a
-  -- SQL one. See §10 storage-purge seam (PR-4).
-  -- GAP-PR4-STORAGE: PR-4 grace-expiry driver must purge storage.objects via
-  -- the Supabase Storage API BEFORE calling execute_account_deletion_cascade;
-  -- SQL cascade cannot delete storage (protect_delete trigger).
-  -- LYCEON-MIGRATION-REVIEWED
-
-  -- auth.users — profiles.id REFERENCES auth.users(id) ON DELETE RESTRICT.
-  -- The profile row is gone, so the RESTRICT is released.
   DELETE FROM auth.users WHERE id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('auth_users', v_count);
@@ -2098,6 +2228,7 @@ DECLARE
   v_last_event_id          uuid;          -- RB-05B-V1-08
   v_last_event_occurred_at timestamptz;   -- RB-05B-V1-08
   v_result_row             public.student_domain_mastery;
+  v_actor_id               uuid;          -- 05E §8 step 2: decoupled synthetic identifier for audit stamping
 BEGIN
   -- §4.2 Step 1: required fields
   IF p_student_id IS NULL OR p_section IS NULL OR p_domain IS NULL THEN
@@ -2116,6 +2247,12 @@ BEGIN
   IF p_section = 'RW' AND p_domain NOT IN
        ('Information and Ideas','Craft and Structure','Expression of Ideas','Standard English Conventions') THEN
     RAISE EXCEPTION 'DOMAIN_SECTION_MISMATCH: domain % is not a canonical RW domain', p_domain;
+  END IF;
+
+  -- 05E §8 step 2: look up the decoupled actor_id for audit stamping.
+  SELECT actor_id INTO v_actor_id FROM public.profiles WHERE id = p_student_id;
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'MASTERY_EVENT_NO_ACTOR_ID: profile % has no actor_id', p_student_id;
   END IF;
 
   -- §4.3 student-domain advisory transaction lock (prefix 'mastery_domain|' — cannot collide
@@ -2186,12 +2323,14 @@ BEGIN
   INSERT INTO public.mastery_domain_refresh_audit_log (
     audit_row_id, student_id, section, domain,
     mastery_score_before, mastery_score_after, mastery_level_before, mastery_level_after,
-    event_count_after, constants_snapshot_hash, mastery_model_version, triggered_by, applied_at
+    event_count_after, constants_snapshot_hash, mastery_model_version, triggered_by,
+    actor_id, applied_at
   ) VALUES (
     gen_random_uuid(), p_student_id, p_section, p_domain,
     v_before_score, v_mastery_score, v_before_level, v_mastery_level,
     v_total_events, v_constants_hash, v_active_version,
-    current_setting('app.mastery_refresh_trigger', true), now()
+    current_setting('app.mastery_refresh_trigger', true),
+    v_actor_id, now()
   );
 
   -- §4.9 downstream KPI refreshes — all four, SAME transaction (§2.3 / §8.1). Any failure rolls
@@ -2754,6 +2893,16 @@ CREATE TABLE public.account_deletion_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: anonymized_actors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.anonymized_actors (
+    actor_id uuid NOT NULL,
+    anonymized_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -3342,7 +3491,7 @@ CREATE TABLE public.mastery_constants_history (
 
 CREATE TABLE public.mastery_domain_refresh_audit_log (
     audit_row_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     section text NOT NULL,
     domain text NOT NULL,
     mastery_score_before numeric(5,4),
@@ -3354,6 +3503,7 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
     mastery_model_version text NOT NULL,
     triggered_by text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT mastery_domain_refresh_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_domain_refresh_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT mastery_domain_refresh_audit_log_triggered_by_check CHECK ((triggered_by = ANY (ARRAY['event'::text, 'backfill_recompute'::text])))
@@ -3366,7 +3516,7 @@ CREATE TABLE public.mastery_domain_refresh_audit_log (
 
 CREATE TABLE public.mastery_event_audit_log (
     audit_row_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     section text NOT NULL,
     domain text NOT NULL,
     skill text NOT NULL,
@@ -3385,6 +3535,7 @@ CREATE TABLE public.mastery_event_audit_log (
     constants_snapshot_hash text NOT NULL,
     mastery_model_version text NOT NULL,
     applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT mastery_event_audit_log_event_count_after_check CHECK ((event_count_after >= 0)),
     CONSTRAINT mastery_event_audit_log_event_source_kind_check CHECK ((event_source_kind = ANY (ARRAY['practice_attempt'::text, 'diagnostic_attempt'::text, 'review_error_attempt'::text, 'full_length_answer'::text]))),
     CONSTRAINT mastery_event_audit_log_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3529,7 +3680,7 @@ CREATE TABLE public.practice_runtime_config_history (
 CREATE TABLE public.practice_session_items (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_id uuid NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     ordinal integer NOT NULL,
     question_id text NOT NULL,
     question_stem text NOT NULL,
@@ -3551,6 +3702,7 @@ CREATE TABLE public.practice_session_items (
     answered_at timestamp with time zone,
     served_at timestamp with time zone,
     occurred_at timestamp with time zone,
+    actor_id uuid NOT NULL,
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3564,17 +3716,18 @@ CREATE TABLE public.practice_session_items (
 
 CREATE TABLE public.practice_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     mode text NOT NULL,
     filters jsonb DEFAULT '{}'::jsonb NOT NULL,
     target_count integer NOT NULL,
     platform text NOT NULL,
-    client_instance_id text NOT NULL,
+    client_instance_id text,
     status text DEFAULT 'created'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
+    actor_id uuid NOT NULL,
     CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
@@ -3607,7 +3760,8 @@ CREATE TABLE public.profiles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     student_link_code text,
     profile_completed_at timestamp with time zone,
-    marketing_opt_in boolean DEFAULT false NOT NULL
+    marketing_opt_in boolean DEFAULT false NOT NULL,
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL
 );
 
 
@@ -3735,7 +3889,7 @@ CREATE TABLE public.rate_limit_runtime_config_history (
 CREATE TABLE public.review_error_attempts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_item_id uuid,
-    student_id uuid NOT NULL,
+    student_id uuid,
     question_id text NOT NULL,
     selected_answer text,
     is_correct boolean NOT NULL,
@@ -3747,6 +3901,7 @@ CREATE TABLE public.review_error_attempts (
     skill text NOT NULL,
     difficulty smallint NOT NULL,
     occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_error_attempts_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
     CONSTRAINT review_error_attempts_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
 );
@@ -3816,7 +3971,7 @@ CREATE TABLE public.review_schedule (
 CREATE TABLE public.review_session_items (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     session_id uuid NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     ordinal integer NOT NULL,
     question_id text NOT NULL,
     question_stem text NOT NULL,
@@ -3834,6 +3989,7 @@ CREATE TABLE public.review_session_items (
     served_at timestamp with time zone,
     answered_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT review_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT review_session_items_retry_mode_check CHECK ((retry_mode = ANY (ARRAY['same_question'::text, 'similar_question'::text]))),
@@ -3847,12 +4003,13 @@ CREATE TABLE public.review_session_items (
 
 CREATE TABLE public.review_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    student_id uuid NOT NULL,
+    student_id uuid,
     status text DEFAULT 'active'::text NOT NULL,
     source_origin text NOT NULL,
-    client_instance_id text NOT NULL,
+    client_instance_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    actor_id uuid NOT NULL,
     CONSTRAINT review_sessions_source_origin_check CHECK ((source_origin = ANY (ARRAY['practice'::text, 'full_test'::text]))),
     CONSTRAINT review_sessions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'completed'::text, 'abandoned'::text])))
 );
@@ -4092,6 +4249,14 @@ ALTER TABLE ONLY public.account_deletion_runtime_config_history
 
 ALTER TABLE ONLY public.account_deletion_runtime_config
     ADD CONSTRAINT account_deletion_runtime_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: anonymized_actors anonymized_actors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.anonymized_actors
+    ADD CONSTRAINT anonymized_actors_pkey PRIMARY KEY (actor_id);
 
 
 --
@@ -4891,6 +5056,13 @@ CREATE INDEX idx_practice_sessions_active ON public.practice_sessions USING btre
 --
 
 CREATE INDEX idx_practice_sessions_user ON public.practice_sessions USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_profiles_actor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_profiles_actor_id ON public.profiles USING btree (actor_id);
 
 
 --
@@ -5942,6 +6114,12 @@ ALTER TABLE public.account_deletion_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.account_deletion_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: anonymized_actors; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.anonymized_actors ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6669,6 +6847,14 @@ GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO s
 
 
 --
+-- Name: FUNCTION complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION compute_longest_streak_days(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -7271,6 +7457,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_confi
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_config_history TO service_role;
+
+
+--
+-- Name: TABLE anonymized_actors; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.anonymized_actors TO service_role;
 
 
 --

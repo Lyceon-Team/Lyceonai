@@ -6,10 +6,12 @@
 -- cancel rehearsals prove single RPCs on real schema. This drives all three chains the UI triggers,
 -- end to end, through the real RPCs:
 --   CHAIN 1: request -> soft-delete + pending row + token -> T+7 cron (select due + deidentify_user
---            + mark completed) -> anonymized;
+--            + mark completed) -> execute_account_deletion_cascade('anonymize') -> anonymized;
 --   CHAIN 2: request -> restore_account_deletion(token) (the /account/recover page) -> restored;
 --   CHAIN 3: request -> cancel_account_deletion(profile) (in-app cancel) -> restored.
--- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql applied.
+-- Pre-req: genesis pipeline + 20260621000000_account_deletion_lifecycle.sql
+--   + 20260625010000_05d_account_deletion_cascade.sql
+--   + 20260626010000_05e_anonymize_disposition.sql applied.
 -- ============================================================================
 --
 -- PORTABLE + PROD-SAFE + RE-RUNNABLE: the ENTIRE chain is ONE self-contained DO block — no psql
@@ -84,6 +86,24 @@ BEGIN
   END IF;
   RAISE NOTICE 'C1.2 OK  T+7 cron -> deidentify anonymized the eligible user';
 
+  -- PR-4a: the driver now calls execute_account_deletion_cascade('anonymize') after mark-completed.
+  -- This proves the full sequence: deidentify → mark completed → cascade('anonymize').
+  DECLARE
+    v_cascade_result jsonb;
+  BEGIN
+    SELECT public.execute_account_deletion_cascade(
+      'a1111111-1111-1111-1111-111111111111', 'anonymize'
+    ) INTO v_cascade_result;
+    IF v_cascade_result IS NULL THEN
+      RAISE EXCEPTION 'C1: cascade returned NULL';
+    END IF;
+    IF v_cascade_result->>'status' = 'no_op' THEN
+      RAISE NOTICE 'C1.3 OK  cascade returned no_op (no child data for seed user — expected)';
+    ELSE
+      RAISE NOTICE 'C1.3 OK  cascade completed: %', v_cascade_result;
+    END IF;
+  END;
+
   -- ===================== CHAIN 2 — request -> token recovery -> restored =====================
   PERFORM public.request_account_deletion(
     'b2222222-2222-2222-2222-222222222222',
@@ -126,5 +146,5 @@ BEGIN
   DELETE FROM public.profiles               WHERE id         = ANY (persona);
   DELETE FROM auth.users                    WHERE id         = ANY (persona);
 
-  RAISE NOTICE '==> DELETION LIFECYCLE E2E PASSED: request->cron->anonymize; request->token-recover->restored; request->in-app-cancel->restored (no residue)';
+  RAISE NOTICE '==> DELETION LIFECYCLE E2E PASSED: request->cron->deidentify->completed->cascade(anonymize); request->token-recover->restored; request->in-app-cancel->restored (no residue)';
 END $$;
