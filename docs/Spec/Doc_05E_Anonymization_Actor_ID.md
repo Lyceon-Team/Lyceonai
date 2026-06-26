@@ -1,6 +1,6 @@
 # Doc 05E — Anonymized Retention & Identity Decoupling (Governance)
 
-**Status:** DRAFT FOR LOCK
+**Status:** LOCKED
 **Family:** 05 (Mastery / Data Governance)
 **Type:** Governance & compliance doctrine. This document owns the *mandate, legal basis, invariants, and procedural requirements* for anonymized retention. It does **not** prescribe schema, column names, or SQL — those are derived at build time against live schema, audited per the canonical build process, the same as every other 05-family implementation.
 **Counsel:** Mechanism approved — decoupled synthetic actor identifier, lifelong cross-service grouping, identity-linkage destroyed at deletion, structured-data-only retention.
