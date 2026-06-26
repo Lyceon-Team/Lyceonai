@@ -1,7 +1,9 @@
 import { getSupabaseAdmin } from "../middleware/supabase-auth";
+import { getUncachableStripeClient } from "./stripeClient";
 import { logger } from "../logger";
 
-// @spec [Doc-01 §40.5 Hard delete at T+7] account-deletion hard-delete execution — domain logic.
+// @spec [Doc-01 §40.5 Hard delete at T+7, Doc-05E §8 step 5 + §9] account-deletion execution —
+// the cron-driven grace-expiry driver that wires deidentify + anonymize-disposition cascade.
 // Kept OUT of the route module (account-deletion-routes.ts) so the cron router can consume
 // executeDueDeletions WITHOUT transitively loading auth/CSRF/email route wiring (layering rule:
 // routes stay thin; domain logic is pure + importable). The irreversible path is reachable only from
@@ -17,21 +19,120 @@ export function buildDeletedEmail(userId: string): string {
 
 // @spec [Doc-01 §40.2.1 / §40.3 / §40.4] V2 lifecycle gate. The soft-delete-lock + token-recovery
 // path (and the destructive executor below) go live ONLY when the owner has applied the staged
-// migration (supabase/migrations-pending/20260621000000_account_deletion_lifecycle.sql) and set this
-// flag. Flag OFF (default) keeps the V2 routes + the hard-delete executor inert/dormant.
+// migration and set this flag. Flag OFF (default) keeps the V2 routes + the executor inert/dormant.
 export function isDeletionLifecycleV2Enabled(): boolean {
   return process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true";
 }
 
-// @spec [Doc-01 §40.5 Hard delete at T+7] the irreversible de-identify pass. Per-row idempotent:
-// deidentify_user is a no-op over an already-anonymized row, and once a request flips to
-// status='completed' it leaves the pending selection — both proven by the deletion-deidentify
-// rehearsal gate (scripts/ci/deletion-deidentify-rehearsal.*).
+// @spec [Doc-05E §8 step 5 + §9] HARDENING: the ONLY way the driver invokes the cascade.
+// The mode is hardcoded to 'anonymize' — there is no parameter, no default, no way to pass
+// 'hard_delete'. This makes the DEFAULT trap (p_privacy_mode DEFAULT 'hard_delete') impossible
+// by construction. Exported for testing only — the driver calls this, never the RPC directly.
+export async function anonymizeAccount(
+  admin: DeletionAdminClient,
+  profileId: string,
+): Promise<Record<string, unknown>> {
+  const { data, error } = await admin.rpc("execute_account_deletion_cascade", {
+    p_profile_id: profileId,
+    p_privacy_mode: "anonymize",
+  });
+  if (error) {
+    throw new Error(
+      `anonymize cascade failed for ${profileId}: ${error.message}`,
+    );
+  }
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+// @spec [Doc-01 §40.5 / Q-PR4a-4(b)] Pause Stripe billing collection so the user is not charged
+// post-deletion. Full cancellation is PR-4b; this prevents interim billing. No-op if no subscription.
+async function pauseStripeBilling(
+  admin: DeletionAdminClient,
+  profileId: string,
+  requestId?: string,
+): Promise<void> {
+  const { data: entitlement, error } = await admin
+    .from("entitlements")
+    .select("stripe_subscription_id")
+    .eq("account_id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Failed to look up entitlement for Stripe pause: ${error.message}`,
+    );
+  }
+
+  const subId = entitlement?.stripe_subscription_id as string | null;
+  if (!subId) {
+    logger.info(
+      "DELETION",
+      "stripe_pause_skip",
+      "No Stripe subscription to pause",
+      { userId: profileId, requestId },
+    );
+    return;
+  }
+
+  const stripe = await getUncachableStripeClient();
+  await stripe.subscriptions.update(subId, {
+    pause_collection: { behavior: "void" },
+  });
+  logger.info(
+    "DELETION",
+    "stripe_paused",
+    "Stripe subscription paused (void) for deletion",
+    { userId: profileId, requestId },
+  );
+}
+
+// @spec [Q-PR4a-2(c)] Fail-fast: if Supabase Storage objects exist for this user, the driver
+// MUST NOT proceed — storage purge logic must be added first. Today zero buckets/uploads exist;
+// this assertion catches a future addition that forgets to update the driver.
+async function assertNoStorageObjects(
+  admin: DeletionAdminClient,
+  profileId: string,
+): Promise<void> {
+  const { data: buckets, error: bucketsError } =
+    await admin.storage.listBuckets();
+  if (bucketsError) {
+    throw new Error(
+      `Storage bucket listing failed (cannot verify purge safety): ${bucketsError.message}`,
+    );
+  }
+  if (!buckets || buckets.length === 0) return;
+
+  for (const bucket of buckets) {
+    const { data: objects, error: listError } = await admin.storage
+      .from(bucket.name)
+      .list(profileId, { limit: 1 });
+    if (listError) {
+      throw new Error(
+        `Storage object listing failed for bucket ${bucket.name}: ${listError.message}`,
+      );
+    }
+    if (objects && objects.length > 0) {
+      throw new Error(
+        `STORAGE_OBJECTS_EXIST: profile ${profileId} has objects in bucket "${bucket.name}" — ` +
+          `add storage purge logic to the driver before proceeding with cascade`,
+      );
+    }
+  }
+}
+
+// @spec [Doc-01 §40.5, Doc-05E §8 step 5 + §9] The grace-expiry driver. Per-request execution
+// sequence (Q-PR4a-6 ruling):
+//   1. Stripe pause (prevent post-deletion billing)
+//   2. Storage purge assertion (fail-fast if objects exist)
+//   3. deidentify_user (scrub profile PII)
+//   4. Mark status='completed' (unlocks cascade's status guard)
+//   5. anonymizeAccount — cascade with 'anonymize' hardcoded (the wiring)
+//   6. Auth ban (100yr defense-in-depth)
+// Failure at any step: log, skip to next request (stays 'pending', retries next cron run).
 export async function executeDueDeletions(
   admin: DeletionAdminClient,
   requestId?: string,
 ): Promise<{ executedCount: number; failedCount: number }> {
-  // Doc-01 §40.5: select every pending request whose scheduled hard-delete time has arrived.
   const nowIso = new Date().toISOString();
 
   const { data: pendingRequests, error: fetchError } = await admin
@@ -57,60 +158,69 @@ export async function executeDueDeletions(
   let successCount = 0;
   let failureCount = 0;
 
-  // Execute de-identification logic via stored procedure per user
   for (const pending of pendingRequests) {
-    const deletionEmail = buildDeletedEmail(pending.profile_id);
+    try {
+      // Step 1: Stripe pause — prevent post-deletion billing (Q-PR4a-4b)
+      await pauseStripeBilling(admin, pending.profile_id, requestId);
 
-    const { error: rpcError } = await admin.rpc("deidentify_user", {
-      target_user_id: pending.profile_id,
-      deleted_email: deletionEmail,
-    });
+      // Step 2: Storage assertion — fail-fast if objects exist (Q-PR4a-2c)
+      await assertNoStorageObjects(admin, pending.profile_id);
 
-    if (rpcError) {
+      // Step 3: deidentify_user — scrub profile PII
+      const deletionEmail = buildDeletedEmail(pending.profile_id);
+      const { error: rpcError } = await admin.rpc("deidentify_user", {
+        target_user_id: pending.profile_id,
+        deleted_email: deletionEmail,
+      });
+      if (rpcError) {
+        throw new Error(`deidentify_user failed: ${rpcError.message}`);
+      }
+
+      // Step 4: Mark status='completed' — unlocks cascade's status guard
+      const { error: markError } = await admin
+        .from("account_deletion_requests")
+        .update({
+          status: "completed",
+          completion_at: new Date().toISOString(),
+        })
+        .eq("id", pending.id);
+      if (markError) {
+        throw new Error(`mark-completed failed: ${markError.message}`);
+      }
+
+      // Step 5: Anonymize cascade — hardcoded 'anonymize', never 'hard_delete'
+      await anonymizeAccount(admin, pending.profile_id);
+
+      // Step 6: Auth ban — defense-in-depth (Q-PR4a-1: keep)
+      const { error: authError } = await admin.auth.admin.updateUserById(
+        pending.profile_id,
+        {
+          email: deletionEmail,
+          ban_duration: DELETION_BAN_DURATION,
+          user_metadata: {
+            deletion_status: "completed",
+            deleted_at: new Date().toISOString(),
+          },
+        },
+      );
+      if (authError) {
+        throw new Error(`auth ban failed: ${authError.message}`);
+      }
+
+      successCount++;
+    } catch (err) {
       logger.error(
         "DELETION",
-        "deidentify_error",
-        "Failed to deidentify user",
+        "execution_step_failed",
+        "Deletion execution failed for profile — stays pending, retries next cron",
         {
           userId: pending.profile_id,
-          error: rpcError.message,
+          error: err instanceof Error ? err.message : String(err),
           requestId,
         },
       );
       failureCount++;
-      continue;
     }
-
-    const { error: authError } = await admin.auth.admin.updateUserById(
-      pending.profile_id,
-      {
-        email: deletionEmail,
-        ban_duration: DELETION_BAN_DURATION,
-        user_metadata: {
-          deletion_status: "completed",
-          deleted_at: new Date().toISOString(),
-        },
-      },
-    );
-
-    if (authError) {
-      logger.error(
-        "DELETION",
-        "auth_disable_failed",
-        "Failed to disable auth user after deidentification",
-        { userId: pending.profile_id, error: authError.message, requestId },
-      );
-      failureCount++;
-      continue;
-    }
-
-    // Mark as completed
-    await admin
-      .from("account_deletion_requests")
-      .update({ status: "completed", completion_at: new Date().toISOString() })
-      .eq("id", pending.id);
-
-    successCount++;
   }
 
   logger.info(

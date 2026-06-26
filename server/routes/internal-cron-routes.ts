@@ -61,16 +61,16 @@ router.get(
 );
 
 /**
- * POST /api/internal/execute-deletions
- * @spec [Doc-01 §40.5 Hard delete at T+7] cron-only hard-delete pass. The IRREVERSIBLE deidentify
- * path is reachable ONLY here, behind TWO gates:
+ * GET /api/internal/execute-deletions
+ * @spec [Doc-01 §40.5 Hard delete at T+7] cron-only hard-delete pass. Vercel Cron dispatches GET
+ * (matching the legal-acceptance-drain pattern). The IRREVERSIBLE path is behind TWO gates:
  *   1. CRON_SECRET (like the legal-acceptance drain) — nothing but the scheduled job can trigger it;
  *      unauthorized/unconfigured => 404 (fails closed, reveals nothing).
  *   2. ACCOUNT_DELETION_LIFECYCLE_V2 — flag-OFF is genuinely dormant: a no-op acknowledgement, no
  *      selector, no deidentify_user call. So shipping with the staged migration unapplied / flag off
  *      cannot anonymize anyone.
  */
-router.post(
+router.get(
   "/execute-deletions",
   async (req: Request, res: Response): Promise<void> => {
     if (!cronAuthorized(req)) {
