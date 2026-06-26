@@ -516,16 +516,23 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     stripePauseMock.mockReset();
   });
 
-  it('calls anonymize cascade with hardcoded "anonymize" mode — never hard_delete', async () => {
+  it("calls the atomic complete_and_anonymize RPC — anonymize-by-construction in SQL", async () => {
     const { admin, rpcCalls } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
     });
     await executeDueDeletions(admin, "test-req");
-    const cascadeCall = rpcCalls.find(
+    const atomicCall = rpcCalls.find(
+      (c) => c.fn === "complete_and_anonymize_account",
+    );
+    expect(atomicCall).toBeDefined();
+    expect(atomicCall!.args).toEqual({
+      p_request_id: "req-1",
+      p_profile_id: "p-1",
+    });
+    const rawCascade = rpcCalls.find(
       (c) => c.fn === "execute_account_deletion_cascade",
     );
-    expect(cascadeCall).toBeDefined();
-    expect(cascadeCall!.args.p_privacy_mode).toBe("anonymize");
+    expect(rawCascade).toBeUndefined();
   });
 
   it('the anonymizeAccount wrapper hardcodes "anonymize" and exposes no mode parameter', async () => {
@@ -540,7 +547,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     });
   });
 
-  it("HARDENING: the driver never invokes hard_delete — verified by inspecting all RPC calls", async () => {
+  it("HARDENING: the driver never calls the raw cascade RPC directly — all go through atomic RPC", async () => {
     const { admin, rpcCalls } = buildFakeAdmin({
       pendingRequests: [
         { id: "req-1", profile_id: "p-1" },
@@ -548,14 +555,14 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       ],
     });
     await executeDueDeletions(admin, "test-req");
-    const cascadeCalls = rpcCalls.filter(
+    const atomicCalls = rpcCalls.filter(
+      (c) => c.fn === "complete_and_anonymize_account",
+    );
+    expect(atomicCalls).toHaveLength(2);
+    const rawCascadeCalls = rpcCalls.filter(
       (c) => c.fn === "execute_account_deletion_cascade",
     );
-    expect(cascadeCalls.length).toBe(2);
-    for (const call of cascadeCalls) {
-      expect(call.args.p_privacy_mode).toBe("anonymize");
-      expect(call.args.p_privacy_mode).not.toBe("hard_delete");
-    }
+    expect(rawCascadeCalls).toHaveLength(0);
   });
 
   it("follows the correct 6-step ordering per request", async () => {
@@ -633,8 +640,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       "stripe_pause",
       "storage_check",
       "rpc:deidentify_user",
-      "mark_completed",
-      "rpc:execute_account_deletion_cascade",
+      "rpc:complete_and_anonymize_account",
       "auth_ban",
     ]);
   });
@@ -654,15 +660,34 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     expect(result).toEqual({ executedCount: 0, failedCount: 1 });
   });
 
-  it("skips a request on cascade failure — stays pending, retries next cron", async () => {
+  it("skips a request on atomic RPC failure — stays pending, retries next cron", async () => {
     const { admin } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
       rpcErrors: {
-        execute_account_deletion_cascade: { message: "cascade boom" },
+        complete_and_anonymize_account: { message: "cascade boom" },
       },
     });
     const result = await executeDueDeletions(admin, "test-req");
     expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+  });
+
+  it("REGRESSION: cascade failure in atomic RPC leaves status 'pending' — never stranded 'completed'", async () => {
+    const { admin, updateCalls } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      rpcErrors: {
+        complete_and_anonymize_account: { message: "cascade boom" },
+      },
+    });
+    const result = await executeDueDeletions(admin, "test-req");
+    expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+    // The atomic RPC wraps mark-completed + cascade in one transaction.
+    // The driver must NOT separately mark-completed outside the RPC.
+    const completedUpdates = updateCalls.filter(
+      (c) =>
+        c.table === "account_deletion_requests" &&
+        c.data.status === "completed",
+    );
+    expect(completedUpdates).toHaveLength(0);
   });
 
   it("fail-fast: throws when storage objects exist for the profile", async () => {

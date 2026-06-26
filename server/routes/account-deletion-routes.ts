@@ -283,9 +283,25 @@ router.post(
             .status(500)
             .json({ error: "Failed to queue account for deletion", requestId });
         }
-        // @spec [Doc-01 §40.2.1 Phase 3] session-kill at request time (Q-PR4-6 yes):
-        // kill all active sessions immediately so the user cannot use the app during grace.
-        await admin.auth.admin.signOutUser(userId);
+        // @spec [Doc-01 §40.2.1 Phase 3] session-kill at request time — best-effort
+        // defense-in-depth. A throw must not 500 the request after deletion was queued.
+        try {
+          await admin.auth.admin.signOutUser(userId);
+        } catch (signOutErr) {
+          logger.error(
+            "DELETION",
+            "signout_best_effort_failed",
+            "Session-kill failed after deletion request — continuing (best-effort)",
+            {
+              userId,
+              error:
+                signOutErr instanceof Error
+                  ? signOutErr.message
+                  : String(signOutErr),
+              requestId,
+            },
+          );
+        }
         // §40.2.1 Phase 4: confirmation email with the 7-day recovery link (best-effort).
         await sendDeletionScheduledEmail(
           admin,

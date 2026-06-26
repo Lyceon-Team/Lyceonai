@@ -62,7 +62,7 @@ router.get(
 
 /**
  * GET /api/internal/execute-deletions
- * @spec [Doc-01 §40.5 Hard delete at T+7] cron-only hard-delete pass. Vercel Cron dispatches GET
+ * @spec [Doc-01 §40.5 Hard delete at T+7] cron-only anonymize pass. Vercel Cron dispatches GET
  * (matching the legal-acceptance-drain pattern). The IRREVERSIBLE path is behind TWO gates:
  *   1. CRON_SECRET (like the legal-acceptance drain) — nothing but the scheduled job can trigger it;
  *      unauthorized/unconfigured => 404 (fails closed, reveals nothing).
@@ -94,7 +94,7 @@ router.get(
       logger.info(
         "DELETION",
         "execute_deletions_job",
-        "Scheduled hard-delete pass completed",
+        "Scheduled anonymize pass completed",
         { executedCount, failedCount },
       );
       res.json({ ok: true, executedCount, failedCount });
@@ -102,7 +102,7 @@ router.get(
       logger.error(
         "DELETION",
         "execute_deletions_job_error",
-        "Scheduled hard-delete pass failed",
+        "Scheduled anonymize pass failed",
         err,
       );
       res.status(500).json({ error: "execute_deletions_failed" });
