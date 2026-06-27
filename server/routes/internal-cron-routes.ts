@@ -87,17 +87,15 @@ router.get(
       return;
     }
     try {
-      const { executedCount, failedCount } = await executeDueDeletions(
-        getSupabaseAdmin(),
-        req.requestId,
-      );
+      const { executedCount, skippedCount, failedCount } =
+        await executeDueDeletions(getSupabaseAdmin(), req.requestId);
       logger.info(
         "DELETION",
         "execute_deletions_job",
         "Scheduled anonymize pass completed",
-        { executedCount, failedCount },
+        { executedCount, skippedCount, failedCount },
       );
-      res.json({ ok: true, executedCount, failedCount });
+      res.json({ ok: true, executedCount, skippedCount, failedCount });
     } catch (err) {
       logger.error(
         "DELETION",
