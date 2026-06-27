@@ -387,12 +387,16 @@ router.post(
         scheduledHardDeleteAt: data.scheduled_hard_delete_at,
         requestId,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         "DELETION",
         "unhandled_error",
         "Failed to process deletion request",
-        { userId, error: err.message, requestId },
+        {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+          requestId,
+        },
       );
       res.status(500).json({ error: "Internal server error", requestId });
     }
@@ -514,12 +518,16 @@ router.post(
         message: "Account deletion cancelled successfully",
         requestId,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         "DELETION",
         "unhandled_error",
         "Failed to cancel deletion request",
-        { userId, error: err.message, requestId },
+        {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+          requestId,
+        },
       );
       res.status(500).json({ error: "Internal server error", requestId });
     }

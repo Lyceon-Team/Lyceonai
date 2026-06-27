@@ -2,7 +2,7 @@
 
 > **Internal engineering/compliance document — not user-facing.**
 > Describes the technical deletion mechanism (anonymize-retain per Doc 05E).
-> The user-facing presentation is "permanently deleted" — see PR-5e copy spec.
+> The user-facing presentation is "permanently deleted" (counsel-approved framing, Doc-01 §40).
 
 ## Deletion Request Lifecycle
 
