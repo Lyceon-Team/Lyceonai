@@ -25,6 +25,27 @@
 
 ## Entries
 
+
+SCL-014 | Doc 05A §4.6/§11.4 (canonical_mastery_events source tables) | PROPOSED (Karl promotes)
+Change: spec prose names event-source tables that differ from the live canonical schema. DB is canonical.
+WAS (spec text): canonical_mastery_events derives events from `test_session_answers` (full_length_answer)
+   and `practice_attempts_v0` (practice_attempt).
+IS (live canonical schema, verified read-only + Codex-confirmed via lane_c_mastery_seam.sql):
+   - practice_attempt  → practice_session_items.id   (lane_c_mastery_seam.sql:42-53)
+   - review_error_attempt → review_error_attempts.id (lane_c_mastery_seam.sql:66-70)
+   - full_length_answer → full_length_exam_responses.id (persisted response PK)
+   The `practice_attempts_v0` table is the retired fossil (Doc 02B §8 names practice_session_items as the
+   V2 replacement; the DB function comment already flags this). `test_session_answers` is the spec-text
+   name for what the live schema exposes as full_length_exam_responses.
+Rationale: WS-0 mastery vertical (PR @cleanup) grounded the TS write-bridge against the LIVE canonical
+   tables, not the stale spec prose, per the standing directive (DB/live schema is canonical; repo/spec-
+   text lag is reconciled forward, never resolved by trusting stale names). event_id sourcing is
+   idempotency-load-bearing ((event_source_kind, event_id) dedup on mastery_event_audit_log); Codex
+   independently re-derived that the sourced PKs match canonical_mastery_events' derivation — confirmed
+   correct. No code/DB change from this entry; it records that Doc 05A's prose table names should be
+   updated to the live names at the next owner spec edit. Tracks the divergence so it's not reburied.
+No DB migration. No code change. Owner action: update Doc 05A §4.6/§11.4 table names at next spec pass.
+
 ### SCL-013 — Doc 01 V8 §40.3 subscription-cancellation timing corrected to match built implementation
 **Date:** 2026-06-27 · **Status:** PROPOSED
 **Touches:** Doc 01 V8 §40.3 (line ~1968)
