@@ -25,6 +25,26 @@
 
 ## Entries
 
+### SCL-012 — Doc 01 §19 deletion-confirmation prompt framing aligned to counsel ruling
+**Date:** 2026-06-27 · **Status:** OPEN→APPLIED (Karl applies)
+**Touches:** Doc 01 §19 (line ~1047)
+**Change:** deletion-confirmation prompt framing aligned to counsel ruling.
+WAS: "...the confirmation prompt should explain ... data anonymization at T+7"
+NOW: "...the confirmation prompt should explain ... permanent account deletion at T+7"
+**Rationale:** Counsel ruled (2026-06-27) that user-facing language is HARD DELETION — anonymized
+retained data is legally non-identifiable (not the user's data), so it is NOT disclosed in user-facing
+copy. The INTERNAL mechanism remains anonymize-retain (Doc 05E governs; cascade 'anonymize' mode). This
+is the internal/external split: §19 user-facing prompt says "deleted"; the engine anonymizes.
+Doc 05E (anonymize mechanism) UNCHANGED. Only the §19 USER-FACING PROMPT DESCRIPTION changes.
+Privacy Policy locked consistent with this framing (Anonymized Structured Learning Data, LISA scoped out).
+
+Doc 01 §19 line ~1047 edit:
+  "data anonymization at T+7" → "permanent deletion of the account at T+7"
+And §19's enumerated prompt disclosures become (per counsel + Karl ruling): (1) 7-day grace window,
+(2) subscription cancels at T+7, (3) guardian links → pending-deletion status. [Item 4 "data treatment
+at T+7" is NOT surfaced in the UI prompt per Karl ruling — internal mechanism only.]
+**Artifact:** PR-5e Bucket 2 (copy changes). Karl separately updating Doc 01 §19 to match.
+
 ### SCL-011 — Authoritative user-scoped table partition (66 tables, proven 2026-06-25)
 **Date:** 2026-06-25 · **Status:** OPEN · **Touches:** 05E §5/§6 (INV-05E-03), INV-DELETION-COMPLETE
 **Change:** Live enumeration proves 66 user-scoped tables, partitioned: 5 ACTIVITY (need actor_id:
@@ -118,6 +138,7 @@ applied + verified live 2026-06-25; 5b write-path stamping next).
 
 These are OPEN entries above that specifically need the locked spec doc text updated by the owner:
 
+- Doc 01 §19 — SCL-012 (deletion-confirmation prompt: "data anonymization at T+7" → "permanent deletion of the account at T+7")
 - 05A §5.1/§4.9 — SCL-001 (PR-2 GUC + p_chain_downstream)
 - 05D §10 — SCL-002 (Q2 request-row deletion; Q3 review_schedule→L1; Q6 audit FK drops; operator-attribution guard)
 - 05D §10 — SCL-003 (storage-purge → PR-4 orchestration seam)

@@ -106,10 +106,13 @@ export function DeleteAccountCard() {
             <AlertDialogDescription>
               This schedules your account for permanent deletion after a 7-day
               grace period. During the grace period your account is locked, but
-              you can cancel any time — here or from the link we email you.
-              After 7 days your account and all your data are permanently
-              deleted and cannot be recovered. If you return to Lyceon,
-              you&apos;ll start fresh with a new account.
+              you can cancel any time — here or from the link we email you. If
+              you have a paid subscription, it stays active during the grace
+              period and is cancelled when your account is deleted. If you have
+              a linked guardian account, it will show your account as pending
+              deletion. After 7 days your account is permanently deleted and
+              cannot be recovered. If you return to Lyceon, you&apos;ll start
+              fresh with a new account.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
