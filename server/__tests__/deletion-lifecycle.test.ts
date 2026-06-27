@@ -422,16 +422,11 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     buckets?: Array<{ name: string }>;
     storageObjects?: Array<{ name: string }>;
     markError?: { message: string };
-    authError?: { message: string };
   }) {
     const rpcCalls: RpcCall[] = [];
     const updateCalls: Array<{ data: Record<string, unknown>; table: string }> =
       [];
     const signOutCalls: string[] = [];
-    const updateUserCalls: Array<{
-      id: string;
-      data: Record<string, unknown>;
-    }> = [];
 
     const admin = {
       from: vi.fn((table: string) => {
@@ -484,12 +479,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
             signOutCalls.push(id);
             return { error: null };
           }),
-          updateUserById: vi.fn(
-            async (id: string, data: Record<string, unknown>) => {
-              updateUserCalls.push({ id, data });
-              return { error: opts?.authError ?? null };
-            },
-          ),
+          updateUserById: vi.fn(async () => ({ error: null })),
         },
       },
       storage: {
@@ -511,7 +501,6 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       rpcCalls,
       updateCalls,
       signOutCalls,
-      updateUserCalls,
     };
   }
 
@@ -757,10 +746,10 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
   });
 
   it("does not call auth.admin.updateUserById — cascade deletes auth.users", async () => {
-    const { admin, updateUserCalls } = buildFakeAdmin({
+    const { admin } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
     });
     await executeDueDeletions(admin, "test-req");
-    expect(updateUserCalls).toHaveLength(0);
+    expect(admin.auth.admin.updateUserById).not.toHaveBeenCalled();
   });
 });
