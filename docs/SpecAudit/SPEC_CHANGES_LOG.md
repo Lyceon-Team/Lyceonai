@@ -58,9 +58,13 @@ Privacy Policy locked consistent with this framing (Anonymized Structured Learni
 
 Doc 01 §19 line ~1047 edit:
   "data anonymization at T+7" → "permanent deletion of the account at T+7"
-And §19's enumerated prompt disclosures become (per counsel + Karl ruling): (1) 7-day grace window,
-(2) subscription cancels at T+7, (3) guardian links → pending-deletion status. [Item 4 "data treatment
-at T+7" is NOT surfaced in the UI prompt per Karl ruling — internal mechanism only.]
+And §19's enumerated prompt disclosures become (per counsel + Karl ruling):
+  (1) 7-day grace window;
+  (2) paid access continues during grace, ends at deletion, no further charges (full Stripe
+      cancellation tracked separately in PR-4b — NOT claimed as "cancelled" in UI; see SCL-013);
+  (3) [REMOVED — guardian pending-deletion display is unbuilt; not disclosed];
+  (4) data-treatment mechanism NOT surfaced in UI (internal anonymize per Doc 05E; counsel ruling).
+Proposed §19 prompt discloses items 1 and 2 (corrected wording) only; 3 dropped, 4 internal.
 **Artifact:** PR-5e Bucket 2 (copy changes). Karl separately updating Doc 01 §19 to match.
 
 ### SCL-011 — Authoritative user-scoped table partition (66 tables, proven 2026-06-25)
