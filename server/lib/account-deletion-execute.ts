@@ -207,6 +207,11 @@ export async function executeDueDeletions(
         skipCount++;
         continue;
       }
+      if (rpcStatus !== "completed") {
+        throw new Error(
+          `atomic RPC returned unexpected status "${String(rpcStatus)}" — treating as failure`,
+        );
+      }
 
       successCount++;
     } catch (err) {
