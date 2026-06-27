@@ -229,10 +229,10 @@ async function sendDeletionScheduledEmail(
       to: email,
       subject: "Your Lyceon account is scheduled for deletion",
       html:
-        `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong>.</p>` +
+        `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong> (7 days from your request).</p>` +
         `<p>Lyceon tracks your learning progress over time — once your account is deleted, ` +
         `that history is gone permanently, and returning means starting over with a new account.</p>` +
-        `<p>If you have a paid subscription, it stays active until <strong>${when}</strong> and is then cancelled.</p>` +
+        `<p>If you have a paid subscription, your paid access ends and you will not be charged again after <strong>${when}</strong>.</p>` +
         `<p>If you didn't request this or change your mind, restore your account before <strong>${when}</strong>:</p>` +
         `<p><a href="${recoverUrl}">Restore my account</a></p>` +
         `<p>This link stops working once deletion completes.</p>`,

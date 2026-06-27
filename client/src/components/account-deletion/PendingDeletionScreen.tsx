@@ -74,16 +74,17 @@ export function PendingDeletionScreen() {
                 <span className="font-medium text-neutral-800">
                   {formatDeletionDate(scheduledAt)}
                 </span>
-                . If you have a paid subscription, it stays active until then
-                and is cancelled when your account is deleted. Until then your
-                account is locked, but you can cancel and restore full access
-                right now.
+                . If you have a paid subscription, your paid access ends and you
+                will not be charged again once your account is deleted. Until
+                then your account is locked, but you can cancel and restore full
+                access right now.
               </>
             ) : (
               <>
-                Your account is locked during the deletion grace period. If you
-                have a paid subscription, it stays active until the deletion
-                date. You can cancel and restore full access right now.
+                Your account is locked during the 7-day deletion grace period.
+                If you have a paid subscription, your paid access ends and you
+                will not be charged again at the deletion date. You can cancel
+                and restore full access right now.
               </>
             )}
           </p>

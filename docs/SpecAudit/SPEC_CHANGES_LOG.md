@@ -26,24 +26,25 @@
 ## Entries
 
 ### SCL-013 — Doc 01 V8 §40.3 subscription-cancellation timing corrected to match built implementation
-**Date:** 2026-06-27 · **Status:** PROPOSED (Karl applies)
+**Date:** 2026-06-27 · **Status:** PROPOSED
 **Touches:** Doc 01 V8 §40.3 (line ~1968)
 **Change:** subscription-cancellation timing corrected to match built + proven implementation.
 WAS: "Stripe subscription cancellation is initiated immediately" (at deletion request)
 NOW: subscription remains active through the 7-day grace period; billing is paused (Stripe
      pause_collection: void) and the entitlement is removed at T+7 execution, not at request.
+     Full Stripe subscription cancellation DEFERRED to PR-4b.
 **Rationale:** Spec-auditor (PR #444) flagged §40.3 contradicts built behavior. Grounded against code:
 request_account_deletion performs NO Stripe operation (sets profiles.deleted_at only); pauseStripeBilling
 + entitlement removal occur at T+7 in the execution driver (PR-4a). The grace period exists for
 reconsideration — preserving paid access the user already paid for, and ensuring a cancelled deletion
 leaves the subscription uninterrupted. Karl ruled (2026-06-27) the IMPLEMENTATION is correct; the spec
-line is stale. Doc 01 §40.3 updated to match. Bucket 2 user-facing copy (subscription "stays active
-during grace, cancels at deletion") is correct as written. No code change.
+line is stale. User-facing copy states "access ends + not charged again" (true now, true post-4b) —
+makes NO Stripe-cancellation claim.
 **Cross-ref:** SCL-012 (§19 disclosure framing). Both align spec to the counsel/Karl-ruled deletion model.
 **Artifact:** PR-5e Bucket 2 (spec correction). Karl separately updating Doc 01 §40.3 to match.
 
 ### SCL-012 — Doc 01 §19 deletion-confirmation prompt framing aligned to counsel ruling
-**Date:** 2026-06-27 · **Status:** OPEN→APPLIED (Karl applies)
+**Date:** 2026-06-27 · **Status:** PROPOSED
 **Touches:** Doc 01 §19 (line ~1047)
 **Change:** deletion-confirmation prompt framing aligned to counsel ruling.
 WAS: "...the confirmation prompt should explain ... data anonymization at T+7"
