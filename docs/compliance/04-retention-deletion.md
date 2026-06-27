@@ -43,6 +43,6 @@ Upon expiry of the grace window, the system de-identifies the user via stored pr
 ### Preserved Links
 - Internal Application IDs / Ledger Continuity preserved to not break aggregated learning telemetry where PII is not exposed.
 
-### Minimal Retained Records (Scrubbed)
-- `entitlements` retained for ledger continuity but Stripe identifiers removed and plan/status reset to free/inactive.
-- `legal_acceptances` retained for compliance but `ip_address` and `user_agent` are nullified.
+### Deleted by Cascade
+- `entitlements` — deleted (pre-clear step PS-1; `DELETE FROM entitlements WHERE profile_id`).
+- `legal_acceptances` — deleted (auto-CASCADE via `profiles` FK deletion).

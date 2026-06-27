@@ -69,7 +69,8 @@ export function PendingDeletionScreen() {
           <p className="text-sm text-neutral-600">
             {scheduledAt ? (
               <>
-                It will be permanently deleted on{" "}
+                Your account and all your progress will be permanently deleted
+                on{" "}
                 <span className="font-medium text-neutral-800">
                   {formatDeletionDate(scheduledAt)}
                 </span>
