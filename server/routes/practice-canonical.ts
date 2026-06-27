@@ -8,7 +8,7 @@ import {
   requireProfileComplete,
   requireConsentCompliance,
 } from "../middleware/supabase-auth.js";
-import { applyLearningEventToMastery } from "../../apps/api/src/services/studentMastery";
+import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
@@ -2870,16 +2870,18 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       sessionItem.question_difficulty ?? null,
     );
     if (canonicalId && difficultyBucket && section && domain && skill) {
-      await applyLearningEventToMastery({
+      await applyMasteryEvent({
         studentId: userId,
         section,
         domain,
         skill,
         difficulty: difficultyBucket,
         sourceFamily: "practice",
+        eventSourceKind: "practice_attempt",
         correct: isCorrect,
-        latencyMs: clampedTimeSpentMs,
         occurredAt: now,
+        eventId: sessionItem.id,
+        questionId: canonicalId,
       });
     } else if (
       canonicalId &&

@@ -1,6 +1,6 @@
 /**
  * Full-Length SAT Exam Service
- * 
+ *
  * Implements server-authoritative SAT full test runtime with:
  * - Published form lifecycle enforcement
  * - Fixed-order question serving from canonical form items
@@ -13,8 +13,11 @@
 import crypto from "node:crypto";
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { checkAndReserveFullLengthQuota } from "../lib/rate-limit-ledger";
-import { applyLearningEventToMastery } from "./mastery-write";
-import { applyFullLengthExamPlannerReprioritization, type ExamSkillDiagnostic } from "./calendar-planner-reprioritization";
+import { applyMasteryEvent } from "./mastery-write";
+import {
+  applyFullLengthExamPlannerReprioritization,
+  type ExamSkillDiagnostic,
+} from "./calendar-planner-reprioritization";
 import {
   normalizeClientInstanceId,
   normalizeSectionCode as normalizeCanonicalSectionCode,
@@ -27,7 +30,10 @@ import type {
   FullLengthExamQuestion,
   FullLengthExamResponse,
 } from "../../../../shared/schema";
-import { getModeledScaledScore, SECTION_SCORE_TABLES } from "./fullLengthScoreTables";
+import {
+  getModeledScaledScore,
+  SECTION_SCORE_TABLES,
+} from "./fullLengthScoreTables";
 
 // ============================================================================
 // CONSTANTS - Bluebook SAT Structure
@@ -107,7 +113,10 @@ type Module2DomainKey =
   | "problem_solving_data_analysis"
   | "geometry_trigonometry";
 
-const MODULE2_DOMAIN_QUOTAS: Record<SectionType, Record<Module2DomainKey, number>> = {
+const MODULE2_DOMAIN_QUOTAS: Record<
+  SectionType,
+  Record<Module2DomainKey, number>
+> = {
   rw: {
     information_and_ideas: 7,
     craft_and_structure: 8,
@@ -130,16 +139,23 @@ const MODULE2_DOMAIN_QUOTAS: Record<SectionType, Record<Module2DomainKey, number
   },
 };
 
-const ACTIVE_SESSION_STATUSES = ["not_started", "in_progress", "break"] as const;
+const ACTIVE_SESSION_STATUSES = [
+  "not_started",
+  "in_progress",
+  "break",
+] as const;
 const CLIENT_INSTANCE_CONFLICT_MESSAGE = "Session client instance conflict";
 const FORM_NOT_FOUND_MESSAGE = "Test form not found";
 const FORM_NOT_PUBLISHED_MESSAGE = "Test form is not published";
 const FORM_ITEMS_MISSING_MESSAGE = "Test form has no items";
-const FORM_STRUCTURE_INCOMPLETE_MESSAGE = "Test form is structurally incomplete";
+const FORM_STRUCTURE_INCOMPLETE_MESSAGE =
+  "Test form is structurally incomplete";
 const FORM_DUPLICATE_ORDINAL_MESSAGE = "Test form has duplicate ordinals";
 const FORM_INVALID_ORDINAL_MESSAGE = "Test form has invalid ordinal sequence";
-const FORM_UNKNOWN_QUESTION_MESSAGE = "Test form references unknown canonical question";
-const FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE = "Test form references unsupported question type";
+const FORM_UNKNOWN_QUESTION_MESSAGE =
+  "Test form references unknown canonical question";
+const FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE =
+  "Test form references unsupported question type";
 const FORM_SECTION_MISMATCH_MESSAGE = "Test form question section mismatch";
 const MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED =
   "Module 2 bucket persisted without deferred materialization proof from persisted Module 1 outcomes";
@@ -152,8 +168,16 @@ export type SectionType = "rw" | "math";
 export type ModuleIndex = 1 | 2;
 export type DifficultyBucket = "easy" | "medium" | "hard";
 export type QuestionDifficulty = 1 | 2 | 3;
-export type SessionStatus = "not_started" | "in_progress" | "completed" | "abandoned";
-export type ModuleStatus = "not_started" | "in_progress" | "submitted" | "expired";
+export type SessionStatus =
+  | "not_started"
+  | "in_progress"
+  | "completed"
+  | "abandoned";
+export type ModuleStatus =
+  | "not_started"
+  | "in_progress"
+  | "submitted"
+  | "expired";
 
 type QuestionOption = { key: string; text: string };
 
@@ -349,7 +373,9 @@ export interface CompleteExamResult {
   completedAt: Date;
 }
 
-export function buildExamPrioritySkillDiagnostics(result: CompleteExamResult): ExamSkillDiagnostic[] {
+export function buildExamPrioritySkillDiagnostics(
+  result: CompleteExamResult,
+): ExamSkillDiagnostic[] {
   const diagnostics: ExamSkillDiagnostic[] = [];
   const rwSkills = result.skillDiagnostics?.rw ?? [];
   const mathSkills = result.skillDiagnostics?.math ?? [];
@@ -376,7 +402,9 @@ export function buildExamPrioritySkillDiagnostics(result: CompleteExamResult): E
     });
   }
 
-  const needsFocus = diagnostics.filter((item) => item.performanceBand === "needs_focus");
+  const needsFocus = diagnostics.filter(
+    (item) => item.performanceBand === "needs_focus",
+  );
   needsFocus.sort((a, b) => {
     if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy;
     const domainCompare = a.domain.localeCompare(b.domain);
@@ -412,13 +440,12 @@ function generateSeed(userId: string): string {
   return `${userId}_${Date.now()}`;
 }
 
-
 /**
  * Determine Module 2 difficulty based on Module 1 performance
  */
 function determineModule2Difficulty(
   config: AdaptiveConfigRow,
-  module1CorrectCount: number
+  module1CorrectCount: number,
 ): DifficultyBucket {
   const hardCutoff = Number(config.hard_cutoff);
   if (!Number.isFinite(hardCutoff)) {
@@ -430,13 +457,17 @@ function determineModule2Difficulty(
 function simpleHash(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i += 1) {
-    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash = (hash << 5) - hash + input.charCodeAt(i);
     hash |= 0;
   }
   return Math.abs(hash);
 }
 
-function stableSeedSort<T>(items: T[], seed: string, keyFn: (item: T) => string): T[] {
+function stableSeedSort<T>(
+  items: T[],
+  seed: string,
+  keyFn: (item: T) => string,
+): T[] {
   return [...items].sort((a, b) => {
     const keyA = keyFn(a);
     const keyB = keyFn(b);
@@ -449,9 +480,15 @@ function stableSeedSort<T>(items: T[], seed: string, keyFn: (item: T) => string)
   });
 }
 
-function normalizeDomainKey(section: SectionType, value: unknown): Module2DomainKey | null {
+function normalizeDomainKey(
+  section: SectionType,
+  value: unknown,
+): Module2DomainKey | null {
   if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
 
   if (section === "rw") {
     if (normalized.includes("information") || normalized.includes("idea")) {
@@ -463,14 +500,26 @@ function normalizeDomainKey(section: SectionType, value: unknown): Module2Domain
     if (normalized.includes("expression") || normalized.includes("rhetoric")) {
       return "expression_of_ideas";
     }
-    if (normalized.includes("standard") || normalized.includes("convention") || normalized.includes("english")) {
+    if (
+      normalized.includes("standard") ||
+      normalized.includes("convention") ||
+      normalized.includes("english")
+    ) {
       return "standard_english_conventions";
     }
   } else {
-    if (normalized.includes("geometry") || normalized.includes("trigonometry") || normalized.includes("trig")) {
+    if (
+      normalized.includes("geometry") ||
+      normalized.includes("trigonometry") ||
+      normalized.includes("trig")
+    ) {
       return "geometry_trigonometry";
     }
-    if (normalized.includes("problem") || normalized.includes("data") || normalized.includes("analysis")) {
+    if (
+      normalized.includes("problem") ||
+      normalized.includes("data") ||
+      normalized.includes("analysis")
+    ) {
       return "problem_solving_data_analysis";
     }
     if (normalized.includes("advanced")) {
@@ -501,7 +550,10 @@ function normalizeDifficultyBucket(value: unknown): DifficultyBucket | null {
   return null;
 }
 
-function bucketMatchesDifficulty(target: DifficultyBucket, value: unknown): boolean {
+function bucketMatchesDifficulty(
+  target: DifficultyBucket,
+  value: unknown,
+): boolean {
   const bucket = normalizeDifficultyBucket(value);
   if (!bucket) return false;
   if (target === "hard") return bucket === "hard";
@@ -511,7 +563,7 @@ function bucketMatchesDifficulty(target: DifficultyBucket, value: unknown): bool
 
 async function loadAdaptiveConfig(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  section: SectionType
+  section: SectionType,
 ): Promise<AdaptiveConfigRow> {
   const { data, error } = await supabase
     .from("full_length_adaptive_config")
@@ -559,9 +611,14 @@ interface SectionDiagnostics {
  * Deterministic modeled score table lookup.
  * Fails closed when the section total does not match canonical SAT totals.
  */
-export function calculateScaledScore(rawCorrect: number, totalQuestions: number): number {
+export function calculateScaledScore(
+  rawCorrect: number,
+  totalQuestions: number,
+): number {
   if (!Number.isFinite(totalQuestions) || totalQuestions <= 0) {
-    throw new Error("Missing modeled score table for unsupported question total");
+    throw new Error(
+      "Missing modeled score table for unsupported question total",
+    );
   }
 
   if (totalQuestions === SECTION_SCORE_TABLES.rw.totalQuestions) {
@@ -572,13 +629,15 @@ export function calculateScaledScore(rawCorrect: number, totalQuestions: number)
     return getModeledScaledScore("math", rawCorrect, totalQuestions);
   }
 
-  throw new Error(`Missing modeled score table for totalQuestions=${totalQuestions}`);
+  throw new Error(
+    `Missing modeled score table for totalQuestions=${totalQuestions}`,
+  );
 }
 
 function calculateSectionScaledScore(
   section: SectionType,
   rawCorrect: number,
-  totalQuestions: number
+  totalQuestions: number,
 ): number {
   return getModeledScaledScore(section, rawCorrect, totalQuestions);
 }
@@ -603,7 +662,7 @@ function moduleKey(section: SectionType, moduleIndex: ModuleIndex): string {
 
 function deriveModulePositionFromOrdinal(
   section: SectionType,
-  ordinal: number
+  ordinal: number,
 ): { moduleIndex: ModuleIndex; moduleOrdinal: number } | null {
   const module1Count = MODULE_CONFIG[section].module1.questionCount;
   const module2Count = MODULE_CONFIG[section].module2.questionCount;
@@ -626,22 +685,28 @@ function deriveModulePositionFromOrdinal(
 function requireModuleItems(
   itemsByModule: Map<string, ResolvedFormItem[]>,
   section: SectionType,
-  moduleIndex: ModuleIndex
+  moduleIndex: ModuleIndex,
 ): ResolvedFormItem[] {
   const key = moduleKey(section, moduleIndex);
   const items = itemsByModule.get(key);
   if (!items || items.length === 0) {
-    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing items for ${section} module ${moduleIndex}`);
+    throw new Error(
+      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing items for ${section} module ${moduleIndex}`,
+    );
   }
   return items;
 }
 
 function normalizeQuestionType(value: unknown): "multiple_choice" | null {
   if (typeof value !== "string") return null;
-  return value.trim().toLowerCase() === "multiple_choice" ? "multiple_choice" : null;
+  return value.trim().toLowerCase() === "multiple_choice"
+    ? "multiple_choice"
+    : null;
 }
 
-function normalizeQuestionDifficultyValue(value: unknown): QuestionDifficulty | null {
+function normalizeQuestionDifficultyValue(
+  value: unknown,
+): QuestionDifficulty | null {
   if (value === 1 || value === 2 || value === 3) {
     return value as QuestionDifficulty;
   }
@@ -666,8 +731,12 @@ function normalizeQuestionOptions(value: unknown): QuestionOption[] {
   const out: QuestionOption[] = [];
   for (const option of value) {
     if (!option || typeof option !== "object") continue;
-    const key = typeof (option as any).key === "string" ? (option as any).key.trim().toUpperCase() : "";
-    const text = typeof (option as any).text === "string" ? (option as any).text : "";
+    const key =
+      typeof (option as any).key === "string"
+        ? (option as any).key.trim().toUpperCase()
+        : "";
+    const text =
+      typeof (option as any).text === "string" ? (option as any).text : "";
     if (!key || !text) continue;
     out.push({ key, text });
   }
@@ -677,37 +746,55 @@ function normalizeQuestionOptions(value: unknown): QuestionOption[] {
 function normalizeMcAnswerKey(value: unknown): "A" | "B" | "C" | "D" | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toUpperCase();
-  if (normalized === "A" || normalized === "B" || normalized === "C" || normalized === "D") {
+  if (
+    normalized === "A" ||
+    normalized === "B" ||
+    normalized === "C" ||
+    normalized === "D"
+  ) {
     return normalized;
   }
   return null;
 }
 
-function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) {
+function materializeSessionQuestionSnapshot(
+  row: FullLengthQuestionSnapshotRow,
+) {
   if (normalizeQuestionType(row.question_type) !== "multiple_choice") {
     throw new Error(FORM_UNSUPPORTED_QUESTION_TYPE_MESSAGE);
   }
 
   const options = normalizeQuestionOptions(row.options);
   if (options.length === 0) {
-    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question options missing`);
+    throw new Error(
+      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question options missing`,
+    );
   }
 
   const correctAnswer = normalizeMcAnswerKey(row.correct_answer);
-  if (!correctAnswer || !options.some((option) => option.key === correctAnswer)) {
-    throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question correct answer missing`);
+  if (
+    !correctAnswer ||
+    !options.some((option) => option.key === correctAnswer)
+  ) {
+    throw new Error(
+      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: question correct answer missing`,
+    );
   }
 
   const sectionCode = normalizeCanonicalSectionCode(row.section_code ?? null);
 
-  const sourceType = typeof row.source_type === "number"
-    ? row.source_type
-    : typeof row.source_type === "string" && row.source_type.trim().length > 0
-      ? Number(row.source_type)
-      : null;
+  const sourceType =
+    typeof row.source_type === "number"
+      ? row.source_type
+      : typeof row.source_type === "string" && row.source_type.trim().length > 0
+        ? Number(row.source_type)
+        : null;
 
   return {
-    question_canonical_id: typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0 ? row.canonical_id : null,
+    question_canonical_id:
+      typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0
+        ? row.canonical_id
+        : null,
     question_stem: typeof row.stem === "string" ? row.stem : "",
     question_section_code: sectionCode === "M" ? "MATH" : sectionCode,
     question_type: "multiple_choice" as const,
@@ -717,7 +804,9 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
     question_skill: row.skill ?? null,
     question_subskill: row.subskill ?? null,
     question_skill_code: null,
-    question_source_type: Number.isFinite(sourceType as number) ? sourceType : null,
+    question_source_type: Number.isFinite(sourceType as number)
+      ? sourceType
+      : null,
     question_diagram_present: row.diagram_present ?? null,
     question_tags: null,
     question_competencies: null,
@@ -731,7 +820,7 @@ function materializeSessionQuestionSnapshot(row: FullLengthQuestionSnapshotRow) 
 async function resolvePublishedFormForSession(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   requestedFormId?: string,
-  options?: { allowUnpublishedRequestedForm?: boolean }
+  options?: { allowUnpublishedRequestedForm?: boolean },
 ): Promise<ResolvedPublishedForm> {
   let formId = requestedFormId ?? null;
 
@@ -750,7 +839,10 @@ async function resolvePublishedFormForSession(
       throw new Error(FORM_NOT_FOUND_MESSAGE);
     }
 
-    if (!options?.allowUnpublishedRequestedForm && form.status !== "published") {
+    if (
+      !options?.allowUnpublishedRequestedForm &&
+      form.status !== "published"
+    ) {
       throw new Error(FORM_NOT_PUBLISHED_MESSAGE);
     }
   } else {
@@ -764,7 +856,9 @@ async function resolvePublishedFormForSession(
       .maybeSingle();
 
     if (latestFormError) {
-      throw new Error(`Failed to load published test form: ${latestFormError.message}`);
+      throw new Error(
+        `Failed to load published test form: ${latestFormError.message}`,
+      );
     }
 
     if (!latestForm) {
@@ -796,7 +890,9 @@ async function resolvePublishedFormForSession(
       .order("ordinal", { ascending: true });
 
     if (fallbackItemsResult.error) {
-      throw new Error(`Failed to load test form items: ${fallbackItemsResult.error.message}`);
+      throw new Error(
+        `Failed to load test form items: ${fallbackItemsResult.error.message}`,
+      );
     }
 
     formItems = (fallbackItemsResult.data ?? []) as TestFormItemRecord[];
@@ -820,26 +916,37 @@ async function resolvePublishedFormForSession(
   for (const item of formItems) {
     const section = toSectionType(item.section);
     if (!section) {
-      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid section in test_form_items`);
+      throw new Error(
+        `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid section in test_form_items`,
+      );
     }
 
     if (!Number.isInteger(item.ordinal) || item.ordinal < 1) {
-      throw new Error(`${FORM_INVALID_ORDINAL_MESSAGE}: ordinals must start at 1`);
+      throw new Error(
+        `${FORM_INVALID_ORDINAL_MESSAGE}: ordinals must start at 1`,
+      );
     }
 
     const explicitModuleIndex = item.module_index;
     const derivedPosition =
       explicitModuleIndex === 1 || explicitModuleIndex === 2
-        ? { moduleIndex: explicitModuleIndex as ModuleIndex, moduleOrdinal: item.ordinal }
+        ? {
+            moduleIndex: explicitModuleIndex as ModuleIndex,
+            moduleOrdinal: item.ordinal,
+          }
         : deriveModulePositionFromOrdinal(section, item.ordinal);
 
     if (!derivedPosition) {
-      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid module index/ordinal in test_form_items`);
+      throw new Error(
+        `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: invalid module index/ordinal in test_form_items`,
+      );
     }
 
     const canonicalQuestionId = String(item.question_id ?? "").trim();
     if (!canonicalQuestionId) {
-      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing canonical question id`);
+      throw new Error(
+        `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: missing canonical question id`,
+      );
     }
 
     const ordinalKey = `${section}:${derivedPosition.moduleIndex}:${derivedPosition.moduleOrdinal}`;
@@ -864,18 +971,26 @@ async function resolvePublishedFormForSession(
     .in("canonical_id", Array.from(canonicalQuestionIds));
 
   if (questionRowsError) {
-    throw new Error(`Failed to load canonical questions for test form: ${questionRowsError.message}`);
+    throw new Error(
+      `Failed to load canonical questions for test form: ${questionRowsError.message}`,
+    );
   }
 
-  const questionByCanonicalId = new Map<string, {
-    id: string;
-    canonical_id: string;
-    question_type: string;
-    section_code: string | null;
-  }>();
+  const questionByCanonicalId = new Map<
+    string,
+    {
+      id: string;
+      canonical_id: string;
+      question_type: string;
+      section_code: string | null;
+    }
+  >();
 
-  for (const row of (questionRows ?? [])) {
-    if (typeof row.canonical_id === "string" && row.canonical_id.trim().length > 0) {
+  for (const row of questionRows ?? []) {
+    if (
+      typeof row.canonical_id === "string" &&
+      row.canonical_id.trim().length > 0
+    ) {
       questionByCanonicalId.set(row.canonical_id, {
         id: row.id,
         canonical_id: row.canonical_id,
@@ -916,18 +1031,27 @@ async function resolvePublishedFormForSession(
 
   for (const section of ["rw", "math"] as const) {
     for (const moduleIndex of [1, 2] as const) {
-      const moduleItems = requireModuleItems(itemsByModule, section, moduleIndex);
-      const expectedCount = MODULE_CONFIG[section][`module${moduleIndex}`].questionCount;
+      const moduleItems = requireModuleItems(
+        itemsByModule,
+        section,
+        moduleIndex,
+      );
+      const expectedCount =
+        MODULE_CONFIG[section][`module${moduleIndex}`].questionCount;
 
       if (moduleItems.length !== expectedCount) {
-        throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: ${section} module ${moduleIndex} expected ${expectedCount} items`);
+        throw new Error(
+          `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: ${section} module ${moduleIndex} expected ${expectedCount} items`,
+        );
       }
 
       moduleItems.sort((a, b) => a.ordinal - b.ordinal);
 
       for (let ordinal = 1; ordinal <= expectedCount; ordinal += 1) {
         if (moduleItems[ordinal - 1]?.ordinal !== ordinal) {
-          throw new Error(`${FORM_INVALID_ORDINAL_MESSAGE}: ${section} module ${moduleIndex} must be contiguous 1..${expectedCount}`);
+          throw new Error(
+            `${FORM_INVALID_ORDINAL_MESSAGE}: ${section} module ${moduleIndex} must be contiguous 1..${expectedCount}`,
+          );
         }
       }
     }
@@ -947,7 +1071,7 @@ function isDuplicateWriteError(error: unknown): boolean {
 
 async function countMaterializedModuleQuestions(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  moduleId: string
+  moduleId: string,
 ): Promise<number> {
   const { data, error } = await supabase
     .from("full_length_exam_questions")
@@ -955,7 +1079,9 @@ async function countMaterializedModuleQuestions(
     .eq("module_id", moduleId);
 
   if (error) {
-    throw new Error(`Failed to load materialized module questions: ${error.message}`);
+    throw new Error(
+      `Failed to load materialized module questions: ${error.message}`,
+    );
   }
 
   return (data ?? []).length;
@@ -969,8 +1095,12 @@ async function materializeModuleFromResolvedForm(args: {
   moduleIndex: ModuleIndex;
   proofErrorMessage?: string;
 }): Promise<void> {
-  const expectedCount = MODULE_CONFIG[args.section][`module${args.moduleIndex}`].questionCount;
-  const existingCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  const expectedCount =
+    MODULE_CONFIG[args.section][`module${args.moduleIndex}`].questionCount;
+  const existingCount = await countMaterializedModuleQuestions(
+    args.supabase,
+    args.moduleId,
+  );
 
   if (existingCount === expectedCount) {
     return;
@@ -979,12 +1109,18 @@ async function materializeModuleFromResolvedForm(args: {
   if (existingCount > 0) {
     const prefix = args.proofErrorMessage ?? FORM_STRUCTURE_INCOMPLETE_MESSAGE;
     throw new Error(
-      `${prefix}: ${args.section} module ${args.moduleIndex} has partial materialization (${existingCount}/${expectedCount})`
+      `${prefix}: ${args.section} module ${args.moduleIndex} has partial materialization (${existingCount}/${expectedCount})`,
     );
   }
 
-  const formItems = requireModuleItems(args.resolvedForm.itemsByModule, args.section, args.moduleIndex);
-  const uniqueQuestionIds = Array.from(new Set(formItems.map((item) => item.questionId)));
+  const formItems = requireModuleItems(
+    args.resolvedForm.itemsByModule,
+    args.section,
+    args.moduleIndex,
+  );
+  const uniqueQuestionIds = Array.from(
+    new Set(formItems.map((item) => item.questionId)),
+  );
 
   const primaryQuestionSnapshotResult = await args.supabase
     .from("questions")
@@ -994,7 +1130,7 @@ async function materializeModuleFromResolvedForm(args: {
 
   if (primaryQuestionSnapshotResult.error) {
     throw new Error(
-      `Failed to load question snapshots for deferred materialization: ${primaryQuestionSnapshotResult.error.message}`
+      `Failed to load question snapshots for deferred materialization: ${primaryQuestionSnapshotResult.error.message}`,
     );
   }
   const questionSnapshotRows = primaryQuestionSnapshotResult.data ?? [];
@@ -1007,7 +1143,9 @@ async function materializeModuleFromResolvedForm(args: {
   const sessionQuestions = formItems.map((item) => {
     const snapshot = snapshotById.get(item.questionId);
     if (!snapshot) {
-      throw new Error(`${FORM_UNKNOWN_QUESTION_MESSAGE}: missing snapshot for materialization`);
+      throw new Error(
+        `${FORM_UNKNOWN_QUESTION_MESSAGE}: missing snapshot for materialization`,
+      );
     }
     return {
       module_id: args.moduleId,
@@ -1022,14 +1160,19 @@ async function materializeModuleFromResolvedForm(args: {
     .insert(sessionQuestions);
 
   if (sessionQuestionsError && !isDuplicateWriteError(sessionQuestionsError)) {
-    throw new Error(`Failed to materialize form questions for module: ${sessionQuestionsError.message}`);
+    throw new Error(
+      `Failed to materialize form questions for module: ${sessionQuestionsError.message}`,
+    );
   }
 
-  const persistedCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  const persistedCount = await countMaterializedModuleQuestions(
+    args.supabase,
+    args.moduleId,
+  );
   if (persistedCount !== expectedCount) {
     const prefix = args.proofErrorMessage ?? FORM_STRUCTURE_INCOMPLETE_MESSAGE;
     throw new Error(
-      `${prefix}: ${args.section} module ${args.moduleIndex} expected ${expectedCount} persisted rows, found ${persistedCount}`
+      `${prefix}: ${args.section} module ${args.moduleIndex} expected ${expectedCount} persisted rows, found ${persistedCount}`,
     );
   }
 }
@@ -1039,11 +1182,17 @@ function sectionCodeFilter(section: SectionType): string[] {
 }
 
 function getCandidateKey(row: FullLengthQuestionSnapshotRow): string {
-  const canonical = typeof row.canonical_id === "string" ? row.canonical_id.trim() : "";
+  const canonical =
+    typeof row.canonical_id === "string" ? row.canonical_id.trim() : "";
   return canonical.length > 0 ? canonical : String(row.id);
 }
 
-function pickDeterministic<T>(items: T[], count: number, seed: string, keyFn: (item: T) => string): T[] {
+function pickDeterministic<T>(
+  items: T[],
+  count: number,
+  seed: string,
+  keyFn: (item: T) => string,
+): T[] {
   if (count <= 0) return [];
   const ordered = stableSeedSort(items, seed, keyFn);
   return ordered.slice(0, count);
@@ -1059,7 +1208,10 @@ async function materializeModule2FromBlueprint(args: {
   excludeCanonicalIds: string[];
 }): Promise<void> {
   const expectedCount = MODULE_CONFIG[args.section].module2.questionCount;
-  const existingCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  const existingCount = await countMaterializedModuleQuestions(
+    args.supabase,
+    args.moduleId,
+  );
 
   if (existingCount === expectedCount) {
     return;
@@ -1067,7 +1219,7 @@ async function materializeModule2FromBlueprint(args: {
 
   if (existingCount > 0) {
     throw new Error(
-      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 has partial materialization (${existingCount}/${expectedCount})`
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 has partial materialization (${existingCount}/${expectedCount})`,
     );
   }
 
@@ -1080,18 +1232,24 @@ async function materializeModule2FromBlueprint(args: {
     .returns<FullLengthQuestionSnapshotRow[]>();
 
   if (error) {
-    throw new Error(`Failed to load module-2 candidate questions: ${error.message}`);
+    throw new Error(
+      `Failed to load module-2 candidate questions: ${error.message}`,
+    );
   }
 
   const pool = data ?? [];
   const excludeSet = new Set(
     args.excludeCanonicalIds
       .map((id) => (typeof id === "string" ? id.trim() : ""))
-      .filter((id) => id.length > 0)
+      .filter((id) => id.length > 0),
   );
 
-  const bucketed = pool.filter((row) => bucketMatchesDifficulty(args.difficultyBucket, row.difficulty));
-  const candidates = bucketed.filter((row) => !excludeSet.has(getCandidateKey(row)));
+  const bucketed = pool.filter((row) =>
+    bucketMatchesDifficulty(args.difficultyBucket, row.difficulty),
+  );
+  const candidates = bucketed.filter(
+    (row) => !excludeSet.has(getCandidateKey(row)),
+  );
 
   const quotas = MODULE2_DOMAIN_QUOTAS[args.section];
   const selected: FullLengthQuestionSnapshotRow[] = [];
@@ -1112,16 +1270,20 @@ async function materializeModule2FromBlueprint(args: {
     }
   }
 
-  const domainOrder = Object.keys(quotas).filter((key) => quotas[key as Module2DomainKey] > 0) as Module2DomainKey[];
+  const domainOrder = Object.keys(quotas).filter(
+    (key) => quotas[key as Module2DomainKey] > 0,
+  ) as Module2DomainKey[];
 
   for (const domain of domainOrder) {
     const needed = quotas[domain];
     const candidatesForDomain = byDomain.get(domain) ?? [];
     const picks = pickDeterministic(
-      candidatesForDomain.filter((row) => !selectedKeys.has(getCandidateKey(row))),
+      candidatesForDomain.filter(
+        (row) => !selectedKeys.has(getCandidateKey(row)),
+      ),
       needed,
       `${args.seed}:${args.section}:module2:${domain}`,
-      getCandidateKey
+      getCandidateKey,
     );
     for (const row of picks) {
       const key = getCandidateKey(row);
@@ -1132,12 +1294,14 @@ async function materializeModule2FromBlueprint(args: {
   }
 
   if (selected.length < expectedCount) {
-    const remainingPool = candidates.filter((row) => !selectedKeys.has(getCandidateKey(row)));
+    const remainingPool = candidates.filter(
+      (row) => !selectedKeys.has(getCandidateKey(row)),
+    );
     const filler = pickDeterministic(
       remainingPool,
       expectedCount - selected.length,
       `${args.seed}:${args.section}:module2:fill`,
-      getCandidateKey
+      getCandidateKey,
     );
     for (const row of filler) {
       const key = getCandidateKey(row);
@@ -1149,14 +1313,14 @@ async function materializeModule2FromBlueprint(args: {
 
   if (selected.length !== expectedCount) {
     throw new Error(
-      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: insufficient module-2 candidates (${selected.length}/${expectedCount}) for ${args.section}`
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: insufficient module-2 candidates (${selected.length}/${expectedCount}) for ${args.section}`,
     );
   }
 
   const ordered = stableSeedSort(
     selected,
     `${args.seed}:${args.section}:module2:order`,
-    getCandidateKey
+    getCandidateKey,
   );
 
   const sessionQuestions = ordered.map((item, index) => {
@@ -1173,13 +1337,18 @@ async function materializeModule2FromBlueprint(args: {
     .insert(sessionQuestions);
 
   if (insertError && !isDuplicateWriteError(insertError)) {
-    throw new Error(`Failed to materialize module-2 questions: ${insertError.message}`);
+    throw new Error(
+      `Failed to materialize module-2 questions: ${insertError.message}`,
+    );
   }
 
-  const persistedCount = await countMaterializedModuleQuestions(args.supabase, args.moduleId);
+  const persistedCount = await countMaterializedModuleQuestions(
+    args.supabase,
+    args.moduleId,
+  );
   if (persistedCount !== expectedCount) {
     throw new Error(
-      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 expected ${expectedCount} persisted rows, found ${persistedCount}`
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: ${args.section} module 2 expected ${expectedCount} persisted rows, found ${persistedCount}`,
     );
   }
 }
@@ -1192,25 +1361,36 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
   module1CorrectCount: number;
 }): Promise<{ difficultyBucket: DifficultyBucket }> {
   if (!args.seed) {
-    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: session seed missing`);
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: session seed missing`,
+    );
   }
   const adaptiveConfig = await loadAdaptiveConfig(args.supabase, args.section);
-  const derivedDifficulty = determineModule2Difficulty(adaptiveConfig, args.module1CorrectCount);
+  const derivedDifficulty = determineModule2Difficulty(
+    adaptiveConfig,
+    args.module1CorrectCount,
+  );
 
   const { data: module2, error: module2Error } = await args.supabase
     .from("full_length_exam_modules")
-    .select("id, difficulty_bucket, module1_correct_count, adaptive_config_id, materialized_at")
+    .select(
+      "id, difficulty_bucket, module1_correct_count, adaptive_config_id, materialized_at",
+    )
     .eq("session_id", args.sessionId)
     .eq("section", args.section)
     .eq("module_index", 2)
     .single();
 
   if (module2Error || !module2) {
-    throw new Error(`Failed to load Module 2 state: ${module2Error?.message || "module missing"}`);
+    throw new Error(
+      `Failed to load Module 2 state: ${module2Error?.message || "module missing"}`,
+    );
   }
 
   const finalDifficulty =
-    module2.difficulty_bucket === "easy" || module2.difficulty_bucket === "medium" || module2.difficulty_bucket === "hard"
+    module2.difficulty_bucket === "easy" ||
+    module2.difficulty_bucket === "medium" ||
+    module2.difficulty_bucket === "hard"
       ? (module2.difficulty_bucket as DifficultyBucket)
       : derivedDifficulty;
 
@@ -1225,7 +1405,9 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
     .is("difficulty_bucket", null);
 
   if (updateError) {
-    throw new Error(`Failed to set Module 2 difficulty: ${updateError.message}`);
+    throw new Error(
+      `Failed to set Module 2 difficulty: ${updateError.message}`,
+    );
   }
 
   const { data: module1, error: module1Error } = await args.supabase
@@ -1237,7 +1419,9 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
     .single();
 
   if (module1Error || !module1) {
-    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: module 1 state missing`);
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: module 1 state missing`,
+    );
   }
 
   const { data: module1Rows, error: module1RowsError } = await args.supabase
@@ -1246,10 +1430,14 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
     .eq("module_id", module1.id);
 
   if (module1RowsError) {
-    throw new Error(`${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: failed to load module 1 questions`);
+    throw new Error(
+      `${MODULE2_DEFERRED_MATERIALIZATION_PROOF_REQUIRED}: failed to load module 1 questions`,
+    );
   }
 
-  const excludeCanonicalIds = (module1Rows ?? []).map((row: any) => row.question_canonical_id || row.question_id).filter(Boolean);
+  const excludeCanonicalIds = (module1Rows ?? [])
+    .map((row: any) => row.question_canonical_id || row.question_id)
+    .filter(Boolean);
 
   await materializeModule2FromBlueprint({
     supabase: args.supabase,
@@ -1273,13 +1461,17 @@ async function prepareDeferredModule2FromPersistedOutcome(args: {
     .eq("id", module2.id);
 
   if (materializedUpdateError) {
-    throw new Error(`Failed to persist module-2 materialization provenance: ${materializedUpdateError.message}`);
+    throw new Error(
+      `Failed to persist module-2 materialization provenance: ${materializedUpdateError.message}`,
+    );
   }
 
   return { difficultyBucket: finalDifficulty };
 }
 
-function buildClientInstanceConflictError(boundClientInstanceId: string | null): Error {
+function buildClientInstanceConflictError(
+  boundClientInstanceId: string | null,
+): Error {
   const error = new Error(CLIENT_INSTANCE_CONFLICT_MESSAGE);
   (error as any).clientInstanceId = boundClientInstanceId ?? null;
   return error;
@@ -1287,7 +1479,12 @@ function buildClientInstanceConflictError(boundClientInstanceId: string | null):
 
 async function enforceClientInstanceBinding(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  args: { sessionId: string; userId: string; boundClientInstanceId: unknown; requestedClientInstanceId: unknown }
+  args: {
+    sessionId: string;
+    userId: string;
+    boundClientInstanceId: unknown;
+    requestedClientInstanceId: unknown;
+  },
 ) {
   const resolution = resolveClientInstanceBinding({
     boundClientInstanceId: args.boundClientInstanceId,
@@ -1324,7 +1521,7 @@ async function emitFullLengthEvent(
     sessionId: string;
     userId: string;
     details?: Record<string, unknown>;
-  }
+  },
 ): Promise<void> {
   try {
     await supabase.from("system_event_logs").insert({
@@ -1346,7 +1543,9 @@ function toAccuracy(correct: number, total: number): number {
   return Math.round((correct / total) * 1000) / 1000;
 }
 
-function toPerformanceBand(accuracy: number): "strength" | "developing" | "needs_focus" {
+function toPerformanceBand(
+  accuracy: number,
+): "strength" | "developing" | "needs_focus" {
   if (accuracy >= 0.8) return "strength";
   if (accuracy >= 0.5) return "developing";
   return "needs_focus";
@@ -1367,19 +1566,25 @@ function normalizeSkillFromCompetencies(competencies: unknown): string | null {
 
 function extractDomainAndSkill(
   section: SectionType,
-  question: Record<string, unknown> | undefined
+  question: Record<string, unknown> | undefined,
 ): { domain: string; skill: string } {
   const explicitDomain = normalizeLabel(question?.domain);
-  const tagsDomain = Array.isArray(question?.tags) ? normalizeLabel(question?.tags[0]) : null;
+  const tagsDomain = Array.isArray(question?.tags)
+    ? normalizeLabel(question?.tags[0])
+    : null;
 
-  const fallbackDomain = section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  const fallbackDomain =
+    section === "math" ? "Math Overall" : "Reading and Writing Overall";
   const domain = explicitDomain || tagsDomain || fallbackDomain;
 
   const explicitSkill = normalizeLabel(question?.skill);
   const explicitSubskill = normalizeLabel(question?.subskill);
-  const competencySkill = normalizeSkillFromCompetencies(question?.competencies);
+  const competencySkill = normalizeSkillFromCompetencies(
+    question?.competencies,
+  );
 
-  const skill = explicitSubskill || explicitSkill || competencySkill || "General";
+  const skill =
+    explicitSubskill || explicitSkill || competencySkill || "General";
 
   return { domain, skill };
 }
@@ -1387,10 +1592,13 @@ function extractDomainAndSkill(
 function buildSectionDiagnostics(
   section: SectionType,
   rows: DiagnosticInputRow[],
-  fallbackRaw: SectionRawScore
+  fallbackRaw: SectionRawScore,
 ): SectionDiagnostics {
   const domainMap = new Map<string, { correct: number; total: number }>();
-  const skillMap = new Map<string, { domain: string; skill: string; correct: number; total: number }>();
+  const skillMap = new Map<
+    string,
+    { domain: string; skill: string; correct: number; total: number }
+  >();
 
   for (const row of rows) {
     if (row.section !== section) continue;
@@ -1404,7 +1612,12 @@ function buildSectionDiagnostics(
 
     const skillKey = `${row.domain}::${row.skill}`;
     if (!skillMap.has(skillKey)) {
-      skillMap.set(skillKey, { domain: row.domain, skill: row.skill, correct: 0, total: 0 });
+      skillMap.set(skillKey, {
+        domain: row.domain,
+        skill: row.skill,
+        correct: 0,
+        total: 0,
+      });
     }
     const skillAgg = skillMap.get(skillKey)!;
     skillAgg.total += 1;
@@ -1432,13 +1645,19 @@ function buildSectionDiagnostics(
         performanceBand: toPerformanceBand(accuracy),
       };
     })
-    .sort((a, b) => b.total - a.total || a.domain.localeCompare(b.domain) || a.skill.localeCompare(b.skill));
+    .sort(
+      (a, b) =>
+        b.total - a.total ||
+        a.domain.localeCompare(b.domain) ||
+        a.skill.localeCompare(b.skill),
+    );
 
   if (domains.length > 0 && skills.length > 0) {
     return { domains, skills };
   }
 
-  const fallbackDomain = section === "math" ? "Math Overall" : "Reading and Writing Overall";
+  const fallbackDomain =
+    section === "math" ? "Math Overall" : "Reading and Writing Overall";
   const fallbackAccuracy = toAccuracy(fallbackRaw.correct, fallbackRaw.total);
 
   return {
@@ -1473,21 +1692,41 @@ interface BuildCompleteExamResultInput {
   diagnosticRows?: DiagnosticInputRow[];
 }
 
-function buildCompleteExamResult(input: BuildCompleteExamResultInput): CompleteExamResult {
+function buildCompleteExamResult(
+  input: BuildCompleteExamResultInput,
+): CompleteExamResult {
   const rwTotalCorrect = input.rwModule1.correct + input.rwModule2.correct;
   const rwTotalQuestions = input.rwModule1.total + input.rwModule2.total;
-  const mathTotalCorrect = input.mathModule1.correct + input.mathModule2.correct;
+  const mathTotalCorrect =
+    input.mathModule1.correct + input.mathModule2.correct;
   const mathTotalQuestions = input.mathModule1.total + input.mathModule2.total;
 
   const totalCorrect = rwTotalCorrect + mathTotalCorrect;
   const totalQuestions = rwTotalQuestions + mathTotalQuestions;
 
-  const rwRaw: SectionRawScore = { correct: rwTotalCorrect, total: rwTotalQuestions };
-  const mathRaw: SectionRawScore = { correct: mathTotalCorrect, total: mathTotalQuestions };
-  const overallRaw: SectionRawScore = { correct: totalCorrect, total: totalQuestions };
+  const rwRaw: SectionRawScore = {
+    correct: rwTotalCorrect,
+    total: rwTotalQuestions,
+  };
+  const mathRaw: SectionRawScore = {
+    correct: mathTotalCorrect,
+    total: mathTotalQuestions,
+  };
+  const overallRaw: SectionRawScore = {
+    correct: totalCorrect,
+    total: totalQuestions,
+  };
 
-  const rwScaled = calculateSectionScaledScore("rw", rwRaw.correct, rwRaw.total);
-  const mathScaled = calculateSectionScaledScore("math", mathRaw.correct, mathRaw.total);
+  const rwScaled = calculateSectionScaledScore(
+    "rw",
+    rwRaw.correct,
+    rwRaw.total,
+  );
+  const mathScaled = calculateSectionScaledScore(
+    "math",
+    mathRaw.correct,
+    mathRaw.total,
+  );
   const scaledTotal = rwScaled + mathScaled;
 
   const rows = input.diagnosticRows || [];
@@ -1529,7 +1768,10 @@ function buildCompleteExamResult(input: BuildCompleteExamResultInput): CompleteE
     overallScore: {
       totalCorrect: overallRaw.correct,
       totalQuestions: overallRaw.total,
-      percentageCorrect: overallRaw.total > 0 ? (overallRaw.correct / overallRaw.total) * 100 : 0,
+      percentageCorrect:
+        overallRaw.total > 0
+          ? (overallRaw.correct / overallRaw.total) * 100
+          : 0,
       scaledTotal,
     },
     completedAt: input.completedAt,
@@ -1543,7 +1785,7 @@ async function computeAndPersistExamScores(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   sessionId: string,
   userId: string,
-  completedAt: Date
+  completedAt: Date,
 ): Promise<CompleteExamResult> {
   // First compute scores from responses
   const result = await computeExamScores(supabase, sessionId, completedAt);
@@ -1567,7 +1809,7 @@ async function computeAndPersistExamScores(
       },
       {
         onConflict: "session_id",
-      }
+      },
     );
 
   if (insertError) {
@@ -1583,7 +1825,7 @@ async function computeAndPersistExamScores(
 async function computeDiagnosticRows(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   sessionId: string,
-  modules: Array<{ id: string; section: string }>
+  modules: Array<{ id: string; section: string }>,
 ): Promise<DiagnosticInputRow[]> {
   try {
     const moduleSectionById = new Map<string, SectionType>();
@@ -1598,12 +1840,19 @@ async function computeDiagnosticRows(
       return [];
     }
 
-    const { data: moduleQuestions, error: moduleQuestionsError } = await supabase
-      .from("full_length_exam_questions")
-      .select("module_id, question_id, question_domain, question_skill, question_subskill, question_tags, question_competencies")
-      .in("module_id", moduleIds);
+    const { data: moduleQuestions, error: moduleQuestionsError } =
+      await supabase
+        .from("full_length_exam_questions")
+        .select(
+          "module_id, question_id, question_domain, question_skill, question_subskill, question_tags, question_competencies",
+        )
+        .in("module_id", moduleIds);
 
-    if (moduleQuestionsError || !moduleQuestions || moduleQuestions.length === 0) {
+    if (
+      moduleQuestionsError ||
+      !moduleQuestions ||
+      moduleQuestions.length === 0
+    ) {
       return [];
     }
 
@@ -1646,7 +1895,7 @@ async function computeDiagnosticRows(
 }
 async function getModuleQuestionTotal(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  moduleId: string
+  moduleId: string,
 ): Promise<number> {
   const { data, error } = await supabase
     .from("full_length_exam_questions")
@@ -1654,7 +1903,9 @@ async function getModuleQuestionTotal(
     .eq("module_id", moduleId);
 
   if (error) {
-    throw new Error(`Failed to load materialized module questions for scoring: ${error.message}`);
+    throw new Error(
+      `Failed to load materialized module questions for scoring: ${error.message}`,
+    );
   }
 
   if (!data || data.length === 0) {
@@ -1671,7 +1922,7 @@ async function getModuleQuestionTotal(
 async function computeExamScores(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   sessionId: string,
-  completedAt: Date
+  completedAt: Date,
 ): Promise<CompleteExamResult> {
   // Get all modules
   const { data: modules, error: modulesError } = await supabase
@@ -1708,7 +1959,7 @@ async function computeExamScores(
   const diagnosticRows = await computeDiagnosticRows(
     supabase,
     sessionId,
-    modules as Array<{ id: string; section: string }>
+    modules as Array<{ id: string; section: string }>,
   );
 
   const rwModule1 = moduleScores["rw_1"] || { correct: 0, total: 0 };
@@ -1734,7 +1985,7 @@ async function computeExamScores(
 async function computeCanonicalExamReport(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   sessionId: string,
-  completedAt: Date
+  completedAt: Date,
 ): Promise<CompleteExamResult> {
   return computeExamScores(supabase, sessionId, completedAt);
 }
@@ -1758,11 +2009,18 @@ async function applyFullLengthMasterySignals(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   userId: string,
   sessionId: string,
-  responses: Array<{ question_id: string; is_correct: boolean | null; answered_at?: string | null }>
+  responses: Array<{
+    id: string;
+    question_id: string;
+    is_correct: boolean | null;
+    answered_at?: string | null;
+  }>,
 ): Promise<void> {
   if (!responses.length) return;
 
-  const questionIds = Array.from(new Set(responses.map((r) => r.question_id).filter(Boolean)));
+  const questionIds = Array.from(
+    new Set(responses.map((r) => r.question_id).filter(Boolean)),
+  );
   if (!questionIds.length) return;
 
   try {
@@ -1772,48 +2030,74 @@ async function applyFullLengthMasterySignals(
       .eq("session_id", sessionId);
 
     if (moduleError) {
-      console.warn(`[FULL-LENGTH] Failed to load modules for mastery updates: ${moduleError.message}`);
+      console.warn(
+        `[FULL-LENGTH] Failed to load modules for mastery updates: ${moduleError.message}`,
+      );
       return;
     }
 
-    const moduleIds = (moduleRows ?? []).map((row: any) => String(row.id)).filter(Boolean);
+    const moduleIds = (moduleRows ?? [])
+      .map((row: any) => String(row.id))
+      .filter(Boolean);
     if (moduleIds.length === 0) {
       return;
     }
 
     const { data: materializedRows, error: materializedError } = await supabase
       .from("full_length_exam_questions")
-      .select("question_id, question_canonical_id, question_exam, question_section, question_domain, question_skill, question_subskill, question_difficulty, question_structure_cluster_id")
+      .select(
+        "question_id, question_canonical_id, question_exam, question_section, question_domain, question_skill, question_subskill, question_difficulty, question_structure_cluster_id",
+      )
       .in("module_id", moduleIds)
       .in("question_id", questionIds);
 
     if (materializedError) {
-      console.warn(`[FULL-LENGTH] Failed to load materialized question metadata for mastery updates: ${materializedError.message}`);
+      console.warn(
+        `[FULL-LENGTH] Failed to load materialized question metadata for mastery updates: ${materializedError.message}`,
+      );
       return;
     }
 
-    const metadataByQuestionId = new Map<string, {
-      question_canonical_id: string | null;
-      question_exam: string | null;
-      question_section: string | null;
-      question_domain: string | null;
-      question_skill: string | null;
-      question_subskill: string | null;
-      question_skill_code: string | null;
-      question_difficulty: unknown;
-      question_structure_cluster_id: string | null;
-    }>();
+    const metadataByQuestionId = new Map<
+      string,
+      {
+        question_canonical_id: string | null;
+        question_exam: string | null;
+        question_section: string | null;
+        question_domain: string | null;
+        question_skill: string | null;
+        question_subskill: string | null;
+        question_skill_code: string | null;
+        question_difficulty: unknown;
+        question_structure_cluster_id: string | null;
+      }
+    >();
     for (const row of (materializedRows ?? []) as any[]) {
       metadataByQuestionId.set(String(row.question_id), {
-        question_canonical_id: typeof row.question_canonical_id === "string" ? row.question_canonical_id : null,
-        question_exam: typeof row.question_exam === "string" ? row.question_exam : null,
-        question_section: typeof row.question_section === "string" ? row.question_section : null,
-        question_domain: typeof row.question_domain === "string" ? row.question_domain : null,
-        question_skill: typeof row.question_skill === "string" ? row.question_skill : null,
-        question_subskill: typeof row.question_subskill === "string" ? row.question_subskill : null,
+        question_canonical_id:
+          typeof row.question_canonical_id === "string"
+            ? row.question_canonical_id
+            : null,
+        question_exam:
+          typeof row.question_exam === "string" ? row.question_exam : null,
+        question_section:
+          typeof row.question_section === "string"
+            ? row.question_section
+            : null,
+        question_domain:
+          typeof row.question_domain === "string" ? row.question_domain : null,
+        question_skill:
+          typeof row.question_skill === "string" ? row.question_skill : null,
+        question_subskill:
+          typeof row.question_subskill === "string"
+            ? row.question_subskill
+            : null,
         question_skill_code: null,
         question_difficulty: row.question_difficulty ?? null,
-        question_structure_cluster_id: typeof row.question_structure_cluster_id === "string" ? row.question_structure_cluster_id : null,
+        question_structure_cluster_id:
+          typeof row.question_structure_cluster_id === "string"
+            ? row.question_structure_cluster_id
+            : null,
       });
     }
 
@@ -1823,50 +2107,68 @@ async function applyFullLengthMasterySignals(
       const section = question.question_section?.trim() ?? "";
       const domain = question.question_domain?.trim() ?? "";
       const skill = question.question_skill?.trim() ?? "";
-      const difficultyBucket = normalizeQuestionDifficultyValue(question.question_difficulty);
+      const difficultyBucket = normalizeQuestionDifficultyValue(
+        question.question_difficulty,
+      );
       if (!difficultyBucket) {
-        console.warn("[full-length] mastery emission skipped (invalid difficulty bucket)", {
-          sessionId,
-          questionCanonicalId: question.question_canonical_id,
-          sourceFamily: "test",
-          rawDifficulty: question.question_difficulty ?? null,
-        });
+        console.warn(
+          "[full-length] mastery emission skipped (invalid difficulty bucket)",
+          {
+            sessionId,
+            questionCanonicalId: question.question_canonical_id,
+            sourceFamily: "test",
+            rawDifficulty: question.question_difficulty ?? null,
+          },
+        );
         continue;
       }
       if (!section || !domain || !skill) {
-        console.warn("[full-length] mastery emission skipped (missing metadata)", {
-          sessionId,
-          questionCanonicalId: question.question_canonical_id,
-          sourceFamily: "test",
-          section: section || null,
-          domain: domain || null,
-          skill: skill || null,
-        });
+        console.warn(
+          "[full-length] mastery emission skipped (missing metadata)",
+          {
+            sessionId,
+            questionCanonicalId: question.question_canonical_id,
+            sourceFamily: "test",
+            section: section || null,
+            domain: domain || null,
+            skill: skill || null,
+          },
+        );
         continue;
       }
 
       try {
-        const result = await applyLearningEventToMastery({
+        const result = await applyMasteryEvent({
           studentId: userId,
           section,
           domain,
           skill,
           difficulty: difficultyBucket,
           sourceFamily: "test",
+          eventSourceKind: "full_length_answer",
           correct: !!response.is_correct,
-          latencyMs: null,
           occurredAt: response.answered_at ?? new Date().toISOString(),
+          eventId: response.id,
+          questionId: question.question_canonical_id,
+          sectionState: "submitted",
         });
 
         if (!result.ok && result.error) {
-          console.warn(`[FULL-LENGTH] Canonical mastery update warning for ${question.question_canonical_id}: ${result.error}`);
+          console.warn(
+            `[FULL-LENGTH] Canonical mastery update warning for ${question.question_canonical_id}: ${result.error}`,
+          );
         }
-      } catch (masteryErr: any) {
-        console.warn(`[FULL-LENGTH] Canonical mastery update failed for ${question.question_canonical_id}: ${masteryErr?.message}`);
+      } catch (masteryErr: unknown) {
+        const message =
+          masteryErr instanceof Error ? masteryErr.message : "unknown";
+        console.warn(
+          `[FULL-LENGTH] Canonical mastery update failed for ${question.question_canonical_id}: ${message}`,
+        );
       }
     }
-  } catch (err: any) {
-    console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${err?.message || 'unknown error'}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.warn(`[FULL-LENGTH] Skipping canonical mastery bridge: ${message}`);
   }
 }
 
@@ -1896,8 +2198,12 @@ async function applyFullLengthPlannerBridgeBestEffort(params: {
  * Create a new full-length exam session
  * Idempotent: returns existing active session if one exists for the user
  */
-export async function createExamSession(params: CreateSessionParams): Promise<FullLengthExamSession> {
-  const requestedClientInstanceId = normalizeClientInstanceId(params.clientInstanceId);
+export async function createExamSession(
+  params: CreateSessionParams,
+): Promise<FullLengthExamSession> {
+  const requestedClientInstanceId = normalizeClientInstanceId(
+    params.clientInstanceId,
+  );
   const supabase = getSupabaseAdmin();
 
   const { data: existingSession } = await supabase
@@ -1910,7 +2216,10 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .maybeSingle();
 
   if (existingSession) {
-    if (params.testFormId && existingSession.test_form_id !== params.testFormId) {
+    if (
+      params.testFormId &&
+      existingSession.test_form_id !== params.testFormId
+    ) {
       throw new Error("Active session exists for a different test form");
     }
 
@@ -1927,10 +2236,14 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     return existingSession;
   }
 
-  const resolvedForm = await resolvePublishedFormForSession(supabase, params.testFormId);
+  const resolvedForm = await resolvePublishedFormForSession(
+    supabase,
+    params.testFormId,
+  );
 
   const seed = generateSeed(params.userId);
-  const insertClientInstanceId = requestedClientInstanceId || `srv_${crypto.randomUUID()}`;
+  const insertClientInstanceId =
+    requestedClientInstanceId || `srv_${crypto.randomUUID()}`;
 
   const { data: session, error: sessionError } = await supabase
     .from("full_length_exam_sessions")
@@ -1945,7 +2258,11 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .single();
 
   if (sessionError) {
-    if (sessionError.code === "23505" || sessionError.message?.includes("duplicate") || sessionError.message?.includes("unique")) {
+    if (
+      sessionError.code === "23505" ||
+      sessionError.message?.includes("duplicate") ||
+      sessionError.message?.includes("unique")
+    ) {
       const { data: racedSession } = await supabase
         .from("full_length_exam_sessions")
         .select("*")
@@ -1956,7 +2273,10 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
         .maybeSingle();
 
       if (racedSession) {
-        if (params.testFormId && racedSession.test_form_id !== params.testFormId) {
+        if (
+          params.testFormId &&
+          racedSession.test_form_id !== params.testFormId
+        ) {
           throw new Error("Active session exists for a different test form");
         }
 
@@ -1974,7 +2294,9 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
       }
     }
 
-    throw new Error(`Failed to create exam session: ${sessionError.message || "Unknown error"}`);
+    throw new Error(
+      `Failed to create exam session: ${sessionError.message || "Unknown error"}`,
+    );
   }
 
   if (!session) {
@@ -1995,8 +2317,11 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
       .eq("id", session.id)
       .eq("user_id", params.userId);
 
-    const quotaErr = new Error(fullLengthGate.message || "Full-length start limit reached");
-    (quotaErr as any).code = fullLengthGate.code || "FULL_LENGTH_QUOTA_EXCEEDED";
+    const quotaErr = new Error(
+      fullLengthGate.message || "Full-length start limit reached",
+    );
+    (quotaErr as any).code =
+      fullLengthGate.code || "FULL_LENGTH_QUOTA_EXCEEDED";
     (quotaErr as any).rateLimit = fullLengthGate;
     throw quotaErr;
   }
@@ -2038,7 +2363,9 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     .select("id, section, module_index");
 
   if (modulesError || !createdModules) {
-    throw new Error(`Failed to create exam modules: ${modulesError?.message || "No modules returned"}`);
+    throw new Error(
+      `Failed to create exam modules: ${modulesError?.message || "No modules returned"}`,
+    );
   }
 
   const moduleIdByKey = new Map<string, string>();
@@ -2050,7 +2377,10 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     if (moduleRow.module_index !== 1 && moduleRow.module_index !== 2) {
       throw new Error("Invalid module index while creating session");
     }
-    moduleIdByKey.set(moduleKey(section, moduleRow.module_index as ModuleIndex), moduleRow.id);
+    moduleIdByKey.set(
+      moduleKey(section, moduleRow.module_index as ModuleIndex),
+      moduleRow.id,
+    );
   }
 
   // Contract gate: at session start only module 1 rows may be materialized.
@@ -2058,7 +2388,9 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
     const key = moduleKey(section, 1);
     const moduleId = moduleIdByKey.get(key);
     if (!moduleId) {
-      throw new Error(`${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: module mapping missing for ${section} module 1`);
+      throw new Error(
+        `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: module mapping missing for ${section} module 1`,
+      );
     }
 
     await materializeModuleFromResolvedForm({
@@ -2078,7 +2410,7 @@ export async function createExamSession(params: CreateSessionParams): Promise<Fu
 export async function getCurrentSession(
   sessionId: string,
   userId: string,
-  clientInstanceId?: string
+  clientInstanceId?: string,
 ): Promise<GetCurrentSessionResult> {
   const supabase = getSupabaseAdmin();
 
@@ -2118,7 +2450,9 @@ export async function getCurrentSession(
   // Check if on break
   if (session.current_section === "break") {
     // Break timer is server authoritative and anchored to break_started_at.
-    const breakStart = new Date(session.break_started_at || session.updated_at).getTime();
+    const breakStart = new Date(
+      session.break_started_at || session.updated_at,
+    ).getTime();
     const breakEnd = breakStart + BREAK_DURATION_MS;
     const now = Date.now();
     const breakTimeRemaining = Math.max(0, breakEnd - now);
@@ -2163,12 +2497,16 @@ export async function getCurrentSession(
   // Get persisted module question snapshots (runtime truth; no raw questions table reads).
   const { data: moduleQuestions, error: questionsError } = await supabase
     .from("full_length_exam_questions")
-    .select("id, question_id, order_index, question_canonical_id, question_stem, question_section, question_type, question_options, question_difficulty")
+    .select(
+      "id, question_id, order_index, question_canonical_id, question_stem, question_section, question_type, question_options, question_difficulty",
+    )
     .eq("module_id", currentModule.id)
     .order("order_index", { ascending: true });
 
   if (questionsError) {
-    throw new Error(`Failed to fetch module questions: ${questionsError.message}`);
+    throw new Error(
+      `Failed to fetch module questions: ${questionsError.message}`,
+    );
   }
 
   // Get responses for this module (for resume support)
@@ -2183,11 +2521,16 @@ export async function getCurrentSession(
 
   // Build a map of question_id -> response for quick lookup
   const responseMap = new Map(
-    responses?.map((r) => [r.question_id, {
-      selectedAnswer: r.selected_answer,
-    }]) || []
+    responses?.map((r) => [
+      r.question_id,
+      {
+        selectedAnswer: r.selected_answer,
+      },
+    ]) || [],
   );
-  const answeredQuestionIds = new Set(responses?.map((r) => r.question_id) || []);
+  const answeredQuestionIds = new Set(
+    responses?.map((r) => r.question_id) || [],
+  );
 
   interface MaterializedModuleQuestion {
     id: string;
@@ -2204,8 +2547,11 @@ export async function getCurrentSession(
   // Find first unanswered question
   let currentQuestion = null;
   if (moduleQuestions && moduleQuestions.length > 0) {
-    const typedQuestions = moduleQuestions as unknown as MaterializedModuleQuestion[];
-    const unanswered = typedQuestions.find((mq) => !answeredQuestionIds.has(mq.question_id));
+    const typedQuestions =
+      moduleQuestions as unknown as MaterializedModuleQuestion[];
+    const unanswered = typedQuestions.find(
+      (mq) => !answeredQuestionIds.has(mq.question_id),
+    );
     const target = unanswered || typedQuestions[0];
 
     if (target) {
@@ -2226,7 +2572,9 @@ export async function getCurrentSession(
         explanation: null,
       });
       if (!safeBase.stem || safeBase.options.length === 0) {
-        throw new Error("Materialized full-length question snapshot is invalid");
+        throw new Error(
+          "Materialized full-length question snapshot is invalid",
+        );
       }
 
       const submittedAnswer = responseMap.get(target.question_id);
@@ -2248,8 +2596,8 @@ export async function getCurrentSession(
         // Include previously submitted answer if it exists (for resume support)
         submittedAnswer: submittedAnswer
           ? {
-            selectedAnswer: submittedAnswer.selectedAnswer || undefined,
-          }
+              selectedAnswer: submittedAnswer.selectedAnswer || undefined,
+            }
           : undefined,
       };
     }
@@ -2259,7 +2607,11 @@ export async function getCurrentSession(
   const timeRemaining = calculateTimeRemaining(currentModule);
 
   // Check if time expired
-  if (timeRemaining !== null && timeRemaining === 0 && currentModule.status === "in_progress") {
+  if (
+    timeRemaining !== null &&
+    timeRemaining === 0 &&
+    currentModule.status === "in_progress"
+  ) {
     // Auto-submit module if time expired
     await submitModule({ sessionId, userId, clientInstanceId });
   }
@@ -2279,7 +2631,7 @@ export async function getCurrentSession(
 async function startModule(
   sessionId: string,
   moduleId: string,
-  userId?: string
+  userId?: string,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
 
@@ -2299,21 +2651,29 @@ async function startModule(
 
   const section = module.section as SectionType;
   const moduleIndex = module.module_index as ModuleIndex;
-  const expectedQuestionCount = MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"].questionCount;
+  const expectedQuestionCount =
+    MODULE_CONFIG[section][`module${moduleIndex}` as "module1" | "module2"]
+      .questionCount;
 
-  const { data: existingQuestions, error: existingQuestionsError } = await supabase
-    .from("full_length_exam_questions")
-    .select("id")
-    .eq("module_id", moduleId)
-    .order("order_index", { ascending: true });
+  const { data: existingQuestions, error: existingQuestionsError } =
+    await supabase
+      .from("full_length_exam_questions")
+      .select("id")
+      .eq("module_id", moduleId)
+      .order("order_index", { ascending: true });
 
   if (existingQuestionsError) {
-    throw new Error(`Failed to load module questions: ${existingQuestionsError.message}`);
+    throw new Error(
+      `Failed to load module questions: ${existingQuestionsError.message}`,
+    );
   }
 
-  if (!existingQuestions || existingQuestions.length !== expectedQuestionCount) {
+  if (
+    !existingQuestions ||
+    existingQuestions.length !== expectedQuestionCount
+  ) {
     throw new Error(
-      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: session module ${section} ${moduleIndex} expected ${expectedQuestionCount} items`
+      `${FORM_STRUCTURE_INCOMPLETE_MESSAGE}: session module ${section} ${moduleIndex} expected ${expectedQuestionCount} items`,
     );
   }
 
@@ -2351,14 +2711,16 @@ async function startModule(
  * List full-length sessions for a user (canonical history truth).
  */
 export async function listExamSessions(
-  params: ListExamSessionsParams
+  params: ListExamSessionsParams,
 ): Promise<FullLengthSessionHistoryItem[]> {
   const supabase = getSupabaseAdmin();
   const limit = Math.max(1, Math.min(params.limit ?? 20, 50));
 
   let query = supabase
     .from("full_length_exam_sessions")
-    .select("id, status, current_section, current_module, test_form_id, started_at, completed_at, created_at, updated_at")
+    .select(
+      "id, status, current_section, current_module, test_form_id, started_at, completed_at, created_at, updated_at",
+    )
     .eq("user_id", params.userId)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -2457,38 +2819,53 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
     throw new Error("Question not found in current module");
   }
 
-  const { data: existingResponse, error: existingResponseError } = await supabase
-    .from("full_length_exam_responses")
-    .select("id, selected_answer")
-    .eq("session_id", params.sessionId)
-    .eq("module_id", currentModule.id)
-    .eq("question_id", params.questionId)
-    .maybeSingle();
+  const { data: existingResponse, error: existingResponseError } =
+    await supabase
+      .from("full_length_exam_responses")
+      .select("id, selected_answer")
+      .eq("session_id", params.sessionId)
+      .eq("module_id", currentModule.id)
+      .eq("question_id", params.questionId)
+      .maybeSingle();
 
   if (existingResponseError) {
-    throw new Error(`Failed to check existing response: ${existingResponseError.message}`);
+    throw new Error(
+      `Failed to check existing response: ${existingResponseError.message}`,
+    );
   }
 
-  const selected = String(params.selectedAnswer ?? "").trim().toUpperCase();
+  const selected = String(params.selectedAnswer ?? "")
+    .trim()
+    .toUpperCase();
   const storedSelectedAnswer = selected.length > 0 ? selected : null;
 
   if (existingResponse) {
-    const existingSelected = String((existingResponse as any).selected_answer ?? "").trim().toUpperCase();
-    const normalizedExistingSelected = existingSelected.length > 0 ? existingSelected : null;
+    const existingSelected = String(
+      (existingResponse as any).selected_answer ?? "",
+    )
+      .trim()
+      .toUpperCase();
+    const normalizedExistingSelected =
+      existingSelected.length > 0 ? existingSelected : null;
     if (normalizedExistingSelected !== storedSelectedAnswer) {
       throw new Error("Answer already submitted with different selection");
     }
     return;
   }
 
-  if (normalizeQuestionType((moduleQuestion as any).question_type) !== "multiple_choice") {
+  if (
+    normalizeQuestionType((moduleQuestion as any).question_type) !==
+    "multiple_choice"
+  ) {
     throw new Error("Unsupported question type for full-length exam");
   }
 
-  const correct = normalizeMcAnswerKey((moduleQuestion as any).question_correct_answer);
+  const correct = normalizeMcAnswerKey(
+    (moduleQuestion as any).question_correct_answer,
+  );
   if (!correct) {
     throw new Error(
-      "Materialized full-length question snapshot is missing a correct answer key. Runtime fallback to raw questions is disabled by contract."
+      "Materialized full-length question snapshot is missing a correct answer key. Runtime fallback to raw questions is disabled by contract.",
     );
   }
   const isCorrect = selected.length > 0 && selected === correct;
@@ -2509,7 +2886,10 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
 
   if (insertError) {
     const message = insertError.message || "";
-    if (insertError.code === "23505" || message.toLowerCase().includes("duplicate")) {
+    if (
+      insertError.code === "23505" ||
+      message.toLowerCase().includes("duplicate")
+    ) {
       return;
     }
     throw new Error(`Failed to insert response: ${insertError.message}`);
@@ -2530,7 +2910,9 @@ export async function submitAnswer(params: SubmitAnswerParams): Promise<void> {
  * Persist calculator state for a math module only.
  * Isolated from scoring/timing logic.
  */
-export async function persistModuleCalculatorState(params: PersistModuleCalculatorStateParams): Promise<void> {
+export async function persistModuleCalculatorState(
+  params: PersistModuleCalculatorStateParams,
+): Promise<void> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -2554,7 +2936,11 @@ export async function persistModuleCalculatorState(params: PersistModuleCalculat
     session.client_instance_id = calculatorBinding.requestedClientInstanceId;
   }
 
-  if (!["in_progress", "break", "not_started"].includes(String(session.status ?? ""))) {
+  if (
+    !["in_progress", "break", "not_started"].includes(
+      String(session.status ?? ""),
+    )
+  ) {
     throw new Error("Session is not active");
   }
 
@@ -2596,14 +2982,18 @@ export async function persistModuleCalculatorState(params: PersistModuleCalculat
     .eq("session_id", params.sessionId);
 
   if (updateError) {
-    throw new Error(`Failed to persist calculator state: ${updateError.message}`);
+    throw new Error(
+      `Failed to persist calculator state: ${updateError.message}`,
+    );
   }
 }
 
 /**
  * Submit a module (end module, compute performance, set up next module)
  */
-export async function submitModule(params: SubmitModuleParams): Promise<SubmitModuleResult> {
+export async function submitModule(
+  params: SubmitModuleParams,
+): Promise<SubmitModuleResult> {
   const supabase = getSupabaseAdmin();
 
   // Validate session ownership
@@ -2650,7 +3040,9 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     throw new Error("Module must be started before submitting");
   }
 
-  const buildSubmittedReplayResult = async (moduleId: string): Promise<SubmitModuleResult> => {
+  const buildSubmittedReplayResult = async (
+    moduleId: string,
+  ): Promise<SubmitModuleResult> => {
     const { data: responses } = await supabase
       .from("full_length_exam_responses")
       .select("question_id, is_correct")
@@ -2661,7 +3053,8 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     const currentSection = session.current_section as SectionType;
     const currentModuleIndex = session.current_module as ModuleIndex;
 
-    let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null = null;
+    let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null =
+      null;
     let isBreak = false;
 
     if (currentModuleIndex === 1) {
@@ -2743,7 +3136,7 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
   // Get module responses to compute score
   const { data: responses, error: responsesError } = await supabase
     .from("full_length_exam_responses")
-    .select("question_id, is_correct, answered_at")
+    .select("id, question_id, is_correct, answered_at")
     .eq("module_id", currentModule.id);
 
   if (responsesError) {
@@ -2757,14 +3150,24 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
     supabase,
     params.userId,
     params.sessionId,
-    (responses || []).map((r) => ({ question_id: r.question_id, is_correct: r.is_correct, answered_at: (r as any).answered_at ?? null }))
+    (responses || []).map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        question_id: r.question_id,
+        is_correct: r.is_correct,
+        answered_at:
+          typeof row.answered_at === "string" ? row.answered_at : null,
+      };
+    }),
   );
 
   // Determine next module
   const currentSection = session.current_section as SectionType;
   const currentModuleIndex = session.current_module as ModuleIndex;
 
-  let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null = null;
+  let nextModule: { section: SectionType; moduleIndex: ModuleIndex } | null =
+    null;
   let isBreak = false;
 
   if (currentModuleIndex === 1) {
@@ -2818,7 +3221,11 @@ export async function submitModule(params: SubmitModuleParams): Promise<SubmitMo
 /**
  * Start the exam (set status to in_progress, start RW Module 1)
  */
-export async function startExam(sessionId: string, userId: string, clientInstanceId?: string): Promise<void> {
+export async function startExam(
+  sessionId: string,
+  userId: string,
+  clientInstanceId?: string,
+): Promise<void> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -2867,7 +3274,11 @@ export async function startExam(sessionId: string, userId: string, clientInstanc
 /**
  * Continue from break to Math Module 1
  */
-export async function continueFromBreak(sessionId: string, userId: string, clientInstanceId?: string): Promise<void> {
+export async function continueFromBreak(
+  sessionId: string,
+  userId: string,
+  clientInstanceId?: string,
+): Promise<void> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -2910,7 +3321,9 @@ export async function continueFromBreak(sessionId: string, userId: string, clien
 /**
  * Complete the exam (compute final scores)
  */
-export async function completeExam(params: CompleteExamParams): Promise<CompleteExamResult> {
+export async function completeExam(
+  params: CompleteExamParams,
+): Promise<CompleteExamResult> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -2935,7 +3348,7 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     const result = await computeCanonicalExamReport(
       supabase,
       params.sessionId,
-      new Date(session.completed_at || new Date().toISOString())
+      new Date(session.completed_at || new Date().toISOString()),
     );
     await applyFullLengthPlannerBridgeBestEffort({
       userId: params.userId,
@@ -3006,7 +3419,7 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
       const result = await computeCanonicalExamReport(
         supabase,
         params.sessionId,
-        new Date(completedSession.completed_at || completedAt.toISOString())
+        new Date(completedSession.completed_at || completedAt.toISOString()),
       );
       await applyFullLengthPlannerBridgeBestEffort({
         userId: params.userId,
@@ -3023,7 +3436,7 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
     supabase,
     params.sessionId,
     params.userId,
-    completedAt
+    completedAt,
   );
 
   await emitFullLengthEvent(supabase, "test_completed", {
@@ -3054,7 +3467,9 @@ export async function completeExam(params: CompleteExamParams): Promise<Complete
 }
 
 // ============================================================================
-export async function getExamReport(params: CompleteExamParams): Promise<CompleteExamResult> {
+export async function getExamReport(
+  params: CompleteExamParams,
+): Promise<CompleteExamResult> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -3072,11 +3487,15 @@ export async function getExamReport(params: CompleteExamParams): Promise<Complet
     throw new Error("Results locked until completion");
   }
 
-  const completedAt = session.completed_at ? new Date(session.completed_at) : new Date();
+  const completedAt = session.completed_at
+    ? new Date(session.completed_at)
+    : new Date();
   return computeCanonicalExamReport(supabase, params.sessionId, completedAt);
 }
 
-export async function getExamReviewAfterCompletion(params: CompleteExamParams): Promise<GetExamReviewResult> {
+export async function getExamReviewAfterCompletion(
+  params: CompleteExamParams,
+): Promise<GetExamReviewResult> {
   const supabase = getSupabaseAdmin();
 
   const { data: session, error: sessionError } = await supabase
@@ -3109,7 +3528,7 @@ export async function getExamReviewAfterCompletion(params: CompleteExamParams): 
 /**
  * Allowlist of question fields safe to expose BEFORE session completion.
  * These fields do NOT reveal correct answers or explanations.
- * 
+ *
  * SECURITY: This is an explicit allowlist. Any field not listed here
  * will NOT be included in pre-completion review responses.
  */
@@ -3215,8 +3634,10 @@ export interface SafeQuestionPreCompletion {
  * Full question type for post-completion review (Doc 04C §2.7).
  * Re-widens the three §10.2-stripped fields and adds answer/explanation.
  */
-export interface FullQuestionPostCompletion
-  extends Omit<SafeQuestionPreCompletion, "domain" | "skill_code" | "difficulty"> {
+export interface FullQuestionPostCompletion extends Omit<
+  SafeQuestionPreCompletion,
+  "domain" | "skill_code" | "difficulty"
+> {
   domain: string | null;
   skill_code: string | null;
   difficulty: QuestionDifficulty | null;
@@ -3276,7 +3697,9 @@ export interface GetExamReviewParams {
   userId?: string;
 }
 
-function normalizeReviewSectionCode(value: unknown): CanonicalSectionCode | null {
+function normalizeReviewSectionCode(
+  value: unknown,
+): CanonicalSectionCode | null {
   if (value === "MATH" || value === "RW") {
     return value;
   }
@@ -3303,7 +3726,12 @@ function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
   }
 
   const metadata = value as Record<string, unknown>;
-  if (!("A" in metadata) || !("B" in metadata) || !("C" in metadata) || !("D" in metadata)) {
+  if (
+    !("A" in metadata) ||
+    !("B" in metadata) ||
+    !("C" in metadata) ||
+    !("D" in metadata)
+  ) {
     return null;
   }
 
@@ -3319,7 +3747,7 @@ function normalizeOptionMetadata(value: unknown): OptionMetadata | null {
  * Exported for direct anti-leak regression testing.
  */
 export function projectSafeQuestionFields(
-  question: Record<string, unknown>
+  question: Record<string, unknown>,
 ): SafeQuestionPreCompletion {
   const safeBase = projectStudentSafeQuestion({
     id: String(question.id),
@@ -3337,11 +3765,12 @@ export function projectSafeQuestionFields(
     correct_answer: null,
     explanation: null,
   });
-  const sectionCode = safeBase.section_code === "M"
-    ? "MATH"
-    : safeBase.section_code === "RW"
-      ? "RW"
-      : normalizeReviewSectionCode(question.section_code);
+  const sectionCode =
+    safeBase.section_code === "M"
+      ? "MATH"
+      : safeBase.section_code === "RW"
+        ? "RW"
+        : normalizeReviewSectionCode(question.section_code);
   return {
     id: safeBase.id,
     canonical_id: safeBase.canonical_id,
@@ -3368,13 +3797,17 @@ export function projectSafeQuestionFields(
  * explanation — the review-phase reveal. Exported for regression testing.
  */
 export function projectFullQuestionFields(
-  question: Record<string, unknown>
+  question: Record<string, unknown>,
 ): FullQuestionPostCompletion {
   const safeFields = projectSafeQuestionFields(question);
   const normalizedAnswer = String(question.correct_answer ?? "").toUpperCase();
-  const correctAnswer = normalizedAnswer === "A" || normalizedAnswer === "B" || normalizedAnswer === "C" || normalizedAnswer === "D"
-    ? (normalizedAnswer as "A" | "B" | "C" | "D")
-    : null;
+  const correctAnswer =
+    normalizedAnswer === "A" ||
+    normalizedAnswer === "B" ||
+    normalizedAnswer === "C" ||
+    normalizedAnswer === "D"
+      ? (normalizedAnswer as "A" | "B" | "C" | "D")
+      : null;
 
   return {
     ...safeFields,
@@ -3391,26 +3824,28 @@ export function projectFullQuestionFields(
 
 /**
  * Get exam review data with safe question field projection.
- * 
+ *
  * SECURITY GUARDRAIL:
  * - If session.status != 'completed': Returns questions with ONLY safe fields
  *   (no correct_answer, no explanation, no solution fields)
  * - If session.status == 'completed': Returns full question details including
  *   correct answers and explanations
- * 
+ *
  * @param params.supabase - Supabase client instance
  * @param params.sessionId - The session ID to retrieve review for
  * @returns Exam review data with appropriately projected question fields
  */
 export async function getExamReview(
-  params: GetExamReviewParams
+  params: GetExamReviewParams,
 ): Promise<GetExamReviewResult> {
   const { supabase, sessionId, userId } = params;
 
   // Load session by ID and optionally enforce explicit user ownership.
   let sessionQuery = supabase
     .from("full_length_exam_sessions")
-    .select("id, user_id, status, current_section, current_module, seed, started_at, completed_at, created_at")
+    .select(
+      "id, user_id, status, current_section, current_module, seed, started_at, completed_at, created_at",
+    )
     .eq("id", sessionId);
 
   if (userId) {
@@ -3426,7 +3861,9 @@ export async function getExamReview(
   // Load all modules for this session
   const { data: modules, error: modulesError } = await supabase
     .from("full_length_exam_modules")
-    .select("id, section, module_index, status, difficulty_bucket, started_at, submitted_at")
+    .select(
+      "id, section, module_index, status, difficulty_bucket, started_at, submitted_at",
+    )
     .eq("session_id", sessionId)
     .order("section", { ascending: true })
     .order("module_index", { ascending: true });
@@ -3439,7 +3876,9 @@ export async function getExamReview(
   const moduleIds = (modules || []).map((m) => m.id);
   const { data: moduleQuestions, error: mqError } = await supabase
     .from("full_length_exam_questions")
-    .select("question_id, module_id, order_index, question_canonical_id, question_stem, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_difficulty, question_source_type, question_diagram_present, question_tags, question_correct_answer, question_answer_text, question_explanation")
+    .select(
+      "question_id, module_id, order_index, question_canonical_id, question_stem, question_section_code, question_type, question_options, question_domain, question_skill, question_subskill, question_difficulty, question_source_type, question_diagram_present, question_tags, question_correct_answer, question_answer_text, question_explanation",
+    )
     .in("module_id", moduleIds.length > 0 ? moduleIds : ["__none__"])
     .order("module_id", { ascending: true })
     .order("order_index", { ascending: true });
@@ -3448,9 +3887,12 @@ export async function getExamReview(
     throw new Error(`Failed to fetch module questions: ${mqError.message}`);
   }
 
-  if (moduleIds.length > 0 && (!moduleQuestions || moduleQuestions.length === 0)) {
+  if (
+    moduleIds.length > 0 &&
+    (!moduleQuestions || moduleQuestions.length === 0)
+  ) {
     throw new Error(
-      "Materialized full-length review snapshots are missing. Runtime fallback to legacy exam tables is disabled by contract."
+      "Materialized full-length review snapshots are missing. Runtime fallback to legacy exam tables is disabled by contract.",
     );
   }
 
@@ -3479,7 +3921,8 @@ export async function getExamReview(
         stem: (row.question_stem as string | null) ?? "",
         section: (row.question_section as string | null) ?? "",
         section_code: (row.question_section_code as string | null) ?? null,
-        question_type: (row.question_type as string | null) ?? "multiple_choice",
+        question_type:
+          (row.question_type as string | null) ?? "multiple_choice",
         options: row.question_options ?? [],
         domain: (row.question_domain as string | null) ?? null,
         skill: (row.question_skill as string | null) ?? null,
@@ -3487,7 +3930,8 @@ export async function getExamReview(
         skill_code: null,
         difficulty: row.question_difficulty ?? null,
         source_type: row.question_source_type ?? null,
-        diagram_present: (row.question_diagram_present as boolean | null) ?? null,
+        diagram_present:
+          (row.question_diagram_present as boolean | null) ?? null,
         tags: row.question_tags ?? null,
         competencies: row.question_competencies ?? null,
         correct_answer: (row.question_correct_answer as string | null) ?? null,
@@ -3503,9 +3947,14 @@ export async function getExamReview(
       : (materializedQuestions as QuestionRowPreCompletion[]);
   }
 
-  if (isCompleted && questions.some((question) => !normalizeMcAnswerKey((question as any).correct_answer))) {
+  if (
+    isCompleted &&
+    questions.some(
+      (question) => !normalizeMcAnswerKey((question as any).correct_answer),
+    )
+  ) {
     throw new Error(
-      "Materialized full-length review snapshots are missing correct-answer keys. Runtime fallback to raw questions is disabled by contract."
+      "Materialized full-length review snapshots are missing correct-answer keys. Runtime fallback to raw questions is disabled by contract.",
     );
   }
 
@@ -3520,11 +3969,15 @@ export async function getExamReview(
   }
 
   if (isCompleted && responses && responses.length > 0) {
-    const questionIds = new Set(questions.map((question) => String((question as any).id ?? "")));
-    const missingQuestionId = responses.find((response) => !questionIds.has(String(response.question_id ?? "")));
+    const questionIds = new Set(
+      questions.map((question) => String((question as any).id ?? "")),
+    );
+    const missingQuestionId = responses.find(
+      (response) => !questionIds.has(String(response.question_id ?? "")),
+    );
     if (missingQuestionId) {
       throw new Error(
-        "Materialized full-length review snapshots are incomplete for completed responses. Runtime fallback to legacy exam tables is disabled by contract."
+        "Materialized full-length review snapshots are incomplete for completed responses. Runtime fallback to legacy exam tables is disabled by contract.",
       );
     }
   }
@@ -3547,13 +4000,15 @@ export async function getExamReview(
   }));
 
   // Format responses
-  const formattedResponses: ExamReviewResponse[] = (responses || []).map((r) => ({
-    questionId: r.question_id,
-    moduleId: r.module_id,
-    selectedAnswer: r.selected_answer,
-    isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
-    answeredAt: r.answered_at,
-  }));
+  const formattedResponses: ExamReviewResponse[] = (responses || []).map(
+    (r) => ({
+      questionId: r.question_id,
+      moduleId: r.module_id,
+      selectedAnswer: r.selected_answer,
+      isCorrect: isCompleted ? r.is_correct : null, // Only reveal correctness after completion
+      answeredAt: r.answered_at,
+    }),
+  );
 
   return {
     session: {
@@ -3570,4 +4025,3 @@ export async function getExamReview(
     responses: formattedResponses,
   };
 }
-
