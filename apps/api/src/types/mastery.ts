@@ -1,12 +1,10 @@
 /**
  * MASTERY V1.0 TYPE DEFINITIONS
  *
- * Sprint 3: TypeScript types for mastery system
+ * Diagnostic session/response types for the diagnostic flow.
  */
 
-import { MasteryEventType } from '../services/mastery-constants';
-
-export type MasteryStatus = 'not_started' | 'weak' | 'improving' | 'proficient';
+export type MasteryStatus = "not_started" | "weak" | "improving" | "proficient";
 
 export interface DiagnosticSession {
   id: string;
@@ -40,24 +38,4 @@ export interface DiagnosticBlueprint {
       count: number;
     }[];
   }[];
-}
-
-export interface MasteryUpdateParams {
-  userId: string;
-  questionCanonicalId: string;
-  sessionId?: string | null;
-  isCorrect: boolean;
-  selectedChoice?: string | null;
-  timeSpentMs?: number | null;
-  eventType: MasteryEventType;
-  questionWeight?: number;
-  metadata: {
-    exam: string | null;
-    section: string | null;
-    domain: string | null;
-    skill: string | null;
-    subskill: string | null;
-    skill_code: string | null;
-    difficulty: string | null;
-  };
 }

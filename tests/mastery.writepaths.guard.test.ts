@@ -1,20 +1,20 @@
 /**
  * Mastery Write Paths Guard Test
- * 
+ *
  * Sprint 3 PR-2: Enhanced guard test enforcing mastery source of truth invariants.
- * 
+ *
  * REQUIREMENT: Only apps/api/src/services/mastery-write.ts should contain
  * write operations (.insert, .update, .upsert, rpc) on canonical mastery tables:
  * - student_skill_mastery
  * - student_domain_mastery
  * - student_section_projections
  * - student_kpi_rollups_current
- * 
+ *
  * INVARIANTS ENFORCED:
  * 1. No direct SQL writes to mastery tables outside mastery-write.ts
- * 2. No RPC calls to apply_learning_event_to_mastery outside mastery-write.ts
+ * 2. No RPC calls to apply_mastery_event outside mastery-write.ts
  * 3. Read functions must not mutate mastery state
- * 
+ *
  * This is a deterministic, filesystem-only test that scans source code
  * to prevent future drift.
  */
@@ -50,7 +50,9 @@ let NORMALIZED_CHOKE_POINT: string;
  */
 function getNormalizedChokePoint(repoRoot: string): string {
   if (!NORMALIZED_CHOKE_POINT) {
-    NORMALIZED_CHOKE_POINT = normalizePath(path.join(repoRoot, CHOKE_POINT_MODULE));
+    NORMALIZED_CHOKE_POINT = normalizePath(
+      path.join(repoRoot, CHOKE_POINT_MODULE),
+    );
   }
   return NORMALIZED_CHOKE_POINT;
 }
@@ -69,13 +71,11 @@ const WRITE_PATTERNS = [
   ".update(",
   ".upsert(",
   "rpc(",
-  ".delete(",  // Also prevent deletes
+  ".delete(", // Also prevent deletes
 ];
 
 // Specific mastery RPC calls that should only be in choke point
-const MASTERY_RPC_CALLS = [
-  "apply_learning_event_to_mastery",
-];
+const MASTERY_RPC_CALLS = ["apply_mastery_event"];
 
 // Directories to scan
 const SCAN_DIRS = ["apps/api/src", "server", "client/src"];
@@ -106,7 +106,7 @@ interface FileViolation {
  */
 function scanDirectory(dir: string, repoRoot: string): string[] {
   const files: string[] = [];
-  
+
   if (!fs.existsSync(dir)) {
     return files;
   }
@@ -124,7 +124,10 @@ function scanDirectory(dir: string, repoRoot: string): string[] {
 
     if (entry.isDirectory()) {
       files.push(...scanDirectory(fullPath, repoRoot));
-    } else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
+    ) {
       files.push(fullPath);
     }
   }
@@ -137,7 +140,7 @@ function scanDirectory(dir: string, repoRoot: string): string[] {
  */
 function checkFileForViolations(
   filePath: string,
-  repoRoot: string
+  repoRoot: string,
 ): FileViolation[] {
   const violations: FileViolation[] = [];
   const relativePath = path.relative(repoRoot, filePath);
@@ -158,7 +161,7 @@ function checkFileForViolations(
 
   // Check if file mentions any mastery table
   const mentionsMasteryTable = MASTERY_TABLES.some((table) =>
-    content.includes(table)
+    content.includes(table),
   );
 
   if (!mentionsMasteryTable) {
@@ -177,7 +180,9 @@ function checkFileForViolations(
         // Look at current line and 2 lines before/after for context
         const contextStart = Math.max(0, i - 2);
         const contextEnd = Math.min(lines.length - 1, i + 2);
-        const contextLines = lines.slice(contextStart, contextEnd + 1).join("\n");
+        const contextLines = lines
+          .slice(contextStart, contextEnd + 1)
+          .join("\n");
 
         for (const table of MASTERY_TABLES) {
           if (contextLines.includes(table)) {
@@ -236,7 +241,7 @@ describe("Mastery Write Paths Guard", () => {
         }),
         "",
         "ACTION REQUIRED:",
-        "  - Move write logic to applyLearningEventToMastery() in mastery-write.ts",
+        "  - Move write logic to applyMasteryEvent() in mastery-write.ts",
         "  - Update the code to call the choke point instead of direct writes",
         "",
       ].join("\n");
@@ -253,17 +258,19 @@ describe("Mastery Write Paths Guard", () => {
     const repoRoot = path.resolve(__dirname, "..");
     const chokePointPath = path.join(repoRoot, CHOKE_POINT_MODULE);
 
-    expect(fs.existsSync(chokePointPath), "Choke point module must exist").toBe(true);
+    expect(fs.existsSync(chokePointPath), "Choke point module must exist").toBe(
+      true,
+    );
 
     const content = fs.readFileSync(chokePointPath, "utf-8");
 
     // Verify it contains the canonical RPC call
-    expect(content).toContain("apply_learning_event_to_mastery");
+    expect(content).toContain("apply_mastery_event");
     // Verify it contains the canonical function
-    expect(content).toContain("applyLearningEventToMastery");
-    
+    expect(content).toContain("applyMasteryEvent");
+
     // Verify it has proper documentation
-    expect(content).toContain("CANONICAL MASTERY WRITE CHOKE POINT");
+    expect(content).toContain("@spec [Doc-05A_V1.0");
   });
 
   it("should prevent RPC calls to mastery functions outside choke point", () => {
@@ -279,16 +286,16 @@ describe("Mastery Write Paths Guard", () => {
         const relativePath = path.relative(repoRoot, file);
         // Normalize Windows paths so allowlist comparisons are stable across OSes.
         const normalizedPath = relativePath.split(path.sep).join("/");
-        
+
         // Normalize both paths for OS-agnostic comparison
         const normalizedFilePath = normalizePath(file);
         const normalizedChokePoint = getNormalizedChokePoint(repoRoot);
-        
+
         // Skip the choke point module itself - it's allowed to call mastery RPCs
         if (normalizedFilePath === normalizedChokePoint) {
           continue;
         }
-        
+
         const content = fs.readFileSync(file, "utf-8");
         const lines = content.split("\n");
 
@@ -301,7 +308,7 @@ describe("Mastery Write Paths Guard", () => {
             if (line.includes(rpcCall)) {
               violations.push({
                 file: normalizedPath,
-                table: "rpc_violation",  // Not a real table - indicates RPC call violation
+                table: "rpc_violation", // Not a real table - indicates RPC call violation
                 writePattern: rpcCall,
                 lineNumber,
                 lineContent: line.trim(),
@@ -333,7 +340,7 @@ describe("Mastery Write Paths Guard", () => {
         "",
         "ACTION REQUIRED:",
         "  - Remove direct RPC calls",
-        "  - Use applyLearningEventToMastery() from mastery-write.ts instead",
+        "  - Use applyMasteryEvent() from mastery-write.ts instead",
         "",
       ].join("\n");
 

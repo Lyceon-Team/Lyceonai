@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fromMock, applyLearningEventToMasteryMock } = vi.hoisted(() => ({
+const { fromMock, applyMasteryEventMock } = vi.hoisted(() => ({
   fromMock: vi.fn(),
-  applyLearningEventToMasteryMock: vi.fn(),
+  applyMasteryEventMock: vi.fn(),
 }));
 
 vi.mock("../apps/api/src/lib/supabase-server", () => ({
@@ -11,8 +11,8 @@ vi.mock("../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
-vi.mock("../apps/api/src/services/studentMastery", () => ({
-  applyLearningEventToMastery: applyLearningEventToMasteryMock,
+vi.mock("../apps/api/src/services/mastery-write", () => ({
+  applyMasteryEvent: applyMasteryEventMock,
 }));
 
 vi.mock("../server/lib/review-runtime-gate", () => ({
@@ -172,7 +172,7 @@ function setupSupabase(options: { hasTutorContext: boolean }) {
 describe("Review Error -> Canonical Mastery Bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    applyLearningEventToMasteryMock.mockResolvedValue({
+    applyMasteryEventMock.mockResolvedValue({
       ok: true,
       error: undefined,
     });
@@ -198,7 +198,7 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyLearningEventToMasteryMock).toHaveBeenCalledWith(
+    expect(applyMasteryEventMock).toHaveBeenCalledWith(
       expect.objectContaining({
         studentId: "student-1",
         sourceFamily: "review",
@@ -231,8 +231,8 @@ describe("Review Error -> Canonical Mastery Bridge", () => {
 
     expect(getStatus()).toBe(200);
     expect(getBody().reviewOutcome).toBe("review_pass");
-    expect(applyLearningEventToMasteryMock).toHaveBeenCalledTimes(1);
-    expect(applyLearningEventToMasteryMock.mock.calls[0][0]).toEqual(
+    expect(applyMasteryEventMock).toHaveBeenCalledTimes(1);
+    expect(applyMasteryEventMock.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         sourceFamily: "review",
         correct: true,
