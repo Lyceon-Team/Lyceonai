@@ -417,20 +417,16 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     pendingRequests?: Array<{ id: string; profile_id: string }>;
     fetchError?: { message: string };
     rpcErrors?: Record<string, { message: string }>;
+    rpcReturns?: Record<string, unknown>;
     entitlement?: { stripe_subscription_id: string | null };
     buckets?: Array<{ name: string }>;
     storageObjects?: Array<{ name: string }>;
     markError?: { message: string };
-    authError?: { message: string };
   }) {
     const rpcCalls: RpcCall[] = [];
     const updateCalls: Array<{ data: Record<string, unknown>; table: string }> =
       [];
     const signOutCalls: string[] = [];
-    const updateUserCalls: Array<{
-      id: string;
-      data: Record<string, unknown>;
-    }> = [];
 
     const admin = {
       from: vi.fn((table: string) => {
@@ -472,6 +468,9 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
         rpcCalls.push({ fn, args });
         const err = opts?.rpcErrors?.[fn];
         if (err) return { data: null, error: err };
+        const customReturn = opts?.rpcReturns?.[fn];
+        if (customReturn !== undefined)
+          return { data: customReturn, error: null };
         return { data: {}, error: null };
       }),
       auth: {
@@ -480,12 +479,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
             signOutCalls.push(id);
             return { error: null };
           }),
-          updateUserById: vi.fn(
-            async (id: string, data: Record<string, unknown>) => {
-              updateUserCalls.push({ id, data });
-              return { error: opts?.authError ?? null };
-            },
-          ),
+          updateUserById: vi.fn(async () => ({ error: null })),
         },
       },
       storage: {
@@ -507,7 +501,6 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       rpcCalls,
       updateCalls,
       signOutCalls,
-      updateUserCalls,
     };
   }
 
@@ -519,6 +512,9 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
   it("calls the atomic complete_and_anonymize RPC — anonymize-by-construction in SQL", async () => {
     const { admin, rpcCalls } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
     });
     await executeDueDeletions(admin, "test-req");
     const atomicCall = rpcCalls.find(
@@ -553,6 +549,9 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
         { id: "req-1", profile_id: "p-1" },
         { id: "req-2", profile_id: "p-2" },
       ],
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
     });
     await executeDueDeletions(admin, "test-req");
     const atomicCalls = rpcCalls.filter(
@@ -565,12 +564,12 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     expect(rawCascadeCalls).toHaveLength(0);
   });
 
-  it("follows the correct 6-step ordering per request", async () => {
+  it("follows the correct 5-step ordering per request", async () => {
     const callOrder: string[] = [];
 
     const rpc = vi.fn(async (fn: string) => {
       callOrder.push(`rpc:${fn}`);
-      return { data: {}, error: null };
+      return { data: { status: "completed" }, error: null };
     });
 
     const admin = {
@@ -609,14 +608,7 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
         return {};
       }),
       rpc,
-      auth: {
-        admin: {
-          updateUserById: vi.fn(async () => {
-            callOrder.push("auth_ban");
-            return { error: null };
-          }),
-        },
-      },
+      auth: { admin: {} },
       storage: {
         listBuckets: vi.fn(async () => {
           callOrder.push("storage_check");
@@ -641,14 +633,17 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       "storage_check",
       "rpc:deidentify_user",
       "rpc:complete_and_anonymize_account",
-      "auth_ban",
     ]);
   });
 
   it("returns zero counts when no pending requests exist", async () => {
     const { admin } = buildFakeAdmin({ pendingRequests: [] });
     const result = await executeDueDeletions(admin, "test-req");
-    expect(result).toEqual({ executedCount: 0, failedCount: 0 });
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+    });
   });
 
   it("skips a request on deidentify failure — stays pending, retries next cron", async () => {
@@ -657,7 +652,11 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       rpcErrors: { deidentify_user: { message: "db down" } },
     });
     const result = await executeDueDeletions(admin, "test-req");
-    expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 1,
+    });
   });
 
   it("skips a request on atomic RPC failure — stays pending, retries next cron", async () => {
@@ -668,7 +667,11 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       },
     });
     const result = await executeDueDeletions(admin, "test-req");
-    expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 1,
+    });
   });
 
   it("REGRESSION: cascade failure in atomic RPC leaves status 'pending' — never stranded 'completed'", async () => {
@@ -679,7 +682,11 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       },
     });
     const result = await executeDueDeletions(admin, "test-req");
-    expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 1,
+    });
     // The atomic RPC wraps mark-completed + cascade in one transaction.
     // The driver must NOT separately mark-completed outside the RPC.
     const completedUpdates = updateCalls.filter(
@@ -697,13 +704,20 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
       storageObjects: [{ name: "photo.jpg" }],
     });
     const result = await executeDueDeletions(admin, "test-req");
-    expect(result).toEqual({ executedCount: 0, failedCount: 1 });
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 0,
+      failedCount: 1,
+    });
   });
 
   it("pauses Stripe subscription before deidentify when subscription exists", async () => {
     const { admin, rpcCalls } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
       entitlement: { stripe_subscription_id: "sub_abc" },
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
     });
     await executeDueDeletions(admin, "test-req");
     expect(stripePauseMock).toHaveBeenCalledWith("sub_abc", {
@@ -717,18 +731,76 @@ describe("Deletion Driver (executeDueDeletions) — PR-4a", () => {
     const { admin } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
       entitlement: { stripe_subscription_id: null },
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
     });
     await executeDueDeletions(admin, "test-req");
     expect(stripePauseMock).not.toHaveBeenCalled();
   });
 
-  it("applies auth ban with 100yr duration as defense-in-depth", async () => {
-    const { admin, updateUserCalls } = buildFakeAdmin({
+  it("classifies RPC status 'completed' as executedCount", async () => {
+    const { admin } = buildFakeAdmin({
       pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
+    });
+    const result = await executeDueDeletions(admin, "test-req");
+    expect(result).toEqual({
+      executedCount: 1,
+      skippedCount: 0,
+      failedCount: 0,
+    });
+  });
+
+  it("classifies RPC no_op (already-processed request) as skippedCount — not failure", async () => {
+    const { admin } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      rpcReturns: {
+        complete_and_anonymize_account: {
+          status: "no_op",
+          reason: "request not pending",
+        },
+      },
+    });
+    const result = await executeDueDeletions(admin, "test-req");
+    expect(result).toEqual({
+      executedCount: 0,
+      skippedCount: 1,
+      failedCount: 0,
+    });
+  });
+
+  it("FAIL-CLOSED: unexpected/undefined RPC status → failedCount (never assumed successful)", async () => {
+    for (const badStatus of [
+      {},
+      { status: undefined },
+      { status: "unexpected" },
+    ]) {
+      const { admin } = buildFakeAdmin({
+        pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+        rpcReturns: {
+          complete_and_anonymize_account: badStatus,
+        },
+      });
+      const result = await executeDueDeletions(admin, "test-req");
+      expect(result).toEqual({
+        executedCount: 0,
+        skippedCount: 0,
+        failedCount: 1,
+      });
+    }
+  });
+
+  it("does not call auth.admin.updateUserById — cascade deletes auth.users", async () => {
+    const { admin } = buildFakeAdmin({
+      pendingRequests: [{ id: "req-1", profile_id: "p-1" }],
+      rpcReturns: {
+        complete_and_anonymize_account: { status: "completed" },
+      },
     });
     await executeDueDeletions(admin, "test-req");
-    expect(updateUserCalls.length).toBe(1);
-    expect(updateUserCalls[0]!.id).toBe("p-1");
-    expect(updateUserCalls[0]!.data).toMatchObject({ ban_duration: "876000h" });
+    expect(admin.auth.admin.updateUserById).not.toHaveBeenCalled();
   });
 });

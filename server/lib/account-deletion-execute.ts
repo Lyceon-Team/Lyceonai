@@ -11,8 +11,6 @@ import { logger } from "../logger";
 
 type DeletionAdminClient = ReturnType<typeof getSupabaseAdmin>;
 
-const DELETION_BAN_DURATION = "876000h"; // 100 years
-
 export function buildDeletedEmail(userId: string): string {
   return `deleted_${userId}@deleted.lyceon.ai`;
 }
@@ -121,18 +119,22 @@ async function assertNoStorageObjects(
 }
 
 // @spec [Doc-01 §40.5, Doc-05E §8 step 5 + §9] The grace-expiry driver. Per-request execution
-// sequence (Q-PR4a-6 ruling):
+// sequence (Q-PR4a-6 ruling, revised PR-4a.1):
 //   1. Stripe pause (prevent post-deletion billing)
 //   2. Storage purge assertion (fail-fast if objects exist)
 //   3. deidentify_user (scrub profile PII)
 //   4+5. complete_and_anonymize_account — atomic mark-completed + cascade('anonymize') in one SQL
 //        transaction. Cascade RAISE → status rolls back to 'pending' → retried next cron.
-//   6. Auth ban (100yr defense-in-depth)
+//        RPC returns {status:'no_op'} if request not pending (ROW_COUNT guard) → skippedCount.
 // Failure at any step: log, skip to next request (stays 'pending', retries next cron run).
 export async function executeDueDeletions(
   admin: DeletionAdminClient,
   requestId?: string,
-): Promise<{ executedCount: number; failedCount: number }> {
+): Promise<{
+  executedCount: number;
+  skippedCount: number;
+  failedCount: number;
+}> {
   const nowIso = new Date().toISOString();
 
   const { data: pendingRequests, error: fetchError } = await admin
@@ -152,10 +154,11 @@ export async function executeDueDeletions(
   }
 
   if (!pendingRequests || pendingRequests.length === 0) {
-    return { executedCount: 0, failedCount: 0 };
+    return { executedCount: 0, skippedCount: 0, failedCount: 0 };
   }
 
   let successCount = 0;
+  let skipCount = 0;
   let failureCount = 0;
 
   for (const pending of pendingRequests) {
@@ -178,7 +181,8 @@ export async function executeDueDeletions(
 
       // Steps 4+5 (atomic): mark-completed + cascade('anonymize') in one SQL transaction.
       // If cascade RAISEs, the status update rolls back → row stays 'pending' → retried next cron.
-      const { error: atomicError } = await admin.rpc(
+      // ROW_COUNT guard: RPC returns {status:'no_op'} when request not pending (already processed).
+      const { data: atomicResult, error: atomicError } = await admin.rpc(
         "complete_and_anonymize_account",
         {
           p_request_id: pending.id,
@@ -191,20 +195,22 @@ export async function executeDueDeletions(
         );
       }
 
-      // Step 6: Auth ban — defense-in-depth (Q-PR4a-1: keep)
-      const { error: authError } = await admin.auth.admin.updateUserById(
-        pending.profile_id,
-        {
-          email: deletionEmail,
-          ban_duration: DELETION_BAN_DURATION,
-          user_metadata: {
-            deletion_status: "completed",
-            deleted_at: new Date().toISOString(),
-          },
-        },
-      );
-      if (authError) {
-        throw new Error(`auth ban failed: ${authError.message}`);
+      const rpcStatus = (atomicResult as Record<string, unknown> | null)
+        ?.status as string | undefined;
+      if (rpcStatus === "no_op") {
+        logger.info(
+          "DELETION",
+          "execution_skipped",
+          "Deletion request not pending (already processed) — skipped",
+          { userId: pending.profile_id, requestId },
+        );
+        skipCount++;
+        continue;
+      }
+      if (rpcStatus !== "completed") {
+        throw new Error(
+          `atomic RPC returned unexpected status "${String(rpcStatus)}" — treating as failure`,
+        );
       }
 
       successCount++;
@@ -230,10 +236,15 @@ export async function executeDueDeletions(
     {
       attemptedCount: pendingRequests.length,
       successCount,
+      skippedCount: skipCount,
       failedCount: failureCount,
       requestId,
     },
   );
 
-  return { executedCount: successCount, failedCount: failureCount };
+  return {
+    executedCount: successCount,
+    skippedCount: skipCount,
+    failedCount: failureCount,
+  };
 }

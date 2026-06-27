@@ -1965,7 +1965,7 @@ During 7-day grace period:
 * Profile is marked `deleted_at`; all queries excluding soft-deleted rows honor this  
 * User cannot log in (auth middleware checks `deleted_at` and rejects)  
 * User can restore account via recovery email link  
-* **Stripe subscription cancellation is initiated immediately** (Phase 2 of the deletion flow per §40.2.1). If Stripe cancellation succeeds on the first attempt, the subscription is canceled at the time of deletion request. If it fails transiently, retries continue in the background via `stripeCancellationQueue` while the account remains inaccessible. The user does not see any difference in either case — access is gated by the DB `deleted_at` state, not by Stripe state.  
+* **Subscription handling follows the deletion lifecycle's grace model.** At deletion request, no Stripe operation occurs; the subscription and the student's paid entitlement remain active throughout the 7-day grace period (the user paid for the period and retains access during reconsideration). At T+7 execution, the deletion driver pauses Stripe billing (pause_collection with behavior 'void', voiding upcoming invoices) and the cascade removes the entitlement. A deletion cancelled during grace leaves the subscription uninterrupted. Entitlement is removed at T+7, not at deletion request.  
 * `account_deletion_requests.stripe_cancellation_status` reflects the current Stripe-side reconciliation state (`pending` | `in_progress` | `completed` | `failed_manual` | `cancelled_by_recovery` per §40.2.1)  
 * Data remains in DB (no hard deletion yet)
 

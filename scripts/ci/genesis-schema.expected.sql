@@ -697,17 +697,19 @@ CREATE FUNCTION public.complete_and_anonymize_account(p_request_id uuid, p_profi
     AS $$
 DECLARE
   v_cascade_result jsonb;
+  v_rows           int;
 BEGIN
-  -- Mark completed — unlocks cascade's status guard (requires 'completed').
-  -- Both this UPDATE and the cascade below run in the same implicit transaction.
-  -- If cascade RAISEs, this UPDATE rolls back → row stays 'pending' → retryable.
   UPDATE public.account_deletion_requests
      SET status        = 'completed',
          completion_at = now()
    WHERE id     = p_request_id
      AND status = 'pending';
 
-  -- Cascade with hardcoded 'anonymize' — no mode parameter, no DEFAULT trap.
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    RETURN jsonb_build_object('status', 'no_op', 'reason', 'request not pending');
+  END IF;
+
   SELECT public.execute_account_deletion_cascade(p_profile_id, 'anonymize')
     INTO v_cascade_result;
 
