@@ -18,10 +18,10 @@ These endpoint behaviors are **locked**. Do not change their shape or semantics.
 
 ## Selection (CEO model — launch)
 
-- **ORDER BY random()** via Supabase-native query. No hand-rolled Fisher-Yates for selection.
+- **Random selection** at launch: filtered pool fetched via Supabase query, then `fisherYates()` (crypto.randomInt-backed) shuffles and slices to target count. Functionally equivalent to ORDER BY random() but performed in-process because Supabase JS client lacks native ORDER BY random() support.
 - No mastery-aware ranking at launch (§15 adaptive selection is post-launch; SCL-P-01/02/03).
 - All N items prepopulated into `practice_session_items` at session creation.
-- Fisher-Yates is retained ONLY for per-serve option shuffling (`buildServedOptions`).
+- Fisher-Yates is also used for per-serve option shuffling (`buildServedOptions`).
 
 ## Filtering
 
@@ -64,7 +64,7 @@ Single source of truth: `practice_sessions.status` column. No dual `metadata.lif
 - [ ] Replayed `answer` with same key -> one effect, identical response.
 - [ ] Resume/refresh creates no duplicate session or item.
 - [ ] All constants read from `practice_runtime_config`, not hardcoded.
-- [ ] Selection uses ORDER BY random(), not Fisher-Yates.
+- [ ] Selection uses random shuffle (fisherYates) on filtered pool; no mastery-ranked selection at launch.
 - [ ] Quota enforced: free 40/day, paid 60/session.
 - [ ] Max 5 active sessions enforced.
 

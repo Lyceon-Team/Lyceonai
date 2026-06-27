@@ -789,20 +789,26 @@ function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   return Array.from(codes);
 }
 
-function filterPoolBySessionSpec(
-  pool: any[],
+function filterPoolBySessionSpec<
+  T extends {
+    domain?: string | null;
+    skill?: string | null;
+    difficulty?: unknown;
+  },
+>(
+  pool: T[],
   spec: {
     domains: string[];
     skills: string[];
     difficulties: Array<"easy" | "medium" | "hard">;
   },
-): any[] {
+): T[] {
   let filtered = pool;
 
   if (spec.domains.length > 0) {
     const allowedDomains = new Set(spec.domains.map((v) => v.toLowerCase()));
     filtered = filtered.filter((row) => {
-      const domain = String((row as any).domain ?? "")
+      const domain = String(row.domain ?? "")
         .trim()
         .toLowerCase();
       return domain.length > 0 && allowedDomains.has(domain);
@@ -812,7 +818,7 @@ function filterPoolBySessionSpec(
   if (spec.skills.length > 0) {
     const allowedSkills = new Set(spec.skills.map((v) => v.toLowerCase()));
     filtered = filtered.filter((row) => {
-      const skill = String((row as any).skill ?? "")
+      const skill = String(row.skill ?? "")
         .trim()
         .toLowerCase();
       return skill.length > 0 && allowedSkills.has(skill);
@@ -827,9 +833,7 @@ function filterPoolBySessionSpec(
       if (difficulty === "hard") allowedDifficultyCodes.add(3);
     }
     filtered = filtered.filter((row) =>
-      allowedDifficultyCodes.has(
-        coerceQuestionDifficulty((row as any).difficulty),
-      ),
+      allowedDifficultyCodes.has(coerceQuestionDifficulty(row.difficulty)),
     );
   }
 
@@ -1661,6 +1665,7 @@ async function serveNextForSession(args: {
   clientInstanceId: string;
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
+  const config = await loadPracticeConfig();
 
   const owned = await loadOwnedSession(args.sessionId, args.userId, {
     hideForbidden: true,
@@ -1758,7 +1763,8 @@ async function serveNextForSession(args: {
 
       metadata.active_session_item_id = unresolved.id;
       metadata.prebuilt = true;
-      metadata.target_question_count = metadata.target_question_count ?? 10;
+      metadata.target_question_count =
+        metadata.target_question_count ?? config.defaultSessionCountWeb;
       await updateSessionLifecycle(args.sessionId, metadata, {
         status: "in_progress",
       });
