@@ -1,0 +1,345 @@
+Here is the content of the PDF rewritten in cleanly formatted Markdown, with math equations rendered using LaTeX syntax (`$..$` and `$$..$$` for blocks) to ensure clarity.
+
+---
+
+# SAT Math Prep: Advanced Math
+
+## Domain: Advanced Math
+
+## Skill: Nonlinear equations in one variable and systems of equations in two variables
+
+**Difficulty:** Medium
+
+---
+
+### Question ID: 4e18fc5d
+
+**Equation:**
+
+
+$$v=-\frac{w}{150x}$$
+
+The given equation relates the distinct positive numbers $v$, $w$, and $x$. Which equation correctly expresses $w$ in terms of $v$ and $x$?
+
+* **A.** $w=-150vx$
+* **B.** $w=-\frac{150v}{x}$
+* **C.** $w=-\frac{x}{150v}$
+* **D.** $w=v+150x$
+
+#### Answer
+
+**Correct Answer:** A
+
+#### Rationale
+
+Choice A is correct. Multiplying each side of the given equation by $-150x$ yields $-150xv=w$, which is equivalent to $w=-150vx$. Thus, the equation $w=-150vx$ correctly expresses $w$ in terms of $v$ and $x$.
+
+* Choice B is incorrect because it is equivalent to $v=-\frac{wx}{150}$.
+* Choice C is incorrect because it is equivalent to $v=-\frac{x}{150w}$.
+* Choice D is incorrect because it is equivalent to $v=w-150x$.
+
+---
+
+### Question ID: a5663025
+
+A system of equations consists of a quadratic equation and a linear equation. The equations in this system are graphed in the $xy$-plane.
+
+How many solutions does this system have?
+
+* **A.** 0
+* **B.** 1
+* **C.** 2
+* **D.** 3
+
+#### Answer
+
+**Correct Answer:** C
+
+#### Rationale
+
+The solutions to a system of two equations correspond to points where the graphs of the equations intersect. The given graphs intersect at 2 points; therefore, the system has 2 solutions.
+
+* Choice A is incorrect because the graphs intersect.
+* Choice B is incorrect because the graphs intersect more than once.
+* Choice D is incorrect because it is not possible for the graph of a quadratic equation and the graph of a linear equation to intersect more than twice.
+
+---
+
+### Question ID: d0a7871e
+
+**System of Equations:**
+
+
+$$y=x+1$$
+
+$$y=x^{2}+x$$
+
+If $(x,y)$ is a solution to the system of equations above, which of the following could be the value of $x$?
+
+* **A.** $-1$
+* **B.** $0$
+* **C.** $2$
+* **D.** $3$
+
+#### Answer
+
+**Correct Answer:** A
+
+#### Rationale
+
+Setting the values for $y$ equal to each other yields $x+1=x^{2}+x$. Subtracting $x$ from each side of this equation yields $x^{2}=1$. Therefore, $x$ can equal $1$ or $-1$. Of these, only $-1$ is given as a choice.
+
+* Choice B is incorrect: If $x=0,$ then $x+1=1$ but $x^{2}+x=0^2+0=0 \neq 1$.
+* Choice C is incorrect: If $x=2$, then $x+1=3$ but $x^{2}+x=2^2+2=6 \neq 3$.
+* Choice D is incorrect: If $x=3$, then $x+1=4$ but $x^{2}+x=3^2+3=12 \neq 4$.
+
+---
+
+### Question ID: 7f81d0c3
+
+**Equation:**
+
+
+$$x^{2}-x-1=0$$
+
+What values satisfy the equation above?
+
+* **A.** $x=1$ and $x=2$
+* **B.** $x=-\frac{1}{2}$ and $x=\frac{3}{2}$
+* **C.** $x=\frac{1+\sqrt{5}}{2}$ and $x=\frac{1-\sqrt{5}}{2}$
+* **D.** $x=\frac{-1+\sqrt{5}}{2}$ and $x=\frac{-1-\sqrt{5}}{2}$
+
+#### Answer
+
+**Correct Answer:** C
+
+#### Rationale
+
+Using the quadratic formula $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ to solve the given expression yields:
+
+
+$$x=\frac{-(-1)\pm\sqrt{(-1)^{2}-(4)(1)(-1)}}{(2)(1)}=\frac{1\pm\sqrt{5}}{2}$$
+
+
+Therefore, $x=\frac{1+\sqrt{5}}{2}$ and $x=\frac{1-\sqrt{5}}{2}$ satisfy the given equation.
+
+---
+
+### Question ID: b4acba95
+
+**Equation:**
+
+
+$$x^{2}-12x+27=0$$
+
+How many distinct real solutions does the given equation have?
+
+* **A.** Exactly two
+* **B.** Exactly one
+* **C.** Zero
+* **D.** Infinitely many
+
+#### Answer
+
+**Correct Answer:** A
+
+#### Rationale
+
+The number of solutions of a quadratic equation of the form $ax^{2}+bx+c=0$ can be determined by the value of the discriminant, $b^{2}-4ac$.
+
+* If the discriminant is positive, the equation has exactly two distinct real solutions.
+* If it equals zero, it has exactly one real solution.
+* If it is negative, it has zero real solutions.
+
+For $x^{2}-12x+27=0$, we have $a=1$, $b=-12$, and $c=27$. Substituting these values yields $(-12)^{2}-4(1)(27) = 144 - 108 = 36$. Since the discriminant is positive, the equation has exactly two distinct real solutions.
+
+---
+
+### Question ID: ff2c1431
+
+**Equation:**
+
+
+$$7m=5(n+p)$$
+
+The given equation relates the positive numbers $m$, $n$, and $p$. Which equation correctly gives $n$ in terms of $m$ and $p$?
+
+* **A.** $n=\frac{5p}{7m}$
+* **B.** $n=\frac{7m}{5}-p$
+* **C.** $n=5(7m)+p$
+* **D.** $n=7m-5-p$
+
+#### Answer
+
+**Correct Answer:** B
+
+#### Rationale
+
+Dividing both sides of the given equation by $5$ yields $\frac{7m}{5}=n+p$. Subtracting $p$ from both sides of this equation yields $\frac{7m}{5}-p=n$.
+
+---
+
+### Question ID: 6bdcac03
+
+**Equation:**
+
+
+$$x^{2}=-841$$
+
+How many distinct real solutions does the given equation have?
+
+* **A.** Exactly one
+* **B.** Exactly two
+* **C.** Infinitely many
+* **D.** Zero
+
+#### Answer
+
+**Correct Answer:** D
+
+#### Rationale
+
+Since the square of a real number is never negative, the given equation isn't true for any real value of $x$. Therefore, the given equation has zero distinct real solutions.
+
+---
+
+### Question ID: 3d7d7534
+
+**Equation:**
+
+
+$$(d-30)(d+30)-7=-7$$
+
+What is a solution to the given equation?
+
+#### Answer
+
+**Correct Answer:** `30` or `-30`
+
+#### Rationale
+
+Adding $7$ to each side of the given equation yields $(d-30)(d+30)=0$. Since a product of two factors is equal to $0$ if and only if at least one of the factors is $0$, either $d-30=0$ (which gives $d=30$) or $d+30=0$ (which gives $d=-30$).
+
+---
+
+### Question ID: 911383f2
+
+**Equation:**
+
+
+$$(x-4)(x+2)(x-1)=0$$
+
+What is the product of the solutions to the given equation?
+
+* **A.** 8
+* **B.** 3
+* **C.** -3
+* **D.** -8
+
+#### Answer
+
+**Correct Answer:** D
+
+#### Rationale
+
+By the zero-product property, the individual solutions are $x=4$, $x=-2$, and $x=1$. The product of these solutions is $(4)(-2)(1)=-8$.
+
+---
+
+### Question ID: b80d10d7
+
+**Equation:**
+
+
+$$\frac{2(x+1)}{x+5}=1-\frac{1}{x+5}$$
+
+What is the solution to the equation above?
+
+* **A.** 0
+* **B.** 2
+* **C.** 3
+* **D.** 5
+
+#### Answer
+
+**Correct Answer:** B
+
+#### Rationale
+
+Since $\frac{x+5}{x+5} = 1$, the right-hand side can be rewritten as $\frac{x+5}{x+5}-\frac{1}{x+5} = \frac{x+4}{x+5}$.
+Equating both sides:
+
+
+$$\frac{2(x+1)}{x+5}=\frac{x+4}{x+5}$$
+
+
+Since the denominators are equal, it follows that $2(x+1)=x+4$, which expands to $2x+2=x+4$. Subtracting $x$ and $2$ from both sides yields $x=2$.
+
+---
+
+### Question ID: a4f61d75
+
+**Equation:**
+
+
+$$x^2 - ax + 12 = 0$$
+
+In the equation above, $a$ is a constant. If the equation has two integer solutions, what is a possible value of $a$?
+
+#### Answer
+
+**Correct Answer:** `7`, `8`, or `13`
+
+#### Rationale
+
+Since the given equation has two integer solutions, it can be factored into the form $(x-c)(x-d)=0$, where $c$ and $d$ are integers. The product $c \cdot d$ must equal the constant term $12$, and since $-a$ is negative, $c$ and $d$ must be positive integers.
+The factor pairs of $12$ are:
+
+* $1$ and $12 \implies a = 1 + 12 = 13$
+* $2$ and $6 \implies a = 2 + 6 = 8$
+* $3$ and $4 \implies a = 3 + 4 = 7$
+
+Thus, possible values for $a$ are 7, 8, or 13.
+
+---
+
+### Question ID: 062f86db
+
+**Equation:**
+
+
+$$5x^2 - 26x + 5 = 0$$
+
+What is the positive solution to the given equation?
+
+#### Answer
+
+**Correct Answer:** `5` (or `1/5`)
+
+#### Rationale
+
+The left-hand side can be factored as $(5x-1)(x-5)=0$. Setting each factor to zero yields $5x-1=0 \implies x=\frac{1}{5}$ and $x-5=0 \implies x=5$. Both are positive, so either answer is correct.
+
+---
+
+### Question ID: da602115
+
+**Equation:**
+
+
+$$|4x - 8| = 104$$
+
+If the equation above is true, what is the positive value of $x$?
+
+#### Answer
+
+**Correct Answer:** `28`
+
+#### Rationale
+
+This absolute value equation yields two linear paths:
+
+1. $4x - 8 = 104 \implies 4x = 112 \implies x = 28$
+2. $4x - 8 = -104 \implies 4x = -96 \implies x = -24$
+
+The positive value of $x$ is $28$.
