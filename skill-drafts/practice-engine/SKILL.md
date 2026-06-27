@@ -7,21 +7,21 @@ description: Practice session lifecycle, item serving, idempotent answer submiss
 
 These endpoint behaviors are **locked**. Do not change their shape or semantics.
 
-| Endpoint | Behavior |
-|---|---|
-| `POST /api/practice/sessions` | Start session; records `client_instance_id`; multi-select filters (sections, domains, skills, difficulties) |
-| `GET /api/practice/sessions/{session_id}/next` | Serve next item; **no answer or explanation** |
-| `POST /api/practice/answer` | Idempotent via `client_attempt_id`; returns correctness + explanation **post-submit** |
-| `GET /api/practice/sessions/{session_id}/state` | Resume-safe; **no duplicate items** |
-| `GET /api/practice/sessions/open` | List active sessions with progress |
-| `POST /api/practice/sessions/{session_id}/terminate` | Close/abandon a session |
+| Endpoint                                             | Behavior                                                                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `POST /api/practice/sessions`                        | Start session; records `client_instance_id`; multi-select filters (sections, domains, skills, difficulties) |
+| `GET /api/practice/sessions/{session_id}/next`       | Serve next item; **no answer or explanation**                                                               |
+| `POST /api/practice/answer`                          | Idempotent via `client_attempt_id`; returns correctness + explanation **post-submit**                       |
+| `GET /api/practice/sessions/{session_id}/state`      | Resume-safe; **no duplicate items**                                                                         |
+| `GET /api/practice/sessions/open`                    | List active sessions with progress                                                                          |
+| `POST /api/practice/sessions/{session_id}/terminate` | Close/abandon a session                                                                                     |
 
 ## Selection (CEO model — launch)
 
-- **Random selection** at launch: filtered pool fetched via Supabase query, then `fisherYates()` (crypto.randomInt-backed) shuffles and slices to target count. Functionally equivalent to ORDER BY random() but performed in-process because Supabase JS client lacks native ORDER BY random() support.
+- **ORDER BY random()** via Supabase RPC (`select_practice_pool_random`). No hand-rolled Fisher-Yates for selection.
 - No mastery-aware ranking at launch (§15 adaptive selection is post-launch; SCL-P-01/02/03).
 - All N items prepopulated into `practice_session_items` at session creation.
-- Fisher-Yates is also used for per-serve option shuffling (`buildServedOptions`).
+- Fisher-Yates is retained ONLY for per-serve option shuffling (`buildServedOptions`).
 
 ## Filtering
 
@@ -64,7 +64,7 @@ Single source of truth: `practice_sessions.status` column. No dual `metadata.lif
 - [ ] Replayed `answer` with same key -> one effect, identical response.
 - [ ] Resume/refresh creates no duplicate session or item.
 - [ ] All constants read from `practice_runtime_config`, not hardcoded.
-- [ ] Selection uses random shuffle (fisherYates) on filtered pool; no mastery-ranked selection at launch.
+- [ ] Selection uses ORDER BY random() via DB RPC, not Fisher-Yates.
 - [ ] Quota enforced: free 40/day, paid 60/session.
 - [ ] Max 5 active sessions enforced.
 

@@ -660,19 +660,8 @@ function simpleHash(input: string): number {
   return Math.abs(hash);
 }
 
-function coerceQuestionDifficulty(raw: unknown): 1 | 2 | 3 {
-  if (typeof raw === "number") {
-    if (raw <= 1) return 1;
-    if (raw >= 3) return 3;
-    return 2;
-  }
-  if (typeof raw === "string") {
-    const s = raw.trim().toLowerCase();
-    if (s === "easy" || s === "1") return 1;
-    if (s === "hard" || s === "3") return 3;
-  }
-  return 2;
-}
+// coerceQuestionDifficulty REMOVED — difficulty filtering moved to
+// select_practice_pool_random RPC (DB-side CASE expression).
 
 function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
   if (raw === 1 || raw === 2 || raw === 3) return raw;
@@ -789,126 +778,9 @@ function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   return Array.from(codes);
 }
 
-function filterPoolBySessionSpec<
-  T extends {
-    domain?: string | null;
-    skill?: string | null;
-    difficulty?: unknown;
-  },
->(
-  pool: T[],
-  spec: {
-    domains: string[];
-    skills: string[];
-    difficulties: Array<"easy" | "medium" | "hard">;
-  },
-): T[] {
-  let filtered = pool;
-
-  if (spec.domains.length > 0) {
-    const allowedDomains = new Set(spec.domains.map((v) => v.toLowerCase()));
-    filtered = filtered.filter((row) => {
-      const domain = String(row.domain ?? "")
-        .trim()
-        .toLowerCase();
-      return domain.length > 0 && allowedDomains.has(domain);
-    });
-  }
-
-  if (spec.skills.length > 0) {
-    const allowedSkills = new Set(spec.skills.map((v) => v.toLowerCase()));
-    filtered = filtered.filter((row) => {
-      const skill = String(row.skill ?? "")
-        .trim()
-        .toLowerCase();
-      return skill.length > 0 && allowedSkills.has(skill);
-    });
-  }
-
-  if (spec.difficulties.length > 0) {
-    const allowedDifficultyCodes = new Set<number>();
-    for (const difficulty of spec.difficulties) {
-      if (difficulty === "easy") allowedDifficultyCodes.add(1);
-      if (difficulty === "medium") allowedDifficultyCodes.add(2);
-      if (difficulty === "hard") allowedDifficultyCodes.add(3);
-    }
-    filtered = filtered.filter((row) =>
-      allowedDifficultyCodes.has(coerceQuestionDifficulty(row.difficulty)),
-    );
-  }
-
-  return filtered;
-}
-
-async function listExactFilteredQuestionPool(spec: {
-  sections: Array<"Math" | "RW">;
-  domains: string[];
-  skills: string[];
-  difficulties: Array<"easy" | "medium" | "hard">;
-  excludeIds?: string[];
-}): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
-  // Genesis-native, SERVER-SIDE select. correct_answer/explanation/correct_variants are
-  // selected for grading ONLY; they never reach a student DTO (the projection null-strips
-  // them and never reads correct_variants). item_type discriminates mcq vs grid_in.
-  let query = supabaseServer
-    .from("questions")
-    .select(
-      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants",
-    )
-    .in("item_type", ["mcq", "grid_in"]);
-
-  if (spec.excludeIds && spec.excludeIds.length > 0) {
-    // @spec [Coding Standards §5.1, §7.1] | @implemented [2026-06-17] | plain English:
-    // Canonical question ids are opaque UUIDs. Allow-list each id through zod's strict
-    // UUID validator before it is interpolated into the PostgREST `not in (...)` filter,
-    // so no caller-supplied string can ever reach the raw filter expression. Behaviour is
-    // unchanged for legitimate question ids; non-UUID values are dropped, not interpolated.
-    const safeExcludeIds = spec.excludeIds.filter(
-      (id) => z.string().uuid().safeParse(id).success,
-    );
-    if (safeExcludeIds.length > 0) {
-      query = query.not("id", "in", `(${safeExcludeIds.join(",")})`);
-    }
-  }
-
-  query = query.limit(1000);
-
-  const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
-  if (allowedSectionCodes.length > 0) {
-    query = query.in("section", allowedSectionCodes);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return { error: `questions_query_failed: ${error.message}` };
-  }
-
-  // Reconcile genesis → contract (id→canonical_id, section→section_code, item_type→question_type).
-  // Per-item validation accepts BOTH mcq and grid_in shapes. We do NOT blanket-normalize
-  // correct_answer to an A–D key here: that would corrupt grid-in values (handled per shape
-  // downstream in toCanonicalQuestionForServing).
-  const mappedRows = (data ?? []).map((row) =>
-    mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike),
-  );
-  const validPool = mappedRows.filter((row) => isCanonicalRuntimeQuestion(row));
-
-  const exactPool = filterPoolBySessionSpec(validPool, {
-    domains: spec.domains,
-    skills: spec.skills,
-    difficulties: spec.difficulties,
-  });
-
-  const ordered = exactPool
-    .map((row: any) => toCanonicalQuestionForServing(row))
-    .sort((a, b) => {
-      if (a.canonical_id !== b.canonical_id)
-        return a.canonical_id.localeCompare(b.canonical_id);
-      return a.id.localeCompare(b.id);
-    });
-
-  return { pool: ordered };
-}
+// listExactFilteredQuestionPool and filterPoolBySessionSpec REMOVED —
+// replaced by DB-side select_practice_pool_random RPC (ORDER BY random()).
+// See migration 20260627030000_practice_select_pool_random.sql.
 
 async function countSessionItems(sessionId: string): Promise<number> {
   const { count, error } = await supabaseServer
@@ -1367,25 +1239,65 @@ async function startOrReplaySession(args: {
     session_start_idempotency_key: args.idempotencyKey,
   };
 
-  const exactPoolResult = await listExactFilteredQuestionPool({
-    sections: args.sessionSpec.sections,
-    domains: args.sessionSpec.domains,
-    skills: args.sessionSpec.skills,
-    difficulties: args.sessionSpec.difficulties,
-  });
+  // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
+  // DB-side ORDER BY random() via select_practice_pool_random RPC.
+  // The DB returns exactly N rows; no full-pool fetch into TS.
 
-  if ("error" in exactPoolResult) {
+  // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
+  const { data: activeSessionItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, practice_sessions!inner(status)")
+    .eq("user_id", args.userId)
+    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
+
+  const excludeIds = (activeSessionItems ?? [])
+    .map((item: { question_id?: string }) => item.question_id)
+    .filter(
+      (id): id is string =>
+        typeof id === "string" && z.string().uuid().safeParse(id).success,
+    );
+
+  // 2. Resolve filter params for the RPC
+  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+  const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
+    d === "easy" ? 1 : d === "hard" ? 3 : 2,
+  );
+
+  // 3. Call DB-side random selection
+  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
+    "select_practice_pool_random",
+    {
+      p_sections: sectionCodes.length > 0 ? sectionCodes : null,
+      p_domains:
+        args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
+      p_skills:
+        args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
+      p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
+      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
+      p_limit: requestedCount,
+    },
+  );
+
+  if (poolError) {
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: exactPoolResult.error,
+        message: `pool_selection_failed: ${poolError.message}`,
       },
     };
   }
 
-  if (exactPoolResult.pool.length === 0) {
+  // 4. Validate and convert DB rows through the canonical pipeline
+  const mappedRows = ((poolRows ?? []) as unknown[]).map((row) =>
+    mapGenesisQuestionRow(row as CanonicalQuestionRowLike),
+  );
+  const validPool = mappedRows
+    .filter((row) => isCanonicalRuntimeQuestion(row))
+    .map((row) => toCanonicalQuestionForServing(row));
+
+  if (validPool.length === 0) {
     return {
       ok: false,
       status: 422,
@@ -1397,28 +1309,8 @@ async function startOrReplaySession(args: {
     };
   }
 
-  // Hard-exclude questions in currently active sessions (prevents cross-session repeats)
-  const { data: activeSessionItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, practice_sessions!inner(status)")
-    .eq("user_id", args.userId)
-    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
-
-  const activeQuestionIds = new Set(
-    (activeSessionItems ?? [])
-      .map((item: { question_id?: string }) => item.question_id)
-      .filter(Boolean) as string[],
-  );
-
-  const poolAfterExclusion = exactPoolResult.pool.filter(
-    (q) => !activeQuestionIds.has(q.id),
-  );
-
-  // Native random selection: shuffle with crypto.randomInt, cap at pool size
-  const shuffled = fisherYates(poolAfterExclusion);
-  const effectiveCount = Math.min(requestedCount, shuffled.length);
-  const selected = shuffled.slice(0, effectiveCount);
-  const sourcePoolCount = poolAfterExclusion.length;
+  const selected = validPool;
+  const sourcePoolCount = validPool.length;
   const selectionMode: "exact" | "exact_reuse" =
     sourcePoolCount < requestedCount ? "exact_reuse" : "exact";
 
