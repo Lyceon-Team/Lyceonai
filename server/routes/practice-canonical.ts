@@ -485,7 +485,9 @@ function buildServedOptions(options: McOption[]): {
 // item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
-function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
+function toCanonicalQuestionForServing(
+  q: CanonicalQuestionRowLike,
+): CanonicalQuestionForServing {
   const itemType: CanonicalItemType =
     normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
   const isGridIn = itemType === "grid_in";
@@ -1139,8 +1141,8 @@ async function startOrReplaySession(args: {
 
   // @spec [Doc-02B_V4 §14; INV-02B-15] | @implemented [2026-06-27]
   // Max concurrent sessions from config (CEO model = 5).
-  const configForLimit = await loadPracticeConfig();
-  const maxSessions = configForLimit.maxConcurrentSessions;
+  const config = await loadPracticeConfig();
+  const maxSessions = config.maxConcurrentSessions;
   if (!replay && sessions.length >= maxSessions) {
     return {
       ok: false,
@@ -1179,8 +1181,8 @@ async function startOrReplaySession(args: {
     }
     replayMeta.target_question_count = coerceTargetQuestionCount(
       replayMeta.target_question_count ?? args.targetQuestionCount,
-      configForLimit.maxSessionCountPremium,
-      configForLimit.defaultSessionCountWeb,
+      config.maxSessionCountPremium,
+      config.defaultSessionCountWeb,
     );
     replayMeta.session_spec = replayMeta.session_spec ?? args.sessionSpec;
 
@@ -1193,8 +1195,8 @@ async function startOrReplaySession(args: {
       replayMeta.prebuilt = true;
       replayMeta.requested_count = coerceTargetQuestionCount(
         replayMeta.target_question_count,
-        configForLimit.maxSessionCountPremium,
-        configForLimit.defaultSessionCountWeb,
+        config.maxSessionCountPremium,
+        config.defaultSessionCountWeb,
       );
       replayMeta.source_pool_count = Number.isFinite(
         replayMeta.source_pool_count as number,
@@ -1223,7 +1225,6 @@ async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §14; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
   // CEO model: filter-driven native random selection. All N items prepopulated at creation.
   // Determinism satisfied by storage (the rows ARE the durable record).
-  const config = await loadPracticeConfig();
   const requestedCount = coerceTargetQuestionCount(
     args.targetQuestionCount,
     config.maxSessionCountPremium,
