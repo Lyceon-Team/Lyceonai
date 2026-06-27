@@ -69,17 +69,21 @@ export function PendingDeletionScreen() {
           <p className="text-sm text-neutral-600">
             {scheduledAt ? (
               <>
-                It will be permanently deleted on{" "}
+                Your account and all your progress will be permanently deleted
+                on{" "}
                 <span className="font-medium text-neutral-800">
                   {formatDeletionDate(scheduledAt)}
                 </span>
-                . Until then your account is locked, but you can cancel and
-                restore full access right now.
+                . If you have a paid subscription, it stays active until then
+                and is cancelled when your account is deleted. Until then your
+                account is locked, but you can cancel and restore full access
+                right now.
               </>
             ) : (
               <>
-                Your account is locked during the deletion grace period. You can
-                cancel and restore full access right now.
+                Your account is locked during the deletion grace period. If you
+                have a paid subscription, it stays active until the deletion
+                date. You can cancel and restore full access right now.
               </>
             )}
           </p>

@@ -230,9 +230,12 @@ async function sendDeletionScheduledEmail(
       subject: "Your Lyceon account is scheduled for deletion",
       html:
         `<p>Your Lyceon account is scheduled for permanent deletion on <strong>${when}</strong>.</p>` +
-        `<p>If you did not request this, or you change your mind, you can restore your account any time before then:</p>` +
+        `<p>Lyceon tracks your learning progress over time — once your account is deleted, ` +
+        `that history is gone permanently, and returning means starting over with a new account.</p>` +
+        `<p>If you have a paid subscription, it stays active until <strong>${when}</strong> and is then cancelled.</p>` +
+        `<p>If you didn't request this or change your mind, restore your account before <strong>${when}</strong>:</p>` +
         `<p><a href="${recoverUrl}">Restore my account</a></p>` +
-        `<p>This link stops working once the deletion completes.</p>`,
+        `<p>This link stops working once deletion completes.</p>`,
     });
     logger.info(
       "DELETION",
@@ -385,12 +388,16 @@ router.post(
         scheduledHardDeleteAt: data.scheduled_hard_delete_at,
         requestId,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         "DELETION",
         "unhandled_error",
         "Failed to process deletion request",
-        { userId, error: err.message, requestId },
+        {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+          requestId,
+        },
       );
       res.status(500).json({ error: "Internal server error", requestId });
     }
@@ -512,12 +519,16 @@ router.post(
         message: "Account deletion cancelled successfully",
         requestId,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         "DELETION",
         "unhandled_error",
         "Failed to cancel deletion request",
-        { userId, error: err.message, requestId },
+        {
+          userId,
+          error: err instanceof Error ? err.message : String(err),
+          requestId,
+        },
       );
       res.status(500).json({ error: "Internal server error", requestId });
     }
