@@ -10,11 +10,21 @@ import {
 const SAT_TOPICS = {
   math: {
     section: "M",
-    domains: ["Algebra", "Advanced Math", "Problem Solving & Data Analysis", "Geometry & Trigonometry"],
+    domains: [
+      "Algebra",
+      "Advanced Math",
+      "Problem Solving & Data Analysis",
+      "Geometry & Trigonometry",
+    ],
   },
   reading_writing: {
     section: "RW",
-    domains: ["Craft and Structure", "Information and Ideas", "Standard English Conventions", "Expression of Ideas"],
+    domains: [
+      "Craft and Structure",
+      "Information and Ideas",
+      "Standard English Conventions",
+      "Expression of Ideas",
+    ],
   },
 };
 
@@ -22,7 +32,12 @@ export async function getPracticeTopics(_req: Request, res: Response) {
   try {
     return res.status(200).json({
       sections: [
-        { section: "math", label: "Math", sectionCode: SAT_TOPICS.math.section, domains: SAT_TOPICS.math.domains },
+        {
+          section: "math",
+          label: "Math",
+          sectionCode: SAT_TOPICS.math.section,
+          domains: SAT_TOPICS.math.domains,
+        },
         {
           section: "reading_writing",
           label: "Reading & Writing",
@@ -42,12 +57,15 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     const domain = req.query.domain as string | undefined;
     const skill = req.query.skill as string | undefined;
     const skillCode = req.query.skillCode as string | undefined;
-    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1), 30);
+    const limit = Math.min(
+      Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1),
+      30,
+    );
 
     let query = supabaseServer
       .from("questions")
       .select(
-        "id, canonical_id, stem, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, correct_answer, status"
+        "id, canonical_id, stem, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, status",
       )
       .eq("question_type", "multiple_choice")
       .eq("status", "published")

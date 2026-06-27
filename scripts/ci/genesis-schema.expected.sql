@@ -2751,6 +2751,36 @@ $$;
 
 
 --
+-- Name: select_practice_pool_random(text[], text[], text[], integer[], text[], integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NULL::text[], p_domains text[] DEFAULT NULL::text[], p_skills text[] DEFAULT NULL::text[], p_difficulties integer[] DEFAULT NULL::integer[], p_exclude_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 10) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer)
+    LANGUAGE sql
+    AS $$
+  SELECT
+    q.id,
+    q.section,
+    q.stem,
+    q.options,
+    q.difficulty,
+    q.correct_answer,
+    q.explanation,
+    q.domain,
+    q.skill_codes,
+    q.source_type
+  FROM public.questions q
+  WHERE q.status = 'published'
+    AND (p_sections IS NULL    OR q.section = ANY(p_sections))
+    AND (p_domains IS NULL     OR q.domain = ANY(p_domains))
+    AND (p_skills IS NULL      OR q.skill_codes && p_skills)
+    AND (p_difficulties IS NULL OR q.difficulty = ANY(p_difficulties))
+    AND (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
+  ORDER BY random()
+  LIMIT p_limit;
+$$;
+
+
+--
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7403,6 +7433,13 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO service_role;
+
+
+--
+-- Name: FUNCTION select_practice_pool_random(p_sections text[], p_domains text[], p_skills text[], p_difficulties integer[], p_exclude_ids text[], p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_domains text[], p_skills text[], p_difficulties integer[], p_exclude_ids text[], p_limit integer) TO service_role;
 
 
 --

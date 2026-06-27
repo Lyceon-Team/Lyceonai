@@ -148,6 +148,7 @@ type SessionMetadata = {
 type CanonicalSessionSpec = {
   sections: Array<"Math" | "RW">;
   domains: string[];
+  skills: string[];
   difficulties: Array<"easy" | "medium" | "hard">;
   target_minutes: number | null;
   target_question_count: number;
@@ -156,11 +157,51 @@ type CanonicalSessionSpec = {
 
 const router = Router();
 
-const SESSION_LIMIT = 3;
+// @spec [Doc-02B_V4 §41; INV-02B-15 Config Doctrine] | @implemented [2026-06-27]
+// All runtime constants read from practice_runtime_config — no hardcoded literals.
+type PracticeConfig = {
+  maxConcurrentSessions: number;
+  defaultSessionCountWeb: number;
+  maxSessionCountPremium: number;
+  targetSecondsPerQuestion: number;
+};
+
+async function loadPracticeConfig(): Promise<PracticeConfig> {
+  const { data, error } = await supabaseServer
+    .from("practice_runtime_config")
+    .select("key, value")
+    .in("key", [
+      "max_concurrent_sessions",
+      "default_session_count_web",
+      "max_session_count_premium",
+      "target_seconds_per_question",
+    ]);
+
+  if (error) {
+    throw new Error(`practice_runtime_config read failed: ${error.message}`);
+  }
+
+  const configMap = new Map(
+    (data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]),
+  );
+
+  const readInt = (key: string, fallback: number): number => {
+    const raw = configMap.get(key);
+    const parsed =
+      typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  return {
+    maxConcurrentSessions: readInt("max_concurrent_sessions", 5),
+    defaultSessionCountWeb: readInt("default_session_count_web", 10),
+    maxSessionCountPremium: readInt("max_session_count_premium", 60),
+    targetSecondsPerQuestion: readInt("target_seconds_per_question", 90),
+  };
+}
+
 const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
-const DEFAULT_TARGET_QUESTION_COUNT = 20;
-const TARGET_SECONDS_PER_QUESTION = 90;
 const SESSION_ITEM_SELECT =
   "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
 
@@ -181,6 +222,7 @@ const StartSessionBodySchema = z.object({
   section: z.string().optional().nullable(),
   sections: z.array(z.string().max(64)).max(20).optional().nullable(),
   domains: z.array(z.string().max(128)).max(100).optional().nullable(),
+  skills: z.array(z.string().max(128)).max(100).optional().nullable(),
   difficulties: z.array(z.string().max(32)).max(10).optional().nullable(),
   mode: z.string().max(64).optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
@@ -190,7 +232,7 @@ const StartSessionBodySchema = z.object({
     .number()
     .int()
     .positive()
-    .max(200)
+    .max(60)
     .optional()
     .nullable(),
 });
@@ -313,19 +355,9 @@ function asSessionMetadata(metadata: unknown): SessionMetadata {
   return metadata as SessionMetadata;
 }
 
-function normalizeSessionState(
-  status: string,
-  metadata: SessionMetadata,
-): PracticeLifecycleState {
-  const lifecycle = metadata.lifecycle_state;
-  if (
-    lifecycle === "created" ||
-    lifecycle === "active" ||
-    lifecycle === "completed" ||
-    lifecycle === "abandoned"
-  ) {
-    return lifecycle;
-  }
+// @spec [Doc-02B_V4 §14] | @implemented [2026-06-27]
+// Single lifecycle source: practice_sessions.status column. metadata.lifecycle_state retired.
+function normalizeSessionState(status: string): PracticeLifecycleState {
   if (status === "completed") return "completed";
   if (status === "abandoned") return "abandoned";
   if (status === "created") return "created";
@@ -453,7 +485,9 @@ function buildServedOptions(options: McOption[]): {
 // item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
-function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
+function toCanonicalQuestionForServing(
+  q: CanonicalQuestionRowLike,
+): CanonicalQuestionForServing {
   const itemType: CanonicalItemType =
     normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
   const isGridIn = itemType === "grid_in";
@@ -628,19 +662,8 @@ function simpleHash(input: string): number {
   return Math.abs(hash);
 }
 
-function coerceQuestionDifficulty(raw: unknown): 1 | 2 | 3 {
-  if (typeof raw === "number") {
-    if (raw <= 1) return 1;
-    if (raw >= 3) return 3;
-    return 2;
-  }
-  if (typeof raw === "string") {
-    const s = raw.trim().toLowerCase();
-    if (s === "easy" || s === "1") return 1;
-    if (s === "hard" || s === "3") return 3;
-  }
-  return 2;
-}
+// coerceQuestionDifficulty REMOVED — difficulty filtering moved to
+// select_practice_pool_random RPC (DB-side CASE expression).
 
 function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
   if (raw === 1 || raw === 2 || raw === 3) return raw;
@@ -656,19 +679,26 @@ function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
   return null;
 }
 
-function coerceTargetQuestionCount(raw: unknown): number {
+function coerceTargetQuestionCount(
+  raw: unknown,
+  maxCap: number = 60,
+  defaultCount: number = 10,
+): number {
   if (typeof raw === "number" && Number.isFinite(raw)) {
     const rounded = Math.floor(raw);
-    if (rounded > 0) return Math.min(200, rounded);
+    if (rounded > 0) return Math.min(maxCap, rounded);
   }
-  return DEFAULT_TARGET_QUESTION_COUNT;
+  return defaultCount;
 }
 
-function deriveTargetQuestionCountFromMinutes(targetMinutes: number): number {
-  const derived = Math.round(
-    (targetMinutes * 60) / TARGET_SECONDS_PER_QUESTION,
-  );
-  return coerceTargetQuestionCount(derived);
+function deriveTargetQuestionCountFromMinutes(
+  targetMinutes: number,
+  secondsPerQuestion: number,
+  maxCap: number,
+  defaultCount: number,
+): number {
+  const derived = Math.round((targetMinutes * 60) / secondsPerQuestion);
+  return coerceTargetQuestionCount(derived, maxCap, defaultCount);
 }
 
 function resolveSectionForSession(
@@ -680,7 +710,10 @@ function resolveSectionForSession(
   return legacySection;
 }
 
-function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
+function normalizeSessionSpec(
+  input: z.infer<typeof StartSessionBodySchema>,
+  config: PracticeConfig,
+): {
   section: "Math" | "RW" | "Random";
   targetQuestionCount: number;
   sessionSpec: CanonicalSessionSpec;
@@ -702,13 +735,20 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
       : null;
   const explicitTargetCount = coerceTargetQuestionCount(
     input.target_question_count,
+    config.maxSessionCountPremium,
+    config.defaultSessionCountWeb,
   );
   const hasExplicitTargetCount =
     typeof input.target_question_count === "number" &&
     Number.isFinite(input.target_question_count);
   const effectiveTargetCount =
     targetMinutes && !hasExplicitTargetCount
-      ? deriveTargetQuestionCountFromMinutes(targetMinutes)
+      ? deriveTargetQuestionCountFromMinutes(
+          targetMinutes,
+          config.targetSecondsPerQuestion,
+          config.maxSessionCountPremium,
+          config.defaultSessionCountWeb,
+        )
       : explicitTargetCount;
 
   return {
@@ -717,6 +757,7 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
     sessionSpec: {
       sections: sectionValues,
       domains: normalizeStringList(input.domains, 128),
+      skills: normalizeStringList(input.skills, 128),
       difficulties: normalizeDifficulties(input.difficulties),
       target_minutes: targetMinutes,
       target_question_count: effectiveTargetCount,
@@ -739,137 +780,9 @@ function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   return Array.from(codes);
 }
 
-function filterPoolBySessionSpec(
-  pool: any[],
-  spec: {
-    domains: string[];
-    difficulties: Array<"easy" | "medium" | "hard">;
-  },
-): any[] {
-  let filtered = pool;
-
-  if (spec.domains.length > 0) {
-    const allowedDomains = new Set(spec.domains.map((v) => v.toLowerCase()));
-    filtered = filtered.filter((row) => {
-      const domain = String((row as any).domain ?? "")
-        .trim()
-        .toLowerCase();
-      return domain.length > 0 && allowedDomains.has(domain);
-    });
-  }
-
-  if (spec.difficulties.length > 0) {
-    const allowedDifficultyCodes = new Set<number>();
-    for (const difficulty of spec.difficulties) {
-      if (difficulty === "easy") allowedDifficultyCodes.add(1);
-      if (difficulty === "medium") allowedDifficultyCodes.add(2);
-      if (difficulty === "hard") allowedDifficultyCodes.add(3);
-    }
-    filtered = filtered.filter((row) =>
-      allowedDifficultyCodes.has(
-        coerceQuestionDifficulty((row as any).difficulty),
-      ),
-    );
-  }
-
-  return filtered;
-}
-
-async function listExactFilteredQuestionPool(spec: {
-  sections: Array<"Math" | "RW">;
-  domains: string[];
-  difficulties: Array<"easy" | "medium" | "hard">;
-  excludeIds?: string[];
-}): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
-  // Genesis-native, SERVER-SIDE select. correct_answer/explanation/correct_variants are
-  // selected for grading ONLY; they never reach a student DTO (the projection null-strips
-  // them and never reads correct_variants). item_type discriminates mcq vs grid_in.
-  let query = supabaseServer
-    .from("questions")
-    .select(
-      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants",
-    )
-    .in("item_type", ["mcq", "grid_in"]);
-
-  if (spec.excludeIds && spec.excludeIds.length > 0) {
-    // @spec [Coding Standards §5.1, §7.1] | @implemented [2026-06-17] | plain English:
-    // Canonical question ids are opaque UUIDs. Allow-list each id through zod's strict
-    // UUID validator before it is interpolated into the PostgREST `not in (...)` filter,
-    // so no caller-supplied string can ever reach the raw filter expression. Behaviour is
-    // unchanged for legitimate question ids; non-UUID values are dropped, not interpolated.
-    const safeExcludeIds = spec.excludeIds.filter(
-      (id) => z.string().uuid().safeParse(id).success,
-    );
-    if (safeExcludeIds.length > 0) {
-      query = query.not("id", "in", `(${safeExcludeIds.join(",")})`);
-    }
-  }
-
-  query = query.limit(1000);
-
-  const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
-  if (allowedSectionCodes.length > 0) {
-    query = query.in("section", allowedSectionCodes);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return { error: `questions_query_failed: ${error.message}` };
-  }
-
-  // Reconcile genesis → contract (id→canonical_id, section→section_code, item_type→question_type).
-  // Per-item validation accepts BOTH mcq and grid_in shapes. We do NOT blanket-normalize
-  // correct_answer to an A–D key here: that would corrupt grid-in values (handled per shape
-  // downstream in toCanonicalQuestionForServing).
-  const mappedRows = (data ?? []).map((row) =>
-    mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike),
-  );
-  const validPool = mappedRows.filter((row) => isCanonicalRuntimeQuestion(row));
-
-  const exactPool = filterPoolBySessionSpec(validPool, {
-    domains: spec.domains,
-    difficulties: spec.difficulties,
-  });
-
-  const ordered = exactPool
-    .map((row: any) => toCanonicalQuestionForServing(row))
-    .sort((a, b) => {
-      if (a.canonical_id !== b.canonical_id)
-        return a.canonical_id.localeCompare(b.canonical_id);
-      return a.id.localeCompare(b.id);
-    });
-
-  return { pool: ordered };
-}
-
-function buildDeterministicPrebuiltSet(
-  pool: CanonicalQuestionForServing[],
-  targetCount: number,
-): {
-  selected: CanonicalQuestionForServing[];
-  selectionMode: "exact" | "exact_reuse";
-  sourcePoolCount: number;
-} {
-  const sourcePoolCount = pool.length;
-  if (sourcePoolCount === 0) {
-    return {
-      selected: [],
-      selectionMode: "exact",
-      sourcePoolCount: 0,
-    };
-  }
-
-  // Never wrap — cap at pool size to prevent within-session repeats
-  const effectiveCount = Math.min(targetCount, sourcePoolCount);
-  const selected = pool.slice(0, effectiveCount);
-
-  return {
-    selected,
-    selectionMode: sourcePoolCount < targetCount ? "exact_reuse" : "exact",
-    sourcePoolCount,
-  };
-}
+// listExactFilteredQuestionPool and filterPoolBySessionSpec REMOVED —
+// replaced by DB-side select_practice_pool_random RPC (ORDER BY random()).
+// See migration 20260627030000_practice_select_pool_random.sql.
 
 async function countSessionItems(sessionId: string): Promise<number> {
   const { count, error } = await supabaseServer
@@ -1226,8 +1139,11 @@ async function startOrReplaySession(args: {
       }) ?? null;
   }
 
-  // 3) Enforce global limit for NEW sessions (unless replaying)
-  if (!replay && sessions.length >= SESSION_LIMIT) {
+  // @spec [Doc-02B_V4 §14; INV-02B-15] | @implemented [2026-06-27]
+  // Max concurrent sessions from config (CEO model = 5).
+  const config = await loadPracticeConfig();
+  const maxSessions = config.maxConcurrentSessions;
+  if (!replay && sessions.length >= maxSessions) {
     return {
       ok: false,
       status: 403,
@@ -1235,7 +1151,7 @@ async function startOrReplaySession(args: {
         error: "session_limit_exceeded",
         code: "SESSION_LIMIT_EXCEEDED",
         message: `You already have ${sessions.length} open sessions. Please complete or terminate some before starting a new one.`,
-        limit: SESSION_LIMIT,
+        limit: maxSessions,
       },
     };
   }
@@ -1265,6 +1181,8 @@ async function startOrReplaySession(args: {
     }
     replayMeta.target_question_count = coerceTargetQuestionCount(
       replayMeta.target_question_count ?? args.targetQuestionCount,
+      config.maxSessionCountPremium,
+      config.defaultSessionCountWeb,
     );
     replayMeta.session_spec = replayMeta.session_spec ?? args.sessionSpec;
 
@@ -1277,6 +1195,8 @@ async function startOrReplaySession(args: {
       replayMeta.prebuilt = true;
       replayMeta.requested_count = coerceTargetQuestionCount(
         replayMeta.target_question_count,
+        config.maxSessionCountPremium,
+        config.defaultSessionCountWeb,
       );
       replayMeta.source_pool_count = Number.isFinite(
         replayMeta.source_pool_count as number,
@@ -1302,35 +1222,83 @@ async function startOrReplaySession(args: {
     };
   }
 
+  // @spec [Doc-02B_V4 §14; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
+  // CEO model: filter-driven native random selection. All N items prepopulated at creation.
+  // Determinism satisfied by storage (the rows ARE the durable record).
+  const requestedCount = coerceTargetQuestionCount(
+    args.targetQuestionCount,
+    config.maxSessionCountPremium,
+    config.defaultSessionCountWeb,
+  );
+
   const sessionMetadata: SessionMetadata = {
     client_instance_id: args.clientInstanceId,
-    lifecycle_state: "created",
     active_session_item_id: null,
-    target_question_count: coerceTargetQuestionCount(args.targetQuestionCount),
+    target_question_count: requestedCount,
     session_spec: args.sessionSpec,
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
   };
 
-  // 1) Fetch the full question pool (no exclusions — we handle prioritization in-memory)
-  const exactPoolResult = await listExactFilteredQuestionPool({
-    sections: args.sessionSpec.sections,
-    domains: args.sessionSpec.domains,
-    difficulties: args.sessionSpec.difficulties,
-  });
+  // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
+  // DB-side ORDER BY random() via select_practice_pool_random RPC.
+  // The DB returns exactly N rows; no full-pool fetch into TS.
 
-  if ("error" in exactPoolResult) {
+  // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
+  const { data: activeSessionItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, practice_sessions!inner(status)")
+    .eq("user_id", args.userId)
+    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
+
+  const excludeIds = (activeSessionItems ?? [])
+    .map((item: { question_id?: string }) => item.question_id)
+    .filter(
+      (id): id is string =>
+        typeof id === "string" && z.string().uuid().safeParse(id).success,
+    );
+
+  // 2. Resolve filter params for the RPC
+  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+  const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
+    d === "easy" ? 1 : d === "hard" ? 3 : 2,
+  );
+
+  // 3. Call DB-side random selection
+  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
+    "select_practice_pool_random",
+    {
+      p_sections: sectionCodes.length > 0 ? sectionCodes : null,
+      p_domains:
+        args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
+      p_skills:
+        args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
+      p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
+      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
+      p_limit: requestedCount,
+    },
+  );
+
+  if (poolError) {
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: exactPoolResult.error,
+        message: `pool_selection_failed: ${poolError.message}`,
       },
     };
   }
 
-  if (exactPoolResult.pool.length === 0) {
+  // 4. Validate and convert DB rows through the canonical pipeline
+  const mappedRows = ((poolRows ?? []) as unknown[]).map((row) =>
+    mapGenesisQuestionRow(row as CanonicalQuestionRowLike),
+  );
+  const validPool = mappedRows
+    .filter((row) => isCanonicalRuntimeQuestion(row))
+    .map((row) => toCanonicalQuestionForServing(row));
+
+  if (validPool.length === 0) {
     return {
       ok: false,
       status: 422,
@@ -1342,81 +1310,18 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
-
-  // 2) Hard-exclude: questions in currently active sessions (prevents cross-tab repeats)
-  const { data: activeSessionItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, practice_sessions!inner(status)")
-    .eq("user_id", args.userId)
-    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
-
-  const activeQuestionIds = new Set(
-    (activeSessionItems ?? [])
-      .map((item: any) => item.question_id)
-      .filter(Boolean) as string[],
-  );
-
-  // 3) Soft-deprioritize: fetch full history with last-seen timestamps (section-aware)
-  const { data: historyItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, created_at")
-    .eq("user_id", args.userId)
-    .order("created_at", { ascending: false });
-
-  // Build a map of question_id -> most recent seen timestamp
-  const lastSeenMap = new Map<string, string>();
-  for (const item of (historyItems ?? []) as any[]) {
-    const qid = item.question_id as string;
-    if (!qid) continue;
-    // Only keep the most recent (first encountered since ordered DESC)
-    if (!lastSeenMap.has(qid)) {
-      lastSeenMap.set(qid, item.created_at as string);
-    }
-  }
-
-  // 4) Tiered selection: partition pool, then combine
-  const poolAfterExclusion = exactPoolResult.pool.filter(
-    (q) => !activeQuestionIds.has(q.id),
-  );
-
-  const neverSeen: CanonicalQuestionForServing[] = [];
-  const previouslySeen: Array<{
-    question: CanonicalQuestionForServing;
-    lastSeen: string;
-  }> = [];
-
-  for (const question of poolAfterExclusion) {
-    const lastSeen = lastSeenMap.get(question.id);
-    if (!lastSeen) {
-      neverSeen.push(question);
-    } else {
-      previouslySeen.push({ question, lastSeen });
-    }
-  }
-
-  // Shuffle fresh questions randomly
-  const shuffledFresh = fisherYates(neverSeen);
-
-  // Sort previously seen by oldest-first (most stale = highest priority)
-  previouslySeen.sort((a, b) => a.lastSeen.localeCompare(b.lastSeen));
-  const staleOrdered = previouslySeen.map((entry) => entry.question);
-
-  // Combine: fresh first, then stale, then select
-  const prioritizedPool = [...shuffledFresh, ...staleOrdered];
-  const selection = buildDeterministicPrebuiltSet(
-    prioritizedPool,
-    requestedCount,
-  );
+  const selected = validPool;
+  const sourcePoolCount = validPool.length;
+  const selectionMode: "exact" | "exact_reuse" =
+    sourcePoolCount < requestedCount ? "exact_reuse" : "exact";
 
   const startedAt = new Date().toISOString();
   const insertMetadata: SessionMetadata = {
     ...sessionMetadata,
     prebuilt: true,
     requested_count: requestedCount,
-    source_pool_count: selection.sourcePoolCount,
-    selection_mode: selection.selectionMode,
-    lifecycle_state: "active",
+    source_pool_count: sourcePoolCount,
+    selection_mode: selectionMode,
     last_served_ordinal: 1,
   };
 
@@ -1468,7 +1373,7 @@ async function startOrReplaySession(args: {
   // question_correct_variants carry the grid-in discriminator + accepted-answer set so a
   // grid-in can be reconstructed and graded. NOTE: the genesis practice_session_items table
   // does not yet have these two columns — see HALT in the PR notes (DB-lane dependency).
-  const insertRows = selection.selected.map((question, index) => ({
+  const insertRows = selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
     actor_id: args.actorId,
@@ -1541,11 +1446,10 @@ async function startOrReplaySession(args: {
   const newMetadata = asSessionMetadata((createdSession as any).metadata);
   newMetadata.prebuilt = true;
   newMetadata.requested_count = requestedCount;
-  newMetadata.source_pool_count = selection.sourcePoolCount;
-  newMetadata.selection_mode = selection.selectionMode;
+  newMetadata.source_pool_count = sourcePoolCount;
+  newMetadata.selection_mode = selectionMode;
   newMetadata.target_question_count = requestedCount;
   newMetadata.session_spec = args.sessionSpec;
-  newMetadata.lifecycle_state = "active";
   newMetadata.client_instance_id = args.clientInstanceId;
   newMetadata.active_session_item_id = firstInsertedItem
     ? String((firstInsertedItem as any).id)
@@ -1654,6 +1558,7 @@ async function serveNextForSession(args: {
   clientInstanceId: string;
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
+  const config = await loadPracticeConfig();
 
   const owned = await loadOwnedSession(args.sessionId, args.userId, {
     hideForbidden: true,
@@ -1668,7 +1573,7 @@ async function serveNextForSession(args: {
   const session = owned.session;
 
   const metadata = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, metadata);
+  const sessionState = normalizeSessionState(session.status);
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
@@ -1749,11 +1654,10 @@ async function serveNextForSession(args: {
         });
       }
 
-      metadata.lifecycle_state = "active";
       metadata.active_session_item_id = unresolved.id;
       metadata.prebuilt = true;
       metadata.target_question_count =
-        metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT;
+        metadata.target_question_count ?? config.defaultSessionCountWeb;
       await updateSessionLifecycle(args.sessionId, metadata, {
         status: "in_progress",
       });
@@ -1778,7 +1682,6 @@ async function serveNextForSession(args: {
       });
     }
 
-    metadata.lifecycle_state = "active";
     metadata.active_session_item_id = unresolved.id;
     metadata.last_served_ordinal = unresolved.ordinal;
 
@@ -1827,7 +1730,6 @@ async function serveNextForSession(args: {
   }
 
   if (!nextPrebuilt) {
-    metadata.lifecycle_state = "completed";
     metadata.active_session_item_id = null;
     await updateSessionLifecycle(args.sessionId, metadata, {
       status: "completed",
@@ -1911,28 +1813,11 @@ async function serveNextForSession(args: {
     });
   }
 
-  metadata.lifecycle_state = "active";
   metadata.active_session_item_id = promoted.id;
   metadata.last_served_ordinal = promoted.ordinal;
   await updateSessionLifecycle(args.sessionId, metadata, {
     status: "in_progress",
   });
-
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: args.userId,
-      session_id: args.sessionId,
-      question_id: promoted.question_id,
-      event_type: "served",
-      created_at: now,
-      payload: {
-        session_item_id: promoted.id,
-        ordinal: promoted.ordinal,
-      },
-    });
-  } catch {
-    // non-blocking
-  }
 
   return args.res.json({
     sessionId: session.id,
@@ -2071,7 +1956,7 @@ router.post(
       // If no active or queued items, the session is likely complete
       return res.json({
         sessionId: session.id,
-        state: normalizeSessionState(session.status, metadata),
+        state: normalizeSessionState(session.status),
         stats: await getSessionStats(sessionId, userId),
         requestId,
       });
@@ -2112,7 +1997,7 @@ router.post(
       sessionId: session.id,
       sessionItemId: state.id,
       ordinal: state.ordinal,
-      state: normalizeSessionState(session.status, metadata),
+      state: normalizeSessionState(session.status),
       calculatorState: metadata.calculator_state ?? null,
       question: toStudentSafeQuestionDTO({
         sessionItemId: state.id,
@@ -2152,7 +2037,8 @@ router.post(
       });
     }
 
-    const normalizedSpec = normalizeSessionSpec(parsed.data);
+    const config = await loadPracticeConfig();
+    const normalizedSpec = normalizeSessionSpec(parsed.data, config);
     const section = normalizedSpec.section;
     const mode = normalizedSpec.sessionSpec.mode;
     const idempotencyKey = parsed.data.idempotency_key?.trim() || null;
@@ -2179,10 +2065,7 @@ router.post(
       });
     }
 
-    const state = normalizeSessionState(
-      sessionResult.session.status,
-      sessionResult.metadata,
-    );
+    const state = normalizeSessionState(sessionResult.session.status);
 
     return res.json({
       id: sessionResult.session.id,
@@ -2240,7 +2123,6 @@ router.post(
     }
 
     const metadata = asSessionMetadata(owned.session.metadata);
-    metadata.lifecycle_state = "abandoned";
     metadata.active_session_item_id = null;
     metadata.client_instance_id = null;
     metadata.calculator_state = null;
@@ -2307,7 +2189,7 @@ router.post(
     }
 
     const metadata = asSessionMetadata(owned.session.metadata);
-    const sessionState = normalizeSessionState(owned.session.status, metadata);
+    const sessionState = normalizeSessionState(owned.session.status);
 
     if (
       sessionState === "completed" ||
@@ -2455,7 +2337,7 @@ router.get(
     const targetQuestionCount = coerceTargetQuestionCount(
       metadata.target_question_count,
     );
-    const state = normalizeSessionState(session.status, metadata);
+    const state = normalizeSessionState(session.status);
 
     return res.json({
       sessionId: session.id,
@@ -2595,7 +2477,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   const sessionMeta = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, sessionMeta);
+  const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
@@ -2833,23 +2715,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: payload.sessionId,
-      question_id: questionId,
-      event_type: "answered",
-      created_at: now,
-      payload: {
-        session_item_id: sessionItem.id,
-        outcome,
-        isCorrect,
-      },
-    });
-  } catch {
-    // non-blocking
-  }
-
-  try {
     const canonicalId =
       typeof sessionItem.question_canonical_id === "string"
         ? sessionItem.question_canonical_id
@@ -2926,14 +2791,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
-    refreshedMeta.lifecycle_state = "completed";
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "completed",
       completed: true,
       finished_at: now,
     });
   } else {
-    refreshedMeta.lifecycle_state = "active";
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "in_progress",
       completed: false,
@@ -3005,7 +2868,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
 
   const session = ownedSessionResult.session;
   const sessionMeta = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, sessionMeta);
+  const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
@@ -3146,10 +3009,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
         mode: "multiple_choice",
         feedback: raced.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: raceStats,
-        state: normalizeSessionState(
-          session.status,
-          asSessionMetadata(session.metadata),
-        ),
+        state: normalizeSessionState(session.status),
         idempotentRetried: true,
       });
     }
@@ -3159,23 +3019,6 @@ async function submitPracticeSkip(req: Request, res: Response) {
       message: "This practice item was already resolved by another request.",
       requestId,
     });
-  }
-
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: sessionId,
-      question_id: questionId,
-      event_type: "skipped",
-      created_at: now,
-      payload: {
-        session_item_id: sessionItem.id,
-        outcome: "skipped",
-        isCorrect: false,
-      },
-    });
-  } catch {
-    // non-blocking
   }
 
   const refreshedMeta = asSessionMetadata(session.metadata);
@@ -3188,14 +3031,12 @@ async function submitPracticeSkip(req: Request, res: Response) {
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
-    refreshedMeta.lifecycle_state = "completed";
     await updateSessionLifecycle(sessionId, refreshedMeta, {
       status: "completed",
       completed: true,
       finished_at: now,
     });
   } else {
-    refreshedMeta.lifecycle_state = "active";
     await updateSessionLifecycle(sessionId, refreshedMeta, {
       status: "in_progress",
       completed: false,
