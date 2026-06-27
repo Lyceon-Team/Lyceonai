@@ -105,8 +105,8 @@ export function DeleteAccountCard() {
               This schedules your account for permanent deletion after a 7-day
               grace period. During the grace period your account is locked, but
               you can cancel any time — here or from the link we email you.
-              After 7 days your data is permanently anonymized and cannot be
-              recovered.
+              After 7 days your account and all your data are permanently
+              deleted and cannot be recovered.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
