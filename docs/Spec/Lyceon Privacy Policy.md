@@ -10,7 +10,7 @@ This summary provides a plain-English overview of how Lyceon handles your inform
 
 **What Lyceon is.** Lyceon is an artificial-intelligence-powered SAT preparation platform serving students aged 13 and older, with optional Parent/Guardian accounts that provide supervisory visibility. Lyceon's AI tutor is named LISA.
 
-**What we do with your data.** We use your information to provide and improve the Service, to personalize learning to your demonstrated knowledge and target exam date, to support LISA conversations, to operate billing for paid subscriptions, to keep the Service secure, and to comply with legal obligations. We also use information in pseudonymized form indefinitely to improve our AI models and the Service.
+**What we do with your data.** We use your information to provide and improve the Service, to personalize learning to your demonstrated knowledge and target exam date, to support LISA conversations, to operate billing for paid subscriptions, to keep the Service secure, and to comply with legal obligations. After account deletion or retention-window expiration, we may retain anonymized, non-personal records for product improvement, learning-effectiveness research, safety, and AI-quality improvement, as described below.
 
 **What we don't do.**
 
@@ -30,7 +30,7 @@ This summary provides a plain-English overview of how Lyceon handles your inform
 * Under 18 in the United Kingdom and Australia: protected by age-appropriate design obligations (the UK Children's Code and the Australian Children's Online Privacy Code respectively).  
 * Parents and guardians may exercise privacy rights on behalf of their minor Student Users.
 
-**How long we keep your information.** Information attributable to your specific account is retained for 12 months from your last activity and then deleted through our cascade deletion process. Pseudonymized records (with directly identifying elements removed or replaced) are retained indefinitely for AI training and product improvement. Financial records processed through Stripe are retained for periods appropriate to financial recordkeeping and audit obligations.
+**How long we keep your information.** Information attributable to your specific account is retained for 12 months from your last activity and then deleted through our cascade deletion process. After account deletion or retention-window expiration, we may retain anonymized, non-personal structured learning records for product improvement, learning-effectiveness research, safety, and AI-quality improvement, as described below. Financial records processed through Stripe are retained for periods appropriate to financial recordkeeping and audit obligations.
 
 **Your rights.** Depending on your location, you may have the right to access, correct, delete, port, or restrict our processing of your personal information; to object to certain processing; to withdraw consent; and to be free from unlawful discrimination for exercising privacy rights. Section 11 explains these rights and how to exercise them.
 
@@ -79,7 +79,7 @@ For purposes of this Policy:
 
 **"Personal Information"** or **"Personal Data"** means information that identifies, relates to, describes, is reasonably capable of being associated with, or could reasonably be linked, directly or indirectly, with a particular individual or household. The specific scope of Personal Information may vary by jurisdiction. Personal Information does not include De-identified Data or Aggregated Data.
 
-**"Pseudonymized Data"** means information that has had directly identifying elements removed or replaced with non-identifying surrogate identifiers, such that the information cannot be attributed to a specific individual without the use of additional information held separately and subject to technical and organizational measures.
+**"Anonymized Structured Learning Data"** means structured learning-event records derived from practice, review, assessment, and mastery activity that have been processed so they are no longer associated with a user account and cannot reasonably be used by Lyceon to identify, relate to, describe, or be linked to a particular individual or household. Anonymized Structured Learning Data is not Personal Information and does not include LISA free-text conversation content unless Lyceon has implemented and verified a separate anonymization process for that content.
 
 **"Processing"** means any operation performed on Personal Information, including collection, recording, organization, structuring, storage, adaptation, retrieval, consultation, use, disclosure, dissemination, restriction, erasure, or destruction.
 
@@ -242,7 +242,7 @@ We use Personal Information for the following purposes:
 
 ### **4.3 To Improve the Service and AI Quality**
 
-We use Personal Information, in Pseudonymized form where reasonably possible, to:
+We use Personal Information, in anonymized form where reasonably possible, to:
 
 * Improve question difficulty calibration  
 * Enhance LISA explanatory quality, accuracy, and safety  
@@ -250,7 +250,7 @@ We use Personal Information, in Pseudonymized form where reasonably possible, to
 * Conduct internal research on learning effectiveness  
 * Train, fine-tune, and evaluate AI models that power the Service
 
-**Disclosure regarding indefinite Pseudonymized retention.** Lyceon retains Pseudonymized records of platform interactions indefinitely for product improvement and AI model training. Personal Information attributable to your specific account is retained for twelve (12) months from your last activity and then deleted in accordance with Section 9\. Pseudonymized records are treated as Personal Information for safeguard purposes notwithstanding the removal of directly identifying elements. We may reclassify Pseudonymized records as anonymized in future updates to this Policy if our technical implementation and applicable legal guidance support that classification.
+**Disclosure regarding retained anonymized structured records.** We may use account-attributable Personal Information to improve the Service and AI quality while your account is active and as permitted by applicable law. Personal Information attributable to your specific account is retained for twelve (12) months from your last activity and then deleted in accordance with Section 9. After account deletion or expiration of the applicable retention period, Lyceon may retain Anonymized Structured Learning Data for product improvement, learning-effectiveness research, AI-quality evaluation, safety testing, and model training where legally permitted. This retained structured data is not maintained with names, emails, account IDs, authentication IDs, billing identifiers, guardian-link identifiers, device identifiers, raw IP addresses, or a lookup key that would allow Lyceon to re-associate it with your account. LISA free-text conversation content is not treated as Anonymized Structured Learning Data unless and until Lyceon implements and verifies a separate anonymization process for such content; until then, LISA conversation content is retained or deleted according to the LISA retention rules in Section 9.
 
 **Children's data exclusion from AI training (users under 13):** Data attributable to users we determine to be under thirteen (13) years of age is excluded from our AI training data sets. This exclusion applies prospectively as well as retroactively to the extent technically achievable, and is consistent with Section 9.4 (Children's Data Deletion).
 
@@ -294,7 +294,7 @@ Where required, opt-out mechanisms are provided in our **California Do Not Sell 
 
 Where we rely on legitimate interests as the legal basis for Processing your Personal Information — including for AI-quality improvement, model training, and internal research as described in Section 4.3 — you may object to that Processing. To object, contact us using the information in Section 16 or use the controls described in Section 11 (Your Rights).
 
-If we cannot demonstrate compelling legitimate grounds for the Processing that override your interests, rights, and freedoms, or another lawful basis for the Processing, we will stop the relevant Processing for your account-attributable Personal Information. Pseudonymized records that have already been incorporated into AI model training sets may not be technically reversible after the fact; in such cases we will exclude your account-attributable data from future training cycles and apply the exclusion prospectively.
+If we cannot demonstrate compelling legitimate grounds for the Processing that override your interests, rights, and freedoms, or another lawful basis for the Processing, we will stop the relevant Processing for your account-attributable Personal Information. Where required by applicable law and technically available, Lyceon will exclude account-attributable Personal Information from future training or improvement pipelines. Lyceon does not currently operate an external AI-training export pipeline for retained structured learning records. Once data has been anonymized so that it is no longer Personal Information and cannot reasonably be associated with you, Lyceon cannot identify that data as yours, and individual access, deletion, correction, or objection requests do not apply to that anonymized data.
 
 You also have the right to object to Processing of your Personal Information for direct-marketing purposes at any time, in which case we will stop Processing for that purpose without requiring us to demonstrate compelling legitimate grounds.
 
@@ -307,11 +307,11 @@ The following table summarizes the categories of Personal Information Lyceon pro
 | Category | Examples | Source | Purpose | Legal Basis (EU/UK) | Retention Pointer |
 | ----- | ----- | ----- | ----- | ----- | ----- |
 | **Account Information** | Name or username; email address; account type (Student or Guardian); stated age or grade level; target exam date | Provided directly by user; some fields may be confirmed by Guardian for Minor accounts | Account creation; authentication; age-eligibility verification; supervisory association for Minor accounts; adaptive learning prioritization | Contract (Article 6(1)(b)) | 12 months after last activity then cascade deletion (§9.2 \+ §9.3); hard delete on under-13 detection (§9.4) |
-| **Learning Activity** | Practice question responses; performance data (correct/incorrect, time spent, scoring); mastery progression data | Generated by user interaction with the Service | Service operation; personalization of difficulty and selection; mastery progression; score reports | Contract; legitimate interests for personalization beyond strict contractual necessity | 12 months after last activity for account-attributable records (§9.2); Pseudonymized records retained indefinitely for AI training (§9.5); under-13 excluded from AI training |
+| **Learning Activity** | Practice question responses; performance data (correct/incorrect, time spent, scoring); mastery progression data | Generated by user interaction with the Service | Service operation; personalization of difficulty and selection; mastery progression; score reports | Contract; legitimate interests for personalization beyond strict contractual necessity | 12 months after last activity for account-attributable records (§9.2); Anonymized records retained indefinitely for AI training (§9.5); under-13 excluded from AI training |
 | **LISA Conversation Data** | Text of messages to LISA; LISA responses; event-level metadata (timestamps, conversation IDs, practice context) | Generated by user interaction with LISA | Tutoring experience; LISA effectiveness analysis; AI improvement; safety review | Contract; legitimate interests for AI improvement | Retention summarized in §9.5; under-13 excluded from AI training |
 | **Subscription and Billing Information** | Subscription status; plan type; payment events; billing address (where required for tax) | Stripe (collected directly by Stripe; transmitted to Lyceon as payment events and subscription status) | Subscription operation; payment processing; tax compliance; financial recordkeeping | Contract; legal obligation (tax / audit) | Approximately seven (7) years for financial records (§9.6); not subject to 12-month inactivity deletion |
-| **Device and Technical Information** | IP address; approximate IP-derived location; device type; operating system; browser type; session timestamps | Collected automatically by Lyceon systems | Service operation; security and fraud prevention; first-party analytics | Legitimate interests; contract for security-critical processing | Subject to retention applicable to associated logs and analytics records; Pseudonymized analytics records retained indefinitely (§9.5) |
-| **Usage Information** | Features accessed; actions taken; practice question outcomes; LISA interaction events | Collected automatically by Lyceon systems | Service operation; personalization; product analytics; AI improvement | Contract; legitimate interests | 12 months after last activity for account-attributable records (§9.2); Pseudonymized records indefinitely (§9.5) |
+| **Device and Technical Information** | IP address; approximate IP-derived location; device type; operating system; browser type; session timestamps | Collected automatically by Lyceon systems | Service operation; security and fraud prevention; first-party analytics | Legitimate interests; contract for security-critical processing | Subject to retention applicable to associated logs and analytics records; Anonymized analytics records retained indefinitely (§9.5) |
+| **Usage Information** | Features accessed; actions taken; practice question outcomes; LISA interaction events | Collected automatically by Lyceon systems | Service operation; personalization; product analytics; AI improvement | Contract; legitimate interests | 12 months after last activity for account-attributable records (§9.2); Anonymized records indefinitely (§9.5) |
 | **Communications** | Support requests; feedback; survey responses; other messages sent to Lyceon | Provided directly by user | Customer support; dispute resolution; product improvement | Contract; legitimate interests | Retained as needed to provide support and resolve disputes; subject to general retention principles in §9.1 |
 | **Guardian Association Data** | Guardian's identifying information; association with Student User account; clickwrap acknowledgment timestamp | Provided directly by Guardian | Parental consent operation; guardian-visibility model; safety notifications | Contract; legal obligation where parental consent is required by law | Tied to the associated Student User account; subject to same general retention as Account Information |
 | **Cookies and Tracking Technologies** | Authentication cookies; preference cookies; first-party analytics cookies | Collected automatically by Lyceon systems and our analytics Sub-Processor | Service operation; user preferences; first-party analytics | Strictly necessary cookies: not requiring consent; non-essential cookies: consent (in jurisdictions requiring consent) | Cookie-specific lifetimes described in **Cookie Policy** |
@@ -334,7 +334,7 @@ We share Personal Information with Sub-Processors that perform services on our b
 
 * **Supabase** — authentication and database hosting (United States). Categories processed: Account Information, Learning Activity, Communications.  
 * **Stripe** — payment processing (United States). Categories processed: Subscription and Billing Information.  
-* **PostHog** — product analytics (United States / European Union). Categories processed: Device and Technical Information; Usage Information; Pseudonymized analytics records.  
+* **PostHog** — product analytics (United States / European Union). Categories processed: Device and Technical Information; Usage Information; anonymized analytics records.  
 * **Google Cloud Platform / Vertex AI** — platform infrastructure and AI inference for LISA (United States). Categories processed: LISA Conversation Data; Device and Technical Information for AI infrastructure operation.
 
 **Planned or Future Sub-Processors:**
@@ -466,8 +466,9 @@ Personal Information attributable to your specific account is retained for **twe
 You may request deletion of your account at any time through your account settings or by contacting us. Upon your deletion request:
 
 * Your account is placed in a soft-deleted state immediately, suspending access  
-* After a seven (7)-day soft-delete window during which you may request restoration, your Personal Information undergoes our cascade deletion process  
-* Cascade deletion removes your Personal Information from active systems and applies one-way transformation to associated learning event records, after which the events cannot be re-associated with your identity
+* After a seven (7)-day soft-delete window during which you may request restoration, your account and Personal Information are permanently deleted through our cascade deletion process  
+* After the seven (7)-day soft-delete window, Lyceon permanently deletes your account and account-attributable Personal Information from active Lyceon systems through our cascade deletion process, subject to limited exceptions for legally required financial, security, fraud-prevention, tax, audit, payment-network, dispute, backup, and vendor records described in this Policy
+* Structured learning-event records may be retained only after they have been anonymized so they are no longer associated with your account and are no longer Personal Information
 
 If you have an active paid subscription at the time of deletion, your subscription is cancelled at the end of the current paid billing period. You retain access through the end of the current period unless you request immediate cancellation. We do not continue to bill subscriptions after account deletion.
 
@@ -478,7 +479,7 @@ Where we determine that a user is under thirteen (13) years of age, the account 
 * Account and learning activity data  
 * Analytics event data attributable to the account  
 * LISA conversation data  
-* Exclusion from any retained Pseudonymized records used for AI training
+* Exclusion from any retained anonymized records used for AI training
 
 This "hard delete everywhere" treatment is more aggressive than the cascade deletion applied to adult accounts and reflects the heightened protection appropriate to children under thirteen (13).
 
@@ -490,14 +491,17 @@ For Student Users in jurisdictions with age-appropriate-design frameworks (notab
 
 See also our **Children's Online Privacy Notice** for additional disclosures regarding the handling of data from minor users.
 
-### **9.5 Pseudonymized Records Retained for AI Training**
+### **9.5 Anonymized Structured Learning Records**
 
-As described in Section 4.3, Lyceon retains Pseudonymized records of platform interactions indefinitely for product improvement and AI model training. These Pseudonymized records:
+After account deletion, retention-window expiration, or other deletion processing, Lyceon may retain Anonymized Structured Learning Data for product improvement, learning-effectiveness analysis, AI-quality evaluation, safety testing, Service reliability, and model training where legally permitted. Anonymized Structured Learning Data:
 
-* Have directly identifying elements removed or replaced with non-identifying surrogate identifiers  
-* Are subject to safeguards under personal-data protections  
-* May be reclassified as anonymized in future updates to this Policy if applicable legal guidance and our technical implementation support that classification  
-* Do not include data attributable to users under thirteen (13), and do not include data from other minor users where applicable law, guardian-consent status, or Lyceon's jurisdictional configuration prohibits such use
+* does not include names, emails, account IDs, authentication IDs, billing identifiers, guardian-link identifiers, device identifiers, raw IP addresses, support-ticket identifiers, or other direct identifiers;
+* is not maintained with a lookup table, key, side table, salted hash, or mapping that would allow Lyceon to re-associate it with a user account;
+* is not used to identify, contact, profile, or make decisions about a specific user;
+* is maintained subject to reasonable safeguards against re-identification; and
+* excludes data attributable to users we determine to be under thirteen (13), and excludes data from other minor users where applicable law, guardian-consent status, or Lyceon's jurisdictional configuration prohibits such use.
+
+LISA free-text conversation content is not included in this anonymization framework unless Lyceon implements and verifies a separate anonymization process for such content.
 
 ### **9.6 Financial Records**
 
@@ -511,9 +515,9 @@ The following table summarizes retention periods applicable to specific data cat
 | ----- | ----- | ----- |
 | Account Information (name, email, account credentials, age, target exam date) | 12 months from last activity, then cascade deletion (§9.2) | Account operation; authentication; service eligibility |
 | Learning Activity (account-attributable) | 12 months from last activity, then cascade deletion (§9.2); under-13 hard-delete (§9.4) | Service operation; personalization; progress tracking |
-| LISA Conversation Content | Retained during the active conversation and for **seven (7) days** after the conversation is closed, abandoned, or your entitlement to access LISA is lost, to support resume and continuity. After this period, conversation content is deleted from operational systems or transitioned to Pseudonymized form per Section 4.3 and Section 9.5 for AI improvement purposes. Conversation content flagged by automated safety monitoring or referenced in an open support, safety, or dispute matter is retained for the duration of the matter and up to ninety (90) days after resolution, unless a longer period is required by law, safety obligations, or dispute defense. Under-13 conversation content: excluded from AI training; deleted per Section 9.4. | Tutoring experience; safety monitoring; AI improvement |
-| LISA Event Metadata (timestamps, conversation IDs, practice context — pseudonymized) | Retained indefinitely as Pseudonymized records (§9.5); under-13 excluded | Service operation; product analytics; AI training |
-| Pseudonymized Learning Activity (for AI training) | Indefinite (§9.5); under-13 excluded | AI model training; product improvement; learning-effectiveness research |
+| LISA Conversation Content | Retained during the active conversation and for **seven (7) days** after the conversation is closed, abandoned, or your entitlement to access LISA is lost, to support resume and continuity. After this period, conversation content is deleted from operational systems or transitioned to anonymized form per Section 4.3 and Section 9.5 for AI improvement purposes. Conversation content flagged by automated safety monitoring or referenced in an open support, safety, or dispute matter is retained for the duration of the matter and up to ninety (90) days after resolution, unless a longer period is required by law, safety obligations, or dispute defense. Under-13 conversation content: excluded from AI training; deleted per Section 9.4. | Tutoring experience; safety monitoring; AI improvement |
+| LISA Event Metadata (timestamps, conversation IDs, practice context) | Retained per LISA retention rules (§9.5 / §4.3); LISA conversation data is NOT part of the Anonymized Structured Learning Data framework unless a separate anonymization process is implemented and verified; under-13 excluded | Service operation; product analytics |
+| Anonymized Learning Activity (for AI training) | Indefinite (§9.5); under-13 excluded | AI model training; product improvement; learning-effectiveness research |
 | Subscription and Billing Information (Stripe) | Approximately seven (7) years unless shorter or longer period required by applicable law or accounting guidance (§9.6) | Financial recordkeeping; audit; tax; refund; chargeback; payment-network obligations |
 | Device and Technical Information (account-attributable) | 12 months from last activity (subject to cascade deletion (§9.2)) | Service operation; security; first-party analytics |
 | Communications (support, feedback, surveys) | Retained as needed to provide support and resolve disputes; subject to general retention principles (§9.1) | Customer support; dispute resolution; product improvement |
@@ -797,4 +801,3 @@ Where applicable law provides rights or protections more favorable to you than t
 **Lyceon AI** hello@lyceon.ai
 
 *This Privacy Policy reflects Lyceon AI's privacy practices as of the Last Updated date. By using the Service, you acknowledge that you have read and understood this Policy. This acknowledgment does not waive rights or replace any consent we are required to obtain separately under applicable law.*
-
