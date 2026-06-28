@@ -20,8 +20,10 @@
 | `difficulty` | `INTEGER NOT NULL CHECK (BETWEEN 1 AND 3)` | Doc 02A §17 INV-02A-05: locked to 1/2/3 (Easy/Medium/Hard). | Calibrated per §A.7. `1`=Easy (single-step, direct application), `2`=Medium (multi-step, requires synthesis), `3`=Hard (complex reasoning, multiple concepts, non-obvious path). | CB categorizes difficulty in 3 tiers for adaptive routing. |
 | `stem` | `TEXT NOT NULL` | Doc 02A: question text. | The question prompt. Math stems use LaTeX for notation (§A.5). RW stems include the question but NOT the passage (passage is separate). Must be self-contained with the passage context. | Digital SAT stems are concise — typically 1–3 sentences for Math, a question sentence for RW. |
 | `passage` | `TEXT NULL` | Doc 02B: passage text for reading comprehension. | Required for all RW questions (passage-based). NULL for most Math questions. Math questions MAY have a passage for word problems with extended context or data tables. LaTeX for any math in passages. | All Digital SAT RW questions are passage-based (25–150 words, 1 question per passage). |
-| `options` | `JSONB NOT NULL` | Doc 02A §19, Doc 02B: student-visible options. | MCQ: exactly 4 objects `[{key:"A",text:"..."}, {key:"B",text:"..."}, {key:"C",text:"..."}, {key:"D",text:"..."}]`. Grid-in: empty array `[]` (once `item_type` column exists; currently MCQ-only). See §A.3. | Digital SAT MCQ always has exactly 4 choices labeled A–D. |
-| `correct_answer` | `TEXT NOT NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. | MCQ: one of `"A"`, `"B"`, `"C"`, `"D"` — must match one option key. Grid-in (future): the canonical numeric/fraction value. See §A.3. | Single unambiguous correct answer per question. |
+| `item_type` | `TEXT NOT NULL DEFAULT 'mcq' CHECK (IN ('mcq','grid_in'))` | SCL-018 (rewritten): grid-in in scope for launch. Migration `20260628010000_grid_in_schema_extension.sql`. | `mcq` for multiple-choice, `grid_in` for student-produced response. See §A.3. | Digital SAT Math is ~75% MCQ, ~25% grid-in. |
+| `options` | `JSONB NOT NULL` | Doc 02A §19, Doc 02B: student-visible options. | MCQ: exactly 4 objects `[{key:"A",text:"..."}, {key:"B",text:"..."}, {key:"C",text:"..."}, {key:"D",text:"..."}]`. Grid-in: empty array `[]`. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Digital SAT MCQ always has exactly 4 choices labeled A–D. |
+| `correct_answer` | `TEXT NOT NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. | MCQ: one of `"A"`, `"B"`, `"C"`, `"D"` — must match one option key. Grid-in: the canonical numeric/fraction value (e.g., `"2/3"`, `"17"`). See §A.3. | Single unambiguous correct answer per question. |
+| `correct_variants` | `TEXT[] NULL` | SCL-018 (rewritten). Migration `20260628010000_grid_in_schema_extension.sql`. | Grid-in: exhaustive set of CB-accepted surface forms (e.g., `{"2/3", ".666", "0.666", ".667", "0.667"}`). MCQ: NULL. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Grid-in answers accept multiple equivalent forms. |
 | `explanation` | `TEXT NOT NULL` | Doc 02 Preamble §12: post-submit only. Doc 02A §20: explanation standard. | Must justify WHY the correct answer is correct. Should address why each distractor is wrong when pedagogically useful. LaTeX for math. 2–8 sentences by difficulty. See §A.6. | Explanations are the primary learning feedback mechanism. |
 | `option_metadata` | `JSONB NULL` | Doc 02A §19, Doc 02 Preamble §12 INV-02-09: INTERNAL, never to clients. | Per-option role and distractor taxonomy from `distractor_taxonomy_v1`. Keyed object: `{"A": {role, error_taxonomy}, ...}`. The correct-answer option has `role: "correct"` and `error_taxonomy: null`. See §A.6. | Distractor labeling enables analytics on common error patterns. |
 | `assets` | `JSONB NULL` | Doc 02A: figures, diagrams, data displays. | Shape: `[{type:"image",url:"...",alt:"...",caption:"..."}]` or `[{type:"latex_figure",content:"..."}]`. Used for geometry diagrams, data tables, graphs. See §A.5. | Digital SAT Math frequently includes figures and data displays. |
@@ -70,7 +72,7 @@
 
 ### MCQ (Multiple-Choice Question)
 
-The primary question type. All launch questions are MCQ.
+The primary question type for both Math and RW sections.
 
 **`options` shape (validated by `optionSchema` in `packages/shared/src/validate.ts:9-12`):**
 ```json
@@ -99,25 +101,28 @@ The primary question type. All launch questions are MCQ.
 |-------|---------------|
 | Words in Context | Single words or short phrases (synonyms/near-synonyms) |
 | Text Structure and Purpose | Full phrases describing purpose (e.g., "to illustrate...", "to refute...") |
-| Cross-text Connections | Full phrases describing textual relationships |
+| Cross-Text Connections | Full phrases describing textual relationships |
 | Rhetorical Synthesis | Full sentences (the student selects which sentence achieves the rhetorical goal) |
 | Boundaries | Punctuation/conjunction variants of the same clause join (e.g., "A, B" vs "A; B" vs "A. B") |
 | Form, Structure, and Sense | Verb/pronoun/modifier form variants (e.g., "has been" vs "have been" vs "had been") |
 | Transitions | Transition words/phrases (e.g., "However," vs "Therefore," vs "In addition,") |
 | Central Ideas and Details / Inferences / Command of Evidence | Full statements about the passage content |
-| Math (all skills) | Numeric values, expressions, or equations; ordered ascending when numeric |
+| Math (all skills) | MCQ: numeric values, expressions, or equations; ordered ascending when numeric. Grid-in: N/A (no options). |
 
-### Grid-In (Student-Produced Response) — Future, Not Launch
+### Grid-In (Student-Produced Response)
 
-Grid-in questions are Math-only. The student types a numeric answer instead of choosing from options. **Deferred to post-launch** (SCL-018 from gap-closure plan; PHASE-0 HALT-5). Genesis DDL currently has no `item_type` column; the grid-in extension migration is drafted but not applied.
+Grid-in questions are Math-only. The student types a numeric answer instead of choosing from options. **In scope for launch** (SCL-018, rewritten — supersedes prior MCQ-only deferral).
 
 **Digital SAT grid-in frequency:** ~11 of 44 Math questions (~25%), distributed across all 4 Math domains. Grid-in frequency increases with difficulty.
 
-**When implemented:**
-- `item_type`: `"grid_in"` (vs `"mcq"` for MCQ)
-- `options`: `[]` (empty array — no choices)
+**Schema:** `item_type = 'grid_in'` + `correct_variants TEXT[]` added via migration `20260628010000_grid_in_schema_extension.sql` (awaiting Karl apply). Shape enforced by `questions_item_shape_chk` CHECK constraint.
+
+**Column values for grid-in:**
+- `item_type`: `"grid_in"`
+- `options`: `[]` (empty array — no choices; enforced by CHECK)
 - `correct_answer`: the canonical numeric value as a string (e.g., `"2/3"`, `"0.5"`, `"17"`)
-- `correct_variants`: `TEXT[]` — the exhaustive set of CB-accepted surface forms
+- `correct_variants`: `TEXT[]` — the exhaustive set of CB-accepted surface forms (enforced non-NULL with ≥1 element by CHECK)
+- `option_metadata`: NULL (no options to label)
 
 **Grid-in accepted forms** (from `parseCorrectVariants`, `question-bank-contract.ts:237-274` and INGESTION-LOGIC §3):
 - Integers: `"17"`, `"-3"`
@@ -127,7 +132,7 @@ Grid-in questions are Math-only. The student types a numeric answer instead of c
 - Maximum 5 characters (6 with negative sign) per the Digital SAT input field budget
 - No mixed numbers, no percentages, no separators
 
-**Answer-matching rule (future):** `gridInResponseMatches(response, value)` — value-equality after normalization. Accepts any stored variant form.
+**Answer-matching rule:** `gridInResponseMatches(response, value)` — value-equality after normalization. Accepts any stored variant form.
 
 ---
 
@@ -163,56 +168,60 @@ Grid-in questions are Math-only. The student types a numeric answer instead of c
 ### Skills (29 canonical skills — frozen from CB taxonomy)
 
 **Algebra (5 skills):**
-1. `Linear equations in one variable`
-2. `Linear equations in two variables`
-3. `Linear functions`
-4. `Linear inequalities in one or two variables`
-5. `Systems of two linear equations in two variables`
+1. `Linear Equations in One Variable`
+2. `Linear Equations in Two Variables`
+3. `Linear Functions`
+4. `Linear Inequalities in One or Two Variables`
+5. `Systems of Two Linear Equations in Two Variables`
 
 **Advanced Math (3 skills):**
-6. `Equivalent expressions`
-7. `Nonlinear equations in one variable and systems of equations in two variables`
-8. `Nonlinear functions`
+6. `Equivalent Expressions`
+7. `Nonlinear Equations in One Variable and Systems of Equations in Two Variables`
+8. `Nonlinear Functions`
 
 **Problem Solving and Data Analysis (7 skills):**
-9. `Ratios, rates, proportional relationships, and units`
+9. `Ratios, Rates, Proportional Relationships, and Units`
 10. `Percentages`
-11. `One-variable data: distributions and measures of center and spread`
-12. `Two-variable data: models and scatterplots`
-13. `Probability and conditional probability`
-14. `Inference from sample statistics and margin of error`
-15. `Evaluating statistical claims: observational studies and experiments`
+11. `One-Variable Data: Distributions and Measures of Center and Spread`
+12. `Two-Variable Data: Models and Scatterplots`
+13. `Probability and Conditional Probability`
+14. `Inference from Sample Statistics and Margin of Error`
+15. `Evaluating Statistical Claims: Observational Studies and Experiments`
 
 **Geometry and Trigonometry (4 skills):**
-16. `Lines, angles, and triangles`
-17. `Right triangles and trigonometry`
+16. `Lines, Angles, and Triangles`
+17. `Right Triangles and Trigonometry`
 18. `Circles`
-19. `Area and volume`
+19. `Area and Volume`
 
 **Information and Ideas (3 skills):**
-20. `Central ideas and details`
-21. `Command of evidence`
+20. `Central Ideas and Details`
+21. `Command of Evidence`
 22. `Inferences`
 
 **Craft and Structure (3 skills):**
-23. `Words in context`
-24. `Text structure and purpose`
-25. `Cross-text connections`
+23. `Words in Context`
+24. `Text Structure and Purpose`
+25. `Cross-Text Connections`
 
 **Expression of Ideas (2 skills):**
 26. `Transitions`
-27. `Rhetorical synthesis`
+27. `Rhetorical Synthesis`
 
 **Standard English Conventions (2 skills):**
 28. `Boundaries`
-29. `Form, structure, and sense`
+29. `Form, Structure, and Sense`
+
+**Title Case convention:** Capitalize first/last word and all major words; lowercase `a, an, the, and, or, nor, in, of, to, for, on` unless first/last; capitalize both parts across a hyphen (`Cross-Text`). These 29 strings are the sole source of truth — no deployed SQL function hardcodes skill strings, so this doc is load-bearing for skill consistency.
 
 **`skill_codes` format:** A 1-element TEXT array containing the canonical skill string:
 ```sql
-skill_codes = ARRAY['Linear equations in one variable']
+skill_codes = ARRAY['Linear Equations in One Variable']
 ```
 
-**Note on CB taxonomy vs. Lyceon frozen set:** CB's Assessment Framework lists ~30 distinct skills (splitting "Command of evidence" into Textual and Quantitative sub-skills). The 29 strings above are our canonical frozen set, derived from the CB style guide filenames with typos corrected (`variabe` → `variable`, `Pecentages` → `Percentages`). The `student_skill_mastery.skill` column must use these same strings for mastery attribution to work.
+**`student_skill_mastery.skill` must use these exact Title Case strings** for mastery attribution to work.
+
+**Note on CB taxonomy vs. Lyceon frozen set:** CB's Assessment Framework lists ~30 distinct skills (splitting "Command of Evidence" into Textual and Quantitative sub-skills). The 29 strings above are our canonical frozen set, derived from the CB style guide filenames with typos corrected (`variabe` → `variable`, `Pecentages` → `Percentages`) and normalized to Title Case (SCL-020).
 
 ### Digital SAT question distribution (reference for content planning)
 
@@ -472,7 +481,7 @@ All Reading & Writing questions are passage-based. Each passage supports exactly
 
 **Per-domain passage patterns:**
 - **Information and Ideas:** Passages present findings, claims, or descriptions. Questions ask about central ideas, supporting evidence, or logical inferences.
-- **Craft and Structure:** Passages may be literary or argumentative. Questions ask about word meaning in context, author purpose, or cross-text comparison (paired passages for Cross-text Connections).
+- **Craft and Structure:** Passages may be literary or argumentative. Questions ask about word meaning in context, author purpose, or cross-text comparison (paired passages for Cross-Text Connections).
 - **Expression of Ideas:** Passages are presented as bulleted notes (Rhetorical Synthesis) or paragraphs with transition gaps (Transitions). No traditional continuous prose for Rhetorical Synthesis.
 - **Standard English Conventions:** Passages contain a blank or underlined section where the grammar/punctuation choice is tested. The question asks which option correctly completes the sentence.
 
