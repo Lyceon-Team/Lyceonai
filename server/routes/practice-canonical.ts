@@ -171,7 +171,22 @@ type PracticeConfig = {
   answerRateLimitMax: number;
 };
 
+let _configCache: { config: PracticeConfig; ts: number } | null = null;
+let _configInflight: Promise<PracticeConfig> | null = null;
+const CONFIG_TTL_MS = 30_000;
+
 async function loadPracticeConfig(): Promise<PracticeConfig> {
+  if (_configCache && Date.now() - _configCache.ts < CONFIG_TTL_MS) {
+    return _configCache.config;
+  }
+  if (_configInflight) return _configInflight;
+  _configInflight = loadPracticeConfigFromDb().finally(() => {
+    _configInflight = null;
+  });
+  return _configInflight;
+}
+
+async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
   const { data, error } = await supabaseServer
     .from("practice_runtime_config")
     .select("key, value")
@@ -199,7 +214,7 @@ async function loadPracticeConfig(): Promise<PracticeConfig> {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   };
 
-  return {
+  const config: PracticeConfig = {
     maxConcurrentSessions: readInt("max_concurrent_sessions", 5),
     defaultSessionCountWeb: readInt("default_session_count_web", 10),
     maxSessionCountPremium: readInt("max_session_count_premium", 60),
@@ -207,6 +222,8 @@ async function loadPracticeConfig(): Promise<PracticeConfig> {
     answerRateLimitWindowMs: readInt("answer_rate_limit_window_ms", 60_000),
     answerRateLimitMax: readInt("answer_rate_limit_max", 30),
   };
+  _configCache = { config, ts: Date.now() };
+  return config;
 }
 
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
@@ -244,18 +261,29 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
   return _cachedRateLimiter;
 }
 
+const FALLBACK_PRACTICE_CONFIG: PracticeConfig = {
+  maxConcurrentSessions: 5,
+  defaultSessionCountWeb: 10,
+  maxSessionCountPremium: 60,
+  targetSecondsPerQuestion: 90,
+  answerRateLimitWindowMs: 60_000,
+  answerRateLimitMax: 30,
+};
+
 async function practiceAnswerRateLimiter(
   req: Request,
   res: Response,
   next: () => void,
 ) {
+  let config: PracticeConfig;
   try {
-    const config = await loadPracticeConfig();
-    const limiter = getPracticeAnswerRateLimiter(config);
-    limiter(req, res, next);
+    config = await loadPracticeConfig();
   } catch {
-    next();
+    config = FALLBACK_PRACTICE_CONFIG;
+    _configCache = { config, ts: Date.now() };
   }
+  const limiter = getPracticeAnswerRateLimiter(config);
+  limiter(req, res, next);
 }
 
 const StartSessionBodySchema = z.object({
