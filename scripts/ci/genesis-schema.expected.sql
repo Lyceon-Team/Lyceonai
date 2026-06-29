@@ -3735,6 +3735,9 @@ CREATE TABLE public.practice_session_items (
     served_at timestamp with time zone,
     occurred_at timestamp with time zone,
     actor_id uuid NOT NULL,
+    option_order text[],
+    option_token_map jsonb,
+    client_instance_id text,
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3760,7 +3763,7 @@ CREATE TABLE public.practice_sessions (
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     actor_id uuid NOT NULL,
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))

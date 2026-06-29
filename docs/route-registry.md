@@ -50,8 +50,8 @@ This document is the single authoritative registry of:
 | `/mastery` | student, admin | free | MasteryPage | `/api/me/mastery/skills` | ACTIVE |
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
 | `/review-errors` | student, admin | free | ReviewErrors | `/api/review-errors`, `/api/review-errors/sessions`, `/api/review-errors/sessions/:sessionId/state`, `/api/review-errors/attempt` | ACTIVE |
-| `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
-| `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
+| `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
+| `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/profile` | student, guardian, admin | free | UserProfile | `/api/profile` | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
 | `/guardian` | guardian, admin | entitled | GuardianDashboard | `/api/guardian/students`, `/api/guardian/students/:id/summary`, `/api/guardian/link`, `/api/guardian/link/:studentId`, `/api/billing/status`, `/api/billing/prices`, `/api/billing/checkout`, `/api/billing/portal` | ACTIVE |
