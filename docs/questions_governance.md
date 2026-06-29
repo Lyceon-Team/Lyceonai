@@ -4,7 +4,8 @@
 **Status:** Living document — question content is authored and audited against this.  
 **Scope:** Per-column content rules, canonical tagging, question types, rendering, quality bar.  
 **Out of scope:** Practice engine, serve/retrieval paths, anti-leak serializer, registry engineering.  
-**Grounded from:** Genesis DDL (`00000000000000_genesis.sql`), Doc 02A V6, Doc 02B V4, Doc 02 Preamble V3, CB style guides (`docs/SAT Qeustions S.D/`), deployed mastery functions, `packages/shared/src/validate.ts`, `packages/shared/src/types.ts`.
+**Grounded from:** Genesis DDL (`00000000000000_genesis.sql`), Doc 02A V6, Doc 02B V4, Doc 02C (authoritative DB schema), Doc 02 Preamble V3, CB style guides (`docs/SAT Qeustions S.D/`), deployed mastery functions, `packages/shared/src/validate.ts`, `packages/shared/src/types.ts`.  
+**Authority note:** This is a content-authoring governance complement derived from the locked spec. Runtime enforcement and schema authority remain in the locked corpus (Doc 02A/02C). Not itself a locked spec section.
 
 ---
 
@@ -23,7 +24,7 @@
 | `item_type` | `TEXT NOT NULL DEFAULT 'mcq' CHECK (IN ('mcq','grid_in'))` | SCL-018: grid-in in scope for launch. Migration `20260628010000_grid_in_schema_extension.sql`. | `mcq` for multiple-choice, `grid_in` for student-produced response. See §A.3. | Digital SAT Math is ~75% MCQ, ~25% grid-in. |
 | `options` | `JSONB NOT NULL` | Doc 02A §19, Doc 02B: student-visible options. | MCQ: exactly 4 objects `[{key:"A",text:"..."}, {key:"B",text:"..."}, {key:"C",text:"..."}, {key:"D",text:"..."}]`. Grid-in: empty array `[]`. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Digital SAT MCQ always has exactly 4 choices labeled A–D. |
 | `correct_answer` | `TEXT NOT NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. | MCQ: one of `"A"`, `"B"`, `"C"`, `"D"` — must match one option key. Grid-in: the canonical numeric/fraction value (e.g., `"2/3"`, `"17"`). See §A.3. | Single unambiguous correct answer per question. |
-| `correct_variants` | `TEXT[] NULL` | SCL-018. Migration `20260628010000_grid_in_schema_extension.sql`. | Grid-in: exhaustive set of CB-accepted surface forms (e.g., `{"2/3", ".666", "0.666", ".667", "0.667"}`). MCQ: NULL. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Grid-in answers accept multiple equivalent forms. |
+| `correct_variants` | `TEXT[] NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. SCL-018. Migration `20260628010000_grid_in_schema_extension.sql`. | Grid-in: exhaustive set of CB-accepted surface forms (e.g., `{"2/3", ".666", "0.666", ".667", "0.667"}`). MCQ: NULL. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Grid-in answers accept multiple equivalent forms. |
 | `explanation` | `TEXT NOT NULL` | Doc 02 Preamble §12: post-submit only. Doc 02A §20: explanation standard. | Must justify WHY the correct answer is correct. Should address why each distractor is wrong when pedagogically useful. LaTeX for math. 2–8 sentences by difficulty. See §A.6. | Explanations are the primary learning feedback mechanism. |
 | `option_metadata` | `JSONB NULL` | Doc 02A §19, Doc 02 Preamble §12 INV-02-09: INTERNAL, never to clients. | Per-option role and distractor taxonomy from `distractor_taxonomy_v1`. Keyed object: `{"A": {role, error_taxonomy}, ...}`. The correct-answer option has `role: "correct"` and `error_taxonomy: null`. See §A.6. | Distractor labeling enables analytics on common error patterns. |
 | `assets` | `JSONB NULL` | Doc 02A: figures, diagrams, data displays. | Shape: `[{type:"image",url:"...",alt:"...",caption:"..."}]` or `[{type:"latex_figure",content:"..."}]`. Used for geometry diagrams, data tables, graphs. See §A.5. | Digital SAT Math frequently includes figures and data displays. |
@@ -111,7 +112,7 @@ The primary question type for both Math and RW sections.
 
 ### Grid-In (Student-Produced Response)
 
-Grid-in questions are Math-only. The student types a numeric answer instead of choosing from options. **In scope for launch** (SCL-018 — supersedes prior MCQ-only deferral).
+Grid-in questions are Math-only (`section = 'M'`). The student types a numeric answer instead of choosing from options. **In scope for launch** (SCL-018 — supersedes prior MCQ-only deferral). Math-only is governance-enforced (not a schema CHECK), consistent with how `domain` is governance-enforced without a CHECK constraint.
 
 **Digital SAT grid-in frequency:** ~11 of 44 Math questions (~25%), distributed across all 4 Math domains. Grid-in frequency increases with difficulty.
 

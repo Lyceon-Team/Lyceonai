@@ -1,5 +1,5 @@
 -- Grid-In Schema Extension Migration
--- @spec [Doc-02A_V6, §16; Doc-02-Preamble_V3, §12 INV-02-08; questions_governance.md §A.3; SCL-018]
+-- @spec [Doc-02A_V6, §16; Doc-02-Preamble_V3, §12 INV-02-08; SCL-018]
 -- @implemented [2026-06-28]
 -- Adds item_type discriminator and correct_variants for grid-in (student-produced
 -- response) questions. MCQ rows are unchanged (DEFAULT 'mcq', correct_variants NULL).

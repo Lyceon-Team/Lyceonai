@@ -25,7 +25,7 @@
 
 ## Entries
 
-SCL-020 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
+SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
 Change: Canonical skill taxonomy frozen as **29 Title Case strings** in governance doc §A.4.
 WAS: skill strings in mixed sentence-case/title-case (internal inconsistency).
 IS: all 29 skills locked to Title Case (e.g., `Linear Equations in One Variable`, `Words in Context`),
@@ -34,7 +34,7 @@ Rationale: single source of truth; no deployed SQL function hardcodes skill stri
   doc is the sole authority — its internal consistency is load-bearing. Title Case matches CB convention.
 No code/DB change from this entry. Owner action: confirm Title Case convention at next spec pass.
 
-SCL-018 | Doc 02A §14 / questions_governance.md §A.3 (grid-in / free-response scope) | PROPOSED
+SCL-018 | 2026-06-28 | Doc 02A §15/§16 / questions_governance.md §A.3 (grid-in / free-response scope) | PROPOSED
 Change: Free-response (grid-in / student-produced response) is **in scope for prelaunch**, superseding
   the prior MCQ-only deferral.
 WAS (gap-closure plan proposal): grid-in deferred to post-launch (MCQ-only for launch).
@@ -44,7 +44,8 @@ IS: grid-in is a launch question type. Schema extension via migration
   `questions_governance.md` §A.3.
 Rationale: Karl ruling (2026-06-28) — grid-in represents ~25% of Digital SAT Math questions and must be
   authorable this content wave. Migration awaiting Karl apply (not applied to prod).
-Owner action: apply migration; promote into Doc 02A spec at next revision.
+Owner action: apply migration; promote into Doc 02A spec at next revision; update Doc 02A §23 QA gate
+  "Four options present" to exempt grid-in items (`options.length = 0` is valid for `grid_in`).
 
 SCL-016 | Doc 02B (flow-cards / adaptive practice flow) | PROPOSED (Karl promotes)
 Change: flow-cards is a POST-LAUNCH feature; removed from launch UI.
