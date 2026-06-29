@@ -28,21 +28,56 @@ const SAT_TOPICS = {
   },
 };
 
+/**
+ * @spec [Doc-02B_V4 §14; Coding Standards §9] | @implemented [2026-06-29]
+ * Returns sections with domains and skills for practice topic selection.
+ */
 export async function getPracticeTopics(_req: Request, res: Response) {
   try {
+    const { data: skillRows, error } = await supabaseServer
+      .from("questions")
+      .select("section_code, domain, skill")
+      .eq("question_type", "multiple_choice")
+      .eq("status", "published");
+
+    if (error) {
+      return res.status(500).json({ error: "Failed to fetch topics" });
+    }
+
+    const skillsBySection: Record<string, Record<string, Set<string>>> = {};
+    for (const row of skillRows ?? []) {
+      const sec = String(row.section_code);
+      const dom = String(row.domain);
+      const sk = row.skill ? String(row.skill) : null;
+      if (!skillsBySection[sec]) skillsBySection[sec] = {};
+      if (!skillsBySection[sec][dom]) skillsBySection[sec][dom] = new Set();
+      if (sk) skillsBySection[sec][dom].add(sk);
+    }
+
+    function buildDomains(
+      sectionCode: string,
+      staticDomains: string[],
+    ): Array<{ domain: string; skills: string[] }> {
+      const domainMap = skillsBySection[sectionCode] ?? {};
+      return staticDomains.map((d) => ({
+        domain: d,
+        skills: Array.from(domainMap[d] ?? []).sort(),
+      }));
+    }
+
     return res.status(200).json({
       sections: [
         {
           section: "math",
           label: "Math",
           sectionCode: SAT_TOPICS.math.section,
-          domains: SAT_TOPICS.math.domains,
+          domains: buildDomains("M", SAT_TOPICS.math.domains),
         },
         {
           section: "reading_writing",
           label: "Reading & Writing",
           sectionCode: SAT_TOPICS.reading_writing.section,
-          domains: SAT_TOPICS.reading_writing.domains,
+          domains: buildDomains("RW", SAT_TOPICS.reading_writing.domains),
         },
       ],
     });

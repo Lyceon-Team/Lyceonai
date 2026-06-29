@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
+import { logger } from "../logger";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
@@ -88,11 +89,17 @@ type CanonicalQuestionForServing = {
 type SessionRow = {
   id: string;
   user_id: string;
-  section: string;
   mode: string;
+  filters: Record<string, unknown>;
+  target_count: number;
+  platform: string;
+  client_instance_id: string;
   status: string;
-  completed?: boolean | null;
-  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string;
+  completed_at?: string | null;
+  actor_id: string;
 };
 
 type SessionItemRow = {
@@ -100,34 +107,30 @@ type SessionItemRow = {
   session_id: string;
   user_id: string;
   question_id: string;
-  question_canonical_id?: string | null;
   question_section?: string | null;
-  // Genesis snapshot is MCQ-only today; these are forward-compat for the grid-in snapshot
-  // DB lane (see HALT in PR notes). Absent columns simply read as undefined → mcq default.
-  question_item_type?: string | null;
-  question_correct_variants?: unknown;
   question_stem?: string | null;
+  question_passage?: string | null;
   question_options?: unknown;
+  question_correct_answer?: string | null;
+  question_explanation?: string | null;
+  question_option_metadata?: unknown;
   question_difficulty?: string | number | null;
   question_domain?: string | null;
   question_skill?: string | null;
-  question_subskill?: string | null;
-  question_exam?: string | null;
-  question_structure_cluster_id?: string | null;
-  question_correct_answer?: string | null;
-  question_explanation?: string | null;
   option_order?: string[] | null;
   option_token_map?: Record<string, string> | null;
   ordinal: number;
-  status: "queued" | "served" | "answered" | "skipped";
-  attempt_id?: string | null;
+  status: "pending" | "served" | "answered" | "skipped";
   client_instance_id?: string | null;
   selected_answer?: string | null;
   is_correct?: boolean | null;
   outcome?: string | null;
   answered_at?: string | null;
+  served_at?: string | null;
+  occurred_at?: string | null;
   time_spent_ms?: number | null;
   client_attempt_id?: string | null;
+  actor_id?: string | null;
 };
 
 type SessionMetadata = {
@@ -164,6 +167,8 @@ type PracticeConfig = {
   defaultSessionCountWeb: number;
   maxSessionCountPremium: number;
   targetSecondsPerQuestion: number;
+  answerRateLimitWindowMs: number;
+  answerRateLimitMax: number;
 };
 
 async function loadPracticeConfig(): Promise<PracticeConfig> {
@@ -175,6 +180,8 @@ async function loadPracticeConfig(): Promise<PracticeConfig> {
       "default_session_count_web",
       "max_session_count_premium",
       "target_seconds_per_question",
+      "answer_rate_limit_window_ms",
+      "answer_rate_limit_max",
     ]);
 
   if (error) {
@@ -197,26 +204,59 @@ async function loadPracticeConfig(): Promise<PracticeConfig> {
     defaultSessionCountWeb: readInt("default_session_count_web", 10),
     maxSessionCountPremium: readInt("max_session_count_premium", 60),
     targetSecondsPerQuestion: readInt("target_seconds_per_question", 90),
+    answerRateLimitWindowMs: readInt("answer_rate_limit_window_ms", 60_000),
+    answerRateLimitMax: readInt("answer_rate_limit_max", 30),
   };
 }
 
-const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
+const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
 
-const practiceAnswerRateLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (_req, res) => {
-    res.status(429).json({
-      error: "rate_limited",
-      message: "Too many practice submissions. Please slow down.",
-    });
-  },
-});
+let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
+let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
+
+function getPracticeAnswerRateLimiter(config: PracticeConfig) {
+  if (
+    _cachedRateLimiter &&
+    _cachedRateLimiterConfig?.windowMs === config.answerRateLimitWindowMs &&
+    _cachedRateLimiterConfig?.max === config.answerRateLimitMax
+  ) {
+    return _cachedRateLimiter;
+  }
+  _cachedRateLimiterConfig = {
+    windowMs: config.answerRateLimitWindowMs,
+    max: config.answerRateLimitMax,
+  };
+  _cachedRateLimiter = rateLimit({
+    windowMs: config.answerRateLimitWindowMs,
+    max: config.answerRateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: "rate_limited",
+        message: "Too many practice submissions. Please slow down.",
+      });
+    },
+  });
+  return _cachedRateLimiter;
+}
+
+async function practiceAnswerRateLimiter(
+  req: Request,
+  res: Response,
+  next: () => void,
+) {
+  try {
+    const config = await loadPracticeConfig();
+    const limiter = getPracticeAnswerRateLimiter(config);
+    limiter(req, res, next);
+  } catch {
+    next();
+  }
+}
 
 const StartSessionBodySchema = z.object({
   section: z.string().optional().nullable(),
@@ -228,19 +268,13 @@ const StartSessionBodySchema = z.object({
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
   target_minutes: z.number().int().positive().max(300).optional().nullable(),
-  target_question_count: z
-    .number()
-    .int()
-    .positive()
-    .max(60)
-    .optional()
-    .nullable(),
+  target_question_count: z.number().int().positive().optional().nullable(),
 });
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
   sessionItemId: z.string().uuid().optional(),
-  questionId: z.string().uuid().optional(),
+  questionId: z.string().min(1).max(32).optional(),
   selectedAnswer: z.string().trim().max(32).optional().nullable(),
   selectedOptionId: z.string().trim().max(32).optional().nullable(),
   answer: z.string().trim().max(32).optional().nullable(),
@@ -250,7 +284,7 @@ const AnswerBodySchema = z.object({
 
 const SkipBodySchema = z.object({
   sessionItemId: z.string().uuid().optional(),
-  questionId: z.string().uuid().optional(),
+  questionId: z.string().min(1).max(32).optional(),
   clientAttemptId: z.string().max(128).optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
 });
@@ -403,7 +437,7 @@ function normalizeStringList(raw: unknown, maxLen: number): string[] {
   const deduped = new Set<string>();
   for (const item of raw) {
     if (typeof item !== "string") continue;
-    const normalized = item.trim().toLowerCase();
+    const normalized = item.trim();
     if (!normalized || normalized.length > maxLen) continue;
     deduped.add(normalized);
   }
@@ -824,7 +858,6 @@ async function hydrateSessionItemOptionTokens(
       .update({
         option_order: served.optionOrder,
         option_token_map: served.optionTokenMap,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
 
@@ -1070,8 +1103,9 @@ async function updateSessionLifecycle(
   patch?: Record<string, unknown>,
 ) {
   const nextUpdate: Record<string, unknown> = {
-    metadata,
+    filters: metadata,
     updated_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(),
     ...(patch ?? {}),
   };
 
@@ -1111,10 +1145,12 @@ async function startOrReplaySession(args: {
   // 1) Fetch all open sessions for this user to check global limit and idempotency
   const { data: openSessions, error: openErr } = await supabaseServer
     .from("practice_sessions")
-    .select("id, user_id, section, mode, status, completed, metadata")
+    .select(
+      "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+    )
     .eq("user_id", args.userId)
     .in("status", [...ACTIVE_DB_STATUSES])
-    .order("started_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (openErr) {
     return {
@@ -1134,8 +1170,8 @@ async function startOrReplaySession(args: {
   if (args.idempotencyKey) {
     replay =
       sessions.find((candidate) => {
-        const metadata = asSessionMetadata(candidate.metadata);
-        return metadata.session_start_idempotency_key === args.idempotencyKey;
+        const meta = asSessionMetadata(candidate.filters);
+        return meta.session_start_idempotency_key === args.idempotencyKey;
       }) ?? null;
   }
 
@@ -1157,9 +1193,9 @@ async function startOrReplaySession(args: {
   }
 
   if (replay) {
-    const replayMeta = asSessionMetadata(replay.metadata);
+    const replayMeta = asSessionMetadata(replay.filters);
     const binding = resolveClientInstanceBinding({
-      boundClientInstanceId: replayMeta.client_instance_id,
+      boundClientInstanceId: replay.client_instance_id,
       requestedClientInstanceId: args.clientInstanceId,
     });
 
@@ -1176,8 +1212,9 @@ async function startOrReplaySession(args: {
       };
     }
 
+    const replayPatch: Record<string, unknown> = {};
     if (binding.action === "bind") {
-      replayMeta.client_instance_id = binding.requestedClientInstanceId;
+      replayPatch.client_instance_id = binding.requestedClientInstanceId;
     }
     replayMeta.target_question_count = coerceTargetQuestionCount(
       replayMeta.target_question_count ?? args.targetQuestionCount,
@@ -1208,14 +1245,15 @@ async function startOrReplaySession(args: {
     }
 
     await updateSessionLifecycle(replay.id, replayMeta, {
-      status: replay.status === "created" ? "in_progress" : replay.status,
+      status: replay.status === "created" ? "active" : replay.status,
+      ...replayPatch,
     });
 
     return {
       ok: true,
       session: {
         ...replay,
-        metadata: replayMeta,
+        filters: replayMeta as Record<string, unknown>,
       },
       metadata: replayMeta,
       replayed: true,
@@ -1253,10 +1291,7 @@ async function startOrReplaySession(args: {
 
   const excludeIds = (activeSessionItems ?? [])
     .map((item: { question_id?: string }) => item.question_id)
-    .filter(
-      (id): id is string =>
-        typeof id === "string" && z.string().uuid().safeParse(id).success,
-    );
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
 
   // 2. Resolve filter params for the RPC
   const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
@@ -1315,8 +1350,7 @@ async function startOrReplaySession(args: {
   const selectionMode: "exact" | "exact_reuse" =
     sourcePoolCount < requestedCount ? "exact_reuse" : "exact";
 
-  const startedAt = new Date().toISOString();
-  const insertMetadata: SessionMetadata = {
+  const insertFilters: SessionMetadata = {
     ...sessionMetadata,
     prebuilt: true,
     requested_count: requestedCount,
@@ -1331,14 +1365,16 @@ async function startOrReplaySession(args: {
       .insert({
         user_id: args.userId,
         actor_id: args.actorId,
-        section: args.section,
         mode: args.mode,
-        status: "in_progress",
-        completed: false,
-        started_at: startedAt,
-        metadata: insertMetadata,
+        filters: insertFilters,
+        target_count: requestedCount,
+        platform: "web",
+        client_instance_id: args.clientInstanceId,
+        status: "active",
       })
-      .select("id, user_id, section, mode, status, completed, metadata")
+      .select(
+        "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+      )
       .single();
 
   if (sessionInsertError || !createdSession) {
@@ -1353,7 +1389,8 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const sessionId = String((createdSession as any).id ?? "");
+  const sessionRow = createdSession as Record<string, unknown>;
+  const sessionId = String(sessionRow.id ?? "");
   if (!sessionId) {
     return {
       ok: false,
@@ -1366,36 +1403,28 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
-  // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
-  // Denormalized snapshot. correct_answer/explanation/correct_variants are persisted for
+  // @spec [Doc 02B §14 Session Items Prefill] | @implemented 2026-06-14
+  // Denormalized snapshot. correct_answer/explanation are persisted for
   // SERVER-SIDE grading only and are never projected to the student (the serving path
-  // returns toStudentSafeQuestionDTO, which null-strips them). question_item_type +
-  // question_correct_variants carry the grid-in discriminator + accepted-answer set so a
-  // grid-in can be reconstructed and graded. NOTE: the genesis practice_session_items table
-  // does not yet have these two columns — see HALT in the PR notes (DB-lane dependency).
+  // returns toStudentSafeQuestionDTO, which null-strips them).
   const insertRows = selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
     actor_id: args.actorId,
     question_id: question.id,
-    question_canonical_id: question.canonical_id,
     question_section: question.section_code,
-    question_item_type: question.item_type,
     question_stem: question.stem,
+    question_passage: null,
     question_options: question.options,
-    question_correct_variants: question.correct_variants ?? null,
-    question_difficulty: question.difficulty ?? null,
-    question_domain: question.domain ?? null,
-    question_skill: question.skill ?? null,
-    question_subskill: question.subskill ?? null,
-    question_exam: question.exam ?? null,
-    question_structure_cluster_id: question.structure_cluster_id ?? null,
     question_correct_answer: question.correct_answer ?? null,
     question_explanation: question.explanation ?? null,
+    question_domain: question.domain ?? null,
+    question_skill: question.skill ?? null,
+    question_difficulty: question.difficulty ?? null,
     ordinal: index + 1,
-    status: index === 0 ? "served" : "queued",
-    attempt_id: null,
+    status: index === 0 ? "served" : "pending",
     client_instance_id: index === 0 ? args.clientInstanceId : null,
+    served_at: index === 0 ? now : null,
     selected_answer: null,
     is_correct: null,
     outcome: null,
@@ -1404,8 +1433,6 @@ async function startOrReplaySession(args: {
     answered_at: null,
     option_order: null,
     option_token_map: null,
-    created_at: now,
-    updated_at: now,
   }));
 
   const { data: insertedItems, error: itemInsertError } = await supabaseServer
@@ -1441,9 +1468,9 @@ async function startOrReplaySession(args: {
   }
 
   const firstInsertedItem = Array.isArray(insertedItems)
-    ? insertedItems.find((row: any) => Number((row as any).ordinal) === 1)
+    ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
     : null;
-  const newMetadata = asSessionMetadata((createdSession as any).metadata);
+  const newMetadata = asSessionMetadata((createdSession as SessionRow).filters);
   newMetadata.prebuilt = true;
   newMetadata.requested_count = requestedCount;
   newMetadata.source_pool_count = sourcePoolCount;
@@ -1452,20 +1479,19 @@ async function startOrReplaySession(args: {
   newMetadata.session_spec = args.sessionSpec;
   newMetadata.client_instance_id = args.clientInstanceId;
   newMetadata.active_session_item_id = firstInsertedItem
-    ? String((firstInsertedItem as any).id)
+    ? String(firstInsertedItem.id)
     : null;
   newMetadata.last_served_ordinal = 1;
 
   await updateSessionLifecycle(sessionId, newMetadata, {
-    status: "in_progress",
-    completed: false,
+    status: "active",
   });
 
   return {
     ok: true,
     session: {
       ...(createdSession as SessionRow),
-      metadata: newMetadata,
+      filters: newMetadata,
     },
     metadata: newMetadata,
     replayed: false,
@@ -1479,7 +1505,9 @@ async function loadOwnedSession(
 ): Promise<{ forbidden: boolean; session: SessionRow } | null> {
   const { data, error } = await supabaseServer
     .from("practice_sessions")
-    .select("id, user_id, section, mode, status, completed, metadata")
+    .select(
+      "id, user_id, mode, status, filters, target_count, platform, client_instance_id, created_at, updated_at, last_activity_at, completed_at, actor_id",
+    )
     .eq("id", sessionId)
     .single();
 
@@ -1498,8 +1526,7 @@ async function getNextPrebuiltQueuedItem(
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
     .eq("session_id", sessionId)
-    .eq("status", "queued")
-    .is("attempt_id", null)
+    .eq("status", "pending")
     .order("ordinal", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -1572,12 +1599,12 @@ async function serveNextForSession(args: {
   }
   const session = owned.session;
 
-  const metadata = asSessionMetadata(session.metadata);
+  const metadata = asSessionMetadata(session.filters);
   const sessionState = normalizeSessionState(session.status);
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return args.res.status(409).json({
       error: "session_closed",
@@ -1623,7 +1650,6 @@ async function serveNextForSession(args: {
       const rebuildPatch = {
         option_order: rebuilt.optionOrder,
         option_token_map: rebuilt.optionTokenMap,
-        updated_at: new Date().toISOString(),
       };
 
       const { error: rebuildErr } = await supabaseServer
@@ -1659,16 +1685,13 @@ async function serveNextForSession(args: {
       metadata.target_question_count =
         metadata.target_question_count ?? config.defaultSessionCountWeb;
       await updateSessionLifecycle(args.sessionId, metadata, {
-        status: "in_progress",
+        status: "active",
       });
 
       return args.res.status(200).json({
         sessionId: args.sessionId,
         sessionItemId: unresolved.id,
         ordinal: unresolved.ordinal,
-        // @spec [Preamble V3 §12 Reveal Matrix; Doc 02B §20 Per-Endpoint Enforcement] | @implemented 2026-06-06
-        // Anti-leak: consolidated onto the single canonical serializer — no second
-        // inline question shape. projectStudentSafeQuestion null-strips reveal fields.
         question: toStudentSafeQuestionDTO({
           sessionItemId: unresolved.id,
           question: canonicalQuestion,
@@ -1686,7 +1709,7 @@ async function serveNextForSession(args: {
     metadata.last_served_ordinal = unresolved.ordinal;
 
     await updateSessionLifecycle(args.sessionId, metadata, {
-      status: "in_progress",
+      status: "active",
     });
 
     return args.res.json({
@@ -1733,8 +1756,7 @@ async function serveNextForSession(args: {
     metadata.active_session_item_id = null;
     await updateSessionLifecycle(args.sessionId, metadata, {
       status: "completed",
-      completed: true,
-      finished_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     });
 
     return args.res.status(409).json({
@@ -1760,11 +1782,10 @@ async function serveNextForSession(args: {
     .update({
       status: "served",
       client_instance_id: args.clientInstanceId,
-      updated_at: now,
+      served_at: now,
     })
     .eq("id", nextPrebuilt.id)
-    .eq("status", "queued")
-    .is("attempt_id", null)
+    .eq("status", "pending")
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
@@ -1788,13 +1809,11 @@ async function serveNextForSession(args: {
     await supabaseServer
       .from("practice_session_items")
       .update({
-        status: "queued",
+        status: "pending",
         client_instance_id: null,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", promoted.id)
-      .eq("status", "served")
-      .is("attempt_id", null);
+      .eq("status", "served");
 
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
@@ -1816,7 +1835,7 @@ async function serveNextForSession(args: {
   metadata.active_session_item_id = promoted.id;
   metadata.last_served_ordinal = promoted.ordinal;
   await updateSessionLifecycle(args.sessionId, metadata, {
-    status: "in_progress",
+    status: "active",
   });
 
   return args.res.json({
@@ -1850,10 +1869,12 @@ router.get(
 
     const { data: sessions, error } = await supabaseServer
       .from("practice_sessions")
-      .select("id, section, mode, status, started_at, metadata")
+      .select(
+        "id, mode, status, filters, target_count, platform, client_instance_id, created_at, updated_at, last_activity_at, completed_at, actor_id",
+      )
       .eq("user_id", userId)
       .in("status", [...ACTIVE_DB_STATUSES])
-      .order("started_at", { ascending: false });
+      .order("created_at", { ascending: false });
 
     if (error) {
       return res.status(500).json({
@@ -1863,9 +1884,8 @@ router.get(
       });
     }
 
-    // Enhance sessions with progress info
     const enhancedSessions = await Promise.all(
-      (sessions || []).map(async (s) => {
+      (sessions || []).map(async (s: SessionRow) => {
         const { count } = await supabaseServer
           .from("practice_session_items")
           .select("*", { count: "exact", head: true })
@@ -1877,13 +1897,12 @@ router.get(
           .eq("session_id", s.id)
           .in("status", ["answered", "skipped"]);
 
-        const metadata = asSessionMetadata(s.metadata);
+        const metadata = asSessionMetadata(s.filters);
         return {
           id: s.id,
-          section: s.section,
           mode: s.mode,
           status: s.status,
-          started_at: s.started_at,
+          created_at: s.created_at,
           target_question_count: metadata.target_question_count || 0,
           total_items: count || 0,
           answered_items: answered || 0,
@@ -1922,7 +1941,7 @@ router.post(
     }
 
     const { session } = owned;
-    const metadata = asSessionMetadata(session.metadata);
+    const metadata = asSessionMetadata(session.filters);
 
     // Check for client instance conflict
     const binding = resolveClientInstanceBinding({
@@ -2071,7 +2090,6 @@ router.post(
       id: sessionResult.session.id,
       sessionId: sessionResult.session.id,
       userId,
-      section: sessionResult.session.section,
       mode: sessionResult.session.mode,
       state,
       replayed: sessionResult.replayed,
@@ -2122,15 +2140,14 @@ router.post(
       });
     }
 
-    const metadata = asSessionMetadata(owned.session.metadata);
+    const metadata = asSessionMetadata(owned.session.filters);
     metadata.active_session_item_id = null;
     metadata.client_instance_id = null;
     metadata.calculator_state = null;
 
     await updateSessionLifecycle(sessionId, metadata, {
       status: "abandoned",
-      completed: true,
-      finished_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     });
 
     return res.json({
@@ -2188,13 +2205,13 @@ router.post(
       });
     }
 
-    const metadata = asSessionMetadata(owned.session.metadata);
+    const metadata = asSessionMetadata(owned.session.filters);
     const sessionState = normalizeSessionState(owned.session.status);
 
     if (
       sessionState === "completed" ||
       sessionState === "abandoned" ||
-      TERMINAL_DB_STATUSES.includes(owned.session.status as any)
+      TERMINAL_DB_STATUSES.includes(owned.session.status)
     ) {
       return res.status(409).json({
         error: "session_closed",
@@ -2317,7 +2334,7 @@ router.get(
     }
     const session = owned.session;
 
-    const metadata = asSessionMetadata(session.metadata);
+    const metadata = asSessionMetadata(session.filters);
     const queryClientInstanceId = normalizeClientInstanceId(
       req.query.client_instance_id,
     );
@@ -2341,7 +2358,6 @@ router.get(
 
     return res.json({
       sessionId: session.id,
-      section: session.section,
       state,
       currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
       answeredCount: progressCounts.answeredCount,
@@ -2476,13 +2492,13 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const sessionMeta = asSessionMetadata(session.metadata);
+  const _sessionMeta = asSessionMetadata(session.filters);
   const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -2511,8 +2527,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const questionId = String(sessionItem.question_id);
-  let correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
+  const _questionId = String(sessionItem.question_id);
+  const correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
   const explanation = canonicalQuestion.explanation ?? null;
 
   if (!correctAnswerKey) {
@@ -2662,7 +2678,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       is_correct: isCorrect,
       outcome,
       time_spent_ms: clampedTimeSpentMs,
-      updated_at: now,
       answered_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
@@ -2753,7 +2768,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
-      console.warn("[practice] mastery emission skipped (missing metadata)", {
+      logger.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
         sessionId: payload.sessionId,
         questionCanonicalId: canonicalId,
@@ -2763,7 +2778,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
-      console.warn(
+      logger.warn(
         "[practice] mastery emission skipped (invalid difficulty bucket)",
         {
           requestId,
@@ -2774,14 +2789,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         },
       );
     }
-  } catch (masteryErr: any) {
-    console.warn("[practice] mastery logging failed", {
+  } catch (masteryErr: unknown) {
+    const errMsg =
+      masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
+    logger.warn("[practice] mastery logging failed", {
       requestId,
-      message: masteryErr?.message,
+      message: errMsg,
     });
   }
 
-  const refreshedMeta = asSessionMetadata(session.metadata);
+  const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(payload.sessionId);
@@ -2793,13 +2810,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (shouldComplete) {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "completed",
-      completed: true,
-      finished_at: now,
+      completed_at: now,
     });
   } else {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-      status: "in_progress",
-      completed: false,
+      status: "active",
     });
   }
 
@@ -2867,13 +2882,13 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   const session = ownedSessionResult.session;
-  const sessionMeta = asSessionMetadata(session.metadata);
+  const sessionMeta = asSessionMetadata(session.filters);
   const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -2912,7 +2927,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  const questionId = String(sessionItem.question_id);
+  const _questionId = String(sessionItem.question_id);
   if (payload.clientAttemptId) {
     const existingByKey = await findSessionItemByClientAttemptId(
       userId,
@@ -2973,7 +2988,6 @@ async function submitPracticeSkip(req: Request, res: Response) {
       is_correct: false,
       outcome: "skipped",
       time_spent_ms: null,
-      updated_at: now,
       answered_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
@@ -3021,7 +3035,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  const refreshedMeta = asSessionMetadata(session.metadata);
+  const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(sessionId);
@@ -3033,13 +3047,11 @@ async function submitPracticeSkip(req: Request, res: Response) {
   if (shouldComplete) {
     await updateSessionLifecycle(sessionId, refreshedMeta, {
       status: "completed",
-      completed: true,
-      finished_at: now,
+      completed_at: now,
     });
   } else {
     await updateSessionLifecycle(sessionId, refreshedMeta, {
-      status: "in_progress",
-      completed: false,
+      status: "active",
     });
   }
 

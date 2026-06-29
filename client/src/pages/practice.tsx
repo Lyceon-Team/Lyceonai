@@ -30,7 +30,6 @@ import {
   TrendingUp,
   Award,
   ArrowRight,
-  Sparkles,
   AlertCircle,
   PlayCircle,
   Trash2,
@@ -270,12 +269,6 @@ function Practice() {
       title: "Review Errors",
       icon: AlertCircle,
       caption: "Resolve unresolved mistakes",
-    },
-    {
-      href: "/flow-cards",
-      title: "FlowCards",
-      icon: Sparkles,
-      caption: "Fast adaptive drill mode",
     },
     {
       href: "/full-test",
