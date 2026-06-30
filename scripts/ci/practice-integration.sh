@@ -157,6 +157,9 @@ echo "==> P.6 config doctrine: quota RPC rejects on missing config"
 # Create a test user for quota checks
 psql_db "$DB" -q -c "INSERT INTO auth.users (id, email) VALUES ('00000000-0000-0000-0000-000000000001','quota-test@example.com');" >/dev/null
 
+# Delete seeded config keys so the RPC sees them as missing
+psql_db "$DB" -q -c "DELETE FROM public.practice_runtime_config WHERE key IN ('daily_quota_free','max_session_count_premium');" >/dev/null
+
 # Attempt quota check without config keys — must fail
 QUOTA_ERR=$(psql_db "$DB" -tAc "
   SELECT public.check_and_reserve_practice_quota(
