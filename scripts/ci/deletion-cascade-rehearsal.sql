@@ -54,7 +54,7 @@ BEGIN
   INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation)
   VALUES (
     v_question_id, 'M', 1, 'Algebra', ARRAY['ALG.01'], 2,
-    'Test question stem', '[{"key":"A","text":"opt A"},{"key":"B","text":"opt B"}]'::jsonb,
+    'Test question stem', '[{"key":"A","text":"opt A"},{"key":"B","text":"opt B"},{"key":"C","text":"opt C"},{"key":"D","text":"opt D"}]'::jsonb,
     'A', 'Test explanation'
   ) ON CONFLICT (id) DO NOTHING;
 
