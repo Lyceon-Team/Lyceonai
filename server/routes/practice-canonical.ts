@@ -1300,8 +1300,10 @@ async function startOrReplaySession(args: {
           ok: false,
           status: 503,
           body: {
-            error: "Quota service temporarily unavailable",
-            code: "QUOTA_UNAVAILABLE",
+            error: {
+              message: "Quota service temporarily unavailable",
+              code: "QUOTA_UNAVAILABLE",
+            },
           },
         };
       }

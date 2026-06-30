@@ -66,10 +66,10 @@ const sessionItemRow = {
   question_stem: "If 2x + 3 = 7, what is x?",
   question_passage: null,
   question_options: JSON.stringify([
-    { token: "A", text: "1" },
-    { token: "B", text: "2" },
-    { token: "C", text: "3" },
-    { token: "D", text: "4" },
+    { key: "A", text: "1" },
+    { key: "B", text: "2" },
+    { key: "C", text: "3" },
+    { key: "D", text: "4" },
   ]),
   question_correct_answer: "B",
   question_explanation: "Subtract 3: 2x=4, divide by 2: x=2.",
@@ -94,12 +94,13 @@ const sessionItemRow = {
 };
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => {
-  const makeChain = (queryResult: { data: unknown; error: null }) => {
+  const makeChain = (opts: { single: unknown; array: unknown[] }) => {
+    const result = { error: null };
     const terminal = {
-      single: async () => queryResult,
-      maybeSingle: async () => queryResult,
+      single: async () => ({ data: opts.single, ...result }),
+      maybeSingle: async () => ({ data: opts.single, ...result }),
       then: (resolve: (v: { data: unknown; error: null }) => void) =>
-        resolve(queryResult),
+        resolve({ data: opts.array, ...result }),
     };
     const chain: Record<string, unknown> = new Proxy(terminal, {
       get(target, prop) {
@@ -110,25 +111,22 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
     return chain;
   };
 
-  let callIndex = 0;
-
   return {
     supabaseServer: {
       from: (table: string) => {
         if (table === "practice_runtime_config") {
-          return makeChain({ data: configRows, error: null });
+          return makeChain({ single: configRows[0], array: configRows });
         }
         if (table === "practice_sessions") {
-          return makeChain({ data: sessionRow, error: null });
+          return makeChain({ single: sessionRow, array: [sessionRow] });
         }
         if (table === "practice_session_items") {
-          callIndex++;
-          if (callIndex <= 2) {
-            return makeChain({ data: sessionItemRow, error: null });
-          }
-          return makeChain({ data: [sessionItemRow], error: null });
+          return makeChain({
+            single: sessionItemRow,
+            array: [sessionItemRow],
+          });
         }
-        return makeChain({ data: [], error: null });
+        return makeChain({ single: null, array: [] });
       },
       rpc: () => Promise.resolve({ data: null, error: null }),
     },
@@ -190,12 +188,10 @@ describe("Practice /next HTTP anti-leak gate", () => {
 
   it("GET /next returns correct_answer:null and explanation:null (anti-leak)", async () => {
     const res = await request(app).get(
-      `/api/practice/sessions/${TEST_SESSION_ID}/next`,
+      `/api/practice/sessions/${TEST_SESSION_ID}/next?client_instance_id=ci-test`,
     );
 
-    if (res.status !== 200) {
-      return;
-    }
+    expect(res.status).toBe(200);
 
     const body = res.body;
 
@@ -207,12 +203,10 @@ describe("Practice /next HTTP anti-leak gate", () => {
 
   it("response body never contains the real answer value anywhere", async () => {
     const res = await request(app).get(
-      `/api/practice/sessions/${TEST_SESSION_ID}/next`,
+      `/api/practice/sessions/${TEST_SESSION_ID}/next?client_instance_id=ci-test`,
     );
 
-    if (res.status !== 200) {
-      return;
-    }
+    expect(res.status).toBe(200);
 
     const bodyStr = JSON.stringify(res.body);
     expect(bodyStr).not.toContain('"Subtract 3: 2x=4, divide by 2: x=2."');
