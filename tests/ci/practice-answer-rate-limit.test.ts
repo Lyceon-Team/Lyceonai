@@ -27,19 +27,35 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
 }));
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => {
-  const chainTerminal = {
-    single: async () => ({ data: null, error: null }),
-    maybeSingle: async () => ({ data: null, error: null }),
-    then: (resolve: any) => resolve({ data: [], error: null }),
+  const configRows = [
+    { key: "max_concurrent_sessions", value: 5 },
+    { key: "default_session_count_web", value: 20 },
+    { key: "max_session_count_premium", value: 60 },
+    { key: "target_seconds_per_question", value: 90 },
+    { key: "answer_rate_limit_window_ms", value: 60000 },
+    { key: "answer_rate_limit_max", value: 30 },
+  ];
+  const makeChain = (data: unknown[]) => {
+    const chainTerminal = {
+      single: async () => ({ data: null, error: null }),
+      maybeSingle: async () => ({ data: null, error: null }),
+      then: (resolve: any) => resolve({ data, error: null }),
+    };
+    const chain: any = new Proxy(chainTerminal, {
+      get(target, prop) {
+        if (prop in target) return (target as any)[prop];
+        return (..._args: any[]) => chain;
+      },
+    });
+    return chain;
   };
-  const chain: any = new Proxy(chainTerminal, {
-    get(target, prop) {
-      if (prop in target) return (target as any)[prop];
-      return (..._args: any[]) => chain;
-    },
-  });
   return {
-    supabaseServer: { from: () => chain },
+    supabaseServer: {
+      from: (table: string) =>
+        table === "practice_runtime_config"
+          ? makeChain(configRows)
+          : makeChain([]),
+    },
   };
 });
 

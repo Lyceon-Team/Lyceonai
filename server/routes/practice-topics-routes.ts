@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   isCanonicalPublishedMcQuestion,
+  mapGenesisQuestionRow,
   projectStudentSafeQuestion,
   resolveCanonicalDomain,
   resolveSectionFilterValues,
@@ -128,6 +129,7 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     }
 
     const safeQuestions = ((data ?? []) as CanonicalQuestionRowLike[])
+      .map((row) => mapGenesisQuestionRow(row))
       .filter((row) => isCanonicalPublishedMcQuestion(row))
       .map((row) => {
         const safe = projectStudentSafeQuestion(row);

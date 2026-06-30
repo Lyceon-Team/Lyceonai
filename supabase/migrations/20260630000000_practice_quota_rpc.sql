@@ -146,8 +146,8 @@ DECLARE
   v_now timestamptz := COALESCE(p_now, now());
   v_today_start timestamptz;
   v_tomorrow_start timestamptz;
-  v_daily_limit integer := 40;
-  v_session_limit integer := 60;
+  v_daily_limit integer;
+  v_session_limit integer;
   v_used integer := 0;
   v_session_used integer := 0;
   v_reset_at timestamptz;
@@ -167,21 +167,25 @@ BEGIN
 
   PERFORM pg_advisory_xact_lock(hashtext('practice_quota:' || p_student_user_id::text));
 
-  -- Read daily limit from config
+  -- Read daily limit from config (required — no hardcoded fallback)
   SELECT value INTO v_config_val
   FROM public.practice_runtime_config
   WHERE key = 'daily_quota_free';
-  IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
-    v_daily_limit := v_config_val::integer;
+  IF v_config_val IS NULL OR NOT (v_config_val ~ '^\d+$') THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key daily_quota_free'
+      USING ERRCODE = 'P0002';
   END IF;
+  v_daily_limit := v_config_val::integer;
 
-  -- Read session limit from config
+  -- Read session limit from config (required — no hardcoded fallback)
   SELECT value INTO v_config_val
   FROM public.practice_runtime_config
   WHERE key = 'max_session_count_premium';
-  IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
-    v_session_limit := v_config_val::integer;
+  IF v_config_val IS NULL OR NOT (v_config_val ~ '^\d+$') THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key max_session_count_premium'
+      USING ERRCODE = 'P0002';
   END IF;
+  v_session_limit := v_config_val::integer;
 
   -- UTC-day boundaries
   v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
