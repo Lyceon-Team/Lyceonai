@@ -7078,6 +7078,22 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
+-- Name: FUNCTION _rl_has_active_entitlement(p_student_user_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION _rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) TO service_role;
+
+
+--
 -- Name: TABLE student_skill_mastery; Type: ACL; Schema: public; Owner: -
 --
 
@@ -7127,22 +7143,6 @@ GRANT SELECT(computed_at) ON TABLE public.student_skill_mastery TO authenticated
 
 
 --
--- Name: FUNCTION _rl_has_active_entitlement(p_student_user_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION _rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) TO service_role;
-
-
---
 -- Name: FUNCTION apply_mastery_event(p_student_id uuid, p_section text, p_domain text, p_skill text, p_difficulty smallint, p_source_family text, p_event_source_kind text, p_correct boolean, p_occurred_at timestamp with time zone, p_event_id uuid, p_question_id text, p_section_state text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -7172,14 +7172,6 @@ GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, 
 
 REVOKE ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -7236,6 +7228,14 @@ GRANT ALL ON FUNCTION public.canonicalize_mastery_constants_serialized() TO serv
 
 REVOKE ALL ON FUNCTION public.canonicalize_projection_constants_serialized() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO service_role;
+
+
+--
+-- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) TO service_role;
 
 
 --
