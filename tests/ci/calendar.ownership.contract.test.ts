@@ -819,9 +819,9 @@ describe("Calendar Ownership Contract", () => {
         practice_sessions: [
           {
             user_id: "student-1",
-            started_at: DateTime.fromISO(day).set({ hour: 9 }).toUTC().toISO(),
-            finished_at: DateTime.fromISO(day).set({ hour: 10 }).toUTC().toISO(),
-            actual_duration_ms: 3600000,
+            created_at: DateTime.fromISO(day).set({ hour: 9 }).toUTC().toISO(),
+            completed_at: DateTime.fromISO(day).set({ hour: 10 }).toUTC().toISO(),
+            last_activity_at: DateTime.fromISO(day).set({ hour: 10 }).toUTC().toISO(),
           },
         ],
       }),

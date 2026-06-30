@@ -30,6 +30,7 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
+  resolveCanonicalDomain,
   resolveClientInstanceBinding,
   resolveSectionFilterValues,
   type StudentSafeOption,
@@ -472,6 +473,18 @@ function normalizeStringList(raw: unknown, maxLen: number): string[] {
   return Array.from(deduped).sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeDomainList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const deduped = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed || trimmed.length > 128) continue;
+    deduped.add(resolveCanonicalDomain(trimmed));
+  }
+  return Array.from(deduped).sort((a, b) => a.localeCompare(b));
+}
+
 function normalizeDifficulties(
   raw: unknown,
 ): Array<"easy" | "medium" | "hard"> {
@@ -818,7 +831,7 @@ function normalizeSessionSpec(
     targetQuestionCount: effectiveTargetCount,
     sessionSpec: {
       sections: sectionValues,
-      domains: normalizeStringList(input.domains, 128),
+      domains: normalizeDomainList(input.domains),
       skills: normalizeStringList(input.skills, 128),
       difficulties: normalizeDifficulties(input.difficulties),
       target_minutes: targetMinutes,

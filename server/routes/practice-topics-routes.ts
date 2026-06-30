@@ -3,6 +3,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   isCanonicalPublishedMcQuestion,
   projectStudentSafeQuestion,
+  resolveCanonicalDomain,
   resolveSectionFilterValues,
   type CanonicalQuestionRowLike,
 } from "../../shared/question-bank-contract";
@@ -112,7 +113,9 @@ export async function getPracticeQuestions(req: Request, res: Response) {
       query = query.in("section_code", sectionFilters);
     }
 
-    if (domain) query = query.eq("domain", domain);
+    if (domain) {
+      query = query.eq("domain", resolveCanonicalDomain(domain));
+    }
     if (skill) query = query.eq("skill", skill);
     if (skillCode) query = query.eq("skill_code", skillCode);
 
