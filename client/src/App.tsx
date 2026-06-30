@@ -25,10 +25,7 @@ const CalendarPage = lazy(() => import("@/pages/calendar"));
 const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
-// Per-section practice pages retired — routes redirect to unified /practice
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
-const FlowCards = lazy(() => import("@/pages/flow-cards"));
-const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
@@ -197,23 +194,6 @@ function Router() {
             </RequireRole>
           )}
         />
-        <Route
-          path="/flow-cards"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <FlowCards />
-            </RequireRole>
-          )}
-        />
-        <Route
-          path="/structured-practice"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <StructuredPractice />
-            </RequireRole>
-          )}
-        />
-
         {/* Profile routes - allow all authenticated roles */}
         <Route
           path="/profile"

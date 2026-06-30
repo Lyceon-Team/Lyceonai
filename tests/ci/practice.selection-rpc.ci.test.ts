@@ -314,9 +314,9 @@ describe("Practice config doctrine (INV-02B-15)", () => {
       "utf8",
     );
 
-    // loadPracticeConfig must query practice_runtime_config
+    // loadPracticeConfig (via its DB helper) must query practice_runtime_config
     const fnMatch = source.match(
-      /async function loadPracticeConfig[\s\S]*?^}/m,
+      /async function loadPracticeConfig(?:FromDb)\b[\s\S]*?^}/m,
     );
     expect(fnMatch).not.toBeNull();
     const fnBody = fnMatch![0];
@@ -362,25 +362,22 @@ describe("Practice config doctrine (INV-02B-15)", () => {
     expect(source).toContain("config.maxConcurrentSessions");
   });
 
-  it("StartSessionBodySchema target_question_count max is 60 (premium cap)", () => {
+  it("target_question_count premium cap is config-driven via coerceTargetQuestionCount", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const source = fs.readFileSync(
       path.join(repoRoot, "server", "routes", "practice-canonical.ts"),
       "utf8",
     );
 
-    // Extract the target_question_count field definition from StartSessionBodySchema
-    const schemaStart = source.indexOf("const StartSessionBodySchema");
-    expect(schemaStart).toBeGreaterThan(-1);
-    const schemaEnd = source.indexOf("});", schemaStart);
-    const schemaBody = source.slice(schemaStart, schemaEnd + 3);
-
-    // Within the schema, find target_question_count and its .max()
-    const fieldStart = schemaBody.indexOf("target_question_count:");
-    expect(fieldStart).toBeGreaterThan(-1);
-    const fieldDef = schemaBody.slice(fieldStart, fieldStart + 200);
-    const maxMatch = fieldDef.match(/\.max\((\d+)\)/);
-    expect(maxMatch).not.toBeNull();
-    expect(maxMatch![1]).toBe("60");
+    // The premium cap must come from config, not a hardcoded Zod .max(60)
+    expect(source).toContain("config.maxSessionCountPremium");
+    // coerceTargetQuestionCount clamps at runtime using the config value
+    expect(source).toMatch(/coerceTargetQuestionCount/);
+    // The default cap parameter defaults to 60 inside coerceTargetQuestionCount
+    const fnMatch = source.match(
+      /function coerceTargetQuestionCount[\s\S]*?maxCap:\s*number\s*=\s*(\d+)/,
+    );
+    expect(fnMatch).not.toBeNull();
+    expect(fnMatch![1]).toBe("60");
   });
 });

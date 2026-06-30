@@ -26,6 +26,23 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
   generateToken: () => "test-csrf-token",
 }));
 
+vi.mock("../../apps/api/src/lib/supabase-server", () => {
+  const chainTerminal = {
+    single: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+    then: (resolve: any) => resolve({ data: [], error: null }),
+  };
+  const chain: any = new Proxy(chainTerminal, {
+    get(target, prop) {
+      if (prop in target) return (target as any)[prop];
+      return (..._args: any[]) => chain;
+    },
+  });
+  return {
+    supabaseServer: { from: () => chain },
+  };
+});
+
 describe("Practice Answer Rate Limiter", () => {
   let app: Express;
 

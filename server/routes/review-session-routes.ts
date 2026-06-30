@@ -1465,9 +1465,9 @@ export async function getRecentReviewSessions(
     // Fetch practice sessions
     const { data: practiceRows, error: practiceError } = await supabaseServer
       .from("practice_sessions")
-      .select("id, status, started_at, section")
+      .select("id, status, created_at, filters")
       .eq("user_id", user.id)
-      .order("started_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(20);
 
     if (practiceError) {
@@ -1502,15 +1502,19 @@ export async function getRecentReviewSessions(
 
     if (practiceRows) {
       for (const row of practiceRows) {
-        if (!row.started_at) continue;
-        const dateObj = new Date(row.started_at);
+        if (!row.created_at) continue;
+        const dateObj = new Date(row.created_at);
         const dateStr = dateObj.toLocaleDateString();
-        const sectionStr = row.section ? ` - ${row.section}` : "";
+        const filters = row.filters as Record<string, unknown> | null;
+        const sectionStr =
+          filters && typeof filters.section === "string"
+            ? ` - ${filters.section}`
+            : "";
         sessions.push({
           id: row.id,
           type: "practice",
           label: `Practice${sectionStr} (${dateStr})`,
-          date: row.started_at,
+          date: row.created_at,
         });
       }
     }

@@ -1889,23 +1889,20 @@ export async function syncCalendarDayFromSessions(userId: string, dayDate: strin
       .maybeSingle(),
     supabaseServer
       .from("practice_sessions")
-      .select("started_at, finished_at, actual_duration_ms")
+      .select("created_at, completed_at, last_activity_at")
       .eq("user_id", userId)
-      .gte("started_at", startUtc)
-      .lte("started_at", endUtc),
+      .gte("created_at", startUtc)
+      .lte("created_at", endUtc),
   ]);
 
   if (dayResult.error || !dayResult.data) return;
 
-  const sessions = (sessionsResult.data as Array<{ started_at: string | null; finished_at: string | null; actual_duration_ms: number | null }> | null) ?? [];
+  const sessions = (sessionsResult.data as Array<{ created_at: string | null; completed_at: string | null; last_activity_at: string | null }> | null) ?? [];
   let totalMinutes = 0;
   for (const session of sessions) {
-    if (typeof session.actual_duration_ms === "number" && session.actual_duration_ms > 0) {
-      totalMinutes += Math.round(session.actual_duration_ms / 60000);
-      continue;
-    }
-    if (!session.started_at || !session.finished_at) continue;
-    const duration = DateTime.fromISO(session.finished_at).diff(DateTime.fromISO(session.started_at), "minutes").minutes;
+    const endTime = session.completed_at ?? session.last_activity_at;
+    if (!session.created_at || !endTime) continue;
+    const duration = DateTime.fromISO(endTime).diff(DateTime.fromISO(session.created_at), "minutes").minutes;
     totalMinutes += Math.max(0, Math.round(duration));
   }
 
