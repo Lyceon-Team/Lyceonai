@@ -163,7 +163,7 @@ Grid-in questions are Math-only (`section = 'M'`). The student types a numeric a
 
 **Critical note on string variants:**
 - CB source PDFs use `"Problem-Solving and Data Analysis"` (hyphenated) — the deployed canonical string is `"Problem Solving and Data Analysis"` (NO hyphens)
-- `practice-topics-routes.ts:13` uses `"Problem Solving & Data Analysis"` (ampersand) — this is WRONG and will be fixed (gap-closure G-01)
+- ~~G-01 CLOSED:~~ `practice-topics-routes.ts` (taxonomy-matching) and `mastery.ts` (presentation-only) ampersand domain strings reconciled to the canonical `and` form (PR #459)
 - The strings in this table are AUTHORITATIVE. Use them exactly.
 
 ### Skills (29 canonical skills — frozen from CB taxonomy)
