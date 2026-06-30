@@ -115,7 +115,7 @@ router.get("/practice", async (req: Request, res: Response) => {
         "test_code",
         "source_type",
       ],
-      practice_sessions: ["id", "user_id", "section", "status", "started_at"],
+      practice_sessions: ["id", "user_id", "mode", "status", "created_at"],
       practice_session_items: [
         "id",
         "session_id",

@@ -39,7 +39,7 @@ const clientInstanceSchema = z.object({
 });
 
 const submitAnswerSchema = z.object({
-  questionId: z.string().uuid(),
+  questionId: z.string().min(1).max(64),
   selectedAnswer: z.string().optional(),
   client_instance_id: z.string().uuid().optional(),
   client_attempt_id: z.string().uuid().optional(),

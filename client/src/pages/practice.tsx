@@ -30,7 +30,6 @@ import {
   TrendingUp,
   Award,
   ArrowRight,
-  Sparkles,
   AlertCircle,
   PlayCircle,
   Trash2,
@@ -115,6 +114,7 @@ function Practice() {
     PracticeDifficulty[]
   >([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [focusSection, setFocusSection] = useState<
     "math" | "reading_writing" | ""
   >("math");
@@ -200,11 +200,30 @@ function Practice() {
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
   const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
 
+  const visibleSkills = useMemo(() => {
+    const sourceDomains =
+      selectedDomains.length > 0
+        ? visibleDomains.filter((d) => selectedDomains.includes(d.domain))
+        : visibleDomains;
+    const all = new Set<string>();
+    for (const d of sourceDomains) {
+      for (const s of d.skills) all.add(s);
+    }
+    return Array.from(all).sort();
+  }, [visibleDomains, selectedDomains]);
+
+  const toggleSkill = (skill: string) => {
+    setSelectedSkills((prev) =>
+      prev.includes(skill) ? prev.filter((x) => x !== skill) : [...prev, skill],
+    );
+  };
+
   const buildFilters = (
     section: "math" | "reading_writing",
   ): PracticeSessionFilters => ({
     sections: [section],
     domains: selectedDomains.length > 0 ? selectedDomains : undefined,
+    skills: selectedSkills.length > 0 ? selectedSkills : undefined,
     difficulties:
       selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
     targetQuestionCount: Number(questionCount) || 10,
@@ -237,10 +256,13 @@ function Practice() {
   const clearFilters = () => {
     setSelectedDifficulties([]);
     setSelectedDomains([]);
+    setSelectedSkills([]);
   };
 
   const hasActiveFilters =
-    selectedDifficulties.length > 0 || selectedDomains.length > 0;
+    selectedDifficulties.length > 0 ||
+    selectedDomains.length > 0 ||
+    selectedSkills.length > 0;
 
   const quickFocus = useMemo(
     () => [
@@ -270,12 +292,6 @@ function Practice() {
       title: "Review Errors",
       icon: AlertCircle,
       caption: "Resolve unresolved mistakes",
-    },
-    {
-      href: "/flow-cards",
-      title: "FlowCards",
-      icon: Sparkles,
-      caption: "Fast adaptive drill mode",
     },
     {
       href: "/full-test",
@@ -474,8 +490,9 @@ function Practice() {
                       <Select
                         value={focusSection}
                         onValueChange={(v) => {
-                          setFocusSection(v as any);
+                          setFocusSection(v as "math" | "reading_writing" | "");
                           setSelectedDomains([]);
+                          setSelectedSkills([]);
                         }}
                       >
                         <SelectTrigger className="h-7 w-36 text-xs bg-background">
@@ -522,6 +539,37 @@ function Practice() {
                   </p>
                 </div>
 
+                {/* Skill Filter */}
+                {visibleSkills.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Skill
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleSkills.map((skill) => {
+                        const active = selectedSkills.includes(skill);
+                        return (
+                          <button
+                            key={skill}
+                            type="button"
+                            onClick={() => toggleSkill(skill)}
+                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary ring-2 ring-offset-1 ring-primary/50"
+                                : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
+                            }`}
+                          >
+                            {skill}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Select none to include all skills
+                    </p>
+                  </div>
+                )}
+
                 {/* Active filter summary + clear */}
                 {hasActiveFilters && (
                   <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
@@ -552,6 +600,21 @@ function Practice() {
                         {domain}
                         <button
                           onClick={() => toggleDomain(domain)}
+                          className="ml-0.5 hover:text-destructive flex-shrink-0"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </Badge>
+                    ))}
+                    {selectedSkills.map((skill) => (
+                      <Badge
+                        key={skill}
+                        variant="secondary"
+                        className="text-[10px] gap-1 max-w-[140px] truncate"
+                      >
+                        {skill}
+                        <button
+                          onClick={() => toggleSkill(skill)}
                           className="ml-0.5 hover:text-destructive flex-shrink-0"
                         >
                           <X className="h-2.5 w-2.5" />
