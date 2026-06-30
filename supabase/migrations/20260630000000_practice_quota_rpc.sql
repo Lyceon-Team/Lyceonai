@@ -1,8 +1,8 @@
 -- LYCEON-MIGRATION-REVIEWED: practice quota RPC + ledger table
 -- @spec [Doc-02B_V4 §41; freemium-practice-quota.contract.md] | @implemented [2026-06-30]
 -- Creates usage_rate_limit_ledger table and check_and_reserve_practice_quota RPC.
--- Quota: 40/day UTC-reset (unpaid), unlimited (entitled), 60/session (paid).
--- Reads daily_quota_free from practice_runtime_config (no hardcoded limit).
+-- Quota: daily_quota_free/day UTC-reset (unpaid), max_session_count_premium/session (paid).
+-- Reads both limits from practice_runtime_config (no hardcoded values).
 --
 -- ROLLBACK:
 --   DROP FUNCTION IF EXISTS public.check_and_reserve_practice_quota CASCADE;
@@ -97,7 +97,8 @@ END;
 $$;
 
 -- ============================================================
--- 3. Helper: entitlement check (delegates to entitlement_active)
+-- 3. Helper: entitlement check — delegates to entitlement_active
+--    profiles.id IS the auth user id (no profiles.user_id column)
 -- ============================================================
 CREATE OR REPLACE FUNCTION public._rl_has_active_entitlement(
   p_student_user_id uuid
@@ -107,20 +108,13 @@ LANGUAGE plpgsql
 STABLE
 AS $$
 BEGIN
-  IF to_regclass('public.profiles') IS NOT NULL
-     AND EXISTS (
-       SELECT 1 FROM pg_proc p
-       JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'public' AND p.proname = 'entitlement_active'
-     )
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'entitlement_active'
+  )
   THEN
-    RETURN COALESCE(
-      (SELECT public.entitlement_active(pr.id)
-       FROM public.profiles pr
-       WHERE pr.user_id = p_student_user_id
-       LIMIT 1),
-      false
-    );
+    RETURN COALESCE(public.entitlement_active(p_student_user_id), false);
   END IF;
   RETURN false;
 END;
@@ -128,10 +122,11 @@ $$;
 
 -- ============================================================
 -- 4. Main RPC: check_and_reserve_practice_quota
---    - Reads daily_quota_free from practice_runtime_config
+--    - Reads daily_quota_free + max_session_count_premium from config
 --    - UTC-day reset window
 --    - Entitled users bypass daily cap
---    - Per-session cap of 60 for paid users
+--    - Per-session cap for paid users (config-driven)
+--    - Asserts caller identity (p_student_user_id = auth.uid())
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.check_and_reserve_practice_quota(
   p_student_user_id uuid,
@@ -164,14 +159,28 @@ DECLARE
   v_inserted_id uuid := NULL;
   v_config_val text;
 BEGIN
+  -- Identity guard: caller must match the student (service_role bypasses via REVOKE/GRANT)
+  IF auth.uid() IS NOT NULL AND p_student_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'p_student_user_id does not match authenticated user'
+      USING ERRCODE = '42501';
+  END IF;
+
   PERFORM pg_advisory_xact_lock(hashtext('practice_quota:' || p_student_user_id::text));
 
-  -- Read daily limit from config (no hardcoded value)
+  -- Read daily limit from config
   SELECT value INTO v_config_val
   FROM public.practice_runtime_config
   WHERE key = 'daily_quota_free';
   IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
     v_daily_limit := v_config_val::integer;
+  END IF;
+
+  -- Read session limit from config
+  SELECT value INTO v_config_val
+  FROM public.practice_runtime_config
+  WHERE key = 'max_session_count_premium';
+  IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
+    v_session_limit := v_config_val::integer;
   END IF;
 
   -- UTC-day boundaries
@@ -211,7 +220,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users get 60/session)
+  -- Per-session cap (paid users)
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -316,5 +325,17 @@ BEGIN
   );
 END;
 $$;
+
+-- ============================================================
+-- 5. ACL: match rate_limit_check_and_increment security pattern
+-- ============================================================
+REVOKE ALL ON FUNCTION public._rl_resolve_student_account(uuid, uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_resolve_student_account(uuid, uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public._rl_has_active_entitlement(uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_has_active_entitlement(uuid) TO service_role;
+
+REVOKE ALL ON FUNCTION public.check_and_reserve_practice_quota(uuid, uuid, uuid, uuid, boolean, text, timestamptz) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(uuid, uuid, uuid, uuid, boolean, text, timestamptz) TO service_role;
 
 COMMIT;
