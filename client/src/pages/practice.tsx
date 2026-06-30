@@ -11,6 +11,17 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   BookOpen,
   Calculator,
   Clock,
@@ -19,15 +30,14 @@ import {
   TrendingUp,
   Award,
   ArrowRight,
-  Timer,
-  Sparkles,
   AlertCircle,
   PlayCircle,
   Trash2,
   X,
+  Hash,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useMemo, useState } from "react";
 import { getCalendarMonth } from "@/lib/calendarApi";
@@ -35,25 +45,11 @@ import {
   normalizePracticeTopicDomains,
   type RawPracticeTopicDomain,
 } from "@/lib/practice-topic-taxonomy";
-import { appendPracticeDuration } from "@/lib/practice-duration";
-import {
-  appendPracticeFilters,
-  type PracticeDifficulty,
-} from "@/lib/practice-filters";
+import { type PracticeDifficulty } from "@/lib/practice-filters";
 import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
-import { csrfFetch } from "@/lib/csrf";
-
-interface OpenSession {
-  id: string;
-  section: string;
-  mode: string;
-  status: string;
-  started_at: string;
-  target_question_count: number;
-  total_items: number;
-  answered_items: number;
-}
+import { useActiveSessions } from "@/hooks/useActiveSessions";
+import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
 
 interface QuestionStats {
   total: number;
@@ -113,16 +109,17 @@ const DIFFICULTY_OPTIONS: {
 
 function Practice() {
   const { user, authLoading } = useSupabaseAuth();
-  const [timePreference, setTimePreference] = useState("15");
+  const [questionCount, setQuestionCount] = useState("10");
   const [selectedDifficulties, setSelectedDifficulties] = useState<
     PracticeDifficulty[]
   >([]);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [focusSection, setFocusSection] = useState<
     "math" | "reading_writing" | ""
   >("math");
-  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const [isStarting, setIsStarting] = useState(false);
 
   const {
     data: stats,
@@ -136,31 +133,12 @@ function Practice() {
   });
 
   const {
-    data: openSessions,
-    isLoading: sessionsLoading,
-    refetch: refetchSessions,
-  } = useQuery<{ sessions: OpenSession[] }>({
-    queryKey: ["/api/practice/sessions/open"],
-    enabled: !!user && !authLoading,
-  });
+    sessions: activeSessions,
+    terminateSession: terminateActiveSession,
+    isTerminating,
+  } = useActiveSessions();
 
-  const terminateMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const res = await csrfFetch(
-        `/api/practice/sessions/${sessionId}/terminate`,
-        {
-          method: "POST",
-        },
-      );
-      if (!res.ok) throw new Error("Failed to terminate session");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/practice/sessions/open"],
-      });
-    },
-  });
+  const practiceHook = usePractice();
 
   const {
     data: topicsData,
@@ -222,12 +200,43 @@ function Practice() {
   const kpiEmpty = !kpiLoading && !kpiError && !kpiData;
   const streakEmpty = !streakLoading && !streakError && !calendarData?.streak;
 
-  const buildSessionHref = (basePath: string) => {
-    const withDuration = appendPracticeDuration(basePath, timePreference);
-    return appendPracticeFilters(withDuration, {
-      difficulties: selectedDifficulties,
-      domains: selectedDomains,
-    });
+  const visibleSkills = useMemo(() => {
+    const sourceDomains =
+      selectedDomains.length > 0
+        ? visibleDomains.filter((d) => selectedDomains.includes(d.domain))
+        : visibleDomains;
+    const all = new Set<string>();
+    for (const d of sourceDomains) {
+      for (const s of d.skills) all.add(s);
+    }
+    return Array.from(all).sort();
+  }, [visibleDomains, selectedDomains]);
+
+  const toggleSkill = (skill: string) => {
+    setSelectedSkills((prev) =>
+      prev.includes(skill) ? prev.filter((x) => x !== skill) : [...prev, skill],
+    );
+  };
+
+  const buildFilters = (
+    section: "math" | "reading_writing",
+  ): PracticeSessionFilters => ({
+    sections: [section],
+    domains: selectedDomains.length > 0 ? selectedDomains : undefined,
+    skills: selectedSkills.length > 0 ? selectedSkills : undefined,
+    difficulties:
+      selectedDifficulties.length > 0 ? selectedDifficulties : undefined,
+    targetQuestionCount: Number(questionCount) || 10,
+  });
+
+  const handleStartSession = async (section: "math" | "reading_writing") => {
+    setIsStarting(true);
+    const sessionFilters = buildFilters(section);
+    const newId = await practiceHook.startSession(sessionFilters);
+    setIsStarting(false);
+    if (newId) {
+      setLocation(`/practice/session/${newId}`);
+    }
   };
 
   const toggleDifficulty = (d: PracticeDifficulty) => {
@@ -247,15 +256,18 @@ function Practice() {
   const clearFilters = () => {
     setSelectedDifficulties([]);
     setSelectedDomains([]);
+    setSelectedSkills([]);
   };
 
   const hasActiveFilters =
-    selectedDifficulties.length > 0 || selectedDomains.length > 0;
+    selectedDifficulties.length > 0 ||
+    selectedDomains.length > 0 ||
+    selectedSkills.length > 0;
 
   const quickFocus = useMemo(
     () => [
       {
-        href: buildSessionHref("/practice/reading-writing"),
+        section: "reading_writing" as const,
         title: "Reading & Writing",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.reading_writing || 0)} questions in bank`,
         icon: BookOpen,
@@ -263,7 +275,7 @@ function Practice() {
         variant: "outline" as const,
       },
       {
-        href: buildSessionHref("/practice/math"),
+        section: "math" as const,
         title: "Math",
         subtitle: `${statsLoading ? "--" : statsError ? "—" : Number(stats?.math || 0)} questions in bank`,
         icon: Calculator,
@@ -271,16 +283,7 @@ function Practice() {
         variant: "default" as const,
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      stats?.math,
-      stats?.reading_writing,
-      statsError,
-      statsLoading,
-      timePreference,
-      selectedDifficulties,
-      selectedDomains,
-    ],
+    [stats?.math, stats?.reading_writing, statsError, statsLoading],
   );
 
   const secondaryActions = [
@@ -289,12 +292,6 @@ function Practice() {
       title: "Review Errors",
       icon: AlertCircle,
       caption: "Resolve unresolved mistakes",
-    },
-    {
-      href: "/flow-cards",
-      title: "FlowCards",
-      icon: Sparkles,
-      caption: "Fast adaptive drill mode",
     },
     {
       href: "/full-test",
@@ -332,14 +329,14 @@ function Practice() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 space-y-6">
-            {openSessions?.sessions && openSessions.sessions.length > 0 && (
+            {activeSessions.length > 0 && (
               <PageCard
                 title="Active Sessions"
-                description={`You have ${openSessions.sessions.length} sessions in progress. Choose one to resume.`}
+                description={`You have ${activeSessions.length} session${activeSessions.length === 1 ? "" : "s"} in progress. Choose one to resume.`}
                 className="bg-primary/5 border-primary/20"
               >
                 <div className="grid gap-3">
-                  {openSessions.sessions.map((s) => (
+                  {activeSessions.map((s) => (
                     <div
                       key={s.id}
                       className="flex items-center justify-between p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-colors"
@@ -374,15 +371,39 @@ function Practice() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => terminateMutation.mutate(s.id)}
-                          disabled={terminateMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-destructive"
+                              disabled={isTerminating}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                End this session?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will terminate the session. Your progress
+                                so far ({s.answered_items} of {s.total_items}{" "}
+                                questions) is saved, but you will not be able to
+                                resume it.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => terminateActiveSession(s.id)}
+                              >
+                                End session
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                         <Button
                           size="sm"
                           onClick={() =>
@@ -405,27 +426,27 @@ function Practice() {
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
-                {/* Duration */}
+                {/* Question count */}
                 <div className="flex flex-wrap items-center gap-3 rounded-xl bg-secondary/50 p-4">
-                  <Timer className="h-4 w-4 text-foreground" />
+                  <Hash className="h-4 w-4 text-foreground" />
                   <p className="text-sm text-foreground/90">
-                    Session target duration
+                    Questions per session
                   </p>
                   <Select
-                    value={timePreference}
-                    onValueChange={setTimePreference}
+                    value={questionCount}
+                    onValueChange={setQuestionCount}
                   >
                     <SelectTrigger
                       className="w-44 bg-background"
-                      data-testid="select-duration"
+                      data-testid="select-question-count"
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="10">10 minutes</SelectItem>
-                      <SelectItem value="15">15 minutes</SelectItem>
-                      <SelectItem value="30">30 minutes</SelectItem>
-                      <SelectItem value="60">1 hour</SelectItem>
+                      <SelectItem value="5">5 questions</SelectItem>
+                      <SelectItem value="10">10 questions</SelectItem>
+                      <SelectItem value="20">20 questions</SelectItem>
+                      <SelectItem value="30">30 questions</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -469,8 +490,9 @@ function Practice() {
                       <Select
                         value={focusSection}
                         onValueChange={(v) => {
-                          setFocusSection(v as any);
+                          setFocusSection(v as "math" | "reading_writing" | "");
                           setSelectedDomains([]);
+                          setSelectedSkills([]);
                         }}
                       >
                         <SelectTrigger className="h-7 w-36 text-xs bg-background">
@@ -517,6 +539,37 @@ function Practice() {
                   </p>
                 </div>
 
+                {/* Skill Filter */}
+                {visibleSkills.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Skill
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleSkills.map((skill) => {
+                        const active = selectedSkills.includes(skill);
+                        return (
+                          <button
+                            key={skill}
+                            type="button"
+                            onClick={() => toggleSkill(skill)}
+                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                              active
+                                ? "border-primary bg-primary/10 text-primary ring-2 ring-offset-1 ring-primary/50"
+                                : "border-border text-muted-foreground hover:border-foreground/30 bg-background"
+                            }`}
+                          >
+                            {skill}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Select none to include all skills
+                    </p>
+                  </div>
+                )}
+
                 {/* Active filter summary + clear */}
                 {hasActiveFilters && (
                   <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
@@ -553,6 +606,21 @@ function Practice() {
                         </button>
                       </Badge>
                     ))}
+                    {selectedSkills.map((skill) => (
+                      <Badge
+                        key={skill}
+                        variant="secondary"
+                        className="text-[10px] gap-1 max-w-[140px] truncate"
+                      >
+                        {skill}
+                        <button
+                          onClick={() => toggleSkill(skill)}
+                          className="ml-0.5 hover:text-destructive flex-shrink-0"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </Badge>
+                    ))}
                     <button
                       onClick={clearFilters}
                       className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
@@ -565,46 +633,63 @@ function Practice() {
                 {/* Section buttons */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   {quickFocus.map((focus) => {
-                    const isLimitReached =
-                      (openSessions?.sessions?.length ?? 0) >= 5;
+                    const isLimitReached = activeSessions.length >= 5;
                     return (
                       <Button
                         key={focus.title}
-                        asChild
                         size="lg"
                         variant={focus.variant}
                         className="h-auto justify-start py-5 px-5"
                         data-testid={focus.testId}
-                        disabled={isLimitReached}
+                        disabled={isLimitReached || isStarting}
+                        onClick={() => handleStartSession(focus.section)}
                       >
-                        <Link href={isLimitReached ? "#" : focus.href}>
-                          <div className="w-full flex items-start justify-between gap-4 text-left">
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
-                                <focus.icon className="h-4 w-4" />
-                                <span className="font-semibold">
-                                  {focus.title}
-                                </span>
-                              </div>
-                              <p className="text-xs opacity-85">
-                                {isLimitReached
-                                  ? "Limit reached (5 sessions)"
-                                  : focus.subtitle}
-                              </p>
+                        <div className="w-full flex items-start justify-between gap-4 text-left">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <focus.icon className="h-4 w-4" />
+                              <span className="font-semibold">
+                                {focus.title}
+                              </span>
                             </div>
-                            <ArrowRight className="h-4 w-4 shrink-0" />
+                            <p className="text-xs opacity-85">
+                              {isLimitReached
+                                ? "Limit reached (5 sessions)"
+                                : focus.subtitle}
+                            </p>
                           </div>
-                        </Link>
+                          <ArrowRight className="h-4 w-4 shrink-0" />
+                        </div>
                       </Button>
                     );
                   })}
                 </div>
 
-                {(openSessions?.sessions?.length ?? 0) >= 5 && (
+                {activeSessions.length >= 5 && (
                   <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3 text-amber-800 text-sm">
                     <AlertCircle className="h-4 w-4" />
                     You've reached the limit of 5 active sessions. Complete or
                     delete an existing session to start a new one.
+                  </div>
+                )}
+
+                {practiceHook.quotaExhausted && (
+                  <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 flex items-center gap-3 text-orange-800 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    Your practice quota is exhausted. Upgrade your plan to
+                    continue practicing.
+                    <Link href="/upgrade">
+                      <Button variant="outline" size="sm" className="ml-auto">
+                        Upgrade
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+
+                {practiceHook.error && !practiceHook.quotaExhausted && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-3 text-red-800 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    {practiceHook.error}
                   </div>
                 )}
 

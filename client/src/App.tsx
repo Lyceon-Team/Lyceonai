@@ -25,12 +25,7 @@ const CalendarPage = lazy(() => import("@/pages/calendar"));
 const Chat = lazy(() => import("@/pages/chat"));
 const FullTest = lazy(() => import("@/pages/full-test"));
 const Practice = lazy(() => import("@/pages/practice"));
-const MathPractice = lazy(() => import("@/pages/math-practice"));
-const ReadingWritingPractice = lazy(() => import("@/pages/reading-writing-practice"));
-const RandomPractice = lazy(() => import("@/pages/random-practice"));
 const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
-const FlowCards = lazy(() => import("@/pages/flow-cards"));
-const StructuredPractice = lazy(() => import("@/pages/structured-practice"));
 const ReviewErrors = lazy(() => import("@/pages/review-errors"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
@@ -38,7 +33,9 @@ const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 
 const DigitalSAT = lazy(() => import("@/pages/digital-sat"));
 const DigitalSATMath = lazy(() => import("@/pages/digital-sat-math"));
-const DigitalSATReadingWriting = lazy(() => import("@/pages/digital-sat-reading-writing"));
+const DigitalSATReadingWriting = lazy(
+  () => import("@/pages/digital-sat-reading-writing"),
+);
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const LegalHub = lazy(() => import("@/pages/legal"));
@@ -50,7 +47,9 @@ const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const GuardianDashboard = lazy(() => import("@/pages/guardian-dashboard"));
 const GuardianCalendar = lazy(() => import("@/pages/guardian-calendar"));
-const GuardianConsentVerify = lazy(() => import("@/pages/guardian-consent-verify"));
+const GuardianConsentVerify = lazy(
+  () => import("@/pages/guardian-consent-verify"),
+);
 
 function PageLoader() {
   return (
@@ -62,7 +61,6 @@ function PageLoader() {
     </div>
   );
 }
-
 
 function Router() {
   return (
@@ -78,7 +76,10 @@ function Router() {
         {/* SEO Content Pages */}
         <Route path="/digital-sat" component={DigitalSAT} />
         <Route path="/digital-sat/math" component={DigitalSATMath} />
-        <Route path="/digital-sat/reading-writing" component={DigitalSATReadingWriting} />
+        <Route
+          path="/digital-sat/reading-writing"
+          component={DigitalSATReadingWriting}
+        />
         <Route path="/blog" component={Blog} />
         <Route path="/blog/:slug" component={BlogPost} />
 
@@ -90,40 +91,159 @@ function Router() {
         <Route path="/legal/:slug" component={LegalDoc} />
 
         {/* Legacy legal redirects */}
-        <Route path="/privacy">{() => <Redirect to="/legal/privacy-policy" replace />}</Route>
-        <Route path="/terms">{() => <Redirect to="/legal/student-terms" replace />}</Route>
+        <Route path="/privacy">
+          {() => <Redirect to="/legal/privacy-policy" replace />}
+        </Route>
+        <Route path="/terms">
+          {() => <Redirect to="/legal/student-terms" replace />}
+        </Route>
 
         {/* Student-only routes - require student or admin role */}
-        <Route path="/dashboard" component={() => <RequireRole allow={['student', 'admin']}><LyceonDashboard /></RequireRole>} />
-        <Route path="/calendar" component={() => <RequireRole allow={['student', 'admin']}><CalendarPage /></RequireRole>} />
-        <Route path="/chat" component={() => <RequireRole allow={['student', 'admin']}><Chat /></RequireRole>} />
-        <Route path="/full-test" component={() => <RequireRole allow={['student', 'admin']}><FullTest /></RequireRole>} />
-        <Route path="/practice" component={() => <RequireRole allow={['student', 'admin']}><Practice /></RequireRole>} />
-        <Route path="/practice/topics" component={() => <RequireRole allow={['student', 'admin']}><BrowseTopics /></RequireRole>} />
-        <Route path="/practice/math" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
-        <Route path="/practice/reading-writing" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
-        <Route path="/practice/random" component={() => <RequireRole allow={['student', 'admin']}><RandomPractice /></RequireRole>} />
-        <Route path="/practice/session/:sessionId" component={() => <RequireRole allow={['student', 'admin']}><ResumePractice /></RequireRole>} />
-        <Route path="/math-practice" component={() => <RequireRole allow={['student', 'admin']}><MathPractice /></RequireRole>} />
-        <Route path="/reading-writing-practice" component={() => <RequireRole allow={['student', 'admin']}><ReadingWritingPractice /></RequireRole>} />
-        <Route path="/mastery" component={() => <RequireRole allow={['student', 'admin']}><MasteryPage /></RequireRole>} />
-        <Route path="/upgrade" component={() => <RequireRole allow={['student', 'admin']}><UpgradePage /></RequireRole>} />
-        <Route path="/review-errors" component={() => <RequireRole allow={['student', 'admin']}><ReviewErrors /></RequireRole>} />
-        <Route path="/flow-cards" component={() => <RequireRole allow={['student', 'admin']}><FlowCards /></RequireRole>} />
-        <Route path="/structured-practice" component={() => <RequireRole allow={['student', 'admin']}><StructuredPractice /></RequireRole>} />
-
+        <Route
+          path="/dashboard"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <LyceonDashboard />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/calendar"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <CalendarPage />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/chat"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <Chat />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/full-test"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <FullTest />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/practice"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <Practice />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/practice/topics"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <BrowseTopics />
+            </RequireRole>
+          )}
+        />
+        <Route path="/practice/math">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
+        <Route path="/practice/reading-writing">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
+        <Route path="/practice/random">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
+        <Route
+          path="/practice/session/:sessionId"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ResumePractice />
+            </RequireRole>
+          )}
+        />
+        <Route path="/math-practice">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
+        <Route path="/reading-writing-practice">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
+        <Route
+          path="/mastery"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <MasteryPage />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/upgrade"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <UpgradePage />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/review-errors"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <ReviewErrors />
+            </RequireRole>
+          )}
+        />
         {/* Profile routes - allow all authenticated roles */}
-        <Route path="/profile" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UserProfile /></RequireRole>} />
-        <Route path="/profile/complete" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><ProfileComplete /></RequireRole>} />
-        <Route path="/update-password" component={() => <RequireRole allow={['student', 'guardian', 'admin']}><UpdatePassword /></RequireRole>} />
+        <Route
+          path="/profile"
+          component={() => (
+            <RequireRole allow={["student", "guardian", "admin"]}>
+              <UserProfile />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/profile/complete"
+          component={() => (
+            <RequireRole allow={["student", "guardian", "admin"]}>
+              <ProfileComplete />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/update-password"
+          component={() => (
+            <RequireRole allow={["student", "guardian", "admin"]}>
+              <UpdatePassword />
+            </RequireRole>
+          )}
+        />
         <Route path="/reset-password" component={UpdatePassword} />
         {/* §40.4 deletion recovery — public (token-gated, no session needed) */}
         <Route path="/account/recover" component={AccountRecover} />
 
         {/* Guardian routes - require guardian or admin role */}
-        <Route path="/guardian/verify-consent" component={GuardianConsentVerify} />
-        <Route path="/guardian" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianDashboard /></RequireRole>} />
-        <Route path="/guardian/students/:studentId/calendar" component={() => <RequireRole allow={['guardian', 'admin']}><GuardianCalendar /></RequireRole>} />
+        <Route
+          path="/guardian/verify-consent"
+          component={GuardianConsentVerify}
+        />
+        <Route
+          path="/guardian"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianDashboard />
+            </RequireRole>
+          )}
+        />
+        <Route
+          path="/guardian/students/:studentId/calendar"
+          component={() => (
+            <RequireRole allow={["guardian", "admin"]}>
+              <GuardianCalendar />
+            </RequireRole>
+          )}
+        />
 
         {/* 404 */}
         <Route component={NotFound} />
@@ -158,7 +278,7 @@ class ErrorBoundary extends Component<
               Something went wrong
             </h1>
             <p className="text-neutral-600 mb-6">
-              {this.state.error?.message || 'An unexpected error occurred'}
+              {this.state.error?.message || "An unexpected error occurred"}
             </p>
             <button
               onClick={() => window.location.reload()}

@@ -67,8 +67,6 @@ function applySectionFilter<
   if (!filters || filters.length === 0) {
     return query;
   }
-  // Genesis section codes are 'M' | 'RW'; resolveSectionFilterValues may include the
-  // legacy 'MATH' alias which is harmless against a genesis bank that only stores 'M'.
   return query.in("section", filters);
 }
 

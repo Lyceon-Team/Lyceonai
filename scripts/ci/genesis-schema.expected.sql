@@ -42,6 +42,64 @@ CREATE TYPE public.profile_role AS ENUM (
 );
 
 
+--
+-- Name: _rl_has_active_entitlement(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE
+    AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'entitlement_active'
+  )
+  THEN
+    RETURN COALESCE(public.entitlement_active(p_student_user_id), false);
+  END IF;
+  RETURN false;
+END;
+$$;
+
+
+--
+-- Name: _rl_resolve_student_account(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) RETURNS uuid
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+  v_account_id uuid := NULL;
+BEGIN
+  IF to_regclass('public.lyceon_account_members') IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF p_account_id IS NOT NULL THEN
+    SELECT lam.account_id
+    INTO v_account_id
+    FROM public.lyceon_account_members lam
+    WHERE lam.user_id = p_student_user_id
+      AND lam.account_id = p_account_id
+    LIMIT 1;
+  END IF;
+
+  IF v_account_id IS NULL THEN
+    SELECT lam.account_id
+    INTO v_account_id
+    FROM public.lyceon_account_members lam
+    WHERE lam.user_id = p_student_user_id
+    ORDER BY lam.account_id ASC
+    LIMIT 1;
+  END IF;
+
+  RETURN v_account_id;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -685,6 +743,203 @@ BEGIN
     RETURN NULL;
 END;
 $$;
+
+
+--
+-- Name: check_and_reserve_practice_quota(uuid, uuid, uuid, uuid, boolean, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid DEFAULT NULL::uuid, p_session_id uuid DEFAULT NULL::uuid, p_session_item_id uuid DEFAULT NULL::uuid, p_dry_run boolean DEFAULT false, p_request_id text DEFAULT NULL::text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+DECLARE
+  v_now timestamptz := COALESCE(p_now, now());
+  v_today_start timestamptz;
+  v_tomorrow_start timestamptz;
+  v_daily_limit integer;
+  v_session_limit integer;
+  v_used integer := 0;
+  v_session_used integer := 0;
+  v_reset_at timestamptz;
+  v_account uuid := NULL;
+  v_entitled boolean := false;
+  v_counts_toward_limit boolean := true;
+  v_dedupe_key text := NULL;
+  v_existing_id uuid := NULL;
+  v_inserted_id uuid := NULL;
+  v_config_val text;
+BEGIN
+  -- Identity guard: caller must match the student (service_role bypasses via REVOKE/GRANT)
+  IF auth.uid() IS NOT NULL AND p_student_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'p_student_user_id does not match authenticated user'
+      USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext('practice_quota:' || p_student_user_id::text));
+
+  -- Read daily limit from config (required — no hardcoded fallback)
+  SELECT value INTO v_config_val
+  FROM public.practice_runtime_config
+  WHERE key = 'daily_quota_free';
+  IF v_config_val IS NULL OR NOT (v_config_val ~ '^\d+$') THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key daily_quota_free'
+      USING ERRCODE = 'P0002';
+  END IF;
+  v_daily_limit := v_config_val::integer;
+
+  -- Read session limit from config (required — no hardcoded fallback)
+  SELECT value INTO v_config_val
+  FROM public.practice_runtime_config
+  WHERE key = 'max_session_count_premium';
+  IF v_config_val IS NULL OR NOT (v_config_val ~ '^\d+$') THEN
+    RAISE EXCEPTION 'practice_runtime_config: missing or invalid key max_session_count_premium'
+      USING ERRCODE = 'P0002';
+  END IF;
+  v_session_limit := v_config_val::integer;
+
+  -- UTC-day boundaries
+  v_today_start := date_trunc('day', v_now AT TIME ZONE 'UTC') AT TIME ZONE 'UTC';
+  v_tomorrow_start := v_today_start + interval '1 day';
+  v_reset_at := v_tomorrow_start;
+
+  -- Resolve account + entitlement
+  v_account := public._rl_resolve_student_account(p_student_user_id, p_account_id);
+  v_entitled := public._rl_has_active_entitlement(p_student_user_id);
+  v_counts_toward_limit := NOT v_entitled;
+
+  -- Count today's consumed units (UTC-day window)
+  SELECT COALESCE(SUM(units), 0)::integer
+  INTO v_used
+  FROM public.usage_rate_limit_ledger l
+  WHERE l.scope = 'practice'
+    AND l.student_user_id = p_student_user_id
+    AND l.reservation_state IN ('consumed', 'finalized')
+    AND COALESCE((l.metadata->>'counts_toward_limit')::boolean, true)
+    AND l.created_at >= v_today_start
+    AND l.created_at < v_tomorrow_start;
+
+  -- Daily cap check (unpaid only)
+  IF v_counts_toward_limit AND v_used >= v_daily_limit THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'PRACTICE_FREE_DAILY_QUOTA_EXCEEDED',
+      'message', format('Practice free-tier limit reached (%s questions per day).', v_daily_limit),
+      'current', v_used,
+      'limit', v_daily_limit,
+      'remaining', 0,
+      'reset_at', v_reset_at,
+      'cooldown_until', NULL,
+      'reservation_id', NULL,
+      'duplicate', false
+    );
+  END IF;
+
+  -- Per-session cap (paid users)
+  IF p_session_id IS NOT NULL AND v_entitled THEN
+    SELECT COALESCE(SUM(units), 0)::integer
+    INTO v_session_used
+    FROM public.usage_rate_limit_ledger l
+    WHERE l.scope = 'practice'
+      AND l.student_user_id = p_student_user_id
+      AND l.session_id = p_session_id
+      AND l.reservation_state IN ('consumed', 'finalized');
+
+    IF v_session_used >= v_session_limit THEN
+      RETURN jsonb_build_object(
+        'allowed', false,
+        'code', 'PRACTICE_SESSION_LIMIT_REACHED',
+        'message', format('Session question limit reached (%s questions per session).', v_session_limit),
+        'current', v_session_used,
+        'limit', v_session_limit,
+        'remaining', 0,
+        'reset_at', NULL,
+        'cooldown_until', NULL,
+        'reservation_id', NULL,
+        'duplicate', false
+      );
+    END IF;
+  END IF;
+
+  -- Dry-run: return quota state without writing
+  IF p_dry_run THEN
+    RETURN jsonb_build_object(
+      'allowed', true,
+      'code', CASE WHEN v_counts_toward_limit THEN 'PRACTICE_OK' ELSE 'PRACTICE_BYPASS_ENTITLED' END,
+      'message', CASE WHEN v_counts_toward_limit THEN 'Practice quota available.' ELSE 'Active entitlement bypasses free-tier practice cap.' END,
+      'current', CASE WHEN v_counts_toward_limit THEN v_used ELSE v_session_used END,
+      'limit', CASE WHEN v_counts_toward_limit THEN v_daily_limit ELSE v_session_limit END,
+      'remaining', CASE WHEN v_counts_toward_limit THEN GREATEST(v_daily_limit - v_used, 0) ELSE GREATEST(v_session_limit - v_session_used, 0) END,
+      'reset_at', v_reset_at,
+      'cooldown_until', NULL,
+      'reservation_id', NULL,
+      'duplicate', false
+    );
+  END IF;
+
+  -- Idempotency: dedupe on session_item_id
+  IF p_session_item_id IS NOT NULL THEN
+    v_dedupe_key := 'practice:served:' || p_session_item_id::text;
+    SELECT l.id
+    INTO v_existing_id
+    FROM public.usage_rate_limit_ledger l
+    WHERE l.dedupe_key = v_dedupe_key
+    LIMIT 1;
+  END IF;
+
+  IF v_existing_id IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'allowed', true,
+      'code', 'PRACTICE_ALREADY_RESERVED',
+      'message', 'Practice session item already counted.',
+      'current', v_used,
+      'limit', CASE WHEN v_counts_toward_limit THEN v_daily_limit ELSE v_session_limit END,
+      'remaining', CASE WHEN v_counts_toward_limit THEN GREATEST(v_daily_limit - v_used, 0) ELSE GREATEST(v_session_limit - v_session_used, 0) END,
+      'reset_at', v_reset_at,
+      'cooldown_until', NULL,
+      'reservation_id', v_existing_id,
+      'duplicate', true
+    );
+  END IF;
+
+  -- Insert ledger entry
+  INSERT INTO public.usage_rate_limit_ledger (
+    scope, event_key, student_user_id, account_id,
+    session_id, session_item_id, dedupe_key,
+    units, reservation_state, metadata, created_at, updated_at
+  )
+  VALUES (
+    'practice', 'practice_question_served', p_student_user_id, v_account,
+    p_session_id, p_session_item_id, v_dedupe_key,
+    1, 'consumed',
+    jsonb_build_object(
+      'counts_toward_limit', v_counts_toward_limit,
+      'request_id', p_request_id
+    ),
+    v_now, v_now
+  )
+  RETURNING id INTO v_inserted_id;
+
+  IF v_counts_toward_limit THEN
+    v_used := v_used + 1;
+  ELSE
+    v_session_used := v_session_used + 1;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'allowed', true,
+    'code', CASE WHEN v_counts_toward_limit THEN 'PRACTICE_RESERVED' ELSE 'PRACTICE_BYPASS_ENTITLED' END,
+    'message', CASE WHEN v_counts_toward_limit THEN 'Practice quota reserved.' ELSE 'Active entitlement bypasses free-tier practice cap.' END,
+    'current', CASE WHEN v_counts_toward_limit THEN v_used ELSE v_session_used END,
+    'limit', CASE WHEN v_counts_toward_limit THEN v_daily_limit ELSE v_session_limit END,
+    'remaining', CASE WHEN v_counts_toward_limit THEN GREATEST(v_daily_limit - v_used, 0) ELSE GREATEST(v_session_limit - v_session_used, 0) END,
+    'reset_at', v_reset_at,
+    'cooldown_until', NULL,
+    'reservation_id', v_inserted_id,
+    'duplicate', false
+  );
+END;
+$_$;
 
 
 --
@@ -2751,6 +3006,36 @@ $$;
 
 
 --
+-- Name: select_practice_pool_random(text[], text[], text[], integer[], text[], integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NULL::text[], p_domains text[] DEFAULT NULL::text[], p_skills text[] DEFAULT NULL::text[], p_difficulties integer[] DEFAULT NULL::integer[], p_exclude_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 10) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer)
+    LANGUAGE sql
+    AS $$
+  SELECT
+    q.id,
+    q.section,
+    q.stem,
+    q.options,
+    q.difficulty,
+    q.correct_answer,
+    q.explanation,
+    q.domain,
+    q.skill_codes,
+    q.source_type
+  FROM public.questions q
+  WHERE q.status = 'published'
+    AND (p_sections IS NULL    OR q.section = ANY(p_sections))
+    AND (p_domains IS NULL     OR q.domain = ANY(p_domains))
+    AND (p_skills IS NULL      OR q.skill_codes && p_skills)
+    AND (p_difficulties IS NULL OR q.difficulty = ANY(p_difficulties))
+    AND (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
+  ORDER BY random()
+  LIMIT p_limit;
+$$;
+
+
+--
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3705,6 +3990,9 @@ CREATE TABLE public.practice_session_items (
     served_at timestamp with time zone,
     occurred_at timestamp with time zone,
     actor_id uuid NOT NULL,
+    option_order text[],
+    option_token_map jsonb,
+    client_instance_id text,
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
@@ -3730,7 +4018,7 @@ CREATE TABLE public.practice_sessions (
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     actor_id uuid NOT NULL,
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text]))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
@@ -4194,6 +4482,45 @@ CREATE TABLE public.tutor_context_runtime_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: usage_rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.usage_rate_limit_ledger (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    scope text NOT NULL,
+    event_key text NOT NULL,
+    student_user_id uuid NOT NULL,
+    account_id uuid,
+    session_id uuid,
+    session_item_id uuid,
+    dedupe_key text,
+    units integer DEFAULT 1 NOT NULL,
+    reservation_state text NOT NULL,
+    reservation_expires_at timestamp with time zone,
+    cooldown_until timestamp with time zone,
+    input_tokens_reserved integer,
+    output_tokens_reserved integer,
+    cost_micros_reserved bigint,
+    input_tokens_final integer,
+    output_tokens_final integer,
+    cost_micros_final bigint,
+    denial_code text,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT usage_rate_limit_ledger_cost_micros_final_check CHECK (((cost_micros_final IS NULL) OR (cost_micros_final >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_cost_micros_reserved_check CHECK (((cost_micros_reserved IS NULL) OR (cost_micros_reserved >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_input_tokens_final_check CHECK (((input_tokens_final IS NULL) OR (input_tokens_final >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_input_tokens_reserved_check CHECK (((input_tokens_reserved IS NULL) OR (input_tokens_reserved >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_output_tokens_final_check CHECK (((output_tokens_final IS NULL) OR (output_tokens_final >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_output_tokens_reserved_check CHECK (((output_tokens_reserved IS NULL) OR (output_tokens_reserved >= 0))),
+    CONSTRAINT usage_rate_limit_ledger_reservation_state_check CHECK ((reservation_state = ANY (ARRAY['consumed'::text, 'reserved'::text, 'finalized'::text, 'failed'::text, 'denied'::text]))),
+    CONSTRAINT usage_rate_limit_ledger_scope_check CHECK ((scope = ANY (ARRAY['practice'::text, 'full_length'::text, 'tutor'::text, 'calendar'::text]))),
+    CONSTRAINT usage_rate_limit_ledger_units_check CHECK ((units >= 0))
 );
 
 
@@ -4886,6 +5213,14 @@ ALTER TABLE ONLY public.review_schedule
 
 
 --
+-- Name: usage_rate_limit_ledger usage_rate_limit_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_limit_ledger
+    ADD CONSTRAINT usage_rate_limit_ledger_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: idx_abuse_incidents_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5250,6 +5585,13 @@ CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skil
 
 
 --
+-- Name: idx_usage_rate_limit_ledger_scope_user_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_usage_rate_limit_ledger_scope_user_created ON public.usage_rate_limit_ledger USING btree (scope, student_user_id, created_at DESC);
+
+
+--
 -- Name: profiles_student_link_code_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5268,6 +5610,13 @@ CREATE UNIQUE INDEX uq_practice_items_idem ON public.practice_session_items USIN
 --
 
 CREATE UNIQUE INDEX uq_review_attempts_idem ON public.review_error_attempts USING btree (student_id, client_attempt_id) WHERE (client_attempt_id IS NOT NULL);
+
+
+--
+-- Name: uq_usage_rate_limit_ledger_dedupe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_usage_rate_limit_ledger_dedupe ON public.usage_rate_limit_ledger USING btree (dedupe_key) WHERE (dedupe_key IS NOT NULL);
 
 
 --
@@ -6074,6 +6423,14 @@ ALTER TABLE ONLY public.tutor_context_runtime_config
 
 
 --
+-- Name: usage_rate_limit_ledger usage_rate_limit_ledger_student_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_limit_ledger
+    ADD CONSTRAINT usage_rate_limit_ledger_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: abuse_score_incidents; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6703,12 +7060,41 @@ ALTER TABLE public.tutor_context_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tutor_context_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: usage_rate_limit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.usage_rate_limit_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: usage_rate_limit_ledger usage_rate_limit_ledger_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledger FOR SELECT TO authenticated USING ((student_user_id = auth.uid()));
+
+
+--
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
 
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
+
+
+--
+-- Name: FUNCTION _rl_has_active_entitlement(p_student_user_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION _rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) TO service_role;
 
 
 --
@@ -6846,6 +7232,14 @@ GRANT ALL ON FUNCTION public.canonicalize_mastery_constants_serialized() TO serv
 
 REVOKE ALL ON FUNCTION public.canonicalize_projection_constants_serialized() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.canonicalize_projection_constants_serialized() TO service_role;
+
+
+--
+-- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -7403,6 +7797,13 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO service_role;
+
+
+--
+-- Name: FUNCTION select_practice_pool_random(p_sections text[], p_domains text[], p_skills text[], p_difficulties integer[], p_exclude_ids text[], p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_domains text[], p_skills text[], p_difficulties integer[], p_exclude_ids text[], p_limit integer) TO service_role;
 
 
 --

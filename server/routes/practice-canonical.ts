@@ -2,13 +2,14 @@ import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
+import { logger } from "../logger";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
   requireProfileComplete,
   requireConsentCompliance,
 } from "../middleware/supabase-auth.js";
-import { applyLearningEventToMastery } from "../../apps/api/src/services/studentMastery";
+import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
@@ -29,10 +30,12 @@ import {
   parseCorrectVariants,
   parseStudentSafeOptionTokenMap,
   projectStudentSafeQuestion,
+  resolveCanonicalDomain,
   resolveClientInstanceBinding,
   resolveSectionFilterValues,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
+import type { PracticeSessionItemRow } from "../../packages/shared/src/practice-schema";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -88,46 +91,21 @@ type CanonicalQuestionForServing = {
 type SessionRow = {
   id: string;
   user_id: string;
-  section: string;
   mode: string;
+  filters: Record<string, unknown>;
+  target_count: number;
+  platform: string;
+  client_instance_id: string;
   status: string;
-  completed?: boolean | null;
-  metadata?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string;
+  completed_at?: string | null;
+  actor_id: string;
 };
 
-type SessionItemRow = {
-  id: string;
-  session_id: string;
-  user_id: string;
-  question_id: string;
-  question_canonical_id?: string | null;
-  question_section?: string | null;
-  // Genesis snapshot is MCQ-only today; these are forward-compat for the grid-in snapshot
-  // DB lane (see HALT in PR notes). Absent columns simply read as undefined → mcq default.
-  question_item_type?: string | null;
-  question_correct_variants?: unknown;
-  question_stem?: string | null;
-  question_options?: unknown;
-  question_difficulty?: string | number | null;
-  question_domain?: string | null;
-  question_skill?: string | null;
-  question_subskill?: string | null;
-  question_exam?: string | null;
-  question_structure_cluster_id?: string | null;
-  question_correct_answer?: string | null;
-  question_explanation?: string | null;
-  option_order?: string[] | null;
-  option_token_map?: Record<string, string> | null;
-  ordinal: number;
-  status: "queued" | "served" | "answered" | "skipped";
-  attempt_id?: string | null;
-  client_instance_id?: string | null;
-  selected_answer?: string | null;
-  is_correct?: boolean | null;
-  outcome?: string | null;
-  answered_at?: string | null;
-  time_spent_ms?: number | null;
-  client_attempt_id?: string | null;
+type SessionItemRow = Omit<PracticeSessionItemRow, "question_difficulty"> & {
+  question_difficulty: string | number | null;
 };
 
 type SessionMetadata = {
@@ -148,6 +126,7 @@ type SessionMetadata = {
 type CanonicalSessionSpec = {
   sections: Array<"Math" | "RW">;
   domains: string[];
+  skills: string[];
   difficulties: Array<"easy" | "medium" | "hard">;
   target_minutes: number | null;
   target_question_count: number;
@@ -156,49 +135,156 @@ type CanonicalSessionSpec = {
 
 const router = Router();
 
-const SESSION_LIMIT = 3;
-const ACTIVE_DB_STATUSES = ["in_progress", "active", "created"] as const;
-const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
-const DEFAULT_TARGET_QUESTION_COUNT = 20;
-const TARGET_SECONDS_PER_QUESTION = 90;
-const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_canonical_id, question_section, question_stem, question_options, question_difficulty, question_domain, question_skill, question_subskill, question_exam, question_structure_cluster_id, question_correct_answer, question_explanation, option_order, option_token_map, ordinal, status, attempt_id, client_instance_id, selected_answer, is_correct, outcome, answered_at, time_spent_ms, client_attempt_id";
+// @spec [Doc-02B_V4 §41; INV-02B-15 Config Doctrine] | @implemented [2026-06-27]
+// All runtime constants read from practice_runtime_config — no hardcoded literals.
+type PracticeConfig = {
+  maxConcurrentSessions: number;
+  defaultSessionCountWeb: number;
+  maxSessionCountPremium: number;
+  targetSecondsPerQuestion: number;
+  answerRateLimitWindowMs: number;
+  answerRateLimitMax: number;
+};
 
-const practiceAnswerRateLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (_req, res) => {
-    res.status(429).json({
-      error: "rate_limited",
-      message: "Too many practice submissions. Please slow down.",
+let _configCache: { config: PracticeConfig; ts: number } | null = null;
+let _configInflight: Promise<PracticeConfig> | null = null;
+const CONFIG_TTL_MS = 30_000;
+
+async function loadPracticeConfig(): Promise<PracticeConfig> {
+  if (_configCache && Date.now() - _configCache.ts < CONFIG_TTL_MS) {
+    return _configCache.config;
+  }
+  if (_configInflight) return _configInflight;
+  _configInflight = loadPracticeConfigFromDb().finally(() => {
+    _configInflight = null;
+  });
+  return _configInflight;
+}
+
+async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
+  const { data, error } = await supabaseServer
+    .from("practice_runtime_config")
+    .select("key, value")
+    .in("key", [
+      "max_concurrent_sessions",
+      "default_session_count_web",
+      "max_session_count_premium",
+      "target_seconds_per_question",
+      "answer_rate_limit_window_ms",
+      "answer_rate_limit_max",
+    ]);
+
+  if (error) {
+    throw new Error(`practice_runtime_config read failed: ${error.message}`);
+  }
+
+  const configMap = new Map(
+    (data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]),
+  );
+
+  const readIntRequired = (key: string): number => {
+    const raw = configMap.get(key);
+    const parsed =
+      typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(
+        `practice_runtime_config: missing or invalid key '${key}'`,
+      );
+    }
+    return parsed;
+  };
+
+  const config: PracticeConfig = {
+    maxConcurrentSessions: readIntRequired("max_concurrent_sessions"),
+    defaultSessionCountWeb: readIntRequired("default_session_count_web"),
+    maxSessionCountPremium: readIntRequired("max_session_count_premium"),
+    targetSecondsPerQuestion: readIntRequired("target_seconds_per_question"),
+    answerRateLimitWindowMs: readIntRequired("answer_rate_limit_window_ms"),
+    answerRateLimitMax: readIntRequired("answer_rate_limit_max"),
+  };
+  _configCache = { config, ts: Date.now() };
+  return config;
+}
+
+const ACTIVE_DB_STATUSES = ["active", "created"] as const;
+const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
+const SESSION_ITEM_SELECT =
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
+
+let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
+let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
+
+function getPracticeAnswerRateLimiter(config: PracticeConfig) {
+  if (
+    _cachedRateLimiter &&
+    _cachedRateLimiterConfig?.windowMs === config.answerRateLimitWindowMs &&
+    _cachedRateLimiterConfig?.max === config.answerRateLimitMax
+  ) {
+    return _cachedRateLimiter;
+  }
+  _cachedRateLimiterConfig = {
+    windowMs: config.answerRateLimitWindowMs,
+    max: config.answerRateLimitMax,
+  };
+  _cachedRateLimiter = rateLimit({
+    windowMs: config.answerRateLimitWindowMs,
+    max: config.answerRateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: "rate_limited",
+        message: "Too many practice submissions. Please slow down.",
+      });
+    },
+  });
+  return _cachedRateLimiter;
+}
+
+// No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
+// If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
+
+async function practiceAnswerRateLimiter(
+  req: Request,
+  res: Response,
+  next: () => void,
+) {
+  let config: PracticeConfig;
+  try {
+    config = await loadPracticeConfig();
+  } catch {
+    logger.warn(
+      "Rate limiter config unavailable; rejecting request (fail-closed)",
+    );
+    res.status(503).json({
+      error: {
+        message: "Service temporarily unavailable",
+        code: "CONFIG_UNAVAILABLE",
+      },
     });
-  },
-});
+    return;
+  }
+  const limiter = getPracticeAnswerRateLimiter(config);
+  limiter(req, res, next);
+}
 
 const StartSessionBodySchema = z.object({
   section: z.string().optional().nullable(),
   sections: z.array(z.string().max(64)).max(20).optional().nullable(),
   domains: z.array(z.string().max(128)).max(100).optional().nullable(),
+  skills: z.array(z.string().max(128)).max(100).optional().nullable(),
   difficulties: z.array(z.string().max(32)).max(10).optional().nullable(),
   mode: z.string().max(64).optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
   idempotency_key: z.string().max(128).optional().nullable(),
   target_minutes: z.number().int().positive().max(300).optional().nullable(),
-  target_question_count: z
-    .number()
-    .int()
-    .positive()
-    .max(200)
-    .optional()
-    .nullable(),
+  target_question_count: z.number().int().positive().optional().nullable(),
 });
 
 const AnswerBodySchema = z.object({
   sessionId: z.string().uuid(),
   sessionItemId: z.string().uuid().optional(),
-  questionId: z.string().uuid().optional(),
+  questionId: z.string().min(1).max(32).optional(),
   selectedAnswer: z.string().trim().max(32).optional().nullable(),
   selectedOptionId: z.string().trim().max(32).optional().nullable(),
   answer: z.string().trim().max(32).optional().nullable(),
@@ -208,7 +294,7 @@ const AnswerBodySchema = z.object({
 
 const SkipBodySchema = z.object({
   sessionItemId: z.string().uuid().optional(),
-  questionId: z.string().uuid().optional(),
+  questionId: z.string().min(1).max(32).optional(),
   clientAttemptId: z.string().max(128).optional().nullable(),
   client_instance_id: z.string().max(128).optional().nullable(),
 });
@@ -313,19 +399,9 @@ function asSessionMetadata(metadata: unknown): SessionMetadata {
   return metadata as SessionMetadata;
 }
 
-function normalizeSessionState(
-  status: string,
-  metadata: SessionMetadata,
-): PracticeLifecycleState {
-  const lifecycle = metadata.lifecycle_state;
-  if (
-    lifecycle === "created" ||
-    lifecycle === "active" ||
-    lifecycle === "completed" ||
-    lifecycle === "abandoned"
-  ) {
-    return lifecycle;
-  }
+// @spec [Doc-02B_V4 §14] | @implemented [2026-06-27]
+// Single lifecycle source: practice_sessions.status column. metadata.lifecycle_state retired.
+function normalizeSessionState(status: string): PracticeLifecycleState {
   if (status === "completed") return "completed";
   if (status === "abandoned") return "abandoned";
   if (status === "created") return "created";
@@ -371,9 +447,21 @@ function normalizeStringList(raw: unknown, maxLen: number): string[] {
   const deduped = new Set<string>();
   for (const item of raw) {
     if (typeof item !== "string") continue;
-    const normalized = item.trim().toLowerCase();
+    const normalized = item.trim();
     if (!normalized || normalized.length > maxLen) continue;
     deduped.add(normalized);
+  }
+  return Array.from(deduped).sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeDomainList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const deduped = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed || trimmed.length > 128) continue;
+    deduped.add(resolveCanonicalDomain(trimmed));
   }
   return Array.from(deduped).sort((a, b) => a.localeCompare(b));
 }
@@ -453,7 +541,9 @@ function buildServedOptions(options: McOption[]): {
 // item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
-function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
+function toCanonicalQuestionForServing(
+  q: CanonicalQuestionRowLike,
+): CanonicalQuestionForServing {
   const itemType: CanonicalItemType =
     normalizeItemType(q.item_type ?? q.question_type ?? null) ?? "mcq";
   const isGridIn = itemType === "grid_in";
@@ -494,60 +584,22 @@ function toCanonicalQuestionForServing(q: any): CanonicalQuestionForServing {
 
 // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
 // Reconstructs the server-side serving record from a persisted practice_session_items
-// snapshot. The genesis snapshot is currently MCQ-shaped (no question_item_type /
-// question_correct_variants columns yet — that is a downstream DB lane, see HALT below),
-// so item_type defaults to 'mcq' and MCQ shape is still enforced. If/when the snapshot
-// gains grid-in fields, this reads them and validates the grid-in shape instead.
+// snapshot. Genesis schema is MCQ-only (no grid-in columns yet).
 function toCanonicalQuestionFromSessionItem(
   item: SessionItemRow,
 ): CanonicalQuestionForServing | null {
-  const canonicalId = String(item.question_canonical_id ?? "").trim();
+  const canonicalId = String(item.question_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
   const section = String(item.question_section ?? "").trim();
 
   if (!isValidCanonicalId(canonicalId)) return null;
   if (!stem || !section) return null;
 
-  const itemType: CanonicalItemType =
-    normalizeItemType(item.question_item_type ?? null) ?? "mcq";
-  const isGridIn = itemType === "grid_in";
-
-  if (isGridIn) {
-    const variants = parseCorrectVariants(item.question_correct_variants);
-    if (variants.length < 1) return null;
-    const correctAnswer =
-      typeof item.question_correct_answer === "string" &&
-      item.question_correct_answer.trim().length > 0
-        ? item.question_correct_answer.trim()
-        : null;
-    return {
-      id: String(item.question_id ?? "").trim(),
-      canonical_id: canonicalId,
-      section_code: section,
-      item_type: "grid_in",
-      stem,
-      options: [],
-      difficulty: item.question_difficulty ?? null,
-      domain: item.question_domain ?? null,
-      skill: item.question_skill ?? null,
-      subskill: item.question_subskill ?? null,
-      exam: item.question_exam ?? null,
-      structure_cluster_id: item.question_structure_cluster_id ?? null,
-      correct_answer: correctAnswer,
-      explanation:
-        typeof item.question_explanation === "string" &&
-        item.question_explanation.trim().length > 0
-          ? item.question_explanation
-          : null,
-      correct_variants: variants,
-    };
-  }
-
   const options = safeParseOptions(item.question_options);
   if (!hasCanonicalOptionSet(options)) return null;
 
   return {
-    id: String(item.question_id ?? "").trim(),
+    id: canonicalId,
     canonical_id: canonicalId,
     section_code: section,
     item_type: "mcq",
@@ -556,9 +608,9 @@ function toCanonicalQuestionFromSessionItem(
     difficulty: item.question_difficulty ?? null,
     domain: item.question_domain ?? null,
     skill: item.question_skill ?? null,
-    subskill: item.question_subskill ?? null,
-    exam: item.question_exam ?? null,
-    structure_cluster_id: item.question_structure_cluster_id ?? null,
+    subskill: null,
+    exam: null,
+    structure_cluster_id: null,
     correct_answer: normalizeAnswerKey(item.question_correct_answer),
     explanation:
       typeof item.question_explanation === "string" &&
@@ -628,19 +680,8 @@ function simpleHash(input: string): number {
   return Math.abs(hash);
 }
 
-function coerceQuestionDifficulty(raw: unknown): 1 | 2 | 3 {
-  if (typeof raw === "number") {
-    if (raw <= 1) return 1;
-    if (raw >= 3) return 3;
-    return 2;
-  }
-  if (typeof raw === "string") {
-    const s = raw.trim().toLowerCase();
-    if (s === "easy" || s === "1") return 1;
-    if (s === "hard" || s === "3") return 3;
-  }
-  return 2;
-}
+// coerceQuestionDifficulty REMOVED — difficulty filtering moved to
+// select_practice_pool_random RPC (DB-side CASE expression).
 
 function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
   if (raw === 1 || raw === 2 || raw === 3) return raw;
@@ -656,19 +697,26 @@ function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
   return null;
 }
 
-function coerceTargetQuestionCount(raw: unknown): number {
+function coerceTargetQuestionCount(
+  raw: unknown,
+  maxCap: number,
+  defaultCount: number,
+): number {
   if (typeof raw === "number" && Number.isFinite(raw)) {
     const rounded = Math.floor(raw);
-    if (rounded > 0) return Math.min(200, rounded);
+    if (rounded > 0) return Math.min(maxCap, rounded);
   }
-  return DEFAULT_TARGET_QUESTION_COUNT;
+  return defaultCount;
 }
 
-function deriveTargetQuestionCountFromMinutes(targetMinutes: number): number {
-  const derived = Math.round(
-    (targetMinutes * 60) / TARGET_SECONDS_PER_QUESTION,
-  );
-  return coerceTargetQuestionCount(derived);
+function deriveTargetQuestionCountFromMinutes(
+  targetMinutes: number,
+  secondsPerQuestion: number,
+  maxCap: number,
+  defaultCount: number,
+): number {
+  const derived = Math.round((targetMinutes * 60) / secondsPerQuestion);
+  return coerceTargetQuestionCount(derived, maxCap, defaultCount);
 }
 
 function resolveSectionForSession(
@@ -680,7 +728,10 @@ function resolveSectionForSession(
   return legacySection;
 }
 
-function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
+function normalizeSessionSpec(
+  input: z.infer<typeof StartSessionBodySchema>,
+  config: PracticeConfig,
+): {
   section: "Math" | "RW" | "Random";
   targetQuestionCount: number;
   sessionSpec: CanonicalSessionSpec;
@@ -702,13 +753,20 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
       : null;
   const explicitTargetCount = coerceTargetQuestionCount(
     input.target_question_count,
+    config.maxSessionCountPremium,
+    config.defaultSessionCountWeb,
   );
   const hasExplicitTargetCount =
     typeof input.target_question_count === "number" &&
     Number.isFinite(input.target_question_count);
   const effectiveTargetCount =
     targetMinutes && !hasExplicitTargetCount
-      ? deriveTargetQuestionCountFromMinutes(targetMinutes)
+      ? deriveTargetQuestionCountFromMinutes(
+          targetMinutes,
+          config.targetSecondsPerQuestion,
+          config.maxSessionCountPremium,
+          config.defaultSessionCountWeb,
+        )
       : explicitTargetCount;
 
   return {
@@ -716,7 +774,8 @@ function normalizeSessionSpec(input: z.infer<typeof StartSessionBodySchema>): {
     targetQuestionCount: effectiveTargetCount,
     sessionSpec: {
       sections: sectionValues,
-      domains: normalizeStringList(input.domains, 128),
+      domains: normalizeDomainList(input.domains),
+      skills: normalizeStringList(input.skills, 128),
       difficulties: normalizeDifficulties(input.difficulties),
       target_minutes: targetMinutes,
       target_question_count: effectiveTargetCount,
@@ -739,137 +798,9 @@ function resolveAllowedSectionCodes(sections: Array<"Math" | "RW">): string[] {
   return Array.from(codes);
 }
 
-function filterPoolBySessionSpec(
-  pool: any[],
-  spec: {
-    domains: string[];
-    difficulties: Array<"easy" | "medium" | "hard">;
-  },
-): any[] {
-  let filtered = pool;
-
-  if (spec.domains.length > 0) {
-    const allowedDomains = new Set(spec.domains.map((v) => v.toLowerCase()));
-    filtered = filtered.filter((row) => {
-      const domain = String((row as any).domain ?? "")
-        .trim()
-        .toLowerCase();
-      return domain.length > 0 && allowedDomains.has(domain);
-    });
-  }
-
-  if (spec.difficulties.length > 0) {
-    const allowedDifficultyCodes = new Set<number>();
-    for (const difficulty of spec.difficulties) {
-      if (difficulty === "easy") allowedDifficultyCodes.add(1);
-      if (difficulty === "medium") allowedDifficultyCodes.add(2);
-      if (difficulty === "hard") allowedDifficultyCodes.add(3);
-    }
-    filtered = filtered.filter((row) =>
-      allowedDifficultyCodes.has(
-        coerceQuestionDifficulty((row as any).difficulty),
-      ),
-    );
-  }
-
-  return filtered;
-}
-
-async function listExactFilteredQuestionPool(spec: {
-  sections: Array<"Math" | "RW">;
-  domains: string[];
-  difficulties: Array<"easy" | "medium" | "hard">;
-  excludeIds?: string[];
-}): Promise<{ pool: CanonicalQuestionForServing[] } | { error: string }> {
-  // @spec [genesis questions DDL; grid-in-extension.sql] | @implemented 2026-06-14
-  // Genesis-native, SERVER-SIDE select. correct_answer/explanation/correct_variants are
-  // selected for grading ONLY; they never reach a student DTO (the projection null-strips
-  // them and never reads correct_variants). item_type discriminates mcq vs grid_in.
-  let query = supabaseServer
-    .from("questions")
-    .select(
-      "id, section, item_type, stem, options, difficulty, correct_answer, explanation, domain, skill_codes, source_type, correct_variants",
-    )
-    .in("item_type", ["mcq", "grid_in"]);
-
-  if (spec.excludeIds && spec.excludeIds.length > 0) {
-    // @spec [Coding Standards §5.1, §7.1] | @implemented [2026-06-17] | plain English:
-    // Canonical question ids are opaque UUIDs. Allow-list each id through zod's strict
-    // UUID validator before it is interpolated into the PostgREST `not in (...)` filter,
-    // so no caller-supplied string can ever reach the raw filter expression. Behaviour is
-    // unchanged for legitimate question ids; non-UUID values are dropped, not interpolated.
-    const safeExcludeIds = spec.excludeIds.filter(
-      (id) => z.string().uuid().safeParse(id).success,
-    );
-    if (safeExcludeIds.length > 0) {
-      query = query.not("id", "in", `(${safeExcludeIds.join(",")})`);
-    }
-  }
-
-  query = query.limit(1000);
-
-  const allowedSectionCodes = resolveAllowedSectionCodes(spec.sections);
-  if (allowedSectionCodes.length > 0) {
-    query = query.in("section", allowedSectionCodes);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    return { error: `questions_query_failed: ${error.message}` };
-  }
-
-  // Reconcile genesis → contract (id→canonical_id, section→section_code, item_type→question_type).
-  // Per-item validation accepts BOTH mcq and grid_in shapes. We do NOT blanket-normalize
-  // correct_answer to an A–D key here: that would corrupt grid-in values (handled per shape
-  // downstream in toCanonicalQuestionForServing).
-  const mappedRows = (data ?? []).map((row) =>
-    mapGenesisQuestionRow(row as unknown as CanonicalQuestionRowLike),
-  );
-  const validPool = mappedRows.filter((row) => isCanonicalRuntimeQuestion(row));
-
-  const exactPool = filterPoolBySessionSpec(validPool, {
-    domains: spec.domains,
-    difficulties: spec.difficulties,
-  });
-
-  const ordered = exactPool
-    .map((row: any) => toCanonicalQuestionForServing(row))
-    .sort((a, b) => {
-      if (a.canonical_id !== b.canonical_id)
-        return a.canonical_id.localeCompare(b.canonical_id);
-      return a.id.localeCompare(b.id);
-    });
-
-  return { pool: ordered };
-}
-
-function buildDeterministicPrebuiltSet(
-  pool: CanonicalQuestionForServing[],
-  targetCount: number,
-): {
-  selected: CanonicalQuestionForServing[];
-  selectionMode: "exact" | "exact_reuse";
-  sourcePoolCount: number;
-} {
-  const sourcePoolCount = pool.length;
-  if (sourcePoolCount === 0) {
-    return {
-      selected: [],
-      selectionMode: "exact",
-      sourcePoolCount: 0,
-    };
-  }
-
-  // Never wrap — cap at pool size to prevent within-session repeats
-  const effectiveCount = Math.min(targetCount, sourcePoolCount);
-  const selected = pool.slice(0, effectiveCount);
-
-  return {
-    selected,
-    selectionMode: sourcePoolCount < targetCount ? "exact_reuse" : "exact",
-    sourcePoolCount,
-  };
-}
+// listExactFilteredQuestionPool and filterPoolBySessionSpec REMOVED —
+// replaced by DB-side select_practice_pool_random RPC (ORDER BY random()).
+// See migration 20260627030000_practice_select_pool_random.sql.
 
 async function countSessionItems(sessionId: string): Promise<number> {
   const { count, error } = await supabaseServer
@@ -911,7 +842,6 @@ async function hydrateSessionItemOptionTokens(
       .update({
         option_order: served.optionOrder,
         option_token_map: served.optionTokenMap,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", row.id);
 
@@ -1157,8 +1087,9 @@ async function updateSessionLifecycle(
   patch?: Record<string, unknown>,
 ) {
   const nextUpdate: Record<string, unknown> = {
-    metadata,
+    filters: metadata,
     updated_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(),
     ...(patch ?? {}),
   };
 
@@ -1198,10 +1129,12 @@ async function startOrReplaySession(args: {
   // 1) Fetch all open sessions for this user to check global limit and idempotency
   const { data: openSessions, error: openErr } = await supabaseServer
     .from("practice_sessions")
-    .select("id, user_id, section, mode, status, completed, metadata")
+    .select(
+      "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+    )
     .eq("user_id", args.userId)
     .in("status", [...ACTIVE_DB_STATUSES])
-    .order("started_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (openErr) {
     return {
@@ -1221,13 +1154,16 @@ async function startOrReplaySession(args: {
   if (args.idempotencyKey) {
     replay =
       sessions.find((candidate) => {
-        const metadata = asSessionMetadata(candidate.metadata);
-        return metadata.session_start_idempotency_key === args.idempotencyKey;
+        const meta = asSessionMetadata(candidate.filters);
+        return meta.session_start_idempotency_key === args.idempotencyKey;
       }) ?? null;
   }
 
-  // 3) Enforce global limit for NEW sessions (unless replaying)
-  if (!replay && sessions.length >= SESSION_LIMIT) {
+  // @spec [Doc-02B_V4 §14; INV-02B-15] | @implemented [2026-06-27]
+  // Max concurrent sessions from config (CEO model = 5).
+  const config = await loadPracticeConfig();
+  const maxSessions = config.maxConcurrentSessions;
+  if (!replay && sessions.length >= maxSessions) {
     return {
       ok: false,
       status: 403,
@@ -1235,15 +1171,15 @@ async function startOrReplaySession(args: {
         error: "session_limit_exceeded",
         code: "SESSION_LIMIT_EXCEEDED",
         message: `You already have ${sessions.length} open sessions. Please complete or terminate some before starting a new one.`,
-        limit: SESSION_LIMIT,
+        limit: maxSessions,
       },
     };
   }
 
   if (replay) {
-    const replayMeta = asSessionMetadata(replay.metadata);
+    const replayMeta = asSessionMetadata(replay.filters);
     const binding = resolveClientInstanceBinding({
-      boundClientInstanceId: replayMeta.client_instance_id,
+      boundClientInstanceId: replay.client_instance_id,
       requestedClientInstanceId: args.clientInstanceId,
     });
 
@@ -1260,11 +1196,14 @@ async function startOrReplaySession(args: {
       };
     }
 
+    const replayPatch: Record<string, unknown> = {};
     if (binding.action === "bind") {
-      replayMeta.client_instance_id = binding.requestedClientInstanceId;
+      replayPatch.client_instance_id = binding.requestedClientInstanceId;
     }
     replayMeta.target_question_count = coerceTargetQuestionCount(
       replayMeta.target_question_count ?? args.targetQuestionCount,
+      config.maxSessionCountPremium,
+      config.defaultSessionCountWeb,
     );
     replayMeta.session_spec = replayMeta.session_spec ?? args.sessionSpec;
 
@@ -1277,6 +1216,8 @@ async function startOrReplaySession(args: {
       replayMeta.prebuilt = true;
       replayMeta.requested_count = coerceTargetQuestionCount(
         replayMeta.target_question_count,
+        config.maxSessionCountPremium,
+        config.defaultSessionCountWeb,
       );
       replayMeta.source_pool_count = Number.isFinite(
         replayMeta.source_pool_count as number,
@@ -1288,49 +1229,153 @@ async function startOrReplaySession(args: {
     }
 
     await updateSessionLifecycle(replay.id, replayMeta, {
-      status: replay.status === "created" ? "in_progress" : replay.status,
+      status: replay.status === "created" ? "active" : replay.status,
+      ...replayPatch,
     });
 
     return {
       ok: true,
       session: {
         ...replay,
-        metadata: replayMeta,
+        filters: replayMeta as Record<string, unknown>,
       },
       metadata: replayMeta,
       replayed: true,
     };
   }
 
+  // @spec [Doc-02B_V4 §14; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
+  // CEO model: filter-driven native random selection. All N items prepopulated at creation.
+  // Determinism satisfied by storage (the rows ARE the durable record).
+  let requestedCount = coerceTargetQuestionCount(
+    args.targetQuestionCount,
+    config.maxSessionCountPremium,
+    config.defaultSessionCountWeb,
+  );
+
+  // @spec [Doc-02B_V4 §41; F2 creation-time clamp] | @implemented [2026-06-30]
+  // Dry-run remaining daily quota for unpaid users and clamp requestedCount
+  // so we never over-materialize sessions beyond the remaining free-tier allowance.
+  if (args.role !== "admin") {
+    try {
+      const dryRunDecision = await checkAndReservePracticeQuota({
+        studentUserId: args.userId,
+        role: args.role,
+        sessionId: null,
+        sessionItemId: null,
+        dryRun: true,
+        requestId: null,
+      });
+      if (!dryRunDecision.allowed) {
+        return {
+          ok: false,
+          status: 402,
+          body: {
+            error: "Usage limit reached",
+            code: dryRunDecision.code || "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
+            limitType: "practice",
+            current: dryRunDecision.current,
+            limit: dryRunDecision.limit,
+            remaining: dryRunDecision.remaining,
+            resetAt: dryRunDecision.resetAt,
+            message:
+              dryRunDecision.message ||
+              "You've reached your daily practice question limit.",
+          },
+        };
+      }
+      const remaining =
+        typeof dryRunDecision.remaining === "number"
+          ? dryRunDecision.remaining
+          : requestedCount;
+      if (remaining > 0 && remaining < requestedCount) {
+        requestedCount = remaining;
+      }
+    } catch (e) {
+      if (e instanceof RateLimitUnavailableError) {
+        logger.warn(
+          "Quota dry-run unavailable at session creation; failing closed",
+        );
+        return {
+          ok: false,
+          status: 503,
+          body: {
+            error: {
+              message: "Quota service temporarily unavailable",
+              code: "QUOTA_UNAVAILABLE",
+            },
+          },
+        };
+      }
+      throw e;
+    }
+  }
+
   const sessionMetadata: SessionMetadata = {
     client_instance_id: args.clientInstanceId,
-    lifecycle_state: "created",
     active_session_item_id: null,
-    target_question_count: coerceTargetQuestionCount(args.targetQuestionCount),
+    target_question_count: requestedCount,
     session_spec: args.sessionSpec,
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
   };
 
-  // 1) Fetch the full question pool (no exclusions — we handle prioritization in-memory)
-  const exactPoolResult = await listExactFilteredQuestionPool({
-    sections: args.sessionSpec.sections,
-    domains: args.sessionSpec.domains,
-    difficulties: args.sessionSpec.difficulties,
-  });
+  // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
+  // DB-side ORDER BY random() via select_practice_pool_random RPC.
+  // The DB returns exactly N rows; no full-pool fetch into TS.
 
-  if ("error" in exactPoolResult) {
+  // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
+  const { data: activeSessionItems } = await supabaseServer
+    .from("practice_session_items")
+    .select("question_id, practice_sessions!inner(status)")
+    .eq("user_id", args.userId)
+    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
+
+  const excludeIds = (activeSessionItems ?? [])
+    .map((item: { question_id?: string }) => item.question_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  // 2. Resolve filter params for the RPC
+  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+  const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
+    d === "easy" ? 1 : d === "hard" ? 3 : 2,
+  );
+
+  // 3. Call DB-side random selection
+  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
+    "select_practice_pool_random",
+    {
+      p_sections: sectionCodes.length > 0 ? sectionCodes : null,
+      p_domains:
+        args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
+      p_skills:
+        args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
+      p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
+      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
+      p_limit: requestedCount,
+    },
+  );
+
+  if (poolError) {
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: exactPoolResult.error,
+        message: `pool_selection_failed: ${poolError.message}`,
       },
     };
   }
 
-  if (exactPoolResult.pool.length === 0) {
+  // 4. Validate and convert DB rows through the canonical pipeline
+  const mappedRows = ((poolRows ?? []) as unknown[]).map((row) =>
+    mapGenesisQuestionRow(row as CanonicalQuestionRowLike),
+  );
+  const validPool = mappedRows
+    .filter((row) => isCanonicalRuntimeQuestion(row))
+    .map((row) => toCanonicalQuestionForServing(row));
+
+  if (validPool.length === 0) {
     return {
       ok: false,
       status: 422,
@@ -1342,81 +1387,17 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const requestedCount = coerceTargetQuestionCount(args.targetQuestionCount);
+  const selected = validPool;
+  const sourcePoolCount = validPool.length;
+  const selectionMode: "exact" | "exact_reuse" =
+    sourcePoolCount < requestedCount ? "exact_reuse" : "exact";
 
-  // 2) Hard-exclude: questions in currently active sessions (prevents cross-tab repeats)
-  const { data: activeSessionItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, practice_sessions!inner(status)")
-    .eq("user_id", args.userId)
-    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
-
-  const activeQuestionIds = new Set(
-    (activeSessionItems ?? [])
-      .map((item: any) => item.question_id)
-      .filter(Boolean) as string[],
-  );
-
-  // 3) Soft-deprioritize: fetch full history with last-seen timestamps (section-aware)
-  const { data: historyItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, created_at")
-    .eq("user_id", args.userId)
-    .order("created_at", { ascending: false });
-
-  // Build a map of question_id -> most recent seen timestamp
-  const lastSeenMap = new Map<string, string>();
-  for (const item of (historyItems ?? []) as any[]) {
-    const qid = item.question_id as string;
-    if (!qid) continue;
-    // Only keep the most recent (first encountered since ordered DESC)
-    if (!lastSeenMap.has(qid)) {
-      lastSeenMap.set(qid, item.created_at as string);
-    }
-  }
-
-  // 4) Tiered selection: partition pool, then combine
-  const poolAfterExclusion = exactPoolResult.pool.filter(
-    (q) => !activeQuestionIds.has(q.id),
-  );
-
-  const neverSeen: CanonicalQuestionForServing[] = [];
-  const previouslySeen: Array<{
-    question: CanonicalQuestionForServing;
-    lastSeen: string;
-  }> = [];
-
-  for (const question of poolAfterExclusion) {
-    const lastSeen = lastSeenMap.get(question.id);
-    if (!lastSeen) {
-      neverSeen.push(question);
-    } else {
-      previouslySeen.push({ question, lastSeen });
-    }
-  }
-
-  // Shuffle fresh questions randomly
-  const shuffledFresh = fisherYates(neverSeen);
-
-  // Sort previously seen by oldest-first (most stale = highest priority)
-  previouslySeen.sort((a, b) => a.lastSeen.localeCompare(b.lastSeen));
-  const staleOrdered = previouslySeen.map((entry) => entry.question);
-
-  // Combine: fresh first, then stale, then select
-  const prioritizedPool = [...shuffledFresh, ...staleOrdered];
-  const selection = buildDeterministicPrebuiltSet(
-    prioritizedPool,
-    requestedCount,
-  );
-
-  const startedAt = new Date().toISOString();
-  const insertMetadata: SessionMetadata = {
+  const insertFilters: SessionMetadata = {
     ...sessionMetadata,
     prebuilt: true,
     requested_count: requestedCount,
-    source_pool_count: selection.sourcePoolCount,
-    selection_mode: selection.selectionMode,
-    lifecycle_state: "active",
+    source_pool_count: sourcePoolCount,
+    selection_mode: selectionMode,
     last_served_ordinal: 1,
   };
 
@@ -1426,14 +1407,16 @@ async function startOrReplaySession(args: {
       .insert({
         user_id: args.userId,
         actor_id: args.actorId,
-        section: args.section,
         mode: args.mode,
-        status: "in_progress",
-        completed: false,
-        started_at: startedAt,
-        metadata: insertMetadata,
+        filters: insertFilters,
+        target_count: requestedCount,
+        platform: "web",
+        client_instance_id: args.clientInstanceId,
+        status: "active",
       })
-      .select("id, user_id, section, mode, status, completed, metadata")
+      .select(
+        "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+      )
       .single();
 
   if (sessionInsertError || !createdSession) {
@@ -1448,7 +1431,8 @@ async function startOrReplaySession(args: {
     };
   }
 
-  const sessionId = String((createdSession as any).id ?? "");
+  const sessionRow = createdSession as Record<string, unknown>;
+  const sessionId = String(sessionRow.id ?? "");
   if (!sessionId) {
     return {
       ok: false,
@@ -1461,36 +1445,28 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
-  // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
-  // Denormalized snapshot. correct_answer/explanation/correct_variants are persisted for
+  // @spec [Doc 02B §14 Session Items Prefill] | @implemented 2026-06-14
+  // Denormalized snapshot. correct_answer/explanation are persisted for
   // SERVER-SIDE grading only and are never projected to the student (the serving path
-  // returns toStudentSafeQuestionDTO, which null-strips them). question_item_type +
-  // question_correct_variants carry the grid-in discriminator + accepted-answer set so a
-  // grid-in can be reconstructed and graded. NOTE: the genesis practice_session_items table
-  // does not yet have these two columns — see HALT in the PR notes (DB-lane dependency).
-  const insertRows = selection.selected.map((question, index) => ({
+  // returns toStudentSafeQuestionDTO, which null-strips them).
+  const insertRows = selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
     actor_id: args.actorId,
     question_id: question.id,
-    question_canonical_id: question.canonical_id,
     question_section: question.section_code,
-    question_item_type: question.item_type,
     question_stem: question.stem,
+    question_passage: null,
     question_options: question.options,
-    question_correct_variants: question.correct_variants ?? null,
-    question_difficulty: question.difficulty ?? null,
-    question_domain: question.domain ?? null,
-    question_skill: question.skill ?? null,
-    question_subskill: question.subskill ?? null,
-    question_exam: question.exam ?? null,
-    question_structure_cluster_id: question.structure_cluster_id ?? null,
     question_correct_answer: question.correct_answer ?? null,
     question_explanation: question.explanation ?? null,
+    question_domain: question.domain ?? null,
+    question_skill: question.skill ?? null,
+    question_difficulty: question.difficulty ?? null,
     ordinal: index + 1,
-    status: index === 0 ? "served" : "queued",
-    attempt_id: null,
+    status: index === 0 ? "served" : "pending",
     client_instance_id: index === 0 ? args.clientInstanceId : null,
+    served_at: index === 0 ? now : null,
     selected_answer: null,
     is_correct: null,
     outcome: null,
@@ -1499,8 +1475,6 @@ async function startOrReplaySession(args: {
     answered_at: null,
     option_order: null,
     option_token_map: null,
-    created_at: now,
-    updated_at: now,
   }));
 
   const { data: insertedItems, error: itemInsertError } = await supabaseServer
@@ -1536,32 +1510,48 @@ async function startOrReplaySession(args: {
   }
 
   const firstInsertedItem = Array.isArray(insertedItems)
-    ? insertedItems.find((row: any) => Number((row as any).ordinal) === 1)
+    ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
     : null;
-  const newMetadata = asSessionMetadata((createdSession as any).metadata);
+
+  if (firstInsertedItem) {
+    const quotaResult = await reservePracticeQuestionQuota({
+      userId: args.userId,
+      role: args.role,
+      sessionId,
+      sessionItemId: String(firstInsertedItem.id),
+    });
+    if (!quotaResult.ok) {
+      await cleanupFailedSessionMaterialization(sessionId);
+      return {
+        ok: false,
+        status: quotaResult.status,
+        body: quotaResult.body,
+      };
+    }
+  }
+
+  const newMetadata = asSessionMetadata((createdSession as SessionRow).filters);
   newMetadata.prebuilt = true;
   newMetadata.requested_count = requestedCount;
-  newMetadata.source_pool_count = selection.sourcePoolCount;
-  newMetadata.selection_mode = selection.selectionMode;
+  newMetadata.source_pool_count = sourcePoolCount;
+  newMetadata.selection_mode = selectionMode;
   newMetadata.target_question_count = requestedCount;
   newMetadata.session_spec = args.sessionSpec;
-  newMetadata.lifecycle_state = "active";
   newMetadata.client_instance_id = args.clientInstanceId;
   newMetadata.active_session_item_id = firstInsertedItem
-    ? String((firstInsertedItem as any).id)
+    ? String(firstInsertedItem.id)
     : null;
   newMetadata.last_served_ordinal = 1;
 
   await updateSessionLifecycle(sessionId, newMetadata, {
-    status: "in_progress",
-    completed: false,
+    status: "active",
   });
 
   return {
     ok: true,
     session: {
       ...(createdSession as SessionRow),
-      metadata: newMetadata,
+      filters: newMetadata,
     },
     metadata: newMetadata,
     replayed: false,
@@ -1575,7 +1565,9 @@ async function loadOwnedSession(
 ): Promise<{ forbidden: boolean; session: SessionRow } | null> {
   const { data, error } = await supabaseServer
     .from("practice_sessions")
-    .select("id, user_id, section, mode, status, completed, metadata")
+    .select(
+      "id, user_id, mode, status, filters, target_count, platform, client_instance_id, created_at, updated_at, last_activity_at, completed_at, actor_id",
+    )
     .eq("id", sessionId)
     .single();
 
@@ -1594,8 +1586,7 @@ async function getNextPrebuiltQueuedItem(
     .from("practice_session_items")
     .select(SESSION_ITEM_SELECT)
     .eq("session_id", sessionId)
-    .eq("status", "queued")
-    .is("attempt_id", null)
+    .eq("status", "pending")
     .order("ordinal", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -1654,6 +1645,7 @@ async function serveNextForSession(args: {
   clientInstanceId: string;
 }): Promise<Response> {
   const requestId = (args.req as any).requestId;
+  const config = await loadPracticeConfig();
 
   const owned = await loadOwnedSession(args.sessionId, args.userId, {
     hideForbidden: true,
@@ -1667,12 +1659,12 @@ async function serveNextForSession(args: {
   }
   const session = owned.session;
 
-  const metadata = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, metadata);
+  const metadata = asSessionMetadata(session.filters);
+  const sessionState = normalizeSessionState(session.status);
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return args.res.status(409).json({
       error: "session_closed",
@@ -1718,7 +1710,6 @@ async function serveNextForSession(args: {
       const rebuildPatch = {
         option_order: rebuilt.optionOrder,
         option_token_map: rebuilt.optionTokenMap,
-        updated_at: new Date().toISOString(),
       };
 
       const { error: rebuildErr } = await supabaseServer
@@ -1749,22 +1740,18 @@ async function serveNextForSession(args: {
         });
       }
 
-      metadata.lifecycle_state = "active";
       metadata.active_session_item_id = unresolved.id;
       metadata.prebuilt = true;
       metadata.target_question_count =
-        metadata.target_question_count ?? DEFAULT_TARGET_QUESTION_COUNT;
+        metadata.target_question_count ?? config.defaultSessionCountWeb;
       await updateSessionLifecycle(args.sessionId, metadata, {
-        status: "in_progress",
+        status: "active",
       });
 
       return args.res.status(200).json({
         sessionId: args.sessionId,
         sessionItemId: unresolved.id,
         ordinal: unresolved.ordinal,
-        // @spec [Preamble V3 §12 Reveal Matrix; Doc 02B §20 Per-Endpoint Enforcement] | @implemented 2026-06-06
-        // Anti-leak: consolidated onto the single canonical serializer — no second
-        // inline question shape. projectStudentSafeQuestion null-strips reveal fields.
         question: toStudentSafeQuestionDTO({
           sessionItemId: unresolved.id,
           question: canonicalQuestion,
@@ -1778,12 +1765,11 @@ async function serveNextForSession(args: {
       });
     }
 
-    metadata.lifecycle_state = "active";
     metadata.active_session_item_id = unresolved.id;
     metadata.last_served_ordinal = unresolved.ordinal;
 
     await updateSessionLifecycle(args.sessionId, metadata, {
-      status: "in_progress",
+      status: "active",
     });
 
     return args.res.json({
@@ -1827,12 +1813,10 @@ async function serveNextForSession(args: {
   }
 
   if (!nextPrebuilt) {
-    metadata.lifecycle_state = "completed";
     metadata.active_session_item_id = null;
     await updateSessionLifecycle(args.sessionId, metadata, {
       status: "completed",
-      completed: true,
-      finished_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     });
 
     return args.res.status(409).json({
@@ -1858,11 +1842,10 @@ async function serveNextForSession(args: {
     .update({
       status: "served",
       client_instance_id: args.clientInstanceId,
-      updated_at: now,
+      served_at: now,
     })
     .eq("id", nextPrebuilt.id)
-    .eq("status", "queued")
-    .is("attempt_id", null)
+    .eq("status", "pending")
     .select(SESSION_ITEM_SELECT)
     .maybeSingle();
 
@@ -1886,13 +1869,11 @@ async function serveNextForSession(args: {
     await supabaseServer
       .from("practice_session_items")
       .update({
-        status: "queued",
+        status: "pending",
         client_instance_id: null,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", promoted.id)
-      .eq("status", "served")
-      .is("attempt_id", null);
+      .eq("status", "served");
 
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
@@ -1911,28 +1892,11 @@ async function serveNextForSession(args: {
     });
   }
 
-  metadata.lifecycle_state = "active";
   metadata.active_session_item_id = promoted.id;
   metadata.last_served_ordinal = promoted.ordinal;
   await updateSessionLifecycle(args.sessionId, metadata, {
-    status: "in_progress",
+    status: "active",
   });
-
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: args.userId,
-      session_id: args.sessionId,
-      question_id: promoted.question_id,
-      event_type: "served",
-      created_at: now,
-      payload: {
-        session_item_id: promoted.id,
-        ordinal: promoted.ordinal,
-      },
-    });
-  } catch {
-    // non-blocking
-  }
 
   return args.res.json({
     sessionId: session.id,
@@ -1965,10 +1929,12 @@ router.get(
 
     const { data: sessions, error } = await supabaseServer
       .from("practice_sessions")
-      .select("id, section, mode, status, started_at, metadata")
+      .select(
+        "id, mode, status, filters, target_count, platform, client_instance_id, created_at, updated_at, last_activity_at, completed_at, actor_id",
+      )
       .eq("user_id", userId)
       .in("status", [...ACTIVE_DB_STATUSES])
-      .order("started_at", { ascending: false });
+      .order("created_at", { ascending: false });
 
     if (error) {
       return res.status(500).json({
@@ -1978,9 +1944,8 @@ router.get(
       });
     }
 
-    // Enhance sessions with progress info
     const enhancedSessions = await Promise.all(
-      (sessions || []).map(async (s) => {
+      (sessions || []).map(async (s: SessionRow) => {
         const { count } = await supabaseServer
           .from("practice_session_items")
           .select("*", { count: "exact", head: true })
@@ -1992,13 +1957,12 @@ router.get(
           .eq("session_id", s.id)
           .in("status", ["answered", "skipped"]);
 
-        const metadata = asSessionMetadata(s.metadata);
+        const metadata = asSessionMetadata(s.filters);
         return {
           id: s.id,
-          section: s.section,
           mode: s.mode,
           status: s.status,
-          started_at: s.started_at,
+          created_at: s.created_at,
           target_question_count: metadata.target_question_count || 0,
           total_items: count || 0,
           answered_items: answered || 0,
@@ -2037,7 +2001,7 @@ router.post(
     }
 
     const { session } = owned;
-    const metadata = asSessionMetadata(session.metadata);
+    const metadata = asSessionMetadata(session.filters);
 
     // Check for client instance conflict
     const binding = resolveClientInstanceBinding({
@@ -2071,7 +2035,7 @@ router.post(
       // If no active or queued items, the session is likely complete
       return res.json({
         sessionId: session.id,
-        state: normalizeSessionState(session.status, metadata),
+        state: normalizeSessionState(session.status),
         stats: await getSessionStats(sessionId, userId),
         requestId,
       });
@@ -2112,7 +2076,7 @@ router.post(
       sessionId: session.id,
       sessionItemId: state.id,
       ordinal: state.ordinal,
-      state: normalizeSessionState(session.status, metadata),
+      state: normalizeSessionState(session.status),
       calculatorState: metadata.calculator_state ?? null,
       question: toStudentSafeQuestionDTO({
         sessionItemId: state.id,
@@ -2152,7 +2116,8 @@ router.post(
       });
     }
 
-    const normalizedSpec = normalizeSessionSpec(parsed.data);
+    const config = await loadPracticeConfig();
+    const normalizedSpec = normalizeSessionSpec(parsed.data, config);
     const section = normalizedSpec.section;
     const mode = normalizedSpec.sessionSpec.mode;
     const idempotencyKey = parsed.data.idempotency_key?.trim() || null;
@@ -2179,16 +2144,12 @@ router.post(
       });
     }
 
-    const state = normalizeSessionState(
-      sessionResult.session.status,
-      sessionResult.metadata,
-    );
+    const state = normalizeSessionState(sessionResult.session.status);
 
     return res.json({
       id: sessionResult.session.id,
       sessionId: sessionResult.session.id,
       userId,
-      section: sessionResult.session.section,
       mode: sessionResult.session.mode,
       state,
       replayed: sessionResult.replayed,
@@ -2239,16 +2200,14 @@ router.post(
       });
     }
 
-    const metadata = asSessionMetadata(owned.session.metadata);
-    metadata.lifecycle_state = "abandoned";
+    const metadata = asSessionMetadata(owned.session.filters);
     metadata.active_session_item_id = null;
     metadata.client_instance_id = null;
     metadata.calculator_state = null;
 
     await updateSessionLifecycle(sessionId, metadata, {
       status: "abandoned",
-      completed: true,
-      finished_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     });
 
     return res.json({
@@ -2306,13 +2265,13 @@ router.post(
       });
     }
 
-    const metadata = asSessionMetadata(owned.session.metadata);
-    const sessionState = normalizeSessionState(owned.session.status, metadata);
+    const metadata = asSessionMetadata(owned.session.filters);
+    const sessionState = normalizeSessionState(owned.session.status);
 
     if (
       sessionState === "completed" ||
       sessionState === "abandoned" ||
-      TERMINAL_DB_STATUSES.includes(owned.session.status as any)
+      TERMINAL_DB_STATUSES.includes(owned.session.status)
     ) {
       return res.status(409).json({
         error: "session_closed",
@@ -2435,7 +2394,7 @@ router.get(
     }
     const session = owned.session;
 
-    const metadata = asSessionMetadata(session.metadata);
+    const metadata = asSessionMetadata(session.filters);
     const queryClientInstanceId = normalizeClientInstanceId(
       req.query.client_instance_id,
     );
@@ -2455,11 +2414,10 @@ router.get(
     const targetQuestionCount = coerceTargetQuestionCount(
       metadata.target_question_count,
     );
-    const state = normalizeSessionState(session.status, metadata);
+    const state = normalizeSessionState(session.status);
 
     return res.json({
       sessionId: session.id,
-      section: session.section,
       state,
       currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
       answeredCount: progressCounts.answeredCount,
@@ -2594,13 +2552,13 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const sessionMeta = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, sessionMeta);
+  const _sessionMeta = asSessionMetadata(session.filters);
+  const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -2629,8 +2587,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const questionId = String(sessionItem.question_id);
-  let correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
+  const _questionId = String(sessionItem.question_id);
+  const correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
   const explanation = canonicalQuestion.explanation ?? null;
 
   if (!correctAnswerKey) {
@@ -2780,7 +2738,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       is_correct: isCorrect,
       outcome,
       time_spent_ms: clampedTimeSpentMs,
-      updated_at: now,
       answered_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
@@ -2833,26 +2790,9 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
 
   try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: payload.sessionId,
-      question_id: questionId,
-      event_type: "answered",
-      created_at: now,
-      payload: {
-        session_item_id: sessionItem.id,
-        outcome,
-        isCorrect,
-      },
-    });
-  } catch {
-    // non-blocking
-  }
-
-  try {
     const canonicalId =
-      typeof sessionItem.question_canonical_id === "string"
-        ? sessionItem.question_canonical_id
+      typeof sessionItem.question_id === "string"
+        ? sessionItem.question_id
         : null;
     const section =
       typeof sessionItem.question_section === "string"
@@ -2870,23 +2810,25 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       sessionItem.question_difficulty ?? null,
     );
     if (canonicalId && difficultyBucket && section && domain && skill) {
-      await applyLearningEventToMastery({
+      await applyMasteryEvent({
         studentId: userId,
         section,
         domain,
         skill,
         difficulty: difficultyBucket,
         sourceFamily: "practice",
+        eventSourceKind: "practice_attempt",
         correct: isCorrect,
-        latencyMs: clampedTimeSpentMs,
         occurredAt: now,
+        eventId: sessionItem.id,
+        questionId: canonicalId,
       });
     } else if (
       canonicalId &&
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
-      console.warn("[practice] mastery emission skipped (missing metadata)", {
+      logger.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
         sessionId: payload.sessionId,
         questionCanonicalId: canonicalId,
@@ -2896,7 +2838,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
-      console.warn(
+      logger.warn(
         "[practice] mastery emission skipped (invalid difficulty bucket)",
         {
           requestId,
@@ -2907,14 +2849,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         },
       );
     }
-  } catch (masteryErr: any) {
-    console.warn("[practice] mastery logging failed", {
+  } catch (masteryErr: unknown) {
+    const errMsg =
+      masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
+    logger.warn("[practice] mastery logging failed", {
       requestId,
-      message: masteryErr?.message,
+      message: errMsg,
     });
   }
 
-  const refreshedMeta = asSessionMetadata(session.metadata);
+  const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(payload.sessionId);
@@ -2924,17 +2868,13 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
-    refreshedMeta.lifecycle_state = "completed";
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "completed",
-      completed: true,
-      finished_at: now,
+      completed_at: now,
     });
   } else {
-    refreshedMeta.lifecycle_state = "active";
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-      status: "in_progress",
-      completed: false,
+      status: "active",
     });
   }
 
@@ -3002,13 +2942,13 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   const session = ownedSessionResult.session;
-  const sessionMeta = asSessionMetadata(session.metadata);
-  const sessionState = normalizeSessionState(session.status, sessionMeta);
+  const sessionMeta = asSessionMetadata(session.filters);
+  const sessionState = normalizeSessionState(session.status);
 
   if (
     sessionState === "completed" ||
     sessionState === "abandoned" ||
-    TERMINAL_DB_STATUSES.includes(session.status as any)
+    TERMINAL_DB_STATUSES.includes(session.status)
   ) {
     return res.status(409).json({
       error: "session_closed",
@@ -3047,7 +2987,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  const questionId = String(sessionItem.question_id);
+  const _questionId = String(sessionItem.question_id);
   if (payload.clientAttemptId) {
     const existingByKey = await findSessionItemByClientAttemptId(
       userId,
@@ -3108,7 +3048,6 @@ async function submitPracticeSkip(req: Request, res: Response) {
       is_correct: false,
       outcome: "skipped",
       time_spent_ms: null,
-      updated_at: now,
       answered_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
@@ -3144,10 +3083,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
         mode: "multiple_choice",
         feedback: raced.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: raceStats,
-        state: normalizeSessionState(
-          session.status,
-          asSessionMetadata(session.metadata),
-        ),
+        state: normalizeSessionState(session.status),
         idempotentRetried: true,
       });
     }
@@ -3159,24 +3095,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
-  try {
-    await supabaseServer.from("practice_events").insert({
-      user_id: userId,
-      session_id: sessionId,
-      question_id: questionId,
-      event_type: "skipped",
-      created_at: now,
-      payload: {
-        session_item_id: sessionItem.id,
-        outcome: "skipped",
-        isCorrect: false,
-      },
-    });
-  } catch {
-    // non-blocking
-  }
-
-  const refreshedMeta = asSessionMetadata(session.metadata);
+  const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(sessionId);
@@ -3186,17 +3105,13 @@ async function submitPracticeSkip(req: Request, res: Response) {
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
   if (shouldComplete) {
-    refreshedMeta.lifecycle_state = "completed";
     await updateSessionLifecycle(sessionId, refreshedMeta, {
       status: "completed",
-      completed: true,
-      finished_at: now,
+      completed_at: now,
     });
   } else {
-    refreshedMeta.lifecycle_state = "active";
     await updateSessionLifecycle(sessionId, refreshedMeta, {
-      status: "in_progress",
-      completed: false,
+      status: "active",
     });
   }
 

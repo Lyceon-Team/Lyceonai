@@ -69,30 +69,48 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
 }));
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => {
-  const chain: any = {
-    then: (resolve: any) => resolve({ data: [], error: null }),
+  const configRows = [
+    { key: "max_concurrent_sessions", value: 5 },
+    { key: "default_session_count_web", value: 20 },
+    { key: "max_session_count_premium", value: 60 },
+    { key: "target_seconds_per_question", value: 90 },
+    { key: "answer_rate_limit_window_ms", value: 60000 },
+    { key: "answer_rate_limit_max", value: 30 },
+  ];
+  const makeChain = (data: any[]) => {
+    const chain: any = {
+      then: (resolve: any) => resolve({ data, error: null }),
+    };
+    const identity = () => chain;
+    Object.assign(chain, {
+      eq: identity,
+      is: identity,
+      in: identity,
+      match: identity,
+      order: identity,
+      limit: identity,
+      select: identity,
+      update: identity,
+      insert: identity,
+      upsert: identity,
+      single: () =>
+        Promise.resolve({
+          data: { student_id: "test-user", id: "q-1" },
+          error: null,
+        }),
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    });
+    return chain;
   };
-  const identity = () => chain;
-  Object.assign(chain, {
-    eq: identity,
-    is: identity,
-    in: identity,
-    match: identity,
-    order: identity,
-    limit: identity,
-    select: identity,
-    update: identity,
-    insert: identity,
-    upsert: identity,
-    single: () =>
-      Promise.resolve({
-        data: { student_id: "test-user", id: "q-1" },
-        error: null,
-      }),
-    maybeSingle: () => Promise.resolve({ data: null, error: null }),
-  });
   return {
-    supabaseServer: { from: vi.fn(() => chain), rpc: vi.fn() },
+    supabaseServer: {
+      from: vi.fn((table: string) =>
+        table === "practice_runtime_config"
+          ? makeChain(configRows)
+          : makeChain([]),
+      ),
+      rpc: vi.fn(),
+    },
   };
 });
 

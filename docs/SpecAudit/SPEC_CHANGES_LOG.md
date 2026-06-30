@@ -25,6 +25,55 @@
 
 ## Entries
 
+
+SCL-016 | Doc 02B (flow-cards / adaptive practice flow) | PROPOSED (Karl promotes)
+Change: flow-cards is a POST-LAUNCH feature; removed from launch UI.
+WAS: flow-cards positioned as the adaptive practice flow for students (the useAdaptivePractice path).
+IS: flow-cards deferred to post-launch as an Anki/Quizlet-style spaced-practice feature, distinct from
+  launch practice. Removed from the launch practice UI; the useAdaptivePractice hook is retired.
+Rationale: CEO ruling 2026-06 — launch practice is the unified filter-driven engine. Flow-cards is a
+  separate post-launch product surface, not part of launch. Its best idea ("target weak skills") is
+  salvaged as the Vertical B weakest-skills filter preset.
+Owner action: revise any 02B flow-cards prose to post-launch status. No code/DB change from this entry.
+
+SCL-015 | Doc 02B §15 (item selection) | PROPOSED (Karl promotes)
+Change: launch selection is filter-driven native random; adaptive/weakness-ranked selection is POST-LAUNCH.
+WAS (02B §15): weakness-first ranking from mastery + seeded Fisher-Yates determinism ("reconstructable
+  from recorded state", INV-02B-07) + cold-start blueprint-balanced sampling.
+IS (launch, CEO ruling 2026-06): student-picked multi-select filters (difficulty/domain/skill, multi per
+  facet, none=all) → native Postgres ORDER BY random() over the filtered pool → ALL N items prepopulated
+  into practice_session_items at session creation. Determinism is satisfied BY STORAGE (the prepopulated
+  rows ARE the durable record of what was selected); no seed/replay needed. No mastery read at selection.
+Rationale: CEO ruling — launch practice is standard filter-driven prepopulation, industry-standard, built
+  near-scratch (both legacy hooks retired). Adaptive selection (weakness-ranked) deferred to post-launch.
+  The audit "gaps" G-SEL-1 (weakness-first), G-SEL-2 (seeded shuffle), G-SEL-3 (cold-start blueprint)
+  CLOSE AS NOT-GAPS — they described a feature being deliberately deferred, not a defect.
+  The "work on your weakest skills" idea is preserved but reframed: a FILTER PRESET (lowest-N mastery
+  skills → filter input) in Vertical B (mastery-coupled, post-baseline-diagnostic), NOT an adaptive
+  selection engine. INV-02B-07 (seeded reconstructability) superseded by store-the-result determinism.
+Owner action: revise Doc 02B §15 to the filter-driven launch model; mark adaptive selection post-launch.
+No code/DB change from this entry; records the spec-vs-launch-model divergence.
+
+SCL-014 | Doc 05A §4.6/§11.4 (canonical_mastery_events source tables) | PROPOSED (Karl promotes)
+Change: spec prose names event-source tables that differ from the live canonical schema. DB is canonical.
+WAS (spec text): canonical_mastery_events derives events from `test_session_answers` (full_length_answer)
+   and `practice_attempts_v0` (practice_attempt).
+IS (live canonical schema, verified read-only + Codex-confirmed via lane_c_mastery_seam.sql):
+   - practice_attempt  → practice_session_items.id   (lane_c_mastery_seam.sql:42-53)
+   - review_error_attempt → review_error_attempts.id (lane_c_mastery_seam.sql:66-70)
+   - full_length_answer → full_length_exam_responses.id (persisted response PK)
+   The `practice_attempts_v0` table is the retired fossil (Doc 02B §8 names practice_session_items as the
+   V2 replacement; the DB function comment already flags this). `test_session_answers` is the spec-text
+   name for what the live schema exposes as full_length_exam_responses.
+Rationale: WS-0 mastery vertical (PR @cleanup) grounded the TS write-bridge against the LIVE canonical
+   tables, not the stale spec prose, per the standing directive (DB/live schema is canonical; repo/spec-
+   text lag is reconciled forward, never resolved by trusting stale names). event_id sourcing is
+   idempotency-load-bearing ((event_source_kind, event_id) dedup on mastery_event_audit_log); Codex
+   independently re-derived that the sourced PKs match canonical_mastery_events' derivation — confirmed
+   correct. No code/DB change from this entry; it records that Doc 05A's prose table names should be
+   updated to the live names at the next owner spec edit. Tracks the divergence so it's not reburied.
+No DB migration. No code change. Owner action: update Doc 05A §4.6/§11.4 table names at next spec pass.
+
 ### SCL-013 — Doc 01 V8 §40.3 subscription-cancellation timing corrected to match built implementation
 **Date:** 2026-06-27 · **Status:** PROPOSED
 **Touches:** Doc 01 V8 §40.3 (line ~1968)
@@ -166,4 +215,6 @@ These are OPEN entries above that specifically need the locked spec doc text upd
 - 05D §10 — SCL-002 (Q2 request-row deletion; Q3 review_schedule→L1; Q6 audit FK drops; operator-attribution guard)
 - 05D §10 — SCL-003 (storage-purge → PR-4 orchestration seam)
 - 05D §10 — SCL-004 (student_kpi_rollups_current → deleted-derived set; defer enumeration to INV-DELETION-COMPLETE)
+- Doc 02B §15 — SCL-015 (item selection: weakness-ranked + seeded Fisher-Yates → filter-driven native random prepopulation; adaptive deferred post-launch)
+- Doc 02B (flow-cards) — SCL-016 (flow-cards deferred post-launch; useAdaptivePractice retired)
 - Doc 05E — SCL-007/008/006 commit to docs/Spec after Codex audit

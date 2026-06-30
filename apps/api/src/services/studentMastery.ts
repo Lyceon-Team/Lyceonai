@@ -1,5 +1,4 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
-import type { LearningEventInput } from "./mastery-write";
 import type {
   WeaknessQuery,
   SkillWeakness,
@@ -22,10 +21,7 @@ export interface QuestionMetadataSnapshot {
   structure_cluster_id: string | null;
 }
 
-export type { LearningEventInput };
 export type { WeaknessQuery, SkillWeakness, MasterySummary };
-
-export { applyLearningEventToMastery } from "./mastery-write";
 
 // Compatibility wrappers: canonical mastery reads live in mastery-read.
 export async function getWeakestSkills(

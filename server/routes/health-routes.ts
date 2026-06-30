@@ -1,6 +1,10 @@
-import { Router, Request, Response } from 'express';
-import { logger } from '../logger.js';
-import { getSupabaseAdmin, resolveTokenFromRequest, resolveUserIdFromToken } from '../middleware/supabase-auth.js';
+import { Router, Request, Response } from "express";
+import { logger } from "../logger.js";
+import {
+  getSupabaseAdmin,
+  resolveTokenFromRequest,
+  resolveUserIdFromToken,
+} from "../middleware/supabase-auth.js";
 
 const router = Router();
 
@@ -26,16 +30,16 @@ interface HealthReport {
   schema: {
     questions: SchemaCheck;
     practice_sessions: SchemaCheck;
-    practice_events: SchemaCheck;
+    practice_session_items: SchemaCheck;
   };
 }
 
-router.get('/practice', async (req: Request, res: Response) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not found' });
+router.get("/practice", async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ error: "Not found" });
   }
 
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader("Cache-Control", "no-store");
 
   const report: HealthReport = {
     ok: true,
@@ -54,7 +58,7 @@ router.get('/practice', async (req: Request, res: Response) => {
     schema: {
       questions: { hasColumns: [], missingColumns: [] },
       practice_sessions: { hasColumns: [], missingColumns: [] },
-      practice_events: { hasColumns: [], missingColumns: [] },
+      practice_session_items: { hasColumns: [], missingColumns: [] },
     },
   };
 
@@ -70,29 +74,56 @@ router.get('/practice', async (req: Request, res: Response) => {
           report.auth.resolvedUserId = resolvedUserId;
 
           const admin = getSupabaseAdmin();
-          const { data, error: adminErr } = await admin.auth.admin.getUserById(resolvedUserId);
+          const { data, error: adminErr } =
+            await admin.auth.admin.getUserById(resolvedUserId);
 
           if (adminErr || !data?.user) {
             report.auth.serviceRoleCanReadUser = false;
-            report.auth.userLookupError = adminErr?.message || 'user_not_found';
+            report.auth.userLookupError = adminErr?.message || "user_not_found";
             report.ok = false;
           } else {
             report.auth.serviceRoleCanReadUser = true;
           }
         } else {
-          report.auth.userLookupError = 'token_invalid';
+          report.auth.userLookupError = "token_invalid";
         }
       } catch (e: any) {
-        report.auth.userLookupError = e?.message || 'exception';
+        report.auth.userLookupError = e?.message || "exception";
       }
     }
 
     const admin = getSupabaseAdmin();
 
     const requiredColumns: Record<string, string[]> = {
-      questions: ['id', 'canonical_id', 'status', 'section_code', 'question_type', 'stem', 'options', 'correct_answer', 'answer_text', 'explanation', 'option_metadata', 'domain', 'skill', 'subskill', 'skill_code', 'difficulty', 'test_code', 'source_type'],
-      practice_sessions: ['id', 'user_id', 'section', 'status', 'started_at'],
-      practice_events: ['id', 'user_id', 'event_type', 'created_at'],
+      questions: [
+        "id",
+        "canonical_id",
+        "status",
+        "section_code",
+        "question_type",
+        "stem",
+        "options",
+        "correct_answer",
+        "answer_text",
+        "explanation",
+        "option_metadata",
+        "domain",
+        "skill",
+        "subskill",
+        "skill_code",
+        "difficulty",
+        "test_code",
+        "source_type",
+      ],
+      practice_sessions: ["id", "user_id", "mode", "status", "created_at"],
+      practice_session_items: [
+        "id",
+        "session_id",
+        "user_id",
+        "question_id",
+        "ordinal",
+        "status",
+      ],
     };
 
     for (const [tableName, columns] of Object.entries(requiredColumns)) {
@@ -100,27 +131,31 @@ router.get('/practice', async (req: Request, res: Response) => {
 
       // Use information_schema to check column existence (more reliable)
       const { data: schemaRows, error: schemaErr } = await admin
-        .from('information_schema.columns' as any)
-        .select('column_name')
-        .eq('table_schema', 'public')
-        .eq('table_name', tableName);
+        .from("information_schema.columns" as any)
+        .select("column_name")
+        .eq("table_schema", "public")
+        .eq("table_name", tableName);
 
       if (schemaErr) {
         // Fallback: try select approach if information_schema fails
-        const selectStr = columns.join(', ');
+        const selectStr = columns.join(", ");
         const { error: selectErr } = await admin
           .from(tableName)
           .select(selectStr)
           .limit(0);
 
         if (selectErr) {
-          const missingMatch = selectErr.message?.match(/column.*"(\w+)".*does not exist/i);
+          const missingMatch = selectErr.message?.match(
+            /column.*"(\w+)".*does not exist/i,
+          );
           if (missingMatch) {
             tableCheck.missingColumns = [missingMatch[1]];
-            tableCheck.hasColumns = columns.filter(c => c !== missingMatch[1]);
+            tableCheck.hasColumns = columns.filter(
+              (c) => c !== missingMatch[1],
+            );
             report.ok = false;
-          } else if (selectErr.message?.includes('does not exist')) {
-            tableCheck.missingColumns = ['(table_not_found)'];
+          } else if (selectErr.message?.includes("does not exist")) {
+            tableCheck.missingColumns = ["(table_not_found)"];
             report.ok = false;
           } else {
             tableCheck.hasColumns = columns;
@@ -131,9 +166,11 @@ router.get('/practice', async (req: Request, res: Response) => {
           tableCheck.missingColumns = [];
         }
       } else {
-        const existingCols = new Set((schemaRows || []).map((r: any) => r.column_name));
-        tableCheck.hasColumns = columns.filter(c => existingCols.has(c));
-        tableCheck.missingColumns = columns.filter(c => !existingCols.has(c));
+        const existingCols = new Set(
+          (schemaRows || []).map((r: any) => r.column_name),
+        );
+        tableCheck.hasColumns = columns.filter((c) => existingCols.has(c));
+        tableCheck.missingColumns = columns.filter((c) => !existingCols.has(c));
         if (tableCheck.missingColumns.length > 0) {
           report.ok = false;
         }
@@ -146,11 +183,14 @@ router.get('/practice', async (req: Request, res: Response) => {
 
     res.json(report);
   } catch (error: any) {
-    logger.error('HEALTH', 'practice', 'Health check failed', { error: error?.message });
+    logger.error("HEALTH", "practice", "Health check failed", {
+      error: error?.message,
+    });
     report.ok = false;
-    res.status(500).json({ ...report, error: error?.message || 'Health check failed' });
+    res
+      .status(500)
+      .json({ ...report, error: error?.message || "Health check failed" });
   }
 });
 
 export default router;
-

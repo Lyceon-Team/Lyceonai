@@ -98,10 +98,29 @@ export function normalizeItemType(value: unknown): CanonicalItemType | null {
   return null;
 }
 
+export const CANONICAL_DOMAINS: readonly string[] = [
+  "Algebra",
+  "Advanced Math",
+  "Problem Solving & Data Analysis",
+  "Geometry & Trigonometry",
+  "Craft and Structure",
+  "Information and Ideas",
+  "Standard English Conventions",
+  "Expression of Ideas",
+];
+
+export const DOMAIN_LOOKUP = new Map(
+  CANONICAL_DOMAINS.map((d) => [d.toLowerCase(), d]),
+);
+
+export function resolveCanonicalDomain(input: string): string {
+  return DOMAIN_LOOKUP.get(input.trim().toLowerCase()) ?? input.trim();
+}
+
 export function resolveSectionFilterValues(input: unknown): string[] | null {
   if (typeof input !== "string") return null;
   const normalized = input.trim().toLowerCase();
-  if (normalized === "math" || normalized === "m") return ["M", "MATH"];
+  if (normalized === "math" || normalized === "m") return ["M"];
   if (
     normalized === "rw" ||
     normalized === "reading_writing" ||
