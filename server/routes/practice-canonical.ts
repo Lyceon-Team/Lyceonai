@@ -256,14 +256,12 @@ async function practiceAnswerRateLimiter(
     logger.warn(
       "Rate limiter config unavailable; rejecting request (fail-closed)",
     );
-    res
-      .status(503)
-      .json({
-        error: {
-          message: "Service temporarily unavailable",
-          code: "CONFIG_UNAVAILABLE",
-        },
-      });
+    res.status(503).json({
+      error: {
+        message: "Service temporarily unavailable",
+        code: "CONFIG_UNAVAILABLE",
+      },
+    });
     return;
   }
   const limiter = getPracticeAnswerRateLimiter(config);
@@ -1296,11 +1294,18 @@ async function startOrReplaySession(args: {
     } catch (e) {
       if (e instanceof RateLimitUnavailableError) {
         logger.warn(
-          "Quota dry-run unavailable at session creation; proceeding unclamped",
+          "Quota dry-run unavailable at session creation; failing closed",
         );
-      } else {
-        throw e;
+        return {
+          ok: false,
+          status: 503,
+          body: {
+            error: "Quota service temporarily unavailable",
+            code: "QUOTA_UNAVAILABLE",
+          },
+        };
       }
+      throw e;
     }
   }
 
