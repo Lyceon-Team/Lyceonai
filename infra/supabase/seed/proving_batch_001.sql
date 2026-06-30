@@ -136,7 +136,7 @@ INSERT INTO questions (
   E'The correct answer is B. The passage contrasts the modest expectations of the automotive executives with Rivera''s extensive research and the ambitious scope of the resulting murals, emphasizing how the project grew beyond what was originally anticipated. Option A makes a comparative claim about artistic superiority that the passage does not address. Option C focuses on technical processes, but the passage emphasizes scope and ambition rather than technique. Option D mentions earlier works in Mexico, which the passage does not discuss.',
   '{"A":{"role":"distractor","error_taxonomy":"rhetorical_purpose_error"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"detail_misread"},"D":{"role":"distractor","error_taxonomy":"inference_overreach"}}'::jsonb,
   NULL,
-  'draft', 1, 75, false,
+  'draft', 1, 90, false,
   '{"provenance":"Lyceon original","authored_by":"claude","authored_date":"2026-06-30"}'::jsonb,
   '{"model":"claude","generation_date":"2026-06-30","prompt_version":"questions_governance_v1"}'::jsonb
 );
@@ -159,7 +159,7 @@ INSERT INTO questions (
   'The correct answer is A. The text contains two independent clauses: one ending with ''Arctic terns'' and one beginning with ''Her findings revealed.'' A period correctly separates two independent clauses into distinct sentences. Option B creates a comma splice by joining two independent clauses with only a comma. Option C creates a run-on sentence with no punctuation between the clauses. Option D introduces ''which'' in a way that creates a grammatically incomplete construction.',
   '{"A":{"role":"correct","error_taxonomy":null},"B":{"role":"distractor","error_taxonomy":"sentence_boundary_error"},"C":{"role":"distractor","error_taxonomy":"sentence_boundary_error"},"D":{"role":"distractor","error_taxonomy":"grammar_rule_error"}}'::jsonb,
   NULL,
-  'draft', 1, 75, false,
+  'draft', 1, 90, false,
   '{"provenance":"Lyceon original","authored_by":"claude","authored_date":"2026-06-30"}'::jsonb,
   '{"model":"claude","generation_date":"2026-06-30","prompt_version":"questions_governance_v1"}'::jsonb
 );
@@ -176,13 +176,13 @@ INSERT INTO questions (
   'mcq',
   'The student wants to emphasize a disadvantage of green roofs. Which choice most effectively uses relevant information from the notes to accomplish this goal?',
   E'While researching the environmental impact of urban green roofs, a student has taken the following notes:\n- Green roofs are rooftops partially or fully covered with vegetation planted over a waterproof membrane.\n- A 2023 study by the University of Toronto measured surface temperatures on green roofs and conventional roofs in the same building complex.\n- Green roof surfaces averaged $25°C$ cooler than conventional roof surfaces during summer months.\n- Green roofs also retained approximately $60\\%$ of annual rainfall, reducing stormwater runoff.\n- The installation cost of green roofs is typically two to three times higher than that of conventional roofs.',
-  '[{"key":"A","text":"Green roofs, which are rooftops covered with vegetation over a waterproof membrane, can retain approximately 60% of annual rainfall."},{"key":"B","text":"A 2023 University of Toronto study found that green roof surfaces averaged 25°C cooler than conventional roof surfaces during summer months."},{"key":"C","text":"Although green roofs provide benefits such as reduced stormwater runoff and lower surface temperatures, their installation cost is typically two to three times higher than that of conventional roofs."},{"key":"D","text":"Green roofs are rooftops that are partially or fully covered with vegetation and are designed to retain rainfall and reduce surface temperatures."}]'::jsonb,
+  '[{"key":"A","text":"Green roofs, which are rooftops covered with vegetation over a waterproof membrane, can retain approximately $60\\%$ of annual rainfall."},{"key":"B","text":"A 2023 University of Toronto study found that green roof surfaces averaged $25°C$ cooler than conventional roof surfaces during summer months."},{"key":"C","text":"Although green roofs provide benefits such as reduced stormwater runoff and lower surface temperatures, their installation cost is typically two to three times higher than that of conventional roofs."},{"key":"D","text":"Green roofs are rooftops that are partially or fully covered with vegetation and are designed to retain rainfall and reduce surface temperatures."}]'::jsonb,
   'C',
   NULL,
   E'The correct answer is C. The student''s goal is to emphasize a disadvantage, and only option C highlights the higher installation cost of green roofs. The concessive clause (\"Although green roofs provide benefits\") acknowledges the advantages while the main clause focuses on the cost disadvantage, effectively emphasizing it. Options A and B present advantages of green roofs without mentioning any disadvantage. Option D provides a neutral definition without addressing either advantages or disadvantages.',
   '{"A":{"role":"distractor","error_taxonomy":"partial_reasoning"},"B":{"role":"distractor","error_taxonomy":"evidence_mismatch"},"C":{"role":"correct","error_taxonomy":null},"D":{"role":"distractor","error_taxonomy":"rhetorical_purpose_error"}}'::jsonb,
   NULL,
-  'draft', 1, 105, false,
+  'draft', 1, 120, false,
   '{"provenance":"Lyceon original","authored_by":"claude","authored_date":"2026-06-30"}'::jsonb,
   '{"model":"claude","generation_date":"2026-06-30","prompt_version":"questions_governance_v1"}'::jsonb
 );
