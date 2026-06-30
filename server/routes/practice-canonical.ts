@@ -1367,12 +1367,14 @@ async function startOrReplaySession(args: {
 
   const now = new Date().toISOString();
   // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
-  // Denormalized snapshot. correct_answer/explanation/correct_variants are persisted for
-  // SERVER-SIDE grading only and are never projected to the student (the serving path
-  // returns toStudentSafeQuestionDTO, which null-strips them). question_item_type +
-  // question_correct_variants carry the grid-in discriminator + accepted-answer set so a
-  // grid-in can be reconstructed and graded. NOTE: the genesis practice_session_items table
-  // does not yet have these two columns — see HALT in the PR notes (DB-lane dependency).
+  // Denormalized snapshot. correct_answer/explanation are persisted for SERVER-SIDE grading
+  // only and are never projected to the student (the serving path returns
+  // toStudentSafeQuestionDTO, which null-strips them).
+  // FORWARD-DEBT: grid-in serving needs a separate bundle before question_item_type and
+  // question_correct_variants can be included here: (1) practice_session_items schema
+  // migration adding item_type + correct_variants columns, (2) serializer strip for
+  // correct_variants, (3) anti-leak guard test for correct_variants pre-submit exclusion.
+  // Grid-in authoring (questions table) does not depend on any of that.
   const insertRows = selected.map((question, index) => ({
     session_id: sessionId,
     user_id: args.userId,
@@ -1380,10 +1382,8 @@ async function startOrReplaySession(args: {
     question_id: question.id,
     question_canonical_id: question.canonical_id,
     question_section: question.section_code,
-    question_item_type: question.item_type,
     question_stem: question.stem,
     question_options: question.options,
-    question_correct_variants: question.correct_variants ?? null,
     question_difficulty: question.difficulty ?? null,
     question_domain: question.domain ?? null,
     question_skill: question.skill ?? null,
