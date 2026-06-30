@@ -30,15 +30,15 @@ const SAT_TOPICS = {
 };
 
 /**
- * @spec [Doc-02B_V4 §14; Coding Standards §9] | @implemented [2026-06-29]
+ * @spec [Doc-02B_V4 §14; Coding Standards §9] | @implemented [2026-06-30]
  * Returns sections with domains and skills for practice topic selection.
+ * Real schema: questions has section (text), domain (text), skill_codes (text[]).
  */
 export async function getPracticeTopics(_req: Request, res: Response) {
   try {
     const { data: skillRows, error } = await supabaseServer
       .from("questions")
-      .select("section_code, domain, skill")
-      .eq("question_type", "multiple_choice")
+      .select("section, domain, skill_codes")
       .eq("status", "published");
 
     if (error) {
@@ -47,12 +47,18 @@ export async function getPracticeTopics(_req: Request, res: Response) {
 
     const skillsBySection: Record<string, Record<string, Set<string>>> = {};
     for (const row of skillRows ?? []) {
-      const sec = String(row.section_code);
+      const sec = String(row.section);
       const dom = String(row.domain);
-      const sk = row.skill ? String(row.skill) : null;
+      const codes: string[] = Array.isArray(row.skill_codes)
+        ? row.skill_codes
+        : [];
       if (!skillsBySection[sec]) skillsBySection[sec] = {};
       if (!skillsBySection[sec][dom]) skillsBySection[sec][dom] = new Set();
-      if (sk) skillsBySection[sec][dom].add(sk);
+      for (const code of codes) {
+        if (typeof code === "string" && code.length > 0) {
+          skillsBySection[sec][dom].add(code);
+        }
+      }
     }
 
     function buildDomains(
@@ -92,7 +98,6 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     const sectionParam = req.query.section as string | undefined;
     const domain = req.query.domain as string | undefined;
     const skill = req.query.skill as string | undefined;
-    const skillCode = req.query.skillCode as string | undefined;
     const limit = Math.min(
       Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1),
       30,
@@ -101,23 +106,21 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     let query = supabaseServer
       .from("questions")
       .select(
-        "id, canonical_id, stem, section_code, question_type, options, difficulty, domain, skill, subskill, skill_code, tags, status",
+        "id, stem, section, options, difficulty, domain, skill_codes, status",
       )
-      .eq("question_type", "multiple_choice")
       .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(limit);
 
     const sectionFilters = resolveSectionFilterValues(sectionParam ?? null);
     if (sectionFilters && sectionFilters.length > 0) {
-      query = query.in("section_code", sectionFilters);
+      query = query.in("section", sectionFilters);
     }
 
     if (domain) {
       query = query.eq("domain", resolveCanonicalDomain(domain));
     }
-    if (skill) query = query.eq("skill", skill);
-    if (skillCode) query = query.eq("skill_code", skillCode);
+    if (skill) query = query.contains("skill_codes", [skill]);
 
     const { data, error } = await query;
     if (error) {
@@ -144,7 +147,6 @@ export async function getPracticeQuestions(req: Request, res: Response) {
         section: sectionParam || null,
         domain: domain || null,
         skill: skill || null,
-        skillCode: skillCode || null,
         limit,
       },
     });

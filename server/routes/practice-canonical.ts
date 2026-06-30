@@ -603,60 +603,22 @@ function toCanonicalQuestionForServing(
 
 // @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
 // Reconstructs the server-side serving record from a persisted practice_session_items
-// snapshot. The genesis snapshot is currently MCQ-shaped (no question_item_type /
-// question_correct_variants columns yet — that is a downstream DB lane, see HALT below),
-// so item_type defaults to 'mcq' and MCQ shape is still enforced. If/when the snapshot
-// gains grid-in fields, this reads them and validates the grid-in shape instead.
+// snapshot. Genesis schema is MCQ-only (no grid-in columns yet).
 function toCanonicalQuestionFromSessionItem(
   item: SessionItemRow,
 ): CanonicalQuestionForServing | null {
-  const canonicalId = String(item.question_canonical_id ?? "").trim();
+  const canonicalId = String(item.question_id ?? "").trim();
   const stem = String(item.question_stem ?? "").trim();
   const section = String(item.question_section ?? "").trim();
 
   if (!isValidCanonicalId(canonicalId)) return null;
   if (!stem || !section) return null;
 
-  const itemType: CanonicalItemType =
-    normalizeItemType(item.question_item_type ?? null) ?? "mcq";
-  const isGridIn = itemType === "grid_in";
-
-  if (isGridIn) {
-    const variants = parseCorrectVariants(item.question_correct_variants);
-    if (variants.length < 1) return null;
-    const correctAnswer =
-      typeof item.question_correct_answer === "string" &&
-      item.question_correct_answer.trim().length > 0
-        ? item.question_correct_answer.trim()
-        : null;
-    return {
-      id: String(item.question_id ?? "").trim(),
-      canonical_id: canonicalId,
-      section_code: section,
-      item_type: "grid_in",
-      stem,
-      options: [],
-      difficulty: item.question_difficulty ?? null,
-      domain: item.question_domain ?? null,
-      skill: item.question_skill ?? null,
-      subskill: item.question_subskill ?? null,
-      exam: item.question_exam ?? null,
-      structure_cluster_id: item.question_structure_cluster_id ?? null,
-      correct_answer: correctAnswer,
-      explanation:
-        typeof item.question_explanation === "string" &&
-        item.question_explanation.trim().length > 0
-          ? item.question_explanation
-          : null,
-      correct_variants: variants,
-    };
-  }
-
   const options = safeParseOptions(item.question_options);
   if (!hasCanonicalOptionSet(options)) return null;
 
   return {
-    id: String(item.question_id ?? "").trim(),
+    id: canonicalId,
     canonical_id: canonicalId,
     section_code: section,
     item_type: "mcq",
@@ -665,9 +627,9 @@ function toCanonicalQuestionFromSessionItem(
     difficulty: item.question_difficulty ?? null,
     domain: item.question_domain ?? null,
     skill: item.question_skill ?? null,
-    subskill: item.question_subskill ?? null,
-    exam: item.question_exam ?? null,
-    structure_cluster_id: item.question_structure_cluster_id ?? null,
+    subskill: null,
+    exam: null,
+    structure_cluster_id: null,
     correct_answer: normalizeAnswerKey(item.question_correct_answer),
     explanation:
       typeof item.question_explanation === "string" &&
@@ -1511,6 +1473,24 @@ async function startOrReplaySession(args: {
   const firstInsertedItem = Array.isArray(insertedItems)
     ? insertedItems.find((row: SessionItemRow) => Number(row.ordinal) === 1)
     : null;
+
+  if (firstInsertedItem) {
+    const quotaResult = await reservePracticeQuestionQuota({
+      userId: args.userId,
+      role: args.role,
+      sessionId,
+      sessionItemId: String(firstInsertedItem.id),
+    });
+    if (!quotaResult.ok) {
+      await cleanupFailedSessionMaterialization(sessionId);
+      return {
+        ok: false,
+        status: quotaResult.status,
+        body: quotaResult.body,
+      };
+    }
+  }
+
   const newMetadata = asSessionMetadata((createdSession as SessionRow).filters);
   newMetadata.prebuilt = true;
   newMetadata.requested_count = requestedCount;
@@ -2772,8 +2752,8 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   try {
     const canonicalId =
-      typeof sessionItem.question_canonical_id === "string"
-        ? sessionItem.question_canonical_id
+      typeof sessionItem.question_id === "string"
+        ? sessionItem.question_id
         : null;
     const section =
       typeof sessionItem.question_section === "string"
