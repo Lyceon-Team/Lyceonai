@@ -373,11 +373,11 @@ describe("Practice config doctrine (INV-02B-15)", () => {
     expect(source).toContain("config.maxSessionCountPremium");
     // coerceTargetQuestionCount clamps at runtime using the config value
     expect(source).toMatch(/coerceTargetQuestionCount/);
-    // The default cap parameter defaults to 60 inside coerceTargetQuestionCount
-    const fnMatch = source.match(
-      /function coerceTargetQuestionCount[\s\S]*?maxCap:\s*number\s*=\s*(\d+)/,
-    );
-    expect(fnMatch).not.toBeNull();
-    expect(fnMatch![1]).toBe("60");
+    // Config doctrine: coerceTargetQuestionCount must NOT have hardcoded default params
+    const hasDefault =
+      /function coerceTargetQuestionCount[\s\S]*?maxCap:\s*number\s*=\s*\d+/.test(
+        source,
+      );
+    expect(hasDefault).toBe(false);
   });
 });

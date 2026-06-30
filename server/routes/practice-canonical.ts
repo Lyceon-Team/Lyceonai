@@ -35,6 +35,7 @@ import {
   resolveSectionFilterValues,
   type StudentSafeOption,
 } from "../../shared/question-bank-contract";
+import type { PracticeSessionItemRow } from "../../packages/shared/src/practice-schema";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -103,35 +104,8 @@ type SessionRow = {
   actor_id: string;
 };
 
-type SessionItemRow = {
-  id: string;
-  session_id: string;
-  user_id: string;
-  question_id: string;
-  question_section?: string | null;
-  question_stem?: string | null;
-  question_passage?: string | null;
-  question_options?: unknown;
-  question_correct_answer?: string | null;
-  question_explanation?: string | null;
-  question_option_metadata?: unknown;
-  question_difficulty?: string | number | null;
-  question_domain?: string | null;
-  question_skill?: string | null;
-  option_order?: string[] | null;
-  option_token_map?: Record<string, string> | null;
-  ordinal: number;
-  status: "pending" | "served" | "answered" | "skipped";
-  client_instance_id?: string | null;
-  selected_answer?: string | null;
-  is_correct?: boolean | null;
-  outcome?: string | null;
-  answered_at?: string | null;
-  served_at?: string | null;
-  occurred_at?: string | null;
-  time_spent_ms?: number | null;
-  client_attempt_id?: string | null;
-  actor_id?: string | null;
+type SessionItemRow = Omit<PracticeSessionItemRow, "question_difficulty"> & {
+  question_difficulty: string | number | null;
 };
 
 type SessionMetadata = {
@@ -208,20 +182,25 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
     (data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]),
   );
 
-  const readInt = (key: string, fallback: number): number => {
+  const readIntRequired = (key: string): number => {
     const raw = configMap.get(key);
     const parsed =
       typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(
+        `practice_runtime_config: missing or invalid key '${key}'`,
+      );
+    }
+    return parsed;
   };
 
   const config: PracticeConfig = {
-    maxConcurrentSessions: readInt("max_concurrent_sessions", 5),
-    defaultSessionCountWeb: readInt("default_session_count_web", 10),
-    maxSessionCountPremium: readInt("max_session_count_premium", 60),
-    targetSecondsPerQuestion: readInt("target_seconds_per_question", 90),
-    answerRateLimitWindowMs: readInt("answer_rate_limit_window_ms", 60_000),
-    answerRateLimitMax: readInt("answer_rate_limit_max", 30),
+    maxConcurrentSessions: readIntRequired("max_concurrent_sessions"),
+    defaultSessionCountWeb: readIntRequired("default_session_count_web"),
+    maxSessionCountPremium: readIntRequired("max_session_count_premium"),
+    targetSecondsPerQuestion: readIntRequired("target_seconds_per_question"),
+    answerRateLimitWindowMs: readIntRequired("answer_rate_limit_window_ms"),
+    answerRateLimitMax: readIntRequired("answer_rate_limit_max"),
   };
   _configCache = { config, ts: Date.now() };
   return config;
@@ -262,14 +241,8 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
   return _cachedRateLimiter;
 }
 
-const FALLBACK_PRACTICE_CONFIG: PracticeConfig = {
-  maxConcurrentSessions: 5,
-  defaultSessionCountWeb: 10,
-  maxSessionCountPremium: 60,
-  targetSecondsPerQuestion: 90,
-  answerRateLimitWindowMs: 60_000,
-  answerRateLimitMax: 30,
-};
+// No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
+// If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
 
 async function practiceAnswerRateLimiter(
   req: Request,
@@ -280,8 +253,18 @@ async function practiceAnswerRateLimiter(
   try {
     config = await loadPracticeConfig();
   } catch {
-    config = FALLBACK_PRACTICE_CONFIG;
-    _configCache = { config, ts: Date.now() };
+    logger.warn(
+      "Rate limiter config unavailable; rejecting request (fail-closed)",
+    );
+    res
+      .status(503)
+      .json({
+        error: {
+          message: "Service temporarily unavailable",
+          code: "CONFIG_UNAVAILABLE",
+        },
+      });
+    return;
   }
   const limiter = getPracticeAnswerRateLimiter(config);
   limiter(req, res, next);
@@ -718,8 +701,8 @@ function resolveDifficultyBucketStrict(raw: unknown): 1 | 2 | 3 | null {
 
 function coerceTargetQuestionCount(
   raw: unknown,
-  maxCap: number = 60,
-  defaultCount: number = 10,
+  maxCap: number,
+  defaultCount: number,
 ): number {
   if (typeof raw === "number" && Number.isFinite(raw)) {
     const rounded = Math.floor(raw);
@@ -1266,11 +1249,60 @@ async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §14; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
   // CEO model: filter-driven native random selection. All N items prepopulated at creation.
   // Determinism satisfied by storage (the rows ARE the durable record).
-  const requestedCount = coerceTargetQuestionCount(
+  let requestedCount = coerceTargetQuestionCount(
     args.targetQuestionCount,
     config.maxSessionCountPremium,
     config.defaultSessionCountWeb,
   );
+
+  // @spec [Doc-02B_V4 §41; F2 creation-time clamp] | @implemented [2026-06-30]
+  // Dry-run remaining daily quota for unpaid users and clamp requestedCount
+  // so we never over-materialize sessions beyond the remaining free-tier allowance.
+  if (args.role !== "admin") {
+    try {
+      const dryRunDecision = await checkAndReservePracticeQuota({
+        studentUserId: args.userId,
+        role: args.role,
+        sessionId: null,
+        sessionItemId: null,
+        dryRun: true,
+        requestId: null,
+      });
+      if (!dryRunDecision.allowed) {
+        return {
+          ok: false,
+          status: 402,
+          body: {
+            error: "Usage limit reached",
+            code: dryRunDecision.code || "PRACTICE_FREE_DAILY_QUOTA_EXCEEDED",
+            limitType: "practice",
+            current: dryRunDecision.current,
+            limit: dryRunDecision.limit,
+            remaining: dryRunDecision.remaining,
+            resetAt: dryRunDecision.resetAt,
+            message:
+              dryRunDecision.message ||
+              "You've reached your daily practice question limit.",
+          },
+        };
+      }
+      const remaining =
+        typeof dryRunDecision.remaining === "number"
+          ? dryRunDecision.remaining
+          : requestedCount;
+      if (remaining > 0 && remaining < requestedCount) {
+        requestedCount = remaining;
+      }
+    } catch (e) {
+      if (e instanceof RateLimitUnavailableError) {
+        logger.warn(
+          "Quota dry-run unavailable at session creation; proceeding unclamped",
+        );
+      } else {
+        throw e;
+      }
+    }
+  }
 
   const sessionMetadata: SessionMetadata = {
     client_instance_id: args.clientInstanceId,
