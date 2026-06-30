@@ -50,20 +50,13 @@ CREATE FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) RETURN
     LANGUAGE plpgsql STABLE
     AS $$
 BEGIN
-  IF to_regclass('public.profiles') IS NOT NULL
-     AND EXISTS (
-       SELECT 1 FROM pg_proc p
-       JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'public' AND p.proname = 'entitlement_active'
-     )
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'entitlement_active'
+  )
   THEN
-    RETURN COALESCE(
-      (SELECT public.entitlement_active(pr.id)
-       FROM public.profiles pr
-       WHERE pr.user_id = p_student_user_id
-       LIMIT 1),
-      false
-    );
+    RETURN COALESCE(public.entitlement_active(p_student_user_id), false);
   END IF;
   RETURN false;
 END;
@@ -777,14 +770,28 @@ DECLARE
   v_inserted_id uuid := NULL;
   v_config_val text;
 BEGIN
+  -- Identity guard: caller must match the student (service_role bypasses via REVOKE/GRANT)
+  IF auth.uid() IS NOT NULL AND p_student_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'p_student_user_id does not match authenticated user'
+      USING ERRCODE = '42501';
+  END IF;
+
   PERFORM pg_advisory_xact_lock(hashtext('practice_quota:' || p_student_user_id::text));
 
-  -- Read daily limit from config (no hardcoded value)
+  -- Read daily limit from config
   SELECT value INTO v_config_val
   FROM public.practice_runtime_config
   WHERE key = 'daily_quota_free';
   IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
     v_daily_limit := v_config_val::integer;
+  END IF;
+
+  -- Read session limit from config
+  SELECT value INTO v_config_val
+  FROM public.practice_runtime_config
+  WHERE key = 'max_session_count_premium';
+  IF v_config_val IS NOT NULL AND v_config_val ~ '^\d+$' THEN
+    v_session_limit := v_config_val::integer;
   END IF;
 
   -- UTC-day boundaries
@@ -824,7 +831,7 @@ BEGIN
     );
   END IF;
 
-  -- Per-session cap (paid users get 60/session)
+  -- Per-session cap (paid users)
   IF p_session_id IS NOT NULL AND v_entitled THEN
     SELECT COALESCE(SUM(units), 0)::integer
     INTO v_session_used
@@ -7120,6 +7127,22 @@ GRANT SELECT(computed_at) ON TABLE public.student_skill_mastery TO authenticated
 
 
 --
+-- Name: FUNCTION _rl_has_active_entitlement(p_student_user_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_has_active_entitlement(p_student_user_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION _rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public._rl_resolve_student_account(p_student_user_id uuid, p_account_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION apply_mastery_event(p_student_id uuid, p_section text, p_domain text, p_skill text, p_difficulty smallint, p_source_family text, p_event_source_kind text, p_correct boolean, p_occurred_at timestamp with time zone, p_event_id uuid, p_question_id text, p_section_state text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -7149,6 +7172,14 @@ GRANT ALL ON FUNCTION public.bump_projection_refresh_counter(p_student_id uuid, 
 
 REVOKE ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id uuid, p_account_id uuid, p_session_id uuid, p_session_item_id uuid, p_dry_run boolean, p_request_id text, p_now timestamp with time zone) TO service_role;
 
 
 --
