@@ -13,8 +13,8 @@ const SAT_TOPICS = {
     domains: [
       "Algebra",
       "Advanced Math",
-      "Problem Solving & Data Analysis",
-      "Geometry & Trigonometry",
+      "Problem Solving and Data Analysis",
+      "Geometry and Trigonometry",
     ],
   },
   reading_writing: {
