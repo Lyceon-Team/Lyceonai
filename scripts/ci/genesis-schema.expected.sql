@@ -4112,8 +4112,12 @@ CREATE TABLE public.questions (
     premium_flag boolean DEFAULT false,
     quality_score numeric,
     issue_flags text[],
+    item_type text DEFAULT 'mcq'::text NOT NULL,
+    correct_variants text[],
     CONSTRAINT questions_difficulty_check CHECK (((difficulty >= 1) AND (difficulty <= 3))),
     CONSTRAINT questions_id_check CHECK ((id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$'::text)),
+    CONSTRAINT questions_item_shape_chk CHECK ((((item_type = 'mcq'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 4) AND (correct_variants IS NULL)) OR ((item_type = 'grid_in'::text) AND (jsonb_typeof(options) = 'array'::text) AND (jsonb_array_length(options) = 0) AND (correct_variants IS NOT NULL) AND (array_length(correct_variants, 1) >= 1)))),
+    CONSTRAINT questions_item_type_check CHECK ((item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
     CONSTRAINT questions_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT questions_source_type_check CHECK ((source_type = ANY (ARRAY[1, 2]))),
     CONSTRAINT questions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'qa'::text, 'published'::text, 'retired'::text])))

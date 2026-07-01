@@ -32,7 +32,7 @@ const devQuestion = {
     { key: "D", text: "10", is_correct: false },
   ],
   domain: 'algebra',
-  skill: 'Linear equations in one variable',
+  skill: 'Linear Equations in One Variable',
   subskill: 'Solve one-step linear equations',
   skill_code: 'MATH.ALG.LINEAR.1',
   competencies: [{ code: "M.LIN.1", raw: "solve linear equations" }],

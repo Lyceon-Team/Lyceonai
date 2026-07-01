@@ -82,7 +82,7 @@ echo "    OK"
 
 echo "==> D.4 ANTI-LEAK: anon/authenticated CANNOT read questions answer/internal cols"
 for r in anon authenticated; do
-  for col in correct_answer explanation option_metadata; do
+  for col in correct_answer explanation option_metadata correct_variants; do
     if psql_db "$DB1" -tAc "set role $r; select $col from public.questions limit 1;" >/dev/null 2>&1; then
       echo "FAIL: role $r could read questions.$col (anti-leak breach)"; exit 1
     fi
