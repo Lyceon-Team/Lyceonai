@@ -1,0 +1,94 @@
+{
+  "version": "1.0",
+  "sections": ["M", "RW"],
+  "domains": {
+    "M": [
+      "Algebra",
+      "Advanced Math",
+      "Problem Solving and Data Analysis",
+      "Geometry and Trigonometry"
+    ],
+    "RW": [
+      "Information and Ideas",
+      "Craft and Structure",
+      "Expression of Ideas",
+      "Standard English Conventions"
+    ]
+  },
+  "skills": {
+    "Algebra": [
+      "Linear Equations in One Variable",
+      "Linear Equations in Two Variables",
+      "Linear Functions",
+      "Linear Inequalities in One or Two Variables",
+      "Systems of Two Linear Equations in Two Variables"
+    ],
+    "Advanced Math": [
+      "Equivalent Expressions",
+      "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "Nonlinear Functions"
+    ],
+    "Problem Solving and Data Analysis": [
+      "Ratios, Rates, Proportional Relationships, and Units",
+      "Percentages",
+      "One-Variable Data: Distributions and Measures of Center and Spread",
+      "Two-Variable Data: Models and Scatterplots",
+      "Probability and Conditional Probability",
+      "Inference from Sample Statistics and Margin of Error",
+      "Evaluating Statistical Claims: Observational Studies and Experiments"
+    ],
+    "Geometry and Trigonometry": [
+      "Lines, Angles, and Triangles",
+      "Right Triangles and Trigonometry",
+      "Circles",
+      "Area and Volume"
+    ],
+    "Information and Ideas": [
+      "Central Ideas and Details",
+      "Command of Evidence",
+      "Inferences"
+    ],
+    "Craft and Structure": [
+      "Words in Context",
+      "Text Structure and Purpose",
+      "Cross-Text Connections"
+    ],
+    "Expression of Ideas": [
+      "Transitions",
+      "Rhetorical Synthesis"
+    ],
+    "Standard English Conventions": [
+      "Boundaries",
+      "Form, Structure, and Sense"
+    ]
+  },
+  "difficulty": {
+    "1": "Easy — single-step, direct application",
+    "2": "Medium — two-to-three steps or one non-obvious concept",
+    "3": "Hard — multi-step, layered, subtle-trap"
+  },
+  "item_types": ["mcq", "grid_in"],
+  "option_keys": ["A", "B", "C", "D"],
+  "distractor_taxonomy": {
+    "M": [
+      "sign_error",
+      "arithmetic_slip",
+      "equation_setup_error",
+      "unit_error",
+      "graph_read_error",
+      "concept_gap",
+      "partial_reasoning",
+      "misread_question"
+    ],
+    "RW": [
+      "detail_misread",
+      "inference_overreach",
+      "evidence_mismatch",
+      "grammar_rule_error",
+      "sentence_boundary_error",
+      "rhetorical_purpose_error",
+      "vocab_context_error",
+      "partial_reasoning"
+    ]
+  }
+}
