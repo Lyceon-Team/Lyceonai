@@ -25,6 +25,24 @@
 
 ## Entries
 
+SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | PROPOSED
+Change: Grid-in correctness model clarified. Grading is by **value-equivalence** (`gridInResponseMatches`,
+  `shared/question-ingestion-qa.ts:436-444`); `correct_variants` is the deterministically-generated
+  canonical set (`gridInAcceptedForms` — reduced fraction + exact decimal, no trailing zeros), validated
+  by `normalizeGridInKey`, and is neither exhaustive nor the grading authority.
+WAS: §A.3 described `correct_variants` as "the exhaustive set of CB-accepted surface forms" and §A.8
+  had no explicit grid-in audit guidance, leading Codex to flag missing surface forms (e.g. `0.50` for
+  `1/2`) as defects — a false-positive class, since adding such forms would break `normalizeGridInKey`
+  ingestion QA and grading already accepts them via value-equivalence.
+IS: §A.3 now distinguishes grading acceptance (runtime, value-equivalence) from `correct_variants`
+  (stored, deterministic canonical set). §A.8 adds check 1a (grid-in correctness) with explicit
+  guidance: do NOT flag `correct_variants` for omitting value-equivalent surface forms.
+Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer='1/2'`,
+  `correct_variants=['1/2','0.5','.5']`) was adjudicated a false positive. The governance doc's
+  conflation of grading-acceptance with `correct_variants` caused the false-positive class.
+  Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
+Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
+
 SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
 Change: Canonical skill taxonomy frozen as **29 Title Case strings** in governance doc §A.4.
 WAS: skill strings in mixed sentence-case/title-case (internal inconsistency).
