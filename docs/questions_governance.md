@@ -235,6 +235,29 @@ skill_codes = ARRAY['Linear Equations in One Variable']
 
 **Note on CB taxonomy vs. Lyceon frozen set:** CB's Assessment Framework lists ~30 distinct skills (splitting "Command of Evidence" into Textual and Quantitative sub-skills). The 29 strings above are our canonical frozen set, derived from the CB style guide filenames with typos corrected (`variabe` → `variable`, `Pecentages` → `Percentages`) and normalized to Title Case (SCL-020).
 
+### Skill Classification Convention (SCL-022)
+
+**Primary-competency rule:** Each question is tagged with the single skill that names the *primary competency being tested* — the skill a student must exercise to reach the correct answer. Secondary skills that are incidentally used (e.g., arithmetic in an algebra problem, reading comprehension in a grammar question) do not determine the tag.
+
+**Disambiguation table — boundary pairs**
+
+When a question could plausibly fall under two skills, apply the distinguishing criterion below. If neither criterion resolves the case, apply the tiebreak rule.
+
+| Pair | Skill A | Skill B | Distinguishing criterion |
+|------|---------|---------|------------------------|
+| 1 | `Linear Equations in Two Variables` | `Linear Functions` | **Equation vs. function.** If the question asks to solve, set up, or manipulate a two-variable equation (find intercepts algebraically, determine a line through two points, find perpendicular/parallel lines) → Skill A. If the question frames the relationship as a function and asks about its behavior (rate of change, domain/range, function notation, graph interpretation) → Skill B. |
+| 2 | `Nonlinear Equations in One Variable and Systems of Equations in Two Variables` | `Nonlinear Functions` | **Solve vs. analyze.** If the primary task is to solve an equation or system (find roots, find intersection points, determine number of solutions) → Skill A. If the primary task is to analyze a function's properties (transformations, end behavior, vertex, graph shape, composition) → Skill B. |
+| 3 | `Central Ideas and Details` | `Inferences` | **Stated vs. derived.** If the correct answer is directly stated or closely paraphrased in the passage → Skill A. If the correct answer must be logically derived from passage evidence (the passage implies it but does not state it) → Skill B. |
+| 4 | `Text Structure and Purpose` | `Rhetorical Synthesis` | **Analyze vs. construct.** If the question asks the student to identify the purpose or structure of an existing text → Skill A. If the question presents notes and asks the student to select or construct a sentence that achieves a stated rhetorical goal → Skill B. |
+| 5 | `Boundaries` | `Form, Structure, and Sense` | **Punctuation/joining vs. word form.** If the tested element is punctuation, sentence joining, or clause boundaries (period vs. comma vs. semicolon, comma splice, run-on) → Skill A. If the tested element is verb tense/form, pronoun case, subject-verb agreement, or modifier placement → Skill B. |
+
+**Tiebreak rule:** When the distinguishing criterion above does not clearly resolve the pair, tag the skill whose name most specifically describes the question's demand. If specificity is equal, tag the skill that a CB-published question with identical structure would carry. If no CB precedent exists, tag whichever skill has fewer questions in the current batch to promote coverage spread.
+
+**Worked example — Q4 (`SATM2L6TC5Y`):**
+Q4 asks for the y-intercept of a line perpendicular to `2x + 3y = 12` passing through `(3, 5)`. The student must: (1) extract slope from a two-variable equation, (2) compute the negative reciprocal, (3) use point-slope form to derive the equation, (4) read the y-intercept. The primary competency is manipulating a linear equation in two variables — not analyzing a function's behavior. Therefore: `Linear Equations in Two Variables` (Skill A in Pair 1), not `Linear Functions`.
+
+**Auditor parity:** Codex auditors apply this same table when evaluating `TAG_MISMATCH` (§A.8 check 7). A skill tag is conformant if it is either the unambiguous primary-competency choice or the correct side of an applicable boundary pair above. A tag that falls on the wrong side of a resolved boundary pair is a `TAG_MISMATCH` finding.
+
 ### Digital SAT question distribution (reference for content planning)
 
 | Domain | Section | Approx. questions | % of section |
