@@ -25,6 +25,23 @@
 
 ## Entries
 
+SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
+Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
+  (tag the skill the student must exercise to reach the correct answer), disambiguation table for
+  5 boundary pairs (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
+  Central Ideas vs Inferences, Text Structure vs Rhetorical Synthesis, Boundaries vs Form/Structure/Sense),
+  tiebreak rule (specificity → CB precedent → coverage spread), Q4 worked example demonstrating
+  Pair 1 resolution, and auditor parity statement (Codex applies the same table for TAG_MISMATCH).
+WAS: §A.4 listed the 29 frozen skills but provided no guidance on resolving classification ambiguity
+  at skill boundaries — authoring and audit could disagree on plausible-either-way tagging.
+IS: §A.4 now includes a deterministic disambiguation protocol that both authors and Codex auditors
+  apply identically, reducing false TAG_MISMATCH findings on boundary-case questions.
+Rationale: Prerequisite for volume batch (70 questions across all 29 skills). Without a locked
+  disambiguation convention, boundary-case skill tags would be auditor-subjective, risking spurious
+  Codex REJECTs on first submission — counter to the graduation criterion (zero genuine content
+  defects on first Codex submission).
+Owner action: review disambiguation table and tiebreak rule at next spec pass.
+
 SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | PROPOSED
 Change: Grid-in correctness model clarified. Grading is by **value-equivalence** (`gridInResponseMatches`,
   `shared/question-ingestion-qa.ts:436-444`); `correct_variants` is the deterministically-generated
