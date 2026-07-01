@@ -28,8 +28,9 @@
 SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
 Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
   (tag the skill the student must exercise to reach the correct answer), disambiguation table for
-  5 boundary pairs (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
-  Central Ideas vs Inferences, Text Structure vs Rhetorical Synthesis, Boundaries vs Form/Structure/Sense),
+  5 boundary rules (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
+  Central Ideas vs Command of Evidence vs Inferences [three-way], Transitions vs Rhetorical Synthesis,
+  Boundaries vs Form/Structure/Sense),
   tiebreak rule (specificity → CB precedent → coverage spread), Q4 worked example demonstrating
   Pair 1 resolution, and auditor parity statement (Codex applies the same table for TAG_MISMATCH).
 WAS: §A.4 listed the 29 frozen skills but provided no guidance on resolving classification ambiguity
