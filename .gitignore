@@ -43,3 +43,4 @@ skill-drafts/*-workspace/
 __pycache__/
 *.pyc
 tests/__fixtures__/assemble-batch-scratch/
+tests/__fixtures__/assemble-batch-apply/
