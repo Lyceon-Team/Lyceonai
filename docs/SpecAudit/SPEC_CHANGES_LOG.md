@@ -224,6 +224,16 @@ applied + verified live 2026-06-25; 5b write-path stamping next).
 **Reason:** PR-2 build findings (deadlock analysis + GUC atomicity). Two CI guards hardened against comment-false-match by perturbation proof.
 **Artifact:** Migration 20260625000000, applied + verified live.
 
+### SCL-P-TZRESET — quota_reset_timezone: UTC (Q13) → America/Chicago [PROPOSED]
+Context: Q13 locked UTC for quota daily-reset determinism. Live config landed as America/Chicago;
+  Karl confirmed Central is the intended boundary.
+Rationale: US-only launch userbase; midnight Central is a more humane reset than 00:00 UTC. DST wobble
+  (23h/25h reset window twice yearly) is acceptable for a quota reset (non-safety, non-scoring). Q13's
+  determinism concern was load-bearing for seeded selection (deferred, SCL-P-ADAPTIVE), not quota windows.
+Effect: unpaid 40/day quota resets at 00:00 America/Chicago. No code/migration change; config row already
+  America/Chicago on prod. Supersedes Q13's UTC clause for quota_reset_timezone only.
+Status: PROPOSED → Karl promotes to canonical.
+
 ---
 
 ## Owner spec-annotations owed (fold into locked docs on next revision)
