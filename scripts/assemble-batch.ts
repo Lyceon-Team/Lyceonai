@@ -12,6 +12,7 @@ import { parseArgs } from "util";
 import {
   buildCanonicalId,
   MC_OPTION_KEYS,
+  type CanonicalSectionCode,
 } from "../shared/question-bank-contract.js";
 import {
   parseGridInValue,
@@ -24,6 +25,7 @@ type Taxonomy = {
   sections: string[];
   domains: Record<string, string[]>;
   skills: Record<string, string[]>;
+  difficulty: Record<string, string>;
   item_types: string[];
   option_keys: string[];
   distractor_taxonomy: Record<string, string[]>;
@@ -79,6 +81,25 @@ function loadTaxonomy(): Taxonomy {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
+function deriveMathSection(taxonomy: Taxonomy): string {
+  const mathDomains = [
+    "Algebra",
+    "Advanced Math",
+    "Problem Solving and Data Analysis",
+    "Geometry and Trigonometry",
+  ];
+  for (const [section, domains] of Object.entries(taxonomy.domains)) {
+    if (mathDomains.some((d) => domains.includes(d))) return section;
+  }
+  throw new Error(
+    "Cannot derive Math section from taxonomy.json — no Math domain found",
+  );
+}
+
+function difficultyKeys(taxonomy: Taxonomy): number[] {
+  return Object.keys(taxonomy.difficulty).map(Number);
+}
+
 function loadAppliedIds(): Set<string> {
   const path = join(REPO_ROOT, "content/canonical/applied_ids.json");
   if (!existsSync(path)) return new Set();
@@ -111,6 +132,7 @@ function domainForSkill(taxonomy: Taxonomy, skill: string): string | null {
 function validateRecord(
   rec: ContentRecord,
   taxonomy: Taxonomy,
+  mathSection: string,
   file: string,
   line: number,
   index: number,
@@ -153,8 +175,12 @@ function validateRecord(
     );
   }
 
-  if (![1, 2, 3].includes(rec.difficulty)) {
-    v("difficulty", `difficulty must be 1, 2, or 3; got ${rec.difficulty}`);
+  const validDifficulties = difficultyKeys(taxonomy);
+  if (!validDifficulties.includes(rec.difficulty)) {
+    v(
+      "difficulty",
+      `difficulty must be ${validDifficulties.join(", ")}; got ${rec.difficulty}`,
+    );
   }
 
   if (!taxonomy.item_types.includes(rec.item_type)) {
@@ -173,13 +199,13 @@ function validateRecord(
   }
 
   if (
-    rec.section === "RW" &&
+    rec.section !== mathSection &&
     (rec.passage === null || rec.passage === undefined)
   ) {
     v("passage", "RW questions must have a passage");
   }
   if (
-    rec.section === "M" &&
+    rec.section === mathSection &&
     rec.passage !== null &&
     rec.passage !== undefined
   ) {
@@ -189,7 +215,7 @@ function validateRecord(
   if (rec.item_type === "mcq") {
     validateMcq(rec, taxonomy, v);
   } else if (rec.item_type === "grid_in") {
-    validateGridIn(rec, v);
+    validateGridIn(rec, mathSection, v);
   }
 
   if (
@@ -245,13 +271,37 @@ function validateMcq(
     return;
   }
 
+  const metaKeys = Object.keys(rec.option_metadata).sort();
+  const expectedKeys = [...MC_OPTION_KEYS].sort();
+  if (
+    metaKeys.length !== expectedKeys.length ||
+    metaKeys.some((k, i) => k !== expectedKeys[i])
+  ) {
+    v(
+      "option_metadata",
+      `option_metadata keys must be exactly ${expectedKeys.join(",")}; got ${metaKeys.join(",")}`,
+    );
+    return;
+  }
+
+  const correctEntries = Object.entries(rec.option_metadata).filter(
+    ([, m]) => m.role === "correct",
+  );
+  if (correctEntries.length !== 1) {
+    v(
+      "option_metadata",
+      `exactly one option_metadata entry must have role="correct"; found ${correctEntries.length}`,
+    );
+  } else if (correctEntries[0][0] !== rec.correct_option) {
+    v(
+      "option_metadata",
+      `role="correct" is on key "${correctEntries[0][0]}" but correct_option is "${rec.correct_option}"`,
+    );
+  }
+
   const distLabels = taxonomy.distractor_taxonomy[rec.section];
   for (const k of MC_OPTION_KEYS) {
     const meta = rec.option_metadata[k];
-    if (!meta) {
-      v("option_metadata", `missing metadata for key "${k}"`);
-      continue;
-    }
     if (k === rec.correct_option) {
       if (meta.role !== "correct") {
         v(
@@ -296,18 +346,20 @@ function validateMcq(
 
 function validateGridIn(
   rec: ContentRecord,
+  mathSection: string,
   v: (field: string, reason: string) => void,
 ): void {
-  if (rec.section !== "M") {
+  if (rec.section !== mathSection) {
     v("item_type", "grid_in is Math-only");
   }
 
-  if (
-    rec.options !== undefined &&
-    Array.isArray(rec.options) &&
-    rec.options.length > 0
-  ) {
-    v("options", "grid_in must not have options");
+  if (rec.options !== undefined) {
+    if (!Array.isArray(rec.options) || rec.options.length > 0) {
+      v(
+        "options",
+        `grid_in options must be omitted or an empty array; got ${Array.isArray(rec.options) ? `array of length ${rec.options.length}` : typeof rec.options}`,
+      );
+    }
   }
 
   if (rec.correct_option !== undefined) {
@@ -395,6 +447,7 @@ function main(): void {
   }
 
   const taxonomy = loadTaxonomy();
+  const mathSection = deriveMathSection(taxonomy);
   const appliedIds = loadAppliedIds();
 
   const partFiles = readdirSync(resolvedPartsDir)
@@ -432,6 +485,7 @@ function main(): void {
       const recViolations = validateRecord(
         parsed,
         taxonomy,
+        mathSection,
         file,
         i + 1,
         records.length,
@@ -460,7 +514,7 @@ function main(): void {
   const assembled: AssembledQuestion[] = [];
 
   for (const { rec } of records) {
-    const sectionCode = rec.section as "M" | "RW";
+    const sectionCode = rec.section as CanonicalSectionCode;
 
     let id: string;
     let attempts = 0;
@@ -520,10 +574,12 @@ function main(): void {
     ids: assembled.map((q) => q.id),
     grid_in_count: assembled.filter((q) => q.item_type === "grid_in").length,
     mcq_count: assembled.filter((q) => q.item_type === "mcq").length,
-    sections: {
-      M: assembled.filter((q) => q.section === "M").length,
-      RW: assembled.filter((q) => q.section === "RW").length,
-    },
+    sections: Object.fromEntries(
+      taxonomy.sections.map((s) => [
+        s,
+        assembled.filter((q) => q.section === s).length,
+      ]),
+    ),
   };
   writeFileSync(resolve(reportPath), JSON.stringify(report, null, 2));
 

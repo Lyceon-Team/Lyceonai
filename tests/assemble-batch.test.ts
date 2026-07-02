@@ -254,7 +254,54 @@ describe("assemble-batch gate", () => {
     writeParts(dir, [validMcqRecord({ difficulty: 4 })]);
     const result = runGate(dir, { dryRun: true });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("difficulty must be 1, 2, or 3");
+    expect(result.stderr).toContain("difficulty must be");
+  });
+
+  it("rejects grid_in with non-array options (no silent auto-fix)", () => {
+    const dir = join(SCRATCH, "grid-in-bad-options");
+    writeParts(dir, [validGridInRecord({ options: "bad" })]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "grid_in options must be omitted or an empty array",
+    );
+  });
+
+  it("rejects MCQ with extra option_metadata key", () => {
+    const dir = join(SCRATCH, "extra-meta-key");
+    writeParts(dir, [
+      validMcqRecord({
+        option_metadata: {
+          A: { role: "correct", error_taxonomy: null },
+          B: { role: "distractor", error_taxonomy: "partial_reasoning" },
+          C: { role: "distractor", error_taxonomy: "arithmetic_slip" },
+          D: { role: "distractor", error_taxonomy: "sign_error" },
+          E: { role: "correct", error_taxonomy: null },
+        },
+      }),
+    ]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("option_metadata keys must be exactly");
+  });
+
+  it("rejects MCQ with two role=correct entries", () => {
+    const dir = join(SCRATCH, "two-correct");
+    writeParts(dir, [
+      validMcqRecord({
+        option_metadata: {
+          A: { role: "correct", error_taxonomy: null },
+          B: { role: "correct", error_taxonomy: null },
+          C: { role: "distractor", error_taxonomy: "arithmetic_slip" },
+          D: { role: "distractor", error_taxonomy: "sign_error" },
+        },
+      }),
+    ]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "exactly one option_metadata entry must have role",
+    );
   });
 
   it("rejects grid_in for RW section", () => {
