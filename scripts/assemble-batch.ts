@@ -23,6 +23,7 @@ const REPO_ROOT = resolve(import.meta.dirname, "..");
 
 type Taxonomy = {
   sections: string[];
+  math_section: string;
   domains: Record<string, string[]>;
   skills: Record<string, string[]>;
   difficulty: Record<string, string>;
@@ -81,19 +82,14 @@ function loadTaxonomy(): Taxonomy {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
-function deriveMathSection(taxonomy: Taxonomy): string {
-  const mathDomains = [
-    "Algebra",
-    "Advanced Math",
-    "Problem Solving and Data Analysis",
-    "Geometry and Trigonometry",
-  ];
-  for (const [section, domains] of Object.entries(taxonomy.domains)) {
-    if (mathDomains.some((d) => domains.includes(d))) return section;
+function mathSection(taxonomy: Taxonomy): string {
+  if (
+    !taxonomy.math_section ||
+    !taxonomy.sections.includes(taxonomy.math_section)
+  ) {
+    throw new Error("taxonomy.json math_section is missing or not in sections");
   }
-  throw new Error(
-    "Cannot derive Math section from taxonomy.json — no Math domain found",
-  );
+  return taxonomy.math_section;
 }
 
 function difficultyKeys(taxonomy: Taxonomy): number[] {
@@ -302,6 +298,7 @@ function validateMcq(
   const distLabels = taxonomy.distractor_taxonomy[rec.section];
   for (const k of MC_OPTION_KEYS) {
     const meta = rec.option_metadata[k];
+    if (!meta) continue;
     if (k === rec.correct_option) {
       if (meta.role !== "correct") {
         v(
@@ -447,7 +444,7 @@ function main(): void {
   }
 
   const taxonomy = loadTaxonomy();
-  const mathSection = deriveMathSection(taxonomy);
+  const math = mathSection(taxonomy);
   const appliedIds = loadAppliedIds();
 
   const partFiles = readdirSync(resolvedPartsDir)
@@ -485,7 +482,7 @@ function main(): void {
       const recViolations = validateRecord(
         parsed,
         taxonomy,
-        mathSection,
+        math,
         file,
         i + 1,
         records.length,
