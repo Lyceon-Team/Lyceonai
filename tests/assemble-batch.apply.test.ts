@@ -2,9 +2,12 @@
  * Apply-proof: verifies the gate's rendered SQL applies cleanly against
  * the real `questions` schema constraints on an ephemeral Postgres.
  *
- * Schema source: test-only DDL derived from the exact deployed CHECK
- * constraints. infra/supabase/migrations/ does not exist locally — see
- * Step 3.3 gap note.
+ * SCHEMA PROVENANCE: QUESTIONS_DDL below is the authoritative committed
+ * test fixture, sourced from the deployed `questions` table DDL (prod
+ * Supabase project, 2026-07-01). infra/supabase/migrations/ does not
+ * exist in-repo — tracked as a follow-up gap (see PR #465 close-out
+ * Step 3.3). If the prod schema changes, this fixture must be updated
+ * to match. CHECK constraints reproduced verbatim from prod.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";

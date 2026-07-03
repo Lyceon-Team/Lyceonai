@@ -1,6 +1,7 @@
 {
   "version": "1.0",
   "sections": ["M", "RW"],
+  "math_section": "M",
   "domains": {
     "M": [
       "Algebra",
