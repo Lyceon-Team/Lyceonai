@@ -29,8 +29,14 @@ Re-derive every answer **from scratch**. Do not read the stored answer before so
 
 ## Output (JSON)
 
+The verdict **must** include the `auditor` identity header as the first key. Compute the contract hash: `sha256sum .claude/skills/question-audit/SKILL.md | cut -c1-8`.
+
 ```json
 {
+  "auditor": {
+    "agent": "question-auditor",
+    "contractHash": "<first 8 chars of SHA-256 of this file>"
+  },
   "compliance": "PASS | FAIL",
   "perQuestion": [
     { "id": "", "derivedAnswer": "", "storedAnswer": "", "match": true, "tagConventionConsistent": true, "issues": [] }
@@ -42,6 +48,8 @@ Re-derive every answer **from scratch**. Do not read the stored answer before so
   "recommendation": "APPROVE | REVISE | REJECT"
 }
 ```
+
+The identity header is not optional. Without it, the orchestrator treats the audit as void — the header proves the registered `question-auditor` agent ran with the correct contract version, not a general-purpose substitute.
 
 ## Auto-REJECT (any one)
 

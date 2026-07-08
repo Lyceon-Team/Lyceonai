@@ -2,7 +2,7 @@
 name: question-author
 description: Authors a disjoint slice of SAT questions as content NDJSON per an assignment. Invoked by the author-batch orchestrator, one instance per domain-slice. Not for general use — always driven by an assignment prompt.
 tools: Read, Write
-model: sonnet
+model: inherit
 ---
 
 You author a disjoint slice of the SAT question bank. You run in a fresh context with no memory, so everything you need is either in this prompt or in the files named below — read them.
