@@ -43,8 +43,11 @@ ALTER TABLE public.practice_session_items
 
 -- 2. Extend select_practice_pool_random to return item_type + correct_variants
 --    Preserves: SECURITY DEFINER, SET search_path, ACL, WHERE clause, ORDER BY.
+--    DROP required: PG cannot change RETURNS TABLE columns via CREATE OR REPLACE.
 
-CREATE OR REPLACE FUNCTION public.select_practice_pool_random(
+DROP FUNCTION IF EXISTS public.select_practice_pool_random(text[], text[], text[], int[], text[], int);
+
+CREATE FUNCTION public.select_practice_pool_random(
   p_sections       text[]   DEFAULT NULL,
   p_domains        text[]   DEFAULT NULL,
   p_skills         text[]   DEFAULT NULL,
@@ -109,7 +112,8 @@ COMMIT;
 -- ALTER TABLE public.practice_session_items DROP COLUMN IF EXISTS question_item_type;
 --
 -- -- Restore the original RPC without item_type/correct_variants:
--- CREATE OR REPLACE FUNCTION public.select_practice_pool_random(
+-- DROP FUNCTION IF EXISTS public.select_practice_pool_random(text[], text[], text[], int[], text[], int);
+-- CREATE FUNCTION public.select_practice_pool_random(
 --   p_sections text[] DEFAULT NULL, p_domains text[] DEFAULT NULL,
 --   p_skills text[] DEFAULT NULL, p_difficulties int[] DEFAULT NULL,
 --   p_exclude_ids text[] DEFAULT NULL, p_limit int DEFAULT 10
@@ -119,7 +123,7 @@ COMMIT;
 --   correct_answer text, explanation text, domain text,
 --   skill_codes text[], source_type int
 -- )
--- LANGUAGE sql VOLATILE
+-- LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = public
 -- AS $$ SELECT q.id, q.section, q.stem, q.options, q.difficulty,
 --        q.correct_answer, q.explanation, q.domain, q.skill_codes, q.source_type
 --   FROM public.questions q WHERE q.status = 'published'
