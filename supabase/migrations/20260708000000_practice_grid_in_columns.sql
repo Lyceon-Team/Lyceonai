@@ -42,7 +42,7 @@ ALTER TABLE public.practice_session_items
   );
 
 -- 2. Extend select_practice_pool_random to return item_type + correct_variants
---    Preserves: SECURITY DEFINER, SET search_path, ACL, WHERE clause, ORDER BY.
+--    Preserves: ACL, WHERE clause, ORDER BY, PLAIN INVOKER security model.
 --    DROP required: PG cannot change RETURNS TABLE columns via CREATE OR REPLACE.
 
 DROP FUNCTION IF EXISTS public.select_practice_pool_random(text[], text[], text[], int[], text[], int);
@@ -71,8 +71,6 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 VOLATILE
-SECURITY DEFINER
-SET search_path = public
 AS $$
   SELECT
     q.id,
@@ -123,7 +121,7 @@ COMMIT;
 --   correct_answer text, explanation text, domain text,
 --   skill_codes text[], source_type int
 -- )
--- LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = public
+-- LANGUAGE sql VOLATILE
 -- AS $$ SELECT q.id, q.section, q.stem, q.options, q.difficulty,
 --        q.correct_answer, q.explanation, q.domain, q.skill_codes, q.source_type
 --   FROM public.questions q WHERE q.status = 'published'
