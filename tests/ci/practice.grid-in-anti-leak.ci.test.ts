@@ -1,5 +1,5 @@
 /**
- * Practice Grid-In Anti-Leak + Grading Gate
+ * Practice Grid-In Anti-Leak + Grading Gate + MCQ Non-Regression
  *
  * @spec [Doc-02B_V4 §14; Doc-02-Preamble_V3 §12 INV-02B-01; TIGHTENING-1] | @implemented [2026-07-09]
  *
@@ -13,21 +13,36 @@
  *   - incorrect when submitted answer is NOT in correct_variants
  *   - response never contains correct_variants
  *
+ * MCQ non-regression: proves the unified grader left MCQ serve+grade identical.
+ *
  * Mirrors practice.next-http-anti-leak.ci.test.ts (MCQ gate) with a grid-in fixture.
  */
 
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from "vitest";
 import request from "supertest";
 import type { Express, Request, Response, NextFunction } from "express";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-aaaaaaaaaaaa";
 const TEST_SESSION_ID = "00000000-0000-0000-0000-bbbbbbbbbbbb";
 const TEST_ITEM_ID = "00000000-0000-0000-0000-cccccccccccc";
+const TEST_MCQ_ITEM_ID = "00000000-0000-0000-0000-dddddddddddd";
 
 vi.mock("../../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: unknown, _res: unknown, next: () => void) =>
     next(),
   generateToken: () => "test-csrf-token",
+}));
+
+vi.mock("../../apps/api/src/services/mastery-write", () => ({
+  applyMasteryEvent: async () => ({ ok: true, error: null }),
 }));
 
 const configRows = [
@@ -60,6 +75,13 @@ const sessionRow = {
     calculator_state: null,
   }),
 };
+
+const MCQ_OPTION_TOKEN_MAP = JSON.stringify({
+  opt_tok_A: "A",
+  opt_tok_B: "B",
+  opt_tok_C: "C",
+  opt_tok_D: "D",
+});
 
 const gridInItemRow = {
   id: TEST_ITEM_ID,
@@ -94,6 +116,45 @@ const gridInItemRow = {
   client_instance_id: "ci-test",
 };
 
+const mcqItemRow = {
+  id: TEST_MCQ_ITEM_ID,
+  session_id: TEST_SESSION_ID,
+  user_id: TEST_USER_ID,
+  ordinal: 2,
+  question_id: "SATM1AAAA01",
+  question_stem: "If 2x + 3 = 7, what is x?",
+  question_passage: null,
+  question_options: JSON.stringify([
+    { key: "A", text: "1" },
+    { key: "B", text: "2" },
+    { key: "C", text: "3" },
+    { key: "D", text: "4" },
+  ]),
+  question_correct_answer: "B",
+  question_explanation: "Subtract 3: 2x=4, divide by 2: x=2.",
+  question_option_metadata: null,
+  question_difficulty: 1,
+  question_domain: "Algebra",
+  question_skill: "ALG.01",
+  question_section: "M",
+  question_item_type: "mcq",
+  question_correct_variants: null,
+  status: "pending",
+  selected_answer: null,
+  is_correct: null,
+  outcome: null,
+  time_spent_ms: null,
+  client_attempt_id: null,
+  answered_at: null,
+  served_at: null,
+  occurred_at: null,
+  actor_id: TEST_USER_ID,
+  option_order: JSON.stringify(["A", "B", "C", "D"]),
+  option_token_map: MCQ_OPTION_TOKEN_MAP,
+  client_instance_id: "ci-test",
+};
+
+let mockActiveFixture: "grid_in" | "mcq" = "grid_in";
 let mockItemStatus = "pending";
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => {
@@ -104,28 +165,68 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
   }) => {
     const result = { error: null };
     let pendingUpdate: Record<string, unknown> | null = null;
-    const terminal = {
+    let isCountQuery = false;
+
+    const chain = {
+      select: (...args: unknown[]) => {
+        if (
+          args.length >= 2 &&
+          typeof args[1] === "object" &&
+          args[1] !== null &&
+          (args[1] as Record<string, unknown>).count === "exact"
+        ) {
+          isCountQuery = true;
+        }
+        return chain;
+      },
+      eq: () => chain,
+      neq: () => chain,
+      in: () => chain,
+      is: () => chain,
+      or: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      gt: () => chain,
+      gte: () => chain,
+      lt: () => chain,
+      lte: () => chain,
+      like: () => chain,
+      ilike: () => chain,
+      not: () => chain,
+      filter: () => chain,
+      match: () => chain,
+      contains: () => chain,
+      containedBy: () => chain,
+      range: () => chain,
+      overlaps: () => chain,
+      textSearch: () => chain,
+      update: (patch: Record<string, unknown>) => {
+        pendingUpdate = patch;
+        return chain;
+      },
+      insert: () => chain,
+      upsert: () => chain,
+      delete: () => chain,
       single: async () => ({ data: opts.single, ...result }),
       maybeSingle: async () => {
         if (pendingUpdate && opts.onUpdate) {
-          return { data: opts.onUpdate(pendingUpdate), ...result };
+          const updated = opts.onUpdate(pendingUpdate);
+          pendingUpdate = null;
+          return { data: updated, ...result };
         }
         return { data: opts.single, ...result };
       },
-      then: (resolve: (v: { data: unknown; error: null }) => void) =>
-        resolve({ data: opts.array, ...result }),
-    };
-    const chain: Record<string, unknown> = new Proxy(terminal, {
-      get(target, prop) {
-        if (prop in target) return (target as Record<string, unknown>)[prop];
-        return (...args: unknown[]) => {
-          if (prop === "update" && args[0]) {
-            pendingUpdate = args[0] as Record<string, unknown>;
-          }
-          return chain;
-        };
+      then: (
+        resolve: (v: { data: unknown; count?: number; error: null }) => void,
+        _reject?: (e: unknown) => void,
+      ) => {
+        if (isCountQuery) {
+          resolve({ data: null, count: 1, ...result });
+        } else {
+          resolve({ data: opts.array, ...result });
+        }
       },
-    });
+    };
     return chain;
   };
 
@@ -139,8 +240,10 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
           return makeChain({ single: sessionRow, array: [sessionRow] });
         }
         if (table === "practice_session_items") {
+          const fixture =
+            mockActiveFixture === "mcq" ? mcqItemRow : gridInItemRow;
           const currentItem = {
-            ...gridInItemRow,
+            ...fixture,
             status: mockItemStatus,
           };
           return makeChain({
@@ -216,7 +319,12 @@ describe("Practice grid-in anti-leak + grading gate", () => {
     vi.restoreAllMocks();
   });
 
-  // --- SERVE PATH: anti-leak ---
+  beforeEach(() => {
+    mockActiveFixture = "grid_in";
+    mockItemStatus = "pending";
+  });
+
+  // --- GRID-IN: SERVE PATH (anti-leak) ---
 
   it("GET /next returns correct_answer:null and explanation:null for grid-in (anti-leak)", async () => {
     const res = await request(app).get(
@@ -257,7 +365,7 @@ describe("Practice grid-in anti-leak + grading gate", () => {
     expect(bodyStr).not.toContain("Divide both sides by 5: x = 1/5 = 0.2.");
   });
 
-  // --- GRADE PATH ---
+  // --- GRID-IN: GRADE PATH ---
 
   it("POST /answer grades grid-in correct (exact match from correct_variants)", async () => {
     mockItemStatus = "served";
@@ -313,5 +421,61 @@ describe("Practice grid-in anti-leak + grading gate", () => {
     expect(res.body.correctAnswer).toBe("0.2");
     const bodyStr = JSON.stringify(res.body);
     expect(bodyStr).not.toContain("correct_variants");
+  });
+
+  // --- MCQ NON-REGRESSION: SERVE PATH ---
+
+  it("GET /next returns correct_answer:null and explanation:null for MCQ (anti-leak non-regression)", async () => {
+    mockActiveFixture = "mcq";
+    mockItemStatus = "pending";
+
+    const res = await request(app).get(
+      `/api/practice/sessions/${TEST_SESSION_ID}/next?client_instance_id=ci-test`,
+    );
+
+    expect(res.status).toBe(200);
+    const body = res.body;
+    expect(body.question).toBeDefined();
+    expect(body.question.correct_answer).toBeNull();
+    expect(body.question.explanation).toBeNull();
+    expect(body.question.stem).toBe("If 2x + 3 = 7, what is x?");
+    expect(body.question.itemType).toBe("mcq");
+    expect(Array.isArray(body.question.options)).toBe(true);
+    expect(body.question.options.length).toBe(4);
+  });
+
+  // --- MCQ NON-REGRESSION: GRADE PATH ---
+
+  it("POST /answer grades MCQ correct via option token (non-regression)", async () => {
+    mockActiveFixture = "mcq";
+    mockItemStatus = "served";
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.mode).toBe("multiple_choice");
+    expect(res.body.correctOptionId).toBeDefined();
+    expect(typeof res.body.correctOptionId).toBe("string");
+  });
+
+  it("POST /answer grades MCQ incorrect via option token (non-regression)", async () => {
+    mockActiveFixture = "mcq";
+    mockItemStatus = "served";
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_C",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(false);
+    expect(res.body.mode).toBe("multiple_choice");
+    expect(res.body.correctOptionId).toBeDefined();
   });
 });
