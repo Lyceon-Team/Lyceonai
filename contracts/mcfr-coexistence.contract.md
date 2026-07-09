@@ -65,5 +65,16 @@ grade-equivalence (ingestion-accepted ⇔ grading-accepted) on the CB fixtures.
 
 ## Status
 
-Registered as a named requirement. **Grid-ins are non-functional end-to-end until this lands.**
-Built after this PR's re-audit clears. Owner-run DB steps, same discipline as the reseed.
+**Practice lane: COMPLETE** (pending migration application by Karl).
+
+- Migration: `20260708000000_practice_grid_in_columns.sql` — adds `question_item_type` +
+  `question_correct_variants` to `practice_session_items`, extends `select_practice_pool_random`.
+- Runtime: `practice-canonical.ts` — `toCanonicalQuestionFromSessionItem` reads item_type from
+  snapshot, `gradeAnswer` branches MCQ key-match vs grid-in `correct_variants.includes()`,
+  submit/skip handlers emit correct `mode` per item type.
+- Anti-leak: grid-in integration test proves no `correct_variants` leak on serve, correct grading
+  on submit, MCQ non-regression.
+- Grading source: `correct_variants` array from `practice_session_items` snapshot (TIGHTENING-1).
+
+**Remaining (review + full-length lanes):** not yet started. Same pattern — extend session-items
+tables + runtime, reuse `gradeAnswer` and `buildSafeOptionsForItem`.

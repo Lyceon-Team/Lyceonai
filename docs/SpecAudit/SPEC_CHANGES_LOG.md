@@ -25,6 +25,20 @@
 
 ## Entries
 
+SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | PROPOSED
+Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
+WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
+  failed with 422 (MCQ-only `normalizeAnswerKey` rejected numeric answers). Anti-leak was structurally
+  sound but unproven for grid-in (zero integration-test coverage).
+IS: `practice_session_items` extended with `question_item_type` (mcq|grid_in) and `question_correct_variants`
+  (TEXT[]). `toCanonicalQuestionFromSessionItem` reads item_type from snapshot. `gradeAnswer` branches:
+  MCQ key-match vs grid-in `correct_variants.includes(submitted.trim())` (TIGHTENING-1). Submit/skip
+  handlers emit `mode: "grid_in"` with `correctAnswer` (canonical display value, post-submit). Anti-leak
+  integration test proves no `correct_variants` leak on serve, correct grading on submit.
+Rationale: MCFR contract practice lane. Migration `20260708000000_practice_grid_in_columns.sql` committed
+  but NOT applied — Karl applies. Review + full-length lanes are named follow-ons.
+Build artifact: PR on branch `claude/grid-in-anti-leak-audit-v0wha5`.
+
 SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
 Change: Canonical skill taxonomy frozen as **29 Title Case strings** in governance doc §A.4.
 WAS: skill strings in mixed sentence-case/title-case (internal inconsistency).

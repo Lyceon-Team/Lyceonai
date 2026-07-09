@@ -227,7 +227,7 @@ const DISTRACTOR_TAXONOMY: Record<CanonicalSectionCode, ReadonlySet<string>> = {
 // 04B scoring path, not by this ingestion-time key check — see normalizeGridInKey.
 // ---------------------------------------------------------------------------
 
-type Rational = { num: bigint; den: bigint }; // den > 0, reduced
+export type Rational = { num: bigint; den: bigint }; // den > 0, reduced
 
 function gcd(a: bigint, b: bigint): bigint {
   let x = a < 0n ? -a : a;
