@@ -3011,7 +3011,7 @@ $$;
 
 CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NULL::text[], p_domains text[] DEFAULT NULL::text[], p_skills text[] DEFAULT NULL::text[], p_difficulties integer[] DEFAULT NULL::integer[], p_exclude_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 10) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[])
     LANGUAGE sql SECURITY DEFINER
-    SET search_path TO 'public', 'pg_temp'
+    SET search_path TO 'public'
     AS $$
   SELECT
     q.id,
@@ -4000,10 +4000,10 @@ CREATE TABLE public.practice_session_items (
     question_correct_variants text[],
     CONSTRAINT practice_session_items_outcome_check CHECK (((outcome IS NULL) OR (outcome = ANY (ARRAY['correct'::text, 'incorrect'::text, 'skipped'::text])))),
     CONSTRAINT practice_session_items_question_difficulty_check CHECK (((question_difficulty >= 1) AND (question_difficulty <= 3))),
+    CONSTRAINT practice_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text]))),
     CONSTRAINT practice_session_items_question_section_check CHECK ((question_section = ANY (ARRAY['M'::text, 'RW'::text]))),
     CONSTRAINT practice_session_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'served'::text, 'answered'::text, 'skipped'::text]))),
-    CONSTRAINT psi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb)))),
-    CONSTRAINT practice_session_items_question_item_type_check CHECK ((question_item_type = ANY (ARRAY['mcq'::text, 'grid_in'::text])))
+    CONSTRAINT psi_item_shape_chk CHECK ((((question_item_type = 'mcq'::text) AND (question_correct_variants IS NULL)) OR ((question_item_type = 'grid_in'::text) AND (question_correct_variants IS NOT NULL) AND (array_length(question_correct_variants, 1) >= 1) AND (question_options = '[]'::jsonb))))
 );
 
 
