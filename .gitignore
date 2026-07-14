@@ -42,3 +42,5 @@ skill-drafts/*-workspace/
 # Python bytecode (mastery reference + CI parity driver)
 __pycache__/
 *.pyc
+tests/__fixtures__/assemble-batch-scratch/
+tests/__fixtures__/assemble-batch-apply/

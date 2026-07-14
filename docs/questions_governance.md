@@ -24,7 +24,7 @@
 | `item_type` | `TEXT NOT NULL DEFAULT 'mcq' CHECK (IN ('mcq','grid_in'))` | SCL-018: grid-in in scope for launch. Migration `20260628010000_grid_in_schema_extension.sql`. | `mcq` for multiple-choice, `grid_in` for student-produced response. See §A.3. | Digital SAT Math is ~75% MCQ, ~25% grid-in. |
 | `options` | `JSONB NOT NULL` | Doc 02A §19, Doc 02B: student-visible options. | MCQ: exactly 4 objects `[{key:"A",text:"..."}, {key:"B",text:"..."}, {key:"C",text:"..."}, {key:"D",text:"..."}]`. Grid-in: empty array `[]`. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Digital SAT MCQ always has exactly 4 choices labeled A–D. |
 | `correct_answer` | `TEXT NOT NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. | MCQ: one of `"A"`, `"B"`, `"C"`, `"D"` — must match one option key. Grid-in: the canonical numeric/fraction value (e.g., `"2/3"`, `"17"`). See §A.3. | Single unambiguous correct answer per question. |
-| `correct_variants` | `TEXT[] NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. SCL-018. Migration `20260628010000_grid_in_schema_extension.sql`. | Grid-in: exhaustive set of CB-accepted surface forms (e.g., `{"2/3", ".666", "0.666", ".667", "0.667"}`). MCQ: NULL. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Grid-in answers accept multiple equivalent forms. |
+| `correct_variants` | `TEXT[] NULL` | Doc 02 Preamble §12 INV-02-08: INTERNAL, never served pre-submit. SCL-018. Migration `20260628010000_grid_in_schema_extension.sql`. | Grid-in: deterministically-generated canonical set from `gridInAcceptedForms(correct_answer)` (e.g., `{"2/3", ".666", "0.666", ".667", "0.667"}`). Not the grading authority — runtime grades by value-equivalence (§A.3 SCL-021). MCQ: NULL. Shape enforced by `questions_item_shape_chk` CHECK. See §A.3. | Grid-in answers accepted by value-equivalence at runtime; `correct_variants` is the canonical representation, not an exhaustive enumeration. |
 | `explanation` | `TEXT NOT NULL` | Doc 02 Preamble §12: post-submit only. Doc 02A §20: explanation standard. | Must justify WHY the correct answer is correct. Should address why each distractor is wrong when pedagogically useful. LaTeX for math. 2–8 sentences by difficulty. See §A.6. | Explanations are the primary learning feedback mechanism. |
 | `option_metadata` | `JSONB NULL` | Doc 02A §19, Doc 02 Preamble §12 INV-02-09: INTERNAL, never to clients. | Per-option role and distractor taxonomy from `distractor_taxonomy_v1`. Keyed object: `{"A": {role, error_taxonomy}, ...}`. The correct-answer option has `role: "correct"` and `error_taxonomy: null`. See §A.6. | Distractor labeling enables analytics on common error patterns. |
 | `assets` | `JSONB NULL` | Doc 02A: figures, diagrams, data displays. | Shape: `[{type:"image",url:"...",alt:"...",caption:"..."}]` or `[{type:"latex_figure",content:"..."}]`. Used for geometry diagrams, data tables, graphs. See §A.5. | Digital SAT Math frequently includes figures and data displays. |
@@ -122,18 +122,29 @@ Grid-in questions are Math-only (`section = 'M'`). The student types a numeric a
 - `item_type`: `"grid_in"`
 - `options`: `[]` (empty array — no choices; enforced by CHECK)
 - `correct_answer`: the canonical numeric value as a string (e.g., `"2/3"`, `"0.5"`, `"17"`)
-- `correct_variants`: `TEXT[]` — the exhaustive set of CB-accepted surface forms (enforced non-NULL with ≥1 element by CHECK)
+- `correct_variants`: `TEXT[]` — the deterministically-generated canonical set produced by `gridInAcceptedForms(correct_answer)` (enforced non-NULL with ≥1 element by CHECK). See correctness model below.
 - `option_metadata`: NULL (no options to label)
 
-**Grid-in accepted forms** (from `parseCorrectVariants`, `question-bank-contract.ts:237-274` and INGESTION-LOGIC §3):
-- Integers: `"17"`, `"-3"`
-- Decimals: `".5"`, `"0.5"`, `"0.50"`
-- Fractions: `"2/3"`, `"1/16"` (improper fractions only — no mixed numbers)
-- 4th-digit truncated AND rounded decimals: `2/3 → {"2/3", ".666", "0.666", ".667", "0.667"}`
-- Maximum 5 characters (6 with negative sign) per the Digital SAT input field budget
-- No mixed numbers, no percentages, no separators
+**Grid-in correctness model (SCL-021)**
 
-**Answer-matching rule:** `gridInResponseMatches(response, value)` — value-equality after normalization. Accepts any stored variant form.
+Grid-in correctness is determined by **value-equivalence**, not surface-string matching.
+
+**Basis** — College Board Digital SAT student-produced response: an answer may be entered as an integer, a fraction (need not be reduced), or a decimal, within the grid's character limit; scoring is by value. Any validly-formatted, in-grid entry equal in value to the correct answer is correct.
+
+**Two distinct concepts — do not conflate:**
+
+1. **Grading acceptance (runtime).** `gridInResponseMatches` (`shared/question-ingestion-qa.ts`) normalizes both the student entry and the canonical answer to a value and compares them. It accepts every value-equivalent, in-grid form — including forms not present in `correct_variants` (for `1/2`: `.5`, `0.5`, `.50`, `0.50`, `2/4`, …). `correct_variants` is not consulted as the grading authority; value-equivalence is.
+2. **`correct_variants` (stored).** The deterministically-generated canonical set produced by `gridInAcceptedForms(correct_answer)`: the reduced fraction plus exact decimal spellings (with and without a leading zero), with no trailing zeros and no unreduced fractions. `normalizeGridInKey` validates at ingestion that `correct_variants` equals this generator output exactly. It is a canonical representation, not an exhaustive list of accepted entries.
+
+**Authoring rule:** set `correct_answer` to the canonical value; `correct_variants` MUST equal `gridInAcceptedForms(correct_answer)`. Never hand-add surface forms (e.g. `0.50`) — it does not affect grading (value-equivalence already accepts them) and will fail `normalizeGridInKey` ingestion QA.
+
+**Grid-in input constraints** (from CB Digital SAT field budget):
+- Maximum 5 characters (6 with negative sign)
+- Integers: `"17"`, `"-3"`
+- Decimals: `".5"`, `"0.5"` (no trailing zeros in the canonical set; trailing-zero forms accepted at runtime by value-equivalence)
+- Fractions: `"2/3"`, `"1/16"` (improper fractions only — no mixed numbers)
+- 4th-digit truncated AND rounded decimals for non-terminating values: `2/3 → {"2/3", ".666", "0.666", ".667", "0.667"}`
+- No mixed numbers, no percentages, no separators
 
 ---
 
@@ -223,6 +234,29 @@ skill_codes = ARRAY['Linear Equations in One Variable']
 **`student_skill_mastery.skill` must use these exact Title Case strings** for mastery attribution to work.
 
 **Note on CB taxonomy vs. Lyceon frozen set:** CB's Assessment Framework lists ~30 distinct skills (splitting "Command of Evidence" into Textual and Quantitative sub-skills). The 29 strings above are our canonical frozen set, derived from the CB style guide filenames with typos corrected (`variabe` → `variable`, `Pecentages` → `Percentages`) and normalized to Title Case (SCL-020).
+
+### Skill Classification Convention (SCL-022)
+
+**Primary-competency rule:** Each question is tagged with the single skill that names the *primary competency being tested* — the skill a student must exercise to reach the correct answer. Secondary skills that are incidentally used (e.g., arithmetic in an algebra problem, reading comprehension in a grammar question) do not determine the tag.
+
+**Disambiguation table — boundary pairs**
+
+When a question could plausibly fall under two skills, apply the distinguishing criterion below. If neither criterion resolves the case, apply the tiebreak rule.
+
+| Pair | Skill A | Skill B | Distinguishing criterion |
+|------|---------|---------|------------------------|
+| 1 | `Linear Equations in Two Variables` | `Linear Functions` | **Equation vs. function.** If the question asks to solve, set up, or manipulate a two-variable equation (find intercepts algebraically, determine a line through two points, find perpendicular/parallel lines) → Skill A. If the question frames the relationship as a function and asks about its behavior (rate of change, domain/range, function notation, graph interpretation) → Skill B. |
+| 2 | `Nonlinear Equations in One Variable and Systems of Equations in Two Variables` | `Nonlinear Functions` | **Solve vs. analyze.** If the primary task is to solve an equation or system (find roots, find intersection points, determine number of solutions) → Skill A. If the primary task is to analyze a function's properties (transformations, end behavior, vertex, graph shape, composition) → Skill B. |
+| 3 | `Central Ideas and Details` vs `Command of Evidence` vs `Inferences` | *(three-way)* | **Central Ideas and Details** — the stem asks for the main idea, primary purpose, or a directly stated detail of the text as written. The answer is recoverable from what the text explicitly says or from summarizing its central point; no new claim, no evidence selection. **Command of Evidence** — the stem references a claim, hypothesis, argument, or dataset and asks which quotation, finding, or data point would most directly **support, illustrate, weaken, or complete** it. Choices are candidate evidence (textual or quantitative). **Inferences** — the stem asks which choice **most logically completes the text** or what can **most reasonably be inferred**; the answer is an implied conclusion that follows logically but is not explicitly stated. **Precedence when overlapping:** select-evidence-for/against-a-stated-claim → Command of Evidence; complete-or-conclude → Inferences; what-the-text-centrally-states → Central Ideas and Details. |
+| 4 | `Transitions` | `Rhetorical Synthesis` | **Transitions** — a blank in continuous prose requires the transition word/phrase capturing the logical relationship between the surrounding sentences; choices are transitional expressions (however, therefore, for example, in contrast, etc.). **Rhetorical Synthesis** — the item presents **bulleted notes** and asks which choice most effectively accomplishes a **stated rhetorical goal** (emphasize X, introduce Y to an unfamiliar reader, present a contrast, etc.); choices are full sentences synthesizing the notes. **Distinguishing signal:** notes + explicit goal → Rhetorical Synthesis; blank + transition-word choices → Transitions. |
+| 5 | `Boundaries` | `Form, Structure, and Sense` | **Punctuation/joining vs. word form.** If the tested element is punctuation, sentence joining, or clause boundaries (period vs. comma vs. semicolon, comma splice, run-on) → Skill A. If the tested element is verb tense/form, pronoun case, subject-verb agreement, or modifier placement → Skill B. |
+
+**Tiebreak rule:** When the distinguishing criterion above does not clearly resolve the pair, tag the skill whose name most specifically describes the question's demand. If specificity is equal, tag the skill that a CB-published question with identical structure would carry. If no CB precedent exists, tag whichever skill has fewer questions in the current batch to promote coverage spread.
+
+**Worked example — Q4 (`SATM2L6TC5Y`):**
+Q4 asks for the y-intercept of a line perpendicular to `2x + 3y = 12` passing through `(3, 5)`. The student must: (1) extract slope from a two-variable equation, (2) compute the negative reciprocal, (3) use point-slope form to derive the equation, (4) read the y-intercept. The primary competency is manipulating a linear equation in two variables — not analyzing a function's behavior. Therefore: `Linear Equations in Two Variables` (Skill A in Pair 1), not `Linear Functions`.
+
+**Auditor parity:** Codex auditors apply this same table when evaluating `TAG_MISMATCH` (§A.8 check 7). A skill tag is conformant if it is either the unambiguous primary-competency choice or the correct side of an applicable boundary pair above. A tag that falls on the wrong side of a resolved boundary pair is a `TAG_MISMATCH` finding.
 
 ### Digital SAT question distribution (reference for content planning)
 
@@ -422,7 +456,8 @@ If the independent derivation produces a DIFFERENT answer, or if MORE THAN ONE o
 
 | # | Check | Pass criteria | Fail code |
 |---|-------|---------------|-----------|
-| 1 | **Answer-key re-derivation** | Independent solution matches `correct_answer`; exactly one correct option | `WRONG_ANSWER_KEY` |
+| 1 | **Answer-key re-derivation** | Independent solution matches `correct_answer`; exactly one correct option (MCQ) or unique correct value (grid-in) | `WRONG_ANSWER_KEY` |
+| 1a | **Grid-in correctness** (grid-in only) | Grading path grades by value-equivalence: accepts every validly-formatted, in-grid entry equal in value to the canonical answer; rejects non-equivalent entries. `correct_variants == gridInAcceptedForms(correct_answer)` exactly. Do NOT flag `correct_variants` for omitting value-equivalent surface forms — grading accepts them regardless; demanding exhaustive enumeration is a false positive and would break `normalizeGridInKey`. | `GRID_IN_GRADING_DEFECT` |
 | 2 | **Stem clarity** | Unambiguous, self-contained question. No missing information. | `AMBIGUOUS_STEM` |
 | 3 | **Option validity** | Exactly 4 options (MCQ), all plausible, no duplicates, no "all of the above" / "none of the above" | `INVALID_OPTIONS` |
 | 4 | **Distractor quality** | Each wrong option represents a real, categorizable error (not random/absurd); `error_taxonomy` label is appropriate | `WEAK_DISTRACTOR_{key}` |

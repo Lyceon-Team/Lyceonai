@@ -25,6 +25,41 @@
 
 ## Entries
 
+SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
+Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
+  (tag the skill the student must exercise to reach the correct answer), disambiguation table for
+  5 boundary rules (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
+  Central Ideas vs Command of Evidence vs Inferences [three-way], Transitions vs Rhetorical Synthesis,
+  Boundaries vs Form/Structure/Sense),
+  tiebreak rule (specificity → CB precedent → coverage spread), Q4 worked example demonstrating
+  Pair 1 resolution, and auditor parity statement (Codex applies the same table for TAG_MISMATCH).
+WAS: §A.4 listed the 29 frozen skills but provided no guidance on resolving classification ambiguity
+  at skill boundaries — authoring and audit could disagree on plausible-either-way tagging.
+IS: §A.4 now includes a deterministic disambiguation protocol that both authors and Codex auditors
+  apply identically, reducing false TAG_MISMATCH findings on boundary-case questions.
+Rationale: Prerequisite for volume batch (70 questions across all 29 skills). Without a locked
+  disambiguation convention, boundary-case skill tags would be auditor-subjective, risking spurious
+  Codex REJECTs on first submission — counter to the graduation criterion (zero genuine content
+  defects on first Codex submission).
+Owner action: review disambiguation table and tiebreak rule at next spec pass.
+
+SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | PROPOSED
+Change: Grid-in correctness model clarified. Grading is by **value-equivalence** (`gridInResponseMatches`,
+  `shared/question-ingestion-qa.ts:436-444`); `correct_variants` is the deterministically-generated
+  canonical set (`gridInAcceptedForms` — reduced fraction + exact decimal, no trailing zeros), validated
+  by `normalizeGridInKey`, and is neither exhaustive nor the grading authority.
+WAS: §A.3 described `correct_variants` as "the exhaustive set of CB-accepted surface forms" and §A.8
+  had no explicit grid-in audit guidance, leading Codex to flag missing surface forms (e.g. `0.50` for
+  `1/2`) as defects — a false-positive class, since adding such forms would break `normalizeGridInKey`
+  ingestion QA and grading already accepts them via value-equivalence.
+IS: §A.3 now distinguishes grading acceptance (runtime, value-equivalence) from `correct_variants`
+  (stored, deterministic canonical set). §A.8 adds check 1a (grid-in correctness) with explicit
+  guidance: do NOT flag `correct_variants` for omitting value-equivalent surface forms.
+Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer='1/2'`,
+  `correct_variants=['1/2','0.5','.5']`) was adjudicated a false positive. The governance doc's
+  conflation of grading-acceptance with `correct_variants` caused the false-positive class.
+  Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
+Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
 SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | PROPOSED
 Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
 WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
