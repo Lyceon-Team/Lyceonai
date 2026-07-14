@@ -35,7 +35,6 @@ function parseGovernanceDoc(): {
   const mathDistractors: string[] = [];
   const rwDistractors: string[] = [];
 
-  const domainTableRe = /\|\s*\d+\s*\|\s*`([^`]+)`\s*\|/g;
   const lines = raw.split("\n");
 
   let currentSection: string | null = null;
