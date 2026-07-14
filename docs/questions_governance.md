@@ -533,7 +533,7 @@ A batch ships exactly these artifacts — nothing more:
 |----------|------|---------|
 | Seed SQL | `infra/supabase/seed/proving_batch_<NNN>.sql` | Reviewable INSERT statements; Karl applies after Codex APPROVE |
 | Part-files (NDJSON) | `infra/supabase/seed/parts/batch_<NNN>/` | Provenance — one file per domain-slice, records only |
-| Applied-IDs append | `content/canonical/applied_ids.json` | Collision manifest; appended when Karl applies a batch |
+| Applied-IDs update | `content/canonical/applied_ids.json` | Collision manifest; reconciled from prod after a batch is applied. CC updates the in-repo copy as part of the batch PR — Karl no longer needs to touch this file manually. Prod remains the source of truth. |
 
 **Prohibited:** per-batch READMEs, summaries, changelogs, batch-notes, or any other ad-hoc documentation. Batch status lives in the PR description.
 
