@@ -10,14 +10,14 @@
  * to match. CHECK constraints reproduced verbatim from prod.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import pg from "pg";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-apply");
-const CLI = `pnpm exec tsx ${resolve(ROOT, "scripts/assemble-batch.ts")}`;
+const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
 
 const QUESTIONS_DDL = `
 CREATE TABLE IF NOT EXISTS questions (
@@ -151,8 +151,21 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
 
       const outPath = join(SCRATCH, "apply-test.sql");
       const reportPath = join(SCRATCH, "apply-report.json");
-      const cmd = `${CLI} --in ${partsDir} --out ${outPath} --report ${reportPath}`;
-      execSync(cmd, { cwd: ROOT, encoding: "utf-8", timeout: 30000 });
+      execFileSync(
+        "pnpm",
+        [
+          "exec",
+          "tsx",
+          ASSEMBLE_BATCH_SCRIPT,
+          "--in",
+          partsDir,
+          "--out",
+          outPath,
+          "--report",
+          reportPath,
+        ],
+        { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
+      );
 
       const sql = readFileSync(outPath, "utf-8");
       expect(sql).toBeTruthy();
