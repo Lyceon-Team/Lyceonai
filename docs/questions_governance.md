@@ -522,3 +522,23 @@ All Reading & Writing questions are passage-based. Each passage supports exactly
 - **Standard English Conventions:** Passages contain a blank or underlined section where the grammar/punctuation choice is tested. The question asks which option correctly completes the sentence.
 
 **Rhetorical Synthesis special format:** The "passage" for Rhetorical Synthesis is a set of bulleted notes about a topic, followed by a task instruction (e.g., "While writing about X, a student wants to emphasize Y. Which choice most effectively uses relevant information from the notes to accomplish this goal?"). Options are complete sentences.
+
+---
+
+## Appendix: Batch Artifact Discipline
+
+A batch ships exactly these artifacts — nothing more:
+
+| Artifact | Path | Purpose |
+|----------|------|---------|
+| Seed SQL | `infra/supabase/seed/proving_batch_<NNN>.sql` | Reviewable INSERT statements; Karl applies after Codex APPROVE |
+| Part-files (NDJSON) | `infra/supabase/seed/parts/batch_<NNN>/` | Provenance — one file per domain-slice, records only |
+| Applied-IDs append | `content/canonical/applied_ids.json` | Collision manifest; appended when Karl applies a batch |
+
+**Prohibited:** per-batch READMEs, summaries, changelogs, batch-notes, or any other ad-hoc documentation. Batch status lives in the PR description.
+
+### Parts-tree invariant
+
+`infra/supabase/seed/parts/batch_<NNN>/` exists **only** for a batch that shipped a corresponding `proving_batch_<NNN>.sql` seed. Every directory under `parts/` maps 1:1 to a proving seed.
+
+Pipeline-validation runs (pilots, smoke tests) live under `tests/fixtures/`, never under `parts/`.
