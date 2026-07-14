@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-scratch");
-const CLI = `pnpm exec tsx ${resolve(ROOT, "scripts/assemble-batch.ts")}`;
+const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
 
 function runGate(
   partsDir: string,
@@ -13,23 +13,31 @@ function runGate(
 ): { status: number; stdout: string; stderr: string } {
   const outPath = opts.out ?? join(SCRATCH, "out.sql");
   const reportPath = opts.report ?? join(SCRATCH, "report.json");
-  const dryFlag = opts.dryRun ? " --dry-run" : "";
-  const cmd = `${CLI} --in ${partsDir} --out ${outPath} --report ${reportPath}${dryFlag}`;
-  try {
-    const stdout = execSync(cmd, {
-      cwd: ROOT,
-      encoding: "utf-8",
-      timeout: 30000,
-    });
-    return { status: 0, stdout, stderr: "" };
-  } catch (err: unknown) {
-    const e = err as { status: number; stdout: string; stderr: string };
-    return {
-      status: e.status ?? 1,
-      stdout: e.stdout ?? "",
-      stderr: e.stderr ?? "",
-    };
-  }
+  const args = [
+    "exec",
+    "tsx",
+    ASSEMBLE_BATCH_SCRIPT,
+    "--in",
+    partsDir,
+    "--out",
+    outPath,
+    "--report",
+    reportPath,
+    ...(opts.dryRun ? ["--dry-run"] : []),
+  ];
+
+  const result = spawnSync("pnpm", args, {
+    cwd: ROOT,
+    encoding: "utf-8",
+    timeout: 30000,
+    shell: false,
+  });
+
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 function writeParts(dir: string, records: object[]): void {
