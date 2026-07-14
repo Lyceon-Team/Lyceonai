@@ -11,6 +11,21 @@ Parse `$ARGUMENTS` as optional filters: `section`, `domain`, `skill`, `difficult
 - **No filter** → full batch: all 29 skills × difficulties {1,2,3} = 87, plus 3 extra hard questions on the three highest-frequency skills = 90.
 - Any filter narrows the target leaf set accordingly (e.g. `difficulty=3` → 29 hard, one per skill; `domain="Algebra"` → Algebra's 5 skills × 3; `skill="Circles" difficulty=2 count=5` → 5).
 
+## Step 0 — Verify subagent registration (fail-closed precondition)
+
+Before any authoring, confirm that **both** `question-author` and `question-auditor` are registered and invocable as subagent types. Dispatch a trivial probe to each: spawn an Agent with `subagent_type: "question-author"` / `subagent_type: "question-auditor"` whose prompt is `"Echo OK"`. If either probe fails with an agent-type-not-found error:
+
+**HARD STOP.** Emit:
+
+```
+AGENT_NOT_REGISTERED — batch aborted.
+Missing: <agent-name>
+Register the subagents (.claude/agents/*.md) and rerun in a fresh session.
+Do NOT substitute a general-purpose agent. Do NOT continue.
+```
+
+Do **not** fall back to a general-purpose agent with the contract pasted in. Do **not** proceed to Step 1. A batch authored or audited by an unregistered substitute is void.
+
 ## Step 1 — Resolve the target leaf set
 
 Read `content/canonical/taxonomy.json`. Expand the filter into a concrete list of `(section, domain, skill, difficulty, count)` leaves. This is the tree in action: section → domain → skill → difficulty.
@@ -39,8 +54,27 @@ If the gate exits non-zero: **stop.** Surface the report's violations. Do **not*
 
 ## Step 6 — Trigger the auditor
 
-On a clean gate pass, dispatch the `question-auditor` subagent on the assembled `proving_batch_<NNN>.sql`. Pass it only the file path, `taxonomy.json`, and the governance doc — **never** the authors' reasoning.
+On a clean gate pass, dispatch the `question-auditor` subagent **by registered name** (`subagent_type: "question-auditor"`) on the assembled `proving_batch_<NNN>.sql`. Pass it only the file path, `taxonomy.json`, and the governance doc — **never** the authors' reasoning.
 
-## Step 7 — Report
+## Step 7 — Verify auditor identity
 
-Surface: the assembled SQL path, the gate report, and the auditor verdict. Stop there. Applying to prod and merging are Karl's actions — never apply or merge.
+When the auditor returns, verify its verdict JSON contains the `auditor` identity header:
+
+```json
+"auditor": { "agent": "question-auditor", "contractHash": "<8-char SHA-256 prefix>" }
+```
+
+Independently compute `sha256sum .claude/skills/question-audit/SKILL.md | cut -c1-8` and compare. If the header is absent or the hash mismatches:
+
+**The audit is VOID.** Emit:
+
+```
+AUDIT_IDENTITY_FAILED — the auditor identity header is missing or the contract hash mismatches.
+This batch was not audited by the registered question-auditor. Re-run the audit.
+```
+
+Do **not** accept the verdict. Do **not** report it as an APPROVE.
+
+## Step 8 — Report
+
+Surface: the assembled SQL path, the gate report, the auditor identity verification, and the auditor verdict. Stop there. Applying to prod and merging are Karl's actions — never apply or merge.
