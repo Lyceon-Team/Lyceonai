@@ -209,7 +209,7 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
 const ACTIVE_DB_STATUSES = ["active", "created"] as const;
 const TERMINAL_DB_STATUSES = ["completed", "abandoned"] as const;
 const SESSION_ITEM_SELECT =
-  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
+  "id, session_id, user_id, question_id, question_section, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_option_metadata, question_domain, question_skill, question_difficulty, question_item_type, question_correct_variants, option_order, option_token_map, ordinal, status, client_instance_id, selected_answer, is_correct, outcome, answered_at, served_at, occurred_at, time_spent_ms, client_attempt_id, actor_id";
 
 let _cachedRateLimiter: ReturnType<typeof rateLimit> | null = null;
 let _cachedRateLimiterConfig: { windowMs: number; max: number } | null = null;
@@ -582,9 +582,10 @@ function toCanonicalQuestionForServing(
   };
 }
 
-// @spec [Doc 02B §14 Session Items Prefill; grid-in-extension.sql] | @implemented 2026-06-14
+// @spec [Doc 02B §14 Session Items Prefill; Doc-02B_V4 §14 grid-in extension] | @implemented 2026-07-09
 // Reconstructs the server-side serving record from a persisted practice_session_items
-// snapshot. Genesis schema is MCQ-only (no grid-in columns yet).
+// snapshot. Branches on question_item_type: MCQ requires 4-option canonical set + A–D key;
+// grid-in requires empty options + raw correct_answer + correct_variants array.
 function toCanonicalQuestionFromSessionItem(
   item: SessionItemRow,
 ): CanonicalQuestionForServing | null {
@@ -595,14 +596,34 @@ function toCanonicalQuestionFromSessionItem(
   if (!isValidCanonicalId(canonicalId)) return null;
   if (!stem || !section) return null;
 
+  const itemType: CanonicalItemType =
+    normalizeItemType(item.question_item_type ?? null) ?? "mcq";
+  const isGridIn = itemType === "grid_in";
+
   const options = safeParseOptions(item.question_options);
-  if (!hasCanonicalOptionSet(options)) return null;
+
+  if (isGridIn) {
+    if (options.length !== 0) return null;
+  } else {
+    if (!hasCanonicalOptionSet(options)) return null;
+  }
+
+  const correctAnswer = isGridIn
+    ? typeof item.question_correct_answer === "string" &&
+      item.question_correct_answer.trim().length > 0
+      ? item.question_correct_answer.trim()
+      : null
+    : (normalizeAnswerKey(item.question_correct_answer) ?? null);
+
+  const correctVariants = isGridIn
+    ? parseCorrectVariants(item.question_correct_variants)
+    : null;
 
   return {
     id: canonicalId,
     canonical_id: canonicalId,
     section_code: section,
-    item_type: "mcq",
+    item_type: itemType,
     stem,
     options,
     difficulty: item.question_difficulty ?? null,
@@ -611,14 +632,29 @@ function toCanonicalQuestionFromSessionItem(
     subskill: null,
     exam: null,
     structure_cluster_id: null,
-    correct_answer: normalizeAnswerKey(item.question_correct_answer),
+    correct_answer: correctAnswer,
     explanation:
       typeof item.question_explanation === "string" &&
       item.question_explanation.trim().length > 0
         ? item.question_explanation
         : null,
-    correct_variants: null,
+    correct_variants:
+      correctVariants && correctVariants.length > 0 ? correctVariants : null,
   };
+}
+
+// Grid-in has no options to tokenize — short-circuit to [].
+function buildSafeOptionsForItem(
+  q: CanonicalQuestionForServing,
+  optionOrder: string[] | null,
+  optionTokenMap: Record<string, string> | null,
+): StudentSafeOption[] | null {
+  if (q.item_type === "grid_in") return [];
+  return buildStudentSafeOptionsFromStoredMap(
+    q.options,
+    optionOrder,
+    optionTokenMap,
+  );
 }
 
 function normalizeSafeDifficulty(value: unknown): string | number | null {
@@ -1463,6 +1499,8 @@ async function startOrReplaySession(args: {
     question_domain: question.domain ?? null,
     question_skill: question.skill ?? null,
     question_difficulty: question.difficulty ?? null,
+    question_item_type: question.item_type,
+    question_correct_variants: question.correct_variants ?? null,
     ordinal: index + 1,
     status: index === 0 ? "served" : "pending",
     client_instance_id: index === 0 ? args.clientInstanceId : null,
@@ -1700,8 +1738,8 @@ async function serveNextForSession(args: {
       });
     }
 
-    const safeOptions = buildStudentSafeOptionsFromStoredMap(
-      canonicalQuestion.options,
+    const safeOptions = buildSafeOptionsForItem(
+      canonicalQuestion,
       unresolved.option_order,
       unresolved.option_token_map,
     );
@@ -1726,8 +1764,8 @@ async function serveNextForSession(args: {
         });
       }
 
-      const healedOptions = buildStudentSafeOptionsFromStoredMap(
-        canonicalQuestion.options,
+      const healedOptions = buildSafeOptionsForItem(
+        canonicalQuestion,
         rebuilt.optionOrder,
         rebuilt.optionTokenMap,
       );
@@ -1878,8 +1916,8 @@ async function serveNextForSession(args: {
     return args.res.status(quotaReservation.status).json(quotaReservation.body);
   }
 
-  const safeOptions = buildStudentSafeOptionsFromStoredMap(
-    canonicalQuestion.options,
+  const safeOptions = buildSafeOptionsForItem(
+    canonicalQuestion,
     promoted.option_order,
     promoted.option_token_map,
   );
@@ -2050,8 +2088,8 @@ router.post(
       });
     }
 
-    let safeOptions = buildStudentSafeOptionsFromStoredMap(
-      canonicalQuestion.options,
+    let safeOptions = buildSafeOptionsForItem(
+      canonicalQuestion,
       state.option_order,
       state.option_token_map,
     );
@@ -2065,8 +2103,8 @@ router.post(
           updated_at: new Date().toISOString(),
         })
         .eq("id", state.id);
-      safeOptions = buildStudentSafeOptionsFromStoredMap(
-        canonicalQuestion.options,
+      safeOptions = buildSafeOptionsForItem(
+        canonicalQuestion,
         rebuilt.optionOrder,
         rebuilt.optionTokenMap,
       );
@@ -2469,6 +2507,108 @@ async function findSessionItemForSubmission(
   if (!data || data.length === 0) return null;
   return data[0];
 }
+// @spec [Doc-02B_V4 §14; TIGHTENING-1 correct_variants grading] | @implemented 2026-07-09
+// Unified grader — MCQ key-match vs grid-in correct_variants array membership.
+// Grid-in grades against the snapshot correct_variants, NOT parseGridInValue.
+// Fail closed on malformed data — no fallback grading path.
+type GradeResult =
+  | {
+      ok: true;
+      isCorrect: boolean;
+      outcome: "correct" | "incorrect";
+      selectedCanonicalKey: string;
+      correctOptionId: string | null;
+    }
+  | { ok: false; status: number; error: string; message: string };
+
+function gradeAnswer(
+  canonicalQuestion: CanonicalQuestionForServing,
+  selectedAnswer: string,
+  optionTokenMap: Record<string, string> | null,
+): GradeResult {
+  const isGridIn = canonicalQuestion.item_type === "grid_in";
+
+  if (isGridIn) {
+    const variants = canonicalQuestion.correct_variants;
+    if (!variants || variants.length === 0) {
+      return {
+        ok: false,
+        status: 422,
+        error: "invalid_question_data",
+        message:
+          "Grid-in question is missing correct_variants and cannot be graded.",
+      };
+    }
+    const trimmed = selectedAnswer.trim();
+    if (!trimmed) {
+      return {
+        ok: false,
+        status: 400,
+        error: "invalid_answer",
+        message: "selectedAnswer must be a non-empty string for grid-in.",
+      };
+    }
+    const isCorrect = variants.includes(trimmed);
+    return {
+      ok: true,
+      isCorrect,
+      outcome: isCorrect ? "correct" : "incorrect",
+      selectedCanonicalKey: trimmed,
+      correctOptionId: null,
+    };
+  }
+
+  // MCQ path
+  if (!optionTokenMap) {
+    return {
+      ok: false,
+      status: 409,
+      error: "session_item_mapping_missing",
+      message: "The served option mapping is missing for this session item.",
+    };
+  }
+
+  const correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
+  if (!correctAnswerKey) {
+    return {
+      ok: false,
+      status: 422,
+      error: "invalid_question_data",
+      message: "This question is missing an answer key and cannot be graded.",
+    };
+  }
+
+  const mappedKeyFromToken = selectedAnswer
+    ? optionTokenMap[selectedAnswer]
+    : null;
+  const selectedCanonicalKey =
+    mappedKeyFromToken ?? normalizeAnswerKey(selectedAnswer ?? null);
+
+  if (!selectedCanonicalKey) {
+    return {
+      ok: false,
+      status: 400,
+      error: "invalid_answer",
+      message:
+        "selectedAnswer must match a served option token or canonical option key.",
+    };
+  }
+
+  const correctOptionId =
+    Object.entries(optionTokenMap).find(
+      (entry) => entry[1] === correctAnswerKey,
+    )?.[0] ?? null;
+
+  const isCorrect = selectedCanonicalKey === correctAnswerKey;
+  return {
+    ok: true,
+    isCorrect,
+    outcome: isCorrect ? "correct" : "incorrect",
+    selectedCanonicalKey,
+    correctOptionId,
+  };
+}
+
 export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
@@ -2576,33 +2716,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const optionTokenMap = parseStudentSafeOptionTokenMap(
-    sessionItem.option_token_map,
-  );
-  if (!optionTokenMap) {
-    return res.status(409).json({
-      error: "session_item_mapping_missing",
-      message: "The served option mapping is missing for this session item.",
-      requestId,
-    });
-  }
-
-  const _questionId = String(sessionItem.question_id);
-  const correctAnswerKey = normalizeAnswerKey(canonicalQuestion.correct_answer);
+  const isGridIn = canonicalQuestion.item_type === "grid_in";
+  const responseMode = isGridIn ? "grid_in" : "multiple_choice";
+  const optionTokenMap = isGridIn
+    ? null
+    : parseStudentSafeOptionTokenMap(sessionItem.option_token_map);
   const explanation = canonicalQuestion.explanation ?? null;
 
-  if (!correctAnswerKey) {
-    return res.status(422).json({
-      error: "invalid_question_data",
-      message: "This question is missing an answer key and cannot be graded.",
-      requestId,
-    });
-  }
-
-  const correctOptionId =
-    Object.entries(optionTokenMap).find(
-      (entry) => entry[1] === correctAnswerKey,
-    )?.[0] ?? null;
+  // For idempotent replays we need correctOptionId even before gradeAnswer —
+  // but only for MCQ. Grid-in has no option tokens.
+  const replayCorrectOptionId =
+    !isGridIn && optionTokenMap
+      ? (Object.entries(optionTokenMap).find(
+          (entry) =>
+            entry[1] === normalizeAnswerKey(canonicalQuestion.correct_answer),
+        )?.[0] ?? null)
+      : null;
 
   if (sessionItem.status !== "served") {
     const resolvedAttemptKey =
@@ -2619,8 +2748,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
         isCorrect: !!sessionItem.is_correct,
-        mode: "multiple_choice",
-        correctOptionId,
+        mode: responseMode,
+        ...(isGridIn
+          ? { correctAnswer: canonicalQuestion.correct_answer }
+          : { correctOptionId: replayCorrectOptionId }),
         explanation,
         feedback: sessionItem.is_correct
           ? "Correct"
@@ -2639,25 +2770,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const selectedTokenOrKey = payload.selectedAnswer;
-  const mappedKeyFromToken = selectedTokenOrKey
-    ? optionTokenMap[selectedTokenOrKey]
-    : null;
-  const selectedCanonicalKey =
-    mappedKeyFromToken ?? normalizeAnswerKey(selectedTokenOrKey ?? null);
-
-  if (!selectedCanonicalKey) {
-    return res.status(400).json({
-      error: "invalid_answer",
-      message:
-        "selectedAnswer must match a served option token or canonical option key.",
+  const gradeResult = gradeAnswer(
+    canonicalQuestion,
+    payload.selectedAnswer,
+    optionTokenMap,
+  );
+  if (!gradeResult.ok) {
+    return res.status(gradeResult.status).json({
+      error: gradeResult.error,
+      message: gradeResult.message,
       requestId,
     });
   }
 
+  const { isCorrect, outcome, selectedCanonicalKey, correctOptionId } =
+    gradeResult;
   const chosen = selectedCanonicalKey;
-  const isCorrect = chosen === correctAnswerKey;
-  const outcome = isCorrect ? "correct" : "incorrect";
 
   const clampedTimeSpentMs = null;
   const now = new Date().toISOString();
@@ -2681,8 +2809,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
         isCorrect: !!existingByKey.is_correct,
-        mode: "multiple_choice",
-        correctOptionId,
+        mode: responseMode,
+        ...(isGridIn
+          ? { correctAnswer: canonicalQuestion.correct_answer }
+          : { correctOptionId }),
         explanation,
         feedback: existingByKey.is_correct
           ? "Correct"
@@ -2710,8 +2840,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
         isCorrect: !!sessionItem.is_correct,
-        mode: "multiple_choice",
-        correctOptionId,
+        mode: responseMode,
+        ...(isGridIn
+          ? { correctAnswer: canonicalQuestion.correct_answer }
+          : { correctOptionId }),
         explanation,
         feedback: sessionItem.is_correct
           ? "Correct"
@@ -2769,8 +2901,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
         isCorrect: !!raced.is_correct,
-        mode: "multiple_choice",
-        correctOptionId,
+        mode: responseMode,
+        ...(isGridIn
+          ? { correctAnswer: canonicalQuestion.correct_answer }
+          : { correctOptionId }),
         explanation,
         feedback: raced.is_correct
           ? "Correct"
@@ -2882,8 +3016,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     sessionId: payload.sessionId,
     sessionItemId: sessionItem.id,
     isCorrect,
-    mode: "multiple_choice",
-    correctOptionId,
+    mode: responseMode,
+    ...(isGridIn
+      ? { correctAnswer: canonicalQuestion.correct_answer }
+      : { correctOptionId }),
     explanation,
     feedback: isCorrect ? "Correct" : "Incorrect",
     stats: await getSessionStats(payload.sessionId, userId),
@@ -2988,6 +3124,11 @@ async function submitPracticeSkip(req: Request, res: Response) {
   }
 
   const _questionId = String(sessionItem.question_id);
+  const skipItemType =
+    normalizeItemType(sessionItem.question_item_type ?? null) ?? "mcq";
+  const skipResponseMode =
+    skipItemType === "grid_in" ? "grid_in" : "multiple_choice";
+
   if (payload.clientAttemptId) {
     const existingByKey = await findSessionItemByClientAttemptId(
       userId,
@@ -3008,7 +3149,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
         sessionId,
         sessionItemId: sessionItem.id,
         skipped: true,
-        mode: "multiple_choice",
+        mode: skipResponseMode,
         feedback: "Skipped",
         stats: existingStats,
         state: sessionState,
@@ -3024,7 +3165,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
         sessionId,
         sessionItemId: sessionItem.id,
         skipped: sessionItem.outcome === "skipped",
-        mode: "multiple_choice",
+        mode: skipResponseMode,
         feedback: sessionItem.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: existingStats,
         state: sessionState,
@@ -3080,7 +3221,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
         sessionId,
         sessionItemId: sessionItem.id,
         skipped: raced.outcome === "skipped",
-        mode: "multiple_choice",
+        mode: skipResponseMode,
         feedback: raced.outcome === "skipped" ? "Skipped" : "Resolved",
         stats: raceStats,
         state: normalizeSessionState(session.status),
@@ -3119,7 +3260,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     sessionId,
     sessionItemId: sessionItem.id,
     skipped: true,
-    mode: "multiple_choice",
+    mode: skipResponseMode,
     feedback: "Skipped",
     stats: await getSessionStats(sessionId, userId),
     state: shouldComplete ? "completed" : "active",

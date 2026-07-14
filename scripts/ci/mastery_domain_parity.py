@@ -75,7 +75,8 @@ def cmd_gen() -> int:
     out.append(
         "INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, "
         "stem, options, correct_answer, explanation) VALUES "
-        f"({_lit(_QID)}, 'M', 1, {_lit(_DOMAIN)}, ARRAY['s'], 2, 'stem', '[]'::jsonb, 'A', 'expl') "
+        f"({_lit(_QID)}, 'M', 1, {_lit(_DOMAIN)}, ARRAY['s'], 2, 'stem', "
+        f"'[{{\"key\":\"A\",\"text\":\"a\"}},{{\"key\":\"B\",\"text\":\"b\"}},{{\"key\":\"C\",\"text\":\"c\"}},{{\"key\":\"D\",\"text\":\"d\"}}]'::jsonb, 'A', 'expl') "
         "ON CONFLICT (id) DO NOTHING;"
     )
 

@@ -48,7 +48,7 @@ python3 "$ROOT/scripts/ci/mastery_domain_parity.py" check --psql-out "$PSQL_OUT"
 # Shared FK parents for the smoke + KPI fixtures.
 psql_db "$DB" -q >/dev/null <<'SQL'
 INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation)
-  VALUES ('SATM1SMOKE0','M',1,'Algebra',ARRAY['s'],2,'stem','[]'::jsonb,'A','expl') ON CONFLICT DO NOTHING;
+  VALUES ('SATM1SMOKE0','M',1,'Algebra',ARRAY['s'],2,'stem','[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,'A','expl') ON CONFLICT DO NOTHING;
 INSERT INTO auth.users (id,email) VALUES ('aaaa1111-1111-1111-1111-111111111111','smoke@ci');
 INSERT INTO public.profiles (id,email) VALUES ('aaaa1111-1111-1111-1111-111111111111','smoke@ci');
 INSERT INTO public.practice_sessions (id,user_id,mode,target_count,platform,client_instance_id,actor_id) VALUES

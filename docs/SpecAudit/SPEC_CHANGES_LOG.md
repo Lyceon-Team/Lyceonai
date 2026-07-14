@@ -25,6 +25,76 @@
 
 ## Entries
 
+SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
+Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
+  (tag the skill the student must exercise to reach the correct answer), disambiguation table for
+  5 boundary rules (Linear Eq Two Var vs Linear Functions, Nonlinear Eq vs Nonlinear Functions,
+  Central Ideas vs Command of Evidence vs Inferences [three-way], Transitions vs Rhetorical Synthesis,
+  Boundaries vs Form/Structure/Sense),
+  tiebreak rule (specificity → CB precedent → coverage spread), Q4 worked example demonstrating
+  Pair 1 resolution, and auditor parity statement (Codex applies the same table for TAG_MISMATCH).
+WAS: §A.4 listed the 29 frozen skills but provided no guidance on resolving classification ambiguity
+  at skill boundaries — authoring and audit could disagree on plausible-either-way tagging.
+IS: §A.4 now includes a deterministic disambiguation protocol that both authors and Codex auditors
+  apply identically, reducing false TAG_MISMATCH findings on boundary-case questions.
+Rationale: Prerequisite for volume batch (70 questions across all 29 skills). Without a locked
+  disambiguation convention, boundary-case skill tags would be auditor-subjective, risking spurious
+  Codex REJECTs on first submission — counter to the graduation criterion (zero genuine content
+  defects on first Codex submission).
+Owner action: review disambiguation table and tiebreak rule at next spec pass.
+
+SCL-021 | 2026-07-01 | questions_governance.md §A.3/§A.8 (grid-in correctness model) | PROPOSED
+Change: Grid-in correctness model clarified. Grading is by **value-equivalence** (`gridInResponseMatches`,
+  `shared/question-ingestion-qa.ts:436-444`); `correct_variants` is the deterministically-generated
+  canonical set (`gridInAcceptedForms` — reduced fraction + exact decimal, no trailing zeros), validated
+  by `normalizeGridInKey`, and is neither exhaustive nor the grading authority.
+WAS: §A.3 described `correct_variants` as "the exhaustive set of CB-accepted surface forms" and §A.8
+  had no explicit grid-in audit guidance, leading Codex to flag missing surface forms (e.g. `0.50` for
+  `1/2`) as defects — a false-positive class, since adding such forms would break `normalizeGridInKey`
+  ingestion QA and grading already accepts them via value-equivalence.
+IS: §A.3 now distinguishes grading acceptance (runtime, value-equivalence) from `correct_variants`
+  (stored, deterministic canonical set). §A.8 adds check 1a (grid-in correctness) with explicit
+  guidance: do NOT flag `correct_variants` for omitting value-equivalent surface forms.
+Rationale: Codex REJECT on proving_batch_001 Q4 (`SATM2L6TC5Y`, `correct_answer='1/2'`,
+  `correct_variants=['1/2','0.5','.5']`) was adjudicated a false positive. The governance doc's
+  conflation of grading-acceptance with `correct_variants` caused the false-positive class.
+  Supersedes any prior language implying `correct_variants` must enumerate all accepted surface forms.
+Owner action: review at next spec pass; confirm value-equivalence model aligns with Doc 04B.
+SCL-021 | 2026-07-09 | Doc 02B §14 / contracts/mcfr-coexistence.contract.md (practice grid-in serve + grade) | PROPOSED
+Change: Grid-in (free-response / SPR) questions are now **functional end-to-end on the practice path**.
+WAS: grid-in items could enter practice sessions via `select_practice_pool_random` but grading always
+  failed with 422 (MCQ-only `normalizeAnswerKey` rejected numeric answers). Anti-leak was structurally
+  sound but unproven for grid-in (zero integration-test coverage).
+IS: `practice_session_items` extended with `question_item_type` (mcq|grid_in) and `question_correct_variants`
+  (TEXT[]). `toCanonicalQuestionFromSessionItem` reads item_type from snapshot. `gradeAnswer` branches:
+  MCQ key-match vs grid-in `correct_variants.includes(submitted.trim())` (TIGHTENING-1). Submit/skip
+  handlers emit `mode: "grid_in"` with `correctAnswer` (canonical display value, post-submit). Anti-leak
+  integration test proves no `correct_variants` leak on serve, correct grading on submit.
+Rationale: MCFR contract practice lane. Migration `20260708000000_practice_grid_in_columns.sql` committed
+  but NOT applied — Karl applies. Review + full-length lanes are named follow-ons.
+Build artifact: PR on branch `claude/grid-in-anti-leak-audit-v0wha5`.
+
+SCL-020 | 2026-06-28 | questions_governance.md §A.4 (canonical skill taxonomy casing) | PROPOSED
+Change: Canonical skill taxonomy frozen as **29 Title Case strings** in governance doc §A.4.
+WAS: skill strings in mixed sentence-case/title-case (internal inconsistency).
+IS: all 29 skills locked to Title Case (e.g., `Linear Equations in One Variable`, `Words in Context`),
+  matching CB-native capitalization. `student_skill_mastery.skill` must use these exact strings.
+Rationale: single source of truth; no deployed SQL function hardcodes skill strings, so the governance
+  doc is the sole authority — its internal consistency is load-bearing. Title Case matches CB convention.
+No code/DB change from this entry. Owner action: confirm Title Case convention at next spec pass.
+
+SCL-018 | 2026-06-28 | Doc 02A §15/§16 / questions_governance.md §A.3 (grid-in / free-response scope) | PROPOSED
+Change: Free-response (grid-in / student-produced response) is **in scope for prelaunch**, superseding
+  the prior MCQ-only deferral.
+WAS (gap-closure plan proposal): grid-in deferred to post-launch (MCQ-only for launch).
+IS: grid-in is a launch question type. Schema extension via migration
+  `20260628010000_grid_in_schema_extension.sql` adds `item_type` (mcq|grid_in) and `correct_variants`
+  (TEXT[]) columns with fail-closed shape-integrity CHECK. Grid-in authoring rules defined in
+  `questions_governance.md` §A.3.
+Rationale: Karl ruling (2026-06-28) — grid-in represents ~25% of Digital SAT Math questions and must be
+  authorable this content wave. Migration awaiting Karl apply (not applied to prod).
+Owner action: apply migration; promote into Doc 02A spec at next revision; update Doc 02A §23 QA gate
+  "Four options present" to exempt grid-in items (`options.length = 0` is valid for `grid_in`).
 
 SCL-016 | Doc 02B (flow-cards / adaptive practice flow) | PROPOSED (Karl promotes)
 Change: flow-cards is a POST-LAUNCH feature; removed from launch UI.
@@ -202,6 +272,16 @@ applied + verified live 2026-06-25; 5b write-path stamping next).
 **Change:** `recompute_skill_mastery` gained conditional `p_chain_downstream boolean DEFAULT true` (unconditional downstream fan-out deadlocks under backfill interleave; conditional makes lock order monotonic). Backfill/event paths stamp `triggered_by` via `SET LOCAL` GUC; `triggered_by` made NOT NULL + CHECK(IN event/backfill_recompute) to close the CHECK-passes-on-NULL hole.
 **Reason:** PR-2 build findings (deadlock analysis + GUC atomicity). Two CI guards hardened against comment-false-match by perturbation proof.
 **Artifact:** Migration 20260625000000, applied + verified live.
+
+### SCL-P-TZRESET — quota_reset_timezone: UTC (Q13) → America/Chicago [PROPOSED]
+Context: Q13 locked UTC for quota daily-reset determinism. Live config landed as America/Chicago;
+  Karl confirmed Central is the intended boundary.
+Rationale: US-only launch userbase; midnight Central is a more humane reset than 00:00 UTC. DST wobble
+  (23h/25h reset window twice yearly) is acceptable for a quota reset (non-safety, non-scoring). Q13's
+  determinism concern was load-bearing for seeded selection (deferred, SCL-P-ADAPTIVE), not quota windows.
+Effect: unpaid 40/day quota resets at 00:00 America/Chicago. No code/migration change; config row already
+  America/Chicago on prod. Supersedes Q13's UTC clause for quota_reset_timezone only.
+Status: PROPOSED → Karl promotes to canonical.
 
 ---
 

@@ -40,7 +40,7 @@ const SAT_TAXONOMY = {
         ],
       },
       problem_solving: {
-        label: "Problem Solving & Data Analysis",
+        label: "Problem Solving and Data Analysis", // presentation-only
         skills: [
           "ratios_rates_proportions",
           "percentages",
@@ -52,7 +52,7 @@ const SAT_TAXONOMY = {
         ],
       },
       geometry: {
-        label: "Geometry & Trigonometry",
+        label: "Geometry and Trigonometry", // presentation-only
         skills: [
           "area_volume",
           "lines_angles",
