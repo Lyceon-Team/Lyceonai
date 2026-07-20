@@ -344,6 +344,52 @@ describe("assemble-batch gate", () => {
     expect(ids).toEqual(sorted);
   });
 
+  it("renders jsonb correctly when option text contains embedded double-quotes and backslashes", () => {
+    const dir = join(SCRATCH, "embedded-quotes");
+    const outPath = join(SCRATCH, "embedded-quotes-out.sql");
+    writeParts(dir, [
+      validMcqRecord({
+        section: "RW",
+        domain: "Information and Ideas",
+        skill: "Command of Evidence",
+        passage:
+          'In Voss\'s novel, Thomas states, "My brother and I were inseparable."',
+        options: [
+          {
+            key: "A",
+            text: 'Thomas states, "My brother and I were inseparable; every summer we explored the woods together, never once quarreling."',
+          },
+          {
+            key: "B",
+            text: 'A letter from Thomas\'s mother reads, "I worry about the boys constantly fighting."',
+          },
+          {
+            key: "C",
+            text: 'Thomas reflects, "Looking back, I realize childhood has \\frac{many}{layers}."',
+          },
+          {
+            key: "D",
+            text: "The novel's epilogue describes a holiday dinner.",
+          },
+        ],
+        option_metadata: {
+          A: { role: "distractor", error_taxonomy: "partial_reasoning" },
+          B: { role: "correct", error_taxonomy: null },
+          C: { role: "distractor", error_taxonomy: "partial_reasoning" },
+          D: { role: "distractor", error_taxonomy: "evidence_mismatch" },
+        },
+        correct_option: "B",
+      }),
+    ]);
+    const result = runGate(dir, { out: outPath });
+    expect(result.status).toBe(0);
+    const sql = readFileSync(outPath, "utf-8");
+    expect(sql).toContain("$lyceon_json$");
+    expect(sql).toContain("::jsonb");
+    expect(sql).toContain("My brother and I were inseparable");
+    expect(sql).not.toContain("'::jsonb");
+  });
+
   it("report JSON has expected shape on success", () => {
     const dir = join(SCRATCH, "report-shape");
     const reportPath = join(SCRATCH, "report-shape.json");
