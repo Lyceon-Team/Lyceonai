@@ -344,6 +344,8 @@ Or for LaTeX-rendered figures (preferred when possible):
 
 Every wrong option must represent a plausible, categorizable error — never a random or absurd answer. Each distractor maps to a label from `distractor_taxonomy_v1` (genesis DDL, `00000000000000_genesis.sql:533-549`).
 
+**Words in Context / vocabulary items (single-defensible-answer sharpening):** a distractor is only valid if substituting it into the blank produces an incoherent or meaning-wrong sentence in context. A distractor that produces a coherent sentence but is "less precise" than the key is a defect — the item then has two defensible answers. Diagnostic tell: if the explanation defends the key as "more precise" or says a distractor "captures [a real reading] but…", the item is defective. Real SAT WiC items have exactly one word that fits on meaning/connotation; replace any distractor that merely "fits less well" with one that fails on meaning. _(Added 2026-07-20 after Codex REJECT on SATRW2O432ST — batch 004 streak candidate 2.)_
+
 **Math distractor labels:**
 
 | Label | Meaning | Example error |
