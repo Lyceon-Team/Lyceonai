@@ -20,6 +20,7 @@ Re-derive every answer **from scratch**. Do not read the stored answer before so
 
 1. **Solve cold.** Derive the answer independently from the stem (and passage). Then compare to the stored `correct_answer`.
    - **MCQ:** exactly one option is defensible and it equals the stored key. If a second option is also defensible or arguably correct → defect (the single-defensible-answer rule). Confirm the other three are checkably wrong.
+   - **Words in Context / vocabulary MCQ (additional):** for each distractor, test whether substituting it into the blank produces a coherent, meaning-correct sentence. If it does, the distractor is defensible and the item is defective — even if the key is "more precise." A distractor is only valid if it makes the sentence incoherent or meaning-wrong. Diagnostic tell: if your reasoning says the key is "more precise" or a distractor "captures [a real reading] but…", that distractor is still defensible → defect.
    - **Grid-in:** your derived value is value-equivalent to the stored `correct_answer`.
 2. **Tags.** `domain` is canonical and section-paired; `skill` ∈ the frozen 29 and is convention-consistent with §A.4. A tag that correctly applies the convention is not a defect.
 3. **Distractors.** Each maps to a real error a student would plausibly make; the `error_taxonomy` label fits.

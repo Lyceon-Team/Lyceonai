@@ -344,6 +344,8 @@ Or for LaTeX-rendered figures (preferred when possible):
 
 Every wrong option must represent a plausible, categorizable error — never a random or absurd answer. Each distractor maps to a label from `distractor_taxonomy_v1` (genesis DDL, `00000000000000_genesis.sql:533-549`).
 
+**Words in Context / vocabulary items (single-defensible-answer sharpening):** a distractor is only valid if substituting it into the blank produces an incoherent or meaning-wrong sentence in context. A distractor that produces a coherent sentence but is "less precise" than the key is a defect — the item then has two defensible answers. Diagnostic tell: if the explanation defends the key as "more precise" or says a distractor "captures [a real reading] but…", the item is defective. Real SAT WiC items have exactly one word that fits on meaning/connotation; replace any distractor that merely "fits less well" with one that fails on meaning. _(Added 2026-07-20 after Codex REJECT on SATRW2O432ST — batch 004 streak candidate 2.)_
+
 **Math distractor labels:**
 
 | Label | Meaning | Example error |
@@ -522,3 +524,23 @@ All Reading & Writing questions are passage-based. Each passage supports exactly
 - **Standard English Conventions:** Passages contain a blank or underlined section where the grammar/punctuation choice is tested. The question asks which option correctly completes the sentence.
 
 **Rhetorical Synthesis special format:** The "passage" for Rhetorical Synthesis is a set of bulleted notes about a topic, followed by a task instruction (e.g., "While writing about X, a student wants to emphasize Y. Which choice most effectively uses relevant information from the notes to accomplish this goal?"). Options are complete sentences.
+
+---
+
+## Appendix: Batch Artifact Discipline
+
+A batch ships exactly these artifacts — nothing more:
+
+| Artifact | Path | Purpose |
+|----------|------|---------|
+| Seed SQL | `infra/supabase/seed/proving_batch_<NNN>.sql` | Reviewable INSERT statements; Karl applies after Codex APPROVE |
+| Part-files (NDJSON) | `infra/supabase/seed/parts/batch_<NNN>/` | Provenance — one file per domain-slice, records only |
+| Applied-IDs update | `content/canonical/applied_ids.json` | Collision manifest; reconciled from prod after a batch is applied. CC updates the in-repo copy as part of the batch PR — Karl no longer needs to touch this file manually. Prod remains the source of truth. |
+
+**Prohibited:** per-batch READMEs, summaries, changelogs, batch-notes, or any other ad-hoc documentation. Batch status lives in the PR description.
+
+### Parts-tree invariant
+
+`infra/supabase/seed/parts/batch_<NNN>/` exists **only** for a batch that shipped a corresponding `proving_batch_<NNN>.sql` seed. Every directory under `parts/` maps 1:1 to a proving seed.
+
+Pipeline-validation runs (pilots, smoke tests) live under `tests/fixtures/`, never under `parts/`.

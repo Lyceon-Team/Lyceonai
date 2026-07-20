@@ -10,7 +10,7 @@
  * to match. CHECK constraints reproduced verbatim from prod.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import pg from "pg";
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS questions (
 
 function pgAvailable(): boolean {
   try {
-    execSync("pg_isready -h /tmp -p 5433", {
+    execSync("pg_isready -h localhost -p 5432", {
       encoding: "utf-8",
       timeout: 3000,
     });
@@ -81,14 +81,24 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
     if (skip) return;
     mkdirSync(SCRATCH, { recursive: true });
 
+    const admin = new pg.Client({
+      host: "localhost",
+      port: 5432,
+      database: "postgres",
+      user: "postgres",
+    });
+    await admin.connect();
+    await admin.query("DROP DATABASE IF EXISTS gate_test");
+    await admin.query("CREATE DATABASE gate_test");
+    await admin.end();
+
     client = new pg.Client({
-      host: "/tmp",
-      port: 5433,
+      host: "localhost",
+      port: 5432,
       database: "gate_test",
       user: "postgres",
     });
     await client.connect();
-    await client.query("DROP TABLE IF EXISTS questions CASCADE;");
     await client.query(QUESTIONS_DDL);
   });
 
@@ -230,8 +240,19 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
 
       const outPath = join(SCRATCH, "apply-fraction.sql");
       const reportPath = join(SCRATCH, "apply-fraction-report.json");
-      execSync(
-        `${CLI} --in ${partsDir} --out ${outPath} --report ${reportPath}`,
+      execFileSync(
+        "pnpm",
+        [
+          "exec",
+          "tsx",
+          ASSEMBLE_BATCH_SCRIPT,
+          "--in",
+          partsDir,
+          "--out",
+          outPath,
+          "--report",
+          reportPath,
+        ],
         { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
       );
 
@@ -278,6 +299,96 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
             'grid_in', 'test stem', '[]'::jsonb, '5', 'test explanation')
         `),
       ).rejects.toThrow(/questions_item_shape_chk/);
+    },
+  );
+
+  it.skipIf(skip)(
+    "MCQ with embedded double-quotes and backslashes in option text applies cleanly",
+    async () => {
+      await client.query("DELETE FROM questions;");
+
+      const partsDir = join(SCRATCH, "apply-embedded-quotes");
+      mkdirSync(partsDir, { recursive: true });
+
+      const record = {
+        section: "RW",
+        domain: "Information and Ideas",
+        skill: "Command of Evidence",
+        difficulty: 3,
+        item_type: "mcq",
+        stem: "Which quotation most effectively supports the critic's argument?",
+        passage:
+          'In Voss\'s novel, Thomas states, "My brother and I were inseparable." However, other textual evidence contradicts this claim.',
+        options: [
+          {
+            key: "A",
+            text: 'Thomas states, "My brother and I were inseparable; every summer we explored the woods together, never once quarreling."',
+          },
+          {
+            key: "B",
+            text: 'A letter from Thomas\'s mother reads, "I worry about the boys constantly fighting."',
+          },
+          {
+            key: "C",
+            text: 'Thomas reflects, "Looking back, I realize childhood has \\frac{many}{layers}."',
+          },
+          {
+            key: "D",
+            text: "The novel's epilogue describes a holiday dinner.",
+          },
+        ],
+        correct_option: "B",
+        option_metadata: {
+          A: { role: "distractor", error_taxonomy: "partial_reasoning" },
+          B: { role: "correct", error_taxonomy: null },
+          C: { role: "distractor", error_taxonomy: "partial_reasoning" },
+          D: { role: "distractor", error_taxonomy: "evidence_mismatch" },
+        },
+        explanation:
+          "The correct answer is B. The mother's letter directly contradicts Thomas's claim. Option A illustrates Thomas's own narration. Option C is a qualified reflection. Option D is neutral.",
+        estimated_time_seconds: 120,
+      };
+
+      writeFileSync(join(partsDir, "test.ndjson"), JSON.stringify(record));
+
+      const outPath = join(SCRATCH, "apply-embedded-quotes.sql");
+      const reportPath = join(SCRATCH, "apply-embedded-quotes-report.json");
+      execFileSync(
+        "pnpm",
+        [
+          "exec",
+          "tsx",
+          ASSEMBLE_BATCH_SCRIPT,
+          "--in",
+          partsDir,
+          "--out",
+          outPath,
+          "--report",
+          reportPath,
+        ],
+        { cwd: ROOT, encoding: "utf-8", timeout: 30000 },
+      );
+
+      const sql = readFileSync(outPath, "utf-8");
+      expect(sql).toContain("$lyceon_json$");
+
+      await client.query(sql);
+
+      const { rows } = await client.query(
+        "SELECT id, options, option_metadata, source_lineage, generation_attribution FROM questions",
+      );
+      expect(rows).toHaveLength(1);
+
+      const row = rows[0] as Record<string, unknown>;
+      const options = row.options as Array<{ key: string; text: string }>;
+      expect(options).toHaveLength(4);
+      expect(options[0].text).toContain("My brother and I were inseparable");
+      expect(options[1].text).toContain(
+        "I worry about the boys constantly fighting",
+      );
+      expect(row.option_metadata).toBeTruthy();
+      expect(row.source_lineage).toBeTruthy();
+      expect(row.generation_attribution).toBeTruthy();
     },
   );
 });
