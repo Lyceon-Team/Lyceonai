@@ -56,6 +56,8 @@ Every single-answer item must have **exactly one** defensible answer. Before emi
 
 This is sharpest for **Standard English Conventions / Boundaries**: only one choice may conform to Standard English. If two punctuation choices both correctly join the clauses, the item is broken — rewrite until exactly one conforms.
 
+**Words in Context / vocabulary items:** a distractor is only valid if it produces an incoherent or meaning-wrong sentence in context. A distractor that produces a coherent sentence but is "less precise" than the key is a defect — the item then has two defensible answers. Diagnostic tell: if the explanation defends the key as "more precise" or says a distractor "captures [a real reading] but…", the item is defective. Replace the distractor with one that fails on meaning, not merely on precision.
+
 ## 6. Skill classification
 
 Assign the one skill whose definition best fits. When a question could fit two skills, apply the §A.4 convention (the boundary sets: Linear Equations in Two Variables ↔ Linear Functions; Nonlinear Equations ↔ Nonlinear Functions; Central Ideas and Details ↔ Command of Evidence ↔ Inferences; Boundaries ↔ Form, Structure, and Sense; Transitions ↔ Rhetorical Synthesis). Read §A.4 for the deterministic tests — do not guess the boundary.
