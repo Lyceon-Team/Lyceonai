@@ -3,7 +3,10 @@ import { PracticeShell } from "@/components/layout/PracticeShell";
 import QuestionRenderer from "@/components/question-renderer";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useCanonicalPractice, PracticeSectionParam } from "@/hooks/useCanonicalPractice";
+import {
+  useCanonicalPractice,
+  PracticeSectionParam,
+} from "@/hooks/useCanonicalPractice";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +18,12 @@ import type { PracticeDifficulty } from "@/lib/practice-filters";
 function isMathSection(section: string | null | undefined): boolean {
   if (!section) return false;
   const normalized = section.trim().toLowerCase();
-  return normalized === "math" || normalized === "m" || normalized === "m1" || normalized === "m2";
+  return (
+    normalized === "math" ||
+    normalized === "m" ||
+    normalized === "m1" ||
+    normalized === "m2"
+  );
 }
 
 const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
@@ -41,9 +49,15 @@ export default function CanonicalPracticePage(props: {
 }) {
   const sessionSpec = React.useMemo(
     () => ({
-      ...(typeof props.targetMinutes === "number" ? { targetMinutes: props.targetMinutes } : {}),
-      ...(props.difficulties && props.difficulties.length > 0 ? { difficulties: props.difficulties } : {}),
-      ...(props.domains && props.domains.length > 0 ? { domains: props.domains } : {}),
+      ...(typeof props.targetMinutes === "number"
+        ? { targetMinutes: props.targetMinutes }
+        : {}),
+      ...(props.difficulties && props.difficulties.length > 0
+        ? { difficulties: props.difficulties }
+        : {}),
+      ...(props.domains && props.domains.length > 0
+        ? { domains: props.domains }
+        : {}),
     }),
     [props.targetMinutes, props.difficulties, props.domains],
   );
@@ -60,6 +74,7 @@ export default function CanonicalPracticePage(props: {
     showResult,
     isCorrect,
     correctOptionId,
+    correctAnswer,
     explanation,
     score,
     currentIndex,
@@ -79,7 +94,9 @@ export default function CanonicalPracticePage(props: {
   const [isEndingSession, setIsEndingSession] = React.useState(false);
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
-  const [localCalculatorState, setLocalCalculatorState] = React.useState<unknown | null>(null);
+  const [localCalculatorState, setLocalCalculatorState] = React.useState<
+    unknown | null
+  >(null);
 
   React.useEffect(() => {
     setLocalCalculatorState(calculatorState ?? null);
@@ -138,23 +155,42 @@ export default function CanonicalPracticePage(props: {
         <Card className="xl:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div className="flex items-center flex-wrap gap-2">
-              <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
+              <Badge
+                variant="outline"
+                className="uppercase tracking-wider text-[10px] font-semibold"
+              >
                 Question {currentIndex + 1}
-                {typeof totalQuestions === "number" ? ` / ${totalQuestions}` : ""}
+                {typeof totalQuestions === "number"
+                  ? ` / ${totalQuestions}`
+                  : ""}
               </Badge>
-              <Badge variant="outline" className="uppercase tracking-wider text-[10px] font-semibold">
+              <Badge
+                variant="outline"
+                className="uppercase tracking-wider text-[10px] font-semibold"
+              >
                 {props.badgeLabel}
               </Badge>
-              {props.difficulties && props.difficulties.length > 0 && props.difficulties.map((d) => (
-                <Badge key={d} className={`text-[10px] border ${DIFFICULTY_COLORS[d]}`}>
-                  {DIFFICULTY_LABELS[d]}
-                </Badge>
-              ))}
-              {props.domains && props.domains.length > 0 && props.domains.map((domain) => (
-                <Badge key={domain} variant="secondary" className="text-[10px] max-w-[120px] truncate">
-                  {domain}
-                </Badge>
-              ))}
+              {props.difficulties &&
+                props.difficulties.length > 0 &&
+                props.difficulties.map((d) => (
+                  <Badge
+                    key={d}
+                    className={`text-[10px] border ${DIFFICULTY_COLORS[d]}`}
+                  >
+                    {DIFFICULTY_LABELS[d]}
+                  </Badge>
+                ))}
+              {props.domains &&
+                props.domains.length > 0 &&
+                props.domains.map((domain) => (
+                  <Badge
+                    key={domain}
+                    variant="secondary"
+                    className="text-[10px] max-w-[120px] truncate"
+                  >
+                    {domain}
+                  </Badge>
+                ))}
             </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Flag className="h-3.5 w-3.5" />
@@ -163,7 +199,10 @@ export default function CanonicalPracticePage(props: {
           </div>
 
           {runtimeDisabled ? (
-            <RuntimeContractDisabledCard domain="practice" code={runtimeDisabled.code} />
+            <RuntimeContractDisabledCard
+              domain="practice"
+              code={runtimeDisabled.code}
+            />
           ) : isLoading && !question ? (
             <div className="flex flex-col items-center justify-center py-14 text-slate-600">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -172,27 +211,30 @@ export default function CanonicalPracticePage(props: {
           ) : isConflict ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
               <AlertCircle className="h-10 w-10 text-amber-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-amber-900 mb-2">Session Conflict</h3>
+              <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                Session Conflict
+              </h3>
               <p className="text-sm text-amber-700 mb-6">
-                This session is currently active in another browser tab or device.
-                Resuming here will disconnect the other instance.
+                This session is currently active in another browser tab or
+                device. Resuming here will disconnect the other instance.
               </p>
               <div className="flex justify-center gap-3">
-                <Button variant="outline" onClick={() => window.location.assign("/practice")}>
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.assign("/practice")}
+                >
                   Go Back
                 </Button>
-                <Button onClick={handleForceTakeover}>
-                  Resume Here
-                </Button>
+                <Button onClick={handleForceTakeover}>Resume Here</Button>
               </div>
             </div>
           ) : isLimit ? (
             <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
               <AlertCircle className="h-10 w-10 text-red-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-red-900 mb-2">Session Limit Exceeded</h3>
-              <p className="text-sm text-red-700 mb-6">
-                {typedError.message}
-              </p>
+              <h3 className="text-lg font-semibold text-red-900 mb-2">
+                Session Limit Exceeded
+              </h3>
+              <p className="text-sm text-red-700 mb-6">{typedError.message}</p>
               <Button onClick={() => window.location.assign("/practice")}>
                 Manage Sessions
               </Button>
@@ -208,14 +250,20 @@ export default function CanonicalPracticePage(props: {
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               <p className="font-medium">No questions available right now.</p>
               <p className="mt-1">Try again in a moment or switch sections.</p>
-              <Button className="mt-4" onClick={fetchNextQuestion} disabled={isLoading}>
+              <Button
+                className="mt-4"
+                onClick={fetchNextQuestion}
+                disabled={isLoading}
+              >
                 Check Again
               </Button>
             </div>
           ) : (
             <>
               {error && (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">{error}</div>
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                  {error}
+                </div>
               )}
 
               <QuestionRenderer
@@ -227,6 +275,7 @@ export default function CanonicalPracticePage(props: {
                 showResult={showResult}
                 isCorrect={isCorrect}
                 correctOptionId={correctOptionId}
+                correctAnswer={correctAnswer}
                 explanation={explanation}
                 disabled={isSubmitting || isLoading}
                 onMissingMcChoices={handleMissingMcChoices}
@@ -252,7 +301,12 @@ export default function CanonicalPracticePage(props: {
                     </Button>
 
                     <Button
-                      disabled={isSubmitting || isLoading || !canSubmit || isEndingSession}
+                      disabled={
+                        isSubmitting ||
+                        isLoading ||
+                        !canSubmit ||
+                        isEndingSession
+                      }
                       onClick={() => submitAnswer({ skipped: false })}
                     >
                       Check Answer
@@ -270,7 +324,9 @@ export default function CanonicalPracticePage(props: {
                       }
                     }}
                   >
-                    {currentIndex + 1 === totalQuestions ? "Done" : "Next Question"}
+                    {currentIndex + 1 === totalQuestions
+                      ? "Done"
+                      : "Next Question"}
                   </Button>
                 )}
               </div>
@@ -280,18 +336,29 @@ export default function CanonicalPracticePage(props: {
 
         <div className="xl:col-span-4 space-y-4">
           <Card className="rounded-2xl border border-border/60 bg-card p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Session Guidance</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
+              Session Guidance
+            </p>
             <p className="text-sm text-foreground/90 leading-relaxed">
-              Responses submit directly to canonical practice endpoints. If you leave and return, Lyceon restores your unresolved state from runtime session truth.
+              Responses submit directly to canonical practice endpoints. If you
+              leave and return, Lyceon restores your unresolved state from
+              runtime session truth.
             </p>
           </Card>
 
           {showCalculator && (
             <Card className="rounded-2xl border border-border/60 bg-card p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Math Tools</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Math Tools
+                </p>
                 <div className="flex gap-2">
-                  <Button variant="outline" type="button" size="sm" onClick={() => setIsReferenceOpen(true)}>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    size="sm"
+                    onClick={() => setIsReferenceOpen(true)}
+                  >
                     Reference Sheet
                   </Button>
                   <Button
@@ -317,7 +384,10 @@ export default function CanonicalPracticePage(props: {
           )}
         </div>
       </div>
-      <MathReferenceSheet open={isReferenceOpen} onOpenChange={setIsReferenceOpen} />
+      <MathReferenceSheet
+        open={isReferenceOpen}
+        onOpenChange={setIsReferenceOpen}
+      />
     </PracticeShell>
   );
 }

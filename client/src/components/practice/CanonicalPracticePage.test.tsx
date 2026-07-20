@@ -18,12 +18,15 @@ vi.mock("@/components/math/DesmosCalculator", () => ({
   ),
 }));
 
-function buildHookState(section: string | null) {
+function buildHookState(
+  section: string | null,
+  overrides?: Record<string, unknown>,
+) {
   return {
     question: section
       ? {
           sessionItemId: "item-1",
-          questionType: "multiple_choice",
+          questionType: "multiple_choice" as const,
           stem: "What is 1 + 1?",
           section,
           options: [
@@ -42,6 +45,7 @@ function buildHookState(section: string | null) {
     showResult: false,
     isCorrect: null,
     correctOptionId: null,
+    correctAnswer: null,
     explanation: null,
     score: { correct: 0, incorrect: 0, skipped: 0, total: 0, streak: 0 },
     currentIndex: 0,
@@ -54,7 +58,22 @@ function buildHookState(section: string | null) {
     terminateSession: vi.fn(),
     calculatorState: null,
     persistCalculatorState: vi.fn(),
+    ...overrides,
   };
+}
+
+function buildGridInHookState() {
+  return buildHookState("M", {
+    question: {
+      sessionItemId: "item-gi-1",
+      questionType: "grid_in" as const,
+      itemType: "grid_in" as const,
+      inputMode: "numeric_entry" as const,
+      stem: "What is the value of x?",
+      section: "M",
+      options: [],
+    },
+  });
 }
 
 describe("CanonicalPracticePage calculator UX", () => {
@@ -70,12 +89,14 @@ describe("CanonicalPracticePage calculator UX", () => {
         title="Math Practice"
         badgeLabel="Math"
         section="math"
-      />
+      />,
     );
 
     expect(screen.getByTestId("practice-calculator-toggle")).not.toBeNull();
     expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
-    expect(screen.getByTestId("desmos-mock").textContent).toContain("collapsed");
+    expect(screen.getByTestId("desmos-mock").textContent).toContain(
+      "collapsed",
+    );
 
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
     expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
@@ -90,9 +111,95 @@ describe("CanonicalPracticePage calculator UX", () => {
         title="RW Practice"
         badgeLabel="RW"
         section="reading_writing"
-      />
+      />,
     );
 
     expect(screen.queryByTestId("practice-calculator-toggle")).toBeNull();
+  });
+});
+
+describe("CanonicalPracticePage grid-in rendering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders numeric entry input for a grid_in question", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(buildGridInHookState());
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    expect(screen.getByText("What is the value of x?")).not.toBeNull();
+    expect(screen.getByLabelText("Enter your answer")).not.toBeNull();
+  });
+
+  it("renders MC option buttons for an MCQ question (non-regression)", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
+    expect(screen.getByText("2")).not.toBeNull();
+    expect(screen.getByText("3")).not.toBeNull();
+    expect(screen.queryByLabelText("Enter your answer")).toBeNull();
+  });
+
+  it("does not auto-skip grid_in questions", () => {
+    const state = buildGridInHookState();
+    hookMock.useCanonicalPractice.mockReturnValue(state);
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    expect(state.handleMissingMcChoices).not.toHaveBeenCalled();
+  });
+
+  it("shows post-submit feedback for grid_in with correct answer", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        question: {
+          sessionItemId: "item-gi-2",
+          questionType: "grid_in" as const,
+          itemType: "grid_in" as const,
+          inputMode: "numeric_entry" as const,
+          stem: "Solve for x.",
+          section: "M",
+          options: [],
+        },
+        freeResponseAnswer: "0.3",
+        showResult: true,
+        isCorrect: false,
+        correctAnswer: "0.2",
+        explanation: "Divide 1 by 5.",
+      }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    expect(screen.getByText("Incorrect")).not.toBeNull();
+    expect(screen.getByText("Correct answer:")).not.toBeNull();
+    expect(screen.getByText("Divide 1 by 5.")).not.toBeNull();
   });
 });
