@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { spawnSync } from "child_process";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
