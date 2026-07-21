@@ -2,7 +2,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { NumericEntryInput } from "./NumericEntryInput";
+import { NumericEntryInput, isValidGridInFormat } from "./NumericEntryInput";
 
 vi.mock("@/components/MathRenderer", () => ({
   default: ({ content }: { content: string }) => (
@@ -140,5 +140,34 @@ describe("NumericEntryInput", () => {
     expect(
       screen.queryByText(/Enter a number, decimal, or fraction/),
     ).toBeNull();
+  });
+});
+
+describe("isValidGridInFormat", () => {
+  it("accepts valid grid-in values", () => {
+    for (const val of [
+      "42",
+      "0.2",
+      "1/5",
+      "-4",
+      "7/2",
+      "3.5",
+      "0",
+      ".5",
+      "-.3",
+    ]) {
+      expect(isValidGridInFormat(val)).toBe(true);
+    }
+  });
+
+  it("rejects malformed values", () => {
+    for (const val of ["1/2/3", "1..2", "1.2.3", "/", ".", "-", "--4", "//5"]) {
+      expect(isValidGridInFormat(val)).toBe(false);
+    }
+  });
+
+  it("rejects empty string", () => {
+    expect(isValidGridInFormat("")).toBe(false);
+    expect(isValidGridInFormat("  ")).toBe(false);
   });
 });

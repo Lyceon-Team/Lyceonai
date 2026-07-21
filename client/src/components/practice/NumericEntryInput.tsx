@@ -15,7 +15,7 @@ export type NumericEntryInputProps = {
 const ALLOWED_CHARS = /^[0-9./\-]*$/;
 const GRID_IN_PATTERN = /^-?(\d+(\.\d*)?|\d*\.\d+|\d+\/\d+)$/;
 
-function isValidGridInFormat(value: string): boolean {
+export function isValidGridInFormat(value: string): boolean {
   return GRID_IN_PATTERN.test(value.trim());
 }
 

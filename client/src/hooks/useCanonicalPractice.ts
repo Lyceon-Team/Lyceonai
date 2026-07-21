@@ -5,6 +5,7 @@ import {
   type RuntimeContractDisabledState,
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
+import { isValidGridInFormat } from "@/components/practice/NumericEntryInput";
 
 const inflightEnsureSession = new Map<string, Promise<string>>();
 
@@ -206,7 +207,8 @@ export function useCanonicalPractice(
   const canSubmit = useMemo(() => {
     if (!question) return false;
     if (isMultipleChoice(question)) return !!selectedAnswer;
-    return freeResponseAnswer.trim().length > 0;
+    const trimmed = freeResponseAnswer.trim();
+    return trimmed.length > 0 && isValidGridInFormat(trimmed);
   }, [question, selectedAnswer, freeResponseAnswer]);
 
   const resetPerQuestionState = useCallback(() => {
