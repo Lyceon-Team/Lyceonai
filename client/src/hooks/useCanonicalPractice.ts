@@ -5,6 +5,7 @@ import {
   type RuntimeContractDisabledState,
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
+import { isSubmittableAnswer } from "@/lib/practice-submission";
 
 const inflightEnsureSession = new Map<string, Promise<string>>();
 
@@ -17,7 +18,9 @@ export type PracticeOption = {
 
 export type PracticeQuestion = {
   sessionItemId?: string;
-  questionType?: "multiple_choice" | null;
+  questionType?: "multiple_choice" | "grid_in" | null;
+  itemType?: "mcq" | "grid_in" | null;
+  inputMode?: "choice" | "numeric_entry" | null;
   stem: string;
   section?: string | null;
   options?: PracticeOption[] | null;
@@ -44,6 +47,8 @@ export type PracticeNextResponse = {
 export type PracticeAnswerResponse = {
   isCorrect: boolean;
   correctOptionId?: string | null;
+  correctAnswer?: string | null;
+  mode?: "multiple_choice" | "grid_in" | null;
   explanation?: string | null;
   state?: "active" | "completed" | "abandoned";
   stats?: {
@@ -78,13 +83,20 @@ export type PracticeSessionSpecInput = {
 };
 
 function mergeStats(
-  prev: { correct: number; incorrect: number; skipped: number; total: number; streak: number },
-  next?: PracticeNextResponse["stats"] | PracticeAnswerResponse["stats"]
+  prev: {
+    correct: number;
+    incorrect: number;
+    skipped: number;
+    total: number;
+    streak: number;
+  },
+  next?: PracticeNextResponse["stats"] | PracticeAnswerResponse["stats"],
 ) {
   if (!next) return prev;
   return {
     correct: typeof next.correct === "number" ? next.correct : prev.correct,
-    incorrect: typeof next.incorrect === "number" ? next.incorrect : prev.incorrect,
+    incorrect:
+      typeof next.incorrect === "number" ? next.incorrect : prev.incorrect,
     skipped: typeof next.skipped === "number" ? next.skipped : prev.skipped,
     total: typeof next.total === "number" ? next.total : prev.total,
     streak: typeof next.streak === "number" ? next.streak : prev.streak,
@@ -95,38 +107,67 @@ function isMultipleChoice(question: PracticeQuestion | null): boolean {
   return !!question && question.questionType === "multiple_choice";
 }
 
-function normalizeQuestion(raw: PracticeQuestion | null): PracticeQuestion | null {
+function isGridIn(question: PracticeQuestion | null): boolean {
+  return (
+    !!question &&
+    (question.questionType === "grid_in" || question.itemType === "grid_in")
+  );
+}
+
+function normalizeQuestion(
+  raw: PracticeQuestion | null,
+): PracticeQuestion | null {
   if (!raw) return null;
 
   const stem = typeof raw.stem === "string" ? raw.stem : "";
+  if (!stem) return null;
+
   const section = typeof raw.section === "string" ? raw.section : null;
+
+  const rawQType =
+    (raw as Record<string, unknown>).questionType ??
+    (raw as Record<string, unknown>).itemType ??
+    null;
+  const isGrid = rawQType === "grid_in";
+
   const options = Array.isArray(raw.options)
     ? raw.options
-      .map((opt) => {
-        const id = typeof opt?.id === "string" ? opt.id.trim() : "";
-        const text = typeof opt?.text === "string" ? opt.text : "";
-        if (!id || !text) return null;
-        return { id, text };
-      })
-      .filter((opt): opt is PracticeOption => !!opt)
+        .map((opt) => {
+          const id = typeof opt?.id === "string" ? opt.id.trim() : "";
+          const text = typeof opt?.text === "string" ? opt.text : "";
+          if (!id || !text) return null;
+          return { id, text };
+        })
+        .filter((opt): opt is PracticeOption => !!opt)
     : [];
 
-  if (!stem || options.length === 0) return null;
+  if (!isGrid && options.length === 0) return null;
 
   return {
-    sessionItemId: typeof raw.sessionItemId === "string" ? raw.sessionItemId : undefined,
-    questionType: "multiple_choice",
+    sessionItemId:
+      typeof raw.sessionItemId === "string" ? raw.sessionItemId : undefined,
+    questionType: isGrid ? "grid_in" : "multiple_choice",
+    itemType: isGrid ? "grid_in" : null,
+    inputMode: isGrid ? "numeric_entry" : null,
     stem,
     section,
-    options,
+    options: isGrid ? [] : options,
   };
 }
 
-export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?: PracticeSessionSpecInput, initialSessionId?: string | null) {
-  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
+export function useCanonicalPractice(
+  section: PracticeSectionParam,
+  sessionSpec?: PracticeSessionSpecInput,
+  initialSessionId?: string | null,
+) {
+  const [sessionId, setSessionId] = useState<string | null>(
+    initialSessionId ?? null,
+  );
   const [sessionItemId, setSessionItemId] = useState<string | null>(null);
   const [clientInstanceId] = useState(() => getClientInstanceId());
-  const [clientAttemptId, setClientAttemptId] = useState(() => crypto.randomUUID());
+  const [clientAttemptId, setClientAttemptId] = useState(() =>
+    crypto.randomUUID(),
+  );
   const [forceTakeover, setForceTakeover] = useState(false);
 
   const [question, setQuestion] = useState<PracticeQuestion | null>(null);
@@ -141,10 +182,14 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
+  const [correctAnswer, setCorrectAnswer] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
-  const [sessionState, setSessionState] = useState<"created" | "active" | "completed" | "abandoned">("created");
+  const [sessionState, setSessionState] = useState<
+    "created" | "active" | "completed" | "abandoned"
+  >("created");
   const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
-  const [runtimeDisabled, setRuntimeDisabled] = useState<RuntimeContractDisabledState | null>(null);
+  const [runtimeDisabled, setRuntimeDisabled] =
+    useState<RuntimeContractDisabledState | null>(null);
 
   const [score, setScore] = useState({
     correct: 0,
@@ -155,13 +200,22 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   });
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [totalQuestions, setTotalQuestions] = useState<number | undefined>(undefined);
+  const [totalQuestions, setTotalQuestions] = useState<number | undefined>(
+    undefined,
+  );
 
-  const canSubmit = useMemo(() => {
-    if (!question) return false;
-    if (isMultipleChoice(question)) return !!selectedAnswer;
-    return freeResponseAnswer.trim().length > 0;
-  }, [question, selectedAnswer, freeResponseAnswer]);
+  const currentAnswer = useMemo(
+    () =>
+      isMultipleChoice(question) ? selectedAnswer : freeResponseAnswer.trim(),
+    [question, selectedAnswer, freeResponseAnswer],
+  );
+
+  const canSubmit = useMemo(
+    () => isSubmittableAnswer(question, currentAnswer),
+    [question, currentAnswer],
+  );
+
+  const [submitBlocked, setSubmitBlocked] = useState<string | null>(null);
 
   const resetPerQuestionState = useCallback(() => {
     setSelectedAnswer(null);
@@ -169,7 +223,9 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     setShowResult(false);
     setIsCorrect(null);
     setCorrectOptionId(null);
+    setCorrectAnswer(null);
     setExplanation(null);
+    setSubmitBlocked(null);
     setClientAttemptId(crypto.randomUUID());
   }, []);
 
@@ -180,8 +236,8 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     if (sessionId && !forceTakeover) return sessionId;
 
     // Deduplicate strict-mode or concurrent calls for the same session setup
-    const lockKey = initialSessionId 
-      ? `resume-${initialSessionId}` 
+    const lockKey = initialSessionId
+      ? `resume-${initialSessionId}`
       : `start-${section}-${sessionSpec?.mode ?? "balanced"}`;
 
     if (inflightEnsureSession.has(lockKey)) {
@@ -193,35 +249,47 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     const promise = (async () => {
       // If we have an initialSessionId, we use the resume endpoint
       if (sessionId) {
-        const resumeRes = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          client_instance_id: clientInstanceId,
-          force_takeover: forceTakeover,
-        }),
-      });
+        const resumeRes = await csrfFetch(
+          `/api/practice/sessions/${encodeURIComponent(sessionId)}/resume`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              client_instance_id: clientInstanceId,
+              force_takeover: forceTakeover,
+            }),
+          },
+        );
 
-      const resumeBody = await resumeRes.json().catch(() => null);
-      if (resumeRes.status === 409) {
-        throw { code: "CLIENT_INSTANCE_CONFLICT", message: resumeBody.message, boundId: resumeBody.client_instance_id };
-      }
+        const resumeBody = await resumeRes.json().catch(() => null);
+        if (resumeRes.status === 409) {
+          throw {
+            code: "CLIENT_INSTANCE_CONFLICT",
+            message: resumeBody.message,
+            boundId: resumeBody.client_instance_id,
+          };
+        }
 
-      if (!resumeRes.ok) {
-        throw new Error(resumeBody?.message || `Failed to resume session (${resumeRes.status})`);
-      }
+        if (!resumeRes.ok) {
+          throw new Error(
+            resumeBody?.message ||
+              `Failed to resume session (${resumeRes.status})`,
+          );
+        }
 
-      setSessionId(resumeBody.sessionId);
-      setSessionItemId(resumeBody.sessionItemId);
-      if (Object.prototype.hasOwnProperty.call(resumeBody, "calculatorState")) {
-        setCalculatorState(resumeBody.calculatorState ?? null);
+        setSessionId(resumeBody.sessionId);
+        setSessionItemId(resumeBody.sessionItemId);
+        if (
+          Object.prototype.hasOwnProperty.call(resumeBody, "calculatorState")
+        ) {
+          setCalculatorState(resumeBody.calculatorState ?? null);
+        }
+        return resumeBody.sessionId;
       }
-      return resumeBody.sessionId;
-    }
 
       const startPayload: Record<string, unknown> = {
         section,
@@ -229,42 +297,63 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         client_instance_id: clientInstanceId,
       };
 
-    if (Array.isArray(sessionSpec?.sections)) startPayload.sections = sessionSpec.sections;
-    if (Array.isArray(sessionSpec?.domains)) startPayload.domains = sessionSpec.domains;
-    if (Array.isArray(sessionSpec?.difficulties)) startPayload.difficulties = sessionSpec.difficulties;
-    if (typeof sessionSpec?.targetMinutes === "number") startPayload.target_minutes = sessionSpec.targetMinutes;
-    if (typeof sessionSpec?.targetQuestionCount === "number") startPayload.target_question_count = sessionSpec.targetQuestionCount;
+      if (Array.isArray(sessionSpec?.sections))
+        startPayload.sections = sessionSpec.sections;
+      if (Array.isArray(sessionSpec?.domains))
+        startPayload.domains = sessionSpec.domains;
+      if (Array.isArray(sessionSpec?.difficulties))
+        startPayload.difficulties = sessionSpec.difficulties;
+      if (typeof sessionSpec?.targetMinutes === "number")
+        startPayload.target_minutes = sessionSpec.targetMinutes;
+      if (typeof sessionSpec?.targetQuestionCount === "number")
+        startPayload.target_question_count = sessionSpec.targetQuestionCount;
 
-    const startRes = await csrfFetch("/api/practice/sessions", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(startPayload),
-    });
+      const startRes = await csrfFetch("/api/practice/sessions", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(startPayload),
+      });
 
-    const startPayloadBody = await startRes.json().catch(() => null);
+      const startPayloadBody = await startRes.json().catch(() => null);
 
-    if (startRes.status === 403 && startPayloadBody?.code === "SESSION_LIMIT_EXCEEDED") {
-      throw { code: "SESSION_LIMIT_EXCEEDED", message: startPayloadBody.message };
-    }
+      if (
+        startRes.status === 403 &&
+        startPayloadBody?.code === "SESSION_LIMIT_EXCEEDED"
+      ) {
+        throw {
+          code: "SESSION_LIMIT_EXCEEDED",
+          message: startPayloadBody.message,
+        };
+      }
 
-    const disabled = parseRuntimeContractDisabledFromPayload("practice", startRes.status, startPayloadBody);
-    if (disabled) {
-      setRuntimeDisabled(disabled);
-      throw new Error(`${disabled.code}: ${disabled.message}`);
-    }
+      const disabled = parseRuntimeContractDisabledFromPayload(
+        "practice",
+        startRes.status,
+        startPayloadBody,
+      );
+      if (disabled) {
+        setRuntimeDisabled(disabled);
+        throw new Error(`${disabled.code}: ${disabled.message}`);
+      }
 
-    if (!startRes.ok) {
-      throw new Error(startPayloadBody?.message || `Failed to start practice session (${startRes.status})`);
-    }
+      if (!startRes.ok) {
+        throw new Error(
+          startPayloadBody?.message ||
+            `Failed to start practice session (${startRes.status})`,
+        );
+      }
 
-    const started = (startPayloadBody ?? {}) as { sessionId?: string; calculatorState?: unknown | null };
-    if (!started.sessionId) {
-      throw new Error("Server did not return a sessionId");
-    }
+      const started = (startPayloadBody ?? {}) as {
+        sessionId?: string;
+        calculatorState?: unknown | null;
+      };
+      if (!started.sessionId) {
+        throw new Error("Server did not return a sessionId");
+      }
 
       setSessionId(started.sessionId);
       if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
@@ -280,7 +369,20 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       // Small delay before clearing to ensure strict-mode double renders hit the cache
       setTimeout(() => inflightEnsureSession.delete(lockKey), 100);
     }
-  }, [clientInstanceId, forceTakeover, initialSessionId, runtimeDisabled, section, sessionId, sessionSpec?.difficulties, sessionSpec?.domains, sessionSpec?.mode, sessionSpec?.sections, sessionSpec?.targetMinutes, sessionSpec?.targetQuestionCount]);
+  }, [
+    clientInstanceId,
+    forceTakeover,
+    initialSessionId,
+    runtimeDisabled,
+    section,
+    sessionId,
+    sessionSpec?.difficulties,
+    sessionSpec?.domains,
+    sessionSpec?.mode,
+    sessionSpec?.sections,
+    sessionSpec?.targetMinutes,
+    sessionSpec?.targetQuestionCount,
+  ]);
 
   const fetchNextQuestion = useCallback(async () => {
     if (runtimeDisabled) return null;
@@ -295,11 +397,15 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
           method: "GET",
           credentials: "include",
           headers: { Accept: "application/json" },
-        }
+        },
       );
 
       const nextPayloadBody = await nextRes.json().catch(() => null);
-      const disabled = parseRuntimeContractDisabledFromPayload("practice", nextRes.status, nextPayloadBody);
+      const disabled = parseRuntimeContractDisabledFromPayload(
+        "practice",
+        nextRes.status,
+        nextPayloadBody,
+      );
       if (disabled) {
         setRuntimeDisabled(disabled);
         setError(`${disabled.code}: ${disabled.message}`);
@@ -322,9 +428,12 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         setCalculatorState(data.calculatorState ?? null);
       }
 
-      if (typeof data.totalQuestions === "number") setTotalQuestions(data.totalQuestions);
-      if (typeof data.currentIndex === "number") setCurrentIndex(data.currentIndex);
-      if (typeof data.ordinal === "number") setCurrentIndex(Math.max(0, data.ordinal - 1));
+      if (typeof data.totalQuestions === "number")
+        setTotalQuestions(data.totalQuestions);
+      if (typeof data.currentIndex === "number")
+        setCurrentIndex(data.currentIndex);
+      if (typeof data.ordinal === "number")
+        setCurrentIndex(Math.max(0, data.ordinal - 1));
 
       if (data.stats) {
         setScore((prev) => mergeStats(prev, data.stats));
@@ -333,7 +442,8 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       resetPerQuestionState();
       return data;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load question";
+      const message =
+        err instanceof Error ? err.message : "Failed to load question";
       setError(message);
       setQuestion(null);
       setSessionItemId(null);
@@ -348,6 +458,17 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
       if (runtimeDisabled) return null;
       if (!question) return;
 
+      if (!opts.skipped && !isSubmittableAnswer(question, currentAnswer)) {
+        setSubmitBlocked(
+          isGridIn(question)
+            ? "Enter a valid number, decimal, or fraction."
+            : "Select an answer option.",
+        );
+        return;
+      }
+
+      setSubmitBlocked(null);
+
       setIsSubmitting(true);
       setError(null);
 
@@ -356,13 +477,16 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         const effectiveSessionItemId = sessionItemId;
 
         if (!effectiveSessionItemId) {
-          throw new Error("No active session item. Please load the next question.");
+          throw new Error(
+            "No active session item. Please load the next question.",
+          );
         }
 
         const endpoint = opts.skipped
           ? `/api/practice/sessions/${encodeURIComponent(effectiveSessionId)}/skip`
           : "/api/practice/answer";
 
+        const gridIn = isGridIn(question);
         const payload = opts.skipped
           ? {
               sessionItemId: effectiveSessionItemId,
@@ -372,8 +496,10 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
           : {
               sessionId: effectiveSessionId,
               sessionItemId: effectiveSessionItemId,
-              selectedOptionId: selectedAnswer,
               clientAttemptId,
+              ...(gridIn
+                ? { selectedAnswer: freeResponseAnswer.trim() }
+                : { selectedOptionId: selectedAnswer }),
             };
 
         const res = await csrfFetch(endpoint, {
@@ -384,7 +510,11 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         });
 
         const payloadBody = await res.json().catch(() => null);
-        const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
+        const disabled = parseRuntimeContractDisabledFromPayload(
+          "practice",
+          res.status,
+          payloadBody,
+        );
         if (disabled) {
           setRuntimeDisabled(disabled);
           setError(`${disabled.code}: ${disabled.message}`);
@@ -395,7 +525,9 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
           throw new Error(`Failed to submit answer (${res.status})`);
         }
 
-        const data = (payloadBody ?? {}) as PracticeAnswerResponse | PracticeSkipResponse;
+        const data = (payloadBody ?? {}) as
+          | PracticeAnswerResponse
+          | PracticeSkipResponse;
         if (data.state) setSessionState(data.state);
 
         if (data.stats) {
@@ -430,11 +562,13 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
         const answerData = data as PracticeAnswerResponse;
         setIsCorrect(!!answerData.isCorrect);
         setCorrectOptionId(answerData.correctOptionId ?? null);
+        setCorrectAnswer(answerData.correctAnswer ?? null);
         setExplanation(answerData.explanation ?? null);
         setShowResult(true);
         return answerData;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit answer";
+        const message =
+          err instanceof Error ? err.message : "Failed to submit answer";
         setError(message);
         return null;
       } finally {
@@ -444,13 +578,13 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     [
       clientInstanceId,
       clientAttemptId,
+      currentAnswer,
       ensureSession,
       fetchNextQuestion,
       question,
-      selectedAnswer,
       sessionItemId,
       runtimeDisabled,
-    ]
+    ],
   );
 
   const nextQuestion = useCallback(async () => {
@@ -459,6 +593,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
 
   const handleMissingMcChoices = useCallback(async () => {
     if (!question) return;
+    if (isGridIn(question)) return;
     if (!isMultipleChoice(question)) return;
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
@@ -466,21 +601,29 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
   const terminateSession = useCallback(async () => {
     if (runtimeDisabled) return null;
     if (!sessionId) return null;
-    if (sessionState === "completed" || sessionState === "abandoned") return { state: sessionState };
+    if (sessionState === "completed" || sessionState === "abandoned")
+      return { state: sessionState };
 
-    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`, {
-      method: "POST",
-      credentials: "include",
-      keepalive: true,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
+    const res = await csrfFetch(
+      `/api/practice/sessions/${encodeURIComponent(sessionId)}/terminate`,
+      {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ client_instance_id: clientInstanceId }),
       },
-      body: JSON.stringify({ client_instance_id: clientInstanceId }),
-    });
+    );
 
     const payloadBody = await res.json().catch(() => null);
-    const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
+    const disabled = parseRuntimeContractDisabledFromPayload(
+      "practice",
+      res.status,
+      payloadBody,
+    );
     if (disabled) {
       setRuntimeDisabled(disabled);
       throw new Error(`${disabled.code}: ${disabled.message}`);
@@ -500,43 +643,57 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     return data;
   }, [clientInstanceId, runtimeDisabled, sessionId, sessionState]);
 
-  const persistCalculatorState = useCallback(async (nextCalculatorState: unknown | null) => {
-    if (runtimeDisabled) return null;
-    if (!sessionId) return null;
-    if (sessionState === "completed" || sessionState === "abandoned") return null;
+  const persistCalculatorState = useCallback(
+    async (nextCalculatorState: unknown | null) => {
+      if (runtimeDisabled) return null;
+      if (!sessionId) return null;
+      if (sessionState === "completed" || sessionState === "abandoned")
+        return null;
 
-    const res = await csrfFetch(`/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        client_instance_id: clientInstanceId,
-        calculator_state: nextCalculatorState,
-      }),
-    });
+      const res = await csrfFetch(
+        `/api/practice/sessions/${encodeURIComponent(sessionId)}/calculator-state`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            client_instance_id: clientInstanceId,
+            calculator_state: nextCalculatorState,
+          }),
+        },
+      );
 
-    const payloadBody = await res.json().catch(() => null);
-    const disabled = parseRuntimeContractDisabledFromPayload("practice", res.status, payloadBody);
-    if (disabled) {
-      setRuntimeDisabled(disabled);
-      throw new Error(`${disabled.code}: ${disabled.message}`);
-    }
+      const payloadBody = await res.json().catch(() => null);
+      const disabled = parseRuntimeContractDisabledFromPayload(
+        "practice",
+        res.status,
+        payloadBody,
+      );
+      if (disabled) {
+        setRuntimeDisabled(disabled);
+        throw new Error(`${disabled.code}: ${disabled.message}`);
+      }
 
-    if (!res.ok) {
-      throw new Error(`Failed to persist calculator state (${res.status})`);
-    }
+      if (!res.ok) {
+        throw new Error(`Failed to persist calculator state (${res.status})`);
+      }
 
-    const data = (payloadBody ?? {}) as { calculatorState?: unknown | null };
-    const value = Object.prototype.hasOwnProperty.call(data, "calculatorState")
-      ? data.calculatorState ?? null
-      : nextCalculatorState;
+      const data = (payloadBody ?? {}) as { calculatorState?: unknown | null };
+      const value = Object.prototype.hasOwnProperty.call(
+        data,
+        "calculatorState",
+      )
+        ? (data.calculatorState ?? null)
+        : nextCalculatorState;
 
-    setCalculatorState(value ?? null);
-    return value ?? null;
-  }, [clientInstanceId, runtimeDisabled, sessionId, sessionState]);
+      setCalculatorState(value ?? null);
+      return value ?? null;
+    },
+    [clientInstanceId, runtimeDisabled, sessionId, sessionState],
+  );
 
   useEffect(() => {
     fetchNextQuestion();
@@ -558,6 +715,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     showResult,
     isCorrect,
     correctOptionId,
+    correctAnswer,
     explanation,
 
     score,
@@ -573,6 +731,7 @@ export function useCanonicalPractice(section: PracticeSectionParam, sessionSpec?
     terminateSession,
     calculatorState,
     persistCalculatorState,
+    submitBlocked,
     runtimeDisabled,
     setForceTakeover,
   };
