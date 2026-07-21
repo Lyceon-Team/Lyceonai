@@ -26,11 +26,13 @@ function asUrl(input: RequestInfo | URL): string {
   }
 }
 
-const SESSION_ID = "sess-grid-guard";
-const SESSION_ITEM_ID = "item-grid-guard";
+const SESSION_ID = "sess-submit-guard";
+const SESSION_ITEM_ID = "item-submit-guard";
 
 let submitRef: ((opts: { skipped: boolean }) => Promise<void>) | null = null;
 let freeResponseRef: ((val: string) => void) | null = null;
+let selectAnswerRef: ((val: string | null) => void) | null = null;
+let submitBlockedRef: string | null = null;
 
 function Harness() {
   const state = useCanonicalPractice("math");
@@ -39,17 +41,30 @@ function Harness() {
     skipped: boolean;
   }) => Promise<void>;
   freeResponseRef = state.setFreeResponseAnswer;
+  selectAnswerRef = state.setSelectedAnswer as (val: string | null) => void;
+  submitBlockedRef = state.submitBlocked;
 
   return (
     <div>
       <div data-testid="question-stem">{state.question?.stem ?? ""}</div>
+      <div data-testid="question-type">
+        {state.question?.questionType ?? ""}
+      </div>
       <div data-testid="can-submit">{state.canSubmit ? "yes" : "no"}</div>
-      <div data-testid="free-response">{state.freeResponseAnswer}</div>
+      <div data-testid="submit-blocked">{state.submitBlocked ?? ""}</div>
     </div>
   );
 }
 
-function buildFetchMock(): ReturnType<typeof vi.fn> {
+type QuestionShape = {
+  questionType: "grid_in" | "multiple_choice";
+  itemType?: string;
+  inputMode?: string;
+  stem: string;
+  options: Array<{ id: string; text: string }>;
+};
+
+function buildFetchMock(question: QuestionShape): ReturnType<typeof vi.fn> {
   return vi
     .spyOn(globalThis, "fetch")
     .mockImplementation(async (input, init) => {
@@ -67,11 +82,7 @@ function buildFetchMock(): ReturnType<typeof vi.fn> {
         return jsonResponse({
           sessionItemId: SESSION_ITEM_ID,
           question: {
-            questionType: "grid_in",
-            itemType: "grid_in",
-            inputMode: "numeric_entry",
-            stem: "Find x.",
-            options: [],
+            ...question,
             correct_answer: null,
             explanation: null,
           },
@@ -82,6 +93,7 @@ function buildFetchMock(): ReturnType<typeof vi.fn> {
         return jsonResponse({
           isCorrect: false,
           correctAnswer: "42",
+          correctOptionId: "A",
           explanation: "The answer is 42.",
         });
       }
@@ -90,68 +102,174 @@ function buildFetchMock(): ReturnType<typeof vi.fn> {
     });
 }
 
-describe("useCanonicalPractice grid-in submit guard", () => {
+const GRID_IN_QUESTION: QuestionShape = {
+  questionType: "grid_in",
+  itemType: "grid_in",
+  inputMode: "numeric_entry",
+  stem: "Find x.",
+  options: [],
+};
+
+const MCQ_QUESTION: QuestionShape = {
+  questionType: "multiple_choice",
+  stem: "What is 1+1?",
+  options: [
+    { id: "A", text: "2" },
+    { id: "B", text: "3" },
+  ],
+};
+
+function countAnswerCalls(fetchMock: ReturnType<typeof vi.fn>): number {
+  return fetchMock.mock.calls.filter(
+    ([input, init]: [RequestInfo | URL, RequestInit | undefined]) =>
+      asUrl(input) === "/api/practice/answer" && init?.method === "POST",
+  ).length;
+}
+
+describe("useCanonicalPractice unified submit guard (isSubmittableAnswer)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     submitRef = null;
     freeResponseRef = null;
+    selectAnswerRef = null;
+    submitBlockedRef = null;
   });
 
-  it("blocks malformed grid-in values from reaching /api/practice/answer", async () => {
-    const fetchMock = buildFetchMock();
+  describe("grid-in: action boundary blocks malformed values", () => {
+    it("blocks malformed grid-in values from reaching /api/practice/answer", async () => {
+      const fetchMock = buildFetchMock(GRID_IN_QUESTION);
 
-    render(<Harness />);
+      render(<Harness />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("question-stem").textContent).toBe("Find x.");
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe("Find x.");
+      });
+
+      for (const malformed of ["1/2/3", "1..2", ".", "/", "-"]) {
+        fetchMock.mockClear();
+
+        await act(async () => {
+          freeResponseRef!(malformed);
+        });
+
+        await act(async () => {
+          await submitRef!({ skipped: false });
+        });
+
+        expect(countAnswerCalls(fetchMock)).toBe(0);
+      }
     });
 
-    for (const malformed of ["1/2/3", "1..2", ".", "/", "-"]) {
-      fetchMock.mockClear();
+    it("allows valid grid-in values to reach /api/practice/answer", async () => {
+      const fetchMock = buildFetchMock(GRID_IN_QUESTION);
+
+      render(<Harness />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe("Find x.");
+      });
+
+      for (const valid of ["0.2", "1/5", "-4", "7/2", "3.5"]) {
+        fetchMock.mockClear();
+
+        await act(async () => {
+          freeResponseRef!(valid);
+        });
+
+        await act(async () => {
+          await submitRef!({ skipped: false });
+        });
+
+        expect(countAnswerCalls(fetchMock)).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it("sets submitBlocked message for malformed grid-in", async () => {
+      buildFetchMock(GRID_IN_QUESTION);
+
+      render(<Harness />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe("Find x.");
+      });
 
       await act(async () => {
-        freeResponseRef!(malformed);
+        freeResponseRef!("1/2/3");
       });
 
       await act(async () => {
         await submitRef!({ skipped: false });
       });
 
-      const answerCalls = fetchMock.mock.calls.filter(
-        ([input, init]) =>
-          asUrl(input) === "/api/practice/answer" &&
-          (init as RequestInit | undefined)?.method === "POST",
+      expect(screen.getByTestId("submit-blocked").textContent).toContain(
+        "number",
       );
-      expect(answerCalls).toHaveLength(0);
-    }
+    });
   });
 
-  it("allows valid grid-in values to reach /api/practice/answer", async () => {
-    const fetchMock = buildFetchMock();
+  describe("MCQ: action boundary blocks null/empty selection", () => {
+    it("blocks submit when no option is selected", async () => {
+      const fetchMock = buildFetchMock(MCQ_QUESTION);
 
-    render(<Harness />);
+      render(<Harness />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("question-stem").textContent).toBe("Find x.");
-    });
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe(
+          "What is 1+1?",
+        );
+      });
 
-    for (const valid of ["0.2", "1/5", "-4", "7/2", "3.5"]) {
       fetchMock.mockClear();
 
       await act(async () => {
-        freeResponseRef!(valid);
+        await submitRef!({ skipped: false });
+      });
+
+      expect(countAnswerCalls(fetchMock)).toBe(0);
+    });
+
+    it("sets submitBlocked message for MCQ with no selection", async () => {
+      buildFetchMock(MCQ_QUESTION);
+
+      render(<Harness />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe(
+          "What is 1+1?",
+        );
       });
 
       await act(async () => {
         await submitRef!({ skipped: false });
       });
 
-      const answerCalls = fetchMock.mock.calls.filter(
-        ([input, init]) =>
-          asUrl(input) === "/api/practice/answer" &&
-          (init as RequestInit | undefined)?.method === "POST",
+      expect(screen.getByTestId("submit-blocked").textContent).toContain(
+        "option",
       );
-      expect(answerCalls.length).toBeGreaterThanOrEqual(1);
-    }
+    });
+
+    it("allows submit when a valid option is selected", async () => {
+      const fetchMock = buildFetchMock(MCQ_QUESTION);
+
+      render(<Harness />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("question-stem").textContent).toBe(
+          "What is 1+1?",
+        );
+      });
+
+      fetchMock.mockClear();
+
+      await act(async () => {
+        selectAnswerRef!("A");
+      });
+
+      await act(async () => {
+        await submitRef!({ skipped: false });
+      });
+
+      expect(countAnswerCalls(fetchMock)).toBeGreaterThanOrEqual(1);
+    });
   });
 });
