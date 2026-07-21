@@ -451,6 +451,14 @@ export function useCanonicalPractice(
       if (runtimeDisabled) return null;
       if (!question) return;
 
+      if (
+        !opts.skipped &&
+        isGridIn(question) &&
+        !isValidGridInFormat(freeResponseAnswer.trim())
+      ) {
+        return;
+      }
+
       setIsSubmitting(true);
       setError(null);
 
