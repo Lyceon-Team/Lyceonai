@@ -3,12 +3,13 @@
  * mints canonical IDs, derives grid-in variants, renders SQL INSERTs.
  *
  * @spec [questions_governance.md §A.1–A.9]
- * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--dry-run]
+ * CLI: pnpm assemble-batch --in <parts_dir> --out <batch>.sql --report <report>.json [--dry-run] [--dry-apply]
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { parseArgs } from "util";
+import pg from "pg";
 import {
   buildCanonicalId,
   MC_OPTION_KEYS,
@@ -385,8 +386,41 @@ function escapeSQL(str: string): string {
   return str.replace(/\\/g, "\\\\").replace(/'/g, "''");
 }
 
+const JSONB_DOLLAR_TAG = "$lyceon_json$";
+
+function jsonbLiteral(value: unknown, id: string, field: string): string {
+  const json = JSON.stringify(value);
+  if (json.includes(JSONB_DOLLAR_TAG)) {
+    throw new Error(`dollar-tag collision in ${id}.${field}`);
+  }
+  return `${JSONB_DOLLAR_TAG}${json}${JSONB_DOLLAR_TAG}::jsonb`;
+}
+
+function verifyJsonbLiterals(sql: string, id: string): void {
+  let searchFrom = 0;
+  while (true) {
+    const start = sql.indexOf(JSONB_DOLLAR_TAG, searchFrom);
+    if (start === -1) break;
+    const contentStart = start + JSONB_DOLLAR_TAG.length;
+    const end = sql.indexOf(JSONB_DOLLAR_TAG, contentStart);
+    if (end === -1) {
+      throw new Error(`Unclosed jsonb dollar-quote in INSERT for ${id}`);
+    }
+    const json = sql.substring(contentStart, end);
+    try {
+      JSON.parse(json);
+    } catch (e) {
+      throw new Error(
+        `Post-render jsonb verification failed for ${id}: ${(e as Error).message}\n  literal: ${json.slice(0, 200)}`,
+        { cause: e },
+      );
+    }
+    searchFrom = end + JSONB_DOLLAR_TAG.length;
+  }
+}
+
 function renderInsert(q: AssembledQuestion, today: string): string {
-  const optionsJson = JSON.stringify(q.item_type === "mcq" ? q.options : []);
+  const optionsValue = q.item_type === "mcq" ? q.options : [];
   const correctAnswer = escapeSQL(q.correct_answer);
   const stem = escapeSQL(q.stem);
   const explanation = escapeSQL(q.explanation);
@@ -399,22 +433,132 @@ function renderInsert(q: AssembledQuestion, today: string): string {
 
   const optionMetaSQL =
     q.option_metadata !== null
-      ? `'${escapeSQL(JSON.stringify(q.option_metadata))}'::jsonb`
+      ? jsonbLiteral(q.option_metadata, q.id, "option_metadata")
       : "NULL";
 
-  const lineage = `'{"provenance":"Lyceon original","authored_by":"claude","authored_date":"${today}"}'::jsonb`;
-  const attribution = `'{"model":"claude","generation_date":"${today}","prompt_version":"questions_governance_v1"}'::jsonb`;
+  const lineage = jsonbLiteral(
+    {
+      provenance: "Lyceon original",
+      authored_by: "claude",
+      authored_date: today,
+    },
+    q.id,
+    "source_lineage",
+  );
+  const attribution = jsonbLiteral(
+    {
+      model: "claude",
+      generation_date: today,
+      prompt_version: "questions_governance_v1",
+    },
+    q.id,
+    "generation_attribution",
+  );
 
-  return `INSERT INTO questions (id, section, source_type, domain, skill_codes, difficulty, item_type, stem, passage, options, correct_answer, correct_variants, explanation, option_metadata, assets, status, version, estimated_time_seconds, premium_flag, source_lineage, generation_attribution) VALUES ('${q.id}', '${q.section}', ${q.source_type}, '${escapeSQL(q.domain)}', ARRAY['${escapeSQL(q.skill)}'], ${q.difficulty}, '${q.item_type}', E'${stem}', ${passage}, '${escapeSQL(optionsJson)}'::jsonb, '${correctAnswer}', ${variantsSQL}, E'${explanation}', ${optionMetaSQL}, NULL, 'draft', 1, ${q.estimated_time_seconds}, false, ${lineage}, ${attribution});`;
+  const sql = `INSERT INTO questions (id, section, source_type, domain, skill_codes, difficulty, item_type, stem, passage, options, correct_answer, correct_variants, explanation, option_metadata, assets, status, version, estimated_time_seconds, premium_flag, source_lineage, generation_attribution) VALUES ('${q.id}', '${q.section}', ${q.source_type}, '${escapeSQL(q.domain)}', ARRAY['${escapeSQL(q.skill)}'], ${q.difficulty}, '${q.item_type}', E'${stem}', ${passage}, ${jsonbLiteral(optionsValue, q.id, "options")}, '${correctAnswer}', ${variantsSQL}, E'${explanation}', ${optionMetaSQL}, NULL, 'draft', 1, ${q.estimated_time_seconds}, false, ${lineage}, ${attribution});`;
+
+  verifyJsonbLiterals(sql, q.id);
+
+  return sql;
 }
 
-function main(): void {
+const QUESTIONS_DDL = `
+CREATE TABLE IF NOT EXISTS questions (
+  id TEXT PRIMARY KEY
+    CHECK (id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$'),
+  section TEXT NOT NULL
+    CHECK (section = ANY (ARRAY['M','RW'])),
+  source_type INTEGER NOT NULL
+    CHECK (source_type = ANY (ARRAY[1,2])),
+  domain TEXT NOT NULL,
+  skill_codes TEXT[] NOT NULL,
+  difficulty INTEGER NOT NULL
+    CHECK (difficulty >= 1 AND difficulty <= 3),
+  item_type TEXT NOT NULL DEFAULT 'mcq'
+    CHECK (item_type = ANY (ARRAY['mcq','grid_in'])),
+  stem TEXT NOT NULL,
+  passage TEXT,
+  options JSONB NOT NULL,
+  correct_answer TEXT NOT NULL,
+  correct_variants TEXT[],
+  explanation TEXT NOT NULL,
+  option_metadata JSONB,
+  assets JSONB,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status = ANY (ARRAY['draft','qa','published','retired'])),
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at TIMESTAMPTZ,
+  retired_at TIMESTAMPTZ,
+  estimated_time_seconds INTEGER,
+  premium_flag BOOLEAN DEFAULT FALSE,
+  quality_score NUMERIC,
+  issue_flags TEXT[],
+  source_lineage JSONB,
+  generation_attribution JSONB,
+  CONSTRAINT questions_item_shape_chk CHECK (
+    (item_type='mcq'     AND jsonb_typeof(options)='array' AND jsonb_array_length(options)=4 AND correct_variants IS NULL)
+    OR
+    (item_type='grid_in' AND jsonb_typeof(options)='array' AND jsonb_array_length(options)=0 AND correct_variants IS NOT NULL AND array_length(correct_variants,1)>=1)
+  )
+);
+`;
+
+async function dryApply(
+  sqlContent: string,
+  expectedCount: number,
+): Promise<void> {
+  const host = process.env["PGHOST"] ?? "localhost";
+  const port = Number(process.env["PGPORT"] ?? "5432");
+  const user = process.env["PGUSER"] ?? "postgres";
+  const database = "gate_dry_apply";
+
+  const adminClient = new pg.Client({ host, port, user, database: "postgres" });
+  await adminClient.connect();
+  try {
+    await adminClient.query(`DROP DATABASE IF EXISTS ${database}`);
+    await adminClient.query(`CREATE DATABASE ${database}`);
+  } finally {
+    await adminClient.end();
+  }
+
+  const client = new pg.Client({ host, port, user, database });
+  await client.connect();
+  try {
+    await client.query(QUESTIONS_DDL);
+    await client.query(sqlContent);
+    const { rows } = await client.query(
+      "SELECT count(*)::int AS n FROM questions",
+    );
+    const inserted = (rows[0] as { n: number }).n;
+    if (inserted !== expectedCount) {
+      throw new Error(
+        `Dry-apply row count mismatch: expected ${expectedCount}, got ${inserted}`,
+      );
+    }
+    console.log(`DRY-APPLY PASS: ${inserted} rows inserted and verified.`);
+  } finally {
+    await client.end();
+    const cleanup = new pg.Client({
+      host,
+      port,
+      user,
+      database: "postgres",
+    });
+    await cleanup.connect();
+    await cleanup.query(`DROP DATABASE IF EXISTS ${database}`);
+    await cleanup.end();
+  }
+}
+
+async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       in: { type: "string" },
       out: { type: "string" },
       report: { type: "string" },
       "dry-run": { type: "boolean", default: false },
+      "dry-apply": { type: "boolean", default: false },
     },
     strict: true,
   });
@@ -423,6 +567,7 @@ function main(): void {
   const outPath = values["out"];
   const reportPath = values["report"];
   const dryRun = values["dry-run"] ?? false;
+  const dryApplyFlag = values["dry-apply"] ?? false;
 
   if (!partsDir) {
     console.error("--in <parts_dir> is required");
@@ -597,9 +742,17 @@ function main(): void {
 
   const inserts = assembled.map((q) => renderInsert(q, today)).join("\n\n");
 
-  writeFileSync(resolve(outPath!), header + inserts + "\n");
+  const sqlContent = header + inserts + "\n";
+  writeFileSync(resolve(outPath!), sqlContent);
   console.log(`GATE PASS: ${assembled.length} records assembled to ${outPath}`);
   console.log(`Report: ${reportPath}`);
+
+  if (dryApplyFlag) {
+    await dryApply(sqlContent, assembled.length);
+  }
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
