@@ -138,7 +138,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     expect(screen.getByLabelText("Enter your answer")).not.toBeNull();
   });
 
-  it("MCQ round-trip: select option, submit, see post-submit feedback with correct highlighting (non-regression)", () => {
+  it("MCQ round-trip: select option, submit, correct option gets emerald highlight (non-regression)", () => {
     const setSelectedAnswer = vi.fn();
     const submitAnswer = vi.fn();
     hookMock.useCanonicalPractice.mockReturnValue(
@@ -150,7 +150,7 @@ describe("CanonicalPracticePage grid-in rendering", () => {
       }),
     );
 
-    render(
+    const { unmount } = render(
       <CanonicalPracticePage
         title="Math Practice"
         badgeLabel="Math"
@@ -169,7 +169,8 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     fireEvent.click(screen.getByText("Check Answer"));
     expect(submitAnswer).toHaveBeenCalledWith({ skipped: false });
 
-    vi.clearAllMocks();
+    unmount();
+
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("Math", {
         selectedAnswer: "A",
@@ -190,6 +191,57 @@ describe("CanonicalPracticePage grid-in rendering", () => {
 
     expect(screen.getAllByText("Correct").length).toBeGreaterThan(0);
     expect(screen.getByText("1 + 1 = 2.")).not.toBeNull();
+
+    const correctBtn = screen
+      .getAllByText("2")
+      .map((el) => el.closest("button"))
+      .find((btn) => btn !== null)!;
+    expect(correctBtn).not.toBeNull();
+    expect(correctBtn!.className).toContain("border-emerald-500");
+    expect(correctBtn!.className).toContain("bg-emerald-50");
+
+    const wrongBtn = screen
+      .getAllByText("3")
+      .map((el) => el.closest("button"))
+      .find((btn) => btn !== null)!;
+    expect(wrongBtn).not.toBeNull();
+    expect(wrongBtn!.className).not.toContain("border-emerald-500");
+    expect(wrongBtn!.className).not.toContain("border-rose-500");
+  });
+
+  it("MCQ incorrect: wrong selected option gets rose highlight, correct gets emerald (non-regression)", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("Math", {
+        selectedAnswer: "B",
+        showResult: true,
+        isCorrect: false,
+        correctOptionId: "A",
+        explanation: "1 + 1 = 2.",
+      }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    const correctBtn = screen
+      .getAllByText("2")
+      .map((el) => el.closest("button"))
+      .find((btn) => btn !== null)!;
+    expect(correctBtn).not.toBeNull();
+    expect(correctBtn!.className).toContain("border-emerald-500");
+
+    const wrongBtn = screen
+      .getAllByText("3")
+      .map((el) => el.closest("button"))
+      .find((btn) => btn !== null)!;
+    expect(wrongBtn).not.toBeNull();
+    expect(wrongBtn!.className).toContain("border-rose-500");
+    expect(wrongBtn!.className).toContain("bg-rose-50");
   });
 
   it("does not auto-skip grid_in questions", () => {
