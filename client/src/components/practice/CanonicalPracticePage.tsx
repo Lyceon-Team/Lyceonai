@@ -87,6 +87,7 @@ export default function CanonicalPracticePage(props: {
     terminateSession,
     calculatorState,
     persistCalculatorState,
+    submitBlocked,
     runtimeDisabled,
     setForceTakeover,
   } = useCanonicalPractice(props.section, sessionSpec, props.sessionId);
@@ -312,7 +313,19 @@ export default function CanonicalPracticePage(props: {
                       Check Answer
                     </Button>
                   </>
-                ) : (
+                ) : null}
+
+                {!showResult && submitBlocked && (
+                  <p
+                    className="w-full text-sm text-rose-600 mt-1"
+                    role="alert"
+                    aria-live="assertive"
+                  >
+                    {submitBlocked}
+                  </p>
+                )}
+
+                {showResult ? (
                   <Button
                     className="w-full"
                     disabled={isSubmitting || isLoading || isEndingSession}
@@ -328,7 +341,7 @@ export default function CanonicalPracticePage(props: {
                       ? "Done"
                       : "Next Question"}
                   </Button>
-                )}
+                ) : null}
               </div>
             </>
           )}

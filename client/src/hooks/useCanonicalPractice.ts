@@ -5,7 +5,7 @@ import {
   type RuntimeContractDisabledState,
   parseRuntimeContractDisabledFromPayload,
 } from "@/lib/runtime-contract-disable";
-import { isValidGridInFormat } from "@/components/practice/NumericEntryInput";
+import { isSubmittableAnswer } from "@/lib/practice-submission";
 
 const inflightEnsureSession = new Map<string, Promise<string>>();
 
@@ -204,12 +204,18 @@ export function useCanonicalPractice(
     undefined,
   );
 
-  const canSubmit = useMemo(() => {
-    if (!question) return false;
-    if (isMultipleChoice(question)) return !!selectedAnswer;
-    const trimmed = freeResponseAnswer.trim();
-    return trimmed.length > 0 && isValidGridInFormat(trimmed);
-  }, [question, selectedAnswer, freeResponseAnswer]);
+  const currentAnswer = useMemo(
+    () =>
+      isMultipleChoice(question) ? selectedAnswer : freeResponseAnswer.trim(),
+    [question, selectedAnswer, freeResponseAnswer],
+  );
+
+  const canSubmit = useMemo(
+    () => isSubmittableAnswer(question, currentAnswer),
+    [question, currentAnswer],
+  );
+
+  const [submitBlocked, setSubmitBlocked] = useState<string | null>(null);
 
   const resetPerQuestionState = useCallback(() => {
     setSelectedAnswer(null);
@@ -219,6 +225,7 @@ export function useCanonicalPractice(
     setCorrectOptionId(null);
     setCorrectAnswer(null);
     setExplanation(null);
+    setSubmitBlocked(null);
     setClientAttemptId(crypto.randomUUID());
   }, []);
 
@@ -451,13 +458,16 @@ export function useCanonicalPractice(
       if (runtimeDisabled) return null;
       if (!question) return;
 
-      if (
-        !opts.skipped &&
-        isGridIn(question) &&
-        !isValidGridInFormat(freeResponseAnswer.trim())
-      ) {
+      if (!opts.skipped && !isSubmittableAnswer(question, currentAnswer)) {
+        setSubmitBlocked(
+          isGridIn(question)
+            ? "Enter a valid number, decimal, or fraction."
+            : "Select an answer option.",
+        );
         return;
       }
+
+      setSubmitBlocked(null);
 
       setIsSubmitting(true);
       setError(null);
@@ -568,11 +578,10 @@ export function useCanonicalPractice(
     [
       clientInstanceId,
       clientAttemptId,
+      currentAnswer,
       ensureSession,
       fetchNextQuestion,
-      freeResponseAnswer,
       question,
-      selectedAnswer,
       sessionItemId,
       runtimeDisabled,
     ],
@@ -722,6 +731,7 @@ export function useCanonicalPractice(
     terminateSession,
     calculatorState,
     persistCalculatorState,
+    submitBlocked,
     runtimeDisabled,
     setForceTakeover,
   };

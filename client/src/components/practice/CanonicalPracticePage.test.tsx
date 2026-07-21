@@ -58,6 +58,7 @@ function buildHookState(
     terminateSession: vi.fn(),
     calculatorState: null,
     persistCalculatorState: vi.fn(),
+    submitBlocked: null,
     ...overrides,
   };
 }
