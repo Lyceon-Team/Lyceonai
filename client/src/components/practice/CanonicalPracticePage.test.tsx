@@ -138,8 +138,17 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     expect(screen.getByLabelText("Enter your answer")).not.toBeNull();
   });
 
-  it("renders MC option buttons for an MCQ question (non-regression)", () => {
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+  it("MCQ round-trip: select option, submit, see post-submit feedback with correct highlighting (non-regression)", () => {
+    const setSelectedAnswer = vi.fn();
+    const submitAnswer = vi.fn();
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("Math", {
+        canSubmit: true,
+        selectedAnswer: null,
+        setSelectedAnswer,
+        submitAnswer,
+      }),
+    );
 
     render(
       <CanonicalPracticePage
@@ -153,6 +162,34 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     expect(screen.getByText("2")).not.toBeNull();
     expect(screen.getByText("3")).not.toBeNull();
     expect(screen.queryByLabelText("Enter your answer")).toBeNull();
+
+    fireEvent.click(screen.getByText("2"));
+    expect(setSelectedAnswer).toHaveBeenCalledWith("A");
+
+    fireEvent.click(screen.getByText("Check Answer"));
+    expect(submitAnswer).toHaveBeenCalledWith({ skipped: false });
+
+    vi.clearAllMocks();
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("Math", {
+        selectedAnswer: "A",
+        showResult: true,
+        isCorrect: true,
+        correctOptionId: "A",
+        explanation: "1 + 1 = 2.",
+      }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    expect(screen.getAllByText("Correct").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 + 1 = 2.")).not.toBeNull();
   });
 
   it("does not auto-skip grid_in questions", () => {
@@ -201,5 +238,78 @@ describe("CanonicalPracticePage grid-in rendering", () => {
     expect(screen.getByText("Incorrect")).not.toBeNull();
     expect(screen.getByText("Correct answer:")).not.toBeNull();
     expect(screen.getByText("Divide 1 by 5.")).not.toBeNull();
+  });
+
+  it("disables Check Answer for malformed grid-in input (format gate)", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(buildGridInHookState());
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    const checkBtn = screen.getByText("Check Answer");
+    expect((checkBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("disables Check Answer when canSubmit is false for malformed values like 1/2/3", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        question: {
+          sessionItemId: "item-gi-3",
+          questionType: "grid_in" as const,
+          itemType: "grid_in" as const,
+          inputMode: "numeric_entry" as const,
+          stem: "Find y.",
+          section: "M",
+          options: [],
+        },
+        freeResponseAnswer: "1/2/3",
+        canSubmit: false,
+      }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    const checkBtn = screen.getByText("Check Answer");
+    expect((checkBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("enables Check Answer when canSubmit is true for valid grid-in value", () => {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        question: {
+          sessionItemId: "item-gi-4",
+          questionType: "grid_in" as const,
+          itemType: "grid_in" as const,
+          inputMode: "numeric_entry" as const,
+          stem: "Find z.",
+          section: "M",
+          options: [],
+        },
+        freeResponseAnswer: "0.2",
+        canSubmit: true,
+      }),
+    );
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    const checkBtn = screen.getByText("Check Answer");
+    expect((checkBtn as HTMLButtonElement).disabled).toBe(false);
   });
 });
