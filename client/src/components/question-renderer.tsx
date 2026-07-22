@@ -16,6 +16,7 @@ type Question = {
   itemType?: "mcq" | "grid_in" | null;
   inputMode?: "choice" | "numeric_entry" | null;
   stem: string;
+  passage?: string | null;
   options?: QuestionOption[] | null;
   correct_answer?: string | null;
   explanation?: string | null;
@@ -146,6 +147,11 @@ export default function QuestionRenderer({
     if (isGrid) {
       return (
         <div className="space-y-5">
+          {question.passage ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-base text-slate-800 whitespace-pre-wrap">
+              <MathRenderer content={question.passage} />
+            </div>
+          ) : null}
           <div className="text-xl font-semibold text-slate-900">
             <MathRenderer content={question.stem} />
           </div>
@@ -166,6 +172,11 @@ export default function QuestionRenderer({
 
   return (
     <div className="space-y-5">
+      {question.passage ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-base text-slate-800 whitespace-pre-wrap">
+          <MathRenderer content={question.passage} />
+        </div>
+      ) : null}
       <div className="text-xl font-semibold text-slate-900">
         <MathRenderer content={question.stem} />
       </div>
