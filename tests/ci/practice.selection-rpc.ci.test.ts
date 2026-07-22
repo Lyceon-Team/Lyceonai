@@ -362,6 +362,46 @@ describe("Practice config doctrine (INV-02B-15)", () => {
     expect(source).toContain("config.maxConcurrentSessions");
   });
 
+  // @spec [Doc-02B_V4 §14; Coding Standards §9] | @implemented [2026-07-22]
+  // G1 regression guard: coerceTargetQuestionCount takes 3 required params
+  // (raw, maxCap, defaultCount) with NO defaults. Every call site must pass all 3.
+  // Missing args produce NaN → shouldComplete is always false → session never
+  // completes on final answer/skip (only mitigated by /next exhaustion path).
+  it("every coerceTargetQuestionCount call passes exactly 3 arguments (no missing maxCap/defaultCount)", () => {
+    const repoRoot = path.resolve(__dirname, "..", "..");
+    const source = fs.readFileSync(
+      path.join(repoRoot, "server", "routes", "practice-canonical.ts"),
+      "utf8",
+    );
+
+    // Match all coerceTargetQuestionCount( calls that are NOT inside a function
+    // definition or the deriveTargetQuestionCountFromMinutes wrapper.
+    // We want to ensure every call site passes 3 comma-separated arguments.
+    const callPattern = /coerceTargetQuestionCount\(\s*([^)]*)\)/g;
+    const calls = [...source.matchAll(callPattern)];
+
+    // There should be multiple call sites
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+
+    for (const match of calls) {
+      const argString = match[1]!.trim();
+      // Skip the function definition line itself (just parameter declarations with types)
+      if (argString.includes("raw: unknown")) continue;
+
+      // Split on top-level commas (not inside nested parens/brackets)
+      let depth = 0;
+      let commaCount = 0;
+      for (const ch of argString) {
+        if (ch === "(" || ch === "[" || ch === "{") depth++;
+        else if (ch === ")" || ch === "]" || ch === "}") depth--;
+        else if (ch === "," && depth === 0) commaCount++;
+      }
+      // 3 arguments = 2 commas (or 3 with a trailing comma from prettier)
+      const argCount = commaCount - (argString.trimEnd().endsWith(",") ? 1 : 0);
+      expect(argCount).toBe(2);
+    }
+  });
+
   it("target_question_count premium cap is config-driven via coerceTargetQuestionCount", () => {
     const repoRoot = path.resolve(__dirname, "..", "..");
     const source = fs.readFileSync(

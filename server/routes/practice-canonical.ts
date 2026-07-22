@@ -1977,6 +1977,7 @@ router.get(
     const user = (req as any).user;
     const userId = user?.id;
 
+    const openConfig = await loadPracticeConfig();
     const { data: sessions, error } = await supabaseServer
       .from("practice_sessions")
       .select(
@@ -2020,7 +2021,11 @@ router.get(
       }),
     );
 
-    return res.json({ sessions: enhancedSessions, requestId });
+    return res.json({
+      sessions: enhancedSessions,
+      maxConcurrentSessions: openConfig.maxConcurrentSessions,
+      requestId,
+    });
   },
 );
 
@@ -2206,6 +2211,8 @@ router.post(
       clientInstanceId,
       targetQuestionCount: coerceTargetQuestionCount(
         sessionResult.metadata.target_question_count,
+        config.maxSessionCountPremium,
+        config.defaultSessionCountWeb,
       ),
       calculatorState: sessionResult.metadata.calculator_state ?? null,
     });
@@ -2458,11 +2465,14 @@ router.get(
       return sendClientConflict(res, requestId, binding.boundClientInstanceId);
     }
 
+    const config = await loadPracticeConfig();
     const latestItem = await getLatestSessionItem(sessionId);
     const unresolved = await getCurrentUnansweredItem(sessionId);
     const progressCounts = await getSessionProgressCounts(sessionId);
     const targetQuestionCount = coerceTargetQuestionCount(
       metadata.target_question_count,
+      config.maxSessionCountPremium,
+      config.defaultSessionCountWeb,
     );
     const state = normalizeSessionState(session.status);
 
@@ -3004,12 +3014,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  const answerConfig = await loadPracticeConfig();
   const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(payload.sessionId);
   const targetQuestionCount = coerceTargetQuestionCount(
     refreshedMeta.target_question_count,
+    answerConfig.maxSessionCountPremium,
+    answerConfig.defaultSessionCountWeb,
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
@@ -3248,12 +3261,15 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
+  const skipConfig = await loadPracticeConfig();
   const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(sessionId);
   const targetQuestionCount = coerceTargetQuestionCount(
     refreshedMeta.target_question_count,
+    skipConfig.maxSessionCountPremium,
+    skipConfig.defaultSessionCountWeb,
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 

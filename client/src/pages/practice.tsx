@@ -134,6 +134,7 @@ function Practice() {
 
   const {
     sessions: activeSessions,
+    maxConcurrentSessions,
     terminateSession: terminateActiveSession,
     isTerminating,
   } = useActiveSessions();
@@ -422,7 +423,7 @@ function Practice() {
 
             <PageCard
               title="Session Setup"
-              description="Configure your next focused run. You can have up to 3 active sessions at a time."
+              description={`Configure your next focused run. You can have up to ${maxConcurrentSessions ?? 5} active sessions at a time.`}
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
