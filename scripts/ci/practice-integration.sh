@@ -265,17 +265,16 @@ echo "    OK idempotent"
 # 9. R&W passage: RPC returns passage column for R&W questions
 # ---------------------------------------------------------------------------
 echo "==> P.9 R&W passage: select_practice_pool_random returns passage for RW"
-RW_PASSAGE=$(psql_db "$DB" -tAc "
-  SELECT passage FROM public.select_practice_pool_random(
+RW_PASSAGE_LEN=$(psql_db "$DB" -tAc "
+  SELECT char_length(passage) FROM public.select_practice_pool_random(
     p_sections := ARRAY['RW'],
     p_domains := ARRAY['Craft and Structure'],
     p_limit := 1,
     p_exclude_ids := ARRAY[]::text[]
   ) LIMIT 1;
 ")
-RW_PASSAGE_TRIMMED=$(echo "$RW_PASSAGE" | xargs)
-[ -n "$RW_PASSAGE_TRIMMED" ] || { echo "FAIL: RW question passage is NULL or empty in RPC output"; exit 1; }
-echo "    OK passage present (${#RW_PASSAGE_TRIMMED} chars)"
+[ -n "$RW_PASSAGE_LEN" ] && [ "$RW_PASSAGE_LEN" -gt 0 ] 2>/dev/null || { echo "FAIL: RW question passage is NULL or empty in RPC output"; exit 1; }
+echo "    OK passage present ($RW_PASSAGE_LEN chars)"
 
 # ---------------------------------------------------------------------------
 # 10. R&W passage: practice_session_items.question_passage populated
@@ -294,12 +293,11 @@ SELECT '$PASSAGE_ITEM', '$PASSAGE_SESSION', '00000000-0000-0000-0000-00000000000
 FROM public.questions q WHERE q.id = 'SATRW1CAS001';
 SQL
 
-STORED_PASSAGE=$(psql_db "$DB" -tAc "
-  SELECT question_passage FROM public.practice_session_items WHERE id = '$PASSAGE_ITEM';
+STORED_PASSAGE_LEN=$(psql_db "$DB" -tAc "
+  SELECT char_length(question_passage) FROM public.practice_session_items WHERE id = '$PASSAGE_ITEM';
 ")
-STORED_PASSAGE_TRIMMED=$(echo "$STORED_PASSAGE" | xargs)
-[ -n "$STORED_PASSAGE_TRIMMED" ] || { echo "FAIL: question_passage not populated in practice_session_items"; exit 1; }
-echo "    OK question_passage stored (${#STORED_PASSAGE_TRIMMED} chars)"
+[ -n "$STORED_PASSAGE_LEN" ] && [ "$STORED_PASSAGE_LEN" -gt 0 ] 2>/dev/null || { echo "FAIL: question_passage not populated in practice_session_items"; exit 1; }
+echo "    OK question_passage stored ($STORED_PASSAGE_LEN chars)"
 
 # ---------------------------------------------------------------------------
 # 11. Anti-leak on R&W: correct_answer and explanation present in RPC
