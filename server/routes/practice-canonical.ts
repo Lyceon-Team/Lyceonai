@@ -57,6 +57,7 @@ type McOption = CanonicalMcOption;
 type StudentSafeQuestionDTO = {
   sessionItemId: string;
   stem: string;
+  passage: string | null;
   section: string;
   questionType: "multiple_choice" | "grid_in";
   itemType: CanonicalItemType;
@@ -76,6 +77,7 @@ type CanonicalQuestionForServing = {
   section_code: string;
   item_type: CanonicalItemType;
   stem: string;
+  passage: string | null;
   options: McOption[];
   difficulty: string | number | null;
   domain?: string | null;
@@ -562,6 +564,10 @@ function toCanonicalQuestionForServing(
     section_code: String(q.section_code ?? q.section ?? ""),
     item_type: itemType,
     stem: String(q.stem ?? ""),
+    passage:
+      typeof q.passage === "string" && q.passage.trim().length > 0
+        ? q.passage
+        : null,
     options: isGridIn ? [] : safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
     domain: typeof q.domain === "string" ? q.domain : null,
@@ -625,6 +631,11 @@ function toCanonicalQuestionFromSessionItem(
     section_code: section,
     item_type: itemType,
     stem,
+    passage:
+      typeof item.question_passage === "string" &&
+      item.question_passage.trim().length > 0
+        ? item.question_passage
+        : null,
     options,
     difficulty: item.question_difficulty ?? null,
     domain: item.question_domain ?? null,
@@ -695,6 +706,7 @@ function toStudentSafeQuestionDTO(args: {
     sessionItemId: args.sessionItemId,
     section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
+    passage: args.question.passage ?? null,
     questionType: safe.question_type,
     itemType: safe.item_type,
     inputMode: safe.inputMode,
@@ -1492,7 +1504,7 @@ async function startOrReplaySession(args: {
     question_id: question.id,
     question_section: question.section_code,
     question_stem: question.stem,
-    question_passage: null,
+    question_passage: question.passage ?? null,
     question_options: question.options,
     question_correct_answer: question.correct_answer ?? null,
     question_explanation: question.explanation ?? null,

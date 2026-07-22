@@ -22,6 +22,7 @@ export type PracticeQuestion = {
   itemType?: "mcq" | "grid_in" | null;
   inputMode?: "choice" | "numeric_entry" | null;
   stem: string;
+  passage?: string | null;
   section?: string | null;
   options?: PracticeOption[] | null;
 };
@@ -150,6 +151,10 @@ function normalizeQuestion(
     itemType: isGrid ? "grid_in" : null,
     inputMode: isGrid ? "numeric_entry" : null,
     stem,
+    passage:
+      typeof raw.passage === "string" && raw.passage.trim().length > 0
+        ? raw.passage
+        : null,
     section,
     options: isGrid ? [] : options,
   };

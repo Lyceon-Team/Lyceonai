@@ -3009,7 +3009,7 @@ $$;
 -- Name: select_practice_pool_random(text[], text[], text[], integer[], text[], integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NULL::text[], p_domains text[] DEFAULT NULL::text[], p_skills text[] DEFAULT NULL::text[], p_difficulties integer[] DEFAULT NULL::integer[], p_exclude_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 10) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[])
+CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NULL::text[], p_domains text[] DEFAULT NULL::text[], p_skills text[] DEFAULT NULL::text[], p_difficulties integer[] DEFAULT NULL::integer[], p_exclude_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 10) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[], passage text)
     LANGUAGE sql
     AS $$
   SELECT
@@ -3024,7 +3024,8 @@ CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NUL
     q.skill_codes,
     q.source_type,
     q.item_type,
-    q.correct_variants
+    q.correct_variants,
+    q.passage
   FROM public.questions q
   WHERE q.status = 'published'
     AND (p_sections IS NULL    OR q.section = ANY(p_sections))

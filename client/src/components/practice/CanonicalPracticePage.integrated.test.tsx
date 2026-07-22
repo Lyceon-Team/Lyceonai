@@ -90,6 +90,133 @@ function findOptionButton(optionText: string): HTMLButtonElement | null {
   return null;
 }
 
+// @spec [Doc-02B_V4 §14/§20; Doc-02A_V6 §16] | @implemented [2026-07-22]
+// R&W passage rendering: proves passage flows /next DTO → rendered above stem,
+// anti-leak holds (correct_answer/explanation null pre-submit), and Math
+// questions with no passage render without an empty container.
+describe("CanonicalPracticePage R&W passage rendering", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders R&W passage above the stem when present, anti-leak holds", async () => {
+    const RW_PASSAGE =
+      "The following passage is adapted from a 2023 study on urban ecology.";
+    const RW_STEM =
+      "Which choice best describes the function of the underlined sentence?";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = asUrl(input);
+      if (url === "/api/csrf-token")
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      if (url === "/api/practice/sessions" && init?.method === "POST")
+        return jsonResponse(
+          { sessionId: "sess-rw-passage", totalQuestions: 5 },
+          201,
+        );
+      if (url.includes("/next")) {
+        const dto = {
+          sessionItemId: "item-rw-passage",
+          question: {
+            questionType: "multiple_choice" as const,
+            itemType: "mcq" as const,
+            inputMode: "choice" as const,
+            stem: RW_STEM,
+            passage: RW_PASSAGE,
+            section: "RW",
+            options: [
+              { id: "A", text: "It introduces a counterargument." },
+              { id: "B", text: "It provides supporting evidence." },
+            ],
+            correct_answer: null,
+            explanation: null,
+          },
+        };
+        return jsonResponse(dto);
+      }
+      if (url === "/api/practice/answer" && init?.method === "POST")
+        return jsonResponse({
+          isCorrect: true,
+          correctOptionId: "B",
+          explanation: "The sentence supports the claim.",
+        });
+      return jsonResponse({ error: `Unexpected ${url}` }, 500);
+    });
+
+    render(
+      <CanonicalPracticePage
+        title="R&W Practice"
+        badgeLabel="R&W"
+        section="rw"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(RW_PASSAGE)).not.toBeNull();
+    });
+    expect(screen.getByText(RW_STEM)).not.toBeNull();
+
+    const passageEl = screen.getByText(RW_PASSAGE);
+    const stemEl = screen.getByText(RW_STEM);
+    const passageRect = passageEl.compareDocumentPosition(stemEl);
+    expect(passageRect & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const html = document.body.innerHTML;
+    expect(html).not.toContain('"correct_answer"');
+    expect(html).not.toContain('"explanation"');
+  });
+
+  it("Math MCQ with no passage renders no passage container", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = asUrl(input);
+      if (url === "/api/csrf-token")
+        return jsonResponse({ csrfToken: "csrf-test-token" });
+      if (url === "/api/practice/sessions" && init?.method === "POST")
+        return jsonResponse(
+          { sessionId: "sess-math-no-passage", totalQuestions: 5 },
+          201,
+        );
+      if (url.includes("/next")) {
+        return jsonResponse({
+          sessionItemId: "item-math-no-passage",
+          question: {
+            questionType: "multiple_choice",
+            stem: "What is 2+2?",
+            passage: null,
+            section: "M",
+            options: [
+              { id: "A", text: "4" },
+              { id: "B", text: "5" },
+            ],
+            correct_answer: null,
+            explanation: null,
+          },
+        });
+      }
+      if (url === "/api/practice/answer" && init?.method === "POST")
+        return jsonResponse({ isCorrect: true, correctOptionId: "A" });
+      return jsonResponse({ error: `Unexpected ${url}` }, 500);
+    });
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("What is 2+2?")).not.toBeNull();
+    });
+
+    const containers = document.querySelectorAll(
+      ".rounded-lg.border.border-slate-200.bg-slate-50",
+    );
+    expect(containers.length).toBe(0);
+  });
+});
+
 describe("CanonicalPracticePage integrated MCQ round-trip", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
