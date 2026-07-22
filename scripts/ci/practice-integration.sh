@@ -80,7 +80,7 @@ echo "==> seed R&W question with passage"
 psql_db "$DB" >/dev/null <<'SQL'
 INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation, passage, status, published_at)
 VALUES
-  ('SATRW1CAS01', 'RW', 1, 'Craft and Structure', ARRAY['CAS.01'], 2,
+  ('SATRW1CAS001', 'RW', 1, 'Craft and Structure', ARRAY['CAS.01'], 2,
    'Based on the passage, the author most likely uses the word "luminous" to mean',
    '[{"token":"A","text":"brightly lit"},{"token":"B","text":"intellectually brilliant"},{"token":"C","text":"clearly visible"},{"token":"D","text":"warmly glowing"}]'::jsonb,
    'B',
@@ -291,7 +291,7 @@ INSERT INTO public.practice_session_items (id, session_id, user_id, ordinal, que
 SELECT '$PASSAGE_ITEM', '$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 1, q.id, q.stem,
        q.passage,
        q.options::text, q.correct_answer, q.explanation, q.difficulty, q.domain, q.skill_codes[1], q.section, 'mcq', 'pending', '00000000-0000-0000-0000-000000000001', 'ci-p10'
-FROM public.questions q WHERE q.id = 'SATRW1CAS01';
+FROM public.questions q WHERE q.id = 'SATRW1CAS001';
 SQL
 
 STORED_PASSAGE=$(psql_db "$DB" -tAc "

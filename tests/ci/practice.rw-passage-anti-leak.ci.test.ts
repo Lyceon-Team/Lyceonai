@@ -64,7 +64,7 @@ const rwItemRow = {
   session_id: TEST_SESSION_ID,
   user_id: TEST_USER_ID,
   ordinal: 1,
-  question_id: "SATRW1CAS01",
+  question_id: "SATRW1CAS001",
   question_stem:
     'Based on the passage, the author most likely uses the word "luminous" to mean',
   question_passage:
