@@ -284,7 +284,7 @@ PASSAGE_SESSION='33333333-3333-3333-3333-333333333333'
 PASSAGE_ITEM='44444444-4444-4444-4444-444444444444'
 psql_db "$DB" >/dev/null <<SQL
 INSERT INTO public.practice_sessions (id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, actor_id)
-VALUES ('$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 'practice', '{}'::jsonb, 5, 'web', 'ci-p10', 'active', now(), now(), now(), '00000000-0000-0000-0000-000000000001');
+VALUES ('$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 'flow', '{}'::jsonb, 5, 'web', 'ci-p10', 'active', now(), now(), now(), '00000000-0000-0000-0000-000000000001');
 
 INSERT INTO public.practice_session_items (id, session_id, user_id, ordinal, question_id, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_difficulty, question_domain, question_skill, question_section, question_item_type, status, actor_id, client_instance_id)
 SELECT '$PASSAGE_ITEM', '$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 1, q.id, q.stem,
