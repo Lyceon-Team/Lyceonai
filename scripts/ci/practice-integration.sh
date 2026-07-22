@@ -289,7 +289,7 @@ VALUES ('$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 'flow', '{}'
 INSERT INTO public.practice_session_items (id, session_id, user_id, ordinal, question_id, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_difficulty, question_domain, question_skill, question_section, question_item_type, status, actor_id, client_instance_id)
 SELECT '$PASSAGE_ITEM', '$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 1, q.id, q.stem,
        q.passage,
-       q.options::text, q.correct_answer, q.explanation, q.difficulty, q.domain, q.skill_codes[1], q.section, 'mcq', 'pending', '00000000-0000-0000-0000-000000000001', 'ci-p10'
+       q.options, q.correct_answer, q.explanation, q.difficulty, q.domain, q.skill_codes[1], q.section, 'mcq', 'pending', '00000000-0000-0000-0000-000000000001', 'ci-p10'
 FROM public.questions q WHERE q.id = 'SATRW1CAS001';
 SQL
 
