@@ -19,6 +19,7 @@ export type ActiveSession = {
 
 type OpenSessionsResponse = {
   sessions: ActiveSession[];
+  maxConcurrentSessions?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -52,9 +53,11 @@ export function useActiveSessions() {
   });
 
   const sessions = data?.sessions ?? [];
+  const maxConcurrentSessions = data?.maxConcurrentSessions ?? null;
 
   return {
     sessions,
+    maxConcurrentSessions,
     isLoading,
     isError,
     error,
