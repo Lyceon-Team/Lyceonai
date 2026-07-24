@@ -689,6 +689,29 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
   return null;
 }
 
+const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
+
+// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
+// Assets with role "explanation" are answer-bearing — post-submit only.
+// Pre-submit: serve only items with role "stimulus" or "option".
+export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
+  if (assets == null) return null;
+  if (typeof assets !== "object") return null;
+
+  const obj = assets as Record<string, unknown>;
+  if (obj.v !== 1 || !Array.isArray(obj.items)) {
+    return assets;
+  }
+
+  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
+    (item) =>
+      typeof item.role === "string" && PRE_SUBMIT_ASSET_ROLES.has(item.role),
+  );
+
+  if (filtered.length === 0) return null;
+  return { v: 1, items: filtered };
+}
+
 // @spec [Doc 02B §14/§20 Serving Questions; Doc 02 Preamble §12 INV-02-08] | @implemented 2026-06-14
 // Single canonical serializer — no second inline question shape. We pass item_type through
 // so projectStudentSafeQuestion produces the correct grid-in vs MCQ surface, and we NEVER
@@ -724,7 +747,7 @@ export function toStudentSafeQuestionDTO(args: {
     section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
     passage: safe.passage,
-    assets: args.question.assets ?? null,
+    assets: filterAssetsPreSubmit(args.question.assets),
     questionType: safe.question_type,
     itemType: safe.item_type,
     inputMode: safe.inputMode,

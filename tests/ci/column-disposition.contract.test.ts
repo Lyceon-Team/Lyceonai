@@ -23,6 +23,7 @@ import {
   QUESTIONS_COLUMN_DISPOSITION,
   type ColumnDisposition,
 } from "../../packages/shared/src/column-disposition";
+import { filterAssetsPreSubmit } from "../../server/routes/practice-canonical";
 
 function extractQuestionsColumns(schemaSql: string): string[] {
   const lines = schemaSql.split("\n");
@@ -111,5 +112,53 @@ describe("Column-disposition contract", () => {
     for (const [_col, disp] of Object.entries(QUESTIONS_COLUMN_DISPOSITION)) {
       expect(valid).toContain(disp);
     }
+  });
+
+  it("assets role filter exists and excludes explanation-role items pre-submit", () => {
+    const structured = {
+      v: 1,
+      items: [
+        { id: "a1", kind: "svg", role: "stimulus", alt: "diagram" },
+        {
+          id: "a2",
+          kind: "table",
+          role: "option",
+          alt: "table",
+          option_key: "A",
+        },
+        { id: "a3", kind: "svg", role: "explanation", alt: "answer diagram" },
+      ],
+    };
+    const filtered = filterAssetsPreSubmit(structured) as {
+      v: number;
+      items: Array<{ role: string }>;
+    };
+    expect(filtered).not.toBeNull();
+    expect(filtered.v).toBe(1);
+    expect(filtered.items).toHaveLength(2);
+    expect(filtered.items.every((item) => item.role !== "explanation")).toBe(
+      true,
+    );
+    expect(filtered.items.map((item) => item.role)).toEqual([
+      "stimulus",
+      "option",
+    ]);
+  });
+
+  it("assets role filter returns null when only explanation items exist", () => {
+    const explanationOnly = {
+      v: 1,
+      items: [{ id: "a1", kind: "svg", role: "explanation", alt: "answer" }],
+    };
+    expect(filterAssetsPreSubmit(explanationOnly)).toBeNull();
+  });
+
+  it("assets role filter passes through null assets", () => {
+    expect(filterAssetsPreSubmit(null)).toBeNull();
+  });
+
+  it("assets role filter passes through legacy flat format unchanged", () => {
+    const legacy = { illustration: "diagram.svg" };
+    expect(filterAssetsPreSubmit(legacy)).toEqual(legacy);
   });
 });

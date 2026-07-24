@@ -314,6 +314,101 @@ describe("toStudentSafeQuestionDTO — anti-leak strip proof", () => {
     expect("estimated_time_seconds" in dto).toBe(false);
   });
 
+  it("structured assets: explanation-role items excluded pre-submit", () => {
+    const questionWithStructuredAssets: CanonicalQuestionForServing = {
+      ...RW_QUESTION,
+      assets: {
+        v: 1,
+        items: [
+          {
+            id: "a1",
+            kind: "svg",
+            role: "stimulus",
+            alt: "passage diagram",
+            svg: "<svg/>",
+          },
+          {
+            id: "a2",
+            kind: "table",
+            role: "option",
+            alt: "option table",
+            option_key: "A",
+            headers: ["x"],
+            rows: [["1"]],
+          },
+          {
+            id: "a3",
+            kind: "svg",
+            role: "explanation",
+            alt: "answer diagram",
+            svg: "<svg/>",
+          },
+        ],
+      },
+    };
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-structured",
+      question: questionWithStructuredAssets,
+      safeOptions: [],
+    });
+
+    const assets = dto.assets as {
+      v: number;
+      items: Array<{ id: string; role: string }>;
+    };
+    expect(assets).not.toBeNull();
+    expect(assets.v).toBe(1);
+    expect(assets.items).toHaveLength(2);
+    expect(assets.items.map((i) => i.role)).toEqual(["stimulus", "option"]);
+    expect(assets.items.map((i) => i.id)).toEqual(["a1", "a2"]);
+  });
+
+  it("structured assets: all-explanation returns null", () => {
+    const questionAllExplanation: CanonicalQuestionForServing = {
+      ...RW_QUESTION,
+      assets: {
+        v: 1,
+        items: [{ id: "a1", kind: "svg", role: "explanation", alt: "answer" }],
+      },
+    };
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-allexpl",
+      question: questionAllExplanation,
+      safeOptions: [],
+    });
+
+    expect(dto.assets).toBeNull();
+  });
+
+  it("structured assets serialization never contains explanation-role items", () => {
+    const questionWithExplanationAsset: CanonicalQuestionForServing = {
+      ...RW_QUESTION,
+      assets: {
+        v: 1,
+        items: [
+          { id: "keep", kind: "svg", role: "stimulus", alt: "safe" },
+          {
+            id: "leak",
+            kind: "svg",
+            role: "explanation",
+            alt: "answer key diagram",
+          },
+        ],
+      },
+    };
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-serial",
+      question: questionWithExplanationAsset,
+      safeOptions: [],
+    });
+
+    const serialized = JSON.stringify(dto);
+    expect(serialized).not.toContain('"role":"explanation"');
+    expect(serialized).not.toContain("leak");
+    expect(serialized).not.toContain("answer key diagram");
+    expect(serialized).toContain("keep");
+  });
+
   it("DTO body serialization never contains answer, explanation, or server-only field values", () => {
     const dto = toStudentSafeQuestionDTO({
       sessionItemId: "item-001",

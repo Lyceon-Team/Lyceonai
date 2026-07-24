@@ -28,7 +28,7 @@ export const QUESTIONS_COLUMN_DISPOSITION: Record<string, ColumnDisposition> = {
   stem: "served_pre_submit",
   passage: "served_pre_submit",
   options: "served_pre_submit",
-  assets: "served_pre_submit",
+  assets: "served_pre_submit", // role-filtered: stimulus/option pre-submit, explanation post-submit only
   item_type: "served_pre_submit",
   skill_codes: "served_pre_submit",
 
