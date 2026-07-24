@@ -3,7 +3,11 @@ import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { getClientInstanceId } from "@/lib/client-instance";
-import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
+import {
+  isMathSection,
+  isRwSection,
+  sectionDisplayLabel,
+} from "@shared/section-display";
 
 interface SessionState {
   sessionId: string;
@@ -58,16 +62,38 @@ export default function ResumePracticePage() {
     );
   }
 
-  // Map the section from the session metadata or row
-  // Note: session.question.section might not be available yet, so we trust the session metadata if possible
-  // In our case, the resume endpoint handles the internal redirecting.
-  // But CanonicalPracticePage needs a "section" prop for its hook.
+  const resolvedSection: "math" | "reading_writing" | null = isMathSection(
+    session.section,
+  )
+    ? "math"
+    : isRwSection(session.section)
+      ? "reading_writing"
+      : null;
+
+  if (!resolvedSection) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center p-4">
+        <h1 className="text-2xl font-bold text-red-600 mb-4">
+          Unknown Section
+        </h1>
+        <p className="text-muted-foreground mb-6">
+          This session has an unrecognised section and cannot be resumed safely.
+        </p>
+        <button
+          onClick={() => window.location.assign("/practice")}
+          className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
+        >
+          Back to Practice
+        </button>
+      </div>
+    );
+  }
 
   return (
     <CanonicalPracticePage
-      title={`Resuming ${session.section || "Practice"} Session`}
+      title={`Resuming ${sectionDisplayLabel(session.section) ?? "Practice"} Session`}
       badgeLabel={sectionDisplayLabel(session.section) ?? "Practice"}
-      section={isMathSection(session.section) ? "math" : "reading_writing"}
+      section={resolvedSection}
       sessionId={sessionId}
     />
   );

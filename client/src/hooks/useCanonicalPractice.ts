@@ -16,10 +16,12 @@ export type PracticeOption = {
   text: string;
 };
 
+export type PreSubmitAssetRole = "stimulus" | "option";
+
 export type PracticeAssetSvg = {
   id: string;
   kind: "svg";
-  role: "stimulus" | "option" | "explanation";
+  role: PreSubmitAssetRole;
   alt: string;
   option_key?: string | null;
   svg: string;
@@ -29,7 +31,7 @@ export type PracticeAssetSvg = {
 export type PracticeAssetTable = {
   id: string;
   kind: "table";
-  role: "stimulus" | "option" | "explanation";
+  role: PreSubmitAssetRole;
   alt: string;
   option_key?: string | null;
   caption?: string | null;
@@ -190,12 +192,29 @@ function normalizeQuestion(
   };
 }
 
-function normalizeAssets(raw: unknown): PracticeAssets | null {
+const VALID_ASSET_KINDS = new Set(["svg", "table"]);
+const VALID_PRE_SUBMIT_ROLES: Set<string> = new Set(["stimulus", "option"]);
+
+export function normalizeAssetItem(raw: unknown): PracticeAssetItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.id !== "string" || !item.id) return null;
+  if (typeof item.kind !== "string" || !VALID_ASSET_KINDS.has(item.kind))
+    return null;
+  if (typeof item.role !== "string" || !VALID_PRE_SUBMIT_ROLES.has(item.role))
+    return null;
+  return raw as PracticeAssetItem;
+}
+
+export function normalizeAssets(raw: unknown): PracticeAssets | null {
   if (!raw || typeof raw !== "object") return null;
   const candidate = raw as Record<string, unknown>;
   if (candidate.v !== 1 || !Array.isArray(candidate.items)) return null;
-  if (candidate.items.length === 0) return null;
-  return raw as PracticeAssets;
+  const validated = candidate.items
+    .map(normalizeAssetItem)
+    .filter((item): item is PracticeAssetItem => item !== null);
+  if (validated.length === 0) return null;
+  return { v: 1, items: validated };
 }
 
 export function useCanonicalPractice(
