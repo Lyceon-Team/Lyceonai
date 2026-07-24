@@ -354,9 +354,7 @@ function Practice() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-semibold">
-                              {isMathSection(s.section)
-                                ? "Math"
-                                : "Reading & Writing"}
+                              {sectionDisplayLabel(s.section) ?? "Practice"}
                             </span>
                             <Badge
                               variant="secondary"
