@@ -277,32 +277,23 @@ RW_PASSAGE_LEN=$(psql_db "$DB" -tAc "
 echo "    OK passage present ($RW_PASSAGE_LEN chars)"
 
 # ---------------------------------------------------------------------------
-# 10. R&W passage: practice_session_items.question_passage populated
+# 10. Row-mapping regression guard (production buildSessionItemInsertRows)
 # ---------------------------------------------------------------------------
-echo "==> P.10 R&W passage: session item stores question_passage"
-PASSAGE_SESSION='33333333-3333-3333-3333-333333333333'
-PASSAGE_ITEM='44444444-4444-4444-4444-444444444444'
-psql_db "$DB" >/dev/null <<SQL
-INSERT INTO public.practice_sessions (id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, actor_id)
-VALUES ('$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 'flow', '{}'::jsonb, 5, 'web', 'ci-p10', 'active', now(), now(), now(), '00000000-0000-0000-0000-000000000001');
-
-INSERT INTO public.practice_session_items (id, session_id, user_id, ordinal, question_id, question_stem, question_passage, question_options, question_correct_answer, question_explanation, question_difficulty, question_domain, question_skill, question_section, question_item_type, status, actor_id, client_instance_id)
-SELECT '$PASSAGE_ITEM', '$PASSAGE_SESSION', '00000000-0000-0000-0000-000000000001', 1, q.id, q.stem,
-       q.passage,
-       q.options, q.correct_answer, q.explanation, q.difficulty, q.domain, q.skill_codes[1], q.section, 'mcq', 'pending', '00000000-0000-0000-0000-000000000001', 'ci-p10'
-FROM public.questions q WHERE q.id = 'SATRW1CAS001';
-SQL
-
-STORED_PASSAGE_LEN=$(psql_db "$DB" -tAc "
-  SELECT char_length(question_passage) FROM public.practice_session_items WHERE id = '$PASSAGE_ITEM';
-")
-[ -n "$STORED_PASSAGE_LEN" ] && [ "$STORED_PASSAGE_LEN" -gt 0 ] 2>/dev/null || { echo "FAIL: question_passage not populated in practice_session_items"; exit 1; }
-echo "    OK question_passage stored ($STORED_PASSAGE_LEN chars)"
+# The real defect-site test lives in the vitest suite
+# (practice.rw-row-mapping.ci.test.ts) which calls the production
+# buildSessionItemInsertRows and toStudentSafeQuestionDTO directly with
+# real R&W shapes. This bash job cannot run Node, so the pure-function
+# proof is delegated there; P.9 above proves the RPC returns passage.
+echo "==> P.10 (delegated to vitest: practice.rw-row-mapping.ci.test.ts)"
 
 # ---------------------------------------------------------------------------
-# 11. Anti-leak on R&W: correct_answer and explanation present in RPC
+# 11. RPC pool carries answer columns (server-side fact)
 # ---------------------------------------------------------------------------
-echo "==> P.11 anti-leak: R&W RPC returns answer columns (server must strip)"
+# This proves the RPC pool returns correct_answer and explanation for R&W
+# questions — a prerequisite for server-side grading. The actual student-DTO
+# anti-leak proof (strip to null) lives in the vitest suite
+# (practice.rw-row-mapping.ci.test.ts).
+echo "==> P.11 RPC pool: R&W rows carry answer columns for server-side grading"
 RW_ANSWER_PRESENT=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM public.select_practice_pool_random(
     p_sections := ARRAY['RW'],
@@ -311,8 +302,8 @@ RW_ANSWER_PRESENT=$(psql_db "$DB" -tAc "
     p_exclude_ids := ARRAY[]::text[]
   ) WHERE correct_answer IS NOT NULL AND explanation IS NOT NULL;
 ")
-[ "$RW_ANSWER_PRESENT" -gt 0 ] || { echo "FAIL: R&W RPC did not return answer columns (anti-leak strip would fail)"; exit 1; }
-echo "    OK correct_answer and explanation present in R&W RPC output"
+[ "$RW_ANSWER_PRESENT" -gt 0 ] || { echo "FAIL: R&W RPC did not return answer columns"; exit 1; }
+echo "    OK correct_answer and explanation present in R&W RPC pool"
 
 # ---------------------------------------------------------------------------
 # Cleanup

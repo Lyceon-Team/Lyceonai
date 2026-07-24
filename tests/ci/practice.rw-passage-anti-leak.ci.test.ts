@@ -3,15 +3,15 @@
  *
  * @spec [Doc-02B_V4 §14/§20; Preamble V3 §12 INV-02B-01] | @implemented [2026-07-22]
  *
- * Proves at the HTTP level that GET /api/practice/sessions/:id/next returns
- * passage content for R&W questions while maintaining anti-leak:
+ * Proves at the HTTP level that GET /api/practice/sessions/:id/next and
+ * POST /api/practice/sessions/:id/resume return passage content for R&W
+ * questions while maintaining anti-leak:
  *   - passage is present and non-null for R&W items
  *   - correct_answer:null, explanation:null (anti-leak preserved)
  *   - response body never contains the real answer or explanation text
  *
- * Also proves GET /api/practice/sessions/:id/resume carries passage.
- *
- * Complements the real-Postgres integration gate (practice-integration.sh P.9–P.11).
+ * Complements the real-Postgres integration gate (practice-integration.sh P.9)
+ * and the pure-function regression guard (practice.rw-row-mapping.ci.test.ts).
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
@@ -242,5 +242,39 @@ describe("Practice R&W passage anti-leak gate", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.question.section).toBe("RW");
+  });
+
+  it("POST /resume returns passage for R&W item (non-null)", async () => {
+    const res = await request(app)
+      .post(`/api/practice/sessions/${TEST_SESSION_ID}/resume`)
+      .send({ client_instance_id: "ci-test" });
+
+    expect(res.status).toBe(200);
+
+    const q = res.body.question;
+    expect(q).toBeDefined();
+    expect(q.passage).toBeDefined();
+    expect(q.passage).not.toBeNull();
+    expect(typeof q.passage).toBe("string");
+    expect(q.passage.length).toBeGreaterThan(0);
+    expect(q.passage).toContain("luminous");
+  });
+
+  it("POST /resume returns correct_answer:null and explanation:null (anti-leak)", async () => {
+    const res = await request(app)
+      .post(`/api/practice/sessions/${TEST_SESSION_ID}/resume`)
+      .send({ client_instance_id: "ci-test" });
+
+    expect(res.status).toBe(200);
+
+    const q = res.body.question;
+    expect(q).toBeDefined();
+    expect(q.correct_answer).toBeNull();
+    expect(q.explanation).toBeNull();
+
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain(
+      "describes the quality of the argument, not physical light",
+    );
   });
 });
