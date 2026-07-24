@@ -14,6 +14,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { isMathSection } from "@shared/section-display";
+import MathRenderer from "@/components/MathRenderer";
 
 interface ReviewModule {
   id: string;
@@ -194,14 +195,15 @@ export default function FullLengthReviewView({
                               )}
                             </div>
                             {question?.answer_text && (
-                              <p className="text-xs text-muted-foreground mb-1">
-                                Answer text: {question.answer_text}
-                              </p>
+                              <div className="text-xs text-muted-foreground mb-1">
+                                Answer text:{" "}
+                                <MathRenderer content={question.answer_text} />
+                              </div>
                             )}
                             {question?.explanation && (
-                              <p className="text-xs text-muted-foreground whitespace-pre-wrap">
-                                {question.explanation}
-                              </p>
+                              <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                                <MathRenderer content={question.explanation} />
+                              </div>
                             )}
                           </div>
                         );

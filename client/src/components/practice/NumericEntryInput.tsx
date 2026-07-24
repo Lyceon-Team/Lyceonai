@@ -96,7 +96,7 @@ export function NumericEntryInput({
             <div className="mt-3 text-slate-700">
               <div className="font-medium text-slate-900 mb-1">Explanation</div>
               <div className="whitespace-pre-wrap leading-relaxed">
-                {explanation}
+                <MathRenderer content={explanation} />
               </div>
             </div>
           )}
