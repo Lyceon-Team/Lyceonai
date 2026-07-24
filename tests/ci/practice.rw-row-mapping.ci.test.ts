@@ -274,14 +274,35 @@ describe("toStudentSafeQuestionDTO — anti-leak strip proof", () => {
     expect("correct_variants" in dto).toBe(false);
   });
 
-  it("assets is served pre-submit (student-facing like passage)", () => {
+  it("legacy flat assets are excluded pre-submit (fail-closed)", () => {
     const dto = toStudentSafeQuestionDTO({
       sessionItemId: "item-001",
       question: RW_QUESTION,
       safeOptions: [],
     });
 
-    expect(dto.assets).toEqual({ illustration: "luminous-diagram.svg" });
+    expect(dto.assets).toBeNull();
+  });
+
+  it("structured v1 assets with safe roles are served pre-submit", () => {
+    const questionWithStructured: CanonicalQuestionForServing = {
+      ...RW_QUESTION,
+      assets: {
+        v: 1,
+        items: [{ id: "a1", kind: "svg", role: "stimulus", alt: "diagram" }],
+      },
+    };
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-structured-safe",
+      question: questionWithStructured,
+      safeOptions: [],
+    });
+
+    const assets = dto.assets as { v: number; items: Array<{ id: string }> };
+    expect(assets).not.toBeNull();
+    expect(assets.v).toBe(1);
+    expect(assets.items).toHaveLength(1);
+    expect(assets.items[0].id).toBe("a1");
   });
 
   it("assets is null when question has no assets", () => {

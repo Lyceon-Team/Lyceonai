@@ -157,8 +157,108 @@ describe("Column-disposition contract", () => {
     expect(filterAssetsPreSubmit(null)).toBeNull();
   });
 
-  it("assets role filter passes through legacy flat format unchanged", () => {
+  it("assets role filter excludes legacy flat format (fail-closed)", () => {
     const legacy = { illustration: "diagram.svg" };
-    expect(filterAssetsPreSubmit(legacy)).toEqual(legacy);
+    expect(filterAssetsPreSubmit(legacy)).toBeNull();
+  });
+
+  it("assets role filter excludes unknown version v:2 (fail-closed)", () => {
+    const v2 = {
+      v: 2,
+      items: [{ id: "a1", kind: "svg", role: "stimulus", alt: "diagram" }],
+    };
+    expect(filterAssetsPreSubmit(v2)).toBeNull();
+  });
+
+  it("assets role filter excludes missing v field (fail-closed)", () => {
+    const noV = {
+      items: [{ id: "a1", kind: "svg", role: "stimulus", alt: "diagram" }],
+    };
+    expect(filterAssetsPreSubmit(noV)).toBeNull();
+  });
+
+  it("assets role filter excludes non-array items (fail-closed)", () => {
+    const badItems = { v: 1, items: "not-an-array" };
+    expect(filterAssetsPreSubmit(badItems)).toBeNull();
+  });
+
+  it("assets role filter drops item with missing role", () => {
+    const missingRole = {
+      v: 1,
+      items: [
+        { id: "a1", kind: "svg", alt: "no role here" },
+        { id: "a2", kind: "svg", role: "stimulus", alt: "safe" },
+      ],
+    };
+    const filtered = filterAssetsPreSubmit(missingRole) as {
+      v: number;
+      items: Array<{ id: string }>;
+    };
+    expect(filtered).not.toBeNull();
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0].id).toBe("a2");
+  });
+
+  it("assets role filter drops item with unknown role", () => {
+    const unknownRole = {
+      v: 1,
+      items: [
+        { id: "a1", kind: "svg", role: "hint", alt: "unknown role" },
+        { id: "a2", kind: "svg", role: "option", alt: "safe" },
+      ],
+    };
+    const filtered = filterAssetsPreSubmit(unknownRole) as {
+      v: number;
+      items: Array<{ id: string }>;
+    };
+    expect(filtered).not.toBeNull();
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0].id).toBe("a2");
+  });
+
+  it("assets role filter drops item with unknown kind", () => {
+    const unknownKind = {
+      v: 1,
+      items: [
+        { id: "a1", kind: "video", role: "stimulus", alt: "unknown kind" },
+        { id: "a2", kind: "table", role: "option", alt: "safe" },
+      ],
+    };
+    const filtered = filterAssetsPreSubmit(unknownKind) as {
+      v: number;
+      items: Array<{ id: string }>;
+    };
+    expect(filtered).not.toBeNull();
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0].id).toBe("a2");
+  });
+
+  it("assets role filter drops item with missing kind", () => {
+    const missingKind = {
+      v: 1,
+      items: [
+        { id: "a1", role: "stimulus", alt: "no kind" },
+        { id: "a2", kind: "svg", role: "stimulus", alt: "safe" },
+      ],
+    };
+    const filtered = filterAssetsPreSubmit(missingKind) as {
+      v: number;
+      items: Array<{ id: string }>;
+    };
+    expect(filtered).not.toBeNull();
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0].id).toBe("a2");
+  });
+
+  it("assets role filter returns null when all items are invalid", () => {
+    const allInvalid = {
+      v: 1,
+      items: [
+        { id: "a1", kind: "video", role: "explanation", alt: "bad" },
+        { id: "a2", role: "stimulus", alt: "no kind" },
+        { id: "a3", kind: "svg", alt: "no role" },
+      ],
+    };
+    expect(filterAssetsPreSubmit(allInvalid)).toBeNull();
   });
 });

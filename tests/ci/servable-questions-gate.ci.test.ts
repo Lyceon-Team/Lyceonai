@@ -4,9 +4,15 @@
  * @spec [Doc-02A_V6 §16; Doc-02B_V4 §14; Coding Standards §5]
  * @implemented [2026-07-24]
  *
- * Scans server and app source code for direct `.from("questions")` /
- * `.from('questions')` calls and fails if any file outside the explicit
- * allowlist queries the questions table directly.
+ * Scans server and app source code for direct questions-table access
+ * and fails if any file outside the explicit allowlist queries the
+ * questions table directly.
+ *
+ * Patterns caught:
+ *   - Supabase client: .from("questions") / .from('questions')
+ *   - Supabase client: .from(`questions`) (template literal)
+ *   - Raw SQL: FROM questions / FROM public.questions
+ *   - RPC bodies referencing: 'questions' as table target
  *
  * Student-serving SELECTION reads must go through `servable_questions`
  * (published + no issue_flags + security_invoker). Direct access is
@@ -14,7 +20,6 @@
  *   - HISTORICAL RECONSTRUCTION (already-served item lookups by ID)
  *   - INFRA (health checks, connectivity probes)
  *   - ADMIN / PUBLISH pipeline (authoring, ingestion, backfill)
- *   - TUTOR / RAG (question loading by canonical ID)
  *   - MASTERY (metadata lookup by ID)
  */
 
@@ -40,7 +45,7 @@ const ALLOWLIST: Record<string, string> = {
   "apps/api/src/db/client.ts": "INFRA: connectivity probe",
   "apps/api/src/lib/supabase-server.ts": "INFRA: server setup",
   "apps/api/src/lib/rag-service.ts":
-    "HISTORICAL: question loading by canonical ID",
+    "HISTORICAL: loadQuestionByCanonicalId only — student's current-session item (retrieval uses servable_questions)",
   "apps/api/src/services/fullLengthExam.ts":
     "HISTORICAL: form canonical ID resolution, deferred materialization snapshots",
   "apps/api/src/services/studentMastery.ts":
@@ -67,7 +72,18 @@ function collectTsFiles(dir: string): string[] {
   return results;
 }
 
-const DIRECT_QUESTIONS_RE = /\.from\(["']questions["']\)/;
+const DIRECT_QUESTIONS_PATTERNS: RegExp[] = [
+  /\.from\(["'`]questions["'`]\)/,
+  /\bFROM\s+(?:public\.)?questions\b/i,
+];
+
+function matchesDirectQuestions(line: string): boolean {
+  return DIRECT_QUESTIONS_PATTERNS.some((re) => re.test(line));
+}
+
+function fileMatchesDirectQuestions(content: string): boolean {
+  return content.split("\n").some((line) => matchesDirectQuestions(line));
+}
 
 describe("servable_questions gate", () => {
   const allFiles: string[] = [];
@@ -79,12 +95,12 @@ describe("servable_questions gate", () => {
     expect(allFiles.length).toBeGreaterThan(10);
   });
 
-  it("no unapproved direct .from('questions') calls", () => {
+  it("no unapproved direct questions-table access", () => {
     const violations: string[] = [];
 
     for (const filePath of allFiles) {
       const content = fs.readFileSync(filePath, "utf-8");
-      if (!DIRECT_QUESTIONS_RE.test(content)) continue;
+      if (!fileMatchesDirectQuestions(content)) continue;
 
       const relPath = path.relative(REPO_ROOT, filePath);
       if (relPath in ALLOWLIST) continue;
@@ -92,7 +108,7 @@ describe("servable_questions gate", () => {
       const lines = content.split("\n");
       const matchingLines: number[] = [];
       for (let i = 0; i < lines.length; i++) {
-        if (DIRECT_QUESTIONS_RE.test(lines[i])) {
+        if (matchesDirectQuestions(lines[i])) {
           matchingLines.push(i + 1);
         }
       }
@@ -109,13 +125,53 @@ describe("servable_questions gate", () => {
     expect(missing).toEqual([]);
   });
 
-  it("every allowlisted file actually has .from('questions')", () => {
+  it("every allowlisted file actually has a direct questions-table access", () => {
     const stale = Object.keys(ALLOWLIST).filter((relPath) => {
       const fullPath = path.join(REPO_ROOT, relPath);
       if (!fs.existsSync(fullPath)) return false;
       const content = fs.readFileSync(fullPath, "utf-8");
-      return !DIRECT_QUESTIONS_RE.test(content);
+      return !fileMatchesDirectQuestions(content);
     });
     expect(stale).toEqual([]);
+  });
+
+  it("gate catches .from('questions') (single quotes)", () => {
+    expect(matchesDirectQuestions("  .from('questions')")).toBe(true);
+  });
+
+  it('gate catches .from("questions") (double quotes)', () => {
+    expect(matchesDirectQuestions('  .from("questions")')).toBe(true);
+  });
+
+  it("gate catches .from(`questions`) (template literal)", () => {
+    expect(matchesDirectQuestions("  .from(`questions`)")).toBe(true);
+  });
+
+  it("gate catches SQL FROM questions", () => {
+    expect(matchesDirectQuestions("  SELECT * FROM questions WHERE")).toBe(
+      true,
+    );
+  });
+
+  it("gate catches SQL FROM public.questions", () => {
+    expect(
+      matchesDirectQuestions("  SELECT id FROM public.questions LIMIT 1"),
+    ).toBe(true);
+  });
+
+  it("gate does NOT match servable_questions", () => {
+    expect(matchesDirectQuestions("  .from('servable_questions')")).toBe(false);
+    expect(
+      matchesDirectQuestions("  SELECT * FROM servable_questions WHERE"),
+    ).toBe(false);
+  });
+
+  it("gate does NOT match full_length_exam_questions", () => {
+    expect(
+      matchesDirectQuestions("  .from('full_length_exam_questions')"),
+    ).toBe(false);
+    expect(
+      matchesDirectQuestions("  FROM full_length_exam_questions WHERE"),
+    ).toBe(false);
   });
 });
