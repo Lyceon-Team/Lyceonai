@@ -1,9 +1,21 @@
 /**
  * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-24]
  * Desmos calculator with graphing/scientific mode toggle and Bluebook-comparable sizing.
- * State persistence is preserved across mode switches via initialState/onStateChange.
+ * Per-mode state is retained across mode switches: the active calculator's state is
+ * flushed synchronously into a mode-keyed map before switching, and restored on switch-in.
+ * Session persistence (initialState/onStateChange) carries the full per-mode map.
+ *
+ * Deferred: Bluebook parity target is a floating, draggable, resizable overlay positioned
+ * over the question area. The current inline-card layout is a deliberate interim step.
+ * Tracked follow-up for the overlay implementation.
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 
 declare global {
   interface DesmosCalculatorInstance {
@@ -97,6 +109,11 @@ function loadDesmosScriptOnce(): Promise<void> {
 
 type CalculatorMode = "graphing" | "scientific";
 
+type PerModeState = {
+  graphing: unknown | null;
+  scientific: unknown | null;
+};
+
 type DesmosCalculatorProps = {
   className?: string;
   expanded: boolean;
@@ -119,9 +136,14 @@ export default function DesmosCalculator({
   const calcRef = useRef<DesmosCalculatorInstance | null>(null);
   const stateDebounceRef = useRef<number | null>(null);
   const onStateChangeRef = useRef(onStateChange);
-  const initialStateRef = useRef<unknown | null>(initialState ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<CalculatorMode>("graphing");
+  const modeStateRef = useRef<PerModeState>({
+    graphing: null,
+    scientific: null,
+  });
+  const activeModeRef = useRef<CalculatorMode>("graphing");
+
   const initialStateKey = useMemo(
     () => JSON.stringify(initialState ?? null),
     [initialState],
@@ -132,8 +154,34 @@ export default function DesmosCalculator({
   }, [onStateChange]);
 
   useEffect(() => {
-    initialStateRef.current = initialState ?? null;
+    if (initialState != null) {
+      modeStateRef.current.graphing = initialState;
+    }
   }, [initialStateKey, initialState]);
+
+  const flushActiveState = useCallback((): void => {
+    const calculator = calcRef.current;
+    if (!calculator) return;
+    if (stateDebounceRef.current !== null) {
+      window.clearTimeout(stateDebounceRef.current);
+      stateDebounceRef.current = null;
+    }
+    const currentState = calculator.getState();
+    modeStateRef.current[activeModeRef.current] = currentState;
+    if (onStateChangeRef.current) {
+      onStateChangeRef.current(currentState);
+    }
+  }, []);
+
+  const handleModeSwitch = useCallback(
+    (nextMode: CalculatorMode): void => {
+      if (nextMode === activeModeRef.current) return;
+      flushActiveState();
+      activeModeRef.current = nextMode;
+      setMode(nextMode);
+    },
+    [flushActiveState],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -169,8 +217,9 @@ export default function DesmosCalculator({
 
         calcRef.current = calculator;
 
-        if (mode === "graphing" && initialStateRef.current) {
-          calculator.setState(initialStateRef.current);
+        const savedState = modeStateRef.current[mode];
+        if (savedState) {
+          calculator.setState(savedState);
         }
 
         const handleChange = () => {
@@ -181,7 +230,9 @@ export default function DesmosCalculator({
           stateDebounceRef.current = window.setTimeout(() => {
             stateDebounceRef.current = null;
             if (!calcRef.current || !onStateChangeRef.current) return;
-            onStateChangeRef.current(calcRef.current.getState());
+            const state = calcRef.current.getState();
+            modeStateRef.current[mode] = state;
+            onStateChangeRef.current(state);
           }, debounceMs);
         };
 
@@ -231,6 +282,7 @@ export default function DesmosCalculator({
     const calculator = calcRef.current;
     if (!calculator || !initialState || mode !== "graphing") return;
     calculator.setState(initialState);
+    modeStateRef.current.graphing = initialState;
   }, [initialStateKey, initialState, mode]);
 
   const expandedHeight =
@@ -250,7 +302,7 @@ export default function DesmosCalculator({
             type="button"
             role="radio"
             aria-checked={mode === "graphing"}
-            onClick={() => setMode("graphing")}
+            onClick={() => handleModeSwitch("graphing")}
             className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
               mode === "graphing"
                 ? "bg-background text-foreground shadow-sm"
@@ -264,7 +316,7 @@ export default function DesmosCalculator({
             type="button"
             role="radio"
             aria-checked={mode === "scientific"}
-            onClick={() => setMode("scientific")}
+            onClick={() => handleModeSwitch("scientific")}
             className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
               mode === "scientific"
                 ? "bg-background text-foreground shadow-sm"

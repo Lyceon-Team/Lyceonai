@@ -354,7 +354,7 @@ function Practice() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-semibold">
-                              {sectionDisplayLabel(s.section) === "Math"
+                              {isMathSection(s.section)
                                 ? "Math"
                                 : "Reading & Writing"}
                             </span>

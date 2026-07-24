@@ -66,7 +66,7 @@ export default function ResumePracticePage() {
   return (
     <CanonicalPracticePage
       title={`Resuming ${session.section || "Practice"} Session`}
-      badgeLabel={sectionDisplayLabel(session.section)}
+      badgeLabel={sectionDisplayLabel(session.section) ?? "Practice"}
       section={isMathSection(session.section) ? "math" : "reading_writing"}
       sessionId={sessionId}
     />
