@@ -62,6 +62,9 @@ const RW_QUESTION: CanonicalQuestionForServing = {
   explanation:
     'In context, "luminous" describes the quality of the argument, not physical light.',
   correct_variants: null,
+  assets: { illustration: "luminous-diagram.svg" },
+  option_metadata: { A: { role: "distractor" }, B: { role: "correct" } },
+  estimated_time_seconds: 90,
 };
 
 const GRID_IN_QUESTION: CanonicalQuestionForServing = {
@@ -81,6 +84,9 @@ const GRID_IN_QUESTION: CanonicalQuestionForServing = {
   correct_answer: "5",
   explanation: "3x = 15, x = 5.",
   correct_variants: ["5", "5.0", "5.00"],
+  assets: null,
+  option_metadata: null,
+  estimated_time_seconds: 60,
 };
 
 const MCQ_QUESTION: CanonicalQuestionForServing = {
@@ -105,6 +111,9 @@ const MCQ_QUESTION: CanonicalQuestionForServing = {
   correct_answer: "B",
   explanation: "Subtract 3: 2x=4, divide by 2: x=2.",
   correct_variants: null,
+  assets: null,
+  option_metadata: null,
+  estimated_time_seconds: null,
 };
 
 const CTX: SessionItemInsertContext = {
@@ -168,6 +177,27 @@ describe("buildSessionItemInsertRows — row-mapping regression guard", () => {
     expect(rows[1].status).toBe("pending");
     expect(rows[1].served_at).toBeNull();
     expect(rows[1].client_instance_id).toBeNull();
+  });
+
+  it("new content-pipeline fields (assets, option_metadata, estimated_time_seconds) propagate", () => {
+    const rows = buildSessionItemInsertRows([RW_QUESTION], CTX);
+    const row = rows[0];
+    expect(row.question_assets).toEqual({
+      illustration: "luminous-diagram.svg",
+    });
+    expect(row.question_option_metadata).toEqual({
+      A: { role: "distractor" },
+      B: { role: "correct" },
+    });
+    expect(row.question_estimated_time_seconds).toBe(90);
+  });
+
+  it("null content-pipeline fields propagate as null", () => {
+    const rows = buildSessionItemInsertRows([MCQ_QUESTION], CTX);
+    const row = rows[0];
+    expect(row.question_assets).toBeNull();
+    expect(row.question_option_metadata).toBeNull();
+    expect(row.question_estimated_time_seconds).toBeNull();
   });
 
   it("ordinals are 1-based", () => {
@@ -244,7 +274,47 @@ describe("toStudentSafeQuestionDTO — anti-leak strip proof", () => {
     expect("correct_variants" in dto).toBe(false);
   });
 
-  it("DTO body serialization never contains answer or explanation text", () => {
+  it("assets is served pre-submit (student-facing like passage)", () => {
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-001",
+      question: RW_QUESTION,
+      safeOptions: [],
+    });
+
+    expect(dto.assets).toEqual({ illustration: "luminous-diagram.svg" });
+  });
+
+  it("assets is null when question has no assets", () => {
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-002",
+      question: MCQ_QUESTION,
+      safeOptions: [],
+    });
+
+    expect(dto.assets).toBeNull();
+  });
+
+  it("option_metadata is absent from DTO (server-only, type-absent)", () => {
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-001",
+      question: RW_QUESTION,
+      safeOptions: [],
+    });
+
+    expect("option_metadata" in dto).toBe(false);
+  });
+
+  it("estimated_time_seconds is absent from DTO (server-only, type-absent)", () => {
+    const dto = toStudentSafeQuestionDTO({
+      sessionItemId: "item-001",
+      question: RW_QUESTION,
+      safeOptions: [],
+    });
+
+    expect("estimated_time_seconds" in dto).toBe(false);
+  });
+
+  it("DTO body serialization never contains answer, explanation, or server-only field values", () => {
     const dto = toStudentSafeQuestionDTO({
       sessionItemId: "item-001",
       question: RW_QUESTION,
@@ -254,5 +324,8 @@ describe("toStudentSafeQuestionDTO — anti-leak strip proof", () => {
     const serialized = JSON.stringify(dto);
     expect(serialized).not.toContain("describes the quality of the argument");
     expect(serialized).not.toContain('"B"');
+    expect(serialized).not.toContain("option_metadata");
+    expect(serialized).not.toContain("estimated_time_seconds");
+    expect(serialized).not.toContain("correct_variants");
   });
 });

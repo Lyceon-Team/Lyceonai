@@ -58,6 +58,7 @@ type StudentSafeQuestionDTO = {
   sessionItemId: string;
   stem: string;
   passage: string | null;
+  assets: unknown | null;
   section: string;
   questionType: "multiple_choice" | "grid_in";
   itemType: CanonicalItemType;
@@ -88,6 +89,9 @@ export type CanonicalQuestionForServing = {
   correct_answer: string | null;
   explanation: string | null;
   correct_variants: string[] | null;
+  assets: unknown | null;
+  option_metadata: unknown | null;
+  estimated_time_seconds: number | null;
 };
 
 type SessionRow = {
@@ -585,6 +589,12 @@ function toCanonicalQuestionForServing(
         : null,
     correct_variants:
       correctVariants && correctVariants.length > 0 ? correctVariants : null,
+    assets: q.assets ?? null,
+    option_metadata: q.option_metadata ?? null,
+    estimated_time_seconds:
+      typeof q.estimated_time_seconds === "number"
+        ? q.estimated_time_seconds
+        : null,
   };
 }
 
@@ -651,6 +661,12 @@ function toCanonicalQuestionFromSessionItem(
         : null,
     correct_variants:
       correctVariants && correctVariants.length > 0 ? correctVariants : null,
+    assets: item.question_assets ?? null,
+    option_metadata: item.question_option_metadata ?? null,
+    estimated_time_seconds:
+      typeof item.question_estimated_time_seconds === "number"
+        ? item.question_estimated_time_seconds
+        : null,
   };
 }
 
@@ -708,6 +724,7 @@ export function toStudentSafeQuestionDTO(args: {
     section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
     passage: safe.passage,
+    assets: args.question.assets ?? null,
     questionType: safe.question_type,
     itemType: safe.item_type,
     inputMode: safe.inputMode,
@@ -747,6 +764,9 @@ export function buildSessionItemInsertRows(
     question_difficulty: question.difficulty ?? null,
     question_item_type: question.item_type,
     question_correct_variants: question.correct_variants ?? null,
+    question_assets: question.assets ?? null,
+    question_option_metadata: question.option_metadata ?? null,
+    question_estimated_time_seconds: question.estimated_time_seconds ?? null,
     ordinal: index + 1,
     status: index === 0 ? "served" : "pending",
     client_instance_id: index === 0 ? ctx.clientInstanceId : null,
