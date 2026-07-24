@@ -2076,8 +2076,18 @@ router.get(
           .in("status", ["answered", "skipped"]);
 
         const metadata = asSessionMetadata(s.filters);
+        const specSections = metadata.session_spec?.sections ?? [];
+        const section =
+          specSections.length === 1
+            ? specSections[0] === "Math"
+              ? "math"
+              : "reading_writing"
+            : s.mode === "math"
+              ? "math"
+              : null;
         return {
           id: s.id,
+          section,
           mode: s.mode,
           status: s.status,
           created_at: s.created_at,
@@ -2519,18 +2529,7 @@ router.get(
     const session = owned.session;
 
     const metadata = asSessionMetadata(session.filters);
-    const queryClientInstanceId = normalizeClientInstanceId(
-      req.query.client_instance_id,
-    );
-    const binding = resolveClientInstanceBinding({
-      boundClientInstanceId: metadata.client_instance_id,
-      requestedClientInstanceId: queryClientInstanceId,
-    });
-    const boundClient = binding.boundClientInstanceId;
-
-    if (binding.action === "conflict") {
-      return sendClientConflict(res, requestId, binding.boundClientInstanceId);
-    }
+    const boundClient = normalizeClientInstanceId(metadata.client_instance_id);
 
     const config = await loadPracticeConfig();
     const latestItem = await getLatestSessionItem(sessionId);
@@ -2542,9 +2541,19 @@ router.get(
       config.defaultSessionCountWeb,
     );
     const state = normalizeSessionState(session.status);
+    const specSections = metadata.session_spec?.sections ?? [];
+    const section =
+      specSections.length === 1
+        ? specSections[0] === "Math"
+          ? "math"
+          : "reading_writing"
+        : session.mode === "math"
+          ? "math"
+          : null;
 
     return res.json({
       sessionId: session.id,
+      section,
       state,
       currentOrdinal: unresolved?.ordinal ?? latestItem?.ordinal ?? 0,
       answeredCount: progressCounts.answeredCount,

@@ -3,6 +3,7 @@ import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { getClientInstanceId } from "@/lib/client-instance";
+import { isApiError } from "@/lib/api-error";
 import {
   isMathSection,
   isRwSection,
@@ -46,18 +47,32 @@ export default function ResumePracticePage() {
   }
 
   if (error || !session) {
+    const is404 = isApiError(error) && error.status === 404;
+    const errorTitle = is404 ? "Session Not Found" : "Session Error";
+    const errorMessage = is404
+      ? "This practice session no longer exists or has been removed."
+      : "Something went wrong loading this session. Please try again.";
+
     return (
       <div className="flex h-screen flex-col items-center justify-center p-4">
-        <h1 className="text-2xl font-bold text-red-600 mb-4">Session Error</h1>
-        <p className="text-muted-foreground mb-6">
-          We couldn't find this practice session.
-        </p>
-        <button
-          onClick={() => window.location.assign("/practice")}
-          className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
-        >
-          Back to Practice
-        </button>
+        <h1 className="text-2xl font-bold text-red-600 mb-4">{errorTitle}</h1>
+        <p className="text-muted-foreground mb-6">{errorMessage}</p>
+        <div className="flex gap-3">
+          {!is404 && (
+            <button
+              onClick={() => window.location.reload()}
+              className="border border-border text-foreground px-6 py-2 rounded-md font-medium"
+            >
+              Retry
+            </button>
+          )}
+          <button
+            onClick={() => window.location.assign("/practice")}
+            className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium"
+          >
+            Back to Practice
+          </button>
+        </div>
       </div>
     );
   }
