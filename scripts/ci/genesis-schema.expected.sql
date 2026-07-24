@@ -4335,7 +4335,7 @@ CREATE TABLE public.sections (
 -- Name: servable_questions; Type: VIEW; Schema: public; Owner: -
 --
 
-CREATE VIEW public.servable_questions AS
+CREATE VIEW public.servable_questions WITH (security_invoker='true') AS
  SELECT id,
     section,
     source_type,
@@ -8639,6 +8639,13 @@ GRANT SELECT ON TABLE public.review_sessions TO authenticated;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sections TO service_role;
 GRANT SELECT ON TABLE public.sections TO anon;
 GRANT SELECT ON TABLE public.sections TO authenticated;
+
+
+--
+-- Name: TABLE servable_questions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.servable_questions TO service_role;
 
 
 --

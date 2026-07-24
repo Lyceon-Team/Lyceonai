@@ -1224,7 +1224,7 @@ async function materializeModule2FromBlueprint(args: {
   }
 
   const { data, error } = await args.supabase
-    .from("questions")
+    .from("servable_questions")
     .select(QUESTION_SNAPSHOT_SELECT)
     .eq("question_type", "multiple_choice")
     .in("section_code", sectionCodeFilter(args.section))

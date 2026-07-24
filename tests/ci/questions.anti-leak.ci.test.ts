@@ -193,7 +193,7 @@ class QuestionQueryBuilder {
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: vi.fn((table: string) => {
-      if (table !== "questions") {
+      if (table !== "questions" && table !== "servable_questions") {
         throw new Error(`Unexpected table access in anti-leak test: ${table}`);
       }
       return new QuestionQueryBuilder();
