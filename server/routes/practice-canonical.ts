@@ -57,6 +57,8 @@ type McOption = CanonicalMcOption;
 type StudentSafeQuestionDTO = {
   sessionItemId: string;
   stem: string;
+  passage: string | null;
+  assets: unknown | null;
   section: string;
   questionType: "multiple_choice" | "grid_in";
   itemType: CanonicalItemType;
@@ -70,12 +72,13 @@ type StudentSafeQuestionDTO = {
 // Server-side serving record. correct_answer / explanation / correct_variants live here for
 // grading ONLY and are never projected to the student DTO. For grid_in, options is [] and the
 // accepted-answer set rides in correct_variants; for mcq, correct_variants is null.
-type CanonicalQuestionForServing = {
+export type CanonicalQuestionForServing = {
   id: string;
   canonical_id: string;
   section_code: string;
   item_type: CanonicalItemType;
   stem: string;
+  passage: string | null;
   options: McOption[];
   difficulty: string | number | null;
   domain?: string | null;
@@ -86,6 +89,9 @@ type CanonicalQuestionForServing = {
   correct_answer: string | null;
   explanation: string | null;
   correct_variants: string[] | null;
+  assets: unknown | null;
+  option_metadata: unknown | null;
+  estimated_time_seconds: number | null;
 };
 
 type SessionRow = {
@@ -562,6 +568,10 @@ function toCanonicalQuestionForServing(
     section_code: String(q.section_code ?? q.section ?? ""),
     item_type: itemType,
     stem: String(q.stem ?? ""),
+    passage:
+      typeof q.passage === "string" && q.passage.trim().length > 0
+        ? q.passage
+        : null,
     options: isGridIn ? [] : safeParseOptions(q.options),
     difficulty: q.difficulty ?? null,
     domain: typeof q.domain === "string" ? q.domain : null,
@@ -579,6 +589,12 @@ function toCanonicalQuestionForServing(
         : null,
     correct_variants:
       correctVariants && correctVariants.length > 0 ? correctVariants : null,
+    assets: q.assets ?? null,
+    option_metadata: q.option_metadata ?? null,
+    estimated_time_seconds:
+      typeof q.estimated_time_seconds === "number"
+        ? q.estimated_time_seconds
+        : null,
   };
 }
 
@@ -625,6 +641,11 @@ function toCanonicalQuestionFromSessionItem(
     section_code: section,
     item_type: itemType,
     stem,
+    passage:
+      typeof item.question_passage === "string" &&
+      item.question_passage.trim().length > 0
+        ? item.question_passage
+        : null,
     options,
     difficulty: item.question_difficulty ?? null,
     domain: item.question_domain ?? null,
@@ -640,6 +661,12 @@ function toCanonicalQuestionFromSessionItem(
         : null,
     correct_variants:
       correctVariants && correctVariants.length > 0 ? correctVariants : null,
+    assets: item.question_assets ?? null,
+    option_metadata: item.question_option_metadata ?? null,
+    estimated_time_seconds:
+      typeof item.question_estimated_time_seconds === "number"
+        ? item.question_estimated_time_seconds
+        : null,
   };
 }
 
@@ -662,13 +689,42 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
   return null;
 }
 
+const PRE_SUBMIT_ASSET_ROLES = new Set(["stimulus", "option"]);
+const KNOWN_ASSET_KINDS = new Set(["svg", "table", "image"]);
+
+// @spec [Doc-02A_V6 §16; Doc-02B_V4 §14/§20] | @implemented [2026-07-24]
+// Fail-closed: only v:1 structured payloads with a valid items array are
+// understood. Unknown versions, missing structure, legacy flat formats, or
+// any unrecognized shape → null (exclude). Items with missing/unknown role
+// or kind are dropped individually; if nothing survives, return null.
+export function filterAssetsPreSubmit(assets: unknown | null): unknown | null {
+  if (assets == null) return null;
+  if (typeof assets !== "object") return null;
+
+  const obj = assets as Record<string, unknown>;
+  if (obj.v !== 1 || !Array.isArray(obj.items)) {
+    return null;
+  }
+
+  const filtered = (obj.items as Array<Record<string, unknown>>).filter(
+    (item) =>
+      typeof item.role === "string" &&
+      PRE_SUBMIT_ASSET_ROLES.has(item.role) &&
+      typeof item.kind === "string" &&
+      KNOWN_ASSET_KINDS.has(item.kind),
+  );
+
+  if (filtered.length === 0) return null;
+  return { v: 1, items: filtered };
+}
+
 // @spec [Doc 02B §14/§20 Serving Questions; Doc 02 Preamble §12 INV-02-08] | @implemented 2026-06-14
 // Single canonical serializer — no second inline question shape. We pass item_type through
 // so projectStudentSafeQuestion produces the correct grid-in vs MCQ surface, and we NEVER
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
-function toStudentSafeQuestionDTO(args: {
+export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
   safeOptions: StudentSafeOption[];
@@ -680,6 +736,7 @@ function toStudentSafeQuestionDTO(args: {
     section_code: args.question.section_code ?? null,
     item_type: args.question.item_type,
     stem: args.question.stem,
+    passage: args.question.passage ?? null,
     options: args.question.options,
     difficulty: args.question.difficulty ?? null,
     domain: args.question.domain ?? null,
@@ -695,6 +752,8 @@ function toStudentSafeQuestionDTO(args: {
     sessionItemId: args.sessionItemId,
     section: safe.section_code ?? args.question.section_code,
     stem: safe.stem,
+    passage: safe.passage,
+    assets: filterAssetsPreSubmit(args.question.assets),
     questionType: safe.question_type,
     itemType: safe.item_type,
     inputMode: safe.inputMode,
@@ -704,6 +763,52 @@ function toStudentSafeQuestionDTO(args: {
     correct_answer: null,
     explanation: null,
   };
+}
+
+export type SessionItemInsertContext = {
+  sessionId: string;
+  userId: string;
+  actorId: string;
+  clientInstanceId: string;
+  now: string;
+};
+
+export function buildSessionItemInsertRows(
+  selected: CanonicalQuestionForServing[],
+  ctx: SessionItemInsertContext,
+): Record<string, unknown>[] {
+  return selected.map((question, index) => ({
+    session_id: ctx.sessionId,
+    user_id: ctx.userId,
+    actor_id: ctx.actorId,
+    question_id: question.id,
+    question_section: question.section_code,
+    question_stem: question.stem,
+    question_passage: question.passage ?? null,
+    question_options: question.options,
+    question_correct_answer: question.correct_answer ?? null,
+    question_explanation: question.explanation ?? null,
+    question_domain: question.domain ?? null,
+    question_skill: question.skill ?? null,
+    question_difficulty: question.difficulty ?? null,
+    question_item_type: question.item_type,
+    question_correct_variants: question.correct_variants ?? null,
+    question_assets: question.assets ?? null,
+    question_option_metadata: question.option_metadata ?? null,
+    question_estimated_time_seconds: question.estimated_time_seconds ?? null,
+    ordinal: index + 1,
+    status: index === 0 ? "served" : "pending",
+    client_instance_id: index === 0 ? ctx.clientInstanceId : null,
+    served_at: index === 0 ? ctx.now : null,
+    selected_answer: null,
+    is_correct: null,
+    outcome: null,
+    time_spent_ms: null,
+    client_attempt_id: null,
+    answered_at: null,
+    option_order: null,
+    option_token_map: null,
+  }));
 }
 
 function simpleHash(input: string): number {
@@ -1481,39 +1586,13 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
-  // @spec [Doc 02B §14 Session Items Prefill] | @implemented 2026-06-14
-  // Denormalized snapshot. correct_answer/explanation are persisted for
-  // SERVER-SIDE grading only and are never projected to the student (the serving path
-  // returns toStudentSafeQuestionDTO, which null-strips them).
-  const insertRows = selected.map((question, index) => ({
-    session_id: sessionId,
-    user_id: args.userId,
-    actor_id: args.actorId,
-    question_id: question.id,
-    question_section: question.section_code,
-    question_stem: question.stem,
-    question_passage: null,
-    question_options: question.options,
-    question_correct_answer: question.correct_answer ?? null,
-    question_explanation: question.explanation ?? null,
-    question_domain: question.domain ?? null,
-    question_skill: question.skill ?? null,
-    question_difficulty: question.difficulty ?? null,
-    question_item_type: question.item_type,
-    question_correct_variants: question.correct_variants ?? null,
-    ordinal: index + 1,
-    status: index === 0 ? "served" : "pending",
-    client_instance_id: index === 0 ? args.clientInstanceId : null,
-    served_at: index === 0 ? now : null,
-    selected_answer: null,
-    is_correct: null,
-    outcome: null,
-    time_spent_ms: null,
-    client_attempt_id: null,
-    answered_at: null,
-    option_order: null,
-    option_token_map: null,
-  }));
+  const insertRows = buildSessionItemInsertRows(selected, {
+    sessionId,
+    userId: args.userId,
+    actorId: args.actorId,
+    clientInstanceId: args.clientInstanceId,
+    now,
+  });
 
   const { data: insertedItems, error: itemInsertError } = await supabaseServer
     .from("practice_session_items")
@@ -1965,6 +2044,7 @@ router.get(
     const user = (req as any).user;
     const userId = user?.id;
 
+    const openConfig = await loadPracticeConfig();
     const { data: sessions, error } = await supabaseServer
       .from("practice_sessions")
       .select(
@@ -2008,7 +2088,11 @@ router.get(
       }),
     );
 
-    return res.json({ sessions: enhancedSessions, requestId });
+    return res.json({
+      sessions: enhancedSessions,
+      maxConcurrentSessions: openConfig.maxConcurrentSessions,
+      requestId,
+    });
   },
 );
 
@@ -2194,6 +2278,8 @@ router.post(
       clientInstanceId,
       targetQuestionCount: coerceTargetQuestionCount(
         sessionResult.metadata.target_question_count,
+        config.maxSessionCountPremium,
+        config.defaultSessionCountWeb,
       ),
       calculatorState: sessionResult.metadata.calculator_state ?? null,
     });
@@ -2446,11 +2532,14 @@ router.get(
       return sendClientConflict(res, requestId, binding.boundClientInstanceId);
     }
 
+    const config = await loadPracticeConfig();
     const latestItem = await getLatestSessionItem(sessionId);
     const unresolved = await getCurrentUnansweredItem(sessionId);
     const progressCounts = await getSessionProgressCounts(sessionId);
     const targetQuestionCount = coerceTargetQuestionCount(
       metadata.target_question_count,
+      config.maxSessionCountPremium,
+      config.defaultSessionCountWeb,
     );
     const state = normalizeSessionState(session.status);
 
@@ -2992,12 +3081,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  const answerConfig = await loadPracticeConfig();
   const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(payload.sessionId);
   const targetQuestionCount = coerceTargetQuestionCount(
     refreshedMeta.target_question_count,
+    answerConfig.maxSessionCountPremium,
+    answerConfig.defaultSessionCountWeb,
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
@@ -3236,12 +3328,15 @@ async function submitPracticeSkip(req: Request, res: Response) {
     });
   }
 
+  const skipConfig = await loadPracticeConfig();
   const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
   const resolvedCount = await countResolvedSessionItems(sessionId);
   const targetQuestionCount = coerceTargetQuestionCount(
     refreshedMeta.target_question_count,
+    skipConfig.maxSessionCountPremium,
+    skipConfig.defaultSessionCountWeb,
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 

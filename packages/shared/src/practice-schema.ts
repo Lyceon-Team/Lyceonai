@@ -79,6 +79,8 @@ export type PracticeSessionItemRow = {
   question_section: string | null; // TEXT nullable
   question_item_type: string | null; // TEXT NOT NULL DEFAULT 'mcq'
   question_correct_variants: string[] | null; // TEXT[] nullable
+  question_assets: unknown | null; // JSONB nullable
+  question_estimated_time_seconds: number | null; // INTEGER nullable
   status: string; // TEXT NOT NULL DEFAULT 'pending'
   selected_answer: string | null; // TEXT nullable
   is_correct: boolean | null; // BOOLEAN nullable

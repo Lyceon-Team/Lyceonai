@@ -75,6 +75,21 @@ VALUES
 SQL
 echo "    OK 3 Algebra/M questions seeded"
 
+# Seed a REAL published R&W question WITH a non-empty passage (Revision 2 fixture)
+echo "==> seed R&W question with passage"
+psql_db "$DB" >/dev/null <<'SQL'
+INSERT INTO public.questions (id, section, source_type, domain, skill_codes, difficulty, stem, options, correct_answer, explanation, passage, status, published_at)
+VALUES
+  ('SATRW1CAS001', 'RW', 1, 'Craft and Structure', ARRAY['CAS.01'], 2,
+   'Based on the passage, the author most likely uses the word "luminous" to mean',
+   '[{"token":"A","text":"brightly lit"},{"token":"B","text":"intellectually brilliant"},{"token":"C","text":"clearly visible"},{"token":"D","text":"warmly glowing"}]'::jsonb,
+   'B',
+   'In context, "luminous" describes the quality of the argument, not physical light. The author contrasts it with "opaque reasoning," indicating intellectual clarity.',
+   'The scholar''s luminous analysis of the text stood in stark contrast to the opaque reasoning that had dominated the field for decades. Where others saw ambiguity, she found precision; where others retreated into jargon, she advanced with plain language that illuminated every corner of the debate.',
+   'published', now());
+SQL
+echo "    OK 1 R&W/Craft and Structure question seeded (with passage)"
+
 # ---------------------------------------------------------------------------
 # 1. select_practice_pool_random returns non-zero results
 # ---------------------------------------------------------------------------
@@ -123,7 +138,7 @@ echo "    OK correct_answer and explanation present in RPC output"
 # ---------------------------------------------------------------------------
 # 4. Pool respects section/domain filter
 # ---------------------------------------------------------------------------
-echo "==> P.4 pool filter: RW section returns 0 (only M seeded)"
+echo "==> P.4 pool filter: RW section returns seeded R&W question"
 RW_COUNT=$(psql_db "$DB" -tAc "
   SELECT count(*) FROM public.select_practice_pool_random(
     p_sections := ARRAY['RW'],
@@ -132,8 +147,20 @@ RW_COUNT=$(psql_db "$DB" -tAc "
     p_exclude_ids := ARRAY[]::text[]
   );
 ")
-[ "$RW_COUNT" = "0" ] || { echo "FAIL: RW pool should be 0 but got $RW_COUNT"; exit 1; }
-echo "    OK empty for unmatched section"
+[ "$RW_COUNT" -gt 0 ] || { echo "FAIL: RW pool should be >0 after R&W seed but got $RW_COUNT"; exit 1; }
+echo "    OK $RW_COUNT R&W row(s)"
+
+echo "==> P.4b pool filter: unseeded domain returns 0"
+EMPTY_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.select_practice_pool_random(
+    p_sections := ARRAY['RW'],
+    p_domains := ARRAY['Information and Ideas'],
+    p_limit := 10,
+    p_exclude_ids := ARRAY[]::text[]
+  );
+")
+[ "$EMPTY_COUNT" = "0" ] || { echo "FAIL: unseeded RW domain should be 0 but got $EMPTY_COUNT"; exit 1; }
+echo "    OK empty for unmatched domain"
 
 # ---------------------------------------------------------------------------
 # 5. Pool respects exclude_ids
@@ -233,6 +260,50 @@ echo "$SECOND" | grep -q '"duplicate": true' || {
   exit 1
 }
 echo "    OK idempotent"
+
+# ---------------------------------------------------------------------------
+# 9. R&W passage: RPC returns passage column for R&W questions
+# ---------------------------------------------------------------------------
+echo "==> P.9 R&W passage: select_practice_pool_random returns passage for RW"
+RW_PASSAGE_LEN=$(psql_db "$DB" -tAc "
+  SELECT char_length(passage) FROM public.select_practice_pool_random(
+    p_sections := ARRAY['RW'],
+    p_domains := ARRAY['Craft and Structure'],
+    p_limit := 1,
+    p_exclude_ids := ARRAY[]::text[]
+  ) LIMIT 1;
+")
+[ -n "$RW_PASSAGE_LEN" ] && [ "$RW_PASSAGE_LEN" -gt 0 ] 2>/dev/null || { echo "FAIL: RW question passage is NULL or empty in RPC output"; exit 1; }
+echo "    OK passage present ($RW_PASSAGE_LEN chars)"
+
+# ---------------------------------------------------------------------------
+# 10. Row-mapping regression guard (production buildSessionItemInsertRows)
+# ---------------------------------------------------------------------------
+# The real defect-site test lives in the vitest suite
+# (practice.rw-row-mapping.ci.test.ts) which calls the production
+# buildSessionItemInsertRows and toStudentSafeQuestionDTO directly with
+# real R&W shapes. This bash job cannot run Node, so the pure-function
+# proof is delegated there; P.9 above proves the RPC returns passage.
+echo "==> P.10 (delegated to vitest: practice.rw-row-mapping.ci.test.ts)"
+
+# ---------------------------------------------------------------------------
+# 11. RPC pool carries answer columns (server-side fact)
+# ---------------------------------------------------------------------------
+# This proves the RPC pool returns correct_answer and explanation for R&W
+# questions — a prerequisite for server-side grading. The actual student-DTO
+# anti-leak proof (strip to null) lives in the vitest suite
+# (practice.rw-row-mapping.ci.test.ts).
+echo "==> P.11 RPC pool: R&W rows carry answer columns for server-side grading"
+RW_ANSWER_PRESENT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.select_practice_pool_random(
+    p_sections := ARRAY['RW'],
+    p_domains := ARRAY['Craft and Structure'],
+    p_limit := 10,
+    p_exclude_ids := ARRAY[]::text[]
+  ) WHERE correct_answer IS NOT NULL AND explanation IS NOT NULL;
+")
+[ "$RW_ANSWER_PRESENT" -gt 0 ] || { echo "FAIL: R&W RPC did not return answer columns"; exit 1; }
+echo "    OK correct_answer and explanation present in R&W RPC pool"
 
 # ---------------------------------------------------------------------------
 # Cleanup

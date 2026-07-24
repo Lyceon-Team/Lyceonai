@@ -77,7 +77,7 @@ async function fetchPublishedQuestions(params: {
   cursor?: string;
 }) {
   let query = supabaseServer
-    .from("questions")
+    .from("servable_questions")
     .select(QUESTION_SAFE_SELECT)
     .in("item_type", [...ALLOWED_ITEM_TYPES])
     .order("created_at", { ascending: false });
@@ -231,7 +231,7 @@ export const getRandomQuestions = async (
 export const getQuestionCount = async (_req: Request, res: Response) => {
   try {
     const { count, error } = await supabaseServer
-      .from("questions")
+      .from("servable_questions")
       .select("id", { count: "exact", head: true })
       .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
@@ -256,7 +256,7 @@ export const getQuestionCount = async (_req: Request, res: Response) => {
 export const getQuestionStats = async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabaseServer
-      .from("questions")
+      .from("servable_questions")
       .select("section, difficulty")
       .in("item_type", [...ALLOWED_ITEM_TYPES]);
 
@@ -610,7 +610,7 @@ export const getQuestionsByTopic = async (req: Request, res: Response) => {
     );
 
     const { data, error } = await supabaseServer
-      .from("questions")
+      .from("servable_questions")
       .select(QUESTION_SAFE_SELECT)
       .in("item_type", [...ALLOWED_ITEM_TYPES])
       .contains("skill_codes", [unitTag])
@@ -663,7 +663,7 @@ export const getQuestionsByDifficulty = async (req: Request, res: Response) => {
     );
 
     const { data, error } = await supabaseServer
-      .from("questions")
+      .from("servable_questions")
       .select(QUESTION_SAFE_SELECT)
       .in("item_type", [...ALLOWED_ITEM_TYPES])
       .eq("difficulty", difficultyLevel)

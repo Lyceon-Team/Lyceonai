@@ -46,7 +46,10 @@ export interface CanonicalQuestionRowLike {
   tags?: unknown;
   answer_text?: string | null;
   diagram_present?: boolean | null;
+  passage?: string | null;
   option_metadata?: unknown;
+  assets?: unknown;
+  estimated_time_seconds?: number | null;
 }
 
 function normalizeText(value: unknown): string {
@@ -445,6 +448,7 @@ export interface StudentSafeQuestionProjection {
   item_type: CanonicalItemType;
   inputMode: "choice" | "numeric_entry";
   stem: string;
+  passage: string | null;
   options: CanonicalMcOption[];
   difficulty: string | number | null;
   domain: string | null;
@@ -498,8 +502,10 @@ export function projectStudentSafeQuestion(
     item_type: itemType,
     inputMode: isGridIn ? "numeric_entry" : "choice",
     stem: normalizeText(row.stem),
-    // Anti-leak + shape: grid-ins carry NO options (the answer is student-produced);
-    // MCQs carry the 4 A–D choices. correct_variants is never read here.
+    passage:
+      typeof row.passage === "string" && row.passage.trim().length > 0
+        ? row.passage
+        : null,
     options: isGridIn ? [] : parseCanonicalMcOptions(row.options ?? null),
     difficulty,
     domain: typeof row.domain === "string" ? row.domain : null,

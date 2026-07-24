@@ -50,6 +50,7 @@ import { DateTime } from "luxon";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { usePractice, type PracticeSessionFilters } from "@/hooks/usePractice";
+import { isMathSection, sectionDisplayLabel } from "@shared/section-display";
 
 interface QuestionStats {
   total: number;
@@ -134,6 +135,7 @@ function Practice() {
 
   const {
     sessions: activeSessions,
+    maxConcurrentSessions,
     terminateSession: terminateActiveSession,
     isTerminating,
   } = useActiveSessions();
@@ -343,7 +345,7 @@ function Practice() {
                     >
                       <div className="flex items-center gap-4">
                         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                          {s.section?.toLowerCase() === "math" ? (
+                          {isMathSection(s.section) ? (
                             <Calculator className="h-5 w-5" />
                           ) : (
                             <BookOpen className="h-5 w-5" />
@@ -351,10 +353,8 @@ function Practice() {
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold capitalize">
-                              {s.section?.toLowerCase() === "math"
-                                ? "Math"
-                                : "Reading & Writing"}
+                            <span className="font-semibold">
+                              {sectionDisplayLabel(s.section) ?? "Practice"}
                             </span>
                             <Badge
                               variant="secondary"
@@ -422,7 +422,7 @@ function Practice() {
 
             <PageCard
               title="Session Setup"
-              description="Configure your next focused run. You can have up to 3 active sessions at a time."
+              description={`Configure your next focused run. You can have up to ${maxConcurrentSessions ?? 5} active sessions at a time.`}
               className="bg-card/80 border-border/50"
             >
               <div className="space-y-6">
