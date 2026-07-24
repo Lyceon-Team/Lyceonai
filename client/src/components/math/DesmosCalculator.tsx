@@ -1,3 +1,8 @@
+/**
+ * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-24]
+ * Desmos calculator with graphing/scientific mode toggle and Bluebook-comparable sizing.
+ * State persistence is preserved across mode switches via initialState/onStateChange.
+ */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 declare global {
@@ -14,7 +19,11 @@ declare global {
     Desmos?: {
       GraphingCalculator: new (
         element: HTMLElement,
-        options?: Record<string, unknown>
+        options?: Record<string, unknown>,
+      ) => DesmosCalculatorInstance;
+      ScientificCalculator: new (
+        element: HTMLElement,
+        options?: Record<string, unknown>,
       ) => DesmosCalculatorInstance;
     };
   }
@@ -44,7 +53,9 @@ function loadDesmosScriptOnce(): Promise<void> {
   const rawApiKey = import.meta.env.VITE_DESMOS_API_KEY;
   const apiKey = typeof rawApiKey === "string" ? rawApiKey.trim() : "";
   if (!apiKey) {
-    return Promise.reject(new Error("Desmos calculator unavailable: missing VITE_DESMOS_API_KEY"));
+    return Promise.reject(
+      new Error("Desmos calculator unavailable: missing VITE_DESMOS_API_KEY"),
+    );
   }
 
   desmosScriptPromise = new Promise<void>((resolve, reject) => {
@@ -53,7 +64,9 @@ function loadDesmosScriptOnce(): Promise<void> {
       reject(new Error("Failed to load Desmos script"));
     };
 
-    const existing = document.querySelector<HTMLScriptElement>('script[data-desmos="graphing-calculator"]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-desmos="graphing-calculator"]',
+    );
     if (existing) {
       if (existing.dataset.loaded === "true") {
         desmosScriptLoaded = true;
@@ -82,6 +95,8 @@ function loadDesmosScriptOnce(): Promise<void> {
   return desmosScriptPromise;
 }
 
+type CalculatorMode = "graphing" | "scientific";
+
 type DesmosCalculatorProps = {
   className?: string;
   expanded: boolean;
@@ -90,20 +105,27 @@ type DesmosCalculatorProps = {
   debounceMs?: number;
 };
 
+const EXPANDED_HEIGHT_GRAPHING = 520;
+const EXPANDED_HEIGHT_SCIENTIFIC = 400;
+
 export default function DesmosCalculator({
   className,
   expanded,
   initialState = null,
   onStateChange,
   debounceMs = 600,
-}: DesmosCalculatorProps) {
+}: DesmosCalculatorProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const calcRef = useRef<DesmosCalculatorInstance | null>(null);
   const stateDebounceRef = useRef<number | null>(null);
   const onStateChangeRef = useRef(onStateChange);
   const initialStateRef = useRef<unknown | null>(initialState ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const initialStateKey = useMemo(() => JSON.stringify(initialState ?? null), [initialState]);
+  const [mode, setMode] = useState<CalculatorMode>("graphing");
+  const initialStateKey = useMemo(
+    () => JSON.stringify(initialState ?? null),
+    [initialState],
+  );
 
   useEffect(() => {
     onStateChangeRef.current = onStateChange;
@@ -119,10 +141,26 @@ export default function DesmosCalculator({
 
     void loadDesmosScriptOnce()
       .then(() => {
-        if (!mounted || !hostRef.current || !window.Desmos?.GraphingCalculator) return;
-        if (calcRef.current) return;
+        if (!mounted || !hostRef.current || !window.Desmos) return;
 
-        const calculator = new window.Desmos.GraphingCalculator(hostRef.current, {
+        if (calcRef.current) {
+          const prev = calcRef.current as Record<string, unknown>;
+          const handler = prev.__lyceonChangeHandler;
+          if (typeof handler === "function") {
+            calcRef.current.unobserveEvent("change", handler as () => void);
+          }
+          calcRef.current.destroy();
+          calcRef.current = null;
+        }
+
+        const Constructor =
+          mode === "scientific"
+            ? window.Desmos.ScientificCalculator
+            : window.Desmos.GraphingCalculator;
+
+        if (!Constructor) return;
+
+        const calculator = new Constructor(hostRef.current, {
           expressions: true,
           settingsMenu: true,
           zoomButtons: true,
@@ -131,7 +169,7 @@ export default function DesmosCalculator({
 
         calcRef.current = calculator;
 
-        if (initialStateRef.current) {
+        if (mode === "graphing" && initialStateRef.current) {
           calculator.setState(initialStateRef.current);
         }
 
@@ -148,15 +186,16 @@ export default function DesmosCalculator({
         };
 
         calculator.observeEvent("change", handleChange);
+        (calculator as Record<string, unknown>).__lyceonChangeHandler =
+          handleChange;
 
         window.setTimeout(() => calculator.resize(), 0);
-
-        (calculator as any).__lyceonChangeHandler = handleChange;
       })
       .catch(() => {
         if (!mounted) return;
-        // Fail closed but keep question UI stable if script or env wiring is unavailable.
-        setLoadError("Desmos calculator unavailable. Configure VITE_DESMOS_API_KEY.");
+        setLoadError(
+          "Desmos calculator unavailable. Configure VITE_DESMOS_API_KEY.",
+        );
       });
 
     return () => {
@@ -167,17 +206,20 @@ export default function DesmosCalculator({
         stateDebounceRef.current = null;
       }
 
-      const calculator = calcRef.current as any;
+      const calculator = calcRef.current as Record<string, unknown> | null;
       if (calculator) {
         const handler = calculator.__lyceonChangeHandler;
         if (typeof handler === "function") {
-          calculator.unobserveEvent("change", handler);
+          (calcRef.current as DesmosCalculatorInstance).unobserveEvent(
+            "change",
+            handler as () => void,
+          );
         }
-        calculator.destroy();
+        (calcRef.current as DesmosCalculatorInstance).destroy();
       }
       calcRef.current = null;
     };
-  }, [debounceMs]);
+  }, [debounceMs, mode]);
 
   useEffect(() => {
     const calculator = calcRef.current;
@@ -187,27 +229,76 @@ export default function DesmosCalculator({
 
   useEffect(() => {
     const calculator = calcRef.current;
-    if (!calculator || !initialState) return;
+    if (!calculator || !initialState || mode !== "graphing") return;
     calculator.setState(initialState);
-  }, [initialStateKey, initialState]);
+  }, [initialStateKey, initialState, mode]);
+
+  const expandedHeight =
+    mode === "scientific"
+      ? EXPANDED_HEIGHT_SCIENTIFIC
+      : EXPANDED_HEIGHT_GRAPHING;
 
   return (
-    <div
-      className={className}
-      style={{
-        height: expanded ? 360 : 0,
-        overflow: "hidden",
-        transition: "height 180ms ease",
-      }}
-      aria-hidden={!expanded}
-      data-testid="desmos-calculator-shell"
-    >
-      {loadError && (
-        <div className="mb-2 text-sm text-amber-700" data-testid="desmos-calculator-error">
-          {loadError}
+    <div className={className}>
+      {expanded && (
+        <div
+          className="mb-2 flex items-center gap-1 rounded-md bg-secondary/60 p-0.5"
+          role="radiogroup"
+          aria-label="Calculator mode"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === "graphing"}
+            onClick={() => setMode("graphing")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+              mode === "graphing"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="desmos-mode-graphing"
+          >
+            Graphing
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={mode === "scientific"}
+            onClick={() => setMode("scientific")}
+            className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+              mode === "scientific"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="desmos-mode-scientific"
+          >
+            Scientific
+          </button>
         </div>
       )}
-      <div ref={hostRef} className="h-full w-full rounded-md border border-slate-200" data-testid="desmos-calculator" />
+      <div
+        style={{
+          height: expanded ? expandedHeight : 0,
+          overflow: "hidden",
+          transition: "height 180ms ease",
+        }}
+        aria-hidden={!expanded}
+        data-testid="desmos-calculator-shell"
+      >
+        {loadError && (
+          <div
+            className="mb-2 text-sm text-amber-700"
+            data-testid="desmos-calculator-error"
+          >
+            {loadError}
+          </div>
+        )}
+        <div
+          ref={hostRef}
+          className="h-full w-full rounded-md border border-slate-200"
+          data-testid="desmos-calculator"
+        />
+      </div>
     </div>
   );
 }

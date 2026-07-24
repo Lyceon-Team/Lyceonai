@@ -14,17 +14,7 @@ import { AlertCircle, Calculator, Flag, Loader2 } from "lucide-react";
 import RuntimeContractDisabledCard from "@/components/RuntimeContractDisabledCard";
 import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
 import type { PracticeDifficulty } from "@/lib/practice-filters";
-
-function isMathSection(section: string | null | undefined): boolean {
-  if (!section) return false;
-  const normalized = section.trim().toLowerCase();
-  return (
-    normalized === "math" ||
-    normalized === "m" ||
-    normalized === "m1" ||
-    normalized === "m2"
-  );
-}
+import { isMathSection } from "@shared/section-display";
 
 const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   easy: "Easy",
