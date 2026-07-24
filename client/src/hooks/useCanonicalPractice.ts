@@ -16,6 +16,34 @@ export type PracticeOption = {
   text: string;
 };
 
+export type PracticeAssetSvg = {
+  id: string;
+  kind: "svg";
+  role: "stimulus" | "option" | "explanation";
+  alt: string;
+  option_key?: string | null;
+  svg: string;
+  caption?: string | null;
+};
+
+export type PracticeAssetTable = {
+  id: string;
+  kind: "table";
+  role: "stimulus" | "option" | "explanation";
+  alt: string;
+  option_key?: string | null;
+  caption?: string | null;
+  headers: string[];
+  rows: string[][];
+};
+
+export type PracticeAssetItem = PracticeAssetSvg | PracticeAssetTable;
+
+export type PracticeAssets = {
+  v: 1;
+  items: PracticeAssetItem[];
+};
+
 export type PracticeQuestion = {
   sessionItemId?: string;
   questionType?: "multiple_choice" | "grid_in" | null;
@@ -25,6 +53,7 @@ export type PracticeQuestion = {
   passage?: string | null;
   section?: string | null;
   options?: PracticeOption[] | null;
+  assets?: PracticeAssets | null;
 };
 
 export type PracticeNextResponse = {
@@ -157,7 +186,16 @@ function normalizeQuestion(
         : null,
     section,
     options: isGrid ? [] : options,
+    assets: normalizeAssets(raw.assets),
   };
+}
+
+function normalizeAssets(raw: unknown): PracticeAssets | null {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as Record<string, unknown>;
+  if (candidate.v !== 1 || !Array.isArray(candidate.items)) return null;
+  if (candidate.items.length === 0) return null;
+  return raw as PracticeAssets;
 }
 
 export function useCanonicalPractice(

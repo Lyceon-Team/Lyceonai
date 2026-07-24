@@ -188,14 +188,11 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       setSessionState(data);
 
       const moduleId = data.currentModule?.id;
-      const moduleSection = String(
-        data.currentModule?.section ?? "",
-      ).toLowerCase();
       const moduleCalculatorState = (data.currentModule as any)
         ?.calculator_state;
       if (
         moduleId &&
-        moduleSection === "math" &&
+        isMathSection(data.currentModule?.section) &&
         moduleCalculatorState !== undefined
       ) {
         setCalculatorStatesByModule((prev) => {
@@ -889,7 +886,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
 
         {/* Module end check */}
         {sessionState.currentModule?.status === "submitted" &&
-          sessionState.session.current_section === "math" &&
+          isMathSection(sessionState.session.current_section) &&
           sessionState.session.current_module === 2 && (
             <div className="mt-8 text-center">
               <Button onClick={completeExam} size="lg" disabled={submitting}>
