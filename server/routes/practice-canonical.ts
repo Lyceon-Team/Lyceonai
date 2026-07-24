@@ -71,7 +71,7 @@ type StudentSafeQuestionDTO = {
 // Server-side serving record. correct_answer / explanation / correct_variants live here for
 // grading ONLY and are never projected to the student DTO. For grid_in, options is [] and the
 // accepted-answer set rides in correct_variants; for mcq, correct_variants is null.
-type CanonicalQuestionForServing = {
+export type CanonicalQuestionForServing = {
   id: string;
   canonical_id: string;
   section_code: string;
@@ -679,7 +679,7 @@ function normalizeSafeDifficulty(value: unknown): string | number | null {
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
-function toStudentSafeQuestionDTO(args: {
+export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
   safeOptions: StudentSafeOption[];
@@ -717,6 +717,49 @@ function toStudentSafeQuestionDTO(args: {
     correct_answer: null,
     explanation: null,
   };
+}
+
+export type SessionItemInsertContext = {
+  sessionId: string;
+  userId: string;
+  actorId: string;
+  clientInstanceId: string;
+  now: string;
+};
+
+export function buildSessionItemInsertRows(
+  selected: CanonicalQuestionForServing[],
+  ctx: SessionItemInsertContext,
+): Record<string, unknown>[] {
+  return selected.map((question, index) => ({
+    session_id: ctx.sessionId,
+    user_id: ctx.userId,
+    actor_id: ctx.actorId,
+    question_id: question.id,
+    question_section: question.section_code,
+    question_stem: question.stem,
+    question_passage: question.passage ?? null,
+    question_options: question.options,
+    question_correct_answer: question.correct_answer ?? null,
+    question_explanation: question.explanation ?? null,
+    question_domain: question.domain ?? null,
+    question_skill: question.skill ?? null,
+    question_difficulty: question.difficulty ?? null,
+    question_item_type: question.item_type,
+    question_correct_variants: question.correct_variants ?? null,
+    ordinal: index + 1,
+    status: index === 0 ? "served" : "pending",
+    client_instance_id: index === 0 ? ctx.clientInstanceId : null,
+    served_at: index === 0 ? ctx.now : null,
+    selected_answer: null,
+    is_correct: null,
+    outcome: null,
+    time_spent_ms: null,
+    client_attempt_id: null,
+    answered_at: null,
+    option_order: null,
+    option_token_map: null,
+  }));
 }
 
 function simpleHash(input: string): number {
@@ -1494,39 +1537,13 @@ async function startOrReplaySession(args: {
   }
 
   const now = new Date().toISOString();
-  // @spec [Doc 02B §14 Session Items Prefill] | @implemented 2026-06-14
-  // Denormalized snapshot. correct_answer/explanation are persisted for
-  // SERVER-SIDE grading only and are never projected to the student (the serving path
-  // returns toStudentSafeQuestionDTO, which null-strips them).
-  const insertRows = selected.map((question, index) => ({
-    session_id: sessionId,
-    user_id: args.userId,
-    actor_id: args.actorId,
-    question_id: question.id,
-    question_section: question.section_code,
-    question_stem: question.stem,
-    question_passage: question.passage ?? null,
-    question_options: question.options,
-    question_correct_answer: question.correct_answer ?? null,
-    question_explanation: question.explanation ?? null,
-    question_domain: question.domain ?? null,
-    question_skill: question.skill ?? null,
-    question_difficulty: question.difficulty ?? null,
-    question_item_type: question.item_type,
-    question_correct_variants: question.correct_variants ?? null,
-    ordinal: index + 1,
-    status: index === 0 ? "served" : "pending",
-    client_instance_id: index === 0 ? args.clientInstanceId : null,
-    served_at: index === 0 ? now : null,
-    selected_answer: null,
-    is_correct: null,
-    outcome: null,
-    time_spent_ms: null,
-    client_attempt_id: null,
-    answered_at: null,
-    option_order: null,
-    option_token_map: null,
-  }));
+  const insertRows = buildSessionItemInsertRows(selected, {
+    sessionId,
+    userId: args.userId,
+    actorId: args.actorId,
+    clientInstanceId: args.clientInstanceId,
+    now,
+  });
 
   const { data: insertedItems, error: itemInsertError } = await supabaseServer
     .from("practice_session_items")
