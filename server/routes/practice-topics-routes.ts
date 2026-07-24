@@ -38,9 +38,8 @@ const SAT_TOPICS = {
 export async function getPracticeTopics(_req: Request, res: Response) {
   try {
     const { data: skillRows, error } = await supabaseServer
-      .from("questions")
-      .select("section, domain, skill_codes")
-      .eq("status", "published");
+      .from("servable_questions")
+      .select("section, domain, skill_codes");
 
     if (error) {
       return res.status(500).json({ error: "Failed to fetch topics" });
@@ -105,11 +104,10 @@ export async function getPracticeQuestions(req: Request, res: Response) {
     );
 
     let query = supabaseServer
-      .from("questions")
+      .from("servable_questions")
       .select(
         "id, stem, section, options, difficulty, domain, skill_codes, status",
       )
-      .eq("status", "published")
       .order("created_at", { ascending: false })
       .limit(limit);
 

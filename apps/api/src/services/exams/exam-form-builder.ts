@@ -234,7 +234,7 @@ export function buildGeneratedFullLengthFormFromPool(args: {
  */
 export async function fetchEligibleQuestionsForExam(supabaseServer: any): Promise<QuestionRow[]> {
   const { data, error } = await supabaseServer
-    .from('questions')
+    .from('servable_questions')
     .select(
       [
         'canonical_id',
@@ -248,7 +248,6 @@ export async function fetchEligibleQuestionsForExam(supabaseServer: any): Promis
       ].join(',')
     )
     .eq('question_type', 'multiple_choice')
-    .eq('status', 'published')
     .not('canonical_id', 'is', null);
 
   if (error) throw new Error(`fetchEligibleQuestionsForExam failed: ${error.message}`);
