@@ -48,6 +48,8 @@ export interface CanonicalQuestionRowLike {
   diagram_present?: boolean | null;
   passage?: string | null;
   option_metadata?: unknown;
+  assets?: unknown;
+  estimated_time_seconds?: number | null;
 }
 
 function normalizeText(value: unknown): string {
