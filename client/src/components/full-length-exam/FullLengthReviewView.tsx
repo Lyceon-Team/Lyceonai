@@ -13,6 +13,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { isMathSection } from "@shared/section-display";
 
 interface ReviewModule {
   id: string;
@@ -57,10 +58,7 @@ export interface FullLengthReviewData {
 }
 
 function sectionLabel(section: string): string {
-  const normalized = section.trim().toLowerCase();
-  if (normalized === "rw") return "Reading & Writing";
-  if (normalized === "math") return "Math";
-  return section;
+  return isMathSection(section) ? "Math" : "Reading & Writing";
 }
 
 export default function FullLengthReviewView({
