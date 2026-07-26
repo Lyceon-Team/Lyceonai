@@ -117,6 +117,55 @@ describe("CanonicalPracticePage calculator UX", () => {
 
     expect(screen.queryByTestId("practice-calculator-toggle")).toBeNull();
   });
+
+  it("uses resizable side panel on xl viewport when calculator is expanded", () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    const { container } = render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const panelGroup = container.querySelector("[data-panel-group-id]");
+    expect(panelGroup).not.toBeNull();
+    expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
+    expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
+  });
+
+  it("falls back to stacked layout on narrow viewport even when expanded", () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    const { container } = render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const panelGroup = container.querySelector("[data-panel-group-id]");
+    expect(panelGroup).toBeNull();
+    expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
+  });
 });
 
 describe("CanonicalPracticePage grid-in rendering", () => {
