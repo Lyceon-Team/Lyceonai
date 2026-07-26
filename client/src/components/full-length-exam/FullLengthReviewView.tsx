@@ -178,11 +178,23 @@ export default function FullLengthReviewView({
                             <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
                               <Badge variant="outline">
                                 Your answer:{" "}
-                                {response.selectedAnswer ?? "No response"}
+                                {response.selectedAnswer ? (
+                                  <MathRenderer
+                                    content={response.selectedAnswer}
+                                  />
+                                ) : (
+                                  "No response"
+                                )}
                               </Badge>
                               <Badge variant="outline">
                                 Correct:{" "}
-                                {question?.correct_answer ?? "Unavailable"}
+                                {question?.correct_answer ? (
+                                  <MathRenderer
+                                    content={question.correct_answer}
+                                  />
+                                ) : (
+                                  "Unavailable"
+                                )}
                               </Badge>
                               {response.isCorrect !== null && (
                                 <Badge
