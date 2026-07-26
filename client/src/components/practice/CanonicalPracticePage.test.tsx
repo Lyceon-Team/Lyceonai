@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeAll, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import CanonicalPracticePage from "./CanonicalPracticePage";
+
+class MockResizeObserver {
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
+}
+
+beforeAll(() => {
+  global.ResizeObserver =
+    MockResizeObserver as unknown as typeof ResizeObserver;
+});
 
 const hookMock = vi.hoisted(() => ({
   useCanonicalPractice: vi.fn(),
@@ -118,7 +129,7 @@ describe("CanonicalPracticePage calculator UX", () => {
     expect(screen.queryByTestId("practice-calculator-toggle")).toBeNull();
   });
 
-  it("uses resizable side panel on xl viewport when calculator is expanded", () => {
+  it("uses resizable side panel above split breakpoint when calculator is expanded", () => {
     window.matchMedia = vi.fn().mockReturnValue({
       matches: true,
       addEventListener: vi.fn(),
@@ -141,6 +152,31 @@ describe("CanonicalPracticePage calculator UX", () => {
     expect(panelGroup).not.toBeNull();
     expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
     expect(screen.getByText("What is 1 + 1?")).not.toBeNull();
+  });
+
+  it("resizable handle has accessible aria-label", () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    const { container } = render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = container.querySelector(
+      '[aria-label="Resize question and calculator panels"]',
+    );
+    expect(handle).not.toBeNull();
   });
 
   it("falls back to stacked layout on narrow viewport even when expanded", () => {
