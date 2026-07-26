@@ -1,3 +1,9 @@
+/**
+ * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-26]
+ * Canonical practice page with Bluebook-parity resizable calculator side-panel.
+ * Pixel-floor constraints guarantee the Desmos host ≥480px at every supported
+ * viewport; below the computed split breakpoint, falls back to stacked layout.
+ */
 import React from "react";
 import { PracticeShell } from "@/components/layout/PracticeShell";
 import QuestionRenderer from "@/components/question-renderer";
@@ -33,25 +39,54 @@ const DIFFICULTY_COLORS: Record<PracticeDifficulty, string> = {
   hard: "bg-red-50 text-red-700 border-red-200",
 };
 
-const XL_BREAKPOINT = 1280;
+const DESMOS_HOST_MIN_PX = 480;
+const CALC_PANEL_PAD_PX = 16;
+const CALC_MIN_PX = DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX;
+const QUESTION_MIN_PX = 500;
+const DIVIDER_PX = 14;
+const SPLIT_BREAKPOINT = CALC_MIN_PX + QUESTION_MIN_PX + DIVIDER_PX + 32 + 20;
 
-function useIsXl(): boolean {
-  const [isXl, setIsXl] = React.useState<boolean>(
+function useSplitEnabled(): boolean {
+  const [enabled, setEnabled] = React.useState<boolean>(
     typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia(`(min-width: ${XL_BREAKPOINT}px)`).matches
+      ? window.matchMedia(`(min-width: ${SPLIT_BREAKPOINT}px)`).matches
       : false,
   );
 
   React.useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
-    const mql = window.matchMedia(`(min-width: ${XL_BREAKPOINT}px)`);
-    const onChange = () => setIsXl(mql.matches);
+    const mql = window.matchMedia(`(min-width: ${SPLIT_BREAKPOINT}px)`);
+    const onChange = () => setEnabled(mql.matches);
     mql.addEventListener("change", onChange);
-    setIsXl(mql.matches);
+    setEnabled(mql.matches);
     return () => mql.removeEventListener("change", onChange);
   }, []);
 
-  return isXl;
+  return enabled;
+}
+
+function usePixelMinSize(
+  groupRef: React.RefObject<HTMLDivElement | null>,
+  pixelMin: number,
+): number {
+  const [minSize, setMinSize] = React.useState(39);
+
+  React.useEffect(() => {
+    const el = groupRef.current;
+    if (!el) return;
+    const compute = () => {
+      const width = el.getBoundingClientRect().width;
+      if (width > 0) {
+        setMinSize(Math.ceil((pixelMin / width) * 100));
+      }
+    };
+    compute();
+    const observer = new ResizeObserver(compute);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [groupRef, pixelMin]);
+
+  return minSize;
 }
 
 export default function CanonicalPracticePage(props: {
@@ -115,7 +150,10 @@ export default function CanonicalPracticePage(props: {
     unknown | null
   >(null);
 
-  const isXl = useIsXl();
+  const splitEnabled = useSplitEnabled();
+  const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
+  const calcMinSize = usePixelMinSize(panelGroupRef, CALC_MIN_PX);
+  const questionMinSize = usePixelMinSize(panelGroupRef, QUESTION_MIN_PX);
 
   React.useEffect(() => {
     setLocalCalculatorState(calculatorState ?? null);
@@ -158,7 +196,7 @@ export default function CanonicalPracticePage(props: {
   }, [fetchNextQuestion, setForceTakeover]);
 
   const showCalculator = isMathSection(question?.section);
-  const useSidePanel = showCalculator && isCalculatorExpanded && isXl;
+  const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
 
   const calculatorToggle = showCalculator ? (
     <div className="flex gap-2">
@@ -381,7 +419,7 @@ export default function CanonicalPracticePage(props: {
   );
 
   const sidePanelCalculator = (
-    <div className="flex flex-col h-full p-4">
+    <div className="flex flex-col h-full py-4 pr-4">
       <DesmosCalculator
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
@@ -423,26 +461,33 @@ export default function CanonicalPracticePage(props: {
       totalQuestions={totalQuestions}
     >
       {useSidePanel ? (
-        <ResizablePanelGroup
-          direction="horizontal"
-          autoSaveId="lyceon-practice-calc-panel"
-          className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
-        >
-          <ResizablePanel defaultSize={60} minSize={40}>
-            <div className="p-6 h-full overflow-y-auto">{questionContent}</div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={40} minSize={37} maxSize={55}>
-            {sidePanelCalculator}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        <div ref={panelGroupRef}>
+          <ResizablePanelGroup
+            direction="horizontal"
+            autoSaveId="lyceon-practice-calc-panel"
+            className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
+          >
+            <ResizablePanel defaultSize={58} minSize={questionMinSize}>
+              <div className="p-6 h-full overflow-y-auto">
+                {questionContent}
+              </div>
+            </ResizablePanel>
+            <ResizableHandle
+              withHandle
+              aria-label="Resize question and calculator panels"
+            />
+            <ResizablePanel defaultSize={42} minSize={calcMinSize} maxSize={55}>
+              {sidePanelCalculator}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-          <Card className="xl:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
             {questionContent}
           </Card>
 
-          <div className="xl:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4">
             <Card className="rounded-2xl border border-border/60 bg-card p-5">
               <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
                 Session Guidance
