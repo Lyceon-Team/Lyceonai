@@ -12,8 +12,12 @@ vi.mock("@/components/math/MathReferenceSheet", () => ({
 }));
 
 vi.mock("@/components/MathRenderer", () => ({
-  default: ({ content }: { content: string }) => <span>{content}</span>,
-  MathRenderer: ({ content }: { content: string }) => <span>{content}</span>,
+  default: ({ content }: { content: string }) => (
+    <span data-testid="math-rendered">{content}</span>
+  ),
+  MathRenderer: ({ content }: { content: string }) => (
+    <span data-testid="math-rendered">{content}</span>
+  ),
 }));
 
 import CanonicalPracticePage from "./CanonicalPracticePage";
@@ -361,7 +365,9 @@ describe("CanonicalPracticePage — explanation renders through MathRenderer", (
     });
 
     await waitFor(() => {
-      expect(screen.getByText(EXPLANATION_WITH_LATEX)).not.toBeNull();
+      const rendered = screen.getByText(EXPLANATION_WITH_LATEX);
+      expect(rendered).not.toBeNull();
+      expect(rendered.closest("[data-testid='math-rendered']")).not.toBeNull();
     });
   });
 });
