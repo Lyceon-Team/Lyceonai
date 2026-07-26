@@ -4,7 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, ArrowRight, CheckCircle, SkipForward, RefreshCw, AlertCircle, BookOpen, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle,
+  SkipForward,
+  RefreshCw,
+  AlertCircle,
+  BookOpen,
+  XCircle,
+} from "lucide-react";
 import { Link } from "wouter";
 import MathRenderer from "@/components/MathRenderer";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -57,7 +66,10 @@ interface ReviewErrorsResponse {
 }
 
 type ReviewFilter = "all" | "incorrect" | "skipped";
-type ReviewScope = "all_past_mistakes" | "by_practice_session" | "by_full_length_session";
+type ReviewScope =
+  | "all_past_mistakes"
+  | "by_practice_session"
+  | "by_full_length_session";
 type ReviewViewMode = "summary" | "sequential";
 
 interface ReviewSessionQuestion {
@@ -107,7 +119,10 @@ interface SubmitResult {
 }
 
 function buildClientInstanceId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return `review-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -117,7 +132,8 @@ function ReviewErrors() {
   const [mode, setMode] = useState<ReviewViewMode>("summary");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<ReviewFilter>("all");
-  const [reviewScope, setReviewScope] = useState<ReviewScope>("all_past_mistakes");
+  const [reviewScope, setReviewScope] =
+    useState<ReviewScope>("all_past_mistakes");
   const [practiceSessionId, setPracticeSessionId] = useState<string>("");
   const [fullLengthSessionId, setFullLengthSessionId] = useState<string>("");
   const [clientInstanceId] = useState<string>(() => buildClientInstanceId());
@@ -125,8 +141,14 @@ function ReviewErrors() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
-  const [runStats, setRunStats] = useState({ correct: 0, incorrect: 0, skipped: 0, total: 0 });
-  const [manualDisabledState, setManualDisabledState] = useState<RuntimeContractDisabledState | null>(null);
+  const [runStats, setRunStats] = useState({
+    correct: 0,
+    incorrect: 0,
+    skipped: 0,
+    total: 0,
+  });
+  const [manualDisabledState, setManualDisabledState] =
+    useState<RuntimeContractDisabledState | null>(null);
 
   const reviewScopeReady = useMemo(() => {
     if (reviewScope === "by_practice_session") {
@@ -144,7 +166,10 @@ function ReviewErrors() {
     if (reviewScope === "by_practice_session" && practiceSessionId.trim()) {
       params.set("practice_session_id", practiceSessionId.trim());
     }
-    if (reviewScope === "by_full_length_session" && fullLengthSessionId.trim()) {
+    if (
+      reviewScope === "by_full_length_session" &&
+      fullLengthSessionId.trim()
+    ) {
       params.set("full_length_session_id", fullLengthSessionId.trim());
     }
     const qs = params.toString();
@@ -165,7 +190,9 @@ function ReviewErrors() {
     refetchOnReconnect: false,
   });
 
-  const { data: recentSessionsData } = useQuery<{ sessions: Array<{id: string, type: string, label: string, date: string}> }>({
+  const { data: recentSessionsData } = useQuery<{
+    sessions: Array<{ id: string; type: string; label: string; date: string }>;
+  }>({
     queryKey: ["/api/review-errors/recent-sessions"],
     queryFn: async () => {
       const response = await apiRequest("/api/review-errors/recent-sessions");
@@ -173,29 +200,39 @@ function ReviewErrors() {
       return response.json();
     },
   });
-  
+
   const recentSessions = recentSessionsData?.sessions ?? [];
-  const practiceOptions = recentSessions.filter(s => s.type === "practice");
-  const fullLengthOptions = recentSessions.filter(s => s.type === "full_length");
+  const practiceOptions = recentSessions.filter((s) => s.type === "practice");
+  const fullLengthOptions = recentSessions.filter(
+    (s) => s.type === "full_length",
+  );
 
   const {
     data: sessionState,
     isLoading: stateLoading,
     refetch: refetchSessionState,
   } = useQuery<ReviewSessionState>({
-    queryKey: ["/api/review-errors/sessions", activeSessionId, clientInstanceId],
+    queryKey: [
+      "/api/review-errors/sessions",
+      activeSessionId,
+      clientInstanceId,
+    ],
     enabled: mode === "sequential" && !!activeSessionId,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     queryFn: async () => {
-      const response = await apiRequest(`/api/review-errors/sessions/${activeSessionId}/state?client_instance_id=${encodeURIComponent(clientInstanceId)}`);
+      const response = await apiRequest(
+        `/api/review-errors/sessions/${activeSessionId}/state?client_instance_id=${encodeURIComponent(clientInstanceId)}`,
+      );
       return response.json();
     },
   });
 
   const reviewDisabledState = useMemo(
-    () => manualDisabledState ?? parseRuntimeContractDisabledFromError("review", reviewError),
+    () =>
+      manualDisabledState ??
+      parseRuntimeContractDisabledFromError("review", reviewError),
     [manualDisabledState, reviewError],
   );
   const reviewUnavailable = !!reviewDisabledState;
@@ -219,76 +256,102 @@ function ReviewErrors() {
     resetPerItemState();
   }, [fullLengthSessionId, practiceSessionId, resetPerItemState, reviewScope]);
 
-  const startReview = useCallback(async (filter: ReviewFilter) => {
-    if (reviewUnavailable) {
-      setRecordError(reviewDisabledState?.message ?? "Review is temporarily unavailable.");
-      return;
-    }
-
-    if (reviewScope === "by_practice_session" && !practiceSessionId.trim()) {
-      setRecordError("Enter a practice session ID to start a session-scoped review.");
-      return;
-    }
-
-    if (reviewScope === "by_full_length_session" && !fullLengthSessionId.trim()) {
-      setRecordError("Enter a full-length session ID to start a session-scoped review.");
-      return;
-    }
-
-    setActiveFilter(filter);
-    setRecordError(null);
-
-    try {
-      const response = await apiRequest("/api/review-errors/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          filter,
-          mode: reviewScope,
-          practice_session_id: reviewScope === "by_practice_session" ? practiceSessionId.trim() : null,
-          full_length_session_id: reviewScope === "by_full_length_session" ? fullLengthSessionId.trim() : null,
-          client_instance_id: clientInstanceId,
-          idempotency_key: `review-session:${reviewScope}:${filter}:${clientInstanceId}`,
-          force_takeover: true,
-        }),
-      });
-      const payload = (await response.json()) as ReviewStartResponse;
-
-      if (!response.ok) {
-        setRecordError((payload as any)?.error || "Unable to start review session");
+  const startReview = useCallback(
+    async (filter: ReviewFilter) => {
+      if (reviewUnavailable) {
+        setRecordError(
+          reviewDisabledState?.message ?? "Review is temporarily unavailable.",
+        );
         return;
       }
 
-      if (!payload.session?.id || payload.empty) {
-        setRecordError(payload.message ?? "No unresolved review items right now.");
+      if (reviewScope === "by_practice_session" && !practiceSessionId.trim()) {
+        setRecordError(
+          "Enter a practice session ID to start a session-scoped review.",
+        );
         return;
       }
 
-      setActiveSessionId(payload.session.id);
-      setRunStats({ correct: 0, incorrect: 0, skipped: 0, total: 0 });
-      resetPerItemState();
-      setMode("sequential");
-    } catch (error) {
-      const disabled = parseRuntimeContractDisabledFromError("review", error);
-      if (disabled) {
-        setManualDisabledState(disabled);
-        setRecordError(disabled.message);
+      if (
+        reviewScope === "by_full_length_session" &&
+        !fullLengthSessionId.trim()
+      ) {
+        setRecordError(
+          "Enter a full-length session ID to start a session-scoped review.",
+        );
         return;
       }
-      const message = error instanceof Error ? error.message : "Unable to start review session";
-      setRecordError(message);
-    }
-  }, [
-    clientInstanceId,
-    fullLengthSessionId,
-    practiceSessionId,
-    resetPerItemState,
-    reviewDisabledState?.message,
-    reviewScope,
-    reviewUnavailable,
-  ]);
+
+      setActiveFilter(filter);
+      setRecordError(null);
+
+      try {
+        const response = await apiRequest("/api/review-errors/sessions", {
+          method: "POST",
+          body: JSON.stringify({
+            filter,
+            mode: reviewScope,
+            practice_session_id:
+              reviewScope === "by_practice_session"
+                ? practiceSessionId.trim()
+                : null,
+            full_length_session_id:
+              reviewScope === "by_full_length_session"
+                ? fullLengthSessionId.trim()
+                : null,
+            client_instance_id: clientInstanceId,
+            idempotency_key: `review-session:${reviewScope}:${filter}:${clientInstanceId}`,
+            force_takeover: true,
+          }),
+        });
+        const payload = (await response.json()) as ReviewStartResponse;
+
+        if (!response.ok) {
+          setRecordError(
+            (payload as any)?.error || "Unable to start review session",
+          );
+          return;
+        }
+
+        if (!payload.session?.id || payload.empty) {
+          setRecordError(
+            payload.message ?? "No unresolved review items right now.",
+          );
+          return;
+        }
+
+        setActiveSessionId(payload.session.id);
+        setRunStats({ correct: 0, incorrect: 0, skipped: 0, total: 0 });
+        resetPerItemState();
+        setMode("sequential");
+      } catch (error) {
+        const disabled = parseRuntimeContractDisabledFromError("review", error);
+        if (disabled) {
+          setManualDisabledState(disabled);
+          setRecordError(disabled.message);
+          return;
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to start review session";
+        setRecordError(message);
+      }
+    },
+    [
+      clientInstanceId,
+      fullLengthSessionId,
+      practiceSessionId,
+      resetPerItemState,
+      reviewDisabledState?.message,
+      reviewScope,
+      reviewUnavailable,
+    ],
+  );
 
   const submitAnswer = useCallback(async () => {
-    if (!activeSessionId || !currentItem || !selectedOptionId || isSubmitting) return;
+    if (!activeSessionId || !currentItem || !selectedOptionId || isSubmitting)
+      return;
     setIsSubmitting(true);
     setRecordError(null);
 
@@ -331,12 +394,19 @@ function ReviewErrors() {
         setRecordError(disabled.message);
         return;
       }
-      const message = error instanceof Error ? error.message : "Unable to submit answer";
+      const message =
+        error instanceof Error ? error.message : "Unable to submit answer";
       setRecordError(message);
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeSessionId, clientInstanceId, currentItem, isSubmitting, selectedOptionId]);
+  }, [
+    activeSessionId,
+    clientInstanceId,
+    currentItem,
+    isSubmitting,
+    selectedOptionId,
+  ]);
 
   const skipItem = useCallback(async () => {
     if (!activeSessionId || !currentItem || isSubmitting) return;
@@ -359,7 +429,11 @@ function ReviewErrors() {
         setRecordError(payload?.error || "Unable to skip review item");
         return;
       }
-      setRunStats((prev) => ({ ...prev, skipped: prev.skipped + 1, total: prev.total + 1 }));
+      setRunStats((prev) => ({
+        ...prev,
+        skipped: prev.skipped + 1,
+        total: prev.total + 1,
+      }));
       resetPerItemState();
       await refetchSessionState();
     } catch (error) {
@@ -369,12 +443,20 @@ function ReviewErrors() {
         setRecordError(disabled.message);
         return;
       }
-      const message = error instanceof Error ? error.message : "Unable to skip review item";
+      const message =
+        error instanceof Error ? error.message : "Unable to skip review item";
       setRecordError(message);
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeSessionId, clientInstanceId, currentItem, isSubmitting, refetchSessionState, resetPerItemState]);
+  }, [
+    activeSessionId,
+    clientInstanceId,
+    currentItem,
+    isSubmitting,
+    refetchSessionState,
+    resetPerItemState,
+  ]);
 
   const nextAfterResult = useCallback(async () => {
     resetPerItemState();
@@ -383,7 +465,10 @@ function ReviewErrors() {
 
   const isComplete = useMemo(() => {
     if (!sessionState) return false;
-    return sessionState.session.status === "completed" || (!sessionState.currentItem && sessionState.session.totalCount > 0);
+    return (
+      sessionState.session.status === "completed" ||
+      (!sessionState.currentItem && sessionState.session.totalCount > 0)
+    );
   }, [sessionState]);
 
   if (isLoading) {
@@ -401,7 +486,10 @@ function ReviewErrors() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="max-w-xl w-full space-y-4">
-          <RuntimeContractDisabledCard domain="review" code={reviewDisabledState?.code ?? null} />
+          <RuntimeContractDisabledCard
+            domain="review"
+            code={reviewDisabledState?.code ?? null}
+          />
           <div className="flex justify-center">
             <Button variant="outline" asChild>
               <Link href="/practice">Back to Practice</Link>
@@ -421,7 +509,9 @@ function ReviewErrors() {
             <CardTitle>Unable to load review data</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">{(reviewError as Error)?.message ?? "Please try again."}</p>
+            <p className="text-sm text-muted-foreground">
+              {(reviewError as Error)?.message ?? "Please try again."}
+            </p>
             <Button onClick={() => refetchSummary()}>Retry</Button>
             <Button variant="outline" asChild>
               <Link href="/practice">Back to Practice</Link>
@@ -445,15 +535,21 @@ function ReviewErrors() {
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div className="p-4 rounded-lg bg-green-50 dark:bg-green-900/20">
-                    <p className="text-2xl font-bold text-green-600">{runStats.correct}</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {runStats.correct}
+                    </p>
                     <p className="text-sm text-muted-foreground">Correct</p>
                   </div>
                   <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20">
-                    <p className="text-2xl font-bold text-amber-700">{runStats.incorrect}</p>
+                    <p className="text-2xl font-bold text-amber-700">
+                      {runStats.incorrect}
+                    </p>
                     <p className="text-sm text-muted-foreground">Incorrect</p>
                   </div>
                   <div className="p-4 rounded-lg bg-muted">
-                    <p className="text-2xl font-bold text-muted-foreground">{runStats.skipped}</p>
+                    <p className="text-2xl font-bold text-muted-foreground">
+                      {runStats.skipped}
+                    </p>
                     <p className="text-sm text-muted-foreground">Skipped</p>
                   </div>
                 </div>
@@ -481,21 +577,29 @@ function ReviewErrors() {
       );
     }
 
-    const progress = sessionState && sessionState.session.totalCount > 0
-      ? ((sessionState.session.resolvedCount + 1) / sessionState.session.totalCount) * 100
-      : 0;
+    const progress =
+      sessionState && sessionState.session.totalCount > 0
+        ? ((sessionState.session.resolvedCount + 1) /
+            sessionState.session.totalCount) *
+          100
+        : 0;
 
     return (
       <div className="min-h-screen bg-background">
         <div className="container mx-auto px-4 py-8 max-w-3xl">
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
-              <Button variant="ghost" size="sm" onClick={() => setMode("summary")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMode("summary")}
+              >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Exit Review
               </Button>
               <span className="text-sm text-muted-foreground">
-                {sessionState?.session.currentOrdinal ?? 0} of {sessionState?.session.totalCount ?? 0}
+                {sessionState?.session.currentOrdinal ?? 0} of{" "}
+                {sessionState?.session.totalCount ?? 0}
               </span>
             </div>
             <Progress value={progress} className="h-2" />
@@ -514,19 +618,29 @@ function ReviewErrors() {
                 <div className="flex items-center gap-2">
                   <XCircle className="h-5 w-5 text-amber-700" />
                   <Badge variant="secondary">{currentQuestion.section}</Badge>
-                  <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-800">Review</Badge>
+                  <Badge
+                    variant="outline"
+                    className="border-amber-300 bg-amber-100 text-amber-800"
+                  >
+                    Review
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="text-lg">
-                  <MathRenderer content={currentQuestion.stem} displayMode={false} />
+                  <MathRenderer
+                    content={currentQuestion.stem}
+                    displayMode={false}
+                  />
                 </div>
 
                 <div className="space-y-3">
                   {currentQuestion.options.map((option) => {
                     const isSelected = selectedOptionId === option.id;
-                    const isCorrect = submitResult?.correctOptionId === option.id;
-                    const isWrongSelection = Boolean(submitResult) && isSelected && !isCorrect;
+                    const isCorrect =
+                      submitResult?.correctOptionId === option.id;
+                    const isWrongSelection =
+                      Boolean(submitResult) && isSelected && !isCorrect;
                     return (
                       <div
                         key={option.id}
@@ -535,30 +649,52 @@ function ReviewErrors() {
                             ? isCorrect
                               ? "bg-green-50 dark:bg-green-900/20 border-green-500"
                               : isWrongSelection
-                              ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500"
-                              : "bg-muted/50"
+                                ? "bg-amber-50 dark:bg-amber-900/20 border-amber-500"
+                                : "bg-muted/50"
                             : isSelected
-                            ? "bg-primary/10 border-primary"
-                            : "bg-muted/50 hover:bg-muted cursor-pointer"
+                              ? "bg-primary/10 border-primary"
+                              : "bg-muted/50 hover:bg-muted cursor-pointer"
                         }`}
-                        onClick={() => !submitResult && setSelectedOptionId(option.id)}
+                        onClick={() =>
+                          !submitResult && setSelectedOptionId(option.id)
+                        }
                       >
-                        <MathRenderer content={option.text} displayMode={false} />
+                        <MathRenderer
+                          content={option.text}
+                          displayMode={false}
+                        />
                       </div>
                     );
                   })}
                 </div>
 
                 {submitResult && (
-                  <div className={`p-4 rounded-lg border ${submitResult.verified_is_correct ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"}`}>
-                    <p className="font-medium mb-2">{submitResult.verified_is_correct ? "Correct" : "Incorrect"}</p>
+                  <div
+                    className={`p-4 rounded-lg border ${submitResult.verified_is_correct ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"}`}
+                  >
+                    <p className="font-medium mb-2">
+                      {submitResult.verified_is_correct
+                        ? "Correct"
+                        : "Incorrect"}
+                    </p>
                     {submitResult.correctAnswerText && (
-                      <p className="text-sm text-muted-foreground"><strong>Correct answer:</strong> {submitResult.correctAnswerText}</p>
+                      <div className="text-sm text-muted-foreground">
+                        <strong>Correct answer:</strong>{" "}
+                        <MathRenderer
+                          content={submitResult.correctAnswerText}
+                          displayMode={false}
+                        />
+                      </div>
                     )}
                     {submitResult.explanation && (
                       <div className="text-sm text-muted-foreground mt-2">
                         <strong>Explanation:</strong>
-                        <div className="mt-1"><MathRenderer content={submitResult.explanation} displayMode={false} /></div>
+                        <div className="mt-1">
+                          <MathRenderer
+                            content={submitResult.explanation}
+                            displayMode={false}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -566,18 +702,27 @@ function ReviewErrors() {
 
                 {recordError && (
                   <div className="p-4 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
-                    <p className="text-sm text-orange-700 dark:text-orange-300">{recordError}</p>
+                    <p className="text-sm text-orange-700 dark:text-orange-300">
+                      {recordError}
+                    </p>
                   </div>
                 )}
 
                 <div className="flex items-center justify-end gap-3 pt-4 border-t">
                   {!submitResult ? (
                     <>
-                      <Button variant="outline" onClick={skipItem} disabled={isSubmitting}>
+                      <Button
+                        variant="outline"
+                        onClick={skipItem}
+                        disabled={isSubmitting}
+                      >
                         <SkipForward className="h-4 w-4 mr-2" />
                         Skip
                       </Button>
-                      <Button onClick={submitAnswer} disabled={!selectedOptionId || isSubmitting}>
+                      <Button
+                        onClick={submitAnswer}
+                        disabled={!selectedOptionId || isSubmitting}
+                      >
                         Submit
                       </Button>
                     </>
@@ -600,23 +745,30 @@ function ReviewErrors() {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center gap-4 mb-8">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => window.location.assign("/practice")}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Practice
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Review Errors</h1>
-            <p className="text-muted-foreground">Review previously missed questions with server-owned session state.</p>
+            <h1 className="text-3xl font-bold text-foreground">
+              Review Errors
+            </h1>
+            <p className="text-muted-foreground">
+              Review previously missed questions with server-owned session
+              state.
+            </p>
           </div>
         </div>
 
         {recordError && (
           <Card className="mb-6 border-orange-200">
-            <CardContent className="pt-6 text-sm text-orange-700">{recordError}</CardContent>
+            <CardContent className="pt-6 text-sm text-orange-700">
+              {recordError}
+            </CardContent>
           </Card>
         )}
 
@@ -627,19 +779,27 @@ function ReviewErrors() {
           <CardContent className="space-y-4">
             <div className="grid gap-2 sm:grid-cols-3">
               <Button
-                variant={reviewScope === "all_past_mistakes" ? "default" : "outline"}
+                variant={
+                  reviewScope === "all_past_mistakes" ? "default" : "outline"
+                }
                 onClick={() => setReviewScope("all_past_mistakes")}
               >
                 All Past Mistakes
               </Button>
               <Button
-                variant={reviewScope === "by_practice_session" ? "default" : "outline"}
+                variant={
+                  reviewScope === "by_practice_session" ? "default" : "outline"
+                }
                 onClick={() => setReviewScope("by_practice_session")}
               >
                 By Practice Session
               </Button>
               <Button
-                variant={reviewScope === "by_full_length_session" ? "default" : "outline"}
+                variant={
+                  reviewScope === "by_full_length_session"
+                    ? "default"
+                    : "outline"
+                }
                 onClick={() => setReviewScope("by_full_length_session")}
               >
                 By Full-Length Session
@@ -660,7 +820,9 @@ function ReviewErrors() {
 
             {reviewScope === "by_full_length_session" && (
               <div className="space-y-2 max-w-sm">
-                <label className="text-sm font-medium">Full-Length Session</label>
+                <label className="text-sm font-medium">
+                  Full-Length Session
+                </label>
                 <RecentSessionsCombobox
                   options={fullLengthOptions}
                   value={fullLengthSessionId}
@@ -682,10 +844,28 @@ function ReviewErrors() {
           <Card className="mb-6">
             <CardContent className="pt-6">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                <div className="text-center p-4 rounded-lg bg-muted/50"><p className="text-2xl font-bold">{summary.totalCount}</p><p className="text-sm text-muted-foreground">Total</p></div>
-                <div className="text-center p-4 rounded-lg bg-green-50 dark:bg-green-900/20"><p className="text-2xl font-bold text-green-600">{summary.correctCount}</p><p className="text-sm text-muted-foreground">Correct</p></div>
-                <div className="text-center p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20"><p className="text-2xl font-bold text-amber-700">{summary.incorrectCount}</p><p className="text-sm text-muted-foreground">Incorrect</p></div>
-                <div className="text-center p-4 rounded-lg bg-muted"><p className="text-2xl font-bold text-muted-foreground">{summary.skippedCount}</p><p className="text-sm text-muted-foreground">Skipped</p></div>
+                <div className="text-center p-4 rounded-lg bg-muted/50">
+                  <p className="text-2xl font-bold">{summary.totalCount}</p>
+                  <p className="text-sm text-muted-foreground">Total</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-green-50 dark:bg-green-900/20">
+                  <p className="text-2xl font-bold text-green-600">
+                    {summary.correctCount}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Correct</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                  <p className="text-2xl font-bold text-amber-700">
+                    {summary.incorrectCount}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Incorrect</p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-muted">
+                  <p className="text-2xl font-bold text-muted-foreground">
+                    {summary.skippedCount}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Skipped</p>
+                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -696,8 +876,17 @@ function ReviewErrors() {
                 >
                   Review Incorrect ({incorrectAttempts.length})
                 </Button>
-                <Button onClick={() => startReview("skipped")} variant="outline" className="flex-1">Review Skipped ({skippedAttempts.length})</Button>
-                <Button onClick={() => startReview("all")} className="flex-1">Review All ({incorrectAttempts.length + skippedAttempts.length})</Button>
+                <Button
+                  onClick={() => startReview("skipped")}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Review Skipped ({skippedAttempts.length})
+                </Button>
+                <Button onClick={() => startReview("all")} className="flex-1">
+                  Review All (
+                  {incorrectAttempts.length + skippedAttempts.length})
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -708,23 +897,41 @@ function ReviewErrors() {
             <Card className="text-center py-12">
               <CardContent>
                 <BookOpen className="h-16 w-16 mx-auto mb-4 text-green-600" />
-                <h3 className="text-xl font-semibold mb-2">No Questions to Review</h3>
-                <p className="text-muted-foreground mb-6">No review-eligible misses found yet. Keep practicing to build your recovery queue.</p>
-                <Button asChild><Link href="/practice">Start Practice</Link></Button>
+                <h3 className="text-xl font-semibold mb-2">
+                  No Questions to Review
+                </h3>
+                <p className="text-muted-foreground mb-6">
+                  No review-eligible misses found yet. Keep practicing to build
+                  your recovery queue.
+                </p>
+                <Button asChild>
+                  <Link href="/practice">Start Practice</Link>
+                </Button>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-6">
               <Card>
-                <CardHeader><CardTitle>Incorrect ({incorrectAttempts.length})</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle>Incorrect ({incorrectAttempts.length})</CardTitle>
+                </CardHeader>
                 <CardContent className="space-y-2">
                   {incorrectAttempts.slice(0, 10).map((attempt) => (
-                    <div key={attempt.id} className="p-3 rounded border bg-muted/30">
+                    <div
+                      key={attempt.id}
+                      className="p-3 rounded border bg-muted/30"
+                    >
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant="outline">{attempt.section}</Badge>
-                        {attempt.difficulty ? <Badge variant="secondary">{attempt.difficulty}</Badge> : null}
+                        {attempt.difficulty ? (
+                          <Badge variant="secondary">
+                            {attempt.difficulty}
+                          </Badge>
+                        ) : null}
                       </div>
-                      <p className="text-sm text-foreground truncate">{attempt.questionText}</p>
+                      <p className="text-sm text-foreground truncate">
+                        {attempt.questionText}
+                      </p>
                     </div>
                   ))}
                 </CardContent>

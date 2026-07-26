@@ -162,66 +162,6 @@
   }
 }
 
-/* FlowCards 3D Flip Animation */
-.perspective-1000 {
-  perspective: 1000px;
-}
-
-.preserve-3d {
-  transform-style: preserve-3d;
-}
-
-.backface-hidden {
-  backface-visibility: hidden;
-}
-
-.rotate-y-180 {
-  transform: rotateY(180deg);
-}
-
-/* TikTok-style Smooth Transitions */
-@keyframes slideUp {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-100%);
-  }
-}
-
-@keyframes slideDown {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(100%);
-  }
-}
-
-/* Answer option selection states */
-.answer-option {
-  transition: all 0.2s ease-in-out;
-}
-
-.answer-option:hover {
-  transform: translateY(-1px);
-}
-
-.answer-option.selected {
-  border-color: var(--primary);
-  background-color: rgba(15, 46, 72, 0.05);
-}
-
-.answer-option.correct {
-  border-color: var(--primary);
-  background-color: rgba(15, 46, 72, 0.08);
-}
-
-.answer-option.incorrect {
-  border-color: var(--destructive);
-  background-color: rgba(185, 28, 28, 0.08);
-}
-
 /* Markdown rendering in question stems */
 .question-stem {
   @apply prose prose-sm max-w-none;

@@ -273,6 +273,50 @@ applied + verified live 2026-06-25; 5b write-path stamping next).
 **Reason:** PR-2 build findings (deadlock analysis + GUC atomicity). Two CI guards hardened against comment-false-match by perturbation proof.
 **Artifact:** Migration 20260625000000, applied + verified live.
 
+### SCL-P-GRIDIN-01 — Grid-in serve+grade rides MCQ machinery [PROPOSED]
+Decision: Grid-in (numeric-entry) item type extends the existing MCQ practice pipeline — same serializer,
+  same practice_session_items table (+ question_item_type, question_correct_variants), same submit handler,
+  same select_practice_pool_random (widened to return item_type + correct_variants). Branches only at
+  type-specific points (grade equivalence, empty options, input mode). NO parallel grid-in path.
+Rationale: minimize deviation / no double surfaces. One pipeline, one branch point per item type.
+Effect: grid-in fully functional end-to-end (serve → typed entry → grade → feedback). Backend migration
+  applied [date], Codex-passed, verified live (RPC stays plain invoker).
+
+### SCL-P-GRIDIN-02 — Grid-in grades against correct_variants (snapshot, not lookup) [PROPOSED]
+Decision: Grid-in correctness matches submitted answer against the correct_variants accepted-forms ARRAY
+  snapshotted into practice_session_items at prepopulation — NOT against correct_answer alone, and NOT via
+  submit-time lookup back to questions. correct_answer = canonical display value; correct_variants = grading
+  set (deterministically derived from gridInAcceptedForms).
+Rationale: session-immutable grading, single answer-data path (parallel-paths-built-differently avoidance),
+  accepts equivalent forms (e.g. "1/5" for "0.2").
+Effect: grading is snapshot-based, immutable per session, correct across equivalent forms.
+
+### SCL-P-GRIDIN-03 — Malformed grid-in fails closed, no fallback grading [PROPOSED]
+Decision: If a grid-in canonical value won't parse / variants missing, the handler FAILS CLOSED (data-
+  integrity error), NOT a fallback grading path. One grading path only.
+Rationale: a malformed answer is a data defect to surface loudly, not grade around; a second grading path
+  is a double surface.
+Effect: bad grid-in data errors visibly rather than silently mis-grading.
+
+### SCL-P-SUBMIT-01 — Unified answer-submission dispatcher (action-boundary validation) [PROPOSED]
+Decision: Client answer-submission validates WELL-FORMEDNESS via ONE dispatcher, isSubmittableAnswer(
+  question, answer), called by BOTH the submit-button state (canSubmit) AND the submitAnswer action guard.
+  Enforced at the ACTION boundary before payload/fetch (the disabled button is UX-only and bypassable via
+  Enter-key). Per-type: MCQ = non-null option; grid-in = isValidGridInFormat; unknown = fail closed.
+  Server owns CORRECTNESS; client owns WELL-FORMEDNESS.
+Rationale: industry-standard (client form-check + server correctness; disabled button is bypassable so the
+  action must be the guard). Single dispatcher prevents button/action drift. Symmetric across item types,
+  extensible at one point.
+Effect: both item types validated at one bypass-proof point; MCQ gained action-boundary validation it
+  previously lacked. Future item types add one dispatcher case.
+Follow-on (logged, not built): button-enabled + inline-error a11y pattern for BOTH types (industry trend
+  away from disabled-button); apply to both to preserve symmetry when done.
+
+### SCL-P-GRIDIN-FOLLOWON — Review + full-length grid-in [PROPOSED]
+Note: grid-in serve+grade was built for PRACTICE only. Review and full-length session-item surfaces have
+  the SAME latent grid-in gap and need the same fix shape before they serve grid-in. Full-length also
+  blocked on 04B seam. Named follow-on, not yet built.
+
 ### SCL-P-TZRESET — quota_reset_timezone: UTC (Q13) → America/Chicago [PROPOSED]
 Context: Q13 locked UTC for quota daily-reset determinism. Live config landed as America/Chicago;
   Karl confirmed Central is the intended boundary.

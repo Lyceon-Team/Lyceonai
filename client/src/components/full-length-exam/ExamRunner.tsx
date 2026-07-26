@@ -38,6 +38,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { Link } from "wouter";
+import { isMathSection } from "@shared/section-display";
 
 // ============================================================================
 // TYPES
@@ -187,14 +188,11 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
       setSessionState(data);
 
       const moduleId = data.currentModule?.id;
-      const moduleSection = String(
-        data.currentModule?.section ?? "",
-      ).toLowerCase();
       const moduleCalculatorState = (data.currentModule as any)
         ?.calculator_state;
       if (
         moduleId &&
-        moduleSection === "math" &&
+        isMathSection(data.currentModule?.section) &&
         moduleCalculatorState !== undefined
       ) {
         setCalculatorStatesByModule((prev) => {
@@ -542,9 +540,8 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     moduleIndex: number | null,
   ): string => {
     if (!section || !moduleIndex) return "";
-    if (section === "rw") return `Reading & Writing Module ${moduleIndex}`;
-    if (section === "math") return `Math Module ${moduleIndex}`;
-    return "";
+    const label = isMathSection(section) ? "Math" : "Reading & Writing";
+    return `${label} Module ${moduleIndex}`;
   };
 
   // ============================================================================
@@ -701,10 +698,9 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
     currentQuestion.answeredCount >= currentQuestion.moduleQuestionCount;
   const progressPercent =
     (currentQuestion.answeredCount / currentQuestion.moduleQuestionCount) * 100;
-  const isMathModule =
-    String(
-      currentModule.section ?? sessionState.session.current_section ?? "",
-    ).toLowerCase() === "math";
+  const isMathModule = isMathSection(
+    currentModule.section ?? sessionState.session.current_section,
+  );
   const calculatorModuleKey =
     currentModule.id ||
     `${sessionState.session.current_section ?? "none"}:${sessionState.session.current_module ?? 0}`;
@@ -890,7 +886,7 @@ export default function ExamRunner({ sessionId, onExit }: ExamRunnerProps) {
 
         {/* Module end check */}
         {sessionState.currentModule?.status === "submitted" &&
-          sessionState.session.current_section === "math" &&
+          isMathSection(sessionState.session.current_section) &&
           sessionState.session.current_module === 2 && (
             <div className="mt-8 text-center">
               <Button onClick={completeExam} size="lg" disabled={submitting}>

@@ -11,11 +11,6 @@ export interface QuestionOption {
   text: string;
 }
 
-export interface Competency {
-  code: string;
-  raw?: string | null;
-}
-
 export interface StudentQuestion {
   id: string;
   canonical_id: string | null;
@@ -31,10 +26,6 @@ export interface StudentQuestion {
   skill_code?: string | null;
   difficulty?: number | null;
 }
-
-export type StudentMcQuestion = StudentQuestion & {
-  question_type: "multiple_choice";
-};
 
 export type NotificationType =
   | "system_update"

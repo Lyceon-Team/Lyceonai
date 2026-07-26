@@ -590,8 +590,9 @@ export class RagService {
   }
 
   /**
-   * Load a question by canonical ID from the database
-   * Uses Supabase HTTP client for reliability
+   * Load the student's current-session question by canonical ID.
+   * HISTORICAL: the question passed the servable gate at selection time;
+   * if flagged mid-session it must remain accessible for the active attempt.
    */
   async loadQuestionByCanonicalId(canonicalId: string): Promise<QuestionContext | null> {
     try {
@@ -893,19 +894,19 @@ export class RagService {
   }
 
   /**
-   * Load question by canonical ID only (fail-closed; no UUID fallback)
-   * Uses injected questionRepo if available, otherwise falls back to Supabase HTTP client
+   * Load a supporting/related question for RAG context by canonical ID.
+   * @spec [Doc-02A_V6 §16] | @implemented [2026-07-24]
+   * SELECTION: retrieval-pool questions must pass the servable gate —
+   * a flagged question must never be surfaced in a student conversation.
    */
   private async loadQuestionById(questionId: string): Promise<QuestionContext | null> {
-    // Use injected repository if available (for testing)
     if (this.questionRepo) {
       return this.questionRepo.loadByCanonicalId(questionId);
     }
 
     try {
-      // Try canonical ID first using Supabase HTTP client with maybeSingle()
       const canonicalQuery = await supabaseServer
-        .from('questions')
+        .from('servable_questions')
         .select('*')
         .eq('canonical_id', questionId)
         .limit(1)

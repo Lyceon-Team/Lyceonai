@@ -20,8 +20,6 @@ Disallow: /full-test
 Disallow: /practice
 Disallow: /mastery
 Disallow: /review-errors
-Disallow: /flow-cards
-Disallow: /structured-practice
 Disallow: /guardian
 Disallow: /profile
 Disallow: /login

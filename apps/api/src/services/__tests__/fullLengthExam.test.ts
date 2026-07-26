@@ -1498,7 +1498,7 @@ function buildPublishedFormFixture(formId: string) {
                 return { error: null };
               }),
             };
-          } else if (table === 'questions') {
+          } else if (table === 'questions' || table === 'servable_questions') {
             return {
               select: vi.fn(() => ({
                 eq: vi.fn(() => ({
