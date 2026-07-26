@@ -12,8 +12,12 @@ vi.mock("@/components/math/MathReferenceSheet", () => ({
 }));
 
 vi.mock("@/components/MathRenderer", () => ({
-  default: ({ content }: { content: string }) => <span>{content}</span>,
-  MathRenderer: ({ content }: { content: string }) => <span>{content}</span>,
+  default: ({ content }: { content: string }) => (
+    <span data-testid="math-rendered">{content}</span>
+  ),
+  MathRenderer: ({ content }: { content: string }) => (
+    <span data-testid="math-rendered">{content}</span>
+  ),
 }));
 
 import CanonicalPracticePage from "./CanonicalPracticePage";
@@ -312,5 +316,58 @@ describe("CanonicalPracticePage integrated MCQ round-trip", () => {
     expect(otherBtn).not.toBeNull();
     expect(otherBtn!.className).not.toContain("border-emerald-500");
     expect(otherBtn!.className).not.toContain("border-rose-500");
+  });
+});
+
+// @spec [CodingStandards_v1, §9] | @implemented [2026-07-24]
+// Explanation text with inline LaTeX is routed through MathRenderer (mocked as
+// passthrough <span>). Proves the content reaches the renderer, not raw text.
+describe("CanonicalPracticePage — explanation renders through MathRenderer", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("explanation with inline $...$ LaTeX is passed to MathRenderer", async () => {
+    const EXPLANATION_WITH_LATEX =
+      "The mean is $\\frac{127}{7} \\approx 18.14$, the $4$th value is $18$.";
+
+    buildFetchMock({
+      isCorrect: false,
+      correctOptionId: "A",
+      explanation: EXPLANATION_WITH_LATEX,
+    });
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("What is 1+1?")).not.toBeNull();
+    });
+
+    const optionB = findOptionButton("3");
+    expect(optionB).not.toBeNull();
+    await act(async () => {
+      optionB!.click();
+    });
+
+    const checkBtn = screen.getByText("Check Answer");
+    await act(async () => {
+      checkBtn.click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Incorrect")).not.toBeNull();
+    });
+
+    await waitFor(() => {
+      const rendered = screen.getByText(EXPLANATION_WITH_LATEX);
+      expect(rendered).not.toBeNull();
+      expect(rendered.closest("[data-testid='math-rendered']")).not.toBeNull();
+    });
   });
 });
