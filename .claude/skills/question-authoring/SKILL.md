@@ -58,6 +58,8 @@ This is sharpest for **Standard English Conventions / Boundaries**: only one cho
 
 **Words in Context / vocabulary items:** a distractor is only valid if it produces an incoherent or meaning-wrong sentence in context. A distractor that produces a coherent sentence but is "less precise" than the key is a defect — the item then has two defensible answers. Diagnostic tell: if the explanation defends the key as "more precise" or says a distractor "captures [a real reading] but…", the item is defective. Replace the distractor with one that fails on meaning, not merely on precision.
 
+**Near-synonym ban (WiC):** never use a dictionary synonym, near-synonym, or hypernym/hyponym of the key whose denotation overlaps with the passage's specific sense. Test each candidate distractor: look up its primary denotation; if that denotation fits the passage's use of the target word, the distractor is presumptively defensible — replace it with a word from the same semantic field whose denotation is wrong for the context.
+
 ## 6. Skill classification
 
 Assign the one skill whose definition best fits. When a question could fit two skills, apply the §A.4 convention (the boundary sets: Linear Equations in Two Variables ↔ Linear Functions; Nonlinear Equations ↔ Nonlinear Functions; Central Ideas and Details ↔ Command of Evidence ↔ Inferences; Boundaries ↔ Form, Structure, and Sense; Transitions ↔ Rhetorical Synthesis). Read §A.4 for the deterministic tests — do not guess the boundary.

@@ -53,9 +53,9 @@ A task is open until: build passes, tests pass, no invariant violated, result re
 - One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
 - Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
 
-## Branch targeting (PRs land on `cleanup`, never `main`)
+## Branch targeting (PRs land on `questions`, never `main`)
 
-All in-flight work merges into the `cleanup` integration branch — **never open a PR against `main`**. When opening a PR, set its base to `cleanup`. If a PR is already open for the working branch, push to that branch and let the existing PR pick up the commits rather than opening a second PR.
+All in-flight work merges into the `questions` integration branch — **never open a PR against `main`**. When opening a PR, set its base to `questions`. If a PR is already open for the working branch, push to that branch and let the existing PR pick up the commits rather than opening a second PR.
 
 ## Unified code across agents & sessions
 
