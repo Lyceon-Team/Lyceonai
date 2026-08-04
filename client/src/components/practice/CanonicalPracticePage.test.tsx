@@ -18,51 +18,11 @@ import CanonicalPracticePage, {
   SPLIT_BREAKPOINT,
 } from "./CanonicalPracticePage";
 
-/* ── Upgraded MockResizeObserver: tracks callbacks for external firing ── */
-type ROCallback = (entries: ResizeObserverEntry[]) => void;
-
-const roInstances: { cb: ROCallback; elements: Element[] }[] = [];
-
+/* ── MockResizeObserver: no-op stub (DesmosCalculator uses ResizeObserver) ── */
 class MockResizeObserver {
-  private cb: ROCallback;
-  private elements: Element[] = [];
-
-  constructor(cb: ROCallback) {
-    this.cb = cb;
-    roInstances.push({ cb: this.cb, elements: this.elements });
-  }
-
-  observe = vi.fn((el: Element) => {
-    this.elements.push(el);
-  });
-
-  disconnect = vi.fn(() => {
-    this.elements.length = 0;
-    const idx = roInstances.findIndex((i) => i.cb === this.cb);
-    if (idx >= 0) roInstances.splice(idx, 1);
-  });
-
-  unobserve = vi.fn((el: Element) => {
-    const idx = this.elements.indexOf(el);
-    if (idx >= 0) this.elements.splice(idx, 1);
-  });
-}
-
-/**
- * Fire all active ResizeObserver callbacks. Used to test useDynamicMinPct's
- * observer→recompute path after a BCR change.
- */
-function fireAllResizeObservers(): void {
-  for (const instance of roInstances) {
-    const entries = instance.elements.map((el) => ({
-      target: el,
-      contentRect: el.getBoundingClientRect(),
-      borderBoxSize: [],
-      contentBoxSize: [],
-      devicePixelContentBoxSize: [],
-    })) as unknown as ResizeObserverEntry[];
-    instance.cb(entries);
-  }
+  observe = vi.fn();
+  disconnect = vi.fn();
+  unobserve = vi.fn();
 }
 
 /* ── Stub getBoundingClientRect on all elements ── */
@@ -115,8 +75,6 @@ afterEach(() => {
   Element.prototype.getBoundingClientRect = originalBCR;
   // Clear localStorage (react-resizable-panels persists via autoSaveId)
   localStorage.clear();
-  // Clear tracked ResizeObserver instances
-  roInstances.length = 0;
 });
 
 /* ── Hook + module mocks ── */
@@ -720,12 +678,10 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
     const widerWidth = 1400;
     const restoreBCR2 = stubAllBCR(widerWidth);
 
-    // Fire our ResizeObserver (useDynamicMinPct) to recompute minPct
-    fireAllResizeObservers();
-
-    // Manually re-trigger onLayout at the new width — in a real browser the
-    // library would call onLayout when layout reflows. We call it directly
-    // because our mock doesn't respond to ResizeObserver.
+    // Re-trigger onLayout at the new width — in a real browser the library
+    // calls onLayout when layout reflows. We call it directly because our
+    // mock doesn't respond to container resize. handleGroupLayout reads
+    // the stubbed BCR and recomputes ARIA pixel values.
     expect(resizableMock.lastOnLayout).not.toBeNull();
     resizableMock.lastOnLayout!([51, 49]);
 
@@ -778,68 +734,25 @@ describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientR
   });
 });
 
-/* ── FIX 2: Resize wiring (OUR code, not the library's drag machinery) ──
+/* ── FIX 2: CSS min-width is the single source of truth for the pixel floor ──
  *
- * Divider drag events are processed by react-resizable-panels' internal
- * pointer state machine, which does not work in jsdom. The tests below
- * verify the code WE own:
- *   - useDynamicMinPct's ResizeObserver → recompute percentage constraint
- *   - handleCalcPanelResize → imperative resize snap-back
- * A real interaction test (e2e) is the correct tool for library drag
- * behavior — flagged as Playwright follow-up.
+ * The pixel floor is enforced by CSS `min-width` (browser-continuous). The
+ * library's `minSize` percentage (CALC_MIN_PCT / QUESTION_MIN_PCT) is a soft
+ * initial constraint that bounds the library's drag allocation at the smallest
+ * supported container width — it is NOT the enforcement mechanism.
+ *
+ * Divider drag and arrow-key resize are provided and bound by
+ * react-resizable-panels; the pixel MIN is enforced by our CSS min-width
+ * (browser-enforced). jsdom cannot exercise the library's pointer/keyboard
+ * state machine, so real interaction testing is a Playwright e2e follow-up.
  */
-describe("CanonicalPracticePage resize wiring", () => {
+describe("CanonicalPracticePage CSS pixel floor (single source of truth)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
   });
 
-  it("useDynamicMinPct sets initial minSize percentage based on CALC_MIN_PCT constant", () => {
-    /*
-     * useDynamicMinPct's ResizeObserver path is not exercisable in this test
-     * setup: the hook's useEffect runs on initial mount when panelGroupRef.current
-     * is still null (the panel group conditionally renders only after the
-     * calculator toggle click). The effect deps [groupRef, pixelMin] are both
-     * stable, so it never re-runs after the ref target mounts.
-     *
-     * This means data-min-size always reflects the static initial percentage
-     * (CALC_MIN_PCT = 49 for calc, QUESTION_MIN_PCT = 49 for question).
-     * The CSS min-width on each panel is the TRUE browser-enforced pixel floor.
-     *
-     * Dynamic recomputation (lowering minSize% at wider viewports for smoother
-     * UX) would require the hook to detect ref population — flagged as a
-     * potential improvement. The pixel floor is still enforced by CSS min-width.
-     */
-    mockMatchMedia(true);
-    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
-
-    const { container } = render(
-      <CanonicalPracticePage
-        title="Math Practice"
-        badgeLabel="Math"
-        section="math"
-      />,
-    );
-    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
-
-    // calc panel: initial minSize = CALC_MIN_PCT = 49
-    const calcPanel = screen.getByTestId("practice-calc-panel");
-    expect(calcPanel.getAttribute("data-min-size")).toBe("49");
-
-    // question panel: initial minSize = QUESTION_MIN_PCT = 49
-    const panelGroup = container.querySelector("[data-panel-group-id]");
-    const panels = panelGroup!.querySelectorAll("[data-panel-id]");
-    const questionPanel = panels[0] as HTMLElement;
-    expect(questionPanel.getAttribute("data-min-size")).toBe("49");
-
-    // At the breakpoint container (1030px), 49% = floor(0.49 * 1030) = 504px
-    // → both panels get ≥ 500px even under the conservative static percentage.
-    const pxAt49Pct = Math.floor((49 / 100) * TEST_CONTAINER_AT_BP);
-    expect(pxAt49Pct).toBeGreaterThanOrEqual(QUESTION_MIN_PX); // 504 ≥ 500
-    expect(pxAt49Pct).toBeGreaterThanOrEqual(CALC_MIN_PX); // 504 ≥ 496
-  });
-
-  it("CSS min-width on both panels provides browser-enforced pixel floor independent of library", () => {
+  it("both panels have CSS min-width set (browser-enforced, continuous pixel floor)", () => {
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
@@ -853,7 +766,7 @@ describe("CanonicalPracticePage resize wiring", () => {
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     // CSS min-width is the TRUE pixel floor — browser-enforced, cannot be
-    // violated by any amount of drag or keyboard resize.
+    // violated by any drag, keyboard resize, or window resize.
     const calcPanel = screen.getByTestId("practice-calc-panel");
     expect(calcPanel.style.minWidth).toBe(`${CALC_MIN_PX}px`);
 
@@ -862,10 +775,39 @@ describe("CanonicalPracticePage resize wiring", () => {
     const questionPanel = panels[0] as HTMLElement;
     expect(questionPanel.style.minWidth).toBe(`${QUESTION_MIN_PX}px`);
 
-    // The Desmos host pixel floor is provably derived:
+    // Desmos host pixel floor is provably derived from CSS min-width:
     // CSS min-width = CALC_MIN_PX = 496px
     // host = 496 − CALC_PANEL_PAD_PX = 480px ≥ 450 ✓
     expect(CALC_MIN_PX - CALC_PANEL_PAD_PX).toBeGreaterThanOrEqual(450);
+  });
+
+  it("static minSize percentage at breakpoint container bounds both panels above pixel floor", () => {
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    const { container } = render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    // Static minSize% = CALC_MIN_PCT = QUESTION_MIN_PCT = 49
+    const calcPanel = screen.getByTestId("practice-calc-panel");
+    expect(calcPanel.getAttribute("data-min-size")).toBe("49");
+
+    const panelGroup = container.querySelector("[data-panel-group-id]");
+    const panels = panelGroup!.querySelectorAll("[data-panel-id]");
+    const questionPanel = panels[0] as HTMLElement;
+    expect(questionPanel.getAttribute("data-min-size")).toBe("49");
+
+    // At the breakpoint container (1030px), 49% = floor(0.49 * 1030) = 504px
+    // → both panels get ≥ their pixel minimums under the static percentage.
+    const pxAt49Pct = Math.floor((49 / 100) * TEST_CONTAINER_AT_BP);
+    expect(pxAt49Pct).toBeGreaterThanOrEqual(QUESTION_MIN_PX); // 504 ≥ 500
+    expect(pxAt49Pct).toBeGreaterThanOrEqual(CALC_MIN_PX); // 504 ≥ 496
   });
 });
 
