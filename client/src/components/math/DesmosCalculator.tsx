@@ -238,6 +238,7 @@ export default function DesmosCalculator({
         if (!Constructor) return;
 
         const calculator = new Constructor(hostRef.current, {
+          autosize: true,
           expressions: true,
           settingsMenu: true,
           zoomButtons: true,

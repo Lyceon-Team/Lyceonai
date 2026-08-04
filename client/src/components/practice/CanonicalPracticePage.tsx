@@ -1,8 +1,18 @@
 /**
  * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-26]
  * Canonical practice page with Bluebook-parity resizable calculator side-panel.
- * Pixel-floor constraints guarantee the Desmos host ≥480px at every supported
- * viewport; below the computed split breakpoint, falls back to stacked layout.
+ *
+ * Pixel-floor guarantee: the Desmos host is ≥DESMOS_HOST_MIN_PX at every
+ * supported viewport, on first render, after resize, and in every fallback.
+ *
+ * The pixel floor is enforced by THREE cooperating mechanisms:
+ *  1. CSS `min-width` on the calculator panel — browser-enforced, immediate.
+ *  2. `onResize` callback + imperative Panel API — runtime clamp during drag.
+ *  3. Conservative initial `minSize` percentage computed from SPLIT_BREAKPOINT —
+ *     guarantees the correct size even before measurement.
+ *
+ * Below the SPLIT_BREAKPOINT the calculator renders full-width (stacked layout)
+ * instead of in a narrow sidebar column, avoiding any sub-minimum host width.
  */
 import React from "react";
 import { PracticeShell } from "@/components/layout/PracticeShell";
@@ -26,6 +36,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 
 const DIFFICULTY_LABELS: Record<PracticeDifficulty, string> = {
   easy: "Easy",
@@ -39,12 +50,35 @@ const DIFFICULTY_COLORS: Record<PracticeDifficulty, string> = {
   hard: "bg-red-50 text-red-700 border-red-200",
 };
 
-const DESMOS_HOST_MIN_PX = 480;
-const CALC_PANEL_PAD_PX = 16;
-const CALC_MIN_PX = DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX;
-const QUESTION_MIN_PX = 500;
-const DIVIDER_PX = 14;
-const SPLIT_BREAKPOINT = CALC_MIN_PX + QUESTION_MIN_PX + DIVIDER_PX + 32 + 20;
+/* ── Layout pixel constraints (exported for test assertions) ── */
+export const DESMOS_HOST_MIN_PX = 480;
+export const CALC_PANEL_PAD_PX = 16;
+export const CALC_MIN_PX = DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX; // 496
+export const QUESTION_MIN_PX = 500;
+const DIVIDER_PX = 14; // conservative; actual CSS is w-px, but grip + hit area widen
+const APP_HORIZONTAL_PADDING = 32;
+const BREAKPOINT_EXTRA = 20;
+export const SPLIT_BREAKPOINT =
+  CALC_MIN_PX +
+  QUESTION_MIN_PX +
+  DIVIDER_PX +
+  APP_HORIZONTAL_PADDING +
+  BREAKPOINT_EXTRA; // 1062
+
+/**
+ * Conservative percentages computed once at the known-minimum container width
+ * (SPLIT_BREAKPOINT − APP_HORIZONTAL_PADDING). These guarantee the pixel floor
+ * even on the very first render, before any container measurement occurs.
+ * The CSS `min-width` on each panel is the TRUE pixel floor; these percentages
+ * are a secondary constraint for smooth library-level drag bounding.
+ */
+const CONTAINER_AT_BREAKPOINT = SPLIT_BREAKPOINT - APP_HORIZONTAL_PADDING; // 1030
+const CALC_MIN_PCT = Math.ceil((CALC_MIN_PX / CONTAINER_AT_BREAKPOINT) * 100); // 49
+const QUESTION_MIN_PCT = Math.ceil(
+  (QUESTION_MIN_PX / CONTAINER_AT_BREAKPOINT) * 100,
+); // 49
+const CALC_DEFAULT_PCT = CALC_MIN_PCT; // 49
+const QUESTION_DEFAULT_PCT = 100 - CALC_DEFAULT_PCT; // 51
 
 function useSplitEnabled(): boolean {
   const [enabled, setEnabled] = React.useState<boolean>(
@@ -56,7 +90,7 @@ function useSplitEnabled(): boolean {
   React.useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
     const mql = window.matchMedia(`(min-width: ${SPLIT_BREAKPOINT}px)`);
-    const onChange = () => setEnabled(mql.matches);
+    const onChange = (): void => setEnabled(mql.matches);
     mql.addEventListener("change", onChange);
     setEnabled(mql.matches);
     return () => mql.removeEventListener("change", onChange);
@@ -65,19 +99,28 @@ function useSplitEnabled(): boolean {
   return enabled;
 }
 
-function usePixelMinSize(
+/**
+ * Dynamically recompute percentage-based minSize from a measured container.
+ * This is a SECONDARY constraint — the CSS `min-width` on the panel is the
+ * primary pixel floor. The dynamic percentage prevents the library from even
+ * attempting to allocate less than the pixel minimum during drag, giving a
+ * smoother UX at wider viewports where the conservative CALC_MIN_PCT would
+ * be unnecessarily restrictive.
+ */
+function useDynamicMinPct(
   groupRef: React.RefObject<HTMLDivElement | null>,
   pixelMin: number,
+  initialPct: number,
 ): number {
-  const [minSize, setMinSize] = React.useState(39);
+  const [minPct, setMinPct] = React.useState(initialPct);
 
   React.useEffect(() => {
     const el = groupRef.current;
     if (!el) return;
-    const compute = () => {
+    const compute = (): void => {
       const width = el.getBoundingClientRect().width;
       if (width > 0) {
-        setMinSize(Math.ceil((pixelMin / width) * 100));
+        setMinPct(Math.ceil((pixelMin / width) * 100));
       }
     };
     compute();
@@ -86,7 +129,7 @@ function usePixelMinSize(
     return () => observer.disconnect();
   }, [groupRef, pixelMin]);
 
-  return minSize;
+  return minPct;
 }
 
 export default function CanonicalPracticePage(props: {
@@ -152,8 +195,58 @@ export default function CanonicalPracticePage(props: {
 
   const splitEnabled = useSplitEnabled();
   const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
-  const calcMinSize = usePixelMinSize(panelGroupRef, CALC_MIN_PX);
-  const questionMinSize = usePixelMinSize(panelGroupRef, QUESTION_MIN_PX);
+  const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
+
+  // Dynamic percentage constraints — secondary to CSS min-width pixel floor
+  const calcMinPct = useDynamicMinPct(panelGroupRef, CALC_MIN_PX, CALC_MIN_PCT);
+  const questionMinPct = useDynamicMinPct(
+    panelGroupRef,
+    QUESTION_MIN_PX,
+    QUESTION_MIN_PCT,
+  );
+
+  /**
+   * Runtime pixel-floor enforcement via imperative API.
+   * If the library allocates fewer pixels than CALC_MIN_PX (should not happen
+   * with CSS min-width + correct minSize, but defence-in-depth), snap back.
+   */
+  const handleCalcPanelResize = React.useCallback((size: number): void => {
+    const groupEl = panelGroupRef.current;
+    if (!groupEl) return;
+    const groupWidth = groupEl.getBoundingClientRect().width;
+    if (groupWidth <= 0) return;
+    const panelPx = (size / 100) * groupWidth;
+    if (panelPx < CALC_MIN_PX && calcPanelRef.current) {
+      const targetPct = Math.ceil((CALC_MIN_PX / groupWidth) * 100);
+      calcPanelRef.current.resize(targetPct);
+    }
+  }, []);
+
+  /**
+   * Override the library's percentage-based ARIA values with real pixel values.
+   * The library sets aria-value* in its layout effect; setTimeout(0) ensures
+   * our pixel override runs after the library's DOM mutations complete.
+   */
+  const handleGroupLayout = React.useCallback((sizes: number[]): void => {
+    const groupEl = panelGroupRef.current;
+    if (!groupEl || sizes.length < 2) return;
+    const groupWidth = groupEl.getBoundingClientRect().width;
+    if (groupWidth <= 0) return;
+
+    const questionPx = Math.round(((sizes[0] ?? 0) / 100) * groupWidth);
+    window.setTimeout(() => {
+      const handleEl = groupEl.querySelector(
+        '[data-testid="practice-resize-handle"]',
+      );
+      if (!handleEl) return;
+      handleEl.setAttribute("aria-valuenow", String(questionPx));
+      handleEl.setAttribute("aria-valuemin", String(QUESTION_MIN_PX));
+      handleEl.setAttribute(
+        "aria-valuemax",
+        String(Math.round(groupWidth - CALC_MIN_PX)),
+      );
+    }, 0);
+  }, []);
 
   React.useEffect(() => {
     setLocalCalculatorState(calculatorState ?? null);
@@ -461,13 +554,18 @@ export default function CanonicalPracticePage(props: {
       totalQuestions={totalQuestions}
     >
       {useSidePanel ? (
-        <div ref={panelGroupRef}>
+        <div ref={panelGroupRef} data-testid="practice-panel-group-container">
           <ResizablePanelGroup
             direction="horizontal"
-            autoSaveId="lyceon-practice-calc-panel"
+            autoSaveId="lyceon-practice-calc-panel-px"
+            onLayout={handleGroupLayout}
             className="min-h-[600px] rounded-2xl border border-border/60 bg-card"
           >
-            <ResizablePanel defaultSize={58} minSize={questionMinSize}>
+            <ResizablePanel
+              defaultSize={QUESTION_DEFAULT_PCT}
+              minSize={questionMinPct}
+              style={{ minWidth: QUESTION_MIN_PX }}
+            >
               <div className="p-6 h-full overflow-y-auto">
                 {questionContent}
               </div>
@@ -475,33 +573,51 @@ export default function CanonicalPracticePage(props: {
             <ResizableHandle
               withHandle
               aria-label="Resize question and calculator panels"
+              aria-orientation="horizontal"
+              data-testid="practice-resize-handle"
             />
-            <ResizablePanel defaultSize={42} minSize={calcMinSize} maxSize={55}>
+            <ResizablePanel
+              ref={calcPanelRef}
+              defaultSize={CALC_DEFAULT_PCT}
+              minSize={calcMinPct}
+              style={{ minWidth: CALC_MIN_PX }}
+              onResize={handleCalcPanelResize}
+              data-testid="practice-calc-panel"
+            >
               {sidePanelCalculator}
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
-            {questionContent}
-          </Card>
-
-          <div className="lg:col-span-4 space-y-4">
-            <Card className="rounded-2xl border border-border/60 bg-card p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
-                Session Guidance
-              </p>
-              <p className="text-sm text-foreground/90 leading-relaxed">
-                Responses submit directly to canonical practice endpoints. If
-                you leave and return, Lyceon restores your unresolved state from
-                runtime session truth.
-              </p>
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <Card className="lg:col-span-8 rounded-2xl border border-border/60 bg-card p-6">
+              {questionContent}
             </Card>
 
-            {showCalculator && !useSidePanel && stackedCalculator}
+            <div className="lg:col-span-4 space-y-4">
+              <Card className="rounded-2xl border border-border/60 bg-card p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                  Session Guidance
+                </p>
+                <p className="text-sm text-foreground/90 leading-relaxed">
+                  Responses submit directly to canonical practice endpoints. If
+                  you leave and return, Lyceon restores your unresolved state
+                  from runtime session truth.
+                </p>
+              </Card>
+            </div>
           </div>
-        </div>
+
+          {/* Below-breakpoint calculator: render full-width to guarantee
+              Desmos host ≥ DESMOS_HOST_MIN_PX. Never in the narrow col-span-4
+              sidebar — that yields ~330px at 1024px viewport. */}
+          {showCalculator && !useSidePanel && (
+            <div className="mt-6" data-testid="stacked-calculator-container">
+              {stackedCalculator}
+            </div>
+          )}
+        </>
       )}
       <MathReferenceSheet
         open={isReferenceOpen}

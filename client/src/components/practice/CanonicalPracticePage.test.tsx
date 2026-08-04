@@ -2,8 +2,14 @@
 import React from "react";
 import { beforeAll, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import CanonicalPracticePage from "./CanonicalPracticePage";
+import CanonicalPracticePage, {
+  CALC_MIN_PX,
+  DESMOS_HOST_MIN_PX,
+  QUESTION_MIN_PX,
+  SPLIT_BREAKPOINT,
+} from "./CanonicalPracticePage";
 
+/* ── Mock ResizeObserver ── */
 class MockResizeObserver {
   observe = vi.fn();
   disconnect = vi.fn();
@@ -88,6 +94,15 @@ function buildGridInHookState() {
   });
 }
 
+/** Helper: set up matchMedia to simulate above/below breakpoint. */
+function mockMatchMedia(matches: boolean): void {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+}
+
 describe("CanonicalPracticePage calculator UX", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -130,12 +145,7 @@ describe("CanonicalPracticePage calculator UX", () => {
   });
 
   it("uses resizable side panel above split breakpoint when calculator is expanded", () => {
-    window.matchMedia = vi.fn().mockReturnValue({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
-
+    mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
     const { container } = render(
@@ -155,12 +165,7 @@ describe("CanonicalPracticePage calculator UX", () => {
   });
 
   it("resizable handle has accessible aria-label", () => {
-    window.matchMedia = vi.fn().mockReturnValue({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
-
+    mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
     const { container } = render(
@@ -180,12 +185,7 @@ describe("CanonicalPracticePage calculator UX", () => {
   });
 
   it("falls back to stacked layout on narrow viewport even when expanded", () => {
-    window.matchMedia = vi.fn().mockReturnValue({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    });
-
+    mockMatchMedia(false);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
     const { container } = render(
@@ -201,6 +201,121 @@ describe("CanonicalPracticePage calculator UX", () => {
     const panelGroup = container.querySelector("[data-panel-group-id]");
     expect(panelGroup).toBeNull();
     expect(screen.getByTestId("desmos-mock").textContent).toContain("expanded");
+  });
+});
+
+/* ── FIX 3: Divider accessibility ── */
+describe("CanonicalPracticePage divider accessibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("handle has role=separator, aria-orientation=horizontal, and is focusable", () => {
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+    expect(handle).not.toBeNull();
+    // role="separator" set by react-resizable-panels library
+    expect(handle.getAttribute("role")).toBe("separator");
+    // aria-orientation="horizontal" set by our prop
+    expect(handle.getAttribute("aria-orientation")).toBe("horizontal");
+    // focusable (library sets tabIndex=0)
+    expect(handle.tabIndex).toBe(0);
+  });
+});
+
+/* ── FIX 1 & 4: Pixel constraints and below-breakpoint fallback ── */
+describe("CanonicalPracticePage pixel-floor constraints", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calculator panel has CSS min-width set to CALC_MIN_PX (true pixel floor)", () => {
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    // The calculator panel should have CSS min-width enforcing the pixel floor
+    const calcPanel = screen.getByTestId("practice-calc-panel");
+    expect(calcPanel).not.toBeNull();
+    expect(calcPanel.style.minWidth).toBe(`${CALC_MIN_PX}px`);
+  });
+
+  it("question panel has CSS min-width set to QUESTION_MIN_PX", () => {
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    const { container } = render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    // The question panel is the first panel (no data-testid, but has the
+    // question content). Find via the panel group's first panel child.
+    const panelGroup = container.querySelector("[data-panel-group-id]");
+    expect(panelGroup).not.toBeNull();
+    // All panels inside the group have data-panel-id attribute
+    const panels = panelGroup!.querySelectorAll("[data-panel-id]");
+    expect(panels.length).toBeGreaterThanOrEqual(2);
+    // First panel is the question panel
+    const questionPanel = panels[0] as HTMLElement;
+    expect(questionPanel.style.minWidth).toBe(`${QUESTION_MIN_PX}px`);
+  });
+
+  it("below-breakpoint fallback renders calculator full-width, not in narrow sidebar", () => {
+    mockMatchMedia(false);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    // Calculator should be in the full-width stacked container, NOT in
+    // the lg:col-span-4 sidebar
+    const stackedContainer = screen.getByTestId("stacked-calculator-container");
+    expect(stackedContainer).not.toBeNull();
+    // The stacked container should NOT be inside any col-span-4 element
+    expect(stackedContainer.closest(".lg\\:col-span-4")).toBeNull();
+  });
+
+  it("SPLIT_BREAKPOINT is ≥ CALC_MIN_PX + QUESTION_MIN_PX + padding (arithmetic guard)", () => {
+    // The breakpoint must ensure both panels can fit at the minimum viewport
+    expect(SPLIT_BREAKPOINT).toBeGreaterThanOrEqual(
+      CALC_MIN_PX + QUESTION_MIN_PX + 32, // 32 = APP_HORIZONTAL_PADDING
+    );
+  });
+
+  it("DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX = CALC_MIN_PX (arithmetic guard)", () => {
+    expect(CALC_MIN_PX).toBe(DESMOS_HOST_MIN_PX + 16);
+    expect(DESMOS_HOST_MIN_PX).toBe(480);
+    expect(CALC_MIN_PX).toBe(496);
   });
 });
 
