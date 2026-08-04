@@ -226,6 +226,16 @@ export default function CanonicalPracticePage(props: {
    * Override the library's percentage-based ARIA values with real pixel values.
    * The library sets aria-value* in its layout effect; setTimeout(0) ensures
    * our pixel override runs after the library's DOM mutations complete.
+   *
+   * ARIA controlled value = question panel width (separator position from left).
+   * This is the standard model for a left-to-right separator:
+   *   aria-valuenow  = current question panel width in px
+   *   aria-valuemin  = QUESTION_MIN_PX (smallest the question panel can be)
+   *   aria-valuemax  = groupWidth − CALC_MIN_PX (largest the question panel can
+   *                    be before the calculator violates its pixel floor)
+   * The calculator pixel floor is provably enforced: when aria-valuenow equals
+   * aria-valuemax, calculator width = groupWidth − (groupWidth − CALC_MIN_PX)
+   * = CALC_MIN_PX = 496px → host = 480px ≥ 450px.
    */
   const handleGroupLayout = React.useCallback((sizes: number[]): void => {
     const groupEl = panelGroupRef.current;

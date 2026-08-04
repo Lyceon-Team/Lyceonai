@@ -1,26 +1,108 @@
 // @vitest-environment jsdom
 import React from "react";
-import { beforeAll, describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CanonicalPracticePage, {
   CALC_MIN_PX,
+  CALC_PANEL_PAD_PX,
   DESMOS_HOST_MIN_PX,
   QUESTION_MIN_PX,
   SPLIT_BREAKPOINT,
 } from "./CanonicalPracticePage";
 
-/* ── Mock ResizeObserver ── */
+/* ── Upgraded MockResizeObserver: tracks callbacks for external firing ── */
+type ROCallback = (entries: ResizeObserverEntry[]) => void;
+
+const roInstances: { cb: ROCallback; elements: Element[] }[] = [];
+
 class MockResizeObserver {
-  observe = vi.fn();
-  disconnect = vi.fn();
-  unobserve = vi.fn();
+  private cb: ROCallback;
+  private elements: Element[] = [];
+
+  constructor(cb: ROCallback) {
+    this.cb = cb;
+    roInstances.push({ cb: this.cb, elements: this.elements });
+  }
+
+  observe = vi.fn((el: Element) => {
+    this.elements.push(el);
+  });
+
+  disconnect = vi.fn(() => {
+    this.elements.length = 0;
+    const idx = roInstances.findIndex((i) => i.cb === this.cb);
+    if (idx >= 0) roInstances.splice(idx, 1);
+  });
+
+  unobserve = vi.fn((el: Element) => {
+    const idx = this.elements.indexOf(el);
+    if (idx >= 0) this.elements.splice(idx, 1);
+  });
 }
+
+/* ── Stub getBoundingClientRect on all elements ── */
+const originalBCR = Element.prototype.getBoundingClientRect;
+
+/**
+ * Override Element.prototype.getBoundingClientRect so every element reports the
+ * given `width`. This lets react-resizable-panels measure its container and
+ * lets handleGroupLayout / handleCalcPanelResize compute real pixel values.
+ * Returns a cleanup function that restores the original method.
+ */
+function stubAllBCR(width: number): () => void {
+  Element.prototype.getBoundingClientRect = function () {
+    return {
+      width,
+      height: 600,
+      top: 0,
+      left: 0,
+      bottom: 600,
+      right: width,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect;
+  };
+  return () => {
+    Element.prototype.getBoundingClientRect = originalBCR;
+  };
+}
+
+// APP_HORIZONTAL_PADDING = 32 (PracticeShell px-4 × 2 sides)
+const APP_HORIZONTAL_PADDING = 32;
+/** Container width at the split breakpoint (what the panel group sees). */
+const TEST_CONTAINER_AT_BP = SPLIT_BREAKPOINT - APP_HORIZONTAL_PADDING; // 1030
 
 beforeAll(() => {
   global.ResizeObserver =
     MockResizeObserver as unknown as typeof ResizeObserver;
+
+  // Ensure pointer-capture methods exist for drag tests (jsdom may have no-ops)
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  HTMLElement.prototype.releasePointerCapture = vi.fn();
+  HTMLElement.prototype.hasPointerCapture = vi
+    .fn()
+    .mockReturnValue(true) as typeof HTMLElement.prototype.hasPointerCapture;
 });
 
+afterEach(() => {
+  // Safety-net: always restore BCR in case a test throws before its own cleanup
+  Element.prototype.getBoundingClientRect = originalBCR;
+  // Clear localStorage (react-resizable-panels persists via autoSaveId)
+  localStorage.clear();
+  // Clear tracked ResizeObserver instances
+  roInstances.length = 0;
+});
+
+/* ── Hook + module mocks ── */
 const hookMock = vi.hoisted(() => ({
   useCanonicalPractice: vi.fn(),
 }));
@@ -204,6 +286,63 @@ describe("CanonicalPracticePage calculator UX", () => {
   });
 });
 
+/* ── Drag helper: triggers library's onLayout → ARIA pixel values ── */
+
+/**
+ * Perform a pointer drag on the resize handle to trigger the library's
+ * layout change path. react-resizable-panels registers pointer event
+ * listeners on document.body (down/move) and window (up). A drag causes
+ * setLayout → onLayout → handleGroupLayout → ARIA pixel values written.
+ *
+ * Without a drag, the library's onLayout never fires on initial mount
+ * (layout equals defaults so the equality check passes), and the library's
+ * ARIA-setting useLayoutEffect depends on panelGroupElement which stays
+ * null in the context until the first drag triggers setDragState and
+ * forces the useMemo to recompute.
+ */
+async function performDrag(
+  handle: HTMLElement,
+  startX: number,
+  endX: number,
+): Promise<void> {
+  // pointerdown on handle → bubbles to body → library's handlePointerDown
+  fireEvent.pointerDown(handle, {
+    clientX: startX,
+    clientY: 300,
+    pointerId: 1,
+    button: 0,
+    buttons: 1,
+  });
+
+  // pointermove → bubbles to body → library's handlePointerMove → resizeHandler
+  fireEvent.pointerMove(handle, {
+    clientX: endX,
+    clientY: 300,
+    pointerId: 1,
+    button: 0,
+    buttons: 1,
+  });
+
+  // pointerup on handle (bubbles to body) + on window (library listener)
+  const upOpts = {
+    clientX: endX,
+    clientY: 300,
+    pointerId: 1,
+    button: 0,
+    buttons: 0,
+  };
+  fireEvent.pointerUp(handle, upOpts);
+  window.dispatchEvent(
+    new PointerEvent("pointerup", { bubbles: true, ...upOpts }),
+  );
+
+  // handleGroupLayout writes ARIA values via setTimeout(0).
+  // Wait for the microtask + timer to flush.
+  await waitFor(() => {
+    expect(handle.getAttribute("aria-valuenow")).not.toBeNull();
+  });
+}
+
 /* ── FIX 3: Divider accessibility ── */
 describe("CanonicalPracticePage divider accessibility", () => {
   beforeEach(() => {
@@ -234,7 +373,8 @@ describe("CanonicalPracticePage divider accessibility", () => {
     expect(handle.tabIndex).toBe(0);
   });
 
-  it("handleGroupLayout overrides ARIA values with pixel widths", async () => {
+  it("handleGroupLayout sets ARIA pixel values on the separator after drag (stubbed BCR)", async () => {
+    const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
@@ -249,28 +389,32 @@ describe("CanonicalPracticePage divider accessibility", () => {
 
     const handle = screen.getByTestId("practice-resize-handle");
 
-    // handleGroupLayout fires onLayout → setTimeout(0) sets pixel ARIA values.
-    // Library fires onLayout synchronously during layout; the setTimeout(0)
-    // macro-task overrides percentage values with pixel ones.
-    // In jsdom, getBoundingClientRect returns 0-width, so pixel values will be 0,
-    // but the attributes should still be present and numeric (set by our handler).
-    // Flush the setTimeout(0) macro-task.
-    await vi.waitFor(() => {
-      const valueNow = handle.getAttribute("aria-valuenow");
-      const valueMin = handle.getAttribute("aria-valuemin");
-      const valueMax = handle.getAttribute("aria-valuemax");
-      // Attributes are set by handleGroupLayout; verify they exist and are numeric
-      if (valueMin !== null) {
-        expect(valueMin).toBe(String(QUESTION_MIN_PX));
-      }
-      if (valueMax !== null) {
-        // Max is groupWidth - CALC_MIN_PX; in jsdom groupWidth=0 → negative, clamped
-        expect(Number(valueMax)).not.toBeNaN();
-      }
-      if (valueNow !== null) {
-        expect(Number(valueNow)).not.toBeNaN();
-      }
-    });
+    // A minimal drag triggers onLayout → handleGroupLayout sets ARIA values.
+    // The library's onLayout only fires when sizes change; a 1px drag
+    // produces a ~0.1% delta which suffices to trigger the callback.
+    await performDrag(handle, 515, 516);
+
+    // Verify all three ARIA pixel values are present and coherent
+    const valueNow = handle.getAttribute("aria-valuenow");
+    const valueMin = handle.getAttribute("aria-valuemin");
+    const valueMax = handle.getAttribute("aria-valuemax");
+
+    expect(valueNow).not.toBeNull();
+    expect(valueMin).not.toBeNull();
+    expect(valueMax).not.toBeNull();
+
+    // aria-valuemin = QUESTION_MIN_PX (smallest the question panel can be)
+    expect(valueMin).toBe(String(QUESTION_MIN_PX));
+    // aria-valuemax = containerWidth − CALC_MIN_PX
+    expect(Number(valueMax)).toBe(
+      Math.round(TEST_CONTAINER_AT_BP - CALC_MIN_PX),
+    );
+    // aria-valuenow is within [min, max]
+    const now = Number(valueNow);
+    expect(now).toBeGreaterThanOrEqual(Number(valueMin));
+    expect(now).toBeLessThanOrEqual(Number(valueMax));
+
+    restoreBCR();
   });
 });
 
@@ -359,6 +503,346 @@ describe("CanonicalPracticePage pixel-floor constraints", () => {
   });
 });
 
+/* ── FIX 4 (decisive): Resolved-pixel regression guard ── */
+describe("CanonicalPracticePage resolved pixel floor (stubbed getBoundingClientRect)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it("initial layout at breakpoint (1062px): calculator resolved width ≥ 450px", async () => {
+    const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // A 1px drag triggers onLayout → ARIA pixel values are set from
+    // the default layout. This is the smallest possible interaction
+    // to measure the resolved pixel widths.
+    await performDrag(handle, 515, 516);
+
+    const questionPx = Number(handle.getAttribute("aria-valuenow"));
+    expect(questionPx).not.toBeNaN();
+    expect(questionPx).toBeGreaterThan(0);
+
+    // Calculator panel width = container − question panel
+    const calcPanelPx = TEST_CONTAINER_AT_BP - questionPx;
+    expect(calcPanelPx).toBeGreaterThanOrEqual(CALC_MIN_PX); // ≥ 496
+
+    // Desmos host width = panel − padding
+    const desmosHostPx = calcPanelPx - CALC_PANEL_PAD_PX;
+    expect(desmosHostPx).toBeGreaterThanOrEqual(450);
+
+    restoreBCR();
+  });
+
+  it("at maximum drag: calculator resolved width = CALC_MIN_PX ≥ 450px", async () => {
+    const restoreBCR = stubAllBCR(TEST_CONTAINER_AT_BP); // 1030
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // A 1px drag seeds the ARIA values so we can read aria-valuemax.
+    await performDrag(handle, 515, 516);
+
+    const valueMax = handle.getAttribute("aria-valuemax");
+    expect(valueMax).not.toBeNull();
+    const maxQuestionPx = Number(valueMax);
+    expect(maxQuestionPx).not.toBeNaN();
+
+    // At max drag, calculator panel = container − maxQuestion = CALC_MIN_PX
+    const calcPanelPxAtMax = TEST_CONTAINER_AT_BP - maxQuestionPx;
+    expect(calcPanelPxAtMax).toBe(CALC_MIN_PX); // 496
+
+    // Desmos host at max drag = CALC_MIN_PX − padding = DESMOS_HOST_MIN_PX
+    const desmosHostPxAtMax = calcPanelPxAtMax - CALC_PANEL_PAD_PX;
+    expect(desmosHostPxAtMax).toBe(DESMOS_HOST_MIN_PX); // 480
+    expect(desmosHostPxAtMax).toBeGreaterThanOrEqual(450);
+
+    restoreBCR();
+  });
+
+  it("after container resize to wider viewport: pixel floor still holds", async () => {
+    const widerWidth = 1400;
+    const restoreBCR = stubAllBCR(widerWidth);
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // Drag to trigger onLayout at the wider viewport
+    await performDrag(handle, 700, 701);
+
+    const valueNow = handle.getAttribute("aria-valuenow");
+    const valueMax = handle.getAttribute("aria-valuemax");
+    expect(valueNow).not.toBeNull();
+    expect(valueMax).not.toBeNull();
+
+    // Default layout pixel check
+    const questionPx = Number(valueNow);
+    const calcPanelPx = widerWidth - questionPx;
+    expect(calcPanelPx).toBeGreaterThanOrEqual(CALC_MIN_PX);
+    const desmosHostPx = calcPanelPx - CALC_PANEL_PAD_PX;
+    expect(desmosHostPx).toBeGreaterThanOrEqual(450);
+
+    // Max-drag pixel check at wider viewport
+    const maxQuestionPx = Number(valueMax);
+    const calcAtMax = widerWidth - maxQuestionPx;
+    expect(calcAtMax).toBe(CALC_MIN_PX);
+    expect(calcAtMax - CALC_PANEL_PAD_PX).toBeGreaterThanOrEqual(450);
+
+    restoreBCR();
+  });
+
+  it("below-breakpoint at 1024px: full-width stacked container ≥ 450px, sidebar would be insufficient", () => {
+    const viewportWidth = 1024;
+    const contentWidth = viewportWidth - APP_HORIZONTAL_PADDING; // 992
+    const restoreBCR = stubAllBCR(contentWidth);
+    mockMatchMedia(false);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    // No side panel at this viewport
+    expect(screen.queryByTestId("practice-resize-handle")).toBeNull();
+
+    // Full-width stacked container exists and resolves ≥ 450px via stubbed BCR
+    const stacked = screen.getByTestId("stacked-calculator-container");
+    const stackedWidth = stacked.getBoundingClientRect().width;
+    expect(stackedWidth).toBe(contentWidth); // 992
+    expect(stackedWidth).toBeGreaterThanOrEqual(450);
+
+    // Arithmetic guard: a col-span-4/12 sidebar at this viewport would be too narrow
+    const hypotheticalSidebarWidth = Math.floor((contentWidth / 12) * 4); // ~330
+    expect(hypotheticalSidebarWidth).toBeLessThan(DESMOS_HOST_MIN_PX);
+
+    restoreBCR();
+  });
+});
+
+/* ── FIX 2: Divider drag interaction via pointer events ── */
+describe("CanonicalPracticePage divider drag interaction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it("pointer drag on handle exercises resize path and pixel floor holds", async () => {
+    const containerWidth = 1400;
+    const restoreBCR = stubAllBCR(containerWidth);
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // Drag 100px right → shrink calculator, grow question panel.
+    // At 1400px wide, the library processes the drag through the full
+    // resizeHandler → setLayout → onLayout path.
+    await performDrag(handle, 700, 800);
+
+    const postDragQuestionPx = Number(handle.getAttribute("aria-valuenow"));
+    expect(postDragQuestionPx).not.toBeNaN();
+    expect(postDragQuestionPx).toBeGreaterThan(0);
+
+    // Calculator panel width after drag
+    const calcPanelPx = containerWidth - postDragQuestionPx;
+    expect(calcPanelPx).toBeGreaterThanOrEqual(CALC_MIN_PX);
+
+    // Desmos host ≥ 450px
+    const desmosHostPx = calcPanelPx - CALC_PANEL_PAD_PX;
+    expect(desmosHostPx).toBeGreaterThanOrEqual(450);
+
+    // Handle retains accessible attributes after drag
+    expect(handle.getAttribute("role")).toBe("separator");
+    expect(handle.tabIndex).toBe(0);
+
+    restoreBCR();
+  });
+
+  it("aggressive drag toward max does not break pixel floor", async () => {
+    const containerWidth = 1400;
+    const restoreBCR = stubAllBCR(containerWidth);
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // Aggressive drag: attempt to push the calculator panel past its minimum.
+    // The library's minSize constraint (and CSS min-width) must prevent
+    // the calculator from going below its pixel floor.
+    await performDrag(handle, 700, containerWidth - 50);
+
+    const questionPx = Number(handle.getAttribute("aria-valuenow"));
+    expect(questionPx).not.toBeNaN();
+
+    const calcPanelPx = containerWidth - questionPx;
+    expect(calcPanelPx).toBeGreaterThanOrEqual(CALC_MIN_PX);
+    expect(calcPanelPx - CALC_PANEL_PAD_PX).toBeGreaterThanOrEqual(450);
+
+    restoreBCR();
+  });
+});
+
+/* ── FIX 3: Keyboard resize pixel bound ── */
+describe("CanonicalPracticePage keyboard resize", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it("ArrowRight on focused handle: calculator pixel bound holds after aggressive resize", async () => {
+    const containerWidth = 1400;
+    const restoreBCR = stubAllBCR(containerWidth);
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // A minimal drag is required first: the library's keyboard handler
+    // depends on panelGroupElement in the React context, which only
+    // becomes non-null after the first drag triggers setDragState →
+    // useMemo recompute (react-resizable-panels v2.1.x behavior).
+    await performDrag(handle, 700, 701);
+
+    // Focus the handle (keyboard nav requires focus)
+    handle.focus();
+    expect(document.activeElement).toBe(handle);
+
+    // Press ArrowRight aggressively to shrink the calculator panel.
+    // Each press moves the divider by 10% (library default step).
+    // The library's minSize constraint must prevent the calculator
+    // from going below its pixel floor.
+    for (let i = 0; i < 20; i++) {
+      fireEvent.keyDown(handle, { key: "ArrowRight", code: "ArrowRight" });
+    }
+
+    // After aggressive keyboard resize, pixel floor must hold
+    await waitFor(() => {
+      const value = handle.getAttribute("aria-valuenow");
+      expect(value).not.toBeNull();
+      const questionPx = Number(value);
+      expect(questionPx).not.toBeNaN();
+
+      const calcPanelPx = containerWidth - questionPx;
+      expect(calcPanelPx).toBeGreaterThanOrEqual(CALC_MIN_PX);
+
+      const desmosHostPx = calcPanelPx - CALC_PANEL_PAD_PX;
+      expect(desmosHostPx).toBeGreaterThanOrEqual(450);
+    });
+
+    restoreBCR();
+  });
+
+  it("ArrowLeft on focused handle: question panel floor holds after aggressive resize", async () => {
+    const containerWidth = 1400;
+    const restoreBCR = stubAllBCR(containerWidth);
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // Activate keyboard handler via initial drag
+    await performDrag(handle, 700, 701);
+
+    handle.focus();
+
+    // Press ArrowLeft aggressively to shrink the question panel.
+    for (let i = 0; i < 20; i++) {
+      fireEvent.keyDown(handle, { key: "ArrowLeft", code: "ArrowLeft" });
+    }
+
+    // After aggressive keyboard resize, question panel must still be ≥ QUESTION_MIN_PX.
+    await waitFor(() => {
+      const valueNow = handle.getAttribute("aria-valuenow");
+      const valueMin = handle.getAttribute("aria-valuemin");
+      expect(valueNow).not.toBeNull();
+      expect(valueMin).not.toBeNull();
+
+      const questionPx = Number(valueNow);
+      expect(questionPx).toBeGreaterThanOrEqual(QUESTION_MIN_PX);
+
+      // Calculator also ≥ 450 from the other direction
+      const calcPanelPx = containerWidth - questionPx;
+      expect(calcPanelPx - CALC_PANEL_PAD_PX).toBeGreaterThanOrEqual(450);
+    });
+
+    restoreBCR();
+  });
+});
+
+/* ── Grid-in rendering ── */
 describe("CanonicalPracticePage grid-in rendering", () => {
   beforeEach(() => {
     vi.clearAllMocks();
