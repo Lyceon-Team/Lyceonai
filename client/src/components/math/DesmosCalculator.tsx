@@ -1,5 +1,5 @@
 /**
- * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-26]
+ * @spec [Doc-02B_v4, §28 Math Tooling: Desmos and Formula Sheet] | @implemented [2026-07-26]
  * Desmos calculator with graphing/scientific mode toggle and Bluebook-parity resizable panel.
  * Per-mode state is retained across mode switches via a mode-keyed map flushed
  * synchronously before switching. The session payload persisted through

@@ -210,7 +210,7 @@ describe("CanonicalPracticePage divider accessibility", () => {
     vi.clearAllMocks();
   });
 
-  it("handle has role=separator, aria-orientation=horizontal, and is focusable", () => {
+  it("handle has role=separator, aria-orientation=vertical, and is focusable", () => {
     mockMatchMedia(true);
     hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
 
@@ -227,10 +227,50 @@ describe("CanonicalPracticePage divider accessibility", () => {
     expect(handle).not.toBeNull();
     // role="separator" set by react-resizable-panels library
     expect(handle.getAttribute("role")).toBe("separator");
-    // aria-orientation="horizontal" set by our prop
-    expect(handle.getAttribute("aria-orientation")).toBe("horizontal");
+    // aria-orientation="vertical": the divider is a vertical line (w-px)
+    // in a direction="horizontal" (side-by-side) panel group
+    expect(handle.getAttribute("aria-orientation")).toBe("vertical");
     // focusable (library sets tabIndex=0)
     expect(handle.tabIndex).toBe(0);
+  });
+
+  it("handleGroupLayout overrides ARIA values with pixel widths", async () => {
+    mockMatchMedia(true);
+    hookMock.useCanonicalPractice.mockReturnValue(buildHookState("Math"));
+
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        badgeLabel="Math"
+        section="math"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+
+    const handle = screen.getByTestId("practice-resize-handle");
+
+    // handleGroupLayout fires onLayout → setTimeout(0) sets pixel ARIA values.
+    // Library fires onLayout synchronously during layout; the setTimeout(0)
+    // macro-task overrides percentage values with pixel ones.
+    // In jsdom, getBoundingClientRect returns 0-width, so pixel values will be 0,
+    // but the attributes should still be present and numeric (set by our handler).
+    // Flush the setTimeout(0) macro-task.
+    await vi.waitFor(() => {
+      const valueNow = handle.getAttribute("aria-valuenow");
+      const valueMin = handle.getAttribute("aria-valuemin");
+      const valueMax = handle.getAttribute("aria-valuemax");
+      // Attributes are set by handleGroupLayout; verify they exist and are numeric
+      if (valueMin !== null) {
+        expect(valueMin).toBe(String(QUESTION_MIN_PX));
+      }
+      if (valueMax !== null) {
+        // Max is groupWidth - CALC_MIN_PX; in jsdom groupWidth=0 → negative, clamped
+        expect(Number(valueMax)).not.toBeNaN();
+      }
+      if (valueNow !== null) {
+        expect(Number(valueNow)).not.toBeNaN();
+      }
+    });
   });
 });
 

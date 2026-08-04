@@ -1,5 +1,5 @@
 /**
- * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-26]
+ * @spec [Doc-02B_v4, §28 Math Tooling: Desmos and Formula Sheet] | @implemented [2026-07-26]
  * Canonical practice page with Bluebook-parity resizable calculator side-panel.
  *
  * Pixel-floor guarantee: the Desmos host is ≥DESMOS_HOST_MIN_PX at every
@@ -266,7 +266,10 @@ export default function CanonicalPracticePage(props: {
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
       setLocalCalculatorState(nextState);
-      void persistCalculatorState(nextState).catch(() => {});
+      void persistCalculatorState(nextState).catch((err: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[Practice] calculator state persist failed", err);
+      });
     },
     [persistCalculatorState],
   );
@@ -573,7 +576,7 @@ export default function CanonicalPracticePage(props: {
             <ResizableHandle
               withHandle
               aria-label="Resize question and calculator panels"
-              aria-orientation="horizontal"
+              aria-orientation="vertical"
               data-testid="practice-resize-handle"
             />
             <ResizablePanel
