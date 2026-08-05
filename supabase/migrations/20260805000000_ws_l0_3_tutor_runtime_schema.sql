@@ -1,16 +1,16 @@
 -- ============================================================================
--- WS-L0.3: LISA Tutor Runtime Schema — 9 new tables + seeds into 1 existing
+-- WS-L0.3: LISA Tutor Runtime Schema — 8 new tables + seeds into 1 existing
 -- ============================================================================
--- @spec  [Doc-03A_V3.0, §17–§18, §6.4, Appendix B]
+-- @spec  [Doc-03A_V3.0, §17–§18, Appendix B]
 -- @implemented [2026-08-05]
 --
--- Creates 9 tutor tables per Doc 03A V3.0 §17 and seeds Layer-2/memory keys
--- into the pre-existing tutor_context_runtime_config (from WS2):
+-- Creates the 8 tutor tables from Doc 03A V3.0 §17 catalog that this migration
+-- owns, and seeds Layer-2/memory keys into the pre-existing
+-- tutor_context_runtime_config (from WS2):
 --   6 runtime tables:  tutor_conversations, tutor_messages,
 --                      tutor_memory_summaries, tutor_instruction_assignments,
 --                      tutor_question_links, tutor_instruction_exposures
 --   2 config/obs tables: tutor_injection_signatures, tutor_injection_log
---   1 config table:      tutor_prompt_chips (§6.4 V1 chips)
 --   + INSERT 4 keys into tutor_context_runtime_config (owned by WS2 migration)
 --
 -- RLS enabled on every student-scoped table with student_id-bound SELECT
@@ -599,48 +599,6 @@ CREATE POLICY tutor_injection_log_service_role ON public.tutor_injection_log
 
 
 -- ============================================================================
--- 10. tutor_prompt_chips — V1 dashboard/general chips
---     @spec [Doc-03A_V3.0, §6.4]
---     Config table — product inputs for dashboard entry. Admin-managed.
---     Not explicitly listed in §17 catalog (which enumerates 9 tables) but
---     named in §6.4 as "stored in tutor_prompt_chips config".
--- ============================================================================
-
-CREATE TABLE public.tutor_prompt_chips (
-  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  chip_key                    TEXT NOT NULL UNIQUE,
-  chip_text                   TEXT NOT NULL,
-  sort_order                  INTEGER NOT NULL DEFAULT 0,
-  active                      BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.tutor_prompt_chips ENABLE ROW LEVEL SECURITY;
-
--- Service role read/write only — admin-managed config
-CREATE POLICY tutor_prompt_chips_service_role ON public.tutor_prompt_chips
-  FOR ALL TO service_role USING (true);
-
--- Students need SELECT for chip rendering in the UI (general/dashboard entry)
-CREATE POLICY tutor_prompt_chips_select_authenticated ON public.tutor_prompt_chips
-  FOR SELECT TO authenticated USING (active = TRUE);
-
--- Seed V1 chips per §6.4 (Doc 03 Main §20)
-INSERT INTO public.tutor_prompt_chips (chip_key, chip_text, sort_order) VALUES
-  ('review_mistakes',   'Review my recent mistakes',          1),
-  ('help_full_length',  'Help with my last full-length',      2),
-  ('explain_topic',     'Explain a topic or skill',           3),
-  ('study_today',       'Help me decide what to study today', 4),
-  ('general_question',  'Ask a general question',             5);
-
--- Trigger: updated_at
-CREATE TRIGGER tutor_prompt_chips_updated_at
-  BEFORE UPDATE ON public.tutor_prompt_chips
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-
--- ============================================================================
 -- COMMENTS — table-level documentation
 -- ============================================================================
 
@@ -661,8 +619,6 @@ COMMENT ON TABLE public.tutor_injection_signatures IS
   'Known injection attack patterns. Admin-managed. §18.7.';
 COMMENT ON TABLE public.tutor_injection_log IS
   'Injection/abuse detection events for safety review queue (INV-03-13). §18.7.';
-COMMENT ON TABLE public.tutor_prompt_chips IS
-  'V1 dashboard/general entry chips (§6.4). Admin-managed product config.';
 
 COMMIT;
 
@@ -676,7 +632,6 @@ COMMIT;
 -- tutor_context_runtime_config is NOT dropped (owned by WS2); only seeded keys are deleted.
 --
 -- BEGIN;
--- DROP TABLE IF EXISTS public.tutor_prompt_chips CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_injection_log CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_injection_signatures CASCADE;
 -- DELETE FROM public.tutor_context_runtime_config WHERE key IN (

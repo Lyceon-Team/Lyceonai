@@ -4852,28 +4852,6 @@ COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation histor
 
 
 --
--- Name: tutor_prompt_chips; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.tutor_prompt_chips (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    chip_key text NOT NULL,
-    chip_text text NOT NULL,
-    sort_order integer DEFAULT 0 NOT NULL,
-    active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: TABLE tutor_prompt_chips; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.tutor_prompt_chips IS 'V1 dashboard/general entry chips (§6.4). Admin-managed product config.';
-
-
---
 -- Name: tutor_question_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5682,22 +5660,6 @@ ALTER TABLE ONLY public.tutor_messages
 
 ALTER TABLE ONLY public.tutor_messages
     ADD CONSTRAINT tutor_messages_pkey PRIMARY KEY (id);
-
-
---
--- Name: tutor_prompt_chips tutor_prompt_chips_chip_key_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tutor_prompt_chips
-    ADD CONSTRAINT tutor_prompt_chips_chip_key_key UNIQUE (chip_key);
-
-
---
--- Name: tutor_prompt_chips tutor_prompt_chips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tutor_prompt_chips
-    ADD CONSTRAINT tutor_prompt_chips_pkey PRIMARY KEY (id);
 
 
 --
@@ -6558,13 +6520,6 @@ CREATE TRIGGER tutor_memory_summaries_updated_at BEFORE UPDATE ON public.tutor_m
 --
 
 CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
-
-
---
--- Name: tutor_prompt_chips tutor_prompt_chips_updated_at; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER tutor_prompt_chips_updated_at BEFORE UPDATE ON public.tutor_prompt_chips FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
@@ -8029,26 +7984,6 @@ CREATE POLICY tutor_messages_select_own ON public.tutor_messages FOR SELECT USIN
 --
 
 CREATE POLICY tutor_messages_service_role ON public.tutor_messages TO service_role USING (true);
-
-
---
--- Name: tutor_prompt_chips; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.tutor_prompt_chips ENABLE ROW LEVEL SECURITY;
-
---
--- Name: tutor_prompt_chips tutor_prompt_chips_select_authenticated; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_prompt_chips_select_authenticated ON public.tutor_prompt_chips FOR SELECT TO authenticated USING ((active = true));
-
-
---
--- Name: tutor_prompt_chips tutor_prompt_chips_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_prompt_chips_service_role ON public.tutor_prompt_chips TO service_role USING (true);
 
 
 --
