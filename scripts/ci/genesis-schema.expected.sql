@@ -3061,6 +3061,107 @@ $$;
 
 
 --
+-- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_memory_summary_schema(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_memory_summary_schema() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_content JSONB := NEW.content_json;
+  v_type    TEXT  := NEW.summary_type;
+  v_version TEXT;
+BEGIN
+  -- Every summary must have summary_version
+  IF NOT (v_content ? 'summary_version') THEN
+    RAISE EXCEPTION 'Memory summary missing summary_version';
+  END IF;
+
+  v_version := v_content->>'summary_version';
+
+  IF v_version != '1.0' THEN
+    RAISE EXCEPTION 'Unsupported summary_version: %', v_version;
+  END IF;
+
+  -- Per-type validation
+  IF v_type = 'teaching_profile' THEN
+    IF NOT (v_content ? 'learning_style_signals'
+      AND v_content ? 'last_struggled_skill'
+      AND v_content ? 'last_mastered_skill'
+      AND v_content ? 'engagement_summary') THEN
+      RAISE EXCEPTION 'teaching_profile missing required fields';
+    END IF;
+
+  ELSIF v_type = 'chat_compaction' THEN
+    IF NOT (v_content ? 'conversation_id'
+      AND v_content ? 'source_window_start'
+      AND v_content ? 'source_window_end'
+      AND v_content ? 'turns_compacted'
+      AND v_content ? 'topics_discussed'
+      AND v_content ? 'skills_referenced'
+      AND v_content ? 'key_insights'
+      AND v_content ? 'unresolved_confusion') THEN
+      RAISE EXCEPTION 'chat_compaction missing required fields';
+    END IF;
+
+    -- Bounds check
+    IF jsonb_array_length(v_content->'key_insights') > 5 THEN
+      RAISE EXCEPTION 'chat_compaction key_insights exceeds 5 entries';
+    END IF;
+    IF jsonb_array_length(v_content->'unresolved_confusion') > 5 THEN
+      RAISE EXCEPTION 'chat_compaction unresolved_confusion exceeds 5 entries';
+    END IF;
+    IF jsonb_array_length(v_content->'topics_discussed') > 10 THEN
+      RAISE EXCEPTION 'chat_compaction topics_discussed exceeds 10 entries';
+    END IF;
+
+  ELSIF v_type = 'recent_learning_pattern' THEN
+    IF NOT (v_content ? 'window_days'
+      AND v_content ? 'sections_active'
+      AND v_content ? 'skills_improved'
+      AND v_content ? 'skills_regressed'
+      AND v_content ? 'skills_stuck'
+      AND v_content ? 'attempts_total'
+      AND v_content ? 'pass_rate') THEN
+      RAISE EXCEPTION 'recent_learning_pattern missing required fields';
+    END IF;
+
+  ELSIF v_type = 'study_context' THEN
+    IF NOT (v_content ? 'current_focus_skills'
+      AND v_content ? 'upcoming_scheduled_sessions') THEN
+      RAISE EXCEPTION 'study_context missing required fields';
+    END IF;
+
+  ELSE
+    RAISE EXCEPTION 'Unknown summary_type: %', v_type;
+  END IF;
+
+  -- Size bound (10KB max)
+  IF pg_column_size(v_content) > 10240 THEN
+    RAISE EXCEPTION 'Memory summary exceeds 10KB size bound';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: abuse_score_incidents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4536,6 +4637,271 @@ CREATE TABLE public.tutor_context_runtime_config_history (
 
 
 --
+-- Name: tutor_conversations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_conversations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    entry_mode text NOT NULL,
+    source_surface text NOT NULL,
+    source_session_id uuid,
+    source_session_item_id uuid,
+    source_question_row_id text,
+    source_question_canonical_id text,
+    policy_family text DEFAULT 'instructional_tutor'::text NOT NULL,
+    policy_variant text DEFAULT 'scaffolded'::text NOT NULL,
+    policy_version text DEFAULT '1.0'::text NOT NULL,
+    prompt_version text,
+    assignment_mode text DEFAULT 'deterministic'::text NOT NULL,
+    assignment_key text,
+    initialization_snapshot jsonb,
+    status text DEFAULT 'active'::text NOT NULL,
+    crisis_flagged boolean DEFAULT false NOT NULL,
+    deleted_at timestamp with time zone,
+    entitlement_lost_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    closed_at timestamp with time zone,
+    CONSTRAINT tutor_conversations_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
+    CONSTRAINT tutor_conversations_entry_mode_check CHECK ((entry_mode = ANY (ARRAY['scoped_question'::text, 'scoped_session'::text, 'general'::text]))),
+    CONSTRAINT tutor_conversations_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text]))),
+    CONSTRAINT tutor_conversations_source_surface_check CHECK ((source_surface = ANY (ARRAY['practice'::text, 'review'::text, 'test_review'::text, 'dashboard'::text]))),
+    CONSTRAINT tutor_conversations_status_check CHECK ((status = ANY (ARRAY['active'::text, 'closed'::text, 'abandoned'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_conversations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with scope metadata. §18.1. Owner: tutor_runtime_writer (§17.4).';
+
+
+--
+-- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_injection_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid,
+    student_id uuid,
+    message_id uuid,
+    signature_matched text,
+    detection_layer text NOT NULL,
+    action_taken text NOT NULL,
+    response_substituted text,
+    detected_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE tutor_injection_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_injection_log IS 'Injection/abuse detection events for safety review queue (INV-03-13). §18.7.';
+
+
+--
+-- Name: tutor_injection_signatures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_injection_signatures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    signature_pattern text NOT NULL,
+    signature_type text NOT NULL,
+    severity text NOT NULL,
+    action text NOT NULL,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    added_by text,
+    CONSTRAINT tutor_injection_signatures_action_check CHECK ((action = ANY (ARRAY['flag'::text, 'reject'::text, 'silent_redirect'::text]))),
+    CONSTRAINT tutor_injection_signatures_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text, 'critical'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_injection_signatures; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_injection_signatures IS 'Known injection attack patterns. Admin-managed. §18.7.';
+
+
+--
+-- Name: tutor_instruction_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_instruction_assignments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    related_message_id uuid,
+    source_session_id uuid,
+    source_session_item_id uuid,
+    source_question_row_id text,
+    source_question_canonical_id text,
+    policy_family text DEFAULT 'instructional_tutor'::text NOT NULL,
+    policy_variant text NOT NULL,
+    policy_version text NOT NULL,
+    prompt_version text,
+    assignment_mode text NOT NULL,
+    assignment_key text,
+    emotional_register text DEFAULT 'default'::text NOT NULL,
+    reason_snapshot jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reason_snapshot_size_bound CHECK ((pg_column_size(reason_snapshot) < 2048)),
+    CONSTRAINT tutor_instruction_assignments_assignment_mode_check CHECK ((assignment_mode = ANY (ARRAY['deterministic'::text, 'explore'::text, 'manual_override'::text]))),
+    CONSTRAINT tutor_instruction_assignments_emotional_register_check CHECK ((emotional_register = ANY (ARRAY['default'::text, 'elite'::text, 'recovery'::text, 'sprint'::text, 'calm'::text]))),
+    CONSTRAINT tutor_instruction_assignments_policy_variant_check CHECK ((policy_variant = ANY (ARRAY['concise'::text, 'scaffolded'::text, 'socratic'::text, 'strategy_first'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_instruction_assignments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_instruction_assignments IS 'Policy decision log — every material instructional decision (INV-03-11). §18.4.';
+
+
+--
+-- Name: tutor_instruction_exposures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_instruction_exposures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    assignment_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    exposure_type text NOT NULL,
+    content_variant_key text,
+    content_version text,
+    rendered_difficulty integer,
+    hint_depth integer,
+    tone_style text,
+    sequence_ordinal integer NOT NULL,
+    shown_at timestamp with time zone DEFAULT now() NOT NULL,
+    consumed_ms integer,
+    CONSTRAINT tutor_instruction_exposures_exposure_type_check CHECK ((exposure_type = ANY (ARRAY['hint'::text, 'explanation'::text, 'strategy'::text, 'similar_question_offer'::text, 'broader_coaching_offer'::text, 'consent_prompt'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_instruction_exposures; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_instruction_exposures IS 'Rendered surface log — what the student actually saw. §18.6.';
+
+
+--
+-- Name: tutor_memory_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_memory_summaries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    student_id uuid NOT NULL,
+    summary_type text NOT NULL,
+    summary_version text DEFAULT '1.0'::text NOT NULL,
+    content_json jsonb NOT NULL,
+    source_window_start timestamp with time zone,
+    source_window_end timestamp with time zone,
+    last_refreshed_at timestamp with time zone DEFAULT now() NOT NULL,
+    refresh_trigger text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_memory_summaries_summary_type_check CHECK ((summary_type = ANY (ARRAY['teaching_profile'::text, 'chat_compaction'::text, 'recent_learning_pattern'::text, 'study_context'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_memory_summaries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_memory_summaries IS 'Durable compact summaries with V1 structured fields. Written by trusted code only (§7.6). §18.3.';
+
+
+--
+-- Name: tutor_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_messages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    role text NOT NULL,
+    content_kind text DEFAULT 'message'::text NOT NULL,
+    message text NOT NULL,
+    content_json jsonb,
+    explanation_level text,
+    source_session_id uuid,
+    source_session_item_id uuid,
+    source_question_row_id text,
+    source_question_canonical_id text,
+    client_turn_id uuid,
+    injection_flag boolean DEFAULT false NOT NULL,
+    injection_signature_matched text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
+    CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_messages; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation history. Append-only from student perspective. §18.2.';
+
+
+--
+-- Name: tutor_prompt_chips; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_prompt_chips (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    chip_key text NOT NULL,
+    chip_text text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE tutor_prompt_chips; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_prompt_chips IS 'V1 dashboard/general entry chips (§6.4). Admin-managed product config.';
+
+
+--
+-- Name: tutor_question_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_question_links (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    source_question_row_id text,
+    source_question_canonical_id text,
+    related_question_row_id text,
+    related_question_canonical_id text,
+    relationship_type text NOT NULL,
+    difficulty_delta integer,
+    reason_code text NOT NULL,
+    link_snapshot jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_question_links_relationship_type_check CHECK ((relationship_type = ANY (ARRAY['current'::text, 'similar_retry'::text, 'simpler_variant'::text, 'harder_variant'::text, 'concept_extension'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_question_links; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_question_links IS 'Question relationship log — audit trail for tutor-suggested retries (§8.5). §18.5.';
+
+
+--
 -- Name: usage_rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5247,6 +5613,102 @@ ALTER TABLE ONLY public.tutor_context_runtime_config
 
 
 --
+-- Name: tutor_conversations tutor_conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_conversations
+    ADD CONSTRAINT tutor_conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_injection_log
+    ADD CONSTRAINT tutor_injection_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_injection_signatures tutor_injection_signatures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_injection_signatures
+    ADD CONSTRAINT tutor_injection_signatures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_assignments
+    ADD CONSTRAINT tutor_instruction_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_exposures
+    ADD CONSTRAINT tutor_instruction_exposures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_current_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_memory_summaries
+    ADD CONSTRAINT tutor_memory_summaries_current_unique UNIQUE (student_id, summary_type);
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_memory_summaries
+    ADD CONSTRAINT tutor_memory_summaries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_messages tutor_messages_client_turn_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_messages
+    ADD CONSTRAINT tutor_messages_client_turn_unique UNIQUE (conversation_id, client_turn_id);
+
+
+--
+-- Name: tutor_messages tutor_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_messages
+    ADD CONSTRAINT tutor_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_prompt_chips tutor_prompt_chips_chip_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_prompt_chips
+    ADD CONSTRAINT tutor_prompt_chips_chip_key_key UNIQUE (chip_key);
+
+
+--
+-- Name: tutor_prompt_chips tutor_prompt_chips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_prompt_chips
+    ADD CONSTRAINT tutor_prompt_chips_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_question_links tutor_question_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_question_links
+    ADD CONSTRAINT tutor_question_links_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: guardian_links unique_active_link; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5635,6 +6097,139 @@ CREATE INDEX idx_student_skill_kpi_student_section_domain ON public.student_skil
 
 
 --
+-- Name: idx_tutor_conversations_crisis; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_crisis ON public.tutor_conversations USING btree (crisis_flagged, created_at DESC) WHERE (crisis_flagged = true);
+
+
+--
+-- Name: idx_tutor_conversations_deletion_window; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_deletion_window ON public.tutor_conversations USING btree (deleted_at) WHERE (deleted_at IS NOT NULL);
+
+
+--
+-- Name: idx_tutor_conversations_reuse_envelope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_reuse_envelope ON public.tutor_conversations USING btree (student_id, source_surface, entry_mode, source_session_id, source_question_row_id, status, updated_at DESC) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_tutor_conversations_student_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_conversations_student_status ON public.tutor_conversations USING btree (student_id, status, updated_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_log_signature; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_log_signature ON public.tutor_injection_log USING btree (signature_matched, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_injection_log_student_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_injection_log_student_recent ON public.tutor_injection_log USING btree (student_id, detected_at DESC);
+
+
+--
+-- Name: idx_tutor_instruction_assignments_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_instruction_assignments_conversation ON public.tutor_instruction_assignments USING btree (conversation_id, created_at);
+
+
+--
+-- Name: idx_tutor_instruction_assignments_register; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_instruction_assignments_register ON public.tutor_instruction_assignments USING btree (emotional_register, created_at DESC) WHERE (emotional_register <> 'default'::text);
+
+
+--
+-- Name: idx_tutor_instruction_assignments_student_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_instruction_assignments_student_recent ON public.tutor_instruction_assignments USING btree (student_id, created_at DESC);
+
+
+--
+-- Name: idx_tutor_instruction_exposures_assignment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_instruction_exposures_assignment ON public.tutor_instruction_exposures USING btree (assignment_id, sequence_ordinal);
+
+
+--
+-- Name: idx_tutor_instruction_exposures_student_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_instruction_exposures_student_type ON public.tutor_instruction_exposures USING btree (student_id, exposure_type, shown_at DESC);
+
+
+--
+-- Name: idx_tutor_memory_summaries_staleness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_memory_summaries_staleness ON public.tutor_memory_summaries USING btree (last_refreshed_at);
+
+
+--
+-- Name: idx_tutor_memory_summaries_student_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_memory_summaries_student_type ON public.tutor_memory_summaries USING btree (student_id, summary_type);
+
+
+--
+-- Name: idx_tutor_messages_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_messages_conversation ON public.tutor_messages USING btree (conversation_id, created_at);
+
+
+--
+-- Name: idx_tutor_messages_injection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_messages_injection ON public.tutor_messages USING btree (injection_flag, created_at DESC) WHERE (injection_flag = true);
+
+
+--
+-- Name: idx_tutor_messages_student_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_messages_student_recent ON public.tutor_messages USING btree (student_id, created_at DESC);
+
+
+--
+-- Name: idx_tutor_question_links_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_question_links_conversation ON public.tutor_question_links USING btree (conversation_id, created_at);
+
+
+--
+-- Name: idx_tutor_question_links_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_question_links_source ON public.tutor_question_links USING btree (source_question_canonical_id);
+
+
+--
+-- Name: idx_tutor_question_links_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tutor_question_links_student ON public.tutor_question_links USING btree (student_id, created_at DESC);
+
+
+--
 -- Name: idx_usage_rate_limit_ledger_scope_user_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5942,6 +6537,34 @@ CREATE TRIGGER tutor_context_runtime_config_history_no_mutate BEFORE DELETE OR U
 --
 
 CREATE TRIGGER tutor_context_runtime_config_notify AFTER INSERT OR UPDATE ON public.tutor_context_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: tutor_conversations tutor_conversations_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_conversations_updated_at BEFORE UPDATE ON public.tutor_conversations FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_memory_summaries_updated_at BEFORE UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_validate_schema; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON public.tutor_memory_summaries FOR EACH ROW EXECUTE FUNCTION public.validate_memory_summary_schema();
+
+
+--
+-- Name: tutor_prompt_chips tutor_prompt_chips_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tutor_prompt_chips_updated_at BEFORE UPDATE ON public.tutor_prompt_chips FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
@@ -6470,6 +7093,158 @@ ALTER TABLE ONLY public.tutor_context_runtime_config_history
 
 ALTER TABLE ONLY public.tutor_context_runtime_config
     ADD CONSTRAINT tutor_context_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: tutor_conversations tutor_conversations_source_question_row_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_conversations
+    ADD CONSTRAINT tutor_conversations_source_question_row_id_fkey FOREIGN KEY (source_question_row_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_conversations tutor_conversations_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_conversations
+    ADD CONSTRAINT tutor_conversations_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_injection_log
+    ADD CONSTRAINT tutor_injection_log_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_injection_log
+    ADD CONSTRAINT tutor_injection_log_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.tutor_messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_injection_log
+    ADD CONSTRAINT tutor_injection_log_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_assignments
+    ADD CONSTRAINT tutor_instruction_assignments_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_related_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_assignments
+    ADD CONSTRAINT tutor_instruction_assignments_related_message_id_fkey FOREIGN KEY (related_message_id) REFERENCES public.tutor_messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_assignments
+    ADD CONSTRAINT tutor_instruction_assignments_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_assignment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_exposures
+    ADD CONSTRAINT tutor_instruction_exposures_assignment_id_fkey FOREIGN KEY (assignment_id) REFERENCES public.tutor_instruction_assignments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_exposures
+    ADD CONSTRAINT tutor_instruction_exposures_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_instruction_exposures
+    ADD CONSTRAINT tutor_instruction_exposures_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_memory_summaries
+    ADD CONSTRAINT tutor_memory_summaries_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_messages tutor_messages_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_messages
+    ADD CONSTRAINT tutor_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_messages tutor_messages_source_question_row_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_messages
+    ADD CONSTRAINT tutor_messages_source_question_row_id_fkey FOREIGN KEY (source_question_row_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_messages tutor_messages_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_messages
+    ADD CONSTRAINT tutor_messages_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: tutor_question_links tutor_question_links_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_question_links
+    ADD CONSTRAINT tutor_question_links_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_question_links tutor_question_links_related_question_row_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_question_links
+    ADD CONSTRAINT tutor_question_links_related_question_row_id_fkey FOREIGN KEY (related_question_row_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_question_links tutor_question_links_source_question_row_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_question_links
+    ADD CONSTRAINT tutor_question_links_source_question_row_id_fkey FOREIGN KEY (source_question_row_id) REFERENCES public.questions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tutor_question_links tutor_question_links_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_question_links
+    ADD CONSTRAINT tutor_question_links_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -7108,6 +7883,193 @@ ALTER TABLE public.tutor_context_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.tutor_context_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_conversations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_conversations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_conversations tutor_conversations_insert_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR INSERT WITH CHECK ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_conversations tutor_conversations_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_conversations tutor_conversations_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_service_role ON public.tutor_conversations TO service_role USING (true);
+
+
+--
+-- Name: tutor_conversations tutor_conversations_update_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_injection_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_injection_log tutor_injection_log_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_log_service_role ON public.tutor_injection_log TO service_role USING (true);
+
+
+--
+-- Name: tutor_injection_signatures; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_injection_signatures ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_injection_signatures tutor_injection_signatures_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_signatures_service_role ON public.tutor_injection_signatures TO service_role USING (true);
+
+
+--
+-- Name: tutor_instruction_assignments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_instruction_assignments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_select_own ON public.tutor_instruction_assignments FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_service_role ON public.tutor_instruction_assignments TO service_role USING (true);
+
+
+--
+-- Name: tutor_instruction_exposures; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_instruction_exposures ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_select_own ON public.tutor_instruction_exposures FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_service_role ON public.tutor_instruction_exposures TO service_role USING (true);
+
+
+--
+-- Name: tutor_memory_summaries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_memory_summaries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_select_own ON public.tutor_memory_summaries FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_service_role ON public.tutor_memory_summaries TO service_role USING (true);
+
+
+--
+-- Name: tutor_messages; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_messages ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_messages tutor_messages_insert_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT WITH CHECK ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_messages tutor_messages_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_select_own ON public.tutor_messages FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_messages tutor_messages_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_service_role ON public.tutor_messages TO service_role USING (true);
+
+
+--
+-- Name: tutor_prompt_chips; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_prompt_chips ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_prompt_chips tutor_prompt_chips_select_authenticated; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_prompt_chips_select_authenticated ON public.tutor_prompt_chips FOR SELECT TO authenticated USING ((active = true));
+
+
+--
+-- Name: tutor_prompt_chips tutor_prompt_chips_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_prompt_chips_service_role ON public.tutor_prompt_chips TO service_role USING (true);
+
+
+--
+-- Name: tutor_question_links; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_question_links ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_question_links tutor_question_links_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_question_links_select_own ON public.tutor_question_links FOR SELECT USING ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_question_links tutor_question_links_service_role; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_question_links_service_role ON public.tutor_question_links TO service_role USING (true);
+
 
 --
 -- Name: usage_rate_limit_ledger; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7861,6 +8823,13 @@ GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_do
 --
 
 GRANT ALL ON FUNCTION public.set_profile_age_fields() TO service_role;
+
+
+--
+-- Name: FUNCTION validate_memory_summary_schema(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.validate_memory_summary_schema() FROM PUBLIC;
 
 
 --
