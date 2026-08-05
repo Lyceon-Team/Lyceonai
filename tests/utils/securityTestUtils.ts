@@ -78,6 +78,7 @@ export function setupSecurityMocks() {
       }
       return { user: req.user, supabase: req.supabase };
     },
+    requireStudentOnly: (_req: any, _res: any, next: any) => next(),
     requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
     requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
     requireProfileComplete: (_req: any, _res: any, next: any) => next(),

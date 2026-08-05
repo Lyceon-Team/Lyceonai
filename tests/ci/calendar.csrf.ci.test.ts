@@ -34,6 +34,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     req.requestId ??= "req-calendar-csrf";
     next();
   },
+  requireStudentOnly: (_req: any, _res: any, next: any) => next(),
   requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
   requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
   requireProfileComplete: (_req: any, _res: any, next: any) => next(),
