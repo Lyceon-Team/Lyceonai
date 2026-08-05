@@ -1,7 +1,7 @@
 # LISA — Gap Closure & Work Plan
 
-**Version:** V1.1
-**Status:** Draft for Karl approval → on approval, becomes the working plan for Vertical C
+**Version:** V1.2
+**Status:** PAUSED at WS-L0.3 pending WS-M (Migration Integrity). WS-L1 hold — Karl ruling 2026-08-04.
 **Date:** 2026-08-04
 **Supersedes:** V1.0 (2026-08-04, chat-delivered)
 **Branch:** `lisa` — all LISA / AI-tutor work routes here
@@ -147,33 +147,24 @@ Each item: **spec source** → **acceptance criterion** → **proving mechanism*
 
 #### L0.1 — Migration-ledger reconciliation `[READ-ONLY]`
 
-Prod's applied chain has 16 entries ending `20260624020000_05d_governance_substrate`. CC's inventory cites `20260625010000`, `20260626010000`, and `20260630000000_practice_quota_rpc.sql` — none in the ledger — yet `check_and_reserve_practice_quota`, the `_rl_*` helpers, and `usage_rate_limit_ledger` are live in prod.
+**CLOSED 2026-08-04.** Verdict **(a)** confirmed: SQL was applied to prod outside the
+migration system. All 16 migration files dated `20260625000000` through `20260724010000`
+are absent from `schema_migrations`, yet 14 of 14 objects sampled across them are live in
+prod. This is not partial drift — the ledger stopped recording on 2026-06-25.
 
-Exactly one is true: **(a)** SQL was applied to prod outside the migration system, or **(b)** CC mis-attributed those objects.
-
-- **Acceptance:** (a) vs (b) resolved with file:line evidence for every object in question. If (a): a written list of every prod object with no ledger provenance.
-- **Proving mechanism:** `scripts/ci/migration-ledger-parity` — replays repo migrations to a throwaway DB and diffs the resulting schema against a prod introspection snapshot. Non-empty diff fails.
-- **Gates:** L0.3. Do not author tutor DDL onto a schema of unknown provenance.
-- **Owner:** CC (read-only) → Claude triage → Karl ruling if (a).
+Escalated to its own program-level workstream: `docs/plans/WS-M_Migration_Integrity.md`.
+Forensic evidence and root-cause analysis live there.
 
 #### L0.2 — Legacy migration-file removal `[REPO-ONLY]`
 
-**Correction of record:** there are no dead tutor tables in prod. A full `pg_class` sweep across all non-system schemas returns two objects, both live config tables this plan keeps. **No `DROP TABLE` migration is authored.** With no target, `DROP TABLE IF EXISTS` returns success and proves nothing — the fail-open shape, and a violation of the rule that irreversible operations require exact-target proof on real schema with a committed negative control.
-
-The dead artifacts are repo files never applied:
-
-| Artifact | Location |
-|---|---|
-| `chat_messages` | `database/migrations/0001_core_schema.sql:324` |
-| `tutor_interactions` | `database/20241207_add_tutor_interactions.sql:1` |
-| `tutor_memory_summaries` | referenced in pre-baseline `20260607_ws0_stop_the_bleed.sql`; **creating migration absent from repo** — broken chain |
-| `_rl_estimate_tutor_cost_micros`, `check_and_reserve_tutor_budget`, `finalize_tutor_usage` | pre-baseline `20260408_rate_limit_ledger_truth.sql` |
-
-- **Real risk being closed:** these files re-create dead objects on `supabase db reset` or a new-environment bootstrap.
-- **Acceptance:** legacy `database/` directory and orphaned pre-baseline files deleted or quarantined outside the migration path; `supabase/migrations/` is the single migration root.
-- **Proving mechanism:** `ci/single-migration-root` — fails if any `.sql` outside `supabase/migrations/` contains `CREATE TABLE`; plus L0.1's parity script re-run clean.
+**MOVED to WS-M item M3.1.** Legacy migration-file removal is a program-level bypass path,
+not a LISA concern. The correction of record — that no dead tutor tables exist in prod and
+no `DROP TABLE` migration is authored — is preserved in WS-M §M3.
 
 #### L0.3 — Canonical tutor schema
+
+**BLOCKED on WS-M item M1.2.** No new migration is authored anywhere in the program until
+the ledger is verified and repaired. Authoring a 17th unrecorded migration deepens the defect.
 
 - **Spec source:** Doc 03A V3 §17 (tables, RLS, grants, triggers, indexes, ownership classes). `tutor_conversations` must carry `crisis_flagged BOOLEAN NOT NULL DEFAULT FALSE` and partial index `idx_tutor_conversations_crisis`.
 - **Acceptance:** all 10 missing tables created exactly per §17. RLS enabled on every student-scoped table with `student_id`-bound policies per `INV-03-14`. No grant wider than spec.
@@ -283,8 +274,8 @@ Standing per-step process. CC does not vary it.
 |---|---|---|
 | S1 | **`canAccessFeature` home.** 03A V3 §15 delegates to Doc 01 V8 `EntitlementService.canAccessFeature`. Prod has `entitlement_active(p_profile_id)` but no feature-gate RPC. Doc 01 V8 not in advisory context | **Blocks WS-L1.** Needs Doc 01 V8 upload or a Karl ruling on TS-service vs DB-RPC |
 | S2 | **CR-03C-V3-01** crisis classifier | **Blocks WS-L2.** 4 open questions in the CR |
-| S3 | **Migration-ledger provenance** (G02) | **Blocks L0.3.** Resolved by L0.1 |
-| S4 | Full-length and calendar quota RPCs absent from prod | Program-level, outside LISA. Raise separately; do not fix in this plan |
+| S3 | **Migration-ledger provenance** (G02) | **RESOLVED.** Verdict (a) confirmed. Superseded by WS-M. |
+| S4 | Full-length and calendar quota RPCs absent from prod | **MOVED to WS-M item M4.1.** Re-verified 2026-08-04: both RPCs genuinely absent from prod. Unlike the 16 out-of-band migrations, these may never have been authored at all. |
 | S5 | Statutory floor for conversational AI serving minors | Attach to Doc 07E **W9 legal counsel sign-off**. Not an engineering determination |
 | S6 | GCP project named `replit-cop` in production | Naming debt. Record in 03C Operations Runbook so on-call is not misled |
 
@@ -296,3 +287,4 @@ Standing per-step process. CC does not vary it.
 |---|---|---|
 | V1.0 | 2026-08-04 | Initial, chat-delivered |
 | V1.1 | 2026-08-04 | Rebuilt for `docs/`. Adds CR-03C-V3-01 linkage; G02 migration-ledger finding; G08 missing alias config keys; L0.2 correction of record on dead tables; per-item proving mechanisms; execution protocol; open-seam register |
+| V1.2 | 2026-08-04 | L0.1 closed, verdict (a). L0.2 moved to WS-M M3.1. L0.3 blocked on WS-M M1.2. S3 resolved, S4 moved to WS-M M4.1. Vertical paused per Karl ruling |
