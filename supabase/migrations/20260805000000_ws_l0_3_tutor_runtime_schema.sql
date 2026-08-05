@@ -29,6 +29,23 @@
 BEGIN;
 
 -- ============================================================================
+-- 0. Utility: update_updated_at_column()
+--    Defined in database/migrations/0001_core_schema.sql (legacy path) but
+--    NOT in the supabase/migrations/ pipeline. CREATE OR REPLACE is idempotent
+--    — a no-op in prod where it already exists, and creates it in CI's fresh
+--    PostgreSQL context (genesis-fresh-apply).
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ============================================================================
 -- 1. tutor_conversations — conversation envelopes with scope metadata
 --    @spec [Doc-03A_V3.0, §18.1]
 -- ============================================================================
