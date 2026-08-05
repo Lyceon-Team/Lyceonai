@@ -1,16 +1,17 @@
 -- ============================================================================
--- WS-L0.3: LISA Tutor Runtime Schema — 10 canonical tutor tables
+-- WS-L0.3: LISA Tutor Runtime Schema — 9 new tables + seeds into 1 existing
 -- ============================================================================
 -- @spec  [Doc-03A_V3.0, §17–§18, §6.4, Appendix B]
 -- @implemented [2026-08-05]
 --
--- Creates the complete tutor runtime schema per Doc 03A V3.0 §17:
+-- Creates 9 tutor tables per Doc 03A V3.0 §17 and seeds Layer-2/memory keys
+-- into the pre-existing tutor_context_runtime_config (from WS2):
 --   6 runtime tables:  tutor_conversations, tutor_messages,
 --                      tutor_memory_summaries, tutor_instruction_assignments,
 --                      tutor_question_links, tutor_instruction_exposures
---   3 config/obs tables: tutor_context_runtime_config,
---                        tutor_injection_signatures, tutor_injection_log
+--   2 config/obs tables: tutor_injection_signatures, tutor_injection_log
 --   1 config table:      tutor_prompt_chips (§6.4 V1 chips)
+--   + INSERT 4 keys into tutor_context_runtime_config (owned by WS2 migration)
 --
 -- RLS enabled on every student-scoped table with student_id-bound SELECT
 -- policies per INV-03-14. service_role gets full access per existing prod
@@ -526,32 +527,19 @@ CREATE POLICY tutor_instruction_exposures_service_role ON public.tutor_instructi
 
 
 -- ============================================================================
--- 7. tutor_context_runtime_config — runtime configuration
+-- 7. tutor_context_runtime_config — ALREADY EXISTS (20260610000000_ws2_config_constants.sql)
 --    @spec [Doc-03A_V3.0, §18.7, CR-03A-30]
---    Config table — no student_id, no student RLS policy.
---    Admin-managed; service_role read. Name per 01A §8 convention.
+--    Table created by WS2 migration using 01A §8 template (key/value/value_type/owner).
+--    RLS, grants, and Doc 03 §24 seeds already applied there.
+--    We only INSERT the Doc 03A §18.7 Layer-2/memory keys not seeded in WS2.
+-- LYCEON-MIGRATION-REVIEWED (INV-06): rollback includes DELETE of these keys.
 -- ============================================================================
 
-CREATE TABLE public.tutor_context_runtime_config (
-  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  config_key                  TEXT NOT NULL UNIQUE,
-  config_value                JSONB NOT NULL,
-  description                 TEXT,
-  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.tutor_context_runtime_config ENABLE ROW LEVEL SECURITY;
-
--- No student SELECT — config is read by server code via service_role only
-CREATE POLICY tutor_context_runtime_config_service_role ON public.tutor_context_runtime_config
-  FOR ALL TO service_role USING (true);
-
--- Seed values for V1 per §18.7
-INSERT INTO public.tutor_context_runtime_config (config_key, config_value, description) VALUES
-  ('recent_message_window', '12', 'Default number of recent messages loaded in Layer 2'),
-  ('memory_summary_staleness_days', '14', 'Days after which teaching_profile is considered stale'),
-  ('injection_length_bound_chars', '4000', 'Max student message length before rejection'),
-  ('study_context_relevance_window_days', '7', 'Days before scheduled_exam_date that triggers study context load');
+INSERT INTO public.tutor_context_runtime_config (key, value, value_type, owner, description) VALUES
+  ('recent_message_window',                '12',   'integer', 'engineering', 'Doc 03A §18.7: recent messages loaded in Layer 2'),
+  ('memory_summary_staleness_days',        '14',   'integer', 'product',    'Doc 03A §18.7: days before teaching_profile is stale'),
+  ('injection_length_bound_chars',         '4000', 'integer', 'engineering', 'Doc 03A §18.7: max student message length before rejection'),
+  ('study_context_relevance_window_days',  '7',    'integer', 'product',    'Doc 03A §18.7: days before exam_date that triggers study context');
 
 
 -- ============================================================================
@@ -668,8 +656,7 @@ COMMENT ON TABLE public.tutor_question_links IS
   'Question relationship log — audit trail for tutor-suggested retries (§8.5). §18.5.';
 COMMENT ON TABLE public.tutor_instruction_exposures IS
   'Rendered surface log — what the student actually saw. §18.6.';
-COMMENT ON TABLE public.tutor_context_runtime_config IS
-  'Runtime configuration for LISA context layer. Admin-managed. §18.7.';
+-- tutor_context_runtime_config: not created here (WS2 owns it); comment already set there.
 COMMENT ON TABLE public.tutor_injection_signatures IS
   'Known injection attack patterns. Admin-managed. §18.7.';
 COMMENT ON TABLE public.tutor_injection_log IS
@@ -682,15 +669,20 @@ COMMIT;
 
 -- ============================================================================
 -- DOWN MIGRATION (rollback)
+-- LYCEON-MIGRATION-REVIEWED (INV-06): rollback reviewed.
 -- ============================================================================
 -- To reverse this migration, run the following statements in order.
 -- Dependencies require reverse-creation order.
+-- tutor_context_runtime_config is NOT dropped (owned by WS2); only seeded keys are deleted.
 --
 -- BEGIN;
 -- DROP TABLE IF EXISTS public.tutor_prompt_chips CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_injection_log CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_injection_signatures CASCADE;
--- DROP TABLE IF EXISTS public.tutor_context_runtime_config CASCADE;
+-- DELETE FROM public.tutor_context_runtime_config WHERE key IN (
+--   'recent_message_window', 'memory_summary_staleness_days',
+--   'injection_length_bound_chars', 'study_context_relevance_window_days'
+-- );
 -- DROP TABLE IF EXISTS public.tutor_instruction_exposures CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_question_links CASCADE;
 -- DROP TABLE IF EXISTS public.tutor_instruction_assignments CASCADE;
