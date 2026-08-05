@@ -537,6 +537,30 @@ vi.mock("../apps/api/src/lib/rate-limit-ledger", () => ({
     Math.max(0, input + output),
 }));
 
+vi.mock("../server/services/tutor-config", () => ({
+  getTutorConfigInt: vi.fn((key: string) => {
+    const defaults: Record<string, number> = {
+      tutor_request_timeout_seconds: 30,
+      per_question_cooldown_minutes: 5,
+      cost_soft_alert_usd_month: 10,
+      cost_hard_alert_usd_month: 18,
+      cost_hard_cap_usd_month: 20,
+      vertex_pro_daily_budget_usd: 200,
+      vertex_pro_budget_circuit_breaker_warning_pct: 80,
+      conversation_reuse_days: 7,
+    };
+    const val = defaults[key];
+    if (val === undefined) throw new Error(`Unknown config key: ${key}`);
+    return val;
+  }),
+  getTutorConfigBool: vi.fn((key: string) => {
+    if (key === "vertex_pro_budget_circuit_breaker_enabled") return true;
+    throw new Error(`Unknown config key: ${key}`);
+  }),
+  initTutorConfig: vi.fn(async () => {}),
+  teardownTutorConfig: vi.fn(),
+}));
+
 vi.mock("../server/services/kpi-access", () => ({
   resolvePaidKpiAccessForUser: vi.fn(async (_userId: string, role: Role) => ({
     hasPaidAccess: role === "admin" ? true : state.hasPaidAccess,
@@ -570,6 +594,19 @@ vi.mock("../server/middleware/supabase-auth", () => ({
       return res.status(403).json({
         error: "Student access required",
         message: "Guardian access is denied.",
+      });
+    }
+    return next();
+  },
+  requireStudentOnly: (req: any, res: any, next: any) => {
+    const user = req.user ?? getCurrentUser();
+    if (!user)
+      return res.status(401).json({ error: "Authentication required" });
+    if (user.role !== "student") {
+      return res.status(403).json({
+        error: "Role not permitted",
+        message: "Only students can access this feature.",
+        code: "ROLE_NOT_PERMITTED",
       });
     }
     return next();

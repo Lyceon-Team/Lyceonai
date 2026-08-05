@@ -18,10 +18,10 @@ import {
 import {
   type AuthenticatedRequest,
   requireRequestUser,
-  sendForbidden,
 } from "../middleware/supabase-auth";
 import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+import { getTutorConfigInt } from "../services/tutor-config";
 
 import { z } from "zod";
 
@@ -249,13 +249,9 @@ function sendRecoverableRetry(res: Response, requestId?: string) {
   });
 }
 
-function isGuardianUser(req: AuthenticatedRequest): boolean {
-  return Boolean(req.user?.isGuardian || req.user?.role === "guardian");
-}
-
-function isAdminUser(req: AuthenticatedRequest): boolean {
-  return Boolean(req.user?.isAdmin || req.user?.role === "admin");
-}
+// L1.1c: isGuardianUser and isAdminUser DELETED (2026-08-05).
+// Role enforcement is now structural via requireStudentOnly middleware (server/index.ts).
+// Per Karl ruling #1: /api/tutor/* permits role=student ONLY. No per-handler role checks needed.
 
 function tutorHardThrottle(
   req: AuthenticatedRequest,
@@ -295,26 +291,77 @@ function tutorHardThrottle(
 
 router.use(tutorHardThrottle);
 
-async function ensureTutorEntitlement(
+/**
+ * @spec [Doc-03B_V2 §3.2 entitlement; §3.4 live-exam block; §12.1 canonical step order]
+ * @implemented 2026-08-05
+ * plain English: THE single structural authorization chokepoint for all /api/tutor/* routes.
+ * Runs ONCE as router-level middleware (after requireStudentOnly + tutorHardThrottle).
+ * Checks: (1) paid entitlement active, (2) no live full-length exam in progress.
+ * Replaces the 5 per-handler ensureTutorEntitlement calls and the route-local live-exam check.
+ *
+ * expected outcome: every tutor route is gated identically; no handler can forget a check.
+ * trade-offs: live-exam block now applies to GET /conversations (read) too, not just POST
+ * /messages — this is the spec-correct behavior (Doc 03B §3.4 applies to all tutor endpoints).
+ *
+ * ABSENT CHECKS (reported, not stubbed — fail-closed by omission):
+ *   - V8 §27.3 step 1 (feature enabled): no entitlement_features reader exists
+ *   - V8 §27.3 step 4 (age ≥ minimum): no age check in entitlement path
+ *   - V8 §27.3 step 5 (country eligible): no country check service exists
+ *   - V8 §27.3 step 7 (abuse tier): AbuseScoreService does not exist
+ */
+async function ensureTutorAccess(
   req: AuthenticatedRequest,
   res: Response,
-  userId: string,
-): Promise<boolean> {
+  next: NextFunction,
+): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) {
+    // Should never reach here (requireSupabaseAuth + requireStudentOnly upstream),
+    // but fail closed.
+    sendTutorError(
+      res,
+      401,
+      "NOT_AUTHENTICATED",
+      "Authentication required.",
+      req.requestId,
+    );
+    return;
+  }
+
+  // Step 1: Entitlement check (V8 §27.3 step 3 — the only step with backing infrastructure)
   const role = (req.user?.role ?? "student") as
     | "student"
     | "guardian"
     | "admin";
   const access = await resolvePaidKpiAccessForUser(userId, role);
-  if (access.hasPaidAccess) return true;
-  sendTutorError(
-    res,
-    402,
-    "PREMIUM_REQUIRED",
-    "Upgrade to an active paid plan to unlock tutor.",
-    req.requestId,
-  );
-  return false;
+  if (!access.hasPaidAccess) {
+    sendTutorError(
+      res,
+      402,
+      "PREMIUM_REQUIRED",
+      "Upgrade to an active paid plan to unlock tutor.",
+      req.requestId,
+    );
+    return;
+  }
+
+  // Step 2: Live-exam block (Doc 03B §3.4 — applies to ALL tutor routes, not just POST /messages)
+  const liveExam = await hasActiveFullLengthExam(userId);
+  if (liveExam) {
+    sendTutorError(
+      res,
+      409,
+      "TUTOR_UNAVAILABLE_LIVE_FULL_LENGTH",
+      "Tutor is unavailable while a full-length test is live.",
+      req.requestId,
+    );
+    return;
+  }
+
+  next();
 }
+
+router.use(ensureTutorAccess);
 
 async function loadConversationOrDeny(
   req: AuthenticatedRequest,
@@ -341,15 +388,16 @@ async function loadConversationOrDeny(
     return null;
   }
 
-  if (
-    String((data as ConversationRow).student_id) !== String(user.id) &&
-    !isAdminUser(req)
-  ) {
-    sendForbidden(res, {
-      error: "Forbidden",
-      message: "You do not own this tutor conversation.",
-      requestId: req.requestId,
-    });
+  // L1.1d: admin ownership bypass REMOVED (Karl ruling #2 — admin review is a separate surface).
+  // Doc 03B §3.3: ownership check returns 404 not 403 (per spec, non-owner = "not found").
+  if (String((data as ConversationRow).student_id) !== String(user.id)) {
+    sendTutorError(
+      res,
+      404,
+      "TUTOR_CONVERSATION_NOT_FOUND",
+      "Tutor conversation not found.",
+      req.requestId,
+    );
     return null;
   }
 
@@ -941,15 +989,7 @@ router.post(
     try {
       const user = requireRequestUser(req, res);
       if (!user) return;
-      if (isGuardianUser(req) && !isAdminUser(req)) {
-        sendForbidden(res, {
-          error: "Student access required",
-          message: "Guardians cannot access tutor.",
-          requestId: req.requestId,
-        });
-        return;
-      }
-      if (!(await ensureTutorEntitlement(req, res, user.id))) return;
+      // L1.1c: role + entitlement + live-exam enforced by ensureTutorAccess middleware.
 
       const parsed = TutorStartConversationRequestSchema.safeParse(
         req.body ?? {},
@@ -1065,15 +1105,6 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     const user = requireRequestUser(req, res);
     if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
     const conversation = await loadConversationOrDeny(
       req,
@@ -1144,15 +1175,6 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     const user = requireRequestUser(req, res);
     if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
     const parsed = TutorListConversationsQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
@@ -1221,15 +1243,6 @@ router.post(
   async (req: AuthenticatedRequest, res: Response) => {
     const user = requireRequestUser(req, res);
     if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
 
     const parsed = TutorCloseConversationRequestSchema.safeParse(
       req.body ?? {},
@@ -1284,15 +1297,7 @@ router.post(
 router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
   const user = requireRequestUser(req, res);
   if (!user) return;
-  if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, {
-      error: "Student access required",
-      message: "Guardians cannot access tutor.",
-      requestId: req.requestId,
-    });
-    return;
-  }
-  if (!(await ensureTutorEntitlement(req, res, user.id))) return;
+  // L1.1c: role + entitlement + live-exam enforced by ensureTutorAccess middleware.
 
   const parsed = TutorAppendMessageRequestSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -1362,18 +1367,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     }
 
     tutorReservationId = reservation.reservationId;
-
-    const liveFullLength = await hasActiveFullLengthExam(user.id);
-    if (liveFullLength) {
-      sendTutorError(
-        res,
-        409,
-        "TUTOR_UNAVAILABLE_LIVE_FULL_LENGTH",
-        "Tutor is unavailable while a full-length test is live.",
-        req.requestId,
-      );
-      return;
-    }
+    // L1.2: live-exam block moved to ensureTutorAccess middleware (all routes, not just POST /messages).
 
     const scopeResolution = await resolveScope({
       conversation,
@@ -1667,9 +1661,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           ignored_conflicts: scopeResolution.conflict_fields,
         },
       },
+      // @spec [Doc-03B_V2 §21; L1.3] values from tutor_context_runtime_config (no hardcoded constants)
       runtime_limits: {
         max_output_tokens: 600,
-        timeout_ms: 8000,
+        timeout_ms: getTutorConfigInt("tutor_request_timeout_seconds") * 1000,
       },
     };
 

@@ -843,6 +843,49 @@ export function requireProfileComplete(
 }
 
 /**
+ * @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1] | @implemented 2026-08-05
+ * plain English: LISA student-only role gate. `/api/tutor/*` permits role `student` ONLY.
+ * All other roles (guardian, admin, support, tutor, teacher) get 403 `role_not_permitted`.
+ * Built as an allowlist of one, never a denylist. Admin safety-review access is a separate
+ * surface (out of scope — Karl ruling #2).
+ *
+ * expected outcome: only role=student reaches tutor route handlers.
+ * trade-offs: admin must use a dedicated admin surface (not built yet) for tutor review.
+ */
+export function requireStudentOnly(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.user) {
+    return sendUnauthenticated(res, req.requestId);
+  }
+
+  if (req.user.role !== "student") {
+    logger.warn(
+      "AUTH",
+      "role_not_permitted",
+      "Non-student role attempted to access student-only surface",
+      {
+        userId: req.user.id,
+        role: req.user.role,
+        path: req.path,
+        requestId: req.requestId,
+      },
+    );
+
+    return sendForbidden(res, {
+      error: "Role not permitted",
+      message: "Only students can access this feature.",
+      requestId: req.requestId,
+      extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+
+  return next();
+}
+
+/**
  * Middleware to require student or admin role (blocks guardians)
  * Returns 403 if user is a guardian
  */
