@@ -5,11 +5,17 @@
  * Pixel-floor guarantee: the Desmos host is ≥DESMOS_HOST_MIN_PX at every
  * supported viewport, on first render, after resize, and in every fallback.
  *
- * The pixel floor is enforced by THREE cooperating mechanisms:
- *  1. CSS `min-width` on the calculator panel — browser-enforced, immediate.
- *  2. `onResize` callback + imperative Panel API — runtime clamp during drag.
- *  3. Conservative initial `minSize` percentage computed from SPLIT_BREAKPOINT —
- *     guarantees the correct size even before measurement.
+ * Pixel floor enforced by CSS `min-width` (browser-continuous); the library's
+ * `minSize` percentage is a soft initial constraint that bounds drag at the
+ * breakpoint-minimum container width. No JS observer needed — CSS `min-width`
+ * is the single source of truth for the pixel floor.
+ *
+ *  1. CSS `min-width` on the calculator panel — browser-enforced, continuous,
+ *     cannot be violated by any drag, keyboard resize, or window resize.
+ *  2. `onResize` callback + imperative Panel API — defence-in-depth runtime
+ *     clamp during drag (snaps back if library somehow violates the floor).
+ *  3. Static `minSize` percentage computed from SPLIT_BREAKPOINT — guarantees
+ *     the correct library-level bound at the smallest supported container.
  *
  * Below the SPLIT_BREAKPOINT the calculator renders full-width (stacked layout)
  * instead of in a narrow sidebar column, avoiding any sub-minimum host width.
@@ -66,11 +72,12 @@ export const SPLIT_BREAKPOINT =
   BREAKPOINT_EXTRA; // 1062
 
 /**
- * Conservative percentages computed once at the known-minimum container width
- * (SPLIT_BREAKPOINT − APP_HORIZONTAL_PADDING). These guarantee the pixel floor
- * even on the very first render, before any container measurement occurs.
- * The CSS `min-width` on each panel is the TRUE pixel floor; these percentages
- * are a secondary constraint for smooth library-level drag bounding.
+ * Static percentages computed once at the known-minimum container width
+ * (SPLIT_BREAKPOINT − APP_HORIZONTAL_PADDING). These give the library a soft
+ * bound that prevents it from allocating less than the pixel minimum during
+ * drag at the breakpoint container width. The CSS `min-width` on each panel
+ * is the TRUE pixel floor (browser-enforced, continuous); these percentages
+ * are a secondary initial constraint only.
  */
 const CONTAINER_AT_BREAKPOINT = SPLIT_BREAKPOINT - APP_HORIZONTAL_PADDING; // 1030
 const CALC_MIN_PCT = Math.ceil((CALC_MIN_PX / CONTAINER_AT_BREAKPOINT) * 100); // 49
@@ -97,39 +104,6 @@ function useSplitEnabled(): boolean {
   }, []);
 
   return enabled;
-}
-
-/**
- * Dynamically recompute percentage-based minSize from a measured container.
- * This is a SECONDARY constraint — the CSS `min-width` on the panel is the
- * primary pixel floor. The dynamic percentage prevents the library from even
- * attempting to allocate less than the pixel minimum during drag, giving a
- * smoother UX at wider viewports where the conservative CALC_MIN_PCT would
- * be unnecessarily restrictive.
- */
-function useDynamicMinPct(
-  groupRef: React.RefObject<HTMLDivElement | null>,
-  pixelMin: number,
-  initialPct: number,
-): number {
-  const [minPct, setMinPct] = React.useState(initialPct);
-
-  React.useEffect(() => {
-    const el = groupRef.current;
-    if (!el) return;
-    const compute = (): void => {
-      const width = el.getBoundingClientRect().width;
-      if (width > 0) {
-        setMinPct(Math.ceil((pixelMin / width) * 100));
-      }
-    };
-    compute();
-    const observer = new ResizeObserver(compute);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [groupRef, pixelMin]);
-
-  return minPct;
 }
 
 export default function CanonicalPracticePage(props: {
@@ -197,13 +171,13 @@ export default function CanonicalPracticePage(props: {
   const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
   const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
 
-  // Dynamic percentage constraints — secondary to CSS min-width pixel floor
-  const calcMinPct = useDynamicMinPct(panelGroupRef, CALC_MIN_PX, CALC_MIN_PCT);
-  const questionMinPct = useDynamicMinPct(
-    panelGroupRef,
-    QUESTION_MIN_PX,
-    QUESTION_MIN_PCT,
-  );
+  // Static percentage constraints — soft library-level bound computed from the
+  // breakpoint-minimum container width. CSS min-width is the true pixel floor
+  // (browser-enforced, continuous); these percentages are a secondary initial
+  // constraint that bounds the library's drag allocation at the smallest
+  // supported container width. No dynamic observer needed.
+  const calcMinPct = CALC_MIN_PCT;
+  const questionMinPct = QUESTION_MIN_PCT;
 
   /**
    * Runtime pixel-floor enforcement via imperative API.
@@ -226,6 +200,16 @@ export default function CanonicalPracticePage(props: {
    * Override the library's percentage-based ARIA values with real pixel values.
    * The library sets aria-value* in its layout effect; setTimeout(0) ensures
    * our pixel override runs after the library's DOM mutations complete.
+   *
+   * ARIA controlled value = question panel width (separator position from left).
+   * This is the standard model for a left-to-right separator:
+   *   aria-valuenow  = current question panel width in px
+   *   aria-valuemin  = QUESTION_MIN_PX (smallest the question panel can be)
+   *   aria-valuemax  = groupWidth − CALC_MIN_PX (largest the question panel can
+   *                    be before the calculator violates its pixel floor)
+   * The calculator pixel floor is provably enforced: when aria-valuenow equals
+   * aria-valuemax, calculator width = groupWidth − (groupWidth − CALC_MIN_PX)
+   * = CALC_MIN_PX = 496px → host = 480px ≥ 450px.
    */
   const handleGroupLayout = React.useCallback((sizes: number[]): void => {
     const groupEl = panelGroupRef.current;
