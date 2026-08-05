@@ -843,14 +843,17 @@ export function requireProfileComplete(
 }
 
 /**
- * @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1] | @implemented 2026-08-05
- * plain English: LISA student-only role gate. `/api/tutor/*` permits role `student` ONLY.
- * All other roles (guardian, admin, support, tutor, teacher) get 403 `role_not_permitted`.
- * Built as an allowlist of one, never a denylist. Admin safety-review access is a separate
- * surface (out of scope — Karl ruling #2).
+ * @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1; Doc-03 §12.5; INV-03-07] | @implemented 2026-08-05
+ * plain English: LISA student-only role gate + under-13 age gate.
+ * `/api/tutor/*` permits role `student` ONLY — all other roles get 403 `ROLE_NOT_PERMITTED`.
+ * Students with `is_under_13 === true` are unconditionally denied (403 `age_restriction`).
+ * Doc 03 §12.5: "Accounts with age < 13 have no LISA access." No guardian-consent exception.
+ * INV-03-07: "LISA access requires student age >= 13." Violation: COPPA exposure.
+ * Doc 03B §3.2.1: denial reason `age_below_minimum` → 403, code `age_restriction`.
  *
- * expected outcome: only role=student reaches tutor route handlers.
+ * expected outcome: only role=student with age >= 13 reaches tutor route handlers.
  * trade-offs: admin must use a dedicated admin surface (not built yet) for tutor review.
+ *   Under-13 students are blocked even with guardian consent — spec is explicit, no exception.
  */
 export function requireStudentOnly(
   req: Request,
@@ -879,6 +882,28 @@ export function requireStudentOnly(
       message: "Only students can access this feature.",
       requestId: req.requestId,
       extra: { code: "ROLE_NOT_PERMITTED" },
+    });
+  }
+
+  // INV-03-07 + Doc 03 §12.5: unconditional age gate — no guardian-consent exception.
+  // Doc 03B §3.2.1: age_below_minimum → 403, code age_restriction.
+  if (req.user.is_under_13) {
+    logger.warn(
+      "AUTH",
+      "age_restriction",
+      "Under-13 student blocked from LISA access",
+      {
+        userId: req.user.id,
+        path: req.path,
+        requestId: req.requestId,
+      },
+    );
+
+    return sendForbidden(res, {
+      error: "Age restriction",
+      message: "This feature requires an older account.",
+      requestId: req.requestId,
+      extra: { code: "AGE_RESTRICTION" },
     });
   }
 

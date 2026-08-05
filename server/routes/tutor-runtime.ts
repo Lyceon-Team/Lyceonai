@@ -303,9 +303,11 @@ router.use(tutorHardThrottle);
  * trade-offs: live-exam block now applies to GET /conversations (read) too, not just POST
  * /messages — this is the spec-correct behavior (Doc 03B §3.4 applies to all tutor endpoints).
  *
+ * ENFORCED UPSTREAM (requireStudentOnly in supabase-auth.ts):
+ *   - V8 §27.3 step 4 (age ≥ minimum): is_under_13 → 403 AGE_RESTRICTION (Doc 03 §12.5, INV-03-07)
+ *
  * ABSENT CHECKS (reported, not stubbed — fail-closed by omission):
  *   - V8 §27.3 step 1 (feature enabled): no entitlement_features reader exists
- *   - V8 §27.3 step 4 (age ≥ minimum): no age check in entitlement path
  *   - V8 §27.3 step 5 (country eligible): no country check service exists
  *   - V8 §27.3 step 7 (abuse tier): AbuseScoreService does not exist
  */
