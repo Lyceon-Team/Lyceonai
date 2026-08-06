@@ -25,6 +25,101 @@
 
 ## Entries
 
+SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | PROPOSED (Karl approved 2026-08-04)
+Change: The corpus mandates a human safety review workflow (Doc 03 §21.3) whose required actions
+  cannot be performed without reading the flagged conversation, but Doc 03B §3.1 line 243 forbids
+  admin absolutely on /api/tutor/*. Doc 07E has no provisions for staff access to tutor data.
+  The corpus mandates a capability its own role rule forbids.
+WAS: Doc 03B §3.1 blocks all non-student roles from /api/tutor/* (403 role_not_permitted). Doc 03
+  §21.3 mandates human review of crisis-flagged conversations. No access path connects the two.
+  Doc 07E provides no staff-access surface for tutor data.
+IS: (a) §3.1 stands unchanged for /api/tutor/*. student only. All other roles 403 role_not_permitted.
+  Already implemented in PR #519. (b) Safety review is a SEPARATE surface outside /api/tutor/*, not
+  a role exception. Read-only. Scoped to conversations where crisis_flagged = true. Not routed
+  through canAccessFeature — different authorization axis. Every read logged append-only with
+  reviewer identity, conversation id, timestamp, action. Write scope limited to classification
+  outcome and review disposition. (c) Doc 03 §21.3 tooling correction: the shared ticketing system
+  carries a conversation identifier and non-content metadata only. Conversation content never leaves
+  Supabase. As currently written §21.3 would export a minor's verbatim crisis disclosure to a
+  third-party SaaS, contradicting ADR-001 §3 and making the Doc 07E deletion cascade unenforceable.
+  (d) Open at V2: §21.3 transitions to a dedicated T&S function at 5,000 paid users or 20+ monthly
+  flags. At that scale the admin role is too broad for standing read access to minors' crisis
+  conversations. Flagged, not resolved.
+Rationale: Karl ruling 2026-08-04 — the contradiction is real. §3.1 is correct for the tutor API
+  surface (student only). The review capability is a separate access path, not an exception to §3.1.
+  Third-party export of crisis content contradicts ADR-001 §3 data-residency and Doc 07E deletion
+  cascade enforceability.
+Version: Doc 03B → V4.2, Doc 03 Main → V1.2.
+No code/schema change from this entry. Owner action: amend Doc 03B, Doc 03 §21.3, and Doc 07E at
+  next spec pass. V2 T&S function is tracked as open, not resolved.
+
+SCL-024 | 2026-08-04 | Doc 03A §18.7, §18.1, §18.2, §18.5 (config table shape + question FK type) | PROPOSED (Karl approved 2026-08-04)
+Change: Two defects in Doc 03A. Production is correct in both; the spec is wrong.
+  (a) Config table shape: Doc 03A §18.7 defines tutor_context_runtime_config with a bespoke shape
+  (id UUID PK, config_key, config_value). Production carries the Doc 01A §8 config template
+  (key TEXT PK, value, value_type, min_value, max_value, allowed_values, owner, description,
+  environment, updated_at, updated_by_profile_id), created by migration
+  supabase/migrations/20260610000000_ws2_config_constants.sql, applied and in ledger. Doc 01A Part I
+  owns config-table shape platform-wide. §18.7 restated a primitive another document owns,
+  differently.
+  (b) Question FK type: Doc 03A types questions(id) foreign keys as UUID. Production: questions.id
+  is TEXT, profiles.id is uuid. A UUID column cannot reference a TEXT primary key — the DDL fails.
+  Four columns across three tables: line 1734 §18.1 tutor_conversations.source_question_row_id;
+  line 1822 §18.2 tutor_messages.source_question_row_id; lines 2012 and 2016 §18.5
+  tutor_question_links.source_question_row_id and .related_question_row_id.
+WAS (a): §18.7 defined tutor_context_runtime_config with (id UUID PK, config_key TEXT, config_value
+  TEXT) — a bespoke shape that conflicts with the platform config template owned by Doc 01A §8.
+WAS (b): §18.1, §18.2, §18.5 typed source_question_row_id and related_question_row_id as UUID
+  REFERENCES questions(id). questions.id is TEXT in production — DDL would fail on type mismatch.
+IS (a): §18.7 removes its DDL and references Doc 01A §8 for config-table shape. §18.7 specifies
+  only the keys it requires and their semantics.
+IS (b): All four question FK columns (§18.1 tutor_conversations.source_question_row_id, §18.2
+  tutor_messages.source_question_row_id, §18.5 tutor_question_links.source_question_row_id and
+  .related_question_row_id) retype from UUID to TEXT. REFERENCES questions(id) ON DELETE SET NULL
+  unchanged.
+Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a) Doc 01A Part I
+  owns config-table shape; §18.7 should not restate it differently. (b) UUID cannot reference TEXT
+  PK — the DDL is structurally invalid against the live schema.
+Version: Doc 03A → V3.1 (config table reference + FK type corrections).
+No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
+  Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
+
+SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | PROPOSED (Karl approved 2026-08-04)
+Change: Doc 03C V3.0 contains no crisis classifier stage. Full-text scan returns zero occurrences
+  of crisis, self-harm, safety classifier, or classifier. Three siblings delegate crisis handling
+  there: Doc 03 §21.1 (crisis detection trigger), INV-03-16 (crisis classification before main
+  response generation), Doc 03A §17 schema (crisis_flagged column + idx_tutor_conversations_crisis
+  index), Doc 03B §0 and §13 step 14 (crisis flow references). Doc 03C.1 has no crisis test
+  scenario.
+WAS: Doc 03C V3.0 has no crisis classifier stage. The pipeline spec gap means four sibling docs
+  reference a capability Doc 03C does not define. Doc 03C §4.5 "Content safety pre-pass" is named
+  misleadingly — it performs prompt-token bounding and its own body says it is not safety
+  enforcement. Doc 03C V3.0's "no further architectural change expected before V1 launch" is
+  falsified by this addition.
+IS: Two-layer crisis classifier gate, both pre-generation, parallel:
+  Layer 1: deterministic signature match against a tutor_crisis_signatures table, reusing the
+  tutor_injection_signatures pattern (Doc 03A). Layer 2: model inference on a new classifier_class
+  alias (alongside flash_class and pro_class; unknown alias continues to throw).
+  New pipeline stage inserted before Vertex invocation. Ordering is load-bearing: INV-03-16 requires
+  "before main response generation."
+  Either layer positive → crisis path per Doc 03 §21.2 (unchanged, referenced not restated).
+  Failure modes: Layer 2 failure → retry once, then Layer 1 result stands, turn proceeds, turn is
+  force-enqueued to the §21.3 review queue, SLI increments. Failure-rate breach pages ops rather
+  than flooding the queue. This is a deliberate narrow exception to fail-closed — blocking returns
+  an error to a student who may be the person the gate exists for. Layer 1 signature table
+  unreadable → fail closed on the turn.
+  Doc 03C §4.5 "Content safety pre-pass" renamed — it does prompt-token bounding, not safety
+  enforcement. The name collides with the crisis classifier stage.
+Rationale: Karl ruling 2026-08-04 — Doc 03C is the sole pipeline-architecture spec and four sibling
+  docs delegate crisis handling to it. The gap is structural, not editorial. Two-layer design
+  provides deterministic baseline (Layer 1) with model-backed depth (Layer 2). Fail-open on Layer 2
+  only is justified because the alternative (fail-closed) returns an error to the student who may be
+  in crisis — the person the gate exists to help.
+Version: Doc 03C → V3.1, Doc 03C.1 → V1.2, Doc 03A → V3.1 (crisis signature table).
+No code/schema change from this entry. Owner action: add crisis classifier stage to Doc 03C,
+  add classifier_class alias to Doc 03A, add crisis test scenarios to Doc 03C.1, rename §4.5 at
+  next spec pass.
+
 SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
 Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
   (tag the skill the student must exercise to reach the correct answer), disambiguation table for
