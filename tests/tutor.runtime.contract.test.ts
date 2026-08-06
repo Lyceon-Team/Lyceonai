@@ -312,6 +312,16 @@ function tableStore(table: string): AnyRow[] {
     case "review_session_items":
     case "full_length_exam_questions":
       return [];
+    case "entitlement_features":
+      // AUD-519-004: ensureTutorAccess reads blocked_during_live_exam from this table.
+      // Return tutor_access feature with blocked_during_live_exam = true (production seed).
+      return [
+        {
+          feature_key: "tutor_access",
+          blocked_during_live_exam: true,
+          enabled: true,
+        },
+      ] as unknown as AnyRow[];
     default:
       throw new Error(`Unexpected table "${table}" in test mock`);
   }
@@ -574,92 +584,80 @@ vi.mock("../server/services/kpi-access", () => ({
   })),
 }));
 
-vi.mock("../server/middleware/supabase-auth", () => ({
-  supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
-    req.requestId ??= "req-tutor-runtime";
-    req.user = getCurrentUser();
-    next();
-  },
-  requireSupabaseAuth: (req: any, res: any, next: any) => {
-    req.requestId ??= "req-tutor-runtime";
-    const user = getCurrentUser();
-    if (!user?.id)
-      return res.status(401).json({ error: "Authentication required" });
-    req.user = user;
-    return next();
-  },
-  requireStudentOrAdmin: (req: any, res: any, next: any) => {
-    const user = req.user ?? getCurrentUser();
-    if (!user)
-      return res.status(401).json({ error: "Authentication required" });
-    if (user.role === "guardian" && !user.isAdmin) {
-      return res.status(403).json({
-        error: "Student access required",
-        message: "Guardian access is denied.",
-      });
-    }
-    return next();
-  },
-  requireStudentOnly: (req: any, res: any, next: any) => {
-    const user = req.user ?? getCurrentUser();
-    if (!user)
-      return res.status(401).json({ error: "Authentication required" });
-    if (user.role !== "student") {
-      return res.status(403).json({
-        error: "Role not permitted",
-        message: "Only students can access this feature.",
-        requestId: req.requestId,
-        extra: { code: "ROLE_NOT_PERMITTED" },
-      });
-    }
-    if (user.is_under_13) {
-      return res.status(403).json({
-        error: "Age restriction",
-        message: "This feature requires an older account.",
-        requestId: req.requestId,
-        extra: { code: "AGE_RESTRICTION" },
-      });
-    }
-    return next();
-  },
-  requireSupabaseAdmin: (_req: any, res: any) =>
-    res.status(403).json({ error: "Admin access required" }),
-  requireProfileComplete: (_req: any, _res: any, next: any) => next(),
-  requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
-  resolveTokenFromRequest: vi.fn((req: any) => {
-    const token = req.cookies?.["sb-access-token"] ?? null;
+vi.mock("../server/middleware/supabase-auth", async (importOriginal) => {
+  // AUD-519-006: use the REAL requireStudentOnly so production regressions
+  // (e.g. fail-open age gate) are visible in these tests. A hand-written
+  // mock re-implementation makes regression tests tautological.
+  const actual =
+    await importOriginal<typeof import("../server/middleware/supabase-auth")>();
+  return {
+    supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
+      req.requestId ??= "req-tutor-runtime";
+      req.user = getCurrentUser();
+      next();
+    },
+    requireSupabaseAuth: (req: any, res: any, next: any) => {
+      req.requestId ??= "req-tutor-runtime";
+      const user = getCurrentUser();
+      if (!user?.id)
+        return res.status(401).json({ error: "Authentication required" });
+      req.user = user;
+      return next();
+    },
+    requireStudentOrAdmin: (req: any, res: any, next: any) => {
+      const user = req.user ?? getCurrentUser();
+      if (!user)
+        return res.status(401).json({ error: "Authentication required" });
+      if (user.role === "guardian" && !user.isAdmin) {
+        return res.status(403).json({
+          error: "Student access required",
+          message: "Guardian access is denied.",
+        });
+      }
+      return next();
+    },
+    // Real production function — tests that guard against age-gate regressions
+    // now exercise the actual code path, not a hand-written copy.
+    requireStudentOnly: actual.requireStudentOnly,
+    requireSupabaseAdmin: (_req: any, res: any) =>
+      res.status(403).json({ error: "Admin access required" }),
+    requireProfileComplete: (_req: any, _res: any, next: any) => next(),
+    requireConsentCompliance: (_req: any, _res: any, next: any) => next(),
+    resolveTokenFromRequest: vi.fn((req: any) => {
+      const token = req.cookies?.["sb-access-token"] ?? null;
 
-    return {
-      token,
-      tokenSource: token ? "cookie:sb-access-token" : null,
-      tokenLength: token ? token.length : null,
-      bearerParsed: false,
-      authHeaderPresent: Boolean(req.headers?.authorization),
-      cookieKeys: Object.keys(req.cookies ?? {}),
-    };
-  }),
-  requireRequestUser: (req: any, res: any) => {
-    if (!req.user?.id) {
-      res.status(401).json({
-        error: "Authentication required",
-        message: "You must be signed in to access this resource",
-      });
-      return null;
-    }
-    return req.user;
-  },
-  sendForbidden: (res: any, body: any) => res.status(403).json(body),
-  // Dormant deletion-lock middleware (gated behind ACCOUNT_DELETION_LIFECYCLE_V2);
-  // pass-through in tests so server/index.ts `app.use(enforceDeletionLock)` resolves.
-  enforceDeletionLock: (
-    _req: import("express").Request,
-    _res: import("express").Response,
-    next: import("express").NextFunction,
-  ) => next(),
-  getSupabaseAdmin: () => ({
-    rpc: vi.fn(async () => ({ data: null, error: null })),
-  }),
-}));
+      return {
+        token,
+        tokenSource: token ? "cookie:sb-access-token" : null,
+        tokenLength: token ? token.length : null,
+        bearerParsed: false,
+        authHeaderPresent: Boolean(req.headers?.authorization),
+        cookieKeys: Object.keys(req.cookies ?? {}),
+      };
+    }),
+    requireRequestUser: (req: any, res: any) => {
+      if (!req.user?.id) {
+        res.status(401).json({
+          error: "Authentication required",
+          message: "You must be signed in to access this resource",
+        });
+        return null;
+      }
+      return req.user;
+    },
+    sendForbidden: (res: any, body: any) => res.status(403).json(body),
+    // Dormant deletion-lock middleware (gated behind ACCOUNT_DELETION_LIFECYCLE_V2);
+    // pass-through in tests so server/index.ts `app.use(enforceDeletionLock)` resolves.
+    enforceDeletionLock: (
+      _req: import("express").Request,
+      _res: import("express").Response,
+      next: import("express").NextFunction,
+    ) => next(),
+    getSupabaseAdmin: () => ({
+      rpc: vi.fn(async () => ({ data: null, error: null })),
+    }),
+  };
+});
 
 vi.mock("../server/middleware/csrf-double-submit", () => ({
   doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),

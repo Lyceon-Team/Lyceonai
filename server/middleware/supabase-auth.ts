@@ -844,16 +844,20 @@ export function requireProfileComplete(
 
 /**
  * @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1; Doc-03 §12.5; INV-03-07] | @implemented 2026-08-05
- * plain English: LISA student-only role gate + under-13 age gate.
+ * plain English: LISA student-only role gate + under-13 age gate (fail-closed).
  * `/api/tutor/*` permits role `student` ONLY — all other roles get 403 `ROLE_NOT_PERMITTED`.
- * Students with `is_under_13 === true` are unconditionally denied (403 `age_restriction`).
+ * Age gate is fail-closed: only `is_under_13 === false` passes. Absent, undefined, or
+ * unrecognized values are denied (403 `age_restriction`). This means a student whose
+ * DOB has not yet been set is blocked — the profile-completion gate upstream
+ * (requireProfileComplete) should catch this first, but the age gate is a hard backstop.
  * Doc 03 §12.5: "Accounts with age < 13 have no LISA access." No guardian-consent exception.
  * INV-03-07: "LISA access requires student age >= 13." Violation: COPPA exposure.
  * Doc 03B §3.2.1: denial reason `age_below_minimum` → 403, code `age_restriction`.
  *
- * expected outcome: only role=student with age >= 13 reaches tutor route handlers.
+ * expected outcome: only role=student with is_under_13 === false reaches tutor route handlers.
  * trade-offs: admin must use a dedicated admin surface (not built yet) for tutor review.
  *   Under-13 students are blocked even with guardian consent — spec is explicit, no exception.
+ *   Students with unknown age state are blocked until DOB is confirmed.
  */
 export function requireStudentOnly(
   req: Request,
@@ -887,7 +891,9 @@ export function requireStudentOnly(
 
   // INV-03-07 + Doc 03 §12.5: unconditional age gate — no guardian-consent exception.
   // Doc 03B §3.2.1: age_below_minimum → 403, code age_restriction.
-  if (req.user.is_under_13) {
+  // Fail-closed: absent/undefined/unrecognized is_under_13 is denied.
+  // Only explicit `false` (age confirmed ≥ 13) passes.
+  if (req.user.is_under_13 !== false) {
     logger.warn(
       "AUTH",
       "age_restriction",

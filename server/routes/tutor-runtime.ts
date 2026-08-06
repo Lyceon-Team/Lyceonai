@@ -296,7 +296,8 @@ router.use(tutorHardThrottle);
  * @implemented 2026-08-05
  * plain English: THE single structural authorization chokepoint for all /api/tutor/* routes.
  * Runs ONCE as router-level middleware (after requireStudentOnly + tutorHardThrottle).
- * Checks: (1) paid entitlement active, (2) no live full-length exam in progress.
+ * Checks: (1) paid entitlement active, (2) live-exam block via
+ * entitlement_features.blocked_during_live_exam (Doc 01 V8 §27.3 step 6).
  * Replaces the 5 per-handler ensureTutorEntitlement calls and the route-local live-exam check.
  *
  * expected outcome: every tutor route is gated identically; no handler can forget a check.
@@ -306,10 +307,13 @@ router.use(tutorHardThrottle);
  * ENFORCED UPSTREAM (requireStudentOnly in supabase-auth.ts):
  *   - V8 §27.3 step 4 (age ≥ minimum): is_under_13 → 403 AGE_RESTRICTION (Doc 03 §12.5, INV-03-07)
  *
- * ABSENT CHECKS (reported, not stubbed — fail-closed by omission):
- *   - V8 §27.3 step 1 (feature enabled): no entitlement_features reader exists
- *   - V8 §27.3 step 5 (country eligible): no country check service exists
- *   - V8 §27.3 step 7 (abuse tier): AbuseScoreService does not exist
+ * ABSENT CHECKS (unenforced — requests proceed without these gates):
+ *   - V8 §27.3 step 1 (feature enabled): no canAccessFeature / entitlement_features reader
+ *     exists. Requests are NOT checked against the entitlement_features table.
+ *   - V8 §27.3 step 5 (country eligible): no country check service exists.
+ *     Requests from any country proceed unchecked.
+ *   - V8 §27.3 step 7 (abuse tier): AbuseScoreService does not exist.
+ *     Requests at any abuse tier proceed unchecked.
  */
 async function ensureTutorAccess(
   req: AuthenticatedRequest,
@@ -347,17 +351,32 @@ async function ensureTutorAccess(
     return;
   }
 
-  // Step 2: Live-exam block (Doc 03B §3.4 — applies to ALL tutor routes, not just POST /messages)
-  const liveExam = await hasActiveFullLengthExam(userId);
-  if (liveExam) {
-    sendTutorError(
-      res,
-      409,
-      "TUTOR_UNAVAILABLE_LIVE_FULL_LENGTH",
-      "Tutor is unavailable while a full-length test is live.",
-      req.requestId,
-    );
-    return;
+  // Step 2: Live-exam block — reads entitlement_features.blocked_during_live_exam
+  // through the chokepoint per Doc 01 V8 §27.3 step 6, Doc 03B §3.4.
+  // Only queries full_length_exam_sessions if the feature declares itself exam-blocked.
+  const { data: featureRow } = await supabaseServer
+    .from("entitlement_features")
+    .select("blocked_during_live_exam")
+    .eq("feature_key", "tutor_access")
+    .eq("enabled", true)
+    .limit(1)
+    .maybeSingle();
+
+  // Fail-closed: if the feature row is missing or the column is absent, treat as blocked.
+  const isExamBlocked = featureRow?.blocked_during_live_exam !== false;
+
+  if (isExamBlocked) {
+    const liveExam = await hasActiveFullLengthExam(userId);
+    if (liveExam) {
+      sendTutorError(
+        res,
+        409,
+        "TUTOR_UNAVAILABLE_LIVE_FULL_LENGTH",
+        "Tutor is unavailable while a full-length test is live.",
+        req.requestId,
+      );
+      return;
+    }
   }
 
   next();
