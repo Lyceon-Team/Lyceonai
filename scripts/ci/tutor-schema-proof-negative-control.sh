@@ -48,7 +48,9 @@ for f in "$MIG_DIR"/*.sql; do
 done
 
 echo "==> MUTATE schema: drop student_id from tutor_conversations (required column)"
-psql_db "$DB" -c "ALTER TABLE public.tutor_conversations DROP COLUMN student_id;" >/dev/null
+# CASCADE: RLS policies referencing student_id are dropped along with the column.
+# That's fine — the point is to break the schema so the proof catches it.
+psql_db "$DB" -c "ALTER TABLE public.tutor_conversations DROP COLUMN student_id CASCADE;" >/dev/null
 
 echo "==> run schema-proof against broken schema (it MUST fail)"
 if DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${DB}" \
