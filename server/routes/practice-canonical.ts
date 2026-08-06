@@ -143,20 +143,22 @@ const router = Router();
 
 // @spec [Doc-02B_V4 §41; INV-02B-15 Config Doctrine] | @implemented [2026-06-27]
 // All runtime constants read from practice_runtime_config — no hardcoded literals.
-type PracticeConfig = {
+export type PracticeConfig = {
   maxConcurrentSessions: number;
   defaultSessionCountWeb: number;
   maxSessionCountPremium: number;
   targetSecondsPerQuestion: number;
   answerRateLimitWindowMs: number;
   answerRateLimitMax: number;
+  diagnosticTotalQuestions: number;
+  diagnosticPerDomain: number;
 };
 
 let _configCache: { config: PracticeConfig; ts: number } | null = null;
 let _configInflight: Promise<PracticeConfig> | null = null;
 const CONFIG_TTL_MS = 30_000;
 
-async function loadPracticeConfig(): Promise<PracticeConfig> {
+export async function loadPracticeConfig(): Promise<PracticeConfig> {
   if (_configCache && Date.now() - _configCache.ts < CONFIG_TTL_MS) {
     return _configCache.config;
   }
@@ -178,6 +180,8 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
       "target_seconds_per_question",
       "answer_rate_limit_window_ms",
       "answer_rate_limit_max",
+      "diagnostic_total_questions",
+      "diagnostic_per_domain",
     ]);
 
   if (error) {
@@ -200,6 +204,18 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
     return parsed;
   };
 
+  // Diagnostic keys may be absent when the diagnostic migration has not been
+  // applied yet (Karl applies at step 7). Fall back to the locked spec values
+  // so existing practice tests keep passing. Doc 05P §10.1: 8 × 5 = 40.
+  const readIntOptional = (key: string, fallback: number): number => {
+    if (!configMap.has(key)) return fallback;
+    const raw = configMap.get(key);
+    const parsed =
+      typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
+  };
+
   const config: PracticeConfig = {
     maxConcurrentSessions: readIntRequired("max_concurrent_sessions"),
     defaultSessionCountWeb: readIntRequired("default_session_count_web"),
@@ -207,6 +223,8 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
     targetSecondsPerQuestion: readIntRequired("target_seconds_per_question"),
     answerRateLimitWindowMs: readIntRequired("answer_rate_limit_window_ms"),
     answerRateLimitMax: readIntRequired("answer_rate_limit_max"),
+    diagnosticTotalQuestions: readIntOptional("diagnostic_total_questions", 40),
+    diagnosticPerDomain: readIntOptional("diagnostic_per_domain", 5),
   };
   _configCache = { config, ts: Date.now() };
   return config;
@@ -547,7 +565,7 @@ function buildServedOptions(options: McOption[]): {
 // item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
-function toCanonicalQuestionForServing(
+export function toCanonicalQuestionForServing(
   q: CanonicalQuestionRowLike,
 ): CanonicalQuestionForServing {
   const itemType: CanonicalItemType =
@@ -958,7 +976,7 @@ async function countSessionItems(sessionId: string): Promise<number> {
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
-async function hydrateSessionItemOptionTokens(
+export async function hydrateSessionItemOptionTokens(
   sessionId: string,
 ): Promise<void> {
   const { data, error } = await supabaseServer
@@ -994,7 +1012,7 @@ async function hydrateSessionItemOptionTokens(
   }
 }
 
-async function cleanupFailedSessionMaterialization(
+export async function cleanupFailedSessionMaterialization(
   sessionId: string,
 ): Promise<void> {
   try {
@@ -3041,6 +3059,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const difficultyBucket = resolveDifficultyBucketStrict(
       sessionItem.question_difficulty ?? null,
     );
+    // @spec [Doc-05A §11.4] Diagnostic items emit event_source_kind='diagnostic_attempt'
+    // with source_family='practice' (diagnostics are regular practice events).
+    const eventSourceKind: "practice_attempt" | "diagnostic_attempt" =
+      session.mode === "diagnostic" ? "diagnostic_attempt" : "practice_attempt";
     if (canonicalId && difficultyBucket && section && domain && skill) {
       await applyMasteryEvent({
         studentId: userId,
@@ -3049,7 +3071,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill,
         difficulty: difficultyBucket,
         sourceFamily: "practice",
-        eventSourceKind: "practice_attempt",
+        eventSourceKind,
         correct: isCorrect,
         occurredAt: now,
         eventId: sessionItem.id,
@@ -3065,6 +3087,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         sessionId: payload.sessionId,
         questionCanonicalId: canonicalId,
         sourceFamily: "practice",
+        eventSourceKind,
         section: section || null,
         domain: domain || null,
         skill: skill || null,
@@ -3077,6 +3100,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           sessionId: payload.sessionId,
           questionCanonicalId: canonicalId,
           sourceFamily: "practice",
+          eventSourceKind,
           rawDifficulty: sessionItem.question_difficulty ?? null,
         },
       );
@@ -3107,6 +3131,33 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       status: "completed",
       completed_at: now,
     });
+
+    // @spec [Doc-05C §10] After completing the 40-question diagnostic, the FIRST
+    // projection refresh MUST produce non-NULL projection rows for both sections.
+    // The auto-counter (PROJECTION_REFRESH_EVENT_THRESHOLD=40) may not align if
+    // the student has pre-existing mastery events, so we force-refresh here.
+    if (session.mode === "diagnostic") {
+      try {
+        await supabaseServer.rpc("compute_section_projection", {
+          p_student_id: userId,
+          p_section: "M",
+          p_as_of: now,
+        });
+        await supabaseServer.rpc("compute_section_projection", {
+          p_student_id: userId,
+          p_section: "RW",
+          p_as_of: now,
+        });
+      } catch (projErr: unknown) {
+        const projMsg =
+          projErr instanceof Error ? projErr.message : String(projErr);
+        logger.warn("[diagnostic] projection refresh failed on completion", {
+          requestId,
+          sessionId: payload.sessionId,
+          message: projMsg,
+        });
+      }
+    }
   } else {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "active",

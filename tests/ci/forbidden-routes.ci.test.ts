@@ -177,14 +177,18 @@ describe('CI Forbidden Routes - Permanent Invariants', () => {
   });
 
   describe("Notification and diagnostic guards", () => {
-    it("keeps diagnostic runtime unmounted", async () => {
+    it("keeps legacy diagnostic path terminally 404 while new diagnostic mounts at /api/practice/diagnostic", async () => {
       const serverIndex = readRepoFile("server/index.ts");
 
-      expect(serverIndex).not.toContain('runtimeContractDisableMiddleware("diagnostic")');
-      expect(serverIndex).not.toContain("diagnosticRouter");
+      // Legacy path (/api/me/mastery/diagnostic) stays terminal-404
       expect(serverIndex).toContain('/api/me/mastery/diagnostic');
       expect(serverIndex).toContain('status(404)');
 
+      // New diagnostic router mounts at /api/practice/diagnostic (Vertical B, Slice 1)
+      expect(serverIndex).toContain('diagnosticRouter');
+      expect(serverIndex).toContain('/api/practice/diagnostic');
+
+      // Legacy path still returns 404
       const res = await request(app)
         .post("/api/me/mastery/diagnostic/start")
         .send({});
