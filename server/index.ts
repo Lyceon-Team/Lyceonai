@@ -48,6 +48,7 @@ import {
   requireSupabaseAuth,
   requireSupabaseAdmin,
   requireStudentOrAdmin,
+  requireStudentOnly,
 } from "./middleware/supabase-auth";
 import { corsAllowlist } from "../apps/api/src/middleware/cors";
 import { env, validateEnvironment } from "../apps/api/src/env";
@@ -372,11 +373,12 @@ app.use(
 // GET  /api/tutor/conversations/:conversationId
 // GET  /api/tutor/conversations
 // POST /api/tutor/conversations/:conversationId/close
+// @spec [Doc-03B_V2 §3.1; Karl ruling 2026-08-05 #1] student-only gate for LISA.
 app.use(
   "/api/tutor",
   ragLimiter,
   requireSupabaseAuth,
-  requireStudentOrAdmin,
+  requireStudentOnly,
   doubleCsrfProtection,
   tutorRuntimeRouter,
 );

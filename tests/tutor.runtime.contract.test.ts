@@ -123,6 +123,7 @@ type PracticeItemRow = {
 const state = vi.hoisted(() => ({
   currentRole: "student" as Role,
   currentUserId: "11111111-1111-4111-8111-111111111111",
+  isUnder13: false,
   hasPaidAccess: true,
   orchestratorResult: {
     response: {
@@ -226,6 +227,7 @@ function getCurrentUser() {
     role,
     isAdmin: role === "admin",
     isGuardian: role === "guardian",
+    is_under_13: state.isUnder13,
   };
 }
 
@@ -537,6 +539,30 @@ vi.mock("../apps/api/src/lib/rate-limit-ledger", () => ({
     Math.max(0, input + output),
 }));
 
+vi.mock("../server/services/tutor-config", () => ({
+  getTutorConfigInt: vi.fn((key: string) => {
+    const defaults: Record<string, number> = {
+      tutor_request_timeout_seconds: 30,
+      per_question_cooldown_minutes: 5,
+      cost_soft_alert_usd_month: 10,
+      cost_hard_alert_usd_month: 18,
+      cost_hard_cap_usd_month: 20,
+      vertex_pro_daily_budget_usd: 200,
+      vertex_pro_budget_circuit_breaker_warning_pct: 80,
+      conversation_reuse_days: 7,
+    };
+    const val = defaults[key];
+    if (val === undefined) throw new Error(`Unknown config key: ${key}`);
+    return val;
+  }),
+  getTutorConfigBool: vi.fn((key: string) => {
+    if (key === "vertex_pro_budget_circuit_breaker_enabled") return true;
+    throw new Error(`Unknown config key: ${key}`);
+  }),
+  initTutorConfig: vi.fn(async () => {}),
+  teardownTutorConfig: vi.fn(),
+}));
+
 vi.mock("../server/services/kpi-access", () => ({
   resolvePaidKpiAccessForUser: vi.fn(async (_userId: string, role: Role) => ({
     hasPaidAccess: role === "admin" ? true : state.hasPaidAccess,
@@ -570,6 +596,28 @@ vi.mock("../server/middleware/supabase-auth", () => ({
       return res.status(403).json({
         error: "Student access required",
         message: "Guardian access is denied.",
+      });
+    }
+    return next();
+  },
+  requireStudentOnly: (req: any, res: any, next: any) => {
+    const user = req.user ?? getCurrentUser();
+    if (!user)
+      return res.status(401).json({ error: "Authentication required" });
+    if (user.role !== "student") {
+      return res.status(403).json({
+        error: "Role not permitted",
+        message: "Only students can access this feature.",
+        requestId: req.requestId,
+        extra: { code: "ROLE_NOT_PERMITTED" },
+      });
+    }
+    if (user.is_under_13) {
+      return res.status(403).json({
+        error: "Age restriction",
+        message: "This feature requires an older account.",
+        requestId: req.requestId,
+        extra: { code: "AGE_RESTRICTION" },
       });
     }
     return next();
@@ -644,6 +692,7 @@ describe("Tutor Runtime Contract Cutover", () => {
     app = (await import("../server/index")).default;
     state.currentRole = "student";
     state.currentUserId = nextUserId();
+    state.isUnder13 = false;
     state.hasPaidAccess = true;
     state.orchestratorResult = {
       response: {
@@ -1576,5 +1625,69 @@ describe("Tutor Runtime Contract Cutover", () => {
       exposure_type: "similar_question_offer",
       content_variant_key: "offer_similar_question",
     });
+  });
+
+  /**
+   * @spec [Doc-03 §12.5; INV-03-07; Doc-03B §3.2.1]
+   * Age-gate denial: under-13 students are rejected on EVERY /api/tutor/* route.
+   * Property test across all routes — not a single-route check.
+   * Doc 03 §12.5: "Accounts with age < 13 have no LISA access."
+   * INV-03-07: "LISA access requires student age >= 13." Violation: COPPA exposure.
+   * Doc 03B §3.2.1: 403, code AGE_RESTRICTION.
+   */
+  describe("INV-03-07 age gate — under-13 denied on all tutor routes", () => {
+    const TUTOR_ROUTES: Array<{
+      method: "get" | "post";
+      path: string;
+      body?: Record<string, unknown>;
+    }> = [
+      {
+        method: "post",
+        path: "/api/tutor/conversations",
+        body: {
+          entry_mode: "scoped_question",
+          source_surface: "practice",
+          source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+          source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_canonical_id: "q1",
+        },
+      },
+      { method: "get", path: "/api/tutor/conversations" },
+      {
+        method: "get",
+        path: "/api/tutor/conversations/00000000-0000-4000-8000-000000000001",
+      },
+      {
+        method: "post",
+        path: "/api/tutor/conversations/00000000-0000-4000-8000-000000000001/close",
+      },
+      {
+        method: "post",
+        path: "/api/tutor/messages",
+        body: {
+          conversation_id: "00000000-0000-4000-8000-000000000001",
+          message: "help",
+          content_kind: "message",
+          client_turn_id: "f0000000-0000-4000-8000-000000000001",
+        },
+      },
+    ];
+
+    it.each(TUTOR_ROUTES)(
+      "rejects under-13 student on $method $path with 403 AGE_RESTRICTION",
+      async ({ method, path, body }) => {
+        state.isUnder13 = true;
+        const req = method === "get" ? agent.get(path) : agent.post(path);
+        if (body) req.send(body);
+        const res = await req;
+
+        expect(res.status).toBe(403);
+        expect(res.body.extra?.code ?? res.body.code).toBe("AGE_RESTRICTION");
+        expect(res.body.message).toBe(
+          "This feature requires an older account.",
+        );
+      },
+    );
   });
 });

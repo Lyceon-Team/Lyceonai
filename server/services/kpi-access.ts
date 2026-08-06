@@ -57,22 +57,22 @@ export async function resolvePaidKpiAccessForStudent(
   }
 }
 
+/**
+ * @spec [Doc-03B_V2 §3.2; Karl ruling 2026-08-05 #1/#2] | @implemented 2026-08-05
+ * plain English: Resolve whether userId has paid access. Admin bypass REMOVED per Karl
+ * ruling #1 (student-only for LISA) and #2 (admin safety-review is a separate surface).
+ * Admin callers now receive the same entitlement evaluation as students — no implicit
+ * hasPaidAccess:true for role=admin.
+ *
+ * expected outcome: only students with active entitlements get hasPaidAccess:true.
+ * trade-offs: admin users without entitlements will receive hasPaidAccess:false on any
+ * surface that calls this function. Admin tooling must use a dedicated admin surface.
+ */
 export async function resolvePaidKpiAccessForUser(
   userId: string,
   role: "student" | "guardian" | "admin",
 ): Promise<KpiEntitlementAccess> {
-  if (role === "admin") {
-    return {
-      hasPaidAccess: true,
-      accountId: null,
-      plan: "paid",
-      status: "active",
-      currentPeriodEnd: null,
-      reason: "Admin bypass.",
-    };
-  }
-
-  if (role === "student") {
+  if (role === "student" || role === "admin") {
     return resolvePaidKpiAccessForStudent(userId);
   }
 
