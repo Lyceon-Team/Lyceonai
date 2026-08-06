@@ -325,9 +325,12 @@ function containsStudentAuthUidPredicate(predicate: string | null): boolean {
 
 export async function collectTutorSchemaProof(): Promise<SchemaProof> {
   const dbUrl = requireDbUrl();
+  // CI uses a throwaway Postgres with no SSL; production uses Supabase with SSL.
+  const isLocalhost =
+    dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1");
   const client = new Client({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false },
+    ssl: isLocalhost ? false : { rejectUnauthorized: false },
   });
   await client.connect();
 
