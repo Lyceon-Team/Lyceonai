@@ -48,26 +48,15 @@ describe("Runtime cutover API enforcement", () => {
     });
   });
 
-  it.each([
-    {
-      method: "post",
-      path: "/api/me/mastery/diagnostic/start",
-      body: {},
-    },
-    {
-      method: "get",
-      path: "/api/me/mastery/diagnostic/next?sessionId=11111111-1111-4111-8111-111111111111",
-    },
-    {
-      method: "post",
-      path: "/api/me/mastery/diagnostic/answer",
-      body: {},
-    },
-  ])("$method $path is unmounted after diagnostic removal", async ({ method, path, body }) => {
-    const req = method === "get" ? request(app).get(path) : request(app).post(path).send(body ?? {});
-    const res = await req;
-
-    expect(res.status).toBe(404);
+  it("POST /api/practice/diagnostic/sessions requires auth (diagnostic is mounted)", async () => {
+    const res = await request(app)
+      .post("/api/practice/diagnostic/sessions")
+      .send({});
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({
+      error: "Authentication required",
+      message: "You must be signed in to access this resource",
+    });
   });
 });
 
@@ -76,7 +65,7 @@ describe("Runtime cutover route coverage proof", () => {
   const indexSource = fs.readFileSync(indexPath, "utf8");
   const practiceSource = fs.readFileSync(path.join(repoRoot, "server", "routes", "practice-canonical.ts"), "utf8");
 
-  it("keeps practice/full-length unlocked and keeps diagnostic terminal-404", () => {
+  it("keeps practice/full-length/diagnostic unlocked with no disable-contract", () => {
     expect(indexSource).toMatch(
       /app\.use\(\s*"\/api\/practice",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*doubleCsrfProtection,\s*practiceCanonicalRouter/s
     );
@@ -86,8 +75,14 @@ describe("Runtime cutover route coverage proof", () => {
       /app\.use\(\s*"\/api\/full-length",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*fullLengthExamRouter/s
     );
     expect(indexSource).not.toMatch(/runtimeContractDisableMiddleware\("full-length"\)/s);
-    expect(indexSource).toMatch(/app\.use\(\s*"\/api\/me\/mastery\/diagnostic",/s);
-    expect(indexSource).toMatch(/status\(404\)/s);
+
+    // Diagnostic is mounted at /api/practice/diagnostic (Vertical B, Slice 1)
+    expect(indexSource).toMatch(
+      /app\.use\(\s*"\/api\/practice\/diagnostic",\s*requireSupabaseAuth,\s*requireStudentOrAdmin,\s*doubleCsrfProtection,\s*diagnosticRouter/s
+    );
+    // Legacy path removed entirely — no 404 stub, no disable-contract
+    expect(indexSource).not.toContain('/api/me/mastery/diagnostic');
+    expect(indexSource).not.toMatch(/runtimeContractDisableMiddleware\("diagnostic"\)/s);
   });
 
 

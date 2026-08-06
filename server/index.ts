@@ -428,11 +428,6 @@ app.use(
   doubleCsrfProtection,
   weaknessRouter,
 );
-// Legacy diagnostic runtime removed: keep the path terminally unavailable (404)
-// before mastery auth mount. The NEW diagnostic lives at /api/practice/diagnostic.
-app.use("/api/me/mastery/diagnostic", (_req, res) =>
-  res.status(404).json({ error: "Not found" }),
-);
 app.use(
   "/api/me/mastery",
   requireSupabaseAuth,

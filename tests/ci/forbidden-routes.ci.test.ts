@@ -177,22 +177,19 @@ describe('CI Forbidden Routes - Permanent Invariants', () => {
   });
 
   describe("Notification and diagnostic guards", () => {
-    it("keeps legacy diagnostic path terminally 404 while new diagnostic mounts at /api/practice/diagnostic", async () => {
+    it("mounts diagnostic at /api/practice/diagnostic with no legacy path or disable-contract", () => {
       const serverIndex = readRepoFile("server/index.ts");
-
-      // Legacy path (/api/me/mastery/diagnostic) stays terminal-404
-      expect(serverIndex).toContain('/api/me/mastery/diagnostic');
-      expect(serverIndex).toContain('status(404)');
 
       // New diagnostic router mounts at /api/practice/diagnostic (Vertical B, Slice 1)
       expect(serverIndex).toContain('diagnosticRouter');
       expect(serverIndex).toContain('/api/practice/diagnostic');
 
-      // Legacy path still returns 404
-      const res = await request(app)
-        .post("/api/me/mastery/diagnostic/start")
-        .send({});
-      expect(res.status).toBe(404);
+      // Legacy path /api/me/mastery/diagnostic does NOT exist (not "returns 404" — removed entirely)
+      expect(serverIndex).not.toContain('/api/me/mastery/diagnostic');
+
+      // No DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT disable-contract remains
+      expect(serverIndex).not.toContain('DIAGNOSTIC_RUNTIME_DISABLED');
+      expect(serverIndex).not.toContain('runtimeContractDisableMiddleware("diagnostic")');
     });
 
     it("keeps raw notification inserts centralized in the notification authority service", () => {

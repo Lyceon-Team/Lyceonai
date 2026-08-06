@@ -12,8 +12,9 @@
 --   M1. Extend practice_sessions.mode CHECK for 'diagnostic'
 --   M2. Seed diagnostic config keys in practice_runtime_config
 --   M3. Fix MA-10: DIAGNOSTIC_TOTAL_QUESTIONS = 40 in mastery_constants
---   M4. Update canonical_mastery_events() to emit 'diagnostic_attempt' for
---       items from diagnostic sessions (JOIN to practice_sessions.mode)
+--   M4a. Create practice_session_mode_to_event_kind() — explicit mode→kind
+--        mapping with RAISE on unrecognized mode
+--   M4b. Update canonical_mastery_events() to use mode_to_event_kind()
 --   M5. Update canonical_mastery_events_for_student() — same fix
 --   M6. Create select_diagnostic_pool() RPC (per-domain balanced selection)
 --
@@ -27,6 +28,7 @@
 --   DELETE FROM public.practice_runtime_config WHERE key IN ('diagnostic_total_questions','diagnostic_per_domain');
 --   -- Re-run original canonical_mastery_events from 20260613000000_lane_c_mastery_seam.sql
 --   -- Re-run original canonical_mastery_events_for_student from 20260625000000_05d_backfill_recompute.sql
+--   DROP FUNCTION IF EXISTS public.practice_session_mode_to_event_kind(text);
 --   DROP FUNCTION IF EXISTS public.select_diagnostic_pool(integer, text[]);
 
 BEGIN;
@@ -68,8 +70,40 @@ ON CONFLICT (key) DO UPDATE SET
   description = EXCLUDED.description;
 
 -- ============================================================================
--- M4. Update canonical_mastery_events() — emit 'diagnostic_attempt' for
---     items from diagnostic sessions (JOIN to practice_sessions.mode)
+-- M4a. Helper: practice_session_mode_to_event_kind() — explicit mode→kind
+--      mapping with RAISE on unrecognized mode (no silent ELSE default).
+-- ============================================================================
+-- @spec [Doc-05A §11.4; Doc-02B §8 seam §2] | @implemented [2026-08-06]
+-- Maps practice_sessions.mode to the mastery seam event_source_kind.
+-- Raises on any mode not in the canonical set so new modes cannot silently
+-- emit the wrong event kind.
+CREATE OR REPLACE FUNCTION public.practice_session_mode_to_event_kind(
+  p_mode text
+) RETURNS text
+LANGUAGE plpgsql IMMUTABLE STRICT
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  -- Explicit mapping: every recognized mode → its event_source_kind.
+  -- flow/structured/balanced/timed are practice modes (Doc-02B §14).
+  -- diagnostic is the 40-question initial diagnostic (Doc-05A §11).
+  CASE p_mode
+    WHEN 'flow'       THEN RETURN 'practice_attempt';
+    WHEN 'structured' THEN RETURN 'practice_attempt';
+    WHEN 'balanced'   THEN RETURN 'practice_attempt';
+    WHEN 'timed'      THEN RETURN 'practice_attempt';
+    WHEN 'diagnostic' THEN RETURN 'diagnostic_attempt';
+    ELSE RAISE EXCEPTION 'MASTERY_UNRECOGNIZED_SESSION_MODE: practice_sessions.mode=''%'' has no event_source_kind mapping — add it to practice_session_mode_to_event_kind()', p_mode;
+  END CASE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.practice_session_mode_to_event_kind(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.practice_session_mode_to_event_kind(text) TO service_role;
+
+-- ============================================================================
+-- M4b. Update canonical_mastery_events() — emit mode-derived event_source_kind
+--      for items from practice/diagnostic sessions (JOIN to practice_sessions.mode)
 -- ============================================================================
 -- Original: 20260613000000_lane_c_mastery_seam.sql lines 33-75
 -- The practice branch hardcoded 'practice_attempt'::text for ALL practice_session_items.
@@ -78,7 +112,7 @@ ON CONFLICT (key) DO UPDATE SET
 -- mastery seam guard (LC-D1-001) finds them via the correct kind.
 --
 -- Fix: JOIN practice_session_items → practice_sessions on session_id.
--- CASE on ps.mode = 'diagnostic' → 'diagnostic_attempt', else → 'practice_attempt'.
+-- Use practice_session_mode_to_event_kind(ps.mode) — explicit mapping, raises on unknown.
 CREATE OR REPLACE FUNCTION public.canonical_mastery_events(
   p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text
 ) RETURNS TABLE (
@@ -90,10 +124,8 @@ CREATE OR REPLACE FUNCTION public.canonical_mastery_events(
   -- mode column discriminates the event_source_kind for the mastery seam guard.
   SELECT
     pi.id                       AS event_id,
-    CASE WHEN ps.mode = 'diagnostic'
-         THEN 'diagnostic_attempt'::text
-         ELSE 'practice_attempt'::text
-    END                         AS event_source_kind,
+    public.practice_session_mode_to_event_kind(ps.mode)
+                                AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
@@ -130,7 +162,7 @@ REVOKE ALL ON FUNCTION public.canonical_mastery_events(uuid, text, text, text, t
 GRANT EXECUTE ON FUNCTION public.canonical_mastery_events(uuid, text, text, text, text) TO service_role;
 
 -- ============================================================================
--- M5. Update canonical_mastery_events_for_student() — same diagnostic fix
+-- M5. Update canonical_mastery_events_for_student() — same mode-derived fix
 -- ============================================================================
 -- Original: 20260625000000_05d_backfill_recompute.sql lines 52-83
 CREATE OR REPLACE FUNCTION public.canonical_mastery_events_for_student(
@@ -141,10 +173,8 @@ CREATE OR REPLACE FUNCTION public.canonical_mastery_events_for_student(
 ) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT
     pi.id                       AS event_id,
-    CASE WHEN ps.mode = 'diagnostic'
-         THEN 'diagnostic_attempt'::text
-         ELSE 'practice_attempt'::text
-    END                         AS event_source_kind,
+    public.practice_session_mode_to_event_kind(ps.mode)
+                                AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
