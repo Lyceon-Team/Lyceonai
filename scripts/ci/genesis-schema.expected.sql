@@ -4737,7 +4737,7 @@ CREATE TABLE public.tutor_instruction_assignments (
     related_message_id uuid,
     source_session_id uuid,
     source_session_item_id uuid,
-    source_question_row_id uuid,
+    source_question_row_id text,
     source_question_canonical_id text,
     policy_family text DEFAULT 'instructional_tutor'::text NOT NULL,
     policy_variant text NOT NULL,

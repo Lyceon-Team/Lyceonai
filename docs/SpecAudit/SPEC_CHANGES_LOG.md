@@ -83,6 +83,36 @@ Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a
 Version: Doc 03A → V3.1 (config table reference + FK type corrections).
 No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
   Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
+SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | PROPOSED
+Change: Extends SCL-024(b) to cover a fifth column and the wire-contract Zod schemas that carry
+  the same UUID assumption.
+  (c) Fifth column: tutor_instruction_assignments.source_question_row_id (§18.4). SCL-024(b) listed
+  four columns across three tables; this fifth column was omitted because §18.4 defines it with no
+  FK to questions(id), and the original rationale (UUID cannot reference TEXT PK) appeared not to
+  apply. Karl ruled: the same resolvedScope.source_question_row_id value is written to all four
+  tutor tables from a single code path; the column must carry the same type. questions.id is TEXT
+  under CHECK (id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$') — canonical SAT IDs, not UUIDs — making UUID
+  structurally impossible regardless of FK presence. The revert migration
+  (20260806010000_tutor_instruction_assignments_uuid_revert.sql) that would have cast this column
+  to UUID is dropped.
+  (d) Wire-contract Zod schemas: Doc 03B §4.1's wire protocol definitions validate
+  source_question_row_id and related_question_row_id as z.string().uuid(). These Zod schemas
+  (shared/tutor-contract.ts, shared/tutor-orchestrator-wire.ts, server/routes/tutor-runtime.ts)
+  would reject canonical SAT question IDs at parse time. Same root cause as (b) — the spec typed
+  question IDs as UUID when questions.id is TEXT.
+WAS (c): §18.4 typed tutor_instruction_assignments.source_question_row_id as UUID (no FK). A
+  revert migration existed to cast the production TEXT column back to UUID.
+WAS (d): Zod schemas validated source_question_row_id and related_question_row_id as
+  z.string().uuid() — 10 call sites across 4 files (shared + server + generated worker copy).
+IS (c): Column stays TEXT, matching the other four question-FK columns. Revert migration dropped.
+IS (d): Zod schemas validate with z.string().regex(CANONICAL_ID_PATTERN) using the existing
+  single-source-of-truth regex from shared/question-bank-contract.ts. All 10 call sites fixed.
+Rationale: Karl ruling 2026-08-06 — extend SCL-024, do not revert to UUID. The same value flows
+  to all four tables from one code path; mixed types are a latent runtime failure. The Zod UUID
+  validation would reject every real question ID at parse time.
+Artifact: PR #523, branch claude/lisa-tutor-inventory-27lras.
+Owner action: at next spec pass, retype §18.4 source_question_row_id to TEXT and update Doc 03B
+  §4.1 wire-contract definitions to use canonical question ID format, not UUID.
 
 SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | PROPOSED (Karl approved 2026-08-04)
 Change: Doc 03C V3.0 contains no crisis classifier stage. Full-text scan returns zero occurrences

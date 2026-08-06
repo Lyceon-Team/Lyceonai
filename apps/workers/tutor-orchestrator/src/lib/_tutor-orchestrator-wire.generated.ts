@@ -10,13 +10,14 @@
  */
 
 import { z } from "zod";
+import { CANONICAL_ID_PATTERN } from "./canonical-id";
 
 // ── Request sub-schemas ──────────────────────────────────────────────
 
 export const resolvedScopeSchema = z.object({
   source_session_id: z.string().uuid().nullable(),
   source_session_item_id: z.string().uuid().nullable(),
-  source_question_row_id: z.string().uuid().nullable(),
+  source_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable(),
   source_question_canonical_id: z.string().nullable(),
 });
 
@@ -77,9 +78,9 @@ export const orchestrateRequestSchema = z.object({
 // ── Response sub-schemas ─────────────────────────────────────────────
 
 export const questionLinkSchema = z.object({
-  source_question_row_id: z.string().uuid().nullable(),
+  source_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable(),
   source_question_canonical_id: z.string(),
-  related_question_row_id: z.string().uuid().nullable(),
+  related_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable(),
   related_question_canonical_id: z.string(),
   relationship_type: z.enum([
     "current",

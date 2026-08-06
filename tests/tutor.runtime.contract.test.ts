@@ -172,8 +172,8 @@ const state = vi.hoisted(() => ({
     created_at: string;
   }>,
   questions: [
-    { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", canonical_id: "q1" },
-    { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2", canonical_id: "q2" },
+    { id: "SATM1ATEST1", canonical_id: "q1" },
+    { id: "SATM1BTEST2", canonical_id: "q2" },
   ] as QuestionRow[],
   practiceSessions: [
     {
@@ -675,7 +675,7 @@ async function createConversation(
     source_surface: "practice",
     source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
     source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-    source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+    source_question_row_id: "SATM1ATEST1",
     source_question_canonical_id: "q1",
     ...payload,
   });
@@ -837,7 +837,7 @@ describe("Tutor Runtime Contract Cutover", () => {
       content_kind: "message",
       client_turn_id: "f3333333-3333-4333-8333-333333333333",
       client_scope: {
-        source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+        source_question_row_id: "SATM1BTEST2",
         source_question_canonical_id: "q2",
       },
     });
@@ -846,7 +846,7 @@ describe("Tutor Runtime Contract Cutover", () => {
     const studentMessage = state.messages.find((m) => m.role === "student");
     expect(studentMessage?.source_question_canonical_id).toBe("q1");
     expect(studentMessage?.source_question_row_id).toBe(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "SATM1ATEST1",
     );
   });
 
@@ -871,7 +871,7 @@ describe("Tutor Runtime Contract Cutover", () => {
       explanation_level: null,
       source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
       source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-      source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      source_question_row_id: "SATM1BTEST2",
       source_question_canonical_id: "q2",
       created_at: isoAt(100),
     });
@@ -888,7 +888,7 @@ describe("Tutor Runtime Contract Cutover", () => {
       (m) => m.client_turn_id === "f9999999-9999-4999-8999-999999999992",
     );
     expect(newStudentMessage?.source_question_row_id).toBe(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      "SATM1BTEST2",
     );
     expect(newStudentMessage?.source_question_canonical_id).toBe("q2");
     expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe(
@@ -896,7 +896,7 @@ describe("Tutor Runtime Contract Cutover", () => {
     );
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
     expect(payload.resolved_scope.source_question_row_id).toBe(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      "SATM1BTEST2",
     );
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q2");
     expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe(
@@ -1065,9 +1065,9 @@ describe("Tutor Runtime Contract Cutover", () => {
       ...state.orchestratorResult,
       question_links: [
         {
-          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_row_id: "SATM1ATEST1",
           source_question_canonical_id: "q1",
-          related_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+          related_question_row_id: "SATM1BTEST2",
           related_question_canonical_id: "q2",
           relationship_type: "similar_retry",
           difficulty_delta: -1,
@@ -1245,7 +1245,7 @@ describe("Tutor Runtime Contract Cutover", () => {
     });
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q1");
     expect(payload.resolved_scope.source_question_row_id).toBe(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "SATM1ATEST1",
     );
     expect(callLlmMock).not.toHaveBeenCalled();
     expect(handleRagQueryMock).not.toHaveBeenCalled();
@@ -1516,7 +1516,7 @@ describe("Tutor Runtime Contract Cutover", () => {
       source_surface: "practice" as const,
       source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
       source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-      source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      source_question_row_id: "SATM1ATEST1",
       source_question_canonical_id: "q1",
       policy_family: "tutor_v1",
       policy_variant: "default",
@@ -1568,9 +1568,9 @@ describe("Tutor Runtime Contract Cutover", () => {
       },
       question_links: [
         {
-          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_row_id: "SATM1ATEST1",
           source_question_canonical_id: "q1",
-          related_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+          related_question_row_id: "SATM1BTEST2",
           related_question_canonical_id: "q2",
           relationship_type: "similar_retry",
           difficulty_delta: -1,
@@ -1611,9 +1611,9 @@ describe("Tutor Runtime Contract Cutover", () => {
     );
     expect(state.questionLinks).toHaveLength(1);
     expect(state.questionLinks[0]).toMatchObject({
-      source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      source_question_row_id: "SATM1ATEST1",
       source_question_canonical_id: "q1",
-      related_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+      related_question_row_id: "SATM1BTEST2",
       related_question_canonical_id: "q2",
       relationship_type: "similar_retry",
       difficulty_delta: -1,
@@ -1647,7 +1647,7 @@ describe("Tutor Runtime Contract Cutover", () => {
           source_surface: "practice",
           source_session_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
           source_session_item_id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
-          source_question_row_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+          source_question_row_id: "SATM1ATEST1",
           source_question_canonical_id: "q1",
         },
       },

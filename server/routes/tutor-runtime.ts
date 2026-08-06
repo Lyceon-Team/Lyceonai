@@ -15,6 +15,7 @@ import {
   TutorStartConversationRequestSchema,
   TutorUiHintsSchema,
 } from "../../shared/tutor-contract";
+import { CANONICAL_ID_PATTERN } from "../../shared/canonical-id";
 import {
   type AuthenticatedRequest,
   requireRequestUser,
@@ -126,9 +127,9 @@ const orchestrationMetaSchema = z.object({
 });
 
 const questionLinkSnapshotSchema = z.object({
-  source_question_row_id: z.string().uuid().nullable(),
+  source_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable(),
   source_question_canonical_id: z.string(),
-  related_question_row_id: z.string().uuid().nullable(),
+  related_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable(),
   related_question_canonical_id: z.string(),
   relationship_type: z.enum([
     "current",
