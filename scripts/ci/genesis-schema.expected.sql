@@ -4737,7 +4737,7 @@ CREATE TABLE public.tutor_instruction_assignments (
     related_message_id uuid,
     source_session_id uuid,
     source_session_item_id uuid,
-    source_question_row_id text,
+    source_question_row_id uuid,
     source_question_canonical_id text,
     policy_family text DEFAULT 'instructional_tutor'::text NOT NULL,
     policy_variant text NOT NULL,
@@ -5647,14 +5647,6 @@ ALTER TABLE ONLY public.tutor_memory_summaries
 
 
 --
--- Name: tutor_messages tutor_messages_client_turn_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.tutor_messages
-    ADD CONSTRAINT tutor_messages_client_turn_unique UNIQUE (conversation_id, client_turn_id);
-
-
---
 -- Name: tutor_messages tutor_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6147,6 +6139,13 @@ CREATE INDEX idx_tutor_memory_summaries_staleness ON public.tutor_memory_summari
 --
 
 CREATE INDEX idx_tutor_memory_summaries_student_type ON public.tutor_memory_summaries USING btree (student_id, summary_type);
+
+
+--
+-- Name: idx_tutor_messages_client_turn_idempotency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_tutor_messages_client_turn_idempotency ON public.tutor_messages USING btree (student_id, conversation_id, client_turn_id) WHERE (client_turn_id IS NOT NULL);
 
 
 --
@@ -7834,6 +7833,13 @@ ALTER TABLE public.taxonomy_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tutor_context_runtime_config ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_context_runtime_config tutor_context_runtime_config_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_context_runtime_config_context_read ON public.tutor_context_runtime_config FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
 -- Name: tutor_context_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7846,6 +7852,27 @@ ALTER TABLE public.tutor_context_runtime_config_history ENABLE ROW LEVEL SECURIT
 ALTER TABLE public.tutor_conversations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_conversations tutor_conversations_archival_harddelete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_archival_harddelete ON public.tutor_conversations FOR DELETE TO tutor_archival_writer USING (((deleted_at IS NOT NULL) AND (deleted_at < (now() - '7 days'::interval))));
+
+
+--
+-- Name: tutor_conversations tutor_conversations_archival_softdelete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_archival_softdelete ON public.tutor_conversations FOR UPDATE TO tutor_archival_writer USING (true) WITH CHECK ((deleted_at IS NOT NULL));
+
+
+--
+-- Name: tutor_conversations tutor_conversations_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_context_read ON public.tutor_conversations FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
 -- Name: tutor_conversations tutor_conversations_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -7853,17 +7880,24 @@ CREATE POLICY tutor_conversations_insert_own ON public.tutor_conversations FOR I
 
 
 --
+-- Name: tutor_conversations tutor_conversations_runtime_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_runtime_insert ON public.tutor_conversations FOR INSERT TO tutor_runtime_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_conversations tutor_conversations_runtime_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_conversations_runtime_update ON public.tutor_conversations FOR UPDATE TO tutor_runtime_writer USING (true);
+
+
+--
 -- Name: tutor_conversations tutor_conversations_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR SELECT USING ((student_id = auth.uid()));
-
-
---
--- Name: tutor_conversations tutor_conversations_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_conversations_service_role ON public.tutor_conversations TO service_role USING (true);
 
 
 --
@@ -7880,10 +7914,38 @@ CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR U
 ALTER TABLE public.tutor_injection_log ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: tutor_injection_log tutor_injection_log_service_role; Type: POLICY; Schema: public; Owner: -
+-- Name: tutor_injection_log tutor_injection_log_archival_delete; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_injection_log_service_role ON public.tutor_injection_log TO service_role USING (true);
+CREATE POLICY tutor_injection_log_archival_delete ON public.tutor_injection_log FOR DELETE TO tutor_archival_writer USING (true);
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_log_context_read ON public.tutor_injection_log FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_injection_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_log_injection_insert ON public.tutor_injection_log FOR INSERT TO tutor_injection_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_injection_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_log_injection_update ON public.tutor_injection_log FOR UPDATE TO tutor_injection_writer USING (true);
+
+
+--
+-- Name: tutor_injection_log tutor_injection_log_select_own; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_injection_log_select_own ON public.tutor_injection_log FOR SELECT USING ((student_id = auth.uid()));
 
 
 --
@@ -7893,10 +7955,10 @@ CREATE POLICY tutor_injection_log_service_role ON public.tutor_injection_log TO 
 ALTER TABLE public.tutor_injection_signatures ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: tutor_injection_signatures tutor_injection_signatures_service_role; Type: POLICY; Schema: public; Owner: -
+-- Name: tutor_injection_signatures tutor_injection_signatures_context_read; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY tutor_injection_signatures_service_role ON public.tutor_injection_signatures TO service_role USING (true);
+CREATE POLICY tutor_injection_signatures_context_read ON public.tutor_injection_signatures FOR SELECT TO tutor_context_reader USING (true);
 
 
 --
@@ -7906,17 +7968,38 @@ CREATE POLICY tutor_injection_signatures_service_role ON public.tutor_injection_
 ALTER TABLE public.tutor_instruction_assignments ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_archival_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_archival_delete ON public.tutor_instruction_assignments FOR DELETE TO tutor_archival_writer USING (true);
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_context_read ON public.tutor_instruction_assignments FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_runtime_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_runtime_insert ON public.tutor_instruction_assignments FOR INSERT TO tutor_runtime_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_instruction_assignments tutor_instruction_assignments_runtime_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_assignments_runtime_update ON public.tutor_instruction_assignments FOR UPDATE TO tutor_runtime_writer USING (true);
+
+
+--
 -- Name: tutor_instruction_assignments tutor_instruction_assignments_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_instruction_assignments_select_own ON public.tutor_instruction_assignments FOR SELECT USING ((student_id = auth.uid()));
-
-
---
--- Name: tutor_instruction_assignments tutor_instruction_assignments_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_instruction_assignments_service_role ON public.tutor_instruction_assignments TO service_role USING (true);
 
 
 --
@@ -7926,17 +8009,38 @@ CREATE POLICY tutor_instruction_assignments_service_role ON public.tutor_instruc
 ALTER TABLE public.tutor_instruction_exposures ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_archival_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_archival_delete ON public.tutor_instruction_exposures FOR DELETE TO tutor_archival_writer USING (true);
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_context_read ON public.tutor_instruction_exposures FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_runtime_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_runtime_insert ON public.tutor_instruction_exposures FOR INSERT TO tutor_runtime_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_instruction_exposures tutor_instruction_exposures_runtime_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_instruction_exposures_runtime_update ON public.tutor_instruction_exposures FOR UPDATE TO tutor_runtime_writer USING (true);
+
+
+--
 -- Name: tutor_instruction_exposures tutor_instruction_exposures_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_instruction_exposures_select_own ON public.tutor_instruction_exposures FOR SELECT USING ((student_id = auth.uid()));
-
-
---
--- Name: tutor_instruction_exposures tutor_instruction_exposures_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_instruction_exposures_service_role ON public.tutor_instruction_exposures TO service_role USING (true);
 
 
 --
@@ -7946,17 +8050,38 @@ CREATE POLICY tutor_instruction_exposures_service_role ON public.tutor_instructi
 ALTER TABLE public.tutor_memory_summaries ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_memory_summaries tutor_memory_summaries_archival_delete; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_archival_delete ON public.tutor_memory_summaries FOR DELETE TO tutor_archival_writer USING (true);
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_context_read ON public.tutor_memory_summaries FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_memory_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_memory_insert ON public.tutor_memory_summaries FOR INSERT TO tutor_memory_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_memory_summaries tutor_memory_summaries_memory_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_memory_summaries_memory_update ON public.tutor_memory_summaries FOR UPDATE TO tutor_memory_writer USING (true);
+
+
+--
 -- Name: tutor_memory_summaries tutor_memory_summaries_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_memory_summaries_select_own ON public.tutor_memory_summaries FOR SELECT USING ((student_id = auth.uid()));
-
-
---
--- Name: tutor_memory_summaries tutor_memory_summaries_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_memory_summaries_service_role ON public.tutor_memory_summaries TO service_role USING (true);
 
 
 --
@@ -7966,10 +8091,31 @@ CREATE POLICY tutor_memory_summaries_service_role ON public.tutor_memory_summari
 ALTER TABLE public.tutor_messages ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_messages tutor_messages_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_context_read ON public.tutor_messages FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
 -- Name: tutor_messages tutor_messages_insert_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_messages_insert_own ON public.tutor_messages FOR INSERT WITH CHECK ((student_id = auth.uid()));
+
+
+--
+-- Name: tutor_messages tutor_messages_runtime_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_runtime_insert ON public.tutor_messages FOR INSERT TO tutor_runtime_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_messages tutor_messages_runtime_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_messages_runtime_update ON public.tutor_messages FOR UPDATE TO tutor_runtime_writer USING (true);
 
 
 --
@@ -7980,30 +8126,37 @@ CREATE POLICY tutor_messages_select_own ON public.tutor_messages FOR SELECT USIN
 
 
 --
--- Name: tutor_messages tutor_messages_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_messages_service_role ON public.tutor_messages TO service_role USING (true);
-
-
---
 -- Name: tutor_question_links; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.tutor_question_links ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: tutor_question_links tutor_question_links_context_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_question_links_context_read ON public.tutor_question_links FOR SELECT TO tutor_context_reader USING (true);
+
+
+--
+-- Name: tutor_question_links tutor_question_links_runtime_insert; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_question_links_runtime_insert ON public.tutor_question_links FOR INSERT TO tutor_runtime_writer WITH CHECK (true);
+
+
+--
+-- Name: tutor_question_links tutor_question_links_runtime_update; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY tutor_question_links_runtime_update ON public.tutor_question_links FOR UPDATE TO tutor_runtime_writer USING (true);
+
+
+--
 -- Name: tutor_question_links tutor_question_links_select_own; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY tutor_question_links_select_own ON public.tutor_question_links FOR SELECT USING ((student_id = auth.uid()));
-
-
---
--- Name: tutor_question_links tutor_question_links_service_role; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY tutor_question_links_service_role ON public.tutor_question_links TO service_role USING (true);
 
 
 --
