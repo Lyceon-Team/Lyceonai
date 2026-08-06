@@ -15,6 +15,7 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
     next();
   },
   requireSupabaseAuth: (_req: any, _res: any, next: any) => next(),
+  requireStudentOnly: (_req: any, _res: any, next: any) => next(),
   requireStudentOrAdmin: (_req: any, _res: any, next: any) => next(),
   requireSupabaseAdmin: (_req: any, _res: any, next: any) => next(),
   requireProfileComplete: (_req: any, _res: any, next: any) => next(),
