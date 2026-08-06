@@ -15,7 +15,7 @@ Production's applied-migration ledger stopped recording on 2026-06-25. Sixteen m
 
 The CI gate that should have caught this cannot, by construction.
 
-This is not a LISA finding. It spans the mastery engine, the account-deletion cascade, the practice pool, the content pipeline, and the metering layer — the entire applied surface. It was surfaced during LISA WS-L0.1 and is extracted here because its blast radius is the program, not the vertical.
+This is not a LISA finding. It spans the mastery engine, the account-deletion cascade, the practice pool, the content pipeline, and the metering layer — the entire applied surface. It was surfaced during LISA WS-L0.1 and is extracted here because its blast radius is the program, not the vertical..
 
 ### 0.1 Evidence
 
