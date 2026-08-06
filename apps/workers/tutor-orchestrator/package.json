@@ -4,8 +4,9 @@
     "type": "module",
     "scripts": {
         "dev": "tsx watch src/index.ts",
+        "prebuild": "cp ../../../shared/tutor-orchestrator-wire.ts src/lib/_tutor-orchestrator-wire.generated.ts",
         "build": "tsc -p tsconfig.json",
-        "start": "node dist/apps/workers/tutor-orchestrator/src/index.js"
+        "start": "node dist/index.js"
     },
     "dependencies": {
         "@google-cloud/vertexai": "^1.11.0",

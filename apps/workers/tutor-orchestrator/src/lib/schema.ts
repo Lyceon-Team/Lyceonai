@@ -5,7 +5,9 @@
  * file is the worker's import surface so existing worker code doesn't change.
  *
  * expected outcome: single source of truth in shared/, zero inline duplicates.
- * trade-offs: worker tsconfig broadened (rootDir removed) to allow shared/ imports.
+ * trade-offs: prebuild step copies shared file into worker src/ as a generated
+ *   file (_tutor-orchestrator-wire.generated.ts) so Cloud Run buildpacks can
+ *   compile in isolation without cross-package tsconfig includes.
  */
 export {
   resolvedScopeSchema,
@@ -22,4 +24,4 @@ export {
   type OrchestrateResponse,
   type CompactRequest,
   type CompactResponse,
-} from "../../../../../shared/tutor-orchestrator-wire.js";
+} from "./_tutor-orchestrator-wire.generated.js";

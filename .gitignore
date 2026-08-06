@@ -44,3 +44,6 @@ __pycache__/
 *.pyc
 tests/__fixtures__/assemble-batch-scratch/
 tests/__fixtures__/assemble-batch-apply/
+
+# Worker prebuild-copied shared schemas (single source of truth lives in shared/)
+apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated.ts
