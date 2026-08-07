@@ -305,6 +305,277 @@ RW_ANSWER_PRESENT=$(psql_db "$DB" -tAc "
 [ "$RW_ANSWER_PRESENT" -gt 0 ] || { echo "FAIL: R&W RPC did not return answer columns"; exit 1; }
 echo "    OK correct_answer and explanation present in R&W RPC pool"
 
+# ===========================================================================
+# DIAGNOSTIC INTEGRATION GATE (Codex audit Fix 2: real-Postgres emission proof)
+# ===========================================================================
+# @spec [Doc-05A §11 / Doc-05C §6.2 / INV-05C-14 / Coding Standards §9]
+# Proves the complete diagnostic lifecycle against real PostgreSQL:
+#   D.1  select_diagnostic_pool returns 40 rows (8×5)
+#   D.2  select_diagnostic_pool is PLAIN INVOKER (not SECURITY DEFINER)
+#   D.3  40 apply_mastery_event calls → exactly 40 diagnostic_attempt audit rows
+#   D.4  student_skill_mastery has rows after the diagnostic
+#   D.5  student_domain_mastery has rows for all 8 domains
+#   D.6  compute_section_projection succeeds for both M and RW
+#   D.7  student_section_projections has non-NULL projected_score_mid for both
+#   D.8  Idempotency: replaying the same 40 events produces no new audit rows
+echo ""
+echo "=================================================================="
+echo "==> DIAGNOSTIC INTEGRATION GATE"
+echo "=================================================================="
+
+# ---------------------------------------------------------------------------
+# D.0 Seed 40 published questions: 8 canonical domains × 5, difficulty cycle
+# ---------------------------------------------------------------------------
+echo "==> D.0 seed diagnostic questions (8 domains × 5 = 40)"
+# IDs must match questions_id_check: ^SAT(M|RW)[12][A-Z0-9]{6}$
+# Format: SAT + section + source_type(1) + 3-char domain abbr + 2-char seq + padding char
+psql_db "$DB" >/dev/null <<'SQL'
+DO $$
+DECLARE
+  -- [section, domain, skill_code, 3-char-abbr-for-id]
+  v_domains text[][] := ARRAY[
+    ARRAY['M',  'Algebra',                            'ALG.D01', 'DGA'],
+    ARRAY['M',  'Advanced Math',                      'ADV.D01', 'DGB'],
+    ARRAY['M',  'Problem Solving and Data Analysis',  'PSD.D01', 'DGC'],
+    ARRAY['M',  'Geometry and Trigonometry',           'GEO.D01', 'DGD'],
+    ARRAY['RW', 'Information and Ideas',               'INI.D01', 'DGE'],
+    ARRAY['RW', 'Craft and Structure',                 'CAS.D01', 'DGF'],
+    ARRAY['RW', 'Expression of Ideas',                 'EOI.D01', 'DGG'],
+    ARRAY['RW', 'Standard English Conventions',        'SEC.D01', 'DGH']
+  ];
+  v_diffs integer[] := ARRAY[1, 2, 3, 1, 2];
+  v_d     text[];
+  v_i     integer;
+  v_qid   text;
+BEGIN
+  FOREACH v_d SLICE 1 IN ARRAY v_domains
+  LOOP
+    FOR v_i IN 1..5 LOOP
+      -- e.g. SATM1DGA01X, SATRW1DGE02X  (matches ^SAT(M|RW)[12][A-Z0-9]{6}$)
+      v_qid := 'SAT' || v_d[1] || '1' || v_d[4] || lpad(v_i::text, 2, '0') || 'X';
+      INSERT INTO public.questions (
+        id, section, source_type, domain, skill_codes, difficulty,
+        stem, options, correct_answer, explanation, status, published_at
+      ) VALUES (
+        v_qid, v_d[1], 1, v_d[2], ARRAY[v_d[3]], v_diffs[v_i],
+        'Diagnostic ' || v_d[2] || ' Q' || v_i,
+        '[{"token":"A","text":"1"},{"token":"B","text":"2"},{"token":"C","text":"3"},{"token":"D","text":"4"}]'::jsonb,
+        'B', 'Explanation for ' || v_d[2] || ' Q' || v_i,
+        'published', now()
+      ) ON CONFLICT (id) DO NOTHING;
+    END LOOP;
+  END LOOP;
+END $$;
+SQL
+echo "    OK 40 diagnostic questions seeded"
+
+# ---------------------------------------------------------------------------
+# D.1 select_diagnostic_pool returns exactly 40 rows
+# ---------------------------------------------------------------------------
+echo "==> D.1 select_diagnostic_pool: returns 40 rows (8×5)"
+DIAG_POOL=$(psql_db "$DB" -tAc "SELECT count(*) FROM public.select_diagnostic_pool(5);")
+[ "$DIAG_POOL" = "40" ] || { echo "FAIL: select_diagnostic_pool returned $DIAG_POOL rows (expected 40)"; exit 1; }
+echo "    OK $DIAG_POOL rows"
+
+# ---------------------------------------------------------------------------
+# D.2 select_diagnostic_pool is PLAIN INVOKER (not SECURITY DEFINER)
+# ---------------------------------------------------------------------------
+echo "==> D.2 select_diagnostic_pool: plain invoker"
+SECDEF=$(psql_db "$DB" -tAc "
+  SELECT prosecdef FROM pg_proc WHERE proname = 'select_diagnostic_pool';
+" | tr -d '[:space:]')
+[ "$SECDEF" = "f" ] || { echo "FAIL: select_diagnostic_pool is SECURITY DEFINER (prosecdef=$SECDEF, expected f)"; exit 1; }
+echo "    OK plain invoker (prosecdef=f)"
+
+# ---------------------------------------------------------------------------
+# D.3-D.8 Full diagnostic lifecycle: session → items → mastery → projection
+# ---------------------------------------------------------------------------
+echo "==> D.3 diagnostic lifecycle: create session, insert 40 items, apply mastery"
+DIAG_STUDENT='dddddddd-dddd-dddd-dddd-dddddddddddd'
+DIAG_SESSION='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+
+# Create student user
+psql_db "$DB" -q -c "
+  INSERT INTO auth.users (id, email) VALUES ('$DIAG_STUDENT', 'diag-ci@example.com')
+  ON CONFLICT (id) DO NOTHING;
+" >/dev/null
+
+# Create diagnostic session + items + apply mastery events in one block
+psql_db "$DB" >/dev/null <<SQL
+DO \$\$
+DECLARE
+  v_student_id uuid := '$DIAG_STUDENT';
+  v_session_id uuid := '$DIAG_SESSION';
+  v_item       record;
+  v_result     public.student_skill_mastery;
+  v_now        timestamptz := now();
+BEGIN
+  -- Create diagnostic session
+  INSERT INTO public.practice_sessions (
+    id, user_id, actor_id, mode, filters, target_count, platform, status, completed_at
+  ) VALUES (
+    v_session_id, v_student_id, v_student_id, 'diagnostic', '{}', 40, 'web', 'completed', v_now
+  );
+
+  -- Insert 40 answered items from the seeded diagnostic questions
+  INSERT INTO public.practice_session_items (
+    id, session_id, user_id, actor_id, ordinal,
+    question_id, question_stem, question_options, question_correct_answer,
+    question_explanation, question_domain, question_skill, question_difficulty,
+    question_section, status, selected_answer, is_correct, outcome, answered_at,
+    occurred_at, question_item_type
+  )
+  SELECT
+    gen_random_uuid(), v_session_id, v_student_id, v_student_id,
+    (row_number() OVER (ORDER BY q.id))::integer,
+    q.id, q.stem, q.options, q.correct_answer, q.explanation,
+    q.domain, q.skill_codes[1], q.difficulty::smallint, q.section,
+    'answered', 'B',
+    (q.correct_answer = 'B'),
+    CASE WHEN q.correct_answer = 'B' THEN 'correct' ELSE 'incorrect' END,
+    v_now, v_now, 'mcq'
+  FROM public.questions q
+  WHERE q.id ~ '^SAT(M|RW)1DG[A-H]'
+  ORDER BY q.id;
+
+  -- Apply mastery event for each answered item (sequential, same as server)
+  FOR v_item IN
+    SELECT psi.id AS item_id, psi.question_id, psi.question_section,
+           psi.question_domain, psi.question_skill, psi.question_difficulty,
+           psi.is_correct
+    FROM public.practice_session_items psi
+    WHERE psi.session_id = v_session_id
+    ORDER BY psi.ordinal
+  LOOP
+    v_result := public.apply_mastery_event(
+      v_student_id,
+      v_item.question_section,
+      v_item.question_domain,
+      v_item.question_skill,
+      v_item.question_difficulty::smallint,
+      'practice',
+      'diagnostic_attempt',
+      v_item.is_correct,
+      v_now,
+      v_item.item_id,
+      v_item.question_id
+    );
+  END LOOP;
+END \$\$;
+SQL
+echo "    OK lifecycle complete"
+
+# ---------------------------------------------------------------------------
+# D.3 Assert exactly 40 diagnostic_attempt audit rows
+# ---------------------------------------------------------------------------
+echo "==> D.3 assert: exactly 40 diagnostic_attempt audit rows"
+AUDIT_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.mastery_event_audit_log
+  WHERE student_id = '$DIAG_STUDENT'
+    AND event_source_kind = 'diagnostic_attempt';
+")
+[ "$AUDIT_COUNT" = "40" ] || { echo "FAIL: expected 40 diagnostic_attempt audit rows, got $AUDIT_COUNT"; exit 1; }
+echo "    OK $AUDIT_COUNT diagnostic_attempt audit rows"
+
+# ---------------------------------------------------------------------------
+# D.4 Assert student_skill_mastery has rows
+# ---------------------------------------------------------------------------
+echo "==> D.4 assert: student_skill_mastery has rows"
+SKILL_MASTERY_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.student_skill_mastery
+  WHERE student_id = '$DIAG_STUDENT';
+")
+[ "$SKILL_MASTERY_COUNT" -gt 0 ] || { echo "FAIL: student_skill_mastery is empty after diagnostic"; exit 1; }
+echo "    OK $SKILL_MASTERY_COUNT skill mastery row(s)"
+
+# ---------------------------------------------------------------------------
+# D.5 Assert student_domain_mastery has rows for all 8 domains
+# ---------------------------------------------------------------------------
+echo "==> D.5 assert: student_domain_mastery covers all 8 domains"
+DOMAIN_MASTERY_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.student_domain_mastery
+  WHERE student_id = '$DIAG_STUDENT'
+    AND event_count_total >= 5;
+")
+[ "$DOMAIN_MASTERY_COUNT" = "8" ] || { echo "FAIL: expected 8 domains with ≥5 events, got $DOMAIN_MASTERY_COUNT"; exit 1; }
+echo "    OK $DOMAIN_MASTERY_COUNT domains with ≥5 events"
+
+# ---------------------------------------------------------------------------
+# D.6 compute_section_projection for both M and RW
+# ---------------------------------------------------------------------------
+echo "==> D.6 compute_section_projection: M and RW"
+psql_db "$DB" -q -c "SELECT public.compute_section_projection('$DIAG_STUDENT'::uuid, 'M', now());" >/dev/null
+psql_db "$DB" -q -c "SELECT public.compute_section_projection('$DIAG_STUDENT'::uuid, 'RW', now());" >/dev/null
+echo "    OK both projections computed without error"
+
+# ---------------------------------------------------------------------------
+# D.7 Assert non-NULL projections for both sections
+# ---------------------------------------------------------------------------
+echo "==> D.7 assert: non-NULL projected_score_mid for M and RW"
+PROJ_M=$(psql_db "$DB" -tAc "
+  SELECT projected_score_mid FROM public.student_section_projections
+  WHERE student_id = '$DIAG_STUDENT' AND section = 'M';
+")
+PROJ_RW=$(psql_db "$DB" -tAc "
+  SELECT projected_score_mid FROM public.student_section_projections
+  WHERE student_id = '$DIAG_STUDENT' AND section = 'RW';
+")
+# Trim whitespace
+PROJ_M=$(echo "$PROJ_M" | tr -d '[:space:]')
+PROJ_RW=$(echo "$PROJ_RW" | tr -d '[:space:]')
+[ -n "$PROJ_M" ] && [ "$PROJ_M" != "" ] || { echo "FAIL: M projection is NULL after diagnostic completion"; exit 1; }
+[ -n "$PROJ_RW" ] && [ "$PROJ_RW" != "" ] || { echo "FAIL: RW projection is NULL after diagnostic completion"; exit 1; }
+echo "    OK M=$PROJ_M  RW=$PROJ_RW"
+
+# ---------------------------------------------------------------------------
+# D.8 Idempotency: replay same events → no new audit rows
+# ---------------------------------------------------------------------------
+echo "==> D.8 idempotency: replay same 40 events (no duplicates)"
+psql_db "$DB" >/dev/null <<SQL
+DO \$\$
+DECLARE
+  v_student_id uuid := '$DIAG_STUDENT';
+  v_session_id uuid := '$DIAG_SESSION';
+  v_item       record;
+  v_result     public.student_skill_mastery;
+  v_now        timestamptz := now();
+BEGIN
+  FOR v_item IN
+    SELECT psi.id AS item_id, psi.question_id, psi.question_section,
+           psi.question_domain, psi.question_skill, psi.question_difficulty,
+           psi.is_correct
+    FROM public.practice_session_items psi
+    WHERE psi.session_id = v_session_id
+    ORDER BY psi.ordinal
+  LOOP
+    v_result := public.apply_mastery_event(
+      v_student_id,
+      v_item.question_section,
+      v_item.question_domain,
+      v_item.question_skill,
+      v_item.question_difficulty::smallint,
+      'practice',
+      'diagnostic_attempt',
+      v_item.is_correct,
+      v_now,
+      v_item.item_id,
+      v_item.question_id
+    );
+  END LOOP;
+END \$\$;
+SQL
+
+AUDIT_AFTER=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.mastery_event_audit_log
+  WHERE student_id = '$DIAG_STUDENT'
+    AND event_source_kind = 'diagnostic_attempt';
+")
+[ "$AUDIT_AFTER" = "40" ] || { echo "FAIL: expected 40 audit rows after replay, got $AUDIT_AFTER (duplicates created)"; exit 1; }
+echo "    OK still 40 audit rows (no duplicates)"
+
+echo ""
+echo "DIAGNOSTIC INTEGRATION GATE: PASS"
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
