@@ -3064,7 +3064,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const eventSourceKind: "practice_attempt" | "diagnostic_attempt" =
       session.mode === "diagnostic" ? "diagnostic_attempt" : "practice_attempt";
     if (canonicalId && difficultyBucket && section && domain && skill) {
-      await applyMasteryEvent({
+      // @spec [Doc-05A §11, Codex audit Fix 1] Diagnostic mastery emission is
+      // FAIL-CLOSED: applyMasteryEvent returns { ok, error } and does NOT throw
+      // on RPC failure. For diagnostic mode, a failed mastery write must not be
+      // silently swallowed — the diagnostic must not be presented as completed
+      // without its required 40 audit events.
+      const masteryResult = await applyMasteryEvent({
         studentId: userId,
         section,
         domain,
@@ -3077,11 +3082,55 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         eventId: sessionItem.id,
         questionId: canonicalId,
       });
+      if (!masteryResult.ok && session.mode === "diagnostic") {
+        logger.error("[diagnostic] mastery emission failed — fail-closed", {
+          requestId,
+          sessionId: payload.sessionId,
+          questionCanonicalId: canonicalId,
+          masteryError: masteryResult.error ?? "unknown",
+        });
+        return res.status(500).json({
+          error: "diagnostic_mastery_emission_failed",
+          message:
+            "Diagnostic mastery event could not be durably written. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
+          requestId,
+        });
+      } else if (!masteryResult.ok) {
+        // Non-diagnostic: existing warn-and-continue posture (practice sessions
+        // do not have the 40-event completeness invariant).
+        logger.warn("[practice] mastery emission returned error", {
+          requestId,
+          sessionId: payload.sessionId,
+          questionCanonicalId: canonicalId,
+          masteryError: masteryResult.error ?? "unknown",
+        });
+      }
     } else if (
       canonicalId &&
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
+      // Diagnostic sessions must never skip mastery emission — all 40 items
+      // must have complete metadata. Missing metadata is a data integrity defect.
+      if (session.mode === "diagnostic") {
+        logger.error(
+          "[diagnostic] mastery emission impossible (missing metadata) — fail-closed",
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            section: section || null,
+            domain: domain || null,
+            skill: skill || null,
+          },
+        );
+        return res.status(500).json({
+          error: "diagnostic_mastery_emission_failed",
+          message:
+            "Diagnostic item lacks required metadata for mastery emission. This is a data integrity defect.",
+          requestId,
+        });
+      }
       logger.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
         sessionId: payload.sessionId,
@@ -3093,6 +3142,23 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
+      if (session.mode === "diagnostic") {
+        logger.error(
+          "[diagnostic] mastery emission impossible (invalid difficulty) — fail-closed",
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            rawDifficulty: sessionItem.question_difficulty ?? null,
+          },
+        );
+        return res.status(500).json({
+          error: "diagnostic_mastery_emission_failed",
+          message:
+            "Diagnostic item has an invalid difficulty bucket for mastery emission. This is a data integrity defect.",
+          requestId,
+        });
+      }
       logger.warn(
         "[practice] mastery emission skipped (invalid difficulty bucket)",
         {
@@ -3108,6 +3174,20 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   } catch (masteryErr: unknown) {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
+    // Diagnostic: fail-closed — re-throw so the request does not succeed.
+    if (session.mode === "diagnostic") {
+      logger.error("[diagnostic] mastery emission threw — fail-closed", {
+        requestId,
+        sessionId: payload.sessionId,
+        message: errMsg,
+      });
+      return res.status(500).json({
+        error: "diagnostic_mastery_emission_failed",
+        message:
+          "Diagnostic mastery event threw an unexpected error. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
+        requestId,
+      });
+    }
     logger.warn("[practice] mastery logging failed", {
       requestId,
       message: errMsg,
@@ -3132,29 +3212,76 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       completed_at: now,
     });
 
-    // @spec [Doc-05C §10] After completing the 40-question diagnostic, the FIRST
-    // projection refresh MUST produce non-NULL projection rows for both sections.
-    // The auto-counter (PROJECTION_REFRESH_EVENT_THRESHOLD=40) may not align if
-    // the student has pre-existing mastery events, so we force-refresh here.
+    // @spec [Doc-05C §10, Codex audit Fix 1] After completing the 40-question
+    // diagnostic, the FIRST projection refresh MUST produce non-NULL projection
+    // rows for both sections. Supabase .rpc() returns { data, error } and does
+    // NOT throw on Postgres errors — both results must be inspected explicitly.
+    // Fail-closed: a diagnostic must not report "completed" without its
+    // required projection effects.
     if (session.mode === "diagnostic") {
       try {
-        await supabaseServer.rpc("compute_section_projection", {
-          p_student_id: userId,
-          p_section: "M",
-          p_as_of: now,
-        });
-        await supabaseServer.rpc("compute_section_projection", {
-          p_student_id: userId,
-          p_section: "RW",
-          p_as_of: now,
-        });
+        const { error: projMErr } = await supabaseServer.rpc(
+          "compute_section_projection",
+          {
+            p_student_id: userId,
+            p_section: "M",
+            p_as_of: now,
+          },
+        );
+        if (projMErr) {
+          logger.error(
+            "[diagnostic] projection refresh failed for M — fail-closed",
+            {
+              requestId,
+              sessionId: payload.sessionId,
+              message: projMErr.message,
+            },
+          );
+          return res.status(500).json({
+            error: "diagnostic_projection_failed",
+            message:
+              "Diagnostic projection refresh failed for section M. The session was marked completed but projections are missing. Retry the submission.",
+            requestId,
+          });
+        }
+
+        const { error: projRWErr } = await supabaseServer.rpc(
+          "compute_section_projection",
+          {
+            p_student_id: userId,
+            p_section: "RW",
+            p_as_of: now,
+          },
+        );
+        if (projRWErr) {
+          logger.error(
+            "[diagnostic] projection refresh failed for RW — fail-closed",
+            {
+              requestId,
+              sessionId: payload.sessionId,
+              message: projRWErr.message,
+            },
+          );
+          return res.status(500).json({
+            error: "diagnostic_projection_failed",
+            message:
+              "Diagnostic projection refresh failed for section RW. The session was marked completed but projections are missing. Retry the submission.",
+            requestId,
+          });
+        }
       } catch (projErr: unknown) {
         const projMsg =
           projErr instanceof Error ? projErr.message : String(projErr);
-        logger.warn("[diagnostic] projection refresh failed on completion", {
+        logger.error("[diagnostic] projection refresh threw — fail-closed", {
           requestId,
           sessionId: payload.sessionId,
           message: projMsg,
+        });
+        return res.status(500).json({
+          error: "diagnostic_projection_failed",
+          message:
+            "Diagnostic projection refresh threw an unexpected error. The session was marked completed but projections are missing. Retry the submission.",
+          requestId,
         });
       }
     }
