@@ -482,9 +482,13 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
   -- Practice events: canonical table practice_session_items (Doc 02B §8 / seam §2; NOT the
   -- fossil practice_attempts_v0 — A3/SP-22). Mastery-bearing = answered items only; pending/
   -- served/skipped are not mastery events (their seam columns are unpopulated by design).
+  -- Diagnostic sessions (mode='diagnostic') emit 'diagnostic_attempt' instead of 'practice_attempt'.
   SELECT
     pi.id                       AS event_id,
-    'practice_attempt'::text    AS event_source_kind,
+    CASE WHEN ps.mode = 'diagnostic'
+         THEN 'diagnostic_attempt'::text
+         ELSE 'practice_attempt'::text
+    END                         AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
@@ -494,6 +498,7 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
     pi.occurred_at              AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
+  JOIN public.practice_sessions ps ON ps.id = pi.session_id
   WHERE pi.user_id = p_student_id
     AND pi.status  = 'answered'
     AND pi.question_section = p_section
@@ -528,7 +533,10 @@ CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) R
     AS $$
   SELECT
     pi.id                       AS event_id,
-    'practice_attempt'::text    AS event_source_kind,
+    CASE WHEN ps.mode = 'diagnostic'
+         THEN 'diagnostic_attempt'::text
+         ELSE 'practice_attempt'::text
+    END                         AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
@@ -538,6 +546,7 @@ CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) R
     pi.occurred_at              AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
+  JOIN public.practice_sessions ps ON ps.id = pi.session_id
   WHERE pi.user_id = p_student_id
     AND pi.status  = 'answered'
     AND pi.question_section IN ('M','RW')
