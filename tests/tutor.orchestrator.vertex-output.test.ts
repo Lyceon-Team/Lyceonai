@@ -37,7 +37,23 @@ function buildRequest(timeoutMs: number) {
     },
     recent_messages: [],
     memory_summaries: [],
-    student_context: {},
+    student_learning_context: {
+      mastery_snapshot: null,
+      recent_friction: {
+        consecutive_fails_this_session: 0,
+        consecutive_fails_this_skill_7d: 0,
+        self_deprecating_language_detected: false,
+        long_pause_detected: false,
+        mastery_regression_14d: null,
+      },
+      kpi_state: null,
+    },
+    memory_structured_fields: {
+      last_struggled_skill: null,
+      last_mastered_skill: null,
+      preferred_explanation_style: null,
+      style_confidence: null,
+    },
     policy_assignment: {
       policy_family: "tutor_v1",
       policy_variant: "default",
@@ -76,6 +92,7 @@ function buildValidResponse() {
       cache_used: false,
       compaction_recommended: false,
     },
+    learner_observation: null,
   };
 }
 
@@ -88,7 +105,8 @@ describe("Tutor orchestrator vertex output hardening", () => {
   });
 
   beforeEach(async () => {
-    const mod = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
+    const mod =
+      await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
     generateTutorResponse = mod.generateTutorResponse;
     setGenerateContentForTests = mod.setGenerateContentForTests;
     setGenerateContentForTests(generateContentMock);
@@ -130,14 +148,16 @@ describe("Tutor orchestrator vertex output hardening", () => {
         candidates: [
           {
             content: {
-              parts: [{ text: "{\n  \"response\": {\n    \"content" }],
+              parts: [{ text: '{\n  "response": {\n    "content' }],
             },
           },
         ],
       },
     });
 
-    await expect(generateTutorResponse(buildRequest(1000))).rejects.toMatchObject({
+    await expect(
+      generateTutorResponse(buildRequest(1000)),
+    ).rejects.toMatchObject({
       name: "ModelOutputError",
       code: "MODEL_OUTPUT_TRUNCATED",
       message: "Vertex returned truncated JSON output",
@@ -157,7 +177,9 @@ describe("Tutor orchestrator vertex output hardening", () => {
       },
     });
 
-    await expect(generateTutorResponse(buildRequest(1000))).rejects.toMatchObject({
+    await expect(
+      generateTutorResponse(buildRequest(1000)),
+    ).rejects.toMatchObject({
       name: "ModelOutputError",
       code: "MODEL_OUTPUT_INVALID",
       message: "Vertex returned non-JSON output",
@@ -170,14 +192,16 @@ describe("Tutor orchestrator vertex output hardening", () => {
         candidates: [
           {
             content: {
-              parts: [{ text: "{\"response\": }" }],
+              parts: [{ text: '{"response": }' }],
             },
           },
         ],
       },
     });
 
-    await expect(generateTutorResponse(buildRequest(1000))).rejects.toMatchObject({
+    await expect(
+      generateTutorResponse(buildRequest(1000)),
+    ).rejects.toMatchObject({
       name: "ModelOutputError",
       code: "MODEL_OUTPUT_INVALID",
       message: "Vertex returned non-JSON output",
@@ -190,18 +214,25 @@ describe("Tutor orchestrator vertex output hardening", () => {
         candidates: [
           {
             content: {
-              parts: [{ text: JSON.stringify({ response: { content: "missing required fields" } }) }],
+              parts: [
+                {
+                  text: JSON.stringify({
+                    response: { content: "missing required fields" },
+                  }),
+                },
+              ],
             },
           },
         ],
       },
     });
 
-    await expect(generateTutorResponse(buildRequest(1000))).rejects.toMatchObject({
+    await expect(
+      generateTutorResponse(buildRequest(1000)),
+    ).rejects.toMatchObject({
       name: "ModelOutputError",
       code: "MODEL_OUTPUT_SCHEMA_MISMATCH",
       message: "Vertex returned invalid orchestrator response shape",
     });
   });
-
 });

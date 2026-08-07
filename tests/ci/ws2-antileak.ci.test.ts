@@ -1,16 +1,22 @@
 /**
  * @spec [Doc 02 Preamble §12 Reveal Matrix, INV-02-09; Doc 03B §16 Anti-Leak at API Boundary, INV-03-04, INV-03-12]
- * | @implemented [2026-06-24]
+ * | @implemented [2026-06-24] | @updated [2026-08-07]
  * plain English: CI gate for WS-2 anti-leak pair (EX-05 + TU-04). Asserts:
  * 1. SubmitModuleResult.nextModule type does NOT contain difficultyBucket
  * 2. ExamReviewModule type does NOT contain difficultyBucket
- * 3. hasDirectAnswerLeak correctly detects MCQ answer reveals
+ * 3. hasAnswerLeak correctly detects MCQ/grid-in answer reveals (answer-aware)
  * 4. isPreSubmitForSurface returns correct values per surface
  * 5. Client components do NOT reference difficultyBucket
+ *
+ * @updated 2026-08-07 — WS-L2: hasDirectAnswerLeak (nine-regex matcher in
+ * tutor-runtime.ts) replaced by answer-aware hasAnswerLeak in tutor-context.ts.
+ * Tests now import the exported function directly instead of extracting regex
+ * patterns from source. Structural assertions updated to reference hasAnswerLeak.
  */
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { hasAnswerLeak } from "../../server/services/tutor-context";
 
 // ---------------------------------------------------------------------------
 // EX-05: difficultyBucket must NOT appear in client-facing types
@@ -114,79 +120,71 @@ describe("EX-05: difficultyBucket stripped from client-facing serialization", ()
 });
 
 // ---------------------------------------------------------------------------
-// TU-04: hasDirectAnswerLeak detection patterns
+// TU-04: hasAnswerLeak detection patterns (answer-aware)
 // ---------------------------------------------------------------------------
 
-describe("TU-04: hasDirectAnswerLeak pattern coverage", () => {
-  it("hasDirectAnswerLeak function exists in tutor-runtime source", () => {
+describe("TU-04: hasAnswerLeak pattern coverage", () => {
+  it("hasAnswerLeak is exported from tutor-context", () => {
+    expect(typeof hasAnswerLeak).toBe("function");
+  });
+
+  it("tutor-runtime imports hasAnswerLeak from tutor-context", () => {
     const src = fs.readFileSync(
       path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
       "utf-8",
     );
-    expect(src).toContain(
-      "function hasDirectAnswerLeak(text: string): boolean",
+    expect(src).toContain("hasAnswerLeak");
+    expect(src).toMatch(
+      /import\s*\{[^}]*hasAnswerLeak[^}]*\}\s*from\s*["']\.\.\/services\/tutor-context/,
     );
   });
 
-  it("detects 'the correct answer is' pattern", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("The correct answer is B")).toBe(true);
-    expect(fn("the correct answer is A")).toBe(true);
+  it("detects MCQ answer leak for the specific correct letter", () => {
+    expect(hasAnswerLeak("The correct answer is B", "B")).toBe(true);
+    expect(hasAnswerLeak("the correct answer is A", "A")).toBe(true);
+    expect(hasAnswerLeak("Answer: C", "C")).toBe(true);
   });
 
-  it("detects 'the right answer is' pattern", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("The right answer is C")).toBe(true);
+  it("does NOT flag MCQ text referencing a different letter", () => {
+    // When the correct answer is B, mentioning A is not a leak
+    expect(hasAnswerLeak("The correct answer is A", "B")).toBe(false);
+    expect(hasAnswerLeak("choose option C", "B")).toBe(false);
   });
 
-  it("detects 'choose option X' pattern", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("You should choose option A")).toBe(true);
-    expect(fn("choose option D for this question")).toBe(true);
+  it("detects 'choose option X' pattern for correct letter", () => {
+    expect(hasAnswerLeak("You should choose option A", "A")).toBe(true);
+    expect(hasAnswerLeak("choose option D for this question", "D")).toBe(true);
   });
 
-  it("detects 'answer: X' pattern", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("answer: B")).toBe(true);
-    expect(fn("Answer: A")).toBe(true);
+  it("detects 'option X is correct' pattern for correct letter", () => {
+    expect(hasAnswerLeak("option A is correct", "A")).toBe(true);
   });
 
-  it("detects 'option X is correct' pattern", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("option A is correct")).toBe(true);
-    expect(fn("choice B = right")).toBe(true);
+  it("detects grid-in answer leak (exact value in text)", () => {
+    expect(hasAnswerLeak("The answer is 42", "42")).toBe(true);
+    expect(hasAnswerLeak("the result is 3.5", "3.5")).toBe(true);
+    expect(hasAnswerLeak("you should get 7", "7")).toBe(true);
+  });
+
+  it("falls back to phrase patterns when correctAnswer is null", () => {
+    // With null correctAnswer, falls back to generic pattern matching
+    expect(hasAnswerLeak("The correct answer is B", null)).toBe(true);
+    expect(hasAnswerLeak("the right answer is A", null)).toBe(true);
+    expect(hasAnswerLeak("choose option D", null)).toBe(true);
+    expect(hasAnswerLeak("Answer: A", null)).toBe(true);
   });
 
   it("does NOT flag safe pedagogical text", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
+    expect(hasAnswerLeak("Think about what happens when x = 3", "B")).toBe(
+      false,
     );
-    const fn = extractHasDirectAnswerLeak(src);
-    expect(fn("Think about what happens when x = 3")).toBe(false);
-    expect(fn("Let's review the concept of linear equations")).toBe(false);
-    expect(fn("Consider each option carefully")).toBe(false);
-    expect(fn("What do you think the answer might be?")).toBe(false);
+    expect(
+      hasAnswerLeak("Let's review the concept of linear equations", "A"),
+    ).toBe(false);
+    expect(hasAnswerLeak("Consider each option carefully", "C")).toBe(false);
+    expect(hasAnswerLeak("What do you think the answer might be?", null)).toBe(
+      false,
+    );
   });
 });
 
@@ -218,9 +216,9 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     );
     const nextChunk = appendTurnSection.slice(0, 2000);
     expect(nextChunk).toContain("isPreSubmitForSurface");
-    expect(nextChunk).toContain("hasDirectAnswerLeak");
+    expect(nextChunk).toContain("hasAnswerLeak");
     expect(nextChunk).not.toMatch(
-      /source_surface\s*===\s*["']practice["']\s*\)\s*\{[\s\S]{0,200}hasDirectAnswerLeak/,
+      /source_surface\s*===\s*["']practice["']\s*\)\s*\{[\s\S]{0,200}hasAnswerLeak/,
     );
   });
 
@@ -242,7 +240,7 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
     const nextChunk = appendTurnSection.slice(0, 1500);
     expect(nextChunk).toContain("const safeContent");
     // Leak detection drives the ternary; substitution selects the shared fallback.
-    expect(nextChunk).toContain("hasDirectAnswerLeak(cleaned)");
+    expect(nextChunk).toContain("hasAnswerLeak(cleaned, correctAnswer)");
     expect(nextChunk).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
     // The block path never calls sendTutorError (no error response on a leak).
     const blockToInsert = nextChunk.slice(
@@ -286,39 +284,7 @@ describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
 
     const replaySection = src.slice(replayIdx, replayIdx + 3000);
     expect(replaySection).toContain("isPreSubmitForSurface");
-    expect(replaySection).toContain("hasDirectAnswerLeak");
+    expect(replaySection).toContain("hasAnswerLeak");
     expect(replaySection).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function extractHasDirectAnswerLeak(source: string): (text: string) => boolean {
-  const fnMatch = source.match(
-    /function hasDirectAnswerLeak\(text: string\): boolean\s*\{([\s\S]*?)\n\}/,
-  );
-  if (!fnMatch) {
-    throw new Error("Could not extract hasDirectAnswerLeak from source");
-  }
-
-  const patternsMatch = fnMatch[1].match(/const patterns = \[([\s\S]*?)\];/);
-  if (!patternsMatch) {
-    throw new Error("Could not extract patterns array");
-  }
-
-  const regexLiterals = patternsMatch[1].match(/\/[^/]+\/[gimsuy]*/g);
-  if (!regexLiterals || regexLiterals.length === 0) {
-    throw new Error("No regex patterns found");
-  }
-
-  const patterns = regexLiterals.map((lit) => {
-    const lastSlash = lit.lastIndexOf("/");
-    const pattern = lit.slice(1, lastSlash);
-    const flags = lit.slice(lastSlash + 1);
-    return new RegExp(pattern, flags);
-  });
-
-  return (text: string) => patterns.some((p) => p.test(text));
-}

@@ -25,6 +25,34 @@
 
 ## Entries
 
+SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
+Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated
+  conversation history. This entry moves it to V1, captured per-turn from model output via the
+  orchestrator response schema.
+WAS: §7.3 defines preferred_explanation_style as a V2 target requiring "LLM-based pattern extraction
+  over conversation history" and "sufficient observed conversation data to train extraction prompts."
+  V1 stores only last_struggled_skill and last_mastered_skill on teaching_profile summaries.
+IS: V1 adds a learner_observation block to the orchestrator response schema (Doc 03C wire contract).
+  The model emits an enum-constrained explanation_form observation per turn (or null when no signal).
+  Enum values: step_by_step, conceptual, example_driven, visual. Observations accumulate as a tally
+  in tutor_memory_summaries type teaching_profile content_json. A preferred style is derived when
+  total observations ≥ 5 and a single-leader plurality exists. The derived style feeds back through
+  Layer 3 memory retrieval to shape subsequent prompts. Free text is never written to memory —
+  enum-constrained values only, satisfying §7.6 Layer B (schema constraints prevent self-injection).
+  The learner_observation block is INTERNAL ONLY — never serialized to any client response body.
+Rationale: Karl ruling 2026-08-07 — the batch-extraction prerequisite (sufficient conversation
+  history + trained extraction prompts) is unnecessary for a four-value enum that the model can
+  classify per-turn from student response patterns. Per-turn capture provides immediate V1 value
+  ("Knows Me" moments) without a separate extraction pipeline. The four-value enum
+  (step_by_step | conceptual | example_driven | visual) scopes to explanation form only — other
+  dimensions (scaffolding level, test strategy) are deferred to independent fields once conversation
+  data proves reliable model classification.
+Version: Doc 03A → V3.2 (§7.3 explanation style capture moved to V1; §10.3 adds learner_observation
+  to orchestrator response contract).
+Artifact: PR for branch claude/ws-l2-context.
+Owner action: at next spec pass, update §7.3 to reflect V1 per-turn capture with the four-value
+  enum, and add learner_observation to §10.3 orchestrator response contract.
+
 SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | PROPOSED (Karl approved 2026-08-04)
 Change: The corpus mandates a human safety review workflow (Doc 03 §21.3) whose required actions
   cannot be performed without reading the flagged conversation, but Doc 03B §3.1 line 243 forbids

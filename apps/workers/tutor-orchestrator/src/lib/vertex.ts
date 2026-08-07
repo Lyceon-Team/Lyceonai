@@ -370,12 +370,29 @@ function getResponseSchema(): Record<string, unknown> {
                 },
                 required: ["model_name", "cache_used", "compaction_recommended"],
             },
+            learner_observation: {
+                type: FunctionDeclarationSchemaType.OBJECT,
+                nullable: true,
+                properties: {
+                    explanation_form: {
+                        type: FunctionDeclarationSchemaType.STRING,
+                        nullable: true,
+                        enum: ["step_by_step", "conceptual", "example_driven", "visual"],
+                    },
+                    confidence: {
+                        type: FunctionDeclarationSchemaType.STRING,
+                        enum: ["low", "medium", "high"],
+                    },
+                },
+                required: ["explanation_form", "confidence"],
+            },
         },
         required: [
             "response",
             "question_links",
             "instruction_exposures",
             "orchestration_meta",
+            "learner_observation",
         ],
     };
 }
@@ -400,7 +417,8 @@ function buildPrompt(input: OrchestrateRequest): string {
             resolved_scope: input.resolved_scope,
             recent_messages: recentMessages,
             memory_summaries: input.memory_summaries,
-            student_context: input.student_context,
+            student_learning_context: input.student_learning_context,
+            memory_structured_fields: input.memory_structured_fields,
             policy_assignment: input.policy_assignment,
             runtime_limits: input.runtime_limits,
         },

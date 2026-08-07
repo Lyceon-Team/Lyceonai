@@ -37,6 +37,7 @@ let initialized = false;
 // ── Known keys + expected types ────────────────────────────────────────
 
 const _EXPECTED_KEYS = {
+  // WS2 — cost / rate / reuse
   cost_soft_alert_usd_month: "integer",
   cost_hard_alert_usd_month: "integer",
   cost_hard_cap_usd_month: "integer",
@@ -46,6 +47,18 @@ const _EXPECTED_KEYS = {
   per_question_cooldown_minutes: "integer",
   tutor_request_timeout_seconds: "integer",
   conversation_reuse_days: "integer",
+  // WS-L0.3 — context window / memory / injection
+  recent_message_window: "integer",
+  memory_summary_staleness_days: "integer",
+  injection_length_bound_chars: "integer",
+  study_context_relevance_window_days: "integer",
+  // WS-L2 — freshness thresholds (Doc 03A §7.4)
+  teaching_profile_freshness_days: "integer",
+  recent_learning_pattern_freshness_days: "integer",
+  study_context_freshness_days: "integer",
+  // WS-L2 — friction / observation
+  friction_long_pause_seconds: "integer",
+  observation_promotion_threshold: "integer",
 } as const;
 
 type ConfigKey = keyof typeof _EXPECTED_KEYS;

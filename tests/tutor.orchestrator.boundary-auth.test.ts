@@ -23,10 +23,14 @@ vi.mock("../apps/workers/tutor-orchestrator/src/lib/vertex.js", () => {
   };
 });
 
-const { createWorkerBoundaryAuthMiddleware } = await import("../apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts");
-const { orchestrateRouter } = await import("../apps/workers/tutor-orchestrator/src/routes/orchestrate.ts");
-const { compactRouter } = await import("../apps/workers/tutor-orchestrator/src/routes/compact.ts");
-const { OrchestratorTimeoutError } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.js");
+const { createWorkerBoundaryAuthMiddleware } =
+  await import("../apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts");
+const { orchestrateRouter } =
+  await import("../apps/workers/tutor-orchestrator/src/routes/orchestrate.ts");
+const { compactRouter } =
+  await import("../apps/workers/tutor-orchestrator/src/routes/compact.ts");
+const { OrchestratorTimeoutError } =
+  await import("../apps/workers/tutor-orchestrator/src/lib/vertex.js");
 
 function validPayload() {
   return {
@@ -42,7 +46,23 @@ function validPayload() {
     },
     recent_messages: [],
     memory_summaries: [],
-    student_context: {},
+    student_learning_context: {
+      mastery_snapshot: null,
+      recent_friction: {
+        consecutive_fails_this_session: 0,
+        consecutive_fails_this_skill_7d: 0,
+        self_deprecating_language_detected: false,
+        long_pause_detected: false,
+        mastery_regression_14d: null,
+      },
+      kpi_state: null,
+    },
+    memory_structured_fields: {
+      last_struggled_skill: null,
+      last_mastered_skill: null,
+      preferred_explanation_style: null,
+      style_confidence: null,
+    },
     policy_assignment: {
       policy_family: "tutor_v1",
       policy_variant: "default",
@@ -81,13 +101,18 @@ function validOrchestratorResponse() {
       cache_used: false,
       compaction_recommended: false,
     },
+    learner_observation: null,
   };
 }
 
 function buildApp(env: NodeJS.ProcessEnv) {
   const app = express();
   app.use(express.json());
-  app.use("/orchestrate", createWorkerBoundaryAuthMiddleware(env), orchestrateRouter);
+  app.use(
+    "/orchestrate",
+    createWorkerBoundaryAuthMiddleware(env),
+    orchestrateRouter,
+  );
   app.use("/compact", createWorkerBoundaryAuthMiddleware(env), compactRouter);
   return app;
 }
@@ -98,7 +123,9 @@ describe("Tutor orchestrator worker boundary auth", () => {
   });
 
   it("allows local dev default mode when auth mode is unset", async () => {
-    generateTutorResponseMock.mockRejectedValueOnce(new OrchestratorTimeoutError(10));
+    generateTutorResponseMock.mockRejectedValueOnce(
+      new OrchestratorTimeoutError(10),
+    );
     const app = buildApp({
       NODE_ENV: "development",
     });
@@ -131,7 +158,9 @@ describe("Tutor orchestrator worker boundary auth", () => {
   });
 
   it("accepts bearer token in require_bearer mode and preserves route behavior", async () => {
-    generateTutorResponseMock.mockRejectedValueOnce(new OrchestratorTimeoutError(10));
+    generateTutorResponseMock.mockRejectedValueOnce(
+      new OrchestratorTimeoutError(10),
+    );
     const app = buildApp({
       NODE_ENV: "development",
       TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE: "require_bearer",
@@ -161,7 +190,9 @@ describe("Tutor orchestrator worker boundary auth", () => {
   });
 
   it("accepts valid token in shared_secret mode and keeps response contract", async () => {
-    generateTutorResponseMock.mockResolvedValueOnce(validOrchestratorResponse());
+    generateTutorResponseMock.mockResolvedValueOnce(
+      validOrchestratorResponse(),
+    );
     const app = buildApp({
       NODE_ENV: "development",
       TUTOR_ORCHESTRATOR_WORKER_AUTH_MODE: "shared_secret",
