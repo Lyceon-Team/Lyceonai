@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CANONICAL_ID_PATTERN } from "./canonical-id";
 
 export const TutorEntryModeSchema = z.enum(["scoped_question", "scoped_session", "general"]);
 export const TutorSourceSurfaceSchema = z.enum(["practice", "review", "test_review", "dashboard"]);
@@ -9,7 +10,7 @@ export const TutorContentKindSchema = z.enum(["message", "suggestion", "consent_
 export const TutorScopeSchema = z.object({
   source_session_id: z.string().uuid().nullable().optional(),
   source_session_item_id: z.string().uuid().nullable().optional(),
-  source_question_row_id: z.string().uuid().nullable().optional(),
+  source_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable().optional(),
   source_question_canonical_id: z.string().min(1).max(128).nullable().optional(),
 });
 
@@ -18,7 +19,7 @@ export const TutorStartConversationRequestSchema = z.object({
   source_surface: TutorSourceSurfaceSchema,
   source_session_id: z.string().uuid().nullable().optional(),
   source_session_item_id: z.string().uuid().nullable().optional(),
-  source_question_row_id: z.string().uuid().nullable().optional(),
+  source_question_row_id: z.string().regex(CANONICAL_ID_PATTERN).nullable().optional(),
   source_question_canonical_id: z.string().min(1).max(128).nullable().optional(),
 });
 

@@ -1,6 +1,10 @@
 import { randomBytes } from "crypto";
 
-export const CANONICAL_ID_PATTERN = /^SAT(?:M|RW)[12][A-Z0-9]{6}$/;
+// Import + re-export from canonical-id.ts (browser-safe module) so existing
+// consumers of question-bank-contract.ts are not broken, and the local
+// isValidCanonicalId function can reference the pattern.
+import { CANONICAL_ID_PATTERN } from "./canonical-id";
+export { CANONICAL_ID_PATTERN };
 export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
 export const QUESTION_LIFECYCLE = ["draft", "qa", "published"] as const;
 export const LEGACY_QUESTION_LIFECYCLE = ["reviewed"] as const;
