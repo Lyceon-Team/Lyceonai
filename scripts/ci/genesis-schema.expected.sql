@@ -3006,6 +3006,47 @@ $$;
 
 
 --
+-- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.select_diagnostic_pool(p_per_domain integer DEFAULT 5, p_exclude_ids text[] DEFAULT NULL::text[]) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[], passage text, assets jsonb, option_metadata jsonb, estimated_time_seconds integer)
+    LANGUAGE sql
+    AS $$
+  -- Step 1: rank within each (domain, difficulty) bucket, randomized.
+  -- Step 2: interleave difficulties — pick one from each tier before repeating
+  --         (diff_rank ASC, difficulty ASC) so the first 3 picks are easy/med/hard.
+  -- Step 3: take p_per_domain per domain → natural difficulty spread.
+  WITH diff_ranked AS (
+    SELECT
+      q.id, q.section, q.stem, q.options, q.difficulty,
+      q.correct_answer, q.explanation, q.domain, q.skill_codes,
+      q.source_type, q.item_type, q.correct_variants, q.passage,
+      q.assets, q.option_metadata, q.estimated_time_seconds,
+      ROW_NUMBER() OVER (
+        PARTITION BY q.domain, q.difficulty ORDER BY random()
+      ) AS diff_rank
+    FROM public.servable_questions q
+    WHERE (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
+  ),
+  interleaved AS (
+    SELECT *,
+      ROW_NUMBER() OVER (
+        PARTITION BY domain ORDER BY diff_rank, difficulty
+      ) AS domain_rank
+    FROM diff_ranked
+  )
+  SELECT
+    i.id, i.section, i.stem, i.options, i.difficulty,
+    i.correct_answer, i.explanation, i.domain, i.skill_codes,
+    i.source_type, i.item_type, i.correct_variants, i.passage,
+    i.assets, i.option_metadata, i.estimated_time_seconds
+  FROM interleaved i
+  WHERE i.domain_rank <= p_per_domain
+  ORDER BY random();
+$$;
+
+
+--
 -- Name: select_practice_pool_random(text[], text[], text[], integer[], text[], integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3037,43 +3078,6 @@ CREATE FUNCTION public.select_practice_pool_random(p_sections text[] DEFAULT NUL
     AND (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
   ORDER BY random()
   LIMIT p_limit;
-$$;
-
-
---
--- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.select_diagnostic_pool(p_per_domain integer DEFAULT 5, p_exclude_ids text[] DEFAULT NULL::text[]) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[], passage text, assets jsonb, option_metadata jsonb, estimated_time_seconds integer)
-    LANGUAGE sql SECURITY INVOKER
-    AS $$
-  WITH diff_ranked AS (
-    SELECT
-      q.id, q.section, q.stem, q.options, q.difficulty,
-      q.correct_answer, q.explanation, q.domain, q.skill_codes,
-      q.source_type, q.item_type, q.correct_variants, q.passage,
-      q.assets, q.option_metadata, q.estimated_time_seconds,
-      ROW_NUMBER() OVER (
-        PARTITION BY q.domain, q.difficulty ORDER BY random()
-      ) AS diff_rank
-    FROM public.servable_questions q
-    WHERE (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
-  ),
-  interleaved AS (
-    SELECT *,
-      ROW_NUMBER() OVER (
-        PARTITION BY domain ORDER BY diff_rank, difficulty
-      ) AS domain_rank
-    FROM diff_ranked
-  )
-  SELECT
-    i.id, i.section, i.stem, i.options, i.difficulty,
-    i.correct_answer, i.explanation, i.domain, i.skill_codes,
-    i.source_type, i.item_type, i.correct_variants, i.passage,
-    i.assets, i.option_metadata, i.estimated_time_seconds
-  FROM interleaved i
-  WHERE i.domain_rank <= p_per_domain
-  ORDER BY random();
 $$;
 
 
@@ -7884,6 +7888,13 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO service_role;
+
+
+--
+-- Name: FUNCTION select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]) TO service_role;
 
 
 --
