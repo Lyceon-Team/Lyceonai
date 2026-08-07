@@ -60,5 +60,5 @@ This audit is based on mounted routes in `server/index.ts` and is required befor
 `/api/guardian/weaknesses/:studentId` (guardian-safe projection of student truth)
 - Compatibility-only:
 None for mastery product truth.
-- Dead/disabled:
-`/api/me/mastery/diagnostic` (intentionally returns 404).
+- Diagnostic (Vertical B, Slice 1):
+`/api/practice/diagnostic/sessions` (40-question initial diagnostic, seeds mastery state).
