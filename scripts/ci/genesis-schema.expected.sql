@@ -3041,6 +3041,43 @@ $$;
 
 
 --
+-- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.select_diagnostic_pool(p_per_domain integer DEFAULT 5, p_exclude_ids text[] DEFAULT NULL::text[]) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[], passage text, assets jsonb, option_metadata jsonb, estimated_time_seconds integer)
+    LANGUAGE sql SECURITY INVOKER
+    AS $$
+  WITH diff_ranked AS (
+    SELECT
+      q.id, q.section, q.stem, q.options, q.difficulty,
+      q.correct_answer, q.explanation, q.domain, q.skill_codes,
+      q.source_type, q.item_type, q.correct_variants, q.passage,
+      q.assets, q.option_metadata, q.estimated_time_seconds,
+      ROW_NUMBER() OVER (
+        PARTITION BY q.domain, q.difficulty ORDER BY random()
+      ) AS diff_rank
+    FROM public.servable_questions q
+    WHERE (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
+  ),
+  interleaved AS (
+    SELECT *,
+      ROW_NUMBER() OVER (
+        PARTITION BY domain ORDER BY diff_rank, difficulty
+      ) AS domain_rank
+    FROM diff_ranked
+  )
+  SELECT
+    i.id, i.section, i.stem, i.options, i.difficulty,
+    i.correct_answer, i.explanation, i.domain, i.skill_codes,
+    i.source_type, i.item_type, i.correct_variants, i.passage,
+    i.assets, i.option_metadata, i.estimated_time_seconds
+  FROM interleaved i
+  WHERE i.domain_rank <= p_per_domain
+  ORDER BY random();
+$$;
+
+
+--
 -- Name: set_profile_age_fields(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4029,7 +4066,7 @@ CREATE TABLE public.practice_sessions (
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     actor_id uuid NOT NULL,
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text]))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))

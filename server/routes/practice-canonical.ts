@@ -1464,6 +1464,11 @@ async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
   // DB-side ORDER BY random() via select_practice_pool_random RPC.
   // The DB returns exactly N rows; no full-pool fetch into TS.
+  //
+  // @spec [Doc-02B_V4 §20] | @implemented [2026-08-07]
+  // Diagnostic mode: select_diagnostic_pool — same engine, but selects
+  // 5 per domain × 8 domains (Math + R&W), randomized with difficulty spread.
+  // Diagnostics ARE practice with per-domain-count + difficulty filters.
 
   // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
   const { data: activeSessionItems } = await supabaseServer
@@ -1476,16 +1481,26 @@ async function startOrReplaySession(args: {
     .map((item: { question_id?: string }) => item.question_id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  // 2. Resolve filter params for the RPC
-  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
-  const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
-    d === "easy" ? 1 : d === "hard" ? 3 : 2,
-  );
+  // 2. Pool selection — diagnostic or practice
+  let poolRows: unknown[] | null = null;
+  let poolError: { message: string } | null = null;
 
-  // 3. Call DB-side random selection
-  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
-    "select_practice_pool_random",
-    {
+  if (args.mode === "diagnostic") {
+    // Diagnostic: 5 per domain × 8 domains, randomized, difficulty spread
+    const rpcResult = await supabaseServer.rpc("select_diagnostic_pool", {
+      p_per_domain: 5,
+      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
+    });
+    poolRows = rpcResult.data as unknown[] | null;
+    poolError = rpcResult.error;
+  } else {
+    // Standard practice: faceted filters
+    const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+    const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
+      d === "easy" ? 1 : d === "hard" ? 3 : 2,
+    );
+
+    const rpcResult = await supabaseServer.rpc("select_practice_pool_random", {
       p_sections: sectionCodes.length > 0 ? sectionCodes : null,
       p_domains:
         args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
@@ -1494,8 +1509,10 @@ async function startOrReplaySession(args: {
       p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
       p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
       p_limit: requestedCount,
-    },
-  );
+    });
+    poolRows = rpcResult.data as unknown[] | null;
+    poolError = rpcResult.error;
+  }
 
   if (poolError) {
     return {
@@ -3021,6 +3038,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  // @spec [Doc-02B_V4 §20] | @implemented [2026-08-07]
+  // Diagnostic sessions are fail-closed: if mastery/projection write fails,
+  // the request fails — an unverified write is a failure, not assumed success.
+  // Practice sessions retain the existing warn-and-continue behavior.
+  const isDiagnosticSession = session.mode === "diagnostic";
+
   try {
     const canonicalId =
       typeof sessionItem.question_id === "string"
@@ -3042,34 +3065,106 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       sessionItem.question_difficulty ?? null,
     );
     if (canonicalId && difficultyBucket && section && domain && skill) {
-      await applyMasteryEvent({
+      const masteryResult = await applyMasteryEvent({
         studentId: userId,
         section,
         domain,
         skill,
         difficulty: difficultyBucket,
         sourceFamily: "practice",
-        eventSourceKind: "practice_attempt",
+        eventSourceKind: isDiagnosticSession
+          ? "diagnostic_attempt"
+          : "practice_attempt",
         correct: isCorrect,
         occurredAt: now,
         eventId: sessionItem.id,
         questionId: canonicalId,
       });
+
+      // FIX 1 (fail-closed): diagnostic sessions must not report "completed"
+      // if mastery/projection writes failed. applyMasteryEvent returns {ok:false}
+      // without throwing; the DB transaction inside the mastery RPC includes
+      // the projection refresh (bump_projection_refresh_counter), so a single
+      // check covers both mastery AND projection.
+      if (!masteryResult.ok && isDiagnosticSession) {
+        logger.error(
+          "[diagnostic] mastery write failed — fail-closed, not reporting success",
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            error: masteryResult.error,
+          },
+        );
+        return res.status(500).json({
+          error: "diagnostic_mastery_write_failed",
+          message:
+            "Diagnostic answer recorded but mastery update failed. The session cannot be completed until all mastery events are confirmed.",
+          requestId,
+        });
+      }
+
+      if (!masteryResult.ok) {
+        logger.warn("[practice] mastery emission failed (non-fatal)", {
+          requestId,
+          sessionId: payload.sessionId,
+          questionCanonicalId: canonicalId,
+          sourceFamily: "practice",
+          error: masteryResult.error,
+        });
+      }
     } else if (
       canonicalId &&
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
+      // Diagnostic sessions must not silently skip mastery — fail-closed.
+      if (isDiagnosticSession) {
+        logger.error(
+          "[diagnostic] mastery emission blocked (missing metadata) — fail-closed",
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            section: section || null,
+            domain: domain || null,
+            skill: skill || null,
+          },
+        );
+        return res.status(500).json({
+          error: "diagnostic_mastery_metadata_missing",
+          message:
+            "Diagnostic mastery event cannot be emitted: missing section/domain/skill metadata.",
+          requestId,
+        });
+      }
       logger.warn("[practice] mastery emission skipped (missing metadata)", {
         requestId,
         sessionId: payload.sessionId,
         questionCanonicalId: canonicalId,
-        sourceFamily: "practice",
+        sourceFamily: masterySourceFamily,
         section: section || null,
         domain: domain || null,
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
+      if (isDiagnosticSession) {
+        logger.error(
+          "[diagnostic] mastery emission blocked (invalid difficulty) — fail-closed",
+          {
+            requestId,
+            sessionId: payload.sessionId,
+            questionCanonicalId: canonicalId,
+            rawDifficulty: sessionItem.question_difficulty ?? null,
+          },
+        );
+        return res.status(500).json({
+          error: "diagnostic_mastery_difficulty_invalid",
+          message:
+            "Diagnostic mastery event cannot be emitted: invalid difficulty bucket.",
+          requestId,
+        });
+      }
       logger.warn(
         "[practice] mastery emission skipped (invalid difficulty bucket)",
         {
@@ -3084,6 +3179,19 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   } catch (masteryErr: unknown) {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
+    // Diagnostic sessions: fail-closed on any mastery error.
+    if (isDiagnosticSession) {
+      logger.error("[diagnostic] mastery logging threw — fail-closed", {
+        requestId,
+        message: errMsg,
+      });
+      return res.status(500).json({
+        error: "diagnostic_mastery_write_failed",
+        message:
+          "Diagnostic mastery event failed unexpectedly. The session cannot be completed until all mastery events are confirmed.",
+        requestId,
+      });
+    }
     logger.warn("[practice] mastery logging failed", {
       requestId,
       message: errMsg,
