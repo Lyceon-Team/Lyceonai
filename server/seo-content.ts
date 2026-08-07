@@ -199,7 +199,7 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
         <p style="color: #555; font-size: 0.9rem;">Ratios, rates, percentages, and data analysis</p>
       </div>
       <div style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Geometry & Trig</h3>
+        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Geometry and Trig</h3>
         <p style="color: #555; font-size: 0.9rem;">Area, volume, lines, angles, and basic trigonometry</p>
       </div>
     </div>
@@ -265,11 +265,11 @@ export const PUBLIC_SSR_ROUTES: Record<string, PublicPageSeo> = {
     </p>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1.5rem;">
       <div style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Craft & Structure</h3>
+        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Craft and Structure</h3>
         <p style="color: #555; font-size: 0.9rem;">Word choice, text structure, and purpose</p>
       </div>
       <div style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
-        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Information & Ideas</h3>
+        <h3 style="font-size: 1.1rem; color: #0F2E48; margin-bottom: 0.5rem;">Information and Ideas</h3>
         <p style="color: #555; font-size: 0.9rem;">Main ideas, details, and inferences</p>
       </div>
       <div style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">

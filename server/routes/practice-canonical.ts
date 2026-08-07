@@ -143,20 +143,22 @@ const router = Router();
 
 // @spec [Doc-02B_V4 §41; INV-02B-15 Config Doctrine] | @implemented [2026-06-27]
 // All runtime constants read from practice_runtime_config — no hardcoded literals.
-type PracticeConfig = {
+export type PracticeConfig = {
   maxConcurrentSessions: number;
   defaultSessionCountWeb: number;
   maxSessionCountPremium: number;
   targetSecondsPerQuestion: number;
   answerRateLimitWindowMs: number;
   answerRateLimitMax: number;
+  diagnosticTotalQuestions: number;
+  diagnosticPerDomain: number;
 };
 
 let _configCache: { config: PracticeConfig; ts: number } | null = null;
 let _configInflight: Promise<PracticeConfig> | null = null;
 const CONFIG_TTL_MS = 30_000;
 
-async function loadPracticeConfig(): Promise<PracticeConfig> {
+export async function loadPracticeConfig(): Promise<PracticeConfig> {
   if (_configCache && Date.now() - _configCache.ts < CONFIG_TTL_MS) {
     return _configCache.config;
   }
@@ -178,6 +180,8 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
       "target_seconds_per_question",
       "answer_rate_limit_window_ms",
       "answer_rate_limit_max",
+      "diagnostic_total_questions",
+      "diagnostic_per_domain",
     ]);
 
   if (error) {
@@ -200,6 +204,18 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
     return parsed;
   };
 
+  // Diagnostic keys may be absent when the diagnostic migration has not been
+  // applied yet (Karl applies at step 7). Fall back to the locked spec values
+  // so existing practice tests keep passing. Doc 05P §10.1: 8 × 5 = 40.
+  const readIntOptional = (key: string, fallback: number): number => {
+    if (!configMap.has(key)) return fallback;
+    const raw = configMap.get(key);
+    const parsed =
+      typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
+  };
+
   const config: PracticeConfig = {
     maxConcurrentSessions: readIntRequired("max_concurrent_sessions"),
     defaultSessionCountWeb: readIntRequired("default_session_count_web"),
@@ -207,6 +223,8 @@ async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
     targetSecondsPerQuestion: readIntRequired("target_seconds_per_question"),
     answerRateLimitWindowMs: readIntRequired("answer_rate_limit_window_ms"),
     answerRateLimitMax: readIntRequired("answer_rate_limit_max"),
+    diagnosticTotalQuestions: readIntOptional("diagnostic_total_questions", 40),
+    diagnosticPerDomain: readIntOptional("diagnostic_per_domain", 5),
   };
   _configCache = { config, ts: Date.now() };
   return config;
@@ -547,7 +565,7 @@ function buildServedOptions(options: McOption[]): {
 // item_type drives the answer shape: mcq → A–D key in correct_answer, options present,
 // no variant set; grid_in → student-produced value in correct_answer, no options, the
 // accepted-answer set in correct_variants. All three answer-bearing fields stay server-side.
-function toCanonicalQuestionForServing(
+export function toCanonicalQuestionForServing(
   q: CanonicalQuestionRowLike,
 ): CanonicalQuestionForServing {
   const itemType: CanonicalItemType =
@@ -958,7 +976,7 @@ async function countSessionItems(sessionId: string): Promise<number> {
   return Number.isFinite(count as number) ? Number(count) : 0;
 }
 
-async function hydrateSessionItemOptionTokens(
+export async function hydrateSessionItemOptionTokens(
   sessionId: string,
 ): Promise<void> {
   const { data, error } = await supabaseServer
@@ -994,7 +1012,7 @@ async function hydrateSessionItemOptionTokens(
   }
 }
 
-async function cleanupFailedSessionMaterialization(
+export async function cleanupFailedSessionMaterialization(
   sessionId: string,
 ): Promise<void> {
   try {
@@ -1464,11 +1482,6 @@ async function startOrReplaySession(args: {
   // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
   // DB-side ORDER BY random() via select_practice_pool_random RPC.
   // The DB returns exactly N rows; no full-pool fetch into TS.
-  //
-  // @spec [Doc-02B_V4 §20] | @implemented [2026-08-07]
-  // Diagnostic mode: select_diagnostic_pool — same engine, but selects
-  // 5 per domain × 8 domains (Math + R&W), randomized with difficulty spread.
-  // Diagnostics ARE practice with per-domain-count + difficulty filters.
 
   // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
   const { data: activeSessionItems } = await supabaseServer
@@ -1481,26 +1494,16 @@ async function startOrReplaySession(args: {
     .map((item: { question_id?: string }) => item.question_id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  // 2. Pool selection — diagnostic or practice
-  let poolRows: unknown[] | null = null;
-  let poolError: { message: string } | null = null;
+  // 2. Resolve filter params for the RPC
+  const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
+  const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
+    d === "easy" ? 1 : d === "hard" ? 3 : 2,
+  );
 
-  if (args.mode === "diagnostic") {
-    // Diagnostic: 5 per domain × 8 domains, randomized, difficulty spread
-    const rpcResult = await supabaseServer.rpc("select_diagnostic_pool", {
-      p_per_domain: 5,
-      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
-    });
-    poolRows = rpcResult.data as unknown[] | null;
-    poolError = rpcResult.error;
-  } else {
-    // Standard practice: faceted filters
-    const sectionCodes = resolveAllowedSectionCodes(args.sessionSpec.sections);
-    const difficultyInts: number[] = args.sessionSpec.difficulties.map((d) =>
-      d === "easy" ? 1 : d === "hard" ? 3 : 2,
-    );
-
-    const rpcResult = await supabaseServer.rpc("select_practice_pool_random", {
+  // 3. Call DB-side random selection
+  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
+    "select_practice_pool_random",
+    {
       p_sections: sectionCodes.length > 0 ? sectionCodes : null,
       p_domains:
         args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
@@ -1509,10 +1512,8 @@ async function startOrReplaySession(args: {
       p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
       p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
       p_limit: requestedCount,
-    });
-    poolRows = rpcResult.data as unknown[] | null;
-    poolError = rpcResult.error;
-  }
+    },
+  );
 
   if (poolError) {
     return {
@@ -3038,12 +3039,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  // @spec [Doc-02B_V4 §20] | @implemented [2026-08-07]
-  // Diagnostic sessions are fail-closed: if mastery/projection write fails,
-  // the request fails — an unverified write is a failure, not assumed success.
-  // Practice sessions retain the existing warn-and-continue behavior.
-  const isDiagnosticSession = session.mode === "diagnostic";
-
   try {
     const canonicalId =
       typeof sessionItem.question_id === "string"
@@ -3064,7 +3059,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const difficultyBucket = resolveDifficultyBucketStrict(
       sessionItem.question_difficulty ?? null,
     );
+    // @spec [Doc-05A §11.4] Diagnostic items emit event_source_kind='diagnostic_attempt'
+    // with source_family='practice' (diagnostics are regular practice events).
+    const eventSourceKind: "practice_attempt" | "diagnostic_attempt" =
+      session.mode === "diagnostic" ? "diagnostic_attempt" : "practice_attempt";
     if (canonicalId && difficultyBucket && section && domain && skill) {
+      // @spec [Doc-05A §11, Codex audit Fix 1] Diagnostic mastery emission is
+      // FAIL-CLOSED: applyMasteryEvent returns { ok, error } and does NOT throw
+      // on RPC failure. For diagnostic mode, a failed mastery write must not be
+      // silently swallowed — the diagnostic must not be presented as completed
+      // without its required 40 audit events.
       const masteryResult = await applyMasteryEvent({
         studentId: userId,
         section,
@@ -3072,45 +3076,33 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         skill,
         difficulty: difficultyBucket,
         sourceFamily: "practice",
-        eventSourceKind: isDiagnosticSession
-          ? "diagnostic_attempt"
-          : "practice_attempt",
+        eventSourceKind,
         correct: isCorrect,
         occurredAt: now,
         eventId: sessionItem.id,
         questionId: canonicalId,
       });
-
-      // FIX 1 (fail-closed): diagnostic sessions must not report "completed"
-      // if mastery/projection writes failed. applyMasteryEvent returns {ok:false}
-      // without throwing; the DB transaction inside the mastery RPC includes
-      // the projection refresh (bump_projection_refresh_counter), so a single
-      // check covers both mastery AND projection.
-      if (!masteryResult.ok && isDiagnosticSession) {
-        logger.error(
-          "[diagnostic] mastery write failed — fail-closed, not reporting success",
-          {
-            requestId,
-            sessionId: payload.sessionId,
-            questionCanonicalId: canonicalId,
-            error: masteryResult.error,
-          },
-        );
-        return res.status(500).json({
-          error: "diagnostic_mastery_write_failed",
-          message:
-            "Diagnostic answer recorded but mastery update failed. The session cannot be completed until all mastery events are confirmed.",
-          requestId,
-        });
-      }
-
-      if (!masteryResult.ok) {
-        logger.warn("[practice] mastery emission failed (non-fatal)", {
+      if (!masteryResult.ok && session.mode === "diagnostic") {
+        logger.error("[diagnostic] mastery emission failed — fail-closed", {
           requestId,
           sessionId: payload.sessionId,
           questionCanonicalId: canonicalId,
-          sourceFamily: "practice",
-          error: masteryResult.error,
+          masteryError: masteryResult.error ?? "unknown",
+        });
+        return res.status(500).json({
+          error: "diagnostic_mastery_emission_failed",
+          message:
+            "Diagnostic mastery event could not be durably written. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
+          requestId,
+        });
+      } else if (!masteryResult.ok) {
+        // Non-diagnostic: existing warn-and-continue posture (practice sessions
+        // do not have the 40-event completeness invariant).
+        logger.warn("[practice] mastery emission returned error", {
+          requestId,
+          sessionId: payload.sessionId,
+          questionCanonicalId: canonicalId,
+          masteryError: masteryResult.error ?? "unknown",
         });
       }
     } else if (
@@ -3118,10 +3110,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       difficultyBucket &&
       (!section || !domain || !skill)
     ) {
-      // Diagnostic sessions must not silently skip mastery — fail-closed.
-      if (isDiagnosticSession) {
+      // Diagnostic sessions must never skip mastery emission — all 40 items
+      // must have complete metadata. Missing metadata is a data integrity defect.
+      if (session.mode === "diagnostic") {
         logger.error(
-          "[diagnostic] mastery emission blocked (missing metadata) — fail-closed",
+          "[diagnostic] mastery emission impossible (missing metadata) — fail-closed",
           {
             requestId,
             sessionId: payload.sessionId,
@@ -3132,9 +3125,9 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           },
         );
         return res.status(500).json({
-          error: "diagnostic_mastery_metadata_missing",
+          error: "diagnostic_mastery_emission_failed",
           message:
-            "Diagnostic mastery event cannot be emitted: missing section/domain/skill metadata.",
+            "Diagnostic item lacks required metadata for mastery emission. This is a data integrity defect.",
           requestId,
         });
       }
@@ -3142,15 +3135,16 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         requestId,
         sessionId: payload.sessionId,
         questionCanonicalId: canonicalId,
-        sourceFamily: masterySourceFamily,
+        sourceFamily: "practice",
+        eventSourceKind,
         section: section || null,
         domain: domain || null,
         skill: skill || null,
       });
     } else if (canonicalId && !difficultyBucket) {
-      if (isDiagnosticSession) {
+      if (session.mode === "diagnostic") {
         logger.error(
-          "[diagnostic] mastery emission blocked (invalid difficulty) — fail-closed",
+          "[diagnostic] mastery emission impossible (invalid difficulty) — fail-closed",
           {
             requestId,
             sessionId: payload.sessionId,
@@ -3159,9 +3153,9 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           },
         );
         return res.status(500).json({
-          error: "diagnostic_mastery_difficulty_invalid",
+          error: "diagnostic_mastery_emission_failed",
           message:
-            "Diagnostic mastery event cannot be emitted: invalid difficulty bucket.",
+            "Diagnostic item has an invalid difficulty bucket for mastery emission. This is a data integrity defect.",
           requestId,
         });
       }
@@ -3172,6 +3166,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           sessionId: payload.sessionId,
           questionCanonicalId: canonicalId,
           sourceFamily: "practice",
+          eventSourceKind,
           rawDifficulty: sessionItem.question_difficulty ?? null,
         },
       );
@@ -3179,16 +3174,17 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   } catch (masteryErr: unknown) {
     const errMsg =
       masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
-    // Diagnostic sessions: fail-closed on any mastery error.
-    if (isDiagnosticSession) {
-      logger.error("[diagnostic] mastery logging threw — fail-closed", {
+    // Diagnostic: fail-closed — re-throw so the request does not succeed.
+    if (session.mode === "diagnostic") {
+      logger.error("[diagnostic] mastery emission threw — fail-closed", {
         requestId,
+        sessionId: payload.sessionId,
         message: errMsg,
       });
       return res.status(500).json({
-        error: "diagnostic_mastery_write_failed",
+        error: "diagnostic_mastery_emission_failed",
         message:
-          "Diagnostic mastery event failed unexpectedly. The session cannot be completed until all mastery events are confirmed.",
+          "Diagnostic mastery event threw an unexpected error. The answer was recorded but the diagnostic cannot proceed without its mastery audit trail. Retry the submission.",
         requestId,
       });
     }
@@ -3215,6 +3211,80 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       status: "completed",
       completed_at: now,
     });
+
+    // @spec [Doc-05C §10, Codex audit Fix 1] After completing the 40-question
+    // diagnostic, the FIRST projection refresh MUST produce non-NULL projection
+    // rows for both sections. Supabase .rpc() returns { data, error } and does
+    // NOT throw on Postgres errors — both results must be inspected explicitly.
+    // Fail-closed: a diagnostic must not report "completed" without its
+    // required projection effects.
+    if (session.mode === "diagnostic") {
+      try {
+        const { error: projMErr } = await supabaseServer.rpc(
+          "compute_section_projection",
+          {
+            p_student_id: userId,
+            p_section: "M",
+            p_as_of: now,
+          },
+        );
+        if (projMErr) {
+          logger.error(
+            "[diagnostic] projection refresh failed for M — fail-closed",
+            {
+              requestId,
+              sessionId: payload.sessionId,
+              message: projMErr.message,
+            },
+          );
+          return res.status(500).json({
+            error: "diagnostic_projection_failed",
+            message:
+              "Diagnostic projection refresh failed for section M. The session was marked completed but projections are missing. Retry the submission.",
+            requestId,
+          });
+        }
+
+        const { error: projRWErr } = await supabaseServer.rpc(
+          "compute_section_projection",
+          {
+            p_student_id: userId,
+            p_section: "RW",
+            p_as_of: now,
+          },
+        );
+        if (projRWErr) {
+          logger.error(
+            "[diagnostic] projection refresh failed for RW — fail-closed",
+            {
+              requestId,
+              sessionId: payload.sessionId,
+              message: projRWErr.message,
+            },
+          );
+          return res.status(500).json({
+            error: "diagnostic_projection_failed",
+            message:
+              "Diagnostic projection refresh failed for section RW. The session was marked completed but projections are missing. Retry the submission.",
+            requestId,
+          });
+        }
+      } catch (projErr: unknown) {
+        const projMsg =
+          projErr instanceof Error ? projErr.message : String(projErr);
+        logger.error("[diagnostic] projection refresh threw — fail-closed", {
+          requestId,
+          sessionId: payload.sessionId,
+          message: projMsg,
+        });
+        return res.status(500).json({
+          error: "diagnostic_projection_failed",
+          message:
+            "Diagnostic projection refresh threw an unexpected error. The session was marked completed but projections are missing. Retry the submission.",
+          requestId,
+        });
+      }
+    }
   } else {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "active",

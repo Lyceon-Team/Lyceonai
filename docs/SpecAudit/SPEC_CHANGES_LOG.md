@@ -327,6 +327,118 @@ Effect: unpaid 40/day quota resets at 00:00 America/Chicago. No code/migration c
   America/Chicago on prod. Supersedes Q13's UTC clause for quota_reset_timezone only.
 Status: PROPOSED → Karl promotes to canonical.
 
+### SCL-P-CONTENT-01 — Content-column disposition contract (anti-whack-a-mole) [PROPOSED]
+Decision: Every `questions` column has a declared disposition — served_pre_submit / server_only /
+  post_submit_only — in a registry, enforced by a CI test that FAILS when a new column appears undeclared.
+  served_pre_submit: id, section, stem, passage, options, assets, difficulty, domain, skill_codes, item_type.
+  server_only: option_metadata, correct_variants, estimated_time_seconds, premium_flag, quality_score,
+  issue_flags, source_lineage, generation_attribution, version, source_type, status, created_at,
+  published_at, retired_at. post_submit_only: correct_answer, explanation.
+Rationale: recurring defect class — a content column exists on `questions` but the RPC never SELECTs it, so
+  it arrives null (caused the R&W passage P0, then option_metadata). A per-column declared contract makes a
+  new column require a conscious serve/don't-serve decision; ends the class.
+Effect: RPC widened to serve passage + assets; option_metadata/estimated_time_seconds carried server-side
+  only. Migration applied, verified live. premium_flag documented permanently unused (Karl: no premium
+  questions ever; all questions servable to all users).
+
+### SCL-P-SERVABLE-01 — servable_questions view is the shared flagged-question gate [PROPOSED]
+Decision: `servable_questions` = questions WHERE status='published' AND issue_flags empty. Created WITH
+  (security_invoker=true); GRANT SELECT to service_role ONLY. select_practice_pool_random selects FROM the
+  view. All student-serving question reads route through it (practice-topics, questions-runtime student
+  paths, full-length selection); a CI gate FAILS on direct `.from("questions")` / `FROM questions` in
+  student-serving paths (authoring/ingestion allowlisted by path).
+Rationale: one shared definition of "servable" so review + full-length inherit the flagged-question gate
+  rather than re-implementing it. security_invoker + service_role-only grant are load-bearing: the view is
+  SELECT* over answer-bearing columns (correct_answer, explanation, option_metadata), so a broader grant
+  would expose the bank WITH ANSWER KEYS via PostgREST.
+Effect: flagged questions excluded from selection everywhere; historical reconstruction of already-served
+  items may still read `questions` directly (a question flagged after a student saw it must still render in
+  review). Migration applied, verified live (security_invoker=true, service_role-only ACL confirmed).
+SECURITY BOUNDARY: the servable_questions grant must NEVER be widened beyond service_role. Load-bearing.
+
+### SCL-P-OPTMETA-01 — option_metadata is server-only LISA context, never client [PROPOSED]
+Decision: option_metadata ({"A":{"role":"correct","error_taxonomy":...},...}) is the ANSWER KEY plus
+  distractor taxonomy. Server-only: TYPE-ABSENT from StudentSafeQuestionDTO (compile error to add), like
+  correct_variants. Consumed solely as LISA (tutor) context; NEVER shown to the student, pre- or
+  post-submit.
+Rationale: Karl ruling — error_taxonomy is valuable tutor context (LISA can say "you made an equation-setup
+  error") but naming it to the student pre-submit leaks the correct role, and post-submit adds no student
+  value over the explanation. Simpler and safer as server-only, full stop.
+Effect: carried RPC→snapshot server-side; never in any student payload. LISA reads it; INV-03-01 (LISA never
+  writes mastery) unaffected.
+
+### SCL-P-ASSETS-01 — assets discriminated union; role is an anti-leak boundary [PROPOSED]
+Decision: assets = { v:1, items:[{ id, kind:"svg"|"table", role:"stimulus"|"option"|"explanation", alt,
+  option_key?, ... }] }. Inline, text-representable (not object storage). ROLE is an anti-leak boundary:
+  pre-submit serves ONLY stimulus/option; explanation-role (worked-solution figures) is post-submit only.
+  filterAssetsPreSubmit FAILS CLOSED — unknown v / missing role / unknown role / unknown kind → excluded,
+  never passthrough.
+Rationale: inline SVG keeps figures legible to LISA (labels as text), transacts+deletes with the row (no
+  second deletion surface vs object storage), and is AI-authorable/auditable. Role-filtering server-side
+  prevents explanation figures (which reveal the answer) leaking pre-submit. Fail-closed because an
+  unrecognized asset shape is exactly when least should be revealed (3rd fail-open default caught in
+  program — quota, rate-limiter, assets).
+Effect: assets threaded RPC→snapshot→DTO→client (renderer deferred — 0 authored). Server role-filter live.
+  Authoring note (out of engine scope): inline SVG is an XSS vector — authoring gate must reject
+  script/event-handler/external-href; renderer sanitizes.
+
+### SCL-P-SECTION-01 — Shared section resolver; fail-closed label [PROPOSED]
+Decision: shared/section-display.ts exports isMathSection() and sectionDisplayLabel() (M→Math, RW→R&W).
+  Badge, Desmos gate, and reference-sheet gate all call these — no ad-hoc section comparison in the client.
+  sectionDisplayLabel returns null (not a defaulted section) on unknown; callers render a neutral state.
+  Resume path reads the item's canonical section ('M'/'RW'), not the session-spec full-word string.
+Rationale: a hardcoded/broken section check badged Math questions "R&W" (data verified clean). One shared
+  resolver kills the double-surface. Fail-closed on the label (not defaulting to a section) prevents the
+  "unknown → R&W" recurrence; the earlier percentage-style default WAS that recurrence.
+Effect: badge correct on practice + resume + review + full-length (shared helper, reusable by those
+  surfaces). Client-only, no migration.
+
+### SCL-P-EXPLANATION-01 — Post-submit explanation/answer values route through MathRenderer [PROPOSED]
+Decision: post-submit explanation text and answer-value displays route through MathRenderer (which
+  tokenizes inline $...$ within prose) at all render sites: QuestionRenderer, NumericEntryInput,
+  FullLengthReviewView (explanation + answer values), review-errors. Placed INSIDE the post-submit
+  result panel (anti-leak: never renders pre-submit).
+Rationale: explanations are prose-with-inline-math ("the $4$th value is $18$"); the stem is whole-string
+  math. The renderer already tokenized inline $...$; the gap was threading, not parsing. MathRenderer is a
+  display component — placement inside the post-submit gate preserves anti-leak.
+Effect: LaTeX in explanations/answers renders typeset, not raw source. Client-only, no migration.
+Content note (authoring track): explanations must reference answer VALUES, not option letters — options
+  randomize per serve, so "Option B" is meaningless. Existing "Option B" explanations are authored wrong
+  for the randomized model; report-an-issue loop surfaces them.
+
+### SCL-P-DESMOS-01 — Desmos resizable side-panel; CSS min-width is the pixel floor [PROPOSED]
+Decision: Bluebook-parity resizable side panel (question left, Desmos right, draggable divider), math-only,
+  graphing+scientific modes with per-mode state preserved across switches. Split activates at 1062px;
+  below it the calculator stacks full-width (never a sub-450px side panel). The 450px floor (Desmos stacks
+  its expression list below the graph under 450px container width) is enforced by BROWSER CSS min-width:496px
+  on the calculator panel (host = 496−16 padding = 480 ≥ 450) — the single source of truth, honored on first
+  render. calculator.resize() called on container-change/toggle/mode-switch (autosize:true explicit).
+Rationale: a fixed sidebar structurally can't clear 450px on laptops; a resizable panel with a real pixel
+  floor can. CSS min-width is browser-continuous and needs no JS — chosen over a JS ResizeObserver
+  recompute (which was found dead in prod: ref mounted after the effect ran → observer never created; a
+  phantom mechanism everyone believed enforced the floor). One mechanism, browser-enforced.
+Effect: calculator renders desktop layout ≥450px on first paint and after resize; verified by a test that
+  measures resolved pixels (stubbed BCR), not the CSS attribute. Divider drag/keyboard are library-provided,
+  bounded by the CSS floor; real interaction proof deferred to a Playwright e2e follow-up. Client-only.
+
+### SCL-P-REFSHEET-01 — Math reference sheet typeset + complete [PROPOSED]
+Decision: all 12 official Bluebook formulas render via MathRenderer (were plain text); added the two
+  missing special-right-triangle figures (30-60-90: x, x√3, 2x; 45-45-90: s, s, s√2) as labeled figures.
+Rationale: plain-text "pi r^2" beside a typeset question is a visible quality tell; the two special
+  triangles are on the official sheet and heavily used. Verified against the official Bluebook sheet.
+Effect: reference sheet matches the official sheet, typeset. Client-only.
+
+### SCL-P-OWNERSHIP-01 — Practice session reads are non-owning [PROPOSED]
+Decision: /state and /resume READ session state WITHOUT writing client_instance_id — no adoption, no claim.
+  Ownership mutates ONLY on the answer-submit WRITE. client_instance_id is generated once and persisted
+  (sessionStorage) so a refresh reuses the same id. Concurrent /state + /resume on load are de-duplicated.
+Rationale: a P0 — practice sessions 409'd on refresh. Root cause: client_instance_id regenerated per-render
+  + /state and /resume racing to ADOPT ownership (one adopts, the other 409s). Reads don't conflict; only
+  concurrent writes/claims do — so ownership enforcement belongs on the write path, and a read must never
+  409 on instance mismatch. Reads-non-owning verified by code-trace (stored id unchanged after a read).
+Effect: refresh/resume works; a new tab/device can read a resumable session without stealing it. Pure
+  client/server-logic fix, NO migration.
+
 ---
 
 ## Owner spec-annotations owed (fold into locked docs on next revision)
