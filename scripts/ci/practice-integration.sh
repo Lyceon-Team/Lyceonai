@@ -327,30 +327,32 @@ echo "=================================================================="
 # D.0 Seed 40 published questions: 8 canonical domains × 5, difficulty cycle
 # ---------------------------------------------------------------------------
 echo "==> D.0 seed diagnostic questions (8 domains × 5 = 40)"
+# IDs must match questions_id_check: ^SAT(M|RW)[12][A-Z0-9]{6}$
+# Format: SAT + section + source_type(1) + 3-char domain abbr + 2-char seq + padding char
 psql_db "$DB" >/dev/null <<'SQL'
 DO $$
 DECLARE
+  -- [section, domain, skill_code, 3-char-abbr-for-id]
   v_domains text[][] := ARRAY[
-    ARRAY['M',  'Algebra',                            'ALG.D01'],
-    ARRAY['M',  'Advanced Math',                      'ADV.D01'],
-    ARRAY['M',  'Problem Solving and Data Analysis',  'PSD.D01'],
-    ARRAY['M',  'Geometry and Trigonometry',           'GEO.D01'],
-    ARRAY['RW', 'Information and Ideas',               'INI.D01'],
-    ARRAY['RW', 'Craft and Structure',                 'CAS.D01'],
-    ARRAY['RW', 'Expression of Ideas',                 'EOI.D01'],
-    ARRAY['RW', 'Standard English Conventions',        'SEC.D01']
+    ARRAY['M',  'Algebra',                            'ALG.D01', 'DGA'],
+    ARRAY['M',  'Advanced Math',                      'ADV.D01', 'DGB'],
+    ARRAY['M',  'Problem Solving and Data Analysis',  'PSD.D01', 'DGC'],
+    ARRAY['M',  'Geometry and Trigonometry',           'GEO.D01', 'DGD'],
+    ARRAY['RW', 'Information and Ideas',               'INI.D01', 'DGE'],
+    ARRAY['RW', 'Craft and Structure',                 'CAS.D01', 'DGF'],
+    ARRAY['RW', 'Expression of Ideas',                 'EOI.D01', 'DGG'],
+    ARRAY['RW', 'Standard English Conventions',        'SEC.D01', 'DGH']
   ];
   v_diffs integer[] := ARRAY[1, 2, 3, 1, 2];
   v_d     text[];
   v_i     integer;
   v_qid   text;
-  v_abbr  text;
 BEGIN
   FOREACH v_d SLICE 1 IN ARRAY v_domains
   LOOP
-    v_abbr := split_part(v_d[3], '.', 1);
     FOR v_i IN 1..5 LOOP
-      v_qid := 'DIAG-' || v_d[1] || '-' || v_abbr || '-' || lpad(v_i::text, 2, '0');
+      -- e.g. SATM1DGA01X, SATRW1DGE02X  (matches ^SAT(M|RW)[12][A-Z0-9]{6}$)
+      v_qid := 'SAT' || v_d[1] || '1' || v_d[4] || lpad(v_i::text, 2, '0') || 'X';
       INSERT INTO public.questions (
         id, section, source_type, domain, skill_codes, difficulty,
         stem, options, correct_answer, explanation, status, published_at
@@ -433,7 +435,7 @@ BEGIN
     CASE WHEN q.correct_answer = 'B' THEN 'correct' ELSE 'incorrect' END,
     v_now, 'mcq'
   FROM public.questions q
-  WHERE q.id LIKE 'DIAG-%'
+  WHERE q.id ~ '^SAT(M|RW)1DG[A-H]'
   ORDER BY q.id;
 
   -- Apply mastery event for each answered item (sequential, same as server)
