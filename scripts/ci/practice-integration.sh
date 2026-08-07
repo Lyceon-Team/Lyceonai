@@ -423,7 +423,7 @@ BEGIN
     question_id, question_stem, question_options, question_correct_answer,
     question_explanation, question_domain, question_skill, question_difficulty,
     question_section, status, selected_answer, is_correct, outcome, answered_at,
-    question_item_type
+    occurred_at, question_item_type
   )
   SELECT
     gen_random_uuid(), v_session_id, v_student_id, v_student_id,
@@ -433,7 +433,7 @@ BEGIN
     'answered', 'B',
     (q.correct_answer = 'B'),
     CASE WHEN q.correct_answer = 'B' THEN 'correct' ELSE 'incorrect' END,
-    v_now, 'mcq'
+    v_now, v_now, 'mcq'
   FROM public.questions q
   WHERE q.id ~ '^SAT(M|RW)1DG[A-H]'
   ORDER BY q.id;
