@@ -2849,6 +2849,48 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
   return { ok: true };
 }
 
+/**
+ * @spec [Doc-05A §11, Codex audit Fix A] After a successful diagnostic mastery
+ * re-emission on a replay path, run the same completion reconciliation the normal
+ * answer path uses: recount resolved items, update session lifecycle to completed
+ * if target is met. Without this, a fail-mastery → retry → mastery-succeeds
+ * sequence leaves the diagnostic ACTIVE forever because the replay path returned
+ * immediately without checking completion.
+ *
+ * For non-final answers (resolvedCount < target), this is a no-op (no lifecycle
+ * change). For the final answer, this completes the diagnostic.
+ * We only UPGRADE to completed — never downgrade — because a concurrent request
+ * may have already completed the session.
+ */
+async function reconcileDiagnosticCompletionOnReplay(opts: {
+  sessionId: string;
+  session: { filters: unknown };
+  now: string;
+}): Promise<{ shouldComplete: boolean }> {
+  const config = await loadPracticeConfig();
+  const meta = asSessionMetadata(opts.session.filters);
+  meta.active_session_item_id = null;
+
+  const resolvedCount = await countResolvedSessionItems(opts.sessionId);
+  const targetQuestionCount = coerceTargetQuestionCount(
+    meta.target_question_count,
+    config.maxSessionCountPremium,
+    config.defaultSessionCountWeb,
+  );
+  const shouldComplete = resolvedCount >= targetQuestionCount;
+
+  if (shouldComplete) {
+    // Idempotent — if already completed by the winning request, this rewrites
+    // the same status + completed_at. We never downgrade a completed session.
+    await updateSessionLifecycle(opts.sessionId, meta, {
+      status: "completed",
+      completed_at: opts.now,
+    });
+  }
+
+  return { shouldComplete };
+}
+
 export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
@@ -2988,18 +3030,45 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // mastery emission on idempotent replay. A prior attempt may have recorded
       // the answer but failed mastery emission (fail-closed 500). applyMasteryEvent
       // is idempotent on event_id — safe to re-emit.
+      // @spec [Doc-05A §11, Codex re-audit Fix A] After successful re-emission,
+      // run completion reconciliation — the first attempt returned 500 before
+      // reaching the completion path, so the session may still be ACTIVE.
       if (session.mode === "diagnostic") {
+        const replayNow = sessionItem.answered_at ?? new Date().toISOString();
         const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
           sessionItem,
           userId,
           requestId,
           sessionId: payload.sessionId,
           isCorrect: !!sessionItem.is_correct,
-          occurredAt: sessionItem.answered_at ?? new Date().toISOString(),
+          occurredAt: replayNow,
         });
         if (!reEmitResult.ok) {
           return res.status(reEmitResult.status).json(reEmitResult.body);
         }
+        const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
+          sessionId: payload.sessionId,
+          session,
+          now: replayNow,
+        });
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!sessionItem.is_correct,
+          mode: responseMode,
+          ...(isGridIn
+            ? { correctAnswer: canonicalQuestion.correct_answer }
+            : { correctOptionId: replayCorrectOptionId }),
+          explanation,
+          feedback: sessionItem.is_correct
+            ? "Correct"
+            : sessionItem.outcome === "skipped"
+              ? "Skipped"
+              : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          state: shouldComplete ? "completed" : "active",
+          idempotentRetried: true,
+        });
       }
       return res.json({
         sessionId: payload.sessionId,
@@ -3065,18 +3134,44 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       // @spec [Doc-05A §11, Codex audit Fix 2] Diagnostic mastery re-emission
       // on idempotent replay via clientAttemptId lookup — same rationale as the
       // status-check replay path above.
+      // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation after
+      // successful re-emission.
       if (session.mode === "diagnostic") {
+        const replayNow = existingByKey.answered_at ?? now;
         const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
           sessionItem: existingByKey,
           userId,
           requestId,
           sessionId: payload.sessionId,
           isCorrect: !!existingByKey.is_correct,
-          occurredAt: existingByKey.answered_at ?? now,
+          occurredAt: replayNow,
         });
         if (!reEmitResult.ok) {
           return res.status(reEmitResult.status).json(reEmitResult.body);
         }
+        const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
+          sessionId: payload.sessionId,
+          session,
+          now: replayNow,
+        });
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!existingByKey.is_correct,
+          mode: responseMode,
+          ...(isGridIn
+            ? { correctAnswer: canonicalQuestion.correct_answer }
+            : { correctOptionId }),
+          explanation,
+          feedback: existingByKey.is_correct
+            ? "Correct"
+            : existingByKey.outcome === "skipped"
+              ? "Skipped"
+              : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          state: shouldComplete ? "completed" : "active",
+          idempotentRetried: true,
+        });
       }
       return res.json({
         sessionId: payload.sessionId,
@@ -3111,18 +3206,43 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     ) {
       // @spec [Doc-05A §11, Codex audit Fix 2] Defensive path: diagnostic
       // mastery re-emission — same rationale as the primary replay path above.
+      // @spec [Doc-05A §11, Codex re-audit Fix A] Completion reconciliation.
       if (session.mode === "diagnostic") {
+        const replayNow = sessionItem.answered_at ?? now;
         const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
           sessionItem,
           userId,
           requestId,
           sessionId: payload.sessionId,
           isCorrect: !!sessionItem.is_correct,
-          occurredAt: sessionItem.answered_at ?? now,
+          occurredAt: replayNow,
         });
         if (!reEmitResult.ok) {
           return res.status(reEmitResult.status).json(reEmitResult.body);
         }
+        const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
+          sessionId: payload.sessionId,
+          session,
+          now: replayNow,
+        });
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!sessionItem.is_correct,
+          mode: responseMode,
+          ...(isGridIn
+            ? { correctAnswer: canonicalQuestion.correct_answer }
+            : { correctOptionId }),
+          explanation,
+          feedback: sessionItem.is_correct
+            ? "Correct"
+            : sessionItem.outcome === "skipped"
+              ? "Skipped"
+              : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          state: shouldComplete ? "completed" : "active",
+          idempotentRetried: true,
+        });
       }
       return res.json({
         sessionId: payload.sessionId,
@@ -3185,6 +3305,47 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   if (!updatedItem) {
     const raced = await findSessionItemById(payload.sessionId, sessionItem.id);
     if (raced?.outcome) {
+      // @spec [Doc-05A §11, Codex re-audit Fix B] The optimistic-race replay path
+      // must guarantee diagnostic mastery emitted (or fail closed) AND complete
+      // the session if this was the final answer. Same contract as every other
+      // idempotent replay path — source-count parity is not sufficient.
+      if (session.mode === "diagnostic") {
+        const raceNow = raced.answered_at ?? now;
+        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+          sessionItem: raced,
+          userId,
+          requestId,
+          sessionId: payload.sessionId,
+          isCorrect: !!raced.is_correct,
+          occurredAt: raceNow,
+        });
+        if (!reEmitResult.ok) {
+          return res.status(reEmitResult.status).json(reEmitResult.body);
+        }
+        const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
+          sessionId: payload.sessionId,
+          session,
+          now: raceNow,
+        });
+        return res.json({
+          sessionId: payload.sessionId,
+          sessionItemId: sessionItem.id,
+          isCorrect: !!raced.is_correct,
+          mode: responseMode,
+          ...(isGridIn
+            ? { correctAnswer: canonicalQuestion.correct_answer }
+            : { correctOptionId }),
+          explanation,
+          feedback: raced.is_correct
+            ? "Correct"
+            : raced.outcome === "skipped"
+              ? "Skipped"
+              : "Incorrect",
+          stats: await getSessionStats(payload.sessionId, userId),
+          state: shouldComplete ? "completed" : "active",
+          idempotentRetried: true,
+        });
+      }
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,

@@ -113,6 +113,9 @@ let mockItemSelectedAnswer: string | null = null;
 let mockResolvedCount = TARGET_COUNT;
 // Controls session mode per test: "diagnostic" or "practice"
 let mockSessionMode = "diagnostic";
+// When true, the CAS update (.eq("status","served").maybeSingle()) returns null,
+// simulating an optimistic-race loss where another request already answered the item.
+let mockCasUpdateReturnsNull = false;
 
 function makeSessionRow(mode: string): Record<string, unknown> {
   return {
@@ -253,11 +256,24 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
           return makeChain({
             single: currentItem,
             array: [currentItem],
-            onUpdate: (patch) => ({
-              ...currentItem,
-              ...patch,
-              status: patch.status ?? currentItem.status,
-            }),
+            onUpdate: (patch) => {
+              if (mockCasUpdateReturnsNull) {
+                // Simulate: the winning request already answered this item.
+                // Flip mock state so the next findSessionItemById returns the
+                // raced item with an outcome (handler's reload path).
+                mockItemStatus = "answered";
+                mockItemOutcome = "answered";
+                mockItemIsCorrect = true;
+                mockItemAnsweredAt = "2026-07-22T00:00:02Z";
+                mockItemSelectedAnswer = "B";
+                return null;
+              }
+              return {
+                ...currentItem,
+                ...patch,
+                status: patch.status ?? currentItem.status,
+              };
+            },
           });
         }
         if (table === "student_skill_mastery") {
@@ -332,6 +348,7 @@ describe("Diagnostic fail-closed mastery gate", () => {
     mockItemSelectedAnswer = null;
     mockResolvedCount = TARGET_COUNT;
     mockSessionMode = "diagnostic";
+    mockCasUpdateReturnsNull = false;
     mockApplyMasteryEvent.mockReset();
   });
 
@@ -413,6 +430,11 @@ describe("Diagnostic fail-closed mastery gate", () => {
     // succeeded, so it returns the answer data with idempotentRetried flag.
     expect(retryRes.body.isCorrect).toBe(true);
     expect(retryRes.body.idempotentRetried).toBe(true);
+    // @spec [Codex re-audit Fix A] After successful mastery re-emission, the
+    // replay path must run completion reconciliation and return state:"completed"
+    // when resolvedCount >= target. Without this assertion the test certified
+    // the bug: mastery re-emits but diagnostic stays ACTIVE forever.
+    expect(retryRes.body.state).toBe("completed");
     // Verify mastery was actually re-attempted on the replay
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(2);
   });
@@ -436,5 +458,69 @@ describe("Diagnostic fail-closed mastery gate", () => {
     expect(res.status).toBe(200);
     expect(res.body.state).toBe("completed");
     expect(res.body.isCorrect).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // @spec [Doc-05A §11, Codex re-audit Fix B] Optimistic-race replay path
+  // ---------------------------------------------------------------------------
+
+  it("optimistic-race replay re-emits mastery and completes diagnostic", async () => {
+    // Simulate the race: CAS update returns null (another request won), but
+    // the item is already answered when re-loaded.
+    mockCasUpdateReturnsNull = true;
+    mockApplyMasteryEvent.mockResolvedValue({ ok: true, error: null });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+    // The race branch must re-emit mastery for diagnostic sessions
+    expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
+    // And run completion reconciliation — return state:"completed"
+    expect(res.body.state).toBe("completed");
+  });
+
+  it("optimistic-race replay fails closed when mastery re-emission fails", async () => {
+    mockCasUpdateReturnsNull = true;
+    mockApplyMasteryEvent.mockResolvedValue({
+      ok: false,
+      error: "simulated_failure",
+    });
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    // Diagnostic fail-closed: mastery failure on race path → 500
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("diagnostic_mastery_emission_failed");
+    expect(res.body.state).toBeUndefined();
+  });
+
+  it("optimistic-race replay skips mastery for practice mode (regression)", async () => {
+    mockSessionMode = "practice";
+    mockCasUpdateReturnsNull = true;
+
+    const res = await request(app).post("/api/practice/answer").send({
+      sessionId: TEST_SESSION_ID,
+      questionId: "SATM1AAAA01",
+      selectedAnswer: "opt_tok_B",
+    });
+
+    // Practice mode: no mastery re-emission on race path, returns 200 as before
+    expect(res.status).toBe(200);
+    expect(res.body.isCorrect).toBe(true);
+    expect(res.body.idempotentRetried).toBe(true);
+    // No mastery call — practice mode doesn't re-emit on race path
+    expect(mockApplyMasteryEvent).not.toHaveBeenCalled();
+    // No state field for non-diagnostic race replay (unchanged behavior)
+    expect(res.body.state).toBeUndefined();
   });
 });

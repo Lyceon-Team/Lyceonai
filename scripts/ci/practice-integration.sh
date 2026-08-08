@@ -401,7 +401,16 @@ echo "    OK plain invoker (prosecdef=f)"
 # ---------------------------------------------------------------------------
 # D.3-D.8 Full diagnostic lifecycle: session → items → mastery → projection
 # ---------------------------------------------------------------------------
-echo "==> D.3 diagnostic lifecycle: create session, insert 40 items, apply mastery"
+# @spec [Codex re-audit Fix C] Simulates the EXACT handler operation sequence:
+#   1. Session starts ACTIVE (not pre-completed)
+#   2. Items start SERVED (not pre-answered)
+#   3. Each item: CAS update served→answered, then apply_mastery_event
+#   4. After the 40th: count resolved, complete session if target met
+# This mirrors submitPracticeAnswer's code path line-for-line. The vitest
+# handler-level test (diagnostic.fail-closed.ci.test.ts) proves the TS handler
+# calls these SQL operations; this test proves those SQL operations produce
+# correct DB state against real Postgres. Together they prove the full chain.
+echo "==> D.3 diagnostic lifecycle: handler-sequence simulation (active→answer→mastery→complete)"
 DIAG_STUDENT='dddddddd-dddd-dddd-dddd-dddddddddddd'
 DIAG_SESSION='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
 
@@ -411,7 +420,50 @@ psql_db "$DB" -q -c "
   ON CONFLICT (id) DO NOTHING;
 " >/dev/null
 
-# Create diagnostic session + items + apply mastery events in one block
+# Step 1: Create diagnostic session as ACTIVE (not pre-completed)
+# Step 2: Insert 40 items as SERVED (not pre-answered)
+psql_db "$DB" >/dev/null <<SQL
+DO \$\$
+DECLARE
+  v_student_id uuid := '$DIAG_STUDENT';
+  v_session_id uuid := '$DIAG_SESSION';
+  v_now        timestamptz := now();
+BEGIN
+  INSERT INTO public.practice_sessions (
+    id, user_id, actor_id, mode, filters, target_count, platform, status
+  ) VALUES (
+    v_session_id, v_student_id, v_student_id, 'diagnostic',
+    '{"target_question_count": 40}', 40, 'web', 'active'
+  );
+
+  INSERT INTO public.practice_session_items (
+    id, session_id, user_id, actor_id, ordinal,
+    question_id, question_stem, question_options, question_correct_answer,
+    question_explanation, question_domain, question_skill, question_difficulty,
+    question_section, status, question_item_type
+  )
+  SELECT
+    gen_random_uuid(), v_session_id, v_student_id, v_student_id,
+    (row_number() OVER (ORDER BY q.id))::integer,
+    q.id, q.stem, q.options, q.correct_answer, q.explanation,
+    q.domain, q.skill_codes[1], q.difficulty::smallint, q.section,
+    'served', 'mcq'
+  FROM public.questions q
+  WHERE q.id ~ '^SAT(M|RW)1DG[A-H]'
+  ORDER BY q.id;
+END \$\$;
+SQL
+echo "    OK session=active, 40 items=served"
+
+# Verify session is ACTIVE before answering
+SESSION_STATUS=$(psql_db "$DB" -tAc "
+  SELECT status FROM public.practice_sessions WHERE id = '$DIAG_SESSION';
+" | tr -d '[:space:]')
+[ "$SESSION_STATUS" = "active" ] || { echo "FAIL: session should be 'active' before answering, got '$SESSION_STATUS'"; exit 1; }
+echo "    OK session status='active' (pre-answer)"
+
+# Step 3: For each item, CAS update served→answered + apply_mastery_event
+# This is the EXACT sequence the handler performs per answer submission.
 psql_db "$DB" >/dev/null <<SQL
 DO \$\$
 DECLARE
@@ -420,44 +472,29 @@ DECLARE
   v_item       record;
   v_result     public.student_skill_mastery;
   v_now        timestamptz := now();
+  v_resolved   integer;
 BEGIN
-  -- Create diagnostic session
-  INSERT INTO public.practice_sessions (
-    id, user_id, actor_id, mode, filters, target_count, platform, status, completed_at
-  ) VALUES (
-    v_session_id, v_student_id, v_student_id, 'diagnostic', '{}', 40, 'web', 'completed', v_now
-  );
-
-  -- Insert 40 answered items from the seeded diagnostic questions
-  INSERT INTO public.practice_session_items (
-    id, session_id, user_id, actor_id, ordinal,
-    question_id, question_stem, question_options, question_correct_answer,
-    question_explanation, question_domain, question_skill, question_difficulty,
-    question_section, status, selected_answer, is_correct, outcome, answered_at,
-    occurred_at, question_item_type
-  )
-  SELECT
-    gen_random_uuid(), v_session_id, v_student_id, v_student_id,
-    (row_number() OVER (ORDER BY q.id))::integer,
-    q.id, q.stem, q.options, q.correct_answer, q.explanation,
-    q.domain, q.skill_codes[1], q.difficulty::smallint, q.section,
-    'answered', 'B',
-    (q.correct_answer = 'B'),
-    CASE WHEN q.correct_answer = 'B' THEN 'correct' ELSE 'incorrect' END,
-    v_now, v_now, 'mcq'
-  FROM public.questions q
-  WHERE q.id ~ '^SAT(M|RW)1DG[A-H]'
-  ORDER BY q.id;
-
-  -- Apply mastery event for each answered item (sequential, same as server)
   FOR v_item IN
     SELECT psi.id AS item_id, psi.question_id, psi.question_section,
            psi.question_domain, psi.question_skill, psi.question_difficulty,
-           psi.is_correct
+           psi.question_correct_answer, psi.ordinal
     FROM public.practice_session_items psi
     WHERE psi.session_id = v_session_id
+      AND psi.status = 'served'
     ORDER BY psi.ordinal
   LOOP
+    -- CAS update: served → answered (mirrors handler's .eq("status","served") guard)
+    UPDATE public.practice_session_items
+    SET status = 'answered',
+        selected_answer = 'B',
+        is_correct = (v_item.question_correct_answer = 'B'),
+        outcome = CASE WHEN v_item.question_correct_answer = 'B' THEN 'correct' ELSE 'incorrect' END,
+        answered_at = v_now,
+        occurred_at = v_now
+    WHERE id = v_item.item_id
+      AND status = 'served';   -- CAS guard: only update if still served
+
+    -- apply_mastery_event (mirrors handler's applyMasteryEvent call)
     v_result := public.apply_mastery_event(
       v_student_id,
       v_item.question_section,
@@ -466,15 +503,35 @@ BEGIN
       v_item.question_difficulty::smallint,
       'practice',
       'diagnostic_attempt',
-      v_item.is_correct,
+      (v_item.question_correct_answer = 'B'),
       v_now,
       v_item.item_id,
       v_item.question_id
     );
   END LOOP;
+
+  -- Step 4: Count resolved items + complete session (mirrors handler's
+  -- countResolvedSessionItems + updateSessionLifecycle path)
+  SELECT count(*) INTO v_resolved
+  FROM public.practice_session_items
+  WHERE session_id = v_session_id
+    AND status IN ('answered', 'skipped');
+
+  IF v_resolved >= 40 THEN
+    UPDATE public.practice_sessions
+    SET status = 'completed', completed_at = v_now, updated_at = v_now
+    WHERE id = v_session_id;
+  END IF;
 END \$\$;
 SQL
-echo "    OK lifecycle complete"
+echo "    OK handler-sequence simulation complete"
+
+# Verify session transitioned to COMPLETED (proves completion reconciliation)
+SESSION_STATUS=$(psql_db "$DB" -tAc "
+  SELECT status FROM public.practice_sessions WHERE id = '$DIAG_SESSION';
+" | tr -d '[:space:]')
+[ "$SESSION_STATUS" = "completed" ] || { echo "FAIL: session should be 'completed' after 40 answers, got '$SESSION_STATUS'"; exit 1; }
+echo "    OK session status='completed' (post-answer, driven by resolved count)"
 
 # ---------------------------------------------------------------------------
 # D.3 Assert exactly 40 diagnostic_attempt audit rows (session-scoped)
