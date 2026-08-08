@@ -473,7 +473,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
                stem, options, correct_answer, explanation, status, published_at)
             VALUES ($1, $2, 1, $3, ARRAY[$4], $5,
               $6,
-              '[{"token":"A","text":"1"},{"token":"B","text":"2"},{"token":"C","text":"3"},{"token":"D","text":"4"}]'::jsonb,
+              '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
               'B', $7, 'published', now())`,
           [
             qid,
@@ -524,7 +524,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
                option_order, option_token_map)
             VALUES ($1, $2, $3, $3, $4,
               $5, $6,
-              '[{"token":"A","text":"1"},{"token":"B","text":"2"},{"token":"C","text":"3"},{"token":"D","text":"4"}]'::jsonb,
+              '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
               'B', $7, $8, $9, $10, $11, 'served', 'mcq',
               ARRAY['A','B','C','D']::text[],
               '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb)`,
