@@ -461,6 +461,15 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     }
 
     // ---------------------------------------------------------------
+    // 4b. Raise rate-limit ceiling so 40 rapid answers don't 429
+    // ---------------------------------------------------------------
+    await testPg.query(
+      `UPDATE public.practice_runtime_config
+         SET value = '200'
+       WHERE key = 'answer_rate_limit_max'`,
+    );
+
+    // ---------------------------------------------------------------
     // 5. Seed 40 diagnostic questions (8 domains × 5)
     // ---------------------------------------------------------------
     for (let d = 0; d < 8; d++) {
