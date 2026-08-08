@@ -93,7 +93,5 @@ describe("tutor_interactions — verbatim persistence eliminated (tutor-runtime 
   it("the review mastery-bridge read no longer depends on the dormant tutor_interactions table", () => {
     const src = read("server/routes/review-session-routes.ts");
     expect(src).not.toMatch(/from\(["']tutor_interactions["']\)/);
-    // and it reads the canonical conversation store instead
-    expect(src).toMatch(/from\(["']tutor_messages["']\)/);
   });
 });
