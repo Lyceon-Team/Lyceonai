@@ -1265,28 +1265,145 @@ function hasMcqAnswerLeak(text: string, letter: string): boolean {
   return patterns.some((p) => p.test(text));
 }
 
+/**
+ * @spec [Doc 02 Preamble §12; Doc 03B §16 Anti-Leak] | @implemented [2026-08-08]
+ * plain English: containment-based grid-in answer detection. Checks whether the
+ * answer VALUE appears anywhere in the text with word boundaries. No phrase
+ * patterns — any phrasing that embeds the value is a leak.
+ *
+ * Karl ruling: FAIL TOWARD BLOCKING. Exclude obvious false-positive prefixes
+ * (step, part, question, number, option) but do not tune further. A false
+ * positive costs one fallback message; a leak costs the product.
+ *
+ * Normalizes both sides: strips whitespace, handles decimal equivalence
+ * (3.50 → 3.5), and fraction/decimal equivalence (7/2 ↔ 3.5).
+ */
 function hasGridInAnswerLeak(text: string, answer: string): boolean {
-  // For grid-in, check if the exact answer value appears in a revealing context
-  const escaped = answer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const normalizedAnswer = normalizeNumericValue(answer);
+  const forms = allNumericForms(normalizedAnswer);
 
-  const patterns = [
-    // "the answer is 42", "answer: 42", "= 42"
-    new RegExp(
-      `\\b(?:the\\s+)?(?:correct\\s+|right\\s+)?answer\\s*(?:is|=|:)\\s*${escaped}\\b`,
-      "i",
-    ),
-    // "equals 42", "the value is 42"
-    new RegExp(`\\b(?:equals?|value\\s+is|result\\s+is)\\s*${escaped}\\b`, "i"),
-    // "you should get 42", "you'd get 42"
-    new RegExp(
-      `\\b(?:you(?:'d|\\s+(?:should|would|will))\\s+get)\\s+${escaped}\\b`,
-      "i",
-    ),
-    // "enter/type/write 42"
-    new RegExp(`\\b(?:enter|type|write|put|input)\\s+${escaped}\\b`, "i"),
-  ];
+  for (const form of forms) {
+    const escaped = form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Word boundary: \b handles edges for digits/letters. For forms starting
+    // with a minus sign, anchor on non-digit before.
+    const pattern = new RegExp(`(?<![\\d.])${escaped}(?![\\d.])`, "i");
 
-  return patterns.some((p) => p.test(text));
+    if (!pattern.test(text)) continue;
+
+    // Exclude false-positive prefixes: "step 3", "part 2", "question 7", etc.
+    // These are structural references, not answer reveals.
+    const fpPattern = new RegExp(
+      `\\b(?:step|part|question|number|option|item|figure|table|page|line|example|chapter|section|problem|exercise|row|column)\\s+${escaped}(?![\\d.])`,
+      "i",
+    );
+    // If every occurrence is preceded by a false-positive prefix, it's safe.
+    // But if ANY occurrence is NOT preceded by one, it's a leak.
+    const textLower = text.toLowerCase();
+    const formLower = form.toLowerCase();
+    let idx = 0;
+    let hasNonFpOccurrence = false;
+
+    while (idx < textLower.length) {
+      const pos = textLower.indexOf(formLower, idx);
+      if (pos === -1) break;
+
+      // Check digit context (not inside a larger number)
+      const charBefore = pos > 0 ? textLower[pos - 1] : " ";
+      const charAfter =
+        pos + formLower.length < textLower.length
+          ? textLower[pos + formLower.length]
+          : " ";
+      const insideLargerNumber =
+        /[\d.]/.test(charBefore ?? "") || /[\d.]/.test(charAfter ?? "");
+
+      if (!insideLargerNumber) {
+        // Check if this occurrence is preceded by a false-positive prefix
+        const precedingText = text.slice(Math.max(0, pos - 30), pos);
+        if (!fpPattern.test(precedingText + form)) {
+          hasNonFpOccurrence = true;
+          break;
+        }
+      }
+      idx = pos + 1;
+    }
+
+    if (hasNonFpOccurrence) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Normalize a numeric value: trim whitespace, strip trailing decimal zeros,
+ * and reduce fractions to lowest terms.
+ */
+function normalizeNumericValue(value: string): string {
+  const trimmed = value.trim();
+
+  // Handle fractions: a/b
+  const fractionMatch = trimmed.match(/^(-?\d+)\s*\/\s*(\d+)$/);
+  if (fractionMatch) {
+    const num = parseInt(fractionMatch[1]!, 10);
+    const den = parseInt(fractionMatch[2]!, 10);
+    if (den !== 0) {
+      const g = gcd(Math.abs(num), den);
+      return `${num / g}/${den / g}`;
+    }
+    return trimmed;
+  }
+
+  // Handle decimals: strip trailing zeros after decimal point
+  const decimalMatch = trimmed.match(/^(-?\d+\.\d+?)0*$/);
+  if (decimalMatch) {
+    return decimalMatch[1]!;
+  }
+
+  return trimmed;
+}
+
+function gcd(a: number, b: number): number {
+  while (b !== 0) {
+    const t = b;
+    b = a % b;
+    a = t;
+  }
+  return a;
+}
+
+/**
+ * Produce all equivalent numeric forms to check against: the normalized form,
+ * plus decimal↔fraction equivalents where they exist.
+ */
+function allNumericForms(normalized: string): string[] {
+  const forms = new Set<string>();
+  forms.add(normalized);
+
+  // Fraction → decimal
+  const fractionMatch = normalized.match(/^(-?\d+)\/(\d+)$/);
+  if (fractionMatch) {
+    const num = parseInt(fractionMatch[1]!, 10);
+    const den = parseInt(fractionMatch[2]!, 10);
+    if (den !== 0) {
+      const decimal = num / den;
+      const decStr = normalizeNumericValue(String(decimal));
+      forms.add(decStr);
+    }
+  }
+
+  // Decimal → fraction (only terminating decimals with manageable denominators)
+  const decimalMatch = normalized.match(/^(-?\d+)\.(\d+)$/);
+  if (decimalMatch) {
+    const sign = normalized.startsWith("-") ? -1 : 1;
+    const wholePart = Math.abs(parseInt(decimalMatch[1]!, 10));
+    const fracDigits = decimalMatch[2]!;
+    const den = Math.pow(10, fracDigits.length);
+    const num = wholePart * den + parseInt(fracDigits, 10);
+    const signedNum = sign * num;
+    const g = gcd(Math.abs(signedNum), den);
+    forms.add(`${signedNum / g}/${den / g}`);
+  }
+
+  return [...forms];
 }
 
 /**

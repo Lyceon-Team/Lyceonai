@@ -162,8 +162,32 @@ describe("TU-04: hasAnswerLeak pattern coverage", () => {
 
   it("detects grid-in answer leak (exact value in text)", () => {
     expect(hasAnswerLeak("The answer is 42", "42")).toBe(true);
-    expect(hasAnswerLeak("the result is 3.5", "3.5")).toBe(true);
+    expect(hasAnswerLeak("you get 3.5 as the result", "3.5")).toBe(true);
     expect(hasAnswerLeak("you should get 7", "7")).toBe(true);
+  });
+
+  it("detects grid-in leak via containment (no regex would catch these)", () => {
+    expect(hasAnswerLeak("so that's 3.5", "3.5")).toBe(true);
+    expect(hasAnswerLeak("we land on 3.5", "3.5")).toBe(true);
+    expect(hasAnswerLeak("3.5 is what you're after", "3.5")).toBe(true);
+  });
+
+  it("detects grid-in leak with fraction/decimal equivalence", () => {
+    // 7/2 = 3.5 — if the model says 3.5, that leaks the answer even if stored as 7/2
+    expect(hasAnswerLeak("so that gives us 3.5", "7/2")).toBe(true);
+    expect(hasAnswerLeak("you get 7/2", "3.5")).toBe(true);
+  });
+
+  it("does NOT flag false-positive structural prefixes", () => {
+    // "step 3" when the answer is "3" — structural reference, not a leak
+    expect(hasAnswerLeak("In step 3, we substitute", "3")).toBe(false);
+    expect(hasAnswerLeak("See question 7 for context", "7")).toBe(false);
+    expect(hasAnswerLeak("Look at part 2 of this problem", "2")).toBe(false);
+  });
+
+  it("does NOT match answer inside a larger number", () => {
+    expect(hasAnswerLeak("The value 13.51 appears", "3.5")).toBe(false);
+    expect(hasAnswerLeak("Consider 42.0 as the base", "2")).toBe(false);
   });
 
   it("falls back to phrase patterns when correctAnswer is null", () => {

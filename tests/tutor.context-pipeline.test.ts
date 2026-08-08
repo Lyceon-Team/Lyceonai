@@ -101,13 +101,46 @@ describe("hasAnswerLeak — MCQ", () => {
   });
 });
 
-describe("hasAnswerLeak — grid-in", () => {
+describe("hasAnswerLeak — grid-in (containment-based)", () => {
   test('"The answer is 42" with correct answer 42 → leak', () => {
     expect(hasAnswerLeak("The answer is 42", "42")).toBe(true);
   });
 
   test('"You should get 7/3" with correct answer 7/3 → leak', () => {
     expect(hasAnswerLeak("You should get 7/3", "7/3")).toBe(true);
+  });
+
+  test('"you get 3.5 as the result" with correct answer 3.5 → leak', () => {
+    expect(hasAnswerLeak("you get 3.5 as the result", "3.5")).toBe(true);
+  });
+
+  test('containment catches phrasings no regex would: "so that\'s 3.5"', () => {
+    expect(hasAnswerLeak("so that's 3.5", "3.5")).toBe(true);
+  });
+
+  test('containment catches "we land on 3.5"', () => {
+    expect(hasAnswerLeak("we land on 3.5", "3.5")).toBe(true);
+  });
+
+  test('containment catches "3.5 is what you\'re after"', () => {
+    expect(hasAnswerLeak("3.5 is what you're after", "3.5")).toBe(true);
+  });
+
+  test("fraction/decimal equivalence: 7/2 stored, 3.5 in text → leak", () => {
+    expect(hasAnswerLeak("so that gives us 3.5", "7/2")).toBe(true);
+  });
+
+  test("fraction/decimal equivalence: 3.5 stored, 7/2 in text → leak", () => {
+    expect(hasAnswerLeak("you get 7/2", "3.5")).toBe(true);
+  });
+
+  test("false-positive prefix: step/question/part are structural, not leaks", () => {
+    expect(hasAnswerLeak("In step 3, we substitute", "3")).toBe(false);
+    expect(hasAnswerLeak("See question 7 for context", "7")).toBe(false);
+  });
+
+  test("does NOT match answer inside a larger number", () => {
+    expect(hasAnswerLeak("The value 13.51 appears", "3.5")).toBe(false);
   });
 
   test('"Think about what value x equals" with correct answer 42 → no leak', () => {
