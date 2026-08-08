@@ -520,18 +520,17 @@ echo "    OK $DOMAIN_MASTERY_COUNT domains with ≥5 events"
 # ---------------------------------------------------------------------------
 # @spec [Codex audit Fix 2] We do NOT call compute_section_projection directly.
 # The 40 apply_mastery_event calls should have triggered projection refresh via
-# bump_projection_refresh_counter (threshold=40). D.7 below proves the result
-# is non-NULL — if the seam failed to fire, D.7 will catch it.
-echo "==> D.6 seam-through proof: projection_refresh_counter reached threshold"
-REFRESH_M=$(psql_db "$DB" -tAc "
-  SELECT projection_refresh_counter FROM public.student_section_projections
-  WHERE student_id = '$DIAG_STUDENT' AND section = 'M';
+# bump_projection_refresh_counter (threshold=40). We verify projection rows
+# exist for BOTH sections — if the seam failed to fire, they would be absent.
+# D.7 below further proves the values are non-NULL.
+echo "==> D.6 seam-through proof: projection rows created by apply_mastery_event seam"
+PROJ_ROW_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.student_section_projections
+  WHERE student_id = '$DIAG_STUDENT'
+    AND section IN ('M', 'RW');
 " | tr -d '[:space:]')
-REFRESH_RW=$(psql_db "$DB" -tAc "
-  SELECT projection_refresh_counter FROM public.student_section_projections
-  WHERE student_id = '$DIAG_STUDENT' AND section = 'RW';
-" | tr -d '[:space:]')
-echo "    OK projection rows exist (M counter=$REFRESH_M, RW counter=$REFRESH_RW)"
+[ "$PROJ_ROW_COUNT" = "2" ] || { echo "FAIL: expected 2 projection rows (M + RW) from seam, got $PROJ_ROW_COUNT"; exit 1; }
+echo "    OK $PROJ_ROW_COUNT projection rows exist (created by seam, not direct RPC)"
 
 # ---------------------------------------------------------------------------
 # D.7 Assert non-NULL projections for both sections
