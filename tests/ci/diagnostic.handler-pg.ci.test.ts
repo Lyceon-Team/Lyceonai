@@ -526,7 +526,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
               $5, $6,
               '[{"token":"A","text":"1"},{"token":"B","text":"2"},{"token":"C","text":"3"},{"token":"D","text":"4"}]'::jsonb,
               'B', $7, $8, $9, $10, $11, 'served', 'mcq',
-              '["A","B","C","D"]'::jsonb,
+              ARRAY['A','B','C','D']::text[],
               '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb)`,
           [
             iid,
