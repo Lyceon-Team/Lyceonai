@@ -37,7 +37,23 @@ function buildRequest(timeoutMs: number) {
     },
     recent_messages: [],
     memory_summaries: [],
-    student_context: {},
+    student_learning_context: {
+      mastery_snapshot: null,
+      recent_friction: {
+        consecutive_fails_this_session: 0,
+        consecutive_fails_this_skill_7d: 0,
+        self_deprecating_language_detected: false,
+        long_pause_detected: false,
+        mastery_regression_14d: null,
+      },
+      kpi_state: null,
+    },
+    memory_structured_fields: {
+      last_struggled_skill: null,
+      last_mastered_skill: null,
+      preferred_explanation_style: null,
+      style_confidence: null,
+    },
     policy_assignment: {
       policy_family: "tutor_v1",
       policy_variant: "default",
@@ -56,7 +72,11 @@ function buildRequest(timeoutMs: number) {
 
 describe("Tutor orchestrator vertex timeout", () => {
   it("enforces runtime_limits.timeout_ms", async () => {
-    const { generateTutorResponse, OrchestratorTimeoutError, setGenerateContentForTests } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
+    const {
+      generateTutorResponse,
+      OrchestratorTimeoutError,
+      setGenerateContentForTests,
+    } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.ts");
     setGenerateContentForTests(generateContentMock);
 
     try {
@@ -69,7 +89,11 @@ describe("Tutor orchestrator vertex timeout", () => {
                   candidates: [
                     {
                       content: {
-                        parts: [{ text: "{\"response\":{\"content\":\"ok\",\"content_kind\":\"message\",\"suggested_action\":{\"type\":\"none\",\"label\":null},\"ui_hints\":{\"show_accept_decline\":false,\"allow_freeform_reply\":true,\"suggested_chip\":null}},\"question_links\":[],\"instruction_exposures\":[],\"orchestration_meta\":{\"model_name\":\"m\",\"cache_used\":false,\"compaction_recommended\":false}}" }],
+                        parts: [
+                          {
+                            text: '{"response":{"content":"ok","content_kind":"message","suggested_action":{"type":"none","label":null},"ui_hints":{"show_accept_decline":false,"allow_freeform_reply":true,"suggested_chip":null}},"question_links":[],"instruction_exposures":[],"orchestration_meta":{"model_name":"m","cache_used":false,"compaction_recommended":false},"learner_observation":null}',
+                          },
+                        ],
                       },
                     },
                   ],
@@ -79,7 +103,9 @@ describe("Tutor orchestrator vertex timeout", () => {
           }),
       );
 
-      await expect(generateTutorResponse(buildRequest(5))).rejects.toBeInstanceOf(OrchestratorTimeoutError);
+      await expect(
+        generateTutorResponse(buildRequest(5)),
+      ).rejects.toBeInstanceOf(OrchestratorTimeoutError);
     } finally {
       setGenerateContentForTests(null);
     }

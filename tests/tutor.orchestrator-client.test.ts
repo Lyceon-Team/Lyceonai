@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getIdTokenClientMock, getRequestHeadersMock, fetchMock } = vi.hoisted(() => ({
-  getIdTokenClientMock: vi.fn(),
-  getRequestHeadersMock: vi.fn(),
-  fetchMock: vi.fn(),
-}));
+const { getIdTokenClientMock, getRequestHeadersMock, fetchMock } = vi.hoisted(
+  () => ({
+    getIdTokenClientMock: vi.fn(),
+    getRequestHeadersMock: vi.fn(),
+    fetchMock: vi.fn(),
+  }),
+);
 
 vi.mock("google-auth-library", () => ({
   GoogleAuth: class {
@@ -34,6 +36,7 @@ function validOrchestratorResponse() {
       cache_used: false,
       compaction_recommended: false,
     },
+    learner_observation: null,
   };
 }
 
@@ -63,7 +66,8 @@ describe("Tutor orchestrator client auth boundary", () => {
   });
 
   it("uses local unauth invocation by default", async () => {
-    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    const { callTutorOrchestrator } =
+      await import("../server/lib/tutor-orchestrator-client.ts");
     await callTutorOrchestrator({ ping: true });
 
     expect(getIdTokenClientMock).not.toHaveBeenCalled();
@@ -77,10 +81,13 @@ describe("Tutor orchestrator client auth boundary", () => {
     process.env.TUTOR_ORCHESTRATOR_AUTH_MODE = "gcp_id_token";
     process.env.TUTOR_ORCHESTRATOR_AUDIENCE = "https://orchestrator.internal";
 
-    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    const { callTutorOrchestrator } =
+      await import("../server/lib/tutor-orchestrator-client.ts");
     await callTutorOrchestrator({ ping: true });
 
-    expect(getIdTokenClientMock).toHaveBeenCalledWith("https://orchestrator.internal");
+    expect(getIdTokenClientMock).toHaveBeenCalledWith(
+      "https://orchestrator.internal",
+    );
     const options = fetchMock.mock.calls[0]?.[1] as Record<string, unknown>;
     const headers = options?.headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer service-token");
@@ -90,7 +97,8 @@ describe("Tutor orchestrator client auth boundary", () => {
     process.env.TUTOR_ORCHESTRATOR_AUTH_MODE = "gcp_id_token";
     getRequestHeadersMock.mockResolvedValue(new Headers());
 
-    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    const { callTutorOrchestrator } =
+      await import("../server/lib/tutor-orchestrator-client.ts");
     await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
       "Failed to acquire service auth header for tutor orchestrator",
     );
@@ -100,7 +108,8 @@ describe("Tutor orchestrator client auth boundary", () => {
   it("fails explicitly for unsupported auth mode config", async () => {
     process.env.TUTOR_ORCHESTRATOR_AUTH_MODE = "bad_mode";
 
-    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    const { callTutorOrchestrator } =
+      await import("../server/lib/tutor-orchestrator-client.ts");
     await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
       "Unsupported tutor orchestrator auth mode: bad_mode",
     );
@@ -110,7 +119,8 @@ describe("Tutor orchestrator client auth boundary", () => {
   it("fails explicitly when orchestrator URL config is missing", async () => {
     delete process.env.TUTOR_ORCHESTRATOR_URL;
 
-    const { callTutorOrchestrator } = await import("../server/lib/tutor-orchestrator-client.ts");
+    const { callTutorOrchestrator } =
+      await import("../server/lib/tutor-orchestrator-client.ts");
     await expect(callTutorOrchestrator({ ping: true })).rejects.toThrow(
       "TUTOR_ORCHESTRATOR_URL is not configured",
     );

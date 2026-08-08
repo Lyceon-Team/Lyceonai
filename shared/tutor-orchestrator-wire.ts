@@ -7,6 +7,10 @@
  * expected outcome: one canonical schema set, consumed by server/lib/tutor-orchestrator-client.ts
  * and apps/workers/tutor-orchestrator/src/lib/schema.ts.
  * trade-offs: worker tsconfig broadened to allow imports from shared/.
+ *
+ * @updated 2026-08-07 — replaced untyped z.record(z.string(), z.unknown()) fields
+ * with fully typed schemas per Karl's standing rule. student_context split into
+ * student_learning_context + memory_structured_fields. All z.record uses removed.
  */
 
 import { z } from "zod";
@@ -42,7 +46,7 @@ export const memorySummarySchema = z.object({
     "study_context",
   ]),
   summary_version: z.string(),
-  content_json: z.record(z.string(), z.unknown()),
+  content_json: z.object({}).passthrough(),
   source_window_start: z.string().nullable(),
   source_window_end: z.string().nullable(),
 });
@@ -54,7 +58,141 @@ export const policyAssignmentSchema = z.object({
   prompt_version: z.string().nullable(),
   assignment_mode: z.enum(["deterministic", "explore", "manual_override"]),
   assignment_key: z.string(),
-  reason_snapshot: z.record(z.string(), z.unknown()),
+  reason_snapshot: z.object({}).passthrough(),
+});
+
+// ── Student learning context (Doc 03A §5.4, §8.3) ─────────────────────
+
+export const masterySnapshotSchema = z.object({
+  scope: z.enum(["skill", "domain", "section", "all"]),
+  current_skill: z
+    .object({
+      skill: z.string(),
+      domain: z.string(),
+      section: z.enum(["M", "RW"]),
+      mastery_score: z.number().nullable(),
+      mastery_level: z.number().int().min(0).max(4).nullable(),
+      attempts_14d: z.number().int().nonnegative(),
+      pass_rate_14d: z.number().nullable(),
+      last_event_at: z.string().nullable(),
+    })
+    .nullable(),
+  current_domain: z
+    .object({
+      domain: z.string(),
+      section: z.enum(["M", "RW"]),
+      mastery_score: z.number().nullable(),
+      mastery_level: z.number().int().min(0).max(4).nullable(),
+    })
+    .nullable(),
+  section_projection: z
+    .object({
+      section: z.enum(["M", "RW"]),
+      projected_score_low: z.number().int().nullable(),
+      projected_score_mid: z.number().int().nullable(),
+      projected_score_high: z.number().int().nullable(),
+      range_width: z.number().int().nullable(),
+    })
+    .nullable(),
+  section_projection_trend: z
+    .array(
+      z.object({
+        section: z.enum(["M", "RW"]),
+        projected_score_mid: z.number().int().nullable(),
+        range_width: z.number().int().nullable(),
+        snapshot_at: z.string(),
+      }),
+    )
+    .nullable(),
+  recent_activity_summary: z
+    .object({
+      skills_practiced_7d: z.array(z.string()),
+      skills_with_fails_7d: z.array(z.string()),
+      skills_newly_mastered_30d: z.array(z.string()).nullable(),
+    })
+    .nullable(),
+});
+
+export const recentFrictionSchema = z.object({
+  consecutive_fails_this_session: z.number().int().nonnegative(),
+  consecutive_fails_this_skill_7d: z.number().int().nonnegative(),
+  self_deprecating_language_detected: z.boolean(),
+  long_pause_detected: z.boolean(),
+  mastery_regression_14d: z.boolean().nullable(),
+});
+
+export const kpiStateSchema = z.object({
+  skill_kpi: z
+    .object({
+      events_total: z.number().int().nonnegative(),
+      events_last_7d: z.number().int().nonnegative(),
+      events_last_30d: z.number().int().nonnegative(),
+      accuracy_overall: z.number().nullable(),
+      accuracy_last_7d: z.number().nullable(),
+      accuracy_last_30d: z.number().nullable(),
+    })
+    .nullable(),
+  domain_kpi: z
+    .object({
+      events_total: z.number().int().nonnegative(),
+      events_last_7d: z.number().int().nonnegative(),
+      events_last_30d: z.number().int().nonnegative(),
+      accuracy_overall: z.number().nullable(),
+      accuracy_last_7d: z.number().nullable(),
+      accuracy_last_30d: z.number().nullable(),
+    })
+    .nullable(),
+  section_kpi: z
+    .object({
+      events_total: z.number().int().nonnegative(),
+      events_last_7d: z.number().int().nonnegative(),
+      events_last_30d: z.number().int().nonnegative(),
+      accuracy_overall: z.number().nullable(),
+      accuracy_last_7d: z.number().nullable(),
+      accuracy_last_30d: z.number().nullable(),
+      current_streak_days: z.number().int().nonnegative(),
+    })
+    .nullable(),
+});
+
+export const studentLearningContextSchema = z.object({
+  mastery_snapshot: masterySnapshotSchema.nullable(),
+  recent_friction: recentFrictionSchema,
+  kpi_state: kpiStateSchema.nullable(),
+});
+
+// ── Memory structured fields (Doc 03A §7.3, §10.3) ────────────────────
+
+export const explanationFormEnum = z.enum([
+  "step_by_step",
+  "conceptual",
+  "example_driven",
+  "visual",
+]);
+
+export const memoryStructuredFieldsSchema = z.object({
+  last_struggled_skill: z
+    .object({
+      skill: z.string(),
+      domain: z.string(),
+      section: z.enum(["M", "RW"]),
+      last_fail_at: z.string().nullable(),
+      fail_count_7d: z.number().int().nonnegative(),
+      mastery_at_time_of_fail: z.number().nullable(),
+    })
+    .nullable(),
+  last_mastered_skill: z
+    .object({
+      skill: z.string(),
+      domain: z.string(),
+      section: z.enum(["M", "RW"]),
+      crossed_to_strong_at: z.string().nullable(),
+      prior_mastery: z.number().nullable(),
+      current_mastery: z.number().nullable(),
+    })
+    .nullable(),
+  preferred_explanation_style: explanationFormEnum.nullable(),
+  style_confidence: z.enum(["low", "medium", "high"]).nullable(),
 });
 
 // ── Request schema ───────────────────────────────────────────────────
@@ -67,7 +205,8 @@ export const orchestrateRequestSchema = z.object({
   resolved_scope: resolvedScopeSchema,
   recent_messages: z.array(recentMessageSchema),
   memory_summaries: z.array(memorySummarySchema),
-  student_context: z.record(z.string(), z.unknown()),
+  student_learning_context: studentLearningContextSchema,
+  memory_structured_fields: memoryStructuredFieldsSchema,
   policy_assignment: policyAssignmentSchema,
   runtime_limits: z.object({
     max_output_tokens: z.number().int().positive(),
@@ -91,7 +230,7 @@ export const questionLinkSchema = z.object({
   ]),
   difficulty_delta: z.number().int().nullable(),
   reason_code: z.string(),
-  link_snapshot: z.record(z.string(), z.unknown()),
+  link_snapshot: z.object({}).passthrough(),
 });
 
 export const instructionExposureSchema = z.object({
@@ -109,6 +248,13 @@ export const instructionExposureSchema = z.object({
   hint_depth: z.number().int().nullable(),
   tone_style: z.string().nullable(),
   sequence_ordinal: z.number().int().nonnegative(),
+});
+
+// ── Learner observation (Doc 03A §7.3, SCL-026) ───────────────────────
+
+export const learnerObservationSchema = z.object({
+  explanation_form: explanationFormEnum.nullable(),
+  confidence: z.enum(["low", "medium", "high"]),
 });
 
 // ── Response schema ──────────────────────────────────────────────────
@@ -139,6 +285,7 @@ export const orchestrateResponseSchema = z.object({
     cache_used: z.boolean(),
     compaction_recommended: z.boolean(),
   }),
+  learner_observation: learnerObservationSchema.nullable(),
 });
 
 // ── Compact schemas ──────────────────────────────────────────────────
@@ -158,3 +305,14 @@ export type OrchestrateRequest = z.infer<typeof orchestrateRequestSchema>;
 export type OrchestrateResponse = z.infer<typeof orchestrateResponseSchema>;
 export type CompactRequest = z.infer<typeof compactRequestSchema>;
 export type CompactResponse = z.infer<typeof compactResponseSchema>;
+export type StudentLearningContext = z.infer<
+  typeof studentLearningContextSchema
+>;
+export type MemoryStructuredFields = z.infer<
+  typeof memoryStructuredFieldsSchema
+>;
+export type LearnerObservation = z.infer<typeof learnerObservationSchema>;
+export type RecentFriction = z.infer<typeof recentFrictionSchema>;
+export type MasterySnapshot = z.infer<typeof masterySnapshotSchema>;
+export type KpiState = z.infer<typeof kpiStateSchema>;
+export type ExplanationForm = z.infer<typeof explanationFormEnum>;

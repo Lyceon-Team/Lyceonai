@@ -23,8 +23,10 @@ vi.mock("../apps/workers/tutor-orchestrator/src/lib/vertex.js", () => {
   };
 });
 
-const { orchestrateRouter } = await import("../apps/workers/tutor-orchestrator/src/routes/orchestrate.ts");
-const { OrchestratorTimeoutError } = await import("../apps/workers/tutor-orchestrator/src/lib/vertex.js");
+const { orchestrateRouter } =
+  await import("../apps/workers/tutor-orchestrator/src/routes/orchestrate.ts");
+const { OrchestratorTimeoutError } =
+  await import("../apps/workers/tutor-orchestrator/src/lib/vertex.js");
 
 function validPayload() {
   return {
@@ -40,7 +42,23 @@ function validPayload() {
     },
     recent_messages: [],
     memory_summaries: [],
-    student_context: {},
+    student_learning_context: {
+      mastery_snapshot: null,
+      recent_friction: {
+        consecutive_fails_this_session: 0,
+        consecutive_fails_this_skill_7d: 0,
+        self_deprecating_language_detected: false,
+        long_pause_detected: false,
+        mastery_regression_14d: null,
+      },
+      kpi_state: null,
+    },
+    memory_structured_fields: {
+      last_struggled_skill: null,
+      last_mastered_skill: null,
+      preferred_explanation_style: null,
+      style_confidence: null,
+    },
     policy_assignment: {
       policy_family: "tutor_v1",
       policy_variant: "default",
@@ -59,7 +77,9 @@ function validPayload() {
 
 describe("Tutor orchestrate route", () => {
   it("maps timeout errors to safe timeout failure", async () => {
-    generateTutorResponseMock.mockRejectedValueOnce(new OrchestratorTimeoutError(10));
+    generateTutorResponseMock.mockRejectedValueOnce(
+      new OrchestratorTimeoutError(10),
+    );
 
     const app = express();
     app.use(express.json());
@@ -71,7 +91,9 @@ describe("Tutor orchestrate route", () => {
   });
 
   it("maps invalid model output failures to safe upstream failure", async () => {
-    generateTutorResponseMock.mockRejectedValueOnce(new Error("Vertex returned truncated JSON output"));
+    generateTutorResponseMock.mockRejectedValueOnce(
+      new Error("Vertex returned truncated JSON output"),
+    );
 
     const app = express();
     app.use(express.json());

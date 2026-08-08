@@ -156,6 +156,7 @@ const state = vi.hoisted(() => ({
       cache_used: false,
       compaction_recommended: false,
     },
+    learner_observation: null,
   },
   conversations: [] as ConversationRow[],
   messages: [] as MessageRow[],
@@ -311,6 +312,15 @@ function tableStore(table: string): AnyRow[] {
     case "review_sessions":
     case "review_session_items":
     case "full_length_exam_questions":
+    case "review_error_attempts":
+    case "student_skill_mastery":
+    case "student_domain_mastery":
+    case "student_section_projections":
+    case "student_section_projection_snapshots":
+    case "student_skill_kpi":
+    case "student_domain_kpi":
+    case "student_section_kpi":
+    case "tutor_injection_signatures":
       return [];
     case "entitlement_features":
       // AUD-519-004: ensureTutorAccess reads blocked_during_live_exam from this table.
@@ -560,6 +570,16 @@ vi.mock("../server/services/tutor-config", () => ({
       vertex_pro_daily_budget_usd: 200,
       vertex_pro_budget_circuit_breaker_warning_pct: 80,
       conversation_reuse_days: 7,
+      // WS-L2 context pipeline config keys
+      friction_long_pause_seconds: 120,
+      teaching_profile_freshness_days: 14,
+      recent_learning_pattern_freshness_days: 7,
+      study_context_freshness_days: 3,
+      memory_summary_staleness_days: 30,
+      injection_length_bound_chars: 4000,
+      study_context_relevance_window_days: 14,
+      recent_message_window: 12,
+      observation_promotion_threshold: 5,
     };
     const val = defaults[key];
     if (val === undefined) throw new Error(`Unknown config key: ${key}`);
@@ -845,9 +865,7 @@ describe("Tutor Runtime Contract Cutover", () => {
     expect(turn.status).toBe(200);
     const studentMessage = state.messages.find((m) => m.role === "student");
     expect(studentMessage?.source_question_canonical_id).toBe("q1");
-    expect(studentMessage?.source_question_row_id).toBe(
-      "SATM1ATEST1",
-    );
+    expect(studentMessage?.source_question_row_id).toBe("SATM1ATEST1");
   });
 
   it("reuses recent valid conversation scope when stored scoped question becomes stale", async () => {
@@ -887,17 +905,13 @@ describe("Tutor Runtime Contract Cutover", () => {
     const newStudentMessage = state.messages.find(
       (m) => m.client_turn_id === "f9999999-9999-4999-8999-999999999992",
     );
-    expect(newStudentMessage?.source_question_row_id).toBe(
-      "SATM1BTEST2",
-    );
+    expect(newStudentMessage?.source_question_row_id).toBe("SATM1BTEST2");
     expect(newStudentMessage?.source_question_canonical_id).toBe("q2");
     expect(state.assignments[0]?.reason_snapshot?.fallback_used).toBe(
       "reused_recent_conversation_scope",
     );
     const payload = callTutorOrchestratorMock.mock.calls[0]?.[0] as any;
-    expect(payload.resolved_scope.source_question_row_id).toBe(
-      "SATM1BTEST2",
-    );
+    expect(payload.resolved_scope.source_question_row_id).toBe("SATM1BTEST2");
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q2");
     expect(payload.policy_assignment.reason_snapshot.fallback_used).toBe(
       "reused_recent_conversation_scope",
@@ -1185,6 +1199,8 @@ describe("Tutor Runtime Contract Cutover", () => {
     ).toEqual({
       accepted: 1,
       rejected: 0,
+      injection_dropped: 0,
+      stale: 0,
     });
   });
 
@@ -1241,12 +1257,12 @@ describe("Tutor Runtime Contract Cutover", () => {
         .memory_summary_counts,
     ).toEqual({
       accepted: 1,
-      rejected: 2,
+      rejected: 0,
+      injection_dropped: 0,
+      stale: 0,
     });
     expect(payload.resolved_scope.source_question_canonical_id).toBe("q1");
-    expect(payload.resolved_scope.source_question_row_id).toBe(
-      "SATM1ATEST1",
-    );
+    expect(payload.resolved_scope.source_question_row_id).toBe("SATM1ATEST1");
     expect(callLlmMock).not.toHaveBeenCalled();
     expect(handleRagQueryMock).not.toHaveBeenCalled();
   });
@@ -1290,7 +1306,9 @@ describe("Tutor Runtime Contract Cutover", () => {
         .memory_summary_counts,
     ).toEqual({
       accepted: 0,
-      rejected: 2,
+      rejected: 0,
+      injection_dropped: 0,
+      stale: 0,
     });
   });
 

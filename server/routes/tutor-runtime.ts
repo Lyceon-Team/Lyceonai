@@ -23,6 +23,13 @@ import {
 import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
 import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
 import { getTutorConfigInt } from "../services/tutor-config";
+import {
+  resolveStudentLearningContext,
+  resolveMemoryWithInjectionScan,
+  accumulateLearnerObservation,
+  hasAnswerLeak,
+  resolveCorrectAnswer,
+} from "../services/tutor-context";
 
 import { z } from "zod";
 
@@ -95,25 +102,8 @@ type ScopeResolution = {
   conflict_fields: string[];
 };
 
-const memorySummarySchema = z.object({
-  summary_type: z.enum([
-    "teaching_profile",
-    "chat_compaction",
-    "recent_learning_pattern",
-    "study_context",
-  ]),
-  summary_version: z.string(),
-  content_json: z.record(z.string(), z.unknown()),
-  source_window_start: z.string().nullable(),
-  source_window_end: z.string().nullable(),
-});
-
-type MemorySummary = z.infer<typeof memorySummarySchema>;
-type MemorySummaryNormalization = {
-  summaries: MemorySummary[];
-  accepted_count: number;
-  rejected_count: number;
-};
+// L2 note: local memorySummarySchema + normalizeMemorySummaries removed —
+// memory retrieval now handled by resolveMemoryWithInjectionScan (tutor-context.ts).
 
 const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY =
   "__internal_question_links_snapshot";
@@ -706,52 +696,6 @@ function removeInternalMetadataMentions(text: string): string {
 const TUTOR_ANTI_LEAK_SUBSTITUTION =
   "Let me think about this differently. Can you walk me through how you approached this problem?";
 
-function hasDirectAnswerLeak(text: string): boolean {
-  const patterns = [
-    /\bthe correct answer is\b/i,
-    /\bthe right answer is\b/i,
-    /\bchoose option [A-D]\b/i,
-    /\banswer:\s*[A-D]\b/i,
-    /\bdefinitely option [A-D]\b/i,
-    /\b(option|choice)\s*[A-D]\s*(is|=)\s*(correct|right)\b/i,
-    /\bit(?:'s| is)\s*(definitely|clearly)\s*(option|choice)\s*[A-D]\b/i,
-    /\bonly\s+(option|choice)\s*[A-D]\s+(can|could)\s+be\s+(correct|right)\b/i,
-    /\beliminate\s+all\s+but\s+(option|choice)\s*[A-D]\b/i,
-  ];
-  return patterns.some((p) => p.test(text));
-}
-
-function normalizeMemorySummaries(rows: unknown): MemorySummaryNormalization {
-  if (!Array.isArray(rows)) {
-    return { summaries: [], accepted_count: 0, rejected_count: 0 };
-  }
-
-  const summaries: MemorySummary[] = [];
-  let rejectedCount = 0;
-  for (const row of rows) {
-    const parsed = memorySummarySchema.safeParse({
-      summary_type: (row as Record<string, unknown>)?.summary_type,
-      summary_version: (row as Record<string, unknown>)?.summary_version,
-      content_json: (row as Record<string, unknown>)?.content_json ?? {},
-      source_window_start:
-        (row as Record<string, unknown>)?.source_window_start ?? null,
-      source_window_end:
-        (row as Record<string, unknown>)?.source_window_end ?? null,
-    });
-    if (!parsed.success) {
-      rejectedCount += 1;
-      continue;
-    }
-    summaries.push(parsed.data);
-  }
-
-  return {
-    summaries,
-    accepted_count: summaries.length,
-    rejected_count: rejectedCount,
-  };
-}
-
 async function getPracticeItemStatus(
   studentId: string,
   itemId: string | null,
@@ -1135,11 +1079,19 @@ router.get(
     );
     if (!conversation) return;
 
-    const replayIsPreSubmit = await isPreSubmitForSurface(
-      conversation.source_surface,
-      user.id,
-      conversation.source_session_item_id ?? null,
-    );
+    const [replayIsPreSubmit, replayCorrectAnswer] = await Promise.all([
+      isPreSubmitForSurface(
+        conversation.source_surface,
+        user.id,
+        conversation.source_session_item_id ?? null,
+      ),
+      resolveCorrectAnswer({
+        source_session_id: conversation.source_session_id,
+        source_session_item_id: conversation.source_session_item_id,
+        source_question_row_id: conversation.source_question_row_id,
+        source_question_canonical_id: conversation.source_question_canonical_id,
+      }),
+    ]);
 
     const { data: messages, error: msgError } = await supabaseServer
       .from("tutor_messages")
@@ -1174,7 +1126,7 @@ router.get(
           const message =
             row.role === "tutor" &&
             replayIsPreSubmit &&
-            hasDirectAnswerLeak(row.message ?? "")
+            hasAnswerLeak(row.message ?? "", replayCorrectAnswer)
               ? TUTOR_ANTI_LEAK_SUBSTITUTION
               : row.message;
           return {
@@ -1568,6 +1520,23 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
         return;
       }
 
+      // L2.4: answer-aware leak check on idempotent replay path
+      const [replayPreSubmit, replayCorrectAnswer] = await Promise.all([
+        isPreSubmitForSurface(
+          conversation.source_surface,
+          user.id,
+          resolvedScope.source_session_item_id,
+        ),
+        resolveCorrectAnswer(resolvedScope),
+      ]);
+      const rawReplayContent = String(
+        (existingTutorResponse as MessageRow).message ?? "",
+      );
+      const safeReplayContent =
+        replayPreSubmit && hasAnswerLeak(rawReplayContent, replayCorrectAnswer)
+          ? TUTOR_ANTI_LEAK_SUBSTITUTION
+          : rawReplayContent;
+
       finalizedWithSuccess = true;
       if (tutorReservationId) {
         finalizedReservation = true;
@@ -1575,14 +1544,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           reservationId: tutorReservationId,
           success: true,
           finalInputTokens: estimateTokenCount(body.message),
-          finalOutputTokens: estimateTokenCount(
-            String((existingTutorResponse as MessageRow).message ?? ""),
-          ),
+          finalOutputTokens: estimateTokenCount(safeReplayContent),
           finalCostMicros: estimateTutorCostMicros(
             estimateTokenCount(body.message),
-            estimateTokenCount(
-              String((existingTutorResponse as MessageRow).message ?? ""),
-            ),
+            estimateTokenCount(safeReplayContent),
           ),
         });
       }
@@ -1591,9 +1556,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           conversation_id: conversation.id,
           message_id: (existingTutorResponse as MessageRow).id,
           response: {
-            content: String(
-              (existingTutorResponse as MessageRow).message ?? "",
-            ),
+            content: safeReplayContent,
             content_kind: (existingTutorResponse as MessageRow).content_kind,
             suggested_action: replayContent.suggested_action,
             ui_hints: replayContent.ui_hints,
@@ -1602,30 +1565,33 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const { data: historyRows } = await supabaseServer
-      .from("tutor_messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: false })
-      .limit(12);
+    // ── L2: Context resolution (Layers 3 + 4) ────────────────────────────
+    // @spec [Doc-03A_V3.2 §5.1] — resolve context in parallel with history fetch.
+    const contextArgs = {
+      student_id: user.id,
+      entry_mode: conversation.entry_mode,
+      source_surface: conversation.source_surface,
+      resolved_scope: resolvedScope,
+      conversation_id: conversation.id,
+    };
 
-    const { data: memoryRows } = await supabaseServer
-      .from("tutor_memory_summaries")
-      .select(
-        "summary_type, summary_version, content_json, source_window_start, source_window_end",
-      )
-      .eq("student_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(3);
-    const normalizedMemory = normalizeMemorySummaries(memoryRows);
-    if (normalizedMemory.rejected_count > 0) {
-      console.warn("[tutor-runtime] filtered incompatible memory summaries", {
-        conversationId: conversation.id,
-        studentId: user.id,
-        acceptedCount: normalizedMemory.accepted_count,
-        rejectedCount: normalizedMemory.rejected_count,
-      });
-    }
+    const [historyResult, memoryResult, studentLearningContext, correctAnswer] =
+      await Promise.all([
+        supabaseServer
+          .from("tutor_messages")
+          .select("*")
+          .eq("conversation_id", conversation.id)
+          .order("created_at", { ascending: false })
+          .limit(12),
+        resolveMemoryWithInjectionScan({
+          student_id: user.id,
+          entry_mode: conversation.entry_mode,
+        }),
+        resolveStudentLearningContext(contextArgs),
+        resolveCorrectAnswer(resolvedScope),
+      ]);
+
+    const historyRows = historyResult.data;
 
     const orchestratorPayload = {
       conversation_id: conversation.id,
@@ -1648,15 +1614,9 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           message: String(row.message ?? ""),
           created_at: String(row.created_at),
         })),
-      memory_summaries: normalizedMemory.summaries,
-      student_context: {
-        recent_practice: {},
-        recent_review: {},
-        recent_full_length: {},
-        kpi_state: {},
-        mastery_state: {},
-        study_plan_context: {},
-      },
+      memory_summaries: memoryResult.summaries,
+      student_learning_context: studentLearningContext,
+      memory_structured_fields: memoryResult.structured_fields,
       policy_assignment: {
         policy_family: conversation.policy_family,
         policy_variant: conversation.policy_variant,
@@ -1675,8 +1635,10 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
           policy_inputs: {
             content_kind: body.content_kind,
             memory_summary_counts: {
-              accepted: normalizedMemory.accepted_count,
-              rejected: normalizedMemory.rejected_count,
+              accepted: memoryResult.accepted_count,
+              rejected: memoryResult.rejected_count,
+              injection_dropped: memoryResult.injection_dropped_count,
+              stale: memoryResult.stale_count,
             },
           },
           fallback_used: scopeResolution.fallback_reason,
@@ -1700,6 +1662,7 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
+    // L2.4: answer-aware leak check replaces nine-regex matcher
     const preSubmit = await isPreSubmitForSurface(
       conversation.source_surface,
       user.id,
@@ -1707,14 +1670,30 @@ router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
     );
     // §16.5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
     // shared pedagogical fallback and deliver it as a normal turn — no 422, no
-    // acknowledgment that filtering occurred. The substituted turn is persisted
-    // and returned through the same path as any other turn, so from the
-    // student's perspective it is indistinguishable from a normal LISA reply.
-    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-HY-19) — tutor persistence tables not in prod.
+    // acknowledgment that filtering occurred.
     const safeContent =
-      preSubmit && hasDirectAnswerLeak(cleaned)
+      preSubmit && hasAnswerLeak(cleaned, correctAnswer)
         ? TUTOR_ANTI_LEAK_SUBSTITUTION
         : cleaned;
+
+    // L2.3 (SCL-026): accumulate learner observation — INTERNAL ONLY, never in client response
+    const learnerObservation = orchestratorResult.learner_observation;
+    if (learnerObservation) {
+      accumulateLearnerObservation({
+        student_id: user.id,
+        explanation_form: learnerObservation.explanation_form ?? null,
+        confidence: learnerObservation.confidence,
+      }).catch((err: unknown) => {
+        // Non-fatal: observation accumulation failure must not block the response
+        console.warn(
+          "[tutor-runtime] learner observation accumulation failed",
+          {
+            error: err instanceof Error ? err.message : String(err),
+            conversationId: conversation.id,
+          },
+        );
+      });
+    }
 
     const suggestedAction = orchestratorResult.response.suggested_action;
     const orchestratorUiHints = orchestratorResult.response.ui_hints;
