@@ -253,7 +253,7 @@ jobs:
       - name: Ensure postgresql-client 16
         run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
 
-      - name: Practice engine integration gate
+      - name: Practice engine integration gate (SQL seam)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -262,6 +262,30 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/practice-integration.sh
+
+      # @spec [Codex re-audit Fix C] Handler-driven real-PG proof.
+      # The bash test above proves the SQL seam; this vitest test proves the
+      # TS handler actually calls applyMasteryEvent against real Postgres.
+      # Would FAIL if `await applyMasteryEvent(...)` were removed from the handler.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Diagnostic handler → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/diagnostic.handler-pg.ci.test.ts
 
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the

@@ -116,6 +116,9 @@ let mockSessionMode = "diagnostic";
 // When true, the CAS update (.eq("status","served").maybeSingle()) returns null,
 // simulating an optimistic-race loss where another request already answered the item.
 let mockCasUpdateReturnsNull = false;
+// @spec [Codex re-audit Fix D] Records every update patch applied to practice_sessions.
+// Tests assert that the handler issued a persisted lifecycle update, not just a response field.
+const sessionUpdatePatches: Record<string, unknown>[] = [];
 
 function makeSessionRow(mode: string): Record<string, unknown> {
   return {
@@ -216,6 +219,14 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
       then: (
         resolve: (v: { data: unknown; count?: number; error: null }) => void,
       ) => {
+        // Handle awaited .update().eq() chains that don't terminate with
+        // .maybeSingle() — e.g. updateSessionLifecycle's fire-and-check pattern.
+        if (pendingUpdate && opts.onUpdate) {
+          const updated = opts.onUpdate(pendingUpdate);
+          pendingUpdate = null;
+          resolve({ data: updated, ...result });
+          return;
+        }
         if (isCountQuery) {
           resolve({ data: null, count: mockResolvedCount, ...result });
         } else {
@@ -237,10 +248,13 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
           return makeChain({
             single: currentSession,
             array: [currentSession],
-            onUpdate: (patch) => ({
-              ...currentSession,
-              ...patch,
-            }),
+            onUpdate: (patch) => {
+              sessionUpdatePatches.push(patch);
+              return {
+                ...currentSession,
+                ...patch,
+              };
+            },
           });
         }
         if (table === "practice_session_items") {
@@ -349,6 +363,7 @@ describe("Diagnostic fail-closed mastery gate", () => {
     mockResolvedCount = TARGET_COUNT;
     mockSessionMode = "diagnostic";
     mockCasUpdateReturnsNull = false;
+    sessionUpdatePatches.length = 0;
     mockApplyMasteryEvent.mockReset();
   });
 
@@ -435,6 +450,16 @@ describe("Diagnostic fail-closed mastery gate", () => {
     // when resolvedCount >= target. Without this assertion the test certified
     // the bug: mastery re-emits but diagnostic stays ACTIVE forever.
     expect(retryRes.body.state).toBe("completed");
+    // @spec [Codex re-audit Fix D] Assert the handler issued a PERSISTED lifecycle
+    // update — not just the response field. Without this, removing
+    // updateSessionLifecycle() would still pass (response says completed, session
+    // stays active in persistence).
+    expect(sessionUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "completed",
+        completed_at: expect.any(String),
+      }),
+    );
     // Verify mastery was actually re-attempted on the replay
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(2);
   });
@@ -483,6 +508,13 @@ describe("Diagnostic fail-closed mastery gate", () => {
     expect(mockApplyMasteryEvent).toHaveBeenCalledTimes(1);
     // And run completion reconciliation — return state:"completed"
     expect(res.body.state).toBe("completed");
+    // @spec [Codex re-audit Fix D] Assert persisted lifecycle update (not just response)
+    expect(sessionUpdatePatches).toContainEqual(
+      expect.objectContaining({
+        status: "completed",
+        completed_at: expect.any(String),
+      }),
+    );
   });
 
   it("optimistic-race replay fails closed when mastery re-emission fails", async () => {
