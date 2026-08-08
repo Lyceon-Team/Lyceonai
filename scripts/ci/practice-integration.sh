@@ -310,14 +310,15 @@ echo "    OK correct_answer and explanation present in R&W RPC pool"
 # ===========================================================================
 # @spec [Doc-05A §11 / Doc-05C §6.2 / INV-05C-14 / Coding Standards §9]
 # Proves the complete diagnostic lifecycle against real PostgreSQL:
+#   D.0  Seed 40 questions with collision pre-check (no silent DO NOTHING)
 #   D.1  select_diagnostic_pool returns 40 rows (8×5)
 #   D.2  select_diagnostic_pool is PLAIN INVOKER (not SECURITY DEFINER)
-#   D.3  40 apply_mastery_event calls → exactly 40 diagnostic_attempt audit rows
+#   D.3  40 audit rows scoped to session_id (JOIN through practice_session_items)
 #   D.4  student_skill_mastery has rows after the diagnostic
 #   D.5  student_domain_mastery has rows for all 8 domains
-#   D.6  compute_section_projection succeeds for both M and RW
+#   D.6  Seam-through proof: apply_mastery_event triggered projection refresh
 #   D.7  student_section_projections has non-NULL projected_score_mid for both
-#   D.8  Idempotency: replaying the same 40 events produces no new audit rows
+#   D.8  Idempotency: replay → no new audit rows (session-scoped assertion)
 echo ""
 echo "=================================================================="
 echo "==> DIAGNOSTIC INTEGRATION GATE"
@@ -347,7 +348,17 @@ DECLARE
   v_d     text[];
   v_i     integer;
   v_qid   text;
+  v_collision_count integer;
 BEGIN
+  -- Collision pre-check: fail loud if any seed IDs already exist.
+  -- Silent ON CONFLICT DO NOTHING would hide collisions with other tests.
+  SELECT count(*) INTO v_collision_count
+  FROM public.questions
+  WHERE id ~ '^SAT(M|RW)1DG[A-H]';
+  IF v_collision_count > 0 THEN
+    RAISE EXCEPTION 'Diagnostic seed-ID collision: % question(s) matching SAT*1DG* already exist — test isolation violated', v_collision_count;
+  END IF;
+
   FOREACH v_d SLICE 1 IN ARRAY v_domains
   LOOP
     FOR v_i IN 1..5 LOOP
@@ -362,7 +373,7 @@ BEGIN
         '[{"token":"A","text":"1"},{"token":"B","text":"2"},{"token":"C","text":"3"},{"token":"D","text":"4"}]'::jsonb,
         'B', 'Explanation for ' || v_d[2] || ' Q' || v_i,
         'published', now()
-      ) ON CONFLICT (id) DO NOTHING;
+      );
     END LOOP;
   END LOOP;
 END $$;
@@ -466,16 +477,20 @@ SQL
 echo "    OK lifecycle complete"
 
 # ---------------------------------------------------------------------------
-# D.3 Assert exactly 40 diagnostic_attempt audit rows
+# D.3 Assert exactly 40 diagnostic_attempt audit rows (session-scoped)
 # ---------------------------------------------------------------------------
-echo "==> D.3 assert: exactly 40 diagnostic_attempt audit rows"
+# @spec [Codex audit Fix 2] JOIN mastery_event_audit_log.event_id →
+# practice_session_items.id → filter by session_id. This ensures the assertion
+# is scoped to THIS diagnostic session, not just student_id + event_source_kind.
+echo "==> D.3 assert: exactly 40 diagnostic_attempt audit rows (session-scoped)"
 AUDIT_COUNT=$(psql_db "$DB" -tAc "
-  SELECT count(*) FROM public.mastery_event_audit_log
-  WHERE student_id = '$DIAG_STUDENT'
-    AND event_source_kind = 'diagnostic_attempt';
+  SELECT count(*) FROM public.mastery_event_audit_log mal
+  JOIN public.practice_session_items psi ON psi.id = mal.event_id
+  WHERE psi.session_id = '$DIAG_SESSION'
+    AND mal.event_source_kind = 'diagnostic_attempt';
 ")
-[ "$AUDIT_COUNT" = "40" ] || { echo "FAIL: expected 40 diagnostic_attempt audit rows, got $AUDIT_COUNT"; exit 1; }
-echo "    OK $AUDIT_COUNT diagnostic_attempt audit rows"
+[ "$AUDIT_COUNT" = "40" ] || { echo "FAIL: expected 40 session-scoped diagnostic_attempt audit rows, got $AUDIT_COUNT"; exit 1; }
+echo "    OK $AUDIT_COUNT diagnostic_attempt audit rows (session=$DIAG_SESSION)"
 
 # ---------------------------------------------------------------------------
 # D.4 Assert student_skill_mastery has rows
@@ -501,12 +516,21 @@ DOMAIN_MASTERY_COUNT=$(psql_db "$DB" -tAc "
 echo "    OK $DOMAIN_MASTERY_COUNT domains with ≥5 events"
 
 # ---------------------------------------------------------------------------
-# D.6 compute_section_projection for both M and RW
+# D.6 Seam-through proof: apply_mastery_event triggered projection refresh
 # ---------------------------------------------------------------------------
-echo "==> D.6 compute_section_projection: M and RW"
-psql_db "$DB" -q -c "SELECT public.compute_section_projection('$DIAG_STUDENT'::uuid, 'M', now());" >/dev/null
-psql_db "$DB" -q -c "SELECT public.compute_section_projection('$DIAG_STUDENT'::uuid, 'RW', now());" >/dev/null
-echo "    OK both projections computed without error"
+# @spec [Codex audit Fix 2] We do NOT call compute_section_projection directly.
+# The 40 apply_mastery_event calls should have triggered projection refresh via
+# bump_projection_refresh_counter (threshold=40). We verify projection rows
+# exist for BOTH sections — if the seam failed to fire, they would be absent.
+# D.7 below further proves the values are non-NULL.
+echo "==> D.6 seam-through proof: projection rows created by apply_mastery_event seam"
+PROJ_ROW_COUNT=$(psql_db "$DB" -tAc "
+  SELECT count(*) FROM public.student_section_projections
+  WHERE student_id = '$DIAG_STUDENT'
+    AND section IN ('M', 'RW');
+" | tr -d '[:space:]')
+[ "$PROJ_ROW_COUNT" = "2" ] || { echo "FAIL: expected 2 projection rows (M + RW) from seam, got $PROJ_ROW_COUNT"; exit 1; }
+echo "    OK $PROJ_ROW_COUNT projection rows exist (created by seam, not direct RPC)"
 
 # ---------------------------------------------------------------------------
 # D.7 Assert non-NULL projections for both sections
@@ -565,13 +589,15 @@ BEGIN
 END \$\$;
 SQL
 
+# Session-scoped assertion: same JOIN as D.3
 AUDIT_AFTER=$(psql_db "$DB" -tAc "
-  SELECT count(*) FROM public.mastery_event_audit_log
-  WHERE student_id = '$DIAG_STUDENT'
-    AND event_source_kind = 'diagnostic_attempt';
+  SELECT count(*) FROM public.mastery_event_audit_log mal
+  JOIN public.practice_session_items psi ON psi.id = mal.event_id
+  WHERE psi.session_id = '$DIAG_SESSION'
+    AND mal.event_source_kind = 'diagnostic_attempt';
 ")
-[ "$AUDIT_AFTER" = "40" ] || { echo "FAIL: expected 40 audit rows after replay, got $AUDIT_AFTER (duplicates created)"; exit 1; }
-echo "    OK still 40 audit rows (no duplicates)"
+[ "$AUDIT_AFTER" = "40" ] || { echo "FAIL: expected 40 session-scoped audit rows after replay, got $AUDIT_AFTER (duplicates created)"; exit 1; }
+echo "    OK still 40 audit rows (no duplicates, session=$DIAG_SESSION)"
 
 echo ""
 echo "DIAGNOSTIC INTEGRATION GATE: PASS"

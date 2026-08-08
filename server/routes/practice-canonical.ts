@@ -2725,6 +2725,130 @@ function gradeAnswer(
   };
 }
 
+// @spec [Doc-05A §11, Codex audit Fix 2] On idempotent replay of a diagnostic
+// answer, re-attempt mastery emission. The answer was already recorded (status →
+// "answered") on the first attempt, but mastery emission may have failed (500
+// returned to client). On retry, the idempotent branch returns 200 without re-
+// trying mastery — leaving the diagnostic without its required audit trail.
+// applyMasteryEvent is idempotent on event_id: if the prior attempt succeeded,
+// this is a no-op; if it failed, this repairs the gap.
+// @implemented [2026-08-08] Re-emit mastery for diagnostic idempotent replays
+async function reEmitDiagnosticMasteryIfNeeded(opts: {
+  sessionItem: SessionItemRow;
+  userId: string;
+  requestId: string;
+  sessionId: string;
+  isCorrect: boolean;
+  occurredAt: string;
+}): Promise<
+  { ok: true } | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const canonicalId =
+    typeof opts.sessionItem.question_id === "string"
+      ? opts.sessionItem.question_id
+      : null;
+  const section =
+    typeof opts.sessionItem.question_section === "string"
+      ? opts.sessionItem.question_section.trim()
+      : "";
+  const domain =
+    typeof opts.sessionItem.question_domain === "string"
+      ? opts.sessionItem.question_domain.trim()
+      : "";
+  const skill =
+    typeof opts.sessionItem.question_skill === "string"
+      ? opts.sessionItem.question_skill.trim()
+      : "";
+  const difficultyBucket = resolveDifficultyBucketStrict(
+    opts.sessionItem.question_difficulty ?? null,
+  );
+
+  if (!canonicalId || !difficultyBucket || !section || !domain || !skill) {
+    // Missing metadata — log and fail-closed for diagnostic.
+    logger.error(
+      "[diagnostic] mastery re-emission impossible (missing metadata) — fail-closed",
+      {
+        requestId: opts.requestId,
+        sessionId: opts.sessionId,
+        questionCanonicalId: canonicalId,
+        section: section || null,
+        domain: domain || null,
+        skill: skill || null,
+      },
+    );
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "diagnostic_mastery_emission_failed",
+        message:
+          "Diagnostic item lacks required metadata for mastery re-emission on replay. This is a data integrity defect.",
+        requestId: opts.requestId,
+      },
+    };
+  }
+
+  try {
+    const masteryResult = await applyMasteryEvent({
+      studentId: opts.userId,
+      section,
+      domain,
+      skill,
+      difficulty: difficultyBucket,
+      sourceFamily: "practice",
+      eventSourceKind: "diagnostic_attempt",
+      correct: opts.isCorrect,
+      occurredAt: opts.occurredAt,
+      eventId: opts.sessionItem.id,
+      questionId: canonicalId,
+    });
+    if (!masteryResult.ok) {
+      logger.error(
+        "[diagnostic] mastery re-emission failed on replay — fail-closed",
+        {
+          requestId: opts.requestId,
+          sessionId: opts.sessionId,
+          questionCanonicalId: canonicalId,
+          masteryError: masteryResult.error ?? "unknown",
+        },
+      );
+      return {
+        ok: false,
+        status: 500,
+        body: {
+          error: "diagnostic_mastery_emission_failed",
+          message:
+            "Diagnostic mastery event could not be durably written on replay. Retry the submission.",
+          requestId: opts.requestId,
+        },
+      };
+    }
+  } catch (masteryErr: unknown) {
+    const errMsg =
+      masteryErr instanceof Error ? masteryErr.message : String(masteryErr);
+    logger.error(
+      "[diagnostic] mastery re-emission threw on replay — fail-closed",
+      {
+        requestId: opts.requestId,
+        sessionId: opts.sessionId,
+        message: errMsg,
+      },
+    );
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "diagnostic_mastery_emission_failed",
+        message:
+          "Diagnostic mastery event threw an unexpected error on replay. Retry the submission.",
+        requestId: opts.requestId,
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
 export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
@@ -2860,6 +2984,23 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       resolvedAttemptKey &&
       replayAttemptKey === resolvedAttemptKey
     ) {
+      // @spec [Doc-05A §11, Codex audit Fix 2] For diagnostic sessions, re-attempt
+      // mastery emission on idempotent replay. A prior attempt may have recorded
+      // the answer but failed mastery emission (fail-closed 500). applyMasteryEvent
+      // is idempotent on event_id — safe to re-emit.
+      if (session.mode === "diagnostic") {
+        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+          sessionItem,
+          userId,
+          requestId,
+          sessionId: payload.sessionId,
+          isCorrect: !!sessionItem.is_correct,
+          occurredAt: sessionItem.answered_at ?? new Date().toISOString(),
+        });
+        if (!reEmitResult.ok) {
+          return res.status(reEmitResult.status).json(reEmitResult.body);
+        }
+      }
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
@@ -2921,6 +3062,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         });
       }
 
+      // @spec [Doc-05A §11, Codex audit Fix 2] Diagnostic mastery re-emission
+      // on idempotent replay via clientAttemptId lookup — same rationale as the
+      // status-check replay path above.
+      if (session.mode === "diagnostic") {
+        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+          sessionItem: existingByKey,
+          userId,
+          requestId,
+          sessionId: payload.sessionId,
+          isCorrect: !!existingByKey.is_correct,
+          occurredAt: existingByKey.answered_at ?? now,
+        });
+        if (!reEmitResult.ok) {
+          return res.status(reEmitResult.status).json(reEmitResult.body);
+        }
+      }
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
@@ -2952,6 +3109,21 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       resolvedAttemptKey &&
       replayAttemptKey === resolvedAttemptKey
     ) {
+      // @spec [Doc-05A §11, Codex audit Fix 2] Defensive path: diagnostic
+      // mastery re-emission — same rationale as the primary replay path above.
+      if (session.mode === "diagnostic") {
+        const reEmitResult = await reEmitDiagnosticMasteryIfNeeded({
+          sessionItem,
+          userId,
+          requestId,
+          sessionId: payload.sessionId,
+          isCorrect: !!sessionItem.is_correct,
+          occurredAt: sessionItem.answered_at ?? now,
+        });
+        if (!reEmitResult.ok) {
+          return res.status(reEmitResult.status).json(reEmitResult.body);
+        }
+      }
       return res.json({
         sessionId: payload.sessionId,
         sessionItemId: sessionItem.id,
@@ -3211,80 +3383,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       status: "completed",
       completed_at: now,
     });
-
-    // @spec [Doc-05C §10, Codex audit Fix 1] After completing the 40-question
-    // diagnostic, the FIRST projection refresh MUST produce non-NULL projection
-    // rows for both sections. Supabase .rpc() returns { data, error } and does
-    // NOT throw on Postgres errors — both results must be inspected explicitly.
-    // Fail-closed: a diagnostic must not report "completed" without its
-    // required projection effects.
-    if (session.mode === "diagnostic") {
-      try {
-        const { error: projMErr } = await supabaseServer.rpc(
-          "compute_section_projection",
-          {
-            p_student_id: userId,
-            p_section: "M",
-            p_as_of: now,
-          },
-        );
-        if (projMErr) {
-          logger.error(
-            "[diagnostic] projection refresh failed for M — fail-closed",
-            {
-              requestId,
-              sessionId: payload.sessionId,
-              message: projMErr.message,
-            },
-          );
-          return res.status(500).json({
-            error: "diagnostic_projection_failed",
-            message:
-              "Diagnostic projection refresh failed for section M. The session was marked completed but projections are missing. Retry the submission.",
-            requestId,
-          });
-        }
-
-        const { error: projRWErr } = await supabaseServer.rpc(
-          "compute_section_projection",
-          {
-            p_student_id: userId,
-            p_section: "RW",
-            p_as_of: now,
-          },
-        );
-        if (projRWErr) {
-          logger.error(
-            "[diagnostic] projection refresh failed for RW — fail-closed",
-            {
-              requestId,
-              sessionId: payload.sessionId,
-              message: projRWErr.message,
-            },
-          );
-          return res.status(500).json({
-            error: "diagnostic_projection_failed",
-            message:
-              "Diagnostic projection refresh failed for section RW. The session was marked completed but projections are missing. Retry the submission.",
-            requestId,
-          });
-        }
-      } catch (projErr: unknown) {
-        const projMsg =
-          projErr instanceof Error ? projErr.message : String(projErr);
-        logger.error("[diagnostic] projection refresh threw — fail-closed", {
-          requestId,
-          sessionId: payload.sessionId,
-          message: projMsg,
-        });
-        return res.status(500).json({
-          error: "diagnostic_projection_failed",
-          message:
-            "Diagnostic projection refresh threw an unexpected error. The session was marked completed but projections are missing. Retry the submission.",
-          requestId,
-        });
-      }
-    }
   } else {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "active",
