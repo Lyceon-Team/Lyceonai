@@ -1,15 +1,15 @@
 /**
- * @spec [CodingStandards_v1, §9 Practice Engine Contracts] | @implemented [2026-07-24]
- * Desmos calculator with graphing/scientific mode toggle and Bluebook-comparable sizing.
+ * @spec [Doc-02B_v4, §28 Math Tooling: Desmos and Formula Sheet] | @implemented [2026-07-26]
+ * Desmos calculator with graphing/scientific mode toggle and Bluebook-parity resizable panel.
  * Per-mode state is retained across mode switches via a mode-keyed map flushed
  * synchronously before switching. The session payload persisted through
  * onStateChange is the full { graphing, scientific } map so both modes survive
  * reload. Legacy sessions that stored a single graphing-shaped blob are
  * recognized and loaded as graphing-only (backward compatible).
  *
- * Deferred: Bluebook parity target is a floating, draggable, resizable overlay positioned
- * over the question area. The current inline-card layout is a deliberate interim step.
- * Tracked follow-up for the overlay implementation.
+ * fillHeight mode: when true, the calculator fills its container vertically
+ * (for use inside a resizable side panel). A ResizeObserver on the host element
+ * throttles resize() calls to rAF during divider drag.
  */
 import React, {
   useEffect,
@@ -142,6 +142,7 @@ type DesmosCalculatorProps = {
   initialState?: unknown | null;
   onStateChange?: (state: unknown) => void;
   debounceMs?: number;
+  fillHeight?: boolean;
 };
 
 const EXPANDED_HEIGHT_GRAPHING = 520;
@@ -153,6 +154,7 @@ export default function DesmosCalculator({
   initialState = null,
   onStateChange,
   debounceMs = 600,
+  fillHeight = false,
 }: DesmosCalculatorProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const calcRef = useRef<DesmosCalculatorInstance | null>(null);
@@ -236,6 +238,7 @@ export default function DesmosCalculator({
         if (!Constructor) return;
 
         const calculator = new Constructor(hostRef.current, {
+          autosize: true,
           expressions: true,
           settingsMenu: true,
           zoomButtons: true,
@@ -305,6 +308,24 @@ export default function DesmosCalculator({
   }, [expanded]);
 
   useEffect(() => {
+    const host = hostRef.current;
+    if (!host || !expanded) return;
+    let rafId: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        calcRef.current?.resize();
+      });
+    });
+    observer.observe(host);
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [expanded]);
+
+  useEffect(() => {
     const calculator = calcRef.current;
     if (!calculator || !initialState || mode !== "graphing") return;
     const parsed = parseInitialState(initialState);
@@ -322,11 +343,21 @@ export default function DesmosCalculator({
       ? EXPANDED_HEIGHT_SCIENTIFIC
       : EXPANDED_HEIGHT_GRAPHING;
 
+  const shellStyle: React.CSSProperties = fillHeight
+    ? { height: expanded ? "100%" : 0, overflow: "hidden" }
+    : {
+        height: expanded ? expandedHeight : 0,
+        overflow: "hidden",
+        transition: "height 180ms ease",
+      };
+
   return (
-    <div className={className}>
+    <div
+      className={`${className ?? ""} ${fillHeight ? "flex flex-col h-full" : ""}`.trim()}
+    >
       {expanded && (
         <div
-          className="mb-2 flex items-center gap-1 rounded-md bg-secondary/60 p-0.5"
+          className="mb-2 flex items-center gap-1 rounded-md bg-secondary/60 p-0.5 shrink-0"
           role="radiogroup"
           aria-label="Calculator mode"
         >
@@ -361,11 +392,8 @@ export default function DesmosCalculator({
         </div>
       )}
       <div
-        style={{
-          height: expanded ? expandedHeight : 0,
-          overflow: "hidden",
-          transition: "height 180ms ease",
-        }}
+        style={shellStyle}
+        className={fillHeight && expanded ? "flex-1 min-h-0" : undefined}
         aria-hidden={!expanded}
         data-testid="desmos-calculator-shell"
       >

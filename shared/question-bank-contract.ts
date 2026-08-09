@@ -104,8 +104,8 @@ export function normalizeItemType(value: unknown): CanonicalItemType | null {
 export const CANONICAL_DOMAINS: readonly string[] = [
   "Algebra",
   "Advanced Math",
-  "Problem Solving & Data Analysis",
-  "Geometry & Trigonometry",
+  "Problem Solving and Data Analysis",
+  "Geometry and Trigonometry",
   "Craft and Structure",
   "Information and Ideas",
   "Standard English Conventions",

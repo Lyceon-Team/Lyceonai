@@ -479,12 +479,13 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  -- Practice events: canonical table practice_session_items (Doc 02B §8 / seam §2; NOT the
-  -- fossil practice_attempts_v0 — A3/SP-22). Mastery-bearing = answered items only; pending/
-  -- served/skipped are not mastery events (their seam columns are unpopulated by design).
+  -- Practice + diagnostic events: canonical table practice_session_items (Doc 02B §8 / seam §2).
+  -- Diagnostic items are stored identically to practice items (Doc 05A §11.4); the session's
+  -- mode column discriminates the event_source_kind for the mastery seam guard.
   SELECT
     pi.id                       AS event_id,
-    'practice_attempt'::text    AS event_source_kind,
+    public.practice_session_mode_to_event_kind(ps.mode)
+                                AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
@@ -494,6 +495,7 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
     pi.occurred_at              AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
+  JOIN public.practice_sessions ps ON ps.id = pi.session_id
   WHERE pi.user_id = p_student_id
     AND pi.status  = 'answered'
     AND pi.question_section = p_section
@@ -504,8 +506,7 @@ CREATE FUNCTION public.canonical_mastery_events(p_student_id uuid, p_entity_type
 
   UNION ALL
 
-  -- Review events: review_error_attempts. Every row is an attempt (fires on correct AND incorrect,
-  -- H7). Seam columns are first-class; used_tutor is telemetry-only (never read here).
+  -- Review events: review_error_attempts (unchanged).
   SELECT
     ra.id, 'review_error_attempt'::text, 'review'::text,
     ra.section, ra.domain, ra.skill, ra.difficulty,
@@ -528,7 +529,8 @@ CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) R
     AS $$
   SELECT
     pi.id                       AS event_id,
-    'practice_attempt'::text    AS event_source_kind,
+    public.practice_session_mode_to_event_kind(ps.mode)
+                                AS event_source_kind,
     'practice'::text            AS source_family,
     pi.question_section         AS section,
     pi.question_domain          AS domain,
@@ -538,6 +540,7 @@ CREATE FUNCTION public.canonical_mastery_events_for_student(p_student_id uuid) R
     pi.occurred_at              AS occurred_at,
     pi.question_id              AS question_id
   FROM public.practice_session_items pi
+  JOIN public.practice_sessions ps ON ps.id = pi.session_id
   WHERE pi.user_id = p_student_id
     AND pi.status  = 'answered'
     AND pi.question_section IN ('M','RW')
@@ -2096,6 +2099,30 @@ $$;
 
 
 --
+-- Name: practice_session_mode_to_event_kind(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.practice_session_mode_to_event_kind(p_mode text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE STRICT
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- Explicit mapping: every recognized mode → its event_source_kind.
+  -- flow/structured/balanced/timed are practice modes (Doc-02B §14).
+  -- diagnostic is the 40-question initial diagnostic (Doc-05A §11).
+  CASE p_mode
+    WHEN 'flow'       THEN RETURN 'practice_attempt';
+    WHEN 'structured' THEN RETURN 'practice_attempt';
+    WHEN 'balanced'   THEN RETURN 'practice_attempt';
+    WHEN 'timed'      THEN RETURN 'practice_attempt';
+    WHEN 'diagnostic' THEN RETURN 'diagnostic_attempt';
+    ELSE RAISE EXCEPTION 'MASTERY_UNRECOGNIZED_SESSION_MODE: practice_sessions.mode=''%'' has no event_source_kind mapping — add it to practice_session_mode_to_event_kind()', p_mode;
+  END CASE;
+END;
+$$;
+
+
+--
 -- Name: prevent_update_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3002,6 +3029,66 @@ CREATE FUNCTION public.round_to_step(p_value numeric, p_step integer) RETURNS in
     LANGUAGE sql IMMUTABLE
     AS $$
   SELECT (ROUND(p_value / p_step) * p_step)::integer;
+$$;
+
+
+--
+-- Name: select_diagnostic_pool(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.select_diagnostic_pool(p_per_domain integer DEFAULT 5, p_exclude_ids text[] DEFAULT NULL::text[]) RETURNS TABLE(id text, section text, stem text, options jsonb, difficulty integer, correct_answer text, explanation text, domain text, skill_codes text[], source_type integer, item_type text, correct_variants text[], passage text, assets jsonb, option_metadata jsonb, estimated_time_seconds integer)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  -- Step 1: define the 8 canonical domains (byte-identical to Doc 05 Parent §10.2 /
+  -- projection evidence gate / mastery_constants domain strings).
+  WITH canonical_domains(cd_section, cd_domain) AS (
+    VALUES
+      ('M',  'Algebra'),
+      ('M',  'Advanced Math'),
+      ('M',  'Problem Solving and Data Analysis'),
+      ('M',  'Geometry and Trigonometry'),
+      ('RW', 'Information and Ideas'),
+      ('RW', 'Craft and Structure'),
+      ('RW', 'Expression of Ideas'),
+      ('RW', 'Standard English Conventions')
+  ),
+  -- Step 2: rank questions within each (domain, difficulty) group randomly.
+  per_difficulty AS (
+    SELECT
+      q.id, q.section, q.stem, q.options, q.difficulty, q.correct_answer,
+      q.explanation, q.domain, q.skill_codes, q.source_type, q.item_type,
+      q.correct_variants, q.passage, q.assets, q.option_metadata,
+      q.estimated_time_seconds,
+      ROW_NUMBER() OVER (
+        PARTITION BY q.domain, q.difficulty
+        ORDER BY random()
+      ) AS diff_rank
+    FROM public.servable_questions q
+    JOIN canonical_domains cd ON q.domain = cd.cd_domain AND q.section = cd.cd_section
+    WHERE (p_exclude_ids IS NULL OR q.id != ALL(p_exclude_ids))
+  ),
+  -- Step 3: interleave across difficulties within each domain.
+  -- ORDER BY diff_rank (round), then difficulty (1→2→3 within each round).
+  -- For 5 picks: round 1 gets easy/medium/hard, round 2 gets easy/medium = 5 total.
+  interleaved AS (
+    SELECT
+      pd.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY pd.domain
+        ORDER BY pd.diff_rank, pd.difficulty
+      ) AS domain_rank
+    FROM per_difficulty pd
+  )
+  -- Step 4: take top p_per_domain per domain, ordered by section then domain.
+  SELECT
+    il.id, il.section, il.stem, il.options, il.difficulty, il.correct_answer,
+    il.explanation, il.domain, il.skill_codes, il.source_type, il.item_type,
+    il.correct_variants, il.passage, il.assets, il.option_metadata,
+    il.estimated_time_seconds
+  FROM interleaved il
+  WHERE il.domain_rank <= p_per_domain
+  ORDER BY il.section, il.domain, il.domain_rank;
 $$;
 
 
@@ -4029,7 +4116,7 @@ CREATE TABLE public.practice_sessions (
     last_activity_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
     actor_id uuid NOT NULL,
-    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text]))),
+    CONSTRAINT practice_sessions_mode_check CHECK ((mode = ANY (ARRAY['flow'::text, 'structured'::text, 'balanced'::text, 'timed'::text, 'diagnostic'::text]))),
     CONSTRAINT practice_sessions_platform_check CHECK ((platform = ANY (ARRAY['web'::text, 'mobile'::text]))),
     CONSTRAINT practice_sessions_status_check CHECK ((status = ANY (ARRAY['created'::text, 'active'::text, 'completed'::text, 'abandoned'::text]))),
     CONSTRAINT practice_sessions_target_count_check CHECK ((target_count > 0))
@@ -7468,6 +7555,14 @@ GRANT ALL ON FUNCTION public.notify_config_change() TO service_role;
 
 
 --
+-- Name: FUNCTION practice_session_mode_to_event_kind(p_mode text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.practice_session_mode_to_event_kind(p_mode text) TO service_role;
+
+
+--
 -- Name: FUNCTION prevent_update_delete(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -7847,6 +7942,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 REVOKE ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.round_to_step(p_value numeric, p_step integer) TO service_role;
+
+
+--
+-- Name: FUNCTION select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.select_diagnostic_pool(p_per_domain integer, p_exclude_ids text[]) TO service_role;
 
 
 --
