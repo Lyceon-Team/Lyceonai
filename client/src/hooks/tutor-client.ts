@@ -19,13 +19,10 @@
  * persisted student + tutor turn is refetched from the server rather than
  * spliced in locally.
  *
- * known contract note: the request field below is named `idempotency_key`
- * per this hook's assigned contract; the current locked Doc 03B §6.3 text
- * names the equivalent field `client_turn_id`. Whichever server route lands
- * for POST /api/tutor/messages must be checked against this before wiring
- * end-to-end, since the LISA runtime router was demolished (WS-L3 Phase B1)
- * and is being rebuilt — see server/index.ts's still-registered but
- * currently-missing `./routes/tutor-runtime` import.
+ * wire contract note: the append-turn idempotency field is named
+ * `client_turn_id` on the wire (Doc 03B §6.3, matching the live
+ * `appendTurnSchema` in server/routes/tutor-runtime.ts) — NOT
+ * `idempotency_key`. Verified directly against that route file.
  */
 
 import {
@@ -67,6 +64,7 @@ export type CreateConversationInput = {
   source_session_id?: string | null;
   source_session_item_id?: string | null;
   source_question_row_id?: string | null;
+  source_question_canonical_id?: string | null;
 };
 
 export type TutorConversation = {
@@ -84,7 +82,7 @@ export type TutorConversation = {
 export type SendMessageInput = {
   conversation_id: string;
   message: string;
-  idempotency_key: string;
+  client_turn_id: string;
 };
 
 export type TutorSuggestedActionType =

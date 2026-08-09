@@ -94,7 +94,7 @@ export default function ChatPage() {
       await sendMessage.mutateAsync({
         conversation_id: conversationId,
         message: trimmed,
-        idempotency_key: crypto.randomUUID(),
+        client_turn_id: crypto.randomUUID(),
       });
       setDraft("");
     } catch (err) {
