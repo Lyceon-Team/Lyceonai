@@ -661,9 +661,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       logger.error(
         "TUTOR_RUNTIME",
         "idempotency_lookup_failed",
-        "tutor_messages idempotency lookup failed",
+        "tutor_messages idempotency lookup failed; failing closed",
         { message: existingTurnError.message, code: existingTurnError.code },
       );
+      sendTutorError(res, "idempotency_lookup_failed");
+      return;
     }
 
     if (existingTurn && existingTurn.length > 0) {
@@ -680,13 +682,32 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
 
       if (existingStudentMsg && existingTutorMsg) {
+        // AUDIT-003: Apply anti-leak scan to idempotency replay — the
+        // submission state may have changed since the original turn.
+        // Same defense-in-depth as the GET replay endpoint (§16 Layer 4).
+        const replayPreSubmit = await isPreSubmitForSurface(
+          conversation.source_surface,
+          conversation.source_session_item_id,
+          supabaseServer,
+        );
+        const replayCorrectAnswer = replayPreSubmit
+          ? await getCorrectAnswerForScope(conversation.source_question_row_id)
+          : null;
+        const cleanedReplay = removeInternalMetadataMentions(
+          existingTutorMsg.message,
+        );
+        const safeReplayContent =
+          replayPreSubmit && hasAnswerLeak(cleanedReplay, replayCorrectAnswer)
+            ? TUTOR_ANTI_LEAK_SUBSTITUTION
+            : cleanedReplay;
+
         res.status(200).json({
           data: {
             conversation_id: conversation.id,
             message_id: existingTutorMsg.id,
             client_turn_id: input.client_turn_id,
             response: {
-              content: existingTutorMsg.message,
+              content: safeReplayContent,
               content_kind: "message",
               suggested_action: { type: "none", label: null },
               ui_hints: {
