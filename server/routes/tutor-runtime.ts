@@ -268,6 +268,63 @@ async function denyIfNotEntitled(
   return false;
 }
 
+type ReplayMessageRow = {
+  id: string;
+  role: "student" | "tutor" | "system";
+  content_kind: string;
+  message: string;
+  source_session_item_id: string | null;
+  created_at: string;
+};
+
+/**
+ * @spec [Doc-03B_V2 §7.3-7.4] loads a page of tutor_messages for replay,
+ * oldest-first, applying the optional `before_message_id` cursor (§7.3).
+ * Returns null on a DB error so the caller can send `canonical_write_failed`.
+ * Kept out-of-line so the replay route handler stays short between the
+ * route path literal and the anti-leak re-scan — see WS-2 CI gate note in
+ * the module header.
+ */
+async function loadMessagesForReplay(
+  conversationId: string,
+  messageLimit: number,
+  beforeMessageId: string | undefined,
+): Promise<ReplayMessageRow[] | null> {
+  let query = supabaseServer
+    .from("tutor_messages")
+    .select(
+      "id, role, content_kind, message, source_session_item_id, created_at",
+    )
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(messageLimit);
+
+  if (beforeMessageId) {
+    const { data: cursorRow } = await supabaseServer
+      .from("tutor_messages")
+      .select("created_at")
+      .eq("id", beforeMessageId)
+      .maybeSingle();
+    if (cursorRow) {
+      query = query.lt("created_at", cursorRow.created_at as string);
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "replay_messages_failed",
+      "Failed to load tutor_messages for replay",
+      { message: error.message, code: error.code },
+      { conversationId },
+    );
+    return null;
+  }
+
+  return ((data ?? []) as ReplayMessageRow[]).slice().reverse();
+}
+
 /**
  * @spec [Doc-03B_V2 §3.3] ownership check — loads a tutor_conversations row
  * scoped to the authenticated student. Returns null (and does not respond)
@@ -1057,10 +1114,8 @@ router.get(
       return;
     }
     const studentId = req.user.id;
-
     if (await denyIfNotEntitled(studentId, res)) return;
 
-    const conversationId = req.params.conversationId;
     const parsedQuery = fetchConversationQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {
       sendTutorError(res, "invalid_input", parsedQuery.error.flatten());
@@ -1070,7 +1125,7 @@ router.get(
 
     try {
       const conversation = await loadOwnedConversation(
-        conversationId,
+        req.params.conversationId,
         studentId,
       );
       if (!conversation) {
@@ -1078,58 +1133,23 @@ router.get(
         return;
       }
 
-      let messagesQuery = supabaseServer
-        .from("tutor_messages")
-        .select("id, role, content_kind, message, source_session_item_id, created_at")
-        .eq("conversation_id", conversation.id)
-        .order("created_at", { ascending: false })
-        .limit(messageLimit);
-
-      if (parsedQuery.data.before_message_id) {
-        const { data: cursorRow } = await supabaseServer
-          .from("tutor_messages")
-          .select("created_at")
-          .eq("id", parsedQuery.data.before_message_id)
-          .maybeSingle();
-        if (cursorRow) {
-          messagesQuery = messagesQuery.lt(
-            "created_at",
-            cursorRow.created_at as string,
-          );
-        }
-      }
-
-      const { data: messageRows, error: messagesError } = await messagesQuery;
-
-      if (messagesError) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "replay_messages_failed",
-          "Failed to load tutor_messages for replay",
-          { message: messagesError.message, code: messagesError.code },
-        );
+      const ordered = await loadMessagesForReplay(
+        conversation.id,
+        messageLimit,
+        parsedQuery.data.before_message_id,
+      );
+      if (ordered === null) {
         sendTutorError(res, "canonical_write_failed");
         return;
       }
 
-      const ordered = (messageRows ?? []).slice().reverse() as Array<{
-        id: string;
-        role: "student" | "tutor" | "system";
-        content_kind: string;
-        message: string;
-        source_session_item_id: string | null;
-        created_at: string;
-      }>;
-
-      // Defense-in-depth: re-apply the anti-leak scan on read, in case the
-      // per-item submission state has changed since write time (e.g., a
-      // student submits the underlying practice item in a separate tab
-      // after LISA already replied). Tutor-authored messages only —
-      // student messages are never subject to answer-leak substitution.
+      // Defense-in-depth (§16 Layer 4 mirror): re-apply the anti-leak scan on
+      // read — the per-item submission state may have changed since write
+      // time. Tutor-authored messages only; student turns pass through.
       let correctAnswerForReplay: string | null = null;
       let correctAnswerResolved = false;
-
       const safeMessages = [];
+
       for (const row of ordered) {
         if (row.role !== "tutor") {
           safeMessages.push({
@@ -1147,14 +1167,12 @@ router.get(
           row.source_session_item_id ?? conversation.source_session_item_id,
           supabaseServer,
         );
-
         if (!correctAnswerResolved) {
           correctAnswerForReplay = await getCorrectAnswerForScope(
             conversation.source_question_row_id,
           );
           correctAnswerResolved = true;
         }
-
         const safeContent =
           preSubmit && hasAnswerLeak(row.message, correctAnswerForReplay)
             ? TUTOR_ANTI_LEAK_SUBSTITUTION
@@ -1189,13 +1207,9 @@ router.get(
           },
           messages: safeMessages,
           pagination: {
-            has_more: (messageRows ?? []).length === messageLimit,
+            has_more: ordered.length === messageLimit,
             next_cursor:
-              (messageRows ?? []).length > 0
-                ? (messageRows as Array<{ id: string }>)[
-                    (messageRows as Array<{ id: string }>).length - 1
-                  ].id
-                : null,
+              ordered.length > 0 ? ordered[ordered.length - 1].id : null,
           },
         },
       });
