@@ -283,23 +283,27 @@ function getGoogleAuth(): GoogleAuth {
 
 /**
  * Builds the inline `modelArmorConfig` for prompt (input) scanning. Fails
- * closed (Result error) when the template ID env var is unset — the caller
+ * closed (Result error) when the template ID is empty — the caller
  * must not proceed to Vertex unarmored.
+ *
+ * @param requestTemplateId Template ID from the orchestrate request (BFF
+ *   reads it from tutor_context_runtime_config and passes it on the wire —
+ *   Karl ruling: worker stays stateless, config stays in DB, ADR-001).
+ *   Falls back to the env var for callers that don't pass one (e.g. compact).
  *
  * @spec [Doc-03B_V4.1 §12B.8, Doc-03C_V3 §5]
  */
-function buildInputModelArmorConfig(): Result<
-  ModelArmorConfig,
-  VertexErrorCode
-> {
+function buildInputModelArmorConfig(
+  requestTemplateId?: string | null,
+): Result<ModelArmorConfig, VertexErrorCode> {
   const rawTemplateId = (
-    process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID ?? ""
+    requestTemplateId ?? process.env.MODEL_ARMOR_INPUT_TEMPLATE_ID ?? ""
   ).trim();
   if (!rawTemplateId) {
     return {
       ok: false,
       errorCode: "vertex_model_armor_unconfigured",
-      details: { reason: "MODEL_ARMOR_INPUT_TEMPLATE_ID is not set" },
+      details: { reason: "Model Armor input template ID is not configured" },
     };
   }
   const promptTemplateName = resolveModelArmorTemplateName(
@@ -632,11 +636,25 @@ async function invokeWithRetry(
 // ── Public entry point: fallback + retry + Model Armor output scan ───────
 
 /**
+ * Model Armor template IDs passed from the BFF on the orchestrate wire
+ * request (Karl ruling: worker stays stateless, config stays in DB, no
+ * redeploy to change a threshold — ADR-001). Optional so callers that
+ * don't carry them (e.g. compact) fall back to env vars.
+ */
+export type ModelArmorTemplateIds = {
+  inputTemplateId: string | null;
+  outputTemplateId: string | null;
+};
+
+/**
  * Generates a tutor turn response from Vertex AI. Applies Model Armor input
  * scanning inline, retries transient failures per §5.8, falls back
  * pro_class → flash_class per §5.3.2 on fallback-eligible errors, and runs
  * the model's raw text through the standalone Model Armor Sanitize API for
  * output scanning before returning.
+ *
+ * @param modelArmorIds Template IDs from the BFF request; falls back to env
+ *   vars when omitted (e.g. compact route). See `buildInputModelArmorConfig`.
  *
  * @spec [Doc-03C_V3 §5.2, §5.3, §5.7, §5.8; Doc-03B_V4.1 §12B.8]
  */
@@ -645,8 +663,11 @@ export async function generateTutorResponse(
   messages: VertexMessage[],
   systemInstruction: string,
   config: VertexGenerationLimits,
+  modelArmorIds?: ModelArmorTemplateIds,
 ): Promise<Result<VertexResponse, VertexErrorCode>> {
-  const armorInputConfig = buildInputModelArmorConfig();
+  const armorInputConfig = buildInputModelArmorConfig(
+    modelArmorIds?.inputTemplateId,
+  );
   if (!armorInputConfig.ok) {
     logEvent(
       "error",
@@ -700,7 +721,9 @@ export async function generateTutorResponse(
   }
 
   const outputTemplateId = (
-    process.env.MODEL_ARMOR_OUTPUT_TEMPLATE_ID ?? ""
+    modelArmorIds?.outputTemplateId ??
+    process.env.MODEL_ARMOR_OUTPUT_TEMPLATE_ID ??
+    ""
   ).trim();
   const sanitized = await sanitizeOutput(generation.text, outputTemplateId);
   if (!sanitized.ok) {

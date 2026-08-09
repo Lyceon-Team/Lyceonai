@@ -212,6 +212,14 @@ export const orchestrateRequestSchema = z.object({
     max_output_tokens: z.number().int().positive(),
     timeout_ms: z.number().int().positive(),
   }),
+  // ── Anti-leak fields (LISA-FULL-001): BFF resolves these; worker scans ──
+  // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
+  correct_answer: z.string().nullable(),
+  is_pre_submit: z.boolean(),
+  // ── Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless) ──
+  // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
+  model_armor_input_template_id: z.string().nullable(),
+  model_armor_output_template_id: z.string().nullable(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────

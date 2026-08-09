@@ -21,16 +21,15 @@
  * state has since changed (e.g., a race) is never served with a leak on read either.
  *
  * trade-offs / edge cases:
- *  - The actual Vertex/Cloud Run orchestrator call (Doc 03C) is not yet wired; this file
- *    documents the calling contract via `invokeOrchestration` and fails with the
- *    spec-mandated `orchestration_failed_recoverable` (503) so the client can retry with
- *    the same `client_turn_id` per §6.8 — same pattern as tutor-crisis.ts's classifier stub.
+ *  - Orchestration is wired to the real worker via `orchestrateTurn()` from
+ *    server/lib/tutor-orchestrator-client.ts (LISA-FULL-001 item 1). The anti-leak
+ *    chokepoint lives inside that call — worker-side scan + BFF-side scanAndSubstitute.
+ *    The route-layer scan in step 15 is defense-in-depth only.
  *  - Per-request rate limiting beyond `ragLimiter` (daily/weekly/monthly quotas, Doc 03
  *    Main §13) is a separate quota service not yet built; deferred, noted at step 7.
- *  - `isPreSubmitForSurface` is intentionally redefined locally (not just imported) — the
- *    WS-2 CI gate (tests/ci/ws2-antileak.ci.test.ts) structurally requires the literal
- *    declaration in THIS file. To avoid forking a second implementation, the local
- *    function delegates to the single canonical algorithm in tutor-antileak.ts.
+ *  - `isPreSubmitForSurface` and `TUTOR_ANTI_LEAK_SUBSTITUTION` are imported from their
+ *    canonical source in tutor-antileak.ts — no local declarations (the WS-2 CI gate was
+ *    rewritten to behavior assertions per LISA-FULL-001 item 6).
  */
 
 import { Router, type Request, type Response } from "express";
@@ -43,10 +42,13 @@ import { EntitlementService } from "../services/entitlement-service";
 // from tutor-antileak.ts for backward compatibility — see that file's
 // "Re-export for backward compatibility" section).
 import { hasAnswerLeak, resolveFullEnvelope } from "../services/tutor-context";
-// isPreSubmitForSurface's canonical algorithm — imported under an alias and
-// delegated to by a local wrapper of the same name below (see module header:
-// the WS-2 CI gate requires a literal declaration in THIS file).
-import { isPreSubmitForSurface as canonicalIsPreSubmitForSurface } from "../services/tutor-antileak";
+// Canonical anti-leak exports used directly (no local wrappers — the WS-2 CI
+// gate was rewritten to behavior assertions per LISA-FULL-001 item 6).
+import {
+  isPreSubmitForSurface,
+  TUTOR_ANTI_LEAK_SUBSTITUTION,
+} from "../services/tutor-antileak";
+import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
 import {
@@ -67,19 +69,13 @@ import {
   logTurnMetrics,
 } from "../services/tutor-policy-logger";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
-import type { OrchestrateResponse } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 
 const router = Router();
 
-// ── Shared anti-leak substitution constant ─────────────────────────────
-// @spec [Doc-03_V3 §17.5, INV-03-04, INV-03-13] Defined exactly once here so
-// both block paths (append-turn + replay) in THIS file reference one literal.
-// Value matches tutor-antileak.ts's constant of the same name exactly —
-// hardcoded (not imported) because the WS-2 CI structural gate requires this
-// exact declaration to live inside THIS file. Keep the two values in sync if
-// either ever changes.
-const TUTOR_ANTI_LEAK_SUBSTITUTION =
-  "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
+// TUTOR_ANTI_LEAK_SUBSTITUTION is now imported from ../services/tutor-antileak
+// (canonical single source of truth). The former local copy was removed per
+// LISA-FULL-001 item 6 — the WS-2 CI gate was rewritten from structural
+// assertions to behavior assertions, so no local declaration is required.
 
 // ── Local surfaces enum (reused from the canonical wire schema — single
 // source of truth for the entry_mode / source_surface literal unions) ──────
@@ -163,21 +159,11 @@ type TutorConversationRow = {
   closed_at: string | null;
 };
 
-// ── isPreSubmitForSurface — local declaration required by the WS-2 CI
-// structural gate (tests/ci/ws2-antileak.ci.test.ts). Delegates to the single
-// canonical algorithm owned by tutor-antileak.ts to avoid a forked second
-// implementation. Fail-closed surface handling: only when
-// surface === "practice" is a live per-item DB check required; every other
-// recognized surface (review, test_review, dashboard) is always post-submit,
-// and any unrecognized surface fails closed to pre-submit.
-// @spec [INV-03-06, Doc-03_V3 §17]
-async function isPreSubmitForSurface(
-  surface: string,
-  sessionItemId: string | null,
-  _supabase: unknown,
-): Promise<boolean> {
-  return canonicalIsPreSubmitForSurface(surface, sessionItemId, _supabase);
-}
+// isPreSubmitForSurface is now imported directly from ../services/tutor-antileak
+// (canonical algorithm, single source of truth). The former local wrapper was
+// removed per LISA-FULL-001 item 6 — the WS-2 CI gate was rewritten from
+// structural assertions to behavior assertions, so no local declaration is
+// required.
 
 // ── removeInternalMetadataMentions ─────────────────────────────────────
 /**
@@ -220,35 +206,11 @@ export function removeInternalMetadataMentions(text: string): string {
     .trim();
 }
 
-// ── Orchestration invocation stub ───────────────────────────────────────
-/**
- * @spec [Doc-03C_V3 GCP Orchestration, Doc-03B_V2 §6.5 step 14]
- * plain English: invokes the Vertex/Cloud Run tutor orchestrator worker with
- * the fully-resolved context envelope. NOT YET WIRED — the orchestration
- * transport (Doc 03C) is a separate workstream. This stub documents the
- * exact calling contract (OrchestrateRequest in, OrchestrateResponse out)
- * so the append-turn handler compiles and fails in the spec-mandated way
- * (`orchestration_failed_recoverable`, 503, §6.7) rather than silently
- * fabricating a tutor response.
- * trade-offs: mirrors tutor-crisis.ts's `invokeClassifier` stub pattern —
- * throwing here is intentional so the caller's catch maps to the correct
- * recoverable-failure response instead of masking the missing wiring.
- * `boundaryMarkedInput` is the current turn's sanitized text wrapped per
- * Doc 03A §12.3 (student_input boundary markers) — the real orchestrator
- * call folds this into the model prompt alongside the envelope's
- * `recent_messages`; captured here as a parameter so the calling contract
- * is unambiguous once Doc 03C wiring lands.
- */
-async function invokeOrchestration(
-  envelope: z.infer<typeof orchestrateRequestSchema>,
-  boundaryMarkedInput: string,
-): Promise<OrchestrateResponse> {
-  void envelope;
-  void boundaryMarkedInput;
-  throw new Error(
-    "invokeOrchestration not yet wired to the Doc 03C Vertex/Cloud Run orchestrator",
-  );
-}
+// invokeOrchestration stub DELETED — replaced by the real orchestrateTurn()
+// call from server/lib/tutor-orchestrator-client.ts (LISA-FULL-001 item 1).
+// orchestrateTurn() posts to the worker, scans the response through
+// scanAndSubstitute (the anti-leak chokepoint), and returns a TutorResult
+// that never throws.
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -642,6 +604,22 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   // Step 2: Check entitlement (per-boundary, INV-03-18).
   if (await denyIfNotEntitled(studentId, res)) return;
 
+  // Step 3: Age gate (INV-03-07, Doc-03B_V4.1 §3.2).
+  // Enforced by the `requireStudentOnly` middleware mounted at /api/tutor
+  // (server/index.ts). That middleware checks `role === "student"` AND
+  // `is_under_13 !== false` (fail-closed). No additional check needed here —
+  // any request reaching this handler has already passed the age gate.
+
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4).
+  // LISA must be unavailable while the student has an active full-length exam
+  // session. Fail CLOSED — a failing live-exam check blocks tutor access.
+  const liveExamInProgress =
+    await EntitlementService.isLiveExamInProgress(studentId);
+  if (liveExamInProgress) {
+    sendTutorError(res, "tutor_unavailable_during_live_exam");
+    return;
+  }
+
   // Step 6: Validate request payload (§6.4). Run before ownership so a
   // malformed body never triggers a DB lookup.
   const parsed = appendTurnSchema.safeParse(req.body);
@@ -752,6 +730,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Step 10: Input sanitization — length bound, escaping, injection scan.
     const { sanitized } = sanitizeInput(input.message);
     const wrapped = wrapWithBoundaryMarkers(sanitized, "student_input");
+    // `wrapped` was previously passed to the now-deleted invokeOrchestration stub.
+    // The real worker prompt assembly (Doc 03A §12.3 student_input boundary
+    // markers) will consume this once the full prompt template system is wired.
+    // Retained so the injection-defense pipeline stays intact.
+    void wrapped;
     const patternScan = scanForInjectionPatterns(sanitized);
     const signatureScan = await checkSignatureTable(sanitized);
     const injectionDetected = patternScan.detected || signatureScan.matched;
@@ -887,7 +870,21 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
 
-    // Step 13: Build context envelope (Doc 03A §5.4).
+    // Step 13: Resolve pre-submit state and correct answer BEFORE building the
+    // envelope — these flow into both the wire request (worker-side scan) and
+    // the BFF-side defense-in-depth scan (step 15).
+    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15]
+    const preSubmit = await isPreSubmitForSurface(
+      conversation.source_surface,
+      effectiveScope.source_session_item_id,
+      supabaseServer,
+    );
+    const correctAnswer = preSubmit
+      ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
+      : null;
+
+    // Build context envelope (Doc 03A §5.4). Anti-leak fields and Model Armor
+    // template IDs are resolved here so the worker receives them on the wire.
     const recentMessages = await getRecentMessages(conversation.id);
     const envelope = await resolveFullEnvelope({
       conversationId: conversation.id,
@@ -899,6 +896,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sourceQuestionRowId: effectiveScope.source_question_row_id,
       recentMessages,
       runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
+      correctAnswer,
+      isPreSubmit: preSubmit,
     });
 
     await logContextResolution({
@@ -917,51 +916,44 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           : "general",
     });
 
-    // Step 14: Invoke orchestration (Doc 03C — crisis classifier already
-    // ran above per INV-03-16; this is the model call + structured parse).
+    // Step 14: Invoke orchestration via the real worker boundary
+    // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
+    // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
+    // and returns a TutorResult — never throws.
     const turnStartedAt = Date.now();
-    let orchestration: OrchestrateResponse;
-    try {
-      orchestration = await invokeOrchestration(envelope, wrapped);
-    } catch (orchestrationErr) {
+    const orchestrationResult = await orchestrateTurn(
+      envelope,
+      preSubmit,
+      correctAnswer,
+    );
+
+    if (!orchestrationResult.ok) {
       logger.error(
         "TUTOR_RUNTIME",
         "orchestration_failed",
-        "Tutor orchestration call failed; turn is recoverable via retry",
-        orchestrationErr instanceof Error ? orchestrationErr : undefined,
-        { conversationId: conversation.id },
+        "orchestrateTurn returned failure; turn is recoverable via retry",
+        {
+          errorCode: orchestrationResult.errorCode,
+          conversationId: conversation.id,
+        },
       );
-      sendTutorError(res, "orchestration_failed_recoverable", {
+      sendTutorError(res, orchestrationResult.errorCode, {
         retry_after_ms: 2000,
         failure_layer: "orchestrator",
       });
       return;
     }
 
+    const orchestration = orchestrationResult.value;
     const tutorResponse = orchestration.response.content;
 
-    // Step 15: Run anti-leak output scan on the orchestrator response
-    // (Doc 03 Main §18 Layer 4). This is the single anti-leak chokepoint
-    // for the append-turn path — see the module header for why
-    // `isPreSubmitForSurface` is redefined locally.
+    // Step 15: Defense-in-depth anti-leak scan (belt-and-suspenders).
+    // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
+    // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
+    // scan catches anything that slipped through both earlier layers —
+    // metadata mentions first, then answer-leak detection.
+    // @spec [Doc-03_V3 §16.4-5, INV-03-13]
     const cleaned = removeInternalMetadataMentions(tutorResponse);
-
-    // Fail-closed surface handling: only when surface === "practice" do we
-    // still need a live per-item status check before revealing content.
-    const preSubmit = await isPreSubmitForSurface(
-      conversation.source_surface,
-      effectiveScope.source_session_item_id,
-      supabaseServer,
-    );
-
-    const correctAnswer = preSubmit
-      ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
-      : null;
-
-    // @spec [Doc-03_V3 §16.4-5, INV-03-13] Silent substitution — never a
-    // blocking error response. A leaked pre-submit answer is substituted
-    // with the shared pedagogical fallback; post-submit content passes
-    // through unmodified.
     const safeContent =
       preSubmit && hasAnswerLeak(cleaned, correctAnswer)
         ? TUTOR_ANTI_LEAK_SUBSTITUTION

@@ -181,20 +181,166 @@ function isCompactionRecommended(request: OrchestrateRequest): boolean {
   return request.recent_messages.length >= 20;
 }
 
+// ── Worker-side anti-leak scan (LISA-FULL-001) ──────────────────────────
+// @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
+// The worker cannot import from server/services/tutor-antileak.ts (it
+// drags in supabase-server and breaks the isolated Cloud Run buildpack).
+// This is the same answer-aware hasAnswerLeak logic, inlined for the
+// worker boundary. BFF-side scanAndSubstitute is kept as defense-in-depth.
+
+/** Generic phrase patterns for null-correctAnswer fallback. */
+const GENERIC_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
+  /the\s+correct\s+answer\s+is\s+[A-Da-d]/i,
+  /the\s+right\s+answer\s+is\s+[A-Da-d]/i,
+  /choose\s+option\s+[A-Da-d]/i,
+  /(?:^|:\s*)Answer:\s*[A-Da-d]/im,
+];
+
+/** Structural prefixes excluded from grid-in matching. */
+const STRUCTURAL_PREFIXES =
+  /(?:step|question|part|item|number|#|no\.?|problem)\s*/i;
+
+function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
+  const l = letter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [
+    new RegExp(`the\\s+correct\\s+answer\\s+is\\s+${l}\\b`, "i"),
+    new RegExp(`the\\s+right\\s+answer\\s+is\\s+${l}\\b`, "i"),
+    new RegExp(`the\\s+answer\\s+is\\s+${l}\\b`, "i"),
+    new RegExp(`(?:^|:\\s*)Answer:\\s*${l}\\b`, "im"),
+    new RegExp(`choose\\s+option\\s+${l}\\b`, "i"),
+    new RegExp(`select\\s+option\\s+${l}\\b`, "i"),
+    new RegExp(`option\\s+${l}\\s+is\\s+correct`, "i"),
+    new RegExp(`option\\s+${l}\\s+is\\s+right`, "i"),
+    new RegExp(`definitely\\s+${l}\\b`, "i"),
+    new RegExp(`it'?s\\s+${l}\\b`, "i"),
+  ];
+}
+
+function fractionToDecimal(value: string): number | null {
+  const fractionMatch = value.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+  if (fractionMatch) {
+    const numerator = Number(fractionMatch[1]);
+    const denominator = Number(fractionMatch[2]);
+    if (denominator === 0) return null;
+    return numerator / denominator;
+  }
+  return null;
+}
+
+function hasGridInValueInText(text: string, value: string): boolean {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, "g");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const beforeMatch = text.slice(Math.max(0, match.index - 20), match.index);
+    if (!STRUCTURAL_PREFIXES.test(beforeMatch.trim())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Answer-aware leak detector — worker-side mirror of the canonical
+ * `hasAnswerLeak` in server/services/tutor-antileak.ts. Kept identical
+ * in logic; update both locations together.
+ * @spec [INV-03-04, Doc-03_V3 §17]
+ */
+export function hasAnswerLeak(
+  text: string,
+  correctAnswer: string | null,
+): boolean {
+  if (!text) return false;
+
+  if (correctAnswer !== null && correctAnswer.length > 0) {
+    const trimmed = correctAnswer.trim();
+
+    if (/^[A-Da-d]$/.test(trimmed)) {
+      const patterns = buildMcqPatterns(trimmed);
+      for (const p of patterns) {
+        if (p.test(text)) return true;
+      }
+      return false;
+    }
+
+    if (hasGridInValueInText(text, trimmed)) return true;
+
+    const asDecimal = fractionToDecimal(trimmed);
+    if (asDecimal !== null) {
+      if (hasGridInValueInText(text, String(asDecimal))) return true;
+    } else {
+      const numericValue = Number(trimmed);
+      if (!isNaN(numericValue)) {
+        const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
+        let frMatch: RegExpExecArray | null;
+        while ((frMatch = fractionPattern.exec(text)) !== null) {
+          const num = Number(frMatch[1]);
+          const den = Number(frMatch[2]);
+          if (den !== 0 && num / den === numericValue) {
+            const before = text.slice(
+              Math.max(0, frMatch.index - 20),
+              frMatch.index,
+            );
+            if (!STRUCTURAL_PREFIXES.test(before.trim())) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  for (const pattern of GENERIC_LEAK_PATTERNS) {
+    if (pattern.test(text)) return true;
+  }
+  return false;
+}
+
+/**
+ * Safe substitution text — mirrored from the canonical constant in
+ * server/services/tutor-antileak.ts. Worker cannot import that module;
+ * keep identical wording across both locations.
+ * @spec [Doc-03_V3 §17.5, INV-03-04]
+ */
+const WORKER_ANTI_LEAK_SUBSTITUTION =
+  "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
+
 /**
  * Maps a successful Vertex generation into the wire-contract OrchestrateResponse
- * shape. `question_links` / `instruction_exposures` are empty (see file header
- * trade-offs — candidate-slot resolution is not implemented in this pass).
+ * shape. Applies worker-side anti-leak scan (LISA-FULL-001) when the request
+ * carries pre-submit state. `question_links` / `instruction_exposures` are empty
+ * (see file header trade-offs — candidate-slot resolution is not implemented in
+ * this pass).
  *
- * @spec [Doc-03C_V3 §7.1]
+ * @spec [Doc-03C_V3 §7.1, INV-03-04]
  */
 export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
 ): OrchestrateResponse {
+  // Worker-side anti-leak scan: if pre-submit and the response leaks the
+  // correct answer, substitute with the safe pedagogical fallback. This is
+  // the first anti-leak layer; BFF-side scanAndSubstitute is defense-in-depth.
+  let content = vertexResponse.text;
+  if (request.is_pre_submit) {
+    const leaked = hasAnswerLeak(content, request.correct_answer);
+    if (leaked) {
+      logEvent(
+        "warn",
+        "orchestrate_route",
+        "worker_antileak_substituted",
+        "Worker-side anti-leak scan detected answer leak in pre-submit response; substituting",
+        {
+          conversationId: request.conversation_id,
+          hasCorrectAnswer: request.correct_answer !== null,
+        },
+      );
+      content = WORKER_ANTI_LEAK_SUBSTITUTION;
+    }
+  }
+
   return {
     response: {
-      content: vertexResponse.text,
+      content,
       content_kind: "message",
       suggested_action: { type: "none", label: null },
       ui_hints: {
@@ -281,6 +427,10 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
+    },
+    {
+      inputTemplateId: request.model_armor_input_template_id,
+      outputTemplateId: request.model_armor_output_template_id,
     },
   );
 
