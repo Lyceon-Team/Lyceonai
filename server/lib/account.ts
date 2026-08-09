@@ -229,20 +229,21 @@ export async function getAllAccountsForUser(
   }));
 }
 
+/**
+ * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181]
+ * Genesis-aligned entitlement row shape. Key: profile_id (= user.id from auth.users),
+ * NOT account_id (dead column that never existed on prod).
+ * stripe_customer_id lives on profiles, NOT entitlements.
+ */
 interface Entitlement {
-  account_id: string;
-  // Legacy in-app storage field (HALT-1 storage drift: genesis uses `tier`, not `plan`).
-  plan: "free" | "paid";
-  // Genesis-aligned status enum (genesis.sql:172). The writer persists Stripe's status
-  // verbatim into this set (STRIPE-001); no legacy 'inactive' (absence of a row = unpaid).
+  profile_id: string;
+  tier: EntitlementTier;
   status: EntitlementStatus;
-  stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  current_period_start: string | null;
   current_period_end: string | null;
-  // STRIPE-001: genesis-aligned authoritative fields persisted verbatim from Stripe by the writer.
-  tier?: EntitlementTier;
-  current_period_start?: string | null;
-  cancel_at_period_end?: boolean;
+  cancel_at_period_end: boolean;
 }
 
 export type PairPremiumSource = "student" | "guardian" | "both" | "none";
@@ -255,7 +256,9 @@ export interface LinkedPairPremiumAccess {
   reason: string;
   studentUserId: string | null;
   guardianUserId: string | null;
+  /** @deprecated diagnostic only — profileId = userId in the new model */
   studentAccountId: string | null;
+  /** @deprecated diagnostic only — profileId = userId in the new model */
   guardianAccountId: string | null;
   studentEntitlementStatus: Entitlement["status"] | "missing";
   guardianEntitlementStatus: Entitlement["status"] | "missing";
@@ -317,51 +320,23 @@ export async function getPracticeDailyFreeQuota(): Promise<number> {
 }
 
 /**
- * Get or create entitlement by account_id
+ * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181] @implemented 2026-08-09
+ * Read entitlement row for a profile. Returns null when no row exists (= free tier).
+ * Queries by profile_id (= auth.users.id). No auto-create — absence of a row
+ * means free tier; the webhook upsert is the only writer.
  */
-export async function getOrCreateEntitlement(
-  accountId: string,
-): Promise<Entitlement> {
-  const { data: existing, error: fetchErr } = await supabaseServer
-    .from("entitlements")
-    .select("*")
-    .eq("account_id", accountId)
-    .single();
-
-  if (existing) {
-    return existing as Entitlement;
-  }
-
-  if (fetchErr && fetchErr.code !== "PGRST116") {
-    throw new Error(`Failed to fetch entitlement: ${fetchErr.message}`);
-  }
-
-  const { data: created, error: createErr } = await supabaseServer
-    .from("entitlements")
-    .insert({ account_id: accountId })
-    .select()
-    .single();
-
-  if (createErr) {
-    throw new Error(`Failed to create entitlement: ${createErr.message}`);
-  }
-
-  return created as Entitlement;
-}
-
-/**
- * Get entitlement by account_id
- */
-export async function getEntitlement(
-  accountId: string,
+export async function getEntitlementForProfile(
+  profileId: string,
 ): Promise<Entitlement | null> {
   const { data, error } = await supabaseServer
     .from("entitlements")
-    .select("*")
-    .eq("account_id", accountId)
-    .single();
+    .select(
+      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+    )
+    .eq("profile_id", profileId)
+    .maybeSingle();
 
-  if (error && error.code !== "PGRST116") {
+  if (error) {
     throw new Error(`Failed to fetch entitlement: ${error.message}`);
   }
 
@@ -369,17 +344,22 @@ export async function getEntitlement(
 }
 
 /**
- * Upsert entitlement by account_id (UNIQUE constraint).
- * WEBHOOK-ONLY: This is the only writer for plan/status/current_period_end/stripe_subscription_id.
+ * @spec [Doc-01_V8 §20–§24; genesis.sql:168–181 | STRIPE-001] @implemented 2026-08-09
+ * plain English: webhook-only upsert keyed on UNIQUE(profile_id). Persists Stripe's
+ * authoritative subscription state verbatim into the genesis entitlements table.
+ * onConflict targets the profile_id_unique constraint (added by migration).
+ * stripe_customer_id is NOT written here — it lives on profiles (genesis:149).
  */
 export async function upsertEntitlement(
-  accountId: string,
-  updates: Partial<Omit<Entitlement, "account_id">>,
+  profileId: string,
+  updates: Partial<Omit<Entitlement, "profile_id">>,
 ): Promise<Entitlement> {
   const { data, error } = await supabaseServer
     .from("entitlements")
-    .upsert({ account_id: accountId, ...updates }, { onConflict: "account_id" })
-    .select()
+    .upsert({ profile_id: profileId, ...updates }, { onConflict: "profile_id" })
+    .select(
+      "profile_id, tier, status, stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, cancel_at_period_end",
+    )
     .single();
 
   if (error) {
@@ -390,47 +370,47 @@ export async function upsertEntitlement(
 }
 
 /**
- * Update entitlement stripe_customer_id only (non-premium metadata).
+ * @spec [Doc-01_V8 §4; genesis.sql:149] @implemented 2026-08-09
+ * plain English: read stripe_customer_id from the profiles table (genesis:149),
+ * NOT from entitlements (which has no such column).
  */
-export async function setEntitlementStripeCustomerId(
-  accountId: string,
-  stripeCustomerId: string,
-): Promise<Entitlement> {
+export async function getProfileStripeCustomerId(
+  profileId: string,
+): Promise<string | null> {
   const { data, error } = await supabaseServer
-    .from("entitlements")
-    .update({ stripe_customer_id: stripeCustomerId })
-    .eq("account_id", accountId)
-    .select()
+    .from("profiles")
+    .select("stripe_customer_id")
+    .eq("id", profileId)
     .single();
 
   if (error) {
     throw new Error(
-      `Failed to update entitlement stripe_customer_id: ${error.message}`,
+      `Failed to read stripe_customer_id from profile: ${error.message}`,
     );
   }
 
-  return data as Entitlement;
+  return data?.stripe_customer_id ?? null;
 }
 
 /**
- * Get entitlement by Stripe customer ID
+ * @spec [Doc-01_V8 §4; genesis.sql:149] @implemented 2026-08-09
+ * plain English: write stripe_customer_id to the profiles table (genesis:149).
+ * Called once during first checkout to persist the Stripe customer for a profile.
  */
-export async function getEntitlementByStripeCustomer(
-  customerId: string,
-): Promise<Entitlement | null> {
-  const { data, error } = await supabaseServer
-    .from("entitlements")
-    .select("*")
-    .eq("stripe_customer_id", customerId)
-    .single();
+export async function setProfileStripeCustomerId(
+  profileId: string,
+  stripeCustomerId: string,
+): Promise<void> {
+  const { error } = await supabaseServer
+    .from("profiles")
+    .update({ stripe_customer_id: stripeCustomerId })
+    .eq("id", profileId);
 
-  if (error && error.code !== "PGRST116") {
+  if (error) {
     throw new Error(
-      `Failed to fetch entitlement by customer: ${error.message}`,
+      `Failed to set stripe_customer_id on profile: ${error.message}`,
     );
   }
-
-  return data as Entitlement | null;
 }
 
 /**
@@ -649,30 +629,28 @@ export async function getLinkedGuardianForStudent(
   };
 }
 
+/**
+ * @spec [Doc-01_V8 §20–§24; SP25-001] @implemented 2026-08-09
+ * plain English: resolve premium access for a student. profile_id = userId (auth.users.id).
+ * No ensureAccountForUser RPC — profile_id IS the user id, entitlement is read directly.
+ * The active/inactive gate is the single canonical evaluator (EntitlementService).
+ * Diagnostic fields (status/expired) are presentation-only metadata, NOT a second gate.
+ */
 export async function resolveLinkedPairPremiumAccessForStudent(
   studentUserId: string,
 ): Promise<LinkedPairPremiumAccess> {
-  const studentAccountId = await ensureAccountForUser(
-    supabaseServer,
-    studentUserId,
-    "student",
-  );
-  const studentEntitlement = studentAccountId
-    ? await getEntitlement(studentAccountId)
-    : null;
+  // profile_id = userId — read entitlement directly, no account indirection
+  const studentEntitlement = await getEntitlementForProfile(studentUserId);
 
   const guardianLink = await getLinkedGuardianForStudent(studentUserId);
   const guardianUserId = guardianLink?.guardian_profile_id ?? null;
-  const guardianAccountId = guardianUserId
-    ? await getAccountIdForUser(guardianUserId)
-    : null;
-  const guardianEntitlement = guardianAccountId
-    ? await getEntitlement(guardianAccountId)
+  const guardianEntitlement = guardianUserId
+    ? await getEntitlementForProfile(guardianUserId)
     : null;
 
   // SP25-001: single evaluator — the active/inactive gate keys on the student's profile id
   // (= studentUserId) and flows through the one canonical RPC. Diagnostic fields below are
-  // presentation-only and read from getEntitlement; they are NOT a second gate.
+  // presentation-only and read from getEntitlementForProfile; they are NOT a second gate.
   const studentActive =
     await EntitlementService.isEntitlementActiveForProfile(studentUserId);
   const hasActiveLink = !!guardianLink;
@@ -690,8 +668,8 @@ export async function resolveLinkedPairPremiumAccessForStudent(
         : "Student account does not have an active premium entitlement.",
     studentUserId,
     guardianUserId,
-    studentAccountId,
-    guardianAccountId,
+    studentAccountId: studentUserId,
+    guardianAccountId: guardianUserId,
     studentEntitlementStatus: studentEntitlement?.status ?? "missing",
     guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
     studentEntitlementExpired: isEntitlementExpired(studentEntitlement),
@@ -699,14 +677,18 @@ export async function resolveLinkedPairPremiumAccessForStudent(
   };
 }
 
+/**
+ * @spec [Doc-01_V8 §20–§24; SP25-001; guardian trust model] @implemented 2026-08-09
+ * plain English: resolve premium access for a guardian. Guardian access derives from the
+ * LINKED STUDENT's entitlement — guardian's own entitlement is diagnostic-only metadata.
+ * profile_id = userId — no ensureAccountForUser / getAccountIdForUser indirection.
+ */
 export async function resolveLinkedPairPremiumAccessForGuardian(
   guardianUserId: string,
   requestedStudentId?: string,
 ): Promise<LinkedPairPremiumAccess> {
-  const guardianAccountId = await getAccountIdForUser(guardianUserId);
-  const guardianEntitlement = guardianAccountId
-    ? await getEntitlement(guardianAccountId)
-    : null;
+  // profile_id = userId — read guardian entitlement directly (diagnostic only)
+  const guardianEntitlement = await getEntitlementForProfile(guardianUserId);
 
   const link = requestedStudentId
     ? await getGuardianLinkForStudent(guardianUserId, requestedStudentId)
@@ -722,7 +704,7 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
       studentUserId: null,
       guardianUserId,
       studentAccountId: null,
-      guardianAccountId,
+      guardianAccountId: guardianUserId,
       studentEntitlementStatus: "missing",
       guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
       studentEntitlementExpired: false,
@@ -730,16 +712,10 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
     };
   }
 
-  const studentAccountId =
-    link.account_id ??
-    (await ensureAccountForUser(
-      supabaseServer,
-      link.student_user_id,
-      "student",
-    ));
-  const studentEntitlement = studentAccountId
-    ? await getEntitlement(studentAccountId)
-    : null;
+  // profile_id = student_user_id — read entitlement directly
+  const studentEntitlement = await getEntitlementForProfile(
+    link.student_user_id,
+  );
 
   // SP25-001: single evaluator — the guardian's access derives from the LINKED student's
   // entitlement, evaluated on the student's profile id via the one canonical RPC. Guardian model:
@@ -759,8 +735,8 @@ export async function resolveLinkedPairPremiumAccessForGuardian(
       : "Linked student account does not have an active premium entitlement.",
     studentUserId: link.student_user_id,
     guardianUserId,
-    studentAccountId,
-    guardianAccountId,
+    studentAccountId: link.student_user_id,
+    guardianAccountId: guardianUserId,
     studentEntitlementStatus: studentEntitlement?.status ?? "missing",
     guardianEntitlementStatus: guardianEntitlement?.status ?? "missing",
     studentEntitlementExpired: isEntitlementExpired(studentEntitlement),

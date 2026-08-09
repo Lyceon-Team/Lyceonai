@@ -1,5 +1,5 @@
 import {
-  getEntitlement,
+  getEntitlementForProfile,
   resolveLinkedPairPremiumAccessForStudent,
   type EntitlementStatus,
 } from "../lib/account";
@@ -25,6 +25,11 @@ function baseFree(reason: string): KpiEntitlementAccess {
   };
 }
 
+/**
+ * @spec [Doc-01_V8 §20–§24] @implemented 2026-08-09
+ * plain English: resolve paid KPI access for a student. profile_id = studentUserId.
+ * Reads entitlement directly by profile_id — no account indirection.
+ */
 export async function resolvePaidKpiAccessForStudent(
   studentUserId: string,
 ): Promise<KpiEntitlementAccess> {
@@ -34,26 +39,28 @@ export async function resolvePaidKpiAccessForStudent(
 
     let status: KpiEntitlementAccess["status"] = "inactive";
     let currentPeriodEnd: string | null = null;
-    const sourceAccountId = access.studentAccountId;
 
-    if (sourceAccountId) {
-      const sourceEntitlement = await getEntitlement(sourceAccountId);
-      if (sourceEntitlement) {
-        status = sourceEntitlement.status;
-        currentPeriodEnd = sourceEntitlement.current_period_end;
-      }
+    // profile_id = studentUserId — read entitlement directly
+    const sourceEntitlement = await getEntitlementForProfile(studentUserId);
+    if (sourceEntitlement) {
+      status = sourceEntitlement.status;
+      currentPeriodEnd = sourceEntitlement.current_period_end;
     }
 
     return {
       hasPaidAccess: access.hasPremiumAccess,
-      accountId: sourceAccountId,
+      accountId: studentUserId,
       plan: access.hasPremiumAccess ? "paid" : "free",
       status: access.hasPremiumAccess ? status : "inactive",
       currentPeriodEnd: access.hasPremiumAccess ? currentPeriodEnd : null,
       reason: access.reason,
     };
-  } catch (err: any) {
-    return baseFree(err?.message || "Failed to resolve entitlement state.");
+  } catch (err: unknown) {
+    const msg =
+      err instanceof Error
+        ? err.message
+        : "Failed to resolve entitlement state.";
+    return baseFree(msg);
   }
 }
 

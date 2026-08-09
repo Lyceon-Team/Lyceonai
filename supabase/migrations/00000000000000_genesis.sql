@@ -179,6 +179,7 @@ CREATE TABLE public.entitlements (
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE public.entitlements ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
 CREATE INDEX idx_entitlements_profile ON public.entitlements (profile_id);
 CREATE INDEX idx_entitlements_active  ON public.entitlements (profile_id) WHERE status = 'active' OR status = 'past_due';
 
@@ -205,6 +206,14 @@ INSERT INTO public.entitlement_features (feature_key, required_tier, blocked_dur
   ('calendar_access',     'premium', FALSE, 'Study calendar'),
   ('mastery_detail',      'premium', FALSE, 'Section/domain/skill-level mastery breakdown'),
   ('historical_trends',   'premium', FALSE, 'Historical mastery trend data');
+
+-- @spec [Doc-01_V8, §20–§24 | STRIPE-001] stripe_webhook_events — idempotency gate for webhook processing.
+CREATE TABLE public.stripe_webhook_events (
+  id         TEXT PRIMARY KEY,           -- Stripe event id (evt_...)
+  type       TEXT NOT NULL,              -- Stripe event type
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe webhook processing (STRIPE-001)';
 
 -- @spec [Doc-01_V8, §35] guardian_links — single guardian-derivation mechanism; writer: guardian-service.ts.
 CREATE TABLE public.guardian_links (
