@@ -85,6 +85,9 @@ jobs:
       - name: Wire-contract drift gate (AUD-519-007 — L1.4 single-contract)
         run: diff shared/tutor-orchestrator-wire.ts apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated.ts
 
+      - name: Safety-constants drift gate (AUD-B1.1c-010 — anti-leak + boundary mirrors)
+        run: diff shared/tutor-safety-constants.ts apps/workers/tutor-orchestrator/src/lib/_tutor-safety-constants.generated.ts
+
   # ---------------------------------------------------------------------------
   # Visibility job — NOT required for merge. Steps are continue-on-error so the
   # job stays green, but their failures remain visible in the logs/annotations
