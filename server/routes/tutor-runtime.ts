@@ -63,10 +63,10 @@ import {
   logInjectionAttempt,
 } from "../services/tutor-injection-defense";
 import {
-  logPolicyDecision,
   logContextResolution,
   logTurnMetrics,
 } from "../services/tutor-policy-logger";
+import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 
 const router = Router();
@@ -851,20 +851,32 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Step 12: Persist instructional assignment (policy decision audit).
-    // A dedicated policy service will replace this deterministic default
-    // in a later workstream — see tutor-context.ts resolveDefaultPolicy.
-    await logPolicyDecision({
+    // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
+    // policy-assignment persistence is blocking per §1.4. If this write fails,
+    // the turn is not treated as successful. The non-blocking audit log
+    // (logPolicyDecision → tutor_policy_decisions) fires in addition for
+    // observability but does not gate the turn.
+    // @spec [Doc-03B_V4.1 §6.5 step 12, Doc-03A_V1 §11, Doc-03B_V4.1 §1.4]
+    const instructionAssignmentResult = await persistInstructionAssignment({
       conversationId: conversation.id,
-      turnOrdinal: 0,
+      studentId,
+      relatedMessageId: studentMessageRow.id,
+      sourceSessionId: effectiveScope.source_session_id,
+      sourceSessionItemId: effectiveScope.source_session_item_id,
+      sourceQuestionRowId: effectiveScope.source_question_row_id,
       policyFamily: "base_v1",
       policyVariant: "standard",
       policyVersion: "1.0.0",
       promptVersion: null,
       assignmentMode: "deterministic",
       assignmentKey: `${studentId}:${conversation.entry_mode}`,
+      emotionalRegister: null,
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
+    if (!instructionAssignmentResult.ok) {
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope — these flow into both the wire request (worker-side scan) and
