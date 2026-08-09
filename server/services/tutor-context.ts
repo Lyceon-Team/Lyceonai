@@ -80,7 +80,7 @@ type EnvelopeParams = {
 const SELF_DEPRECATING_PATTERNS: ReadonlyArray<RegExp> = [
   /i'?m\s+(?:so\s+)?(?:stupid|dumb|bad\s+at\s+this|terrible|hopeless)/i,
   /i\s+(?:can['']?t|cannot)\s+do\s+(?:this|anything|math)/i,
-  /i['']?ll\s+never\s+(?:get|understand|learn)\s+this/i,
+  /i[']?ll\s+never\s+(?:get|understand|learn)\s+this/i,
   /i\s+(?:hate|suck\s+at)\s+(?:this|math|reading)/i,
   /i\s+give\s+up/i,
   /what['']?s\s+the\s+point/i,
