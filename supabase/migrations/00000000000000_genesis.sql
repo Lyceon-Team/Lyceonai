@@ -288,6 +288,7 @@ CREATE TRIGGER audit_logs_no_mutate BEFORE UPDATE OR DELETE ON public.audit_logs
 ALTER TABLE public.profiles                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlements              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entitlement_features      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stripe_webhook_events   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardian_links            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.account_deletion_requests ENABLE ROW LEVEL SECURITY;

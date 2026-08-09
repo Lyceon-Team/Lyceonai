@@ -7069,6 +7069,12 @@ ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.source_types ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: stripe_webhook_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: student_domain_kpi; Type: ROW SECURITY; Schema: public; Owner: -
 --
 

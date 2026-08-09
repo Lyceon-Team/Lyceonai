@@ -30,3 +30,6 @@ CREATE TABLE IF NOT EXISTS public.stripe_webhook_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe webhook processing (STRIPE-001)';
+
+-- Enable RLS (genesis CI gate: every public table must have RLS enabled)
+ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
