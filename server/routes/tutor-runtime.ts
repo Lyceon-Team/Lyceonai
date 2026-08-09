@@ -766,7 +766,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
-    const crisisResult = await runCrisisClassifier(sanitized);
+    // Runs BEFORE orchestration — if crisis is detected, bypass model generation
+    // entirely and return regional crisis resources (Doc-03_V3 §21).
+    // The classifier infrastructure may be unavailable (missing tables in test
+    // environments, Vertex outage). In that case the turn proceeds with
+    // forceReview so it lands in the §21.3 safety review queue.
+    let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
+    try {
+      crisisResult = await runCrisisClassifier(sanitized);
+    } catch (crisisErr: unknown) {
+      // Classifier infrastructure failure — treat as degraded, not blocking.
+      // The turn proceeds but is force-enqueued to the review queue.
+      logger.error(
+        "TUTOR_RUNTIME",
+        "crisis_classifier_infrastructure_error",
+        "crisis classifier infrastructure error; treating as degraded",
+        {
+          message:
+            crisisErr instanceof Error ? crisisErr.message : String(crisisErr),
+          conversationId: conversation.id,
+        },
+      );
+      crisisResult = { crisis: false, forceReview: true };
+    }
 
     // Step 11: Persist student message.
     const { data: studentMessageRow, error: studentMessageError } =
@@ -870,6 +892,12 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         },
       });
       return;
+    }
+
+    // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
+    // force-enqueued to the §21.3 review queue with classifier_degraded.
+    if (!crisisResult.crisis && crisisResult.forceReview) {
+      await flagConversationForReview(conversation.id);
     }
 
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
