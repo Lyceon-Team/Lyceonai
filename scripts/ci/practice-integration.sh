@@ -306,10 +306,15 @@ RW_ANSWER_PRESENT=$(psql_db "$DB" -tAc "
 echo "    OK correct_answer and explanation present in R&W RPC pool"
 
 # ===========================================================================
-# DIAGNOSTIC INTEGRATION GATE (Codex audit Fix 2: real-Postgres emission proof)
+# DIAGNOSTIC SQL SEAM SIMULATION (lower-level SQL coverage)
 # ===========================================================================
 # @spec [Doc-05A §11 / Doc-05C §6.2 / INV-05C-14 / Coding Standards §9]
-# Proves the complete diagnostic lifecycle against real PostgreSQL:
+# Proves the SQL operations produce correct DB state against real PostgreSQL.
+# This is a SQL SEAM test — it calls the SQL operations directly, NOT through
+# the TS handler. The handler-driven proof lives in:
+#   tests/ci/diagnostic.handler-pg.ci.test.ts (supertest → real PG)
+# Together they prove the full chain: handler → applyMasteryEvent → real PG.
+#
 #   D.0  Seed 40 questions with collision pre-check (no silent DO NOTHING)
 #   D.1  select_diagnostic_pool returns 40 rows (8×5)
 #   D.2  select_diagnostic_pool is PLAIN INVOKER (not SECURITY DEFINER)
@@ -399,18 +404,15 @@ SECDEF=$(psql_db "$DB" -tAc "
 echo "    OK plain invoker (prosecdef=f)"
 
 # ---------------------------------------------------------------------------
-# D.3-D.8 Full diagnostic lifecycle: session → items → mastery → projection
+# D.3-D.8 Full diagnostic lifecycle: SQL seam simulation
 # ---------------------------------------------------------------------------
-# @spec [Codex re-audit Fix C] Simulates the EXACT handler operation sequence:
-#   1. Session starts ACTIVE (not pre-completed)
-#   2. Items start SERVED (not pre-answered)
-#   3. Each item: CAS update served→answered, then apply_mastery_event
-#   4. After the 40th: count resolved, complete session if target met
-# This mirrors submitPracticeAnswer's code path line-for-line. The vitest
-# handler-level test (diagnostic.fail-closed.ci.test.ts) proves the TS handler
-# calls these SQL operations; this test proves those SQL operations produce
-# correct DB state against real Postgres. Together they prove the full chain.
-echo "==> D.3 diagnostic lifecycle: handler-sequence simulation (active→answer→mastery→complete)"
+# @spec [Codex re-audit Fix C] SQL SEAM SIMULATION — calls the same SQL
+# operations the handler would issue, in the same order, to prove they produce
+# correct DB state. This is NOT the handler-driven proof (that lives in
+# tests/ci/diagnostic.handler-pg.ci.test.ts). Together:
+#   - This test proves: SQL operations → correct PG state
+#   - diagnostic.handler-pg.ci.test.ts proves: handler → SQL operations → PG state
+echo "==> D.3 diagnostic lifecycle: SQL seam simulation (active→answer→mastery→complete)"
 DIAG_STUDENT='dddddddd-dddd-dddd-dddd-dddddddddddd'
 DIAG_SESSION='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
 

@@ -3279,6 +3279,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       outcome,
       time_spent_ms: clampedTimeSpentMs,
       answered_at: now,
+      occurred_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
     .eq("id", sessionItem.id)
@@ -3728,6 +3729,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
       outcome: "skipped",
       time_spent_ms: null,
       answered_at: now,
+      occurred_at: now,
       client_attempt_id: payload.clientAttemptId ?? null,
     })
     .eq("id", sessionItem.id)
