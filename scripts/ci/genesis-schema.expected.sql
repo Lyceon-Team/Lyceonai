@@ -4480,6 +4480,24 @@ CREATE TABLE public.source_types (
 
 
 --
+-- Name: stripe_webhook_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stripe_webhook_events (
+    id text NOT NULL,
+    type text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE stripe_webhook_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.stripe_webhook_events IS 'Idempotency gate for Stripe webhook processing (STRIPE-001)';
+
+
+--
 -- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4843,6 +4861,14 @@ ALTER TABLE ONLY public.entitlement_runtime_config
 
 ALTER TABLE ONLY public.entitlements
     ADD CONSTRAINT entitlements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: entitlements entitlements_profile_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.entitlements
+    ADD CONSTRAINT entitlements_profile_id_unique UNIQUE (profile_id);
 
 
 --
@@ -5227,6 +5253,14 @@ ALTER TABLE ONLY public.service_auth_secrets
 
 ALTER TABLE ONLY public.source_types
     ADD CONSTRAINT source_types_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: stripe_webhook_events stripe_webhook_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stripe_webhook_events
+    ADD CONSTRAINT stripe_webhook_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -8763,6 +8797,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.service_auth_secrets TO servic
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_types TO service_role;
+
+
+--
+-- Name: TABLE stripe_webhook_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.stripe_webhook_events TO service_role;
 
 
 --
