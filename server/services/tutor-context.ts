@@ -83,7 +83,7 @@ const SELF_DEPRECATING_PATTERNS: ReadonlyArray<RegExp> = [
   /i[']?ll\s+never\s+(?:get|understand|learn)\s+this/i,
   /i\s+(?:hate|suck\s+at)\s+(?:this|math|reading)/i,
   /i\s+give\s+up/i,
-  /what['']?s\s+the\s+point/i,
+  /what'?s\s+the\s+point/i,
   /too\s+(?:stupid|dumb)\s+for/i,
 ];
 
