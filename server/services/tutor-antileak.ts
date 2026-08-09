@@ -76,6 +76,7 @@ function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
   return [
     new RegExp(`the\\s+correct\\s+answer\\s+is\\s+${l}\\b`, "i"),
     new RegExp(`the\\s+right\\s+answer\\s+is\\s+${l}\\b`, "i"),
+    new RegExp(`the\\s+answer\\s+is\\s+${l}\\b`, "i"),
     new RegExp(`(?:^|:\\s*)Answer:\\s*${l}\\b`, "im"),
     new RegExp(`choose\\s+option\\s+${l}\\b`, "i"),
     new RegExp(`select\\s+option\\s+${l}\\b`, "i"),

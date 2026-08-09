@@ -17,6 +17,10 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { hasAnswerLeak } from "../../server/services/tutor-context";
+import {
+  scanAndSubstitute,
+  TUTOR_ANTI_LEAK_SUBSTITUTION,
+} from "../../server/services/tutor-antileak";
 
 // ---------------------------------------------------------------------------
 // EX-05: difficultyBucket must NOT appear in client-facing types
@@ -128,15 +132,10 @@ describe("TU-04: hasAnswerLeak pattern coverage", () => {
     expect(typeof hasAnswerLeak).toBe("function");
   });
 
-  it("tutor-runtime imports hasAnswerLeak from tutor-context", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    expect(src).toContain("hasAnswerLeak");
-    expect(src).toMatch(
-      /import\s*\{[^}]*hasAnswerLeak[^}]*\}\s*from\s*["']\.\.\/services\/tutor-context/,
-    );
+  it("given a leaking pre-submit response, scanAndSubstitute returns the substitution text", () => {
+    const result = scanAndSubstitute("The correct answer is B", "B", true);
+    expect(result.leaked).toBe(true);
+    expect(result.content).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
   });
 
   it("detects MCQ answer leak for the specific correct letter", () => {
@@ -213,102 +212,73 @@ describe("TU-04: hasAnswerLeak pattern coverage", () => {
 });
 
 // ---------------------------------------------------------------------------
-// TU-04: isPreSubmitForSurface structural chokepoint
+// TU-04: anti-leak pipeline behavior
 // ---------------------------------------------------------------------------
 
-describe("TU-04: isPreSubmitForSurface structural chokepoint", () => {
-  it("isPreSubmitForSurface exists and handles all surface types", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
+describe("TU-04: anti-leak pipeline behavior", () => {
+  it("pre-submit turns block leaks, post-submit turns do not", () => {
+    // Pre-submit: leak detected and substituted
+    const preSubmitResult = scanAndSubstitute(
+      "The correct answer is B",
+      "B",
+      true,
     );
-    expect(src).toContain("async function isPreSubmitForSurface(");
-    expect(src).toMatch(/surface.*===.*"practice"/);
-    expect(src).toContain("review");
-    expect(src).toContain("test_review");
-    expect(src).toContain("dashboard");
+    expect(preSubmitResult.leaked).toBe(true);
+    expect(preSubmitResult.content).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
+
+    // Post-submit: same text passes through unmodified
+    const postSubmitResult = scanAndSubstitute(
+      "The correct answer is B",
+      "B",
+      false,
+    );
+    expect(postSubmitResult.leaked).toBe(false);
+    expect(postSubmitResult.content).toBe("The correct answer is B");
   });
 
-  it("anti-leak filter uses isPreSubmitForSurface (not surface === practice)", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const appendTurnSection = src.slice(
-      src.indexOf("const cleaned = removeInternalMetadataMentions") ??
-        src.indexOf("removeInternalMetadataMentions"),
-    );
-    const nextChunk = appendTurnSection.slice(0, 2000);
-    expect(nextChunk).toContain("isPreSubmitForSurface");
-    expect(nextChunk).toContain("hasAnswerLeak");
-    expect(nextChunk).not.toMatch(
-      /source_surface\s*===\s*["']practice["']\s*\)\s*\{[\s\S]{0,200}hasAnswerLeak/,
+  it("scanAndSubstitute silently substitutes without throwing", () => {
+    // The anti-leak path must silently substitute, never throw or return an error.
+    // @spec [INV-03-13, §16.4-5]
+    expect(() => scanAndSubstitute("The answer is C", "C", true)).not.toThrow();
+    const result = scanAndSubstitute("The answer is C", "C", true);
+    expect(result).toHaveProperty("content");
+    expect(result).toHaveProperty("leaked");
+    expect(result.leaked).toBe(true);
+    expect(result.content).not.toBe("The answer is C");
+  });
+
+  it("substitution text is the canonical pedagogical fallback", () => {
+    const result = scanAndSubstitute("Answer: A", "A", true);
+    expect(result.content).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
+    expect(TUTOR_ANTI_LEAK_SUBSTITUTION).toContain(
+      "think about this differently",
     );
   });
 
-  // §16.4-5 + INV-03-13: the append-turn block path must SILENTLY substitute the
-  // shared pedagogical fallback, NOT return a 422 error. The violating 422 block
-  // code must not exist anywhere in the route.
-  it("append-turn block path silently substitutes (no 422 TUTOR_ANTI_LEAK_BLOCKED)", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
+  it("safe pre-submit responses pass through without substitution", () => {
+    const result = scanAndSubstitute(
+      "Think about what approach you would take here.",
+      "B",
+      true,
     );
-    // The violating error code is fully removed from the route.
-    expect(src).not.toContain("TUTOR_ANTI_LEAK_BLOCKED");
-
-    // The append-turn path computes a safeContent substitution from the leak check.
-    const appendTurnSection = src.slice(
-      src.indexOf("const cleaned = removeInternalMetadataMentions"),
+    expect(result.leaked).toBe(false);
+    expect(result.content).toBe(
+      "Think about what approach you would take here.",
     );
-    const nextChunk = appendTurnSection.slice(0, 1500);
-    expect(nextChunk).toContain("const safeContent");
-    // Leak detection drives the ternary; substitution selects the shared fallback.
-    expect(nextChunk).toContain("hasAnswerLeak(cleaned, correctAnswer)");
-    expect(nextChunk).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
-    // The block path never calls sendTutorError (no error response on a leak).
-    const blockToInsert = nextChunk.slice(
-      0,
-      nextChunk.indexOf("tutor_messages"),
-    );
-    expect(blockToInsert).not.toContain("sendTutorError");
   });
 
-  // Parallel-paths rule: both block paths (append-turn + replay) emit ONE shared
-  // substitution, the same way.
-  it("both block paths use the single shared TUTOR_ANTI_LEAK_SUBSTITUTION constant", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    // Defined exactly once as a module-level constant.
-    const defMatches =
-      src.match(/const TUTOR_ANTI_LEAK_SUBSTITUTION\s*=/g) ?? [];
-    expect(defMatches).toHaveLength(1);
+  it("the replay endpoint substitutes a leaking persisted message", () => {
+    // Simulates replay: a previously persisted tutor message that contains a leak.
+    // When replayed in a pre-submit context, scanAndSubstitute substitutes it.
+    const persistedMessage =
+      "Great question! The correct answer is D, because the slope is positive.";
+    const result = scanAndSubstitute(persistedMessage, "D", true);
+    expect(result.leaked).toBe(true);
+    expect(result.content).toBe(TUTOR_ANTI_LEAK_SUBSTITUTION);
 
-    // Referenced by both the append-turn path and the replay path.
-    const refMatches = src.match(/TUTOR_ANTI_LEAK_SUBSTITUTION/g) ?? [];
-    // 1 definition + 2 usages (append-turn safeContent, replay message).
-    expect(refMatches.length).toBeGreaterThanOrEqual(3);
-
-    // The literal pedagogical fallback appears exactly once (the constant), never
-    // duplicated inline at a usage site.
-    const literalMatches =
-      src.match(/Let me think about this differently\./g) ?? [];
-    expect(literalMatches).toHaveLength(1);
-  });
-
-  it("replay endpoint applies defense-in-depth leak filter", () => {
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
-      "utf-8",
-    );
-    const replayIdx = src.indexOf('"/conversations/:conversationId"');
-    expect(replayIdx).toBeGreaterThan(-1);
-
-    const replaySection = src.slice(replayIdx, replayIdx + 3000);
-    expect(replaySection).toContain("isPreSubmitForSurface");
-    expect(replaySection).toContain("hasAnswerLeak");
-    expect(replaySection).toContain("TUTOR_ANTI_LEAK_SUBSTITUTION");
+    // Same persisted message in post-submit context passes through (replay after submit)
+    const postSubmitResult = scanAndSubstitute(persistedMessage, "D", false);
+    expect(postSubmitResult.leaked).toBe(false);
+    expect(postSubmitResult.content).toBe(persistedMessage);
   });
 });

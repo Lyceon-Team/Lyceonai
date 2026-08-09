@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "prebuild": "cp ../../../shared/tutor-orchestrator-wire.ts src/lib/_tutor-orchestrator-wire.generated.ts",
+    "prebuild": "test -f ../../../shared/tutor-orchestrator-wire.ts && cp ../../../shared/tutor-orchestrator-wire.ts src/lib/_tutor-orchestrator-wire.generated.ts || echo 'prebuild: shared wire schema not found (isolated build); using checked-in generated file'",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },
