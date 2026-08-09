@@ -214,7 +214,10 @@ export function removeInternalMetadataMentions(text: string): string {
   for (const pattern of INTERNAL_METADATA_PATTERNS) {
     cleaned = cleaned.replace(pattern, "");
   }
-  return cleaned.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return cleaned
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // ── Orchestration invocation stub ───────────────────────────────────────
@@ -529,7 +532,8 @@ router.post(
           )
         : reuseQuery.is("source_question_row_id", null);
 
-      const { data: reusable, error: reuseError } = await reuseQuery.maybeSingle();
+      const { data: reusable, error: reuseError } =
+        await reuseQuery.maybeSingle();
 
       if (reuseError) {
         logger.error(
@@ -573,7 +577,8 @@ router.post(
           source_session_id: resolvedScope.source_session_id,
           source_session_item_id: resolvedScope.source_session_item_id,
           source_question_row_id: resolvedScope.source_question_row_id,
-          source_question_canonical_id: resolvedScope.source_question_canonical_id,
+          source_question_canonical_id:
+            resolvedScope.source_question_canonical_id,
         })
         .select(
           "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
@@ -626,235 +631,85 @@ router.post(
 // POST /messages — §6 Append Turn (19-step pipeline, §6.5)
 // ============================================================================
 
-router.post(
-  "/messages",
-  async (req: Request, res: Response): Promise<void> => {
-    // Step 1: Validate JWT and role — already enforced at mount.
-    if (!req.user) {
-      sendTutorError(res, "unauthenticated");
+router.post("/messages", async (req: Request, res: Response): Promise<void> => {
+  // Step 1: Validate JWT and role — already enforced at mount.
+  if (!req.user) {
+    sendTutorError(res, "unauthenticated");
+    return;
+  }
+  const studentId = req.user.id;
+
+  // Step 2: Check entitlement (per-boundary, INV-03-18).
+  if (await denyIfNotEntitled(studentId, res)) return;
+
+  // Step 6: Validate request payload (§6.4). Run before ownership so a
+  // malformed body never triggers a DB lookup.
+  const parsed = appendTurnSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendTutorError(res, "invalid_input", parsed.error.flatten());
+    return;
+  }
+  const input = parsed.data;
+  const contentKind = input.content_kind ?? "message";
+
+  try {
+    // Step 5: Verify conversation ownership (§3.3).
+    const conversation = await loadOwnedConversation(
+      input.conversation_id,
+      studentId,
+    );
+    if (!conversation) {
+      sendTutorError(res, "conversation_not_found");
       return;
     }
-    const studentId = req.user.id;
-
-    // Step 2: Check entitlement (per-boundary, INV-03-18).
-    if (await denyIfNotEntitled(studentId, res)) return;
-
-    // Step 6: Validate request payload (§6.4). Run before ownership so a
-    // malformed body never triggers a DB lookup.
-    const parsed = appendTurnSchema.safeParse(req.body);
-    if (!parsed.success) {
-      sendTutorError(res, "invalid_input", parsed.error.flatten());
+    if (conversation.status !== "active") {
+      sendTutorError(res, "conversation_closed");
       return;
     }
-    const input = parsed.data;
-    const contentKind = input.content_kind ?? "message";
 
-    try {
-      // Step 5: Verify conversation ownership (§3.3).
-      const conversation = await loadOwnedConversation(
-        input.conversation_id,
-        studentId,
+    // Step 7: Rate/quota limits — `ragLimiter` (mounted at /api/tutor) covers
+    // request-rate; daily/weekly/monthly quota accounting (Doc 03 Main §13)
+    // is a separate quota service, not yet built. Deferred.
+
+    // Step 8: Idempotency check — same client_turn_id already persisted?
+    const { data: existingTurn, error: existingTurnError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .select("id, role, message, created_at")
+        .eq("conversation_id", conversation.id)
+        .eq("client_turn_id", input.client_turn_id)
+        .order("created_at", { ascending: true });
+
+    if (existingTurnError) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "idempotency_lookup_failed",
+        "tutor_messages idempotency lookup failed",
+        { message: existingTurnError.message, code: existingTurnError.code },
       );
-      if (!conversation) {
-        sendTutorError(res, "conversation_not_found");
-        return;
-      }
-      if (conversation.status !== "active") {
-        sendTutorError(res, "conversation_closed");
-        return;
-      }
+    }
 
-      // Step 7: Rate/quota limits — `ragLimiter` (mounted at /api/tutor) covers
-      // request-rate; daily/weekly/monthly quota accounting (Doc 03 Main §13)
-      // is a separate quota service, not yet built. Deferred.
+    if (existingTurn && existingTurn.length > 0) {
+      const existingStudentMsg = existingTurn.find(
+        (m) => (m as { role: string }).role === "student",
+      ) as { id: string; message: string } | undefined;
+      const existingTutorMsg = existingTurn.find(
+        (m) => (m as { role: string }).role === "tutor",
+      ) as { id: string; message: string } | undefined;
 
-      // Step 8: Idempotency check — same client_turn_id already persisted?
-      const { data: existingTurn, error: existingTurnError } =
-        await supabaseServer
-          .from("tutor_messages")
-          .select("id, role, message, created_at")
-          .eq("conversation_id", conversation.id)
-          .eq("client_turn_id", input.client_turn_id)
-          .order("created_at", { ascending: true });
-
-      if (existingTurnError) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "idempotency_lookup_failed",
-          "tutor_messages idempotency lookup failed",
-          { message: existingTurnError.message, code: existingTurnError.code },
-        );
-      }
-
-      if (existingTurn && existingTurn.length > 0) {
-        const existingStudentMsg = existingTurn.find(
-          (m) => (m as { role: string }).role === "student",
-        ) as { id: string; message: string } | undefined;
-        const existingTutorMsg = existingTurn.find(
-          (m) => (m as { role: string }).role === "tutor",
-        ) as { id: string; message: string } | undefined;
-
-        if (existingStudentMsg && existingStudentMsg.message !== input.message) {
-          sendTutorError(res, "idempotency_conflict");
-          return;
-        }
-
-        if (existingStudentMsg && existingTutorMsg) {
-          res.status(200).json({
-            data: {
-              conversation_id: conversation.id,
-              message_id: existingTutorMsg.id,
-              client_turn_id: input.client_turn_id,
-              response: {
-                content: existingTutorMsg.message,
-                content_kind: "message",
-                suggested_action: { type: "none", label: null },
-                ui_hints: {
-                  show_accept_decline: false,
-                  allow_freeform_reply: true,
-                  suggested_chip: null,
-                },
-              },
-              conversation_updated_at: conversation.updated_at,
-            },
-          });
-          return;
-        }
-        // Student message persisted but tutor response was not (prior
-        // request failed mid-flow) — fall through and complete the flow.
-      }
-
-      // Step 9: Re-resolve scope — stored conversation scope is authoritative;
-      // client_scope only supplements missing fields (§6.6).
-      const clientScope = input.client_scope;
-      const effectiveScope: ResolvedScopeRow = {
-        source_session_id:
-          conversation.source_session_id ??
-          clientScope?.source_session_id ??
-          null,
-        source_session_item_id:
-          conversation.source_session_item_id ??
-          clientScope?.source_session_item_id ??
-          null,
-        source_question_row_id:
-          conversation.source_question_row_id ??
-          clientScope?.source_question_row_id ??
-          null,
-        source_question_canonical_id:
-          conversation.source_question_canonical_id ??
-          clientScope?.source_question_canonical_id ??
-          null,
-      };
-
-      // Step 10: Input sanitization — length bound, escaping, injection scan.
-      const { sanitized } = sanitizeInput(input.message);
-      const wrapped = wrapWithBoundaryMarkers(sanitized, "student_input");
-      const patternScan = scanForInjectionPatterns(sanitized);
-      const signatureScan = await checkSignatureTable(sanitized);
-      const injectionDetected = patternScan.detected || signatureScan.matched;
-      if (injectionDetected) {
-        // INV-03-13: logged, never acknowledged to the student.
-        await logInjectionAttempt(
-          studentId,
-          conversation.id,
-          patternScan.patterns,
-          signatureScan.signatureId,
-        );
-      }
-
-      // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
-      const crisisResult = await runCrisisClassifier(sanitized);
-
-      // Step 11: Persist student message.
-      const { data: studentMessageRow, error: studentMessageError } =
-        await supabaseServer
-          .from("tutor_messages")
-          .insert({
-            conversation_id: conversation.id,
-            student_id: studentId,
-            role: "student",
-            content_kind: contentKind,
-            message: sanitized,
-            source_session_id: effectiveScope.source_session_id,
-            source_session_item_id: effectiveScope.source_session_item_id,
-            source_question_row_id: effectiveScope.source_question_row_id,
-            source_question_canonical_id:
-              effectiveScope.source_question_canonical_id,
-            client_turn_id: input.client_turn_id,
-            injection_flag: injectionDetected,
-            injection_signature_matched: signatureScan.signatureId,
-          })
-          .select("id, created_at")
-          .single();
-
-      if (studentMessageError || !studentMessageRow) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "student_message_write_failed",
-          "Failed to persist student tutor_messages row",
-          {
-            message: studentMessageError?.message,
-            code: studentMessageError?.code,
-          },
-        );
-        sendTutorError(res, "canonical_write_failed");
+      if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+        sendTutorError(res, "idempotency_conflict");
         return;
       }
 
-      // Crisis path: bypass model generation entirely; respond with the
-      // regional crisis resource and flag for the safety review queue.
-      if (crisisResult.crisis) {
-        await flagConversationForReview(conversation.id);
-
-        const { data: profileRow } = await supabaseServer
-          .from("profiles")
-          .select("country_code")
-          .eq("id", studentId)
-          .maybeSingle();
-        const crisisContent = getCrisisResponse(
-          (profileRow?.country_code as string | null) ?? "US",
-        );
-
-        const { data: crisisMessageRow, error: crisisMessageError } =
-          await supabaseServer
-            .from("tutor_messages")
-            .insert({
-              conversation_id: conversation.id,
-              student_id: studentId,
-              role: "tutor",
-              content_kind: "message",
-              message: crisisContent,
-              source_session_id: effectiveScope.source_session_id,
-              source_session_item_id: effectiveScope.source_session_item_id,
-              source_question_row_id: effectiveScope.source_question_row_id,
-              source_question_canonical_id:
-                effectiveScope.source_question_canonical_id,
-              client_turn_id: input.client_turn_id,
-            })
-            .select("id")
-            .single();
-
-        if (crisisMessageError || !crisisMessageRow) {
-          logger.error(
-            "TUTOR_RUNTIME",
-            "crisis_message_write_failed",
-            "Failed to persist crisis-path tutor message",
-            {
-              message: crisisMessageError?.message,
-              code: crisisMessageError?.code,
-            },
-          );
-          sendTutorError(res, "canonical_write_failed");
-          return;
-        }
-
+      if (existingStudentMsg && existingTutorMsg) {
         res.status(200).json({
           data: {
             conversation_id: conversation.id,
-            message_id: crisisMessageRow.id,
+            message_id: existingTutorMsg.id,
             client_turn_id: input.client_turn_id,
             response: {
-              content: crisisContent,
+              content: existingTutorMsg.message,
               content_kind: "message",
               suggested_action: { type: "none", label: null },
               ui_hints: {
@@ -863,118 +718,115 @@ router.post(
                 suggested_chip: null,
               },
             },
-            conversation_updated_at: new Date().toISOString(),
+            conversation_updated_at: conversation.updated_at,
           },
         });
         return;
       }
+      // Student message persisted but tutor response was not (prior
+      // request failed mid-flow) — fall through and complete the flow.
+    }
 
-      // Step 12: Persist instructional assignment (policy decision audit).
-      // A dedicated policy service will replace this deterministic default
-      // in a later workstream — see tutor-context.ts resolveDefaultPolicy.
-      await logPolicyDecision({
-        conversationId: conversation.id,
-        turnOrdinal: 0,
-        policyFamily: "base_v1",
-        policyVariant: "standard",
-        policyVersion: "1.0.0",
-        promptVersion: null,
-        assignmentMode: "deterministic",
-        assignmentKey: `${studentId}:${conversation.entry_mode}`,
-        reasonSnapshot: { reason: "default_deterministic_assignment" },
-      });
+    // Step 9: Re-resolve scope — stored conversation scope is authoritative;
+    // client_scope only supplements missing fields (§6.6).
+    const clientScope = input.client_scope;
+    const effectiveScope: ResolvedScopeRow = {
+      source_session_id:
+        conversation.source_session_id ??
+        clientScope?.source_session_id ??
+        null,
+      source_session_item_id:
+        conversation.source_session_item_id ??
+        clientScope?.source_session_item_id ??
+        null,
+      source_question_row_id:
+        conversation.source_question_row_id ??
+        clientScope?.source_question_row_id ??
+        null,
+      source_question_canonical_id:
+        conversation.source_question_canonical_id ??
+        clientScope?.source_question_canonical_id ??
+        null,
+    };
 
-      // Step 13: Build context envelope (Doc 03A §5.4).
-      const recentMessages = await getRecentMessages(conversation.id);
-      const envelope = await resolveFullEnvelope({
-        conversationId: conversation.id,
+    // Step 10: Input sanitization — length bound, escaping, injection scan.
+    const { sanitized } = sanitizeInput(input.message);
+    const wrapped = wrapWithBoundaryMarkers(sanitized, "student_input");
+    const patternScan = scanForInjectionPatterns(sanitized);
+    const signatureScan = await checkSignatureTable(sanitized);
+    const injectionDetected = patternScan.detected || signatureScan.matched;
+    if (injectionDetected) {
+      // INV-03-13: logged, never acknowledged to the student.
+      await logInjectionAttempt(
         studentId,
-        entryMode: conversation.entry_mode,
-        sourceSurface: conversation.source_surface,
-        sourceSessionId: effectiveScope.source_session_id,
-        sourceSessionItemId: effectiveScope.source_session_item_id,
-        sourceQuestionRowId: effectiveScope.source_question_row_id,
-        recentMessages,
-        runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
-      });
+        conversation.id,
+        patternScan.patterns,
+        signatureScan.signatureId,
+      );
+    }
 
-      await logContextResolution({
-        conversationId: conversation.id,
-        turnOrdinal: 0,
-        contextVersion: "1.0",
-        memorySummariesCount: envelope.memory_summaries.length,
-        recentMessagesCount: envelope.recent_messages.length,
-        masterySnapshotPresent:
-          envelope.student_learning_context.mastery_snapshot !== null,
-        frictionSignalsPresent: true,
-        scopeType: envelope.resolved_scope.source_question_row_id
-          ? "question"
-          : envelope.resolved_scope.source_session_id
-            ? "session"
-            : "general",
-      });
+    // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
+    const crisisResult = await runCrisisClassifier(sanitized);
 
-      // Step 14: Invoke orchestration (Doc 03C — crisis classifier already
-      // ran above per INV-03-16; this is the model call + structured parse).
-      const turnStartedAt = Date.now();
-      let orchestration: OrchestrateResponse;
-      try {
-        orchestration = await invokeOrchestration(envelope, wrapped);
-      } catch (orchestrationErr) {
-        logger.error(
-          "TUTOR_RUNTIME",
-          "orchestration_failed",
-          "Tutor orchestration call failed; turn is recoverable via retry",
-          orchestrationErr instanceof Error ? orchestrationErr : undefined,
-          { conversationId: conversation.id },
-        );
-        sendTutorError(res, "orchestration_failed_recoverable", {
-          retry_after_ms: 2000,
-          failure_layer: "orchestrator",
-        });
-        return;
-      }
+    // Step 11: Persist student message.
+    const { data: studentMessageRow, error: studentMessageError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .insert({
+          conversation_id: conversation.id,
+          student_id: studentId,
+          role: "student",
+          content_kind: contentKind,
+          message: sanitized,
+          source_session_id: effectiveScope.source_session_id,
+          source_session_item_id: effectiveScope.source_session_item_id,
+          source_question_row_id: effectiveScope.source_question_row_id,
+          source_question_canonical_id:
+            effectiveScope.source_question_canonical_id,
+          client_turn_id: input.client_turn_id,
+          injection_flag: injectionDetected,
+          injection_signature_matched: signatureScan.signatureId,
+        })
+        .select("id, created_at")
+        .single();
 
-      const tutorResponse = orchestration.response.content;
+    if (studentMessageError || !studentMessageRow) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "student_message_write_failed",
+        "Failed to persist student tutor_messages row",
+        {
+          message: studentMessageError?.message,
+          code: studentMessageError?.code,
+        },
+      );
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
 
-      // Step 15: Run anti-leak output scan on the orchestrator response
-      // (Doc 03 Main §18 Layer 4). This is the single anti-leak chokepoint
-      // for the append-turn path — see the module header for why
-      // `isPreSubmitForSurface` is redefined locally.
-      const cleaned = removeInternalMetadataMentions(tutorResponse);
+    // Crisis path: bypass model generation entirely; respond with the
+    // regional crisis resource and flag for the safety review queue.
+    if (crisisResult.crisis) {
+      await flagConversationForReview(conversation.id);
 
-      // Fail-closed surface handling: only when surface === "practice" do we
-      // still need a live per-item status check before revealing content.
-      const preSubmit = await isPreSubmitForSurface(
-        conversation.source_surface,
-        effectiveScope.source_session_item_id,
-        supabaseServer,
+      const { data: profileRow } = await supabaseServer
+        .from("profiles")
+        .select("country_code")
+        .eq("id", studentId)
+        .maybeSingle();
+      const crisisContent = getCrisisResponse(
+        (profileRow?.country_code as string | null) ?? "US",
       );
 
-      const correctAnswer = preSubmit
-        ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
-        : null;
-
-      // @spec [Doc-03_V3 §16.4-5, INV-03-13] Silent substitution — never a
-      // blocking error response. A leaked pre-submit answer is substituted
-      // with the shared pedagogical fallback; post-submit content passes
-      // through unmodified.
-      const safeContent =
-        preSubmit && hasAnswerLeak(cleaned, correctAnswer)
-          ? TUTOR_ANTI_LEAK_SUBSTITUTION
-          : cleaned;
-      const antiLeakTriggered = safeContent !== cleaned;
-
-      // Step 16: Persist tutor message.
-      const { data: tutorMessageRow, error: tutorMessageError } =
+      const { data: crisisMessageRow, error: crisisMessageError } =
         await supabaseServer
           .from("tutor_messages")
           .insert({
             conversation_id: conversation.id,
             student_id: studentId,
             role: "tutor",
-            content_kind: orchestration.response.content_kind,
-            message: safeContent,
+            content_kind: "message",
+            message: crisisContent,
             source_session_id: effectiveScope.source_session_id,
             source_session_item_id: effectiveScope.source_session_item_id,
             source_question_row_id: effectiveScope.source_question_row_id,
@@ -985,122 +837,271 @@ router.post(
           .select("id")
           .single();
 
-      if (tutorMessageError || !tutorMessageRow) {
+      if (crisisMessageError || !crisisMessageRow) {
         logger.error(
           "TUTOR_RUNTIME",
-          "tutor_message_write_failed",
-          "Failed to persist tutor tutor_messages row",
+          "crisis_message_write_failed",
+          "Failed to persist crisis-path tutor message",
           {
-            message: tutorMessageError?.message,
-            code: tutorMessageError?.code,
+            message: crisisMessageError?.message,
+            code: crisisMessageError?.code,
           },
         );
         sendTutorError(res, "canonical_write_failed");
         return;
       }
 
-      // Step 17: Persist question links, if any.
-      if (orchestration.question_links.length > 0) {
-        const { error: linksError } = await supabaseServer
-          .from("tutor_question_links")
-          .insert(
-            orchestration.question_links.map((link) => ({
-              conversation_id: conversation.id,
-              related_message_id: tutorMessageRow.id,
-              source_question_row_id: link.source_question_row_id,
-              source_question_canonical_id: link.source_question_canonical_id,
-              related_question_row_id: link.related_question_row_id,
-              related_question_canonical_id:
-                link.related_question_canonical_id,
-              relationship_type: link.relationship_type,
-              difficulty_delta: link.difficulty_delta,
-              reason_code: link.reason_code,
-              link_snapshot: link.link_snapshot,
-            })),
-          );
-        if (linksError) {
-          logger.warn(
-            "TUTOR_RUNTIME",
-            "question_links_write_failed",
-            "Failed to persist tutor_question_links; turn proceeds",
-            { message: linksError.message, code: linksError.code },
-          );
-        }
-      }
-
-      // Step 18: Persist instruction exposures, if any.
-      if (orchestration.instruction_exposures.length > 0) {
-        const { error: exposuresError } = await supabaseServer
-          .from("tutor_instruction_exposures")
-          .insert(
-            orchestration.instruction_exposures.map((exposure) => ({
-              conversation_id: conversation.id,
-              related_message_id: tutorMessageRow.id,
-              exposure_type: exposure.exposure_type,
-              content_variant_key: exposure.content_variant_key,
-              content_version: exposure.content_version,
-              rendered_difficulty: exposure.rendered_difficulty,
-              hint_depth: exposure.hint_depth,
-              tone_style: exposure.tone_style,
-              sequence_ordinal: exposure.sequence_ordinal,
-            })),
-          );
-        if (exposuresError) {
-          logger.warn(
-            "TUTOR_RUNTIME",
-            "instruction_exposures_write_failed",
-            "Failed to persist tutor_instruction_exposures; turn proceeds",
-            { message: exposuresError.message, code: exposuresError.code },
-          );
-        }
-      }
-
-      await logTurnMetrics({
-        conversationId: conversation.id,
-        turnOrdinal: 0,
-        orchestrationDurationMs: Date.now() - turnStartedAt,
-        modelName: orchestration.orchestration_meta.model_name,
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheHit: orchestration.orchestration_meta.cache_used,
-        compactionRecommended:
-          orchestration.orchestration_meta.compaction_recommended,
-        antiLeakTriggered,
-        injectionDetected,
-        crisisTriggered: false,
-      });
-
-      await supabaseServer
-        .from("tutor_conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", conversation.id);
-
-      // Step 19: Return success response (§6.7).
       res.status(200).json({
         data: {
           conversation_id: conversation.id,
-          message_id: tutorMessageRow.id,
+          message_id: crisisMessageRow.id,
           client_turn_id: input.client_turn_id,
           response: {
-            content: safeContent,
-            content_kind: orchestration.response.content_kind,
-            suggested_action: orchestration.response.suggested_action,
-            ui_hints: orchestration.response.ui_hints,
+            content: crisisContent,
+            content_kind: "message",
+            suggested_action: { type: "none", label: null },
+            ui_hints: {
+              show_accept_decline: false,
+              allow_freeform_reply: true,
+              suggested_chip: null,
+            },
           },
           conversation_updated_at: new Date().toISOString(),
         },
       });
-    } catch (err) {
+      return;
+    }
+
+    // Step 12: Persist instructional assignment (policy decision audit).
+    // A dedicated policy service will replace this deterministic default
+    // in a later workstream — see tutor-context.ts resolveDefaultPolicy.
+    await logPolicyDecision({
+      conversationId: conversation.id,
+      turnOrdinal: 0,
+      policyFamily: "base_v1",
+      policyVariant: "standard",
+      policyVersion: "1.0.0",
+      promptVersion: null,
+      assignmentMode: "deterministic",
+      assignmentKey: `${studentId}:${conversation.entry_mode}`,
+      reasonSnapshot: { reason: "default_deterministic_assignment" },
+    });
+
+    // Step 13: Build context envelope (Doc 03A §5.4).
+    const recentMessages = await getRecentMessages(conversation.id);
+    const envelope = await resolveFullEnvelope({
+      conversationId: conversation.id,
+      studentId,
+      entryMode: conversation.entry_mode,
+      sourceSurface: conversation.source_surface,
+      sourceSessionId: effectiveScope.source_session_id,
+      sourceSessionItemId: effectiveScope.source_session_item_id,
+      sourceQuestionRowId: effectiveScope.source_question_row_id,
+      recentMessages,
+      runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
+    });
+
+    await logContextResolution({
+      conversationId: conversation.id,
+      turnOrdinal: 0,
+      contextVersion: "1.0",
+      memorySummariesCount: envelope.memory_summaries.length,
+      recentMessagesCount: envelope.recent_messages.length,
+      masterySnapshotPresent:
+        envelope.student_learning_context.mastery_snapshot !== null,
+      frictionSignalsPresent: true,
+      scopeType: envelope.resolved_scope.source_question_row_id
+        ? "question"
+        : envelope.resolved_scope.source_session_id
+          ? "session"
+          : "general",
+    });
+
+    // Step 14: Invoke orchestration (Doc 03C — crisis classifier already
+    // ran above per INV-03-16; this is the model call + structured parse).
+    const turnStartedAt = Date.now();
+    let orchestration: OrchestrateResponse;
+    try {
+      orchestration = await invokeOrchestration(envelope, wrapped);
+    } catch (orchestrationErr) {
       logger.error(
         "TUTOR_RUNTIME",
-        "append_turn_error",
-        "Unexpected error in POST /messages",
-        err instanceof Error ? err : undefined,
+        "orchestration_failed",
+        "Tutor orchestration call failed; turn is recoverable via retry",
+        orchestrationErr instanceof Error ? orchestrationErr : undefined,
+        { conversationId: conversation.id },
       );
-      sendTutorError(res, "orchestration_failed");
+      sendTutorError(res, "orchestration_failed_recoverable", {
+        retry_after_ms: 2000,
+        failure_layer: "orchestrator",
+      });
+      return;
     }
-  },
-);
+
+    const tutorResponse = orchestration.response.content;
+
+    // Step 15: Run anti-leak output scan on the orchestrator response
+    // (Doc 03 Main §18 Layer 4). This is the single anti-leak chokepoint
+    // for the append-turn path — see the module header for why
+    // `isPreSubmitForSurface` is redefined locally.
+    const cleaned = removeInternalMetadataMentions(tutorResponse);
+
+    // Fail-closed surface handling: only when surface === "practice" do we
+    // still need a live per-item status check before revealing content.
+    const preSubmit = await isPreSubmitForSurface(
+      conversation.source_surface,
+      effectiveScope.source_session_item_id,
+      supabaseServer,
+    );
+
+    const correctAnswer = preSubmit
+      ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
+      : null;
+
+    // @spec [Doc-03_V3 §16.4-5, INV-03-13] Silent substitution — never a
+    // blocking error response. A leaked pre-submit answer is substituted
+    // with the shared pedagogical fallback; post-submit content passes
+    // through unmodified.
+    const safeContent =
+      preSubmit && hasAnswerLeak(cleaned, correctAnswer)
+        ? TUTOR_ANTI_LEAK_SUBSTITUTION
+        : cleaned;
+    const antiLeakTriggered = safeContent !== cleaned;
+
+    // Step 16: Persist tutor message.
+    const { data: tutorMessageRow, error: tutorMessageError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .insert({
+          conversation_id: conversation.id,
+          student_id: studentId,
+          role: "tutor",
+          content_kind: orchestration.response.content_kind,
+          message: safeContent,
+          source_session_id: effectiveScope.source_session_id,
+          source_session_item_id: effectiveScope.source_session_item_id,
+          source_question_row_id: effectiveScope.source_question_row_id,
+          source_question_canonical_id:
+            effectiveScope.source_question_canonical_id,
+          client_turn_id: input.client_turn_id,
+        })
+        .select("id")
+        .single();
+
+    if (tutorMessageError || !tutorMessageRow) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "tutor_message_write_failed",
+        "Failed to persist tutor tutor_messages row",
+        {
+          message: tutorMessageError?.message,
+          code: tutorMessageError?.code,
+        },
+      );
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
+
+    // Step 17: Persist question links, if any.
+    if (orchestration.question_links.length > 0) {
+      const { error: linksError } = await supabaseServer
+        .from("tutor_question_links")
+        .insert(
+          orchestration.question_links.map((link) => ({
+            conversation_id: conversation.id,
+            related_message_id: tutorMessageRow.id,
+            source_question_row_id: link.source_question_row_id,
+            source_question_canonical_id: link.source_question_canonical_id,
+            related_question_row_id: link.related_question_row_id,
+            related_question_canonical_id: link.related_question_canonical_id,
+            relationship_type: link.relationship_type,
+            difficulty_delta: link.difficulty_delta,
+            reason_code: link.reason_code,
+            link_snapshot: link.link_snapshot,
+          })),
+        );
+      if (linksError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "question_links_write_failed",
+          "Failed to persist tutor_question_links; turn proceeds",
+          { message: linksError.message, code: linksError.code },
+        );
+      }
+    }
+
+    // Step 18: Persist instruction exposures, if any.
+    if (orchestration.instruction_exposures.length > 0) {
+      const { error: exposuresError } = await supabaseServer
+        .from("tutor_instruction_exposures")
+        .insert(
+          orchestration.instruction_exposures.map((exposure) => ({
+            conversation_id: conversation.id,
+            related_message_id: tutorMessageRow.id,
+            exposure_type: exposure.exposure_type,
+            content_variant_key: exposure.content_variant_key,
+            content_version: exposure.content_version,
+            rendered_difficulty: exposure.rendered_difficulty,
+            hint_depth: exposure.hint_depth,
+            tone_style: exposure.tone_style,
+            sequence_ordinal: exposure.sequence_ordinal,
+          })),
+        );
+      if (exposuresError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "instruction_exposures_write_failed",
+          "Failed to persist tutor_instruction_exposures; turn proceeds",
+          { message: exposuresError.message, code: exposuresError.code },
+        );
+      }
+    }
+
+    await logTurnMetrics({
+      conversationId: conversation.id,
+      turnOrdinal: 0,
+      orchestrationDurationMs: Date.now() - turnStartedAt,
+      modelName: orchestration.orchestration_meta.model_name,
+      tokensIn: 0,
+      tokensOut: 0,
+      cacheHit: orchestration.orchestration_meta.cache_used,
+      compactionRecommended:
+        orchestration.orchestration_meta.compaction_recommended,
+      antiLeakTriggered,
+      injectionDetected,
+      crisisTriggered: false,
+    });
+
+    await supabaseServer
+      .from("tutor_conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", conversation.id);
+
+    // Step 19: Return success response (§6.7).
+    res.status(200).json({
+      data: {
+        conversation_id: conversation.id,
+        message_id: tutorMessageRow.id,
+        client_turn_id: input.client_turn_id,
+        response: {
+          content: safeContent,
+          content_kind: orchestration.response.content_kind,
+          suggested_action: orchestration.response.suggested_action,
+          ui_hints: orchestration.response.ui_hints,
+        },
+        conversation_updated_at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "append_turn_error",
+      "Unexpected error in POST /messages",
+      err instanceof Error ? err : undefined,
+    );
+    sendTutorError(res, "orchestration_failed");
+  }
+});
 
 // ============================================================================
 // GET /conversations/:conversationId — §7 Replay
@@ -1208,8 +1209,9 @@ router.get(
           messages: safeMessages,
           pagination: {
             has_more: ordered.length === messageLimit,
-            next_cursor:
-              ordered.length > 0 ? ordered[ordered.length - 1].id : null,
+            // `ordered` is oldest-first; the pagination cursor for "older
+            // messages" is the earliest (first) row in this page.
+            next_cursor: ordered.length > 0 ? ordered[0].id : null,
           },
         },
       });
