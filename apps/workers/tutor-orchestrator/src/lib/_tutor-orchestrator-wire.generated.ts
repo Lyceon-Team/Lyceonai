@@ -290,13 +290,29 @@ export const orchestrateResponseSchema = z.object({
 
 // ── Compact schemas ──────────────────────────────────────────────────
 
+/**
+ * @updated 2026-08-09 — additive fields for worker-side conversation
+ * compaction (Doc 03C V3 §8.3 step 1-2: load conversation content, invoke
+ * Vertex flash_class to summarize). `recent_messages` reuses the canonical
+ * `recentMessageSchema` already defined above for orchestrateRequestSchema —
+ * no duplicate shape. Both new fields are optional/nullable so the existing
+ * caller (server/lib/tutor-orchestrator-client.ts, which posts only
+ * {conversation_id, student_id} and reads only `.ok`) keeps working
+ * unchanged; this is purely additive, non-breaking. Persisting the returned
+ * `summary` to `tutor_memory_summaries` (Doc 03A V3 §7, chat_compaction type)
+ * and the invalidate-then-delete cache NOTIFY (Doc 03B V4.1 §12B.5.1) are
+ * NOT implemented by this schema change — see apps/workers/tutor-orchestrator/
+ * src/routes/compact.ts header for the exact scope boundary.
+ */
 export const compactRequestSchema = z.object({
   conversation_id: z.string().uuid(),
   student_id: z.string().uuid(),
+  recent_messages: z.array(recentMessageSchema).optional(),
 });
 
 export const compactResponseSchema = z.object({
   ok: z.boolean(),
+  summary: z.string().nullable().optional(),
 });
 
 // ── Inferred types ───────────────────────────────────────────────────
