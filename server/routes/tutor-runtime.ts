@@ -893,7 +893,6 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       recentMessages,
       runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
       correctAnswer,
-      isPreSubmit: preSubmit,
     });
 
     await logContextResolution({

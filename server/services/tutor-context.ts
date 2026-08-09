@@ -69,10 +69,9 @@ type EnvelopeParams = {
   sourceQuestionRowId: string | null;
   recentMessages: z.infer<typeof recentMessageSchema>[];
   runtimeLimits: { maxOutputTokens: number; timeoutMs: number };
-  // Anti-leak fields (LISA-FULL-001): resolved BFF-side, passed to worker.
+  // Anti-leak field (LISA-FULL-001): resolved BFF-side, passed to worker.
   // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
   correctAnswer: string | null;
-  isPreSubmit: boolean;
 };
 
 // ── Self-deprecation keywords (V1 simple scan) ─────────────────────────
@@ -1019,10 +1018,9 @@ export async function resolveFullEnvelope(
       max_output_tokens: params.runtimeLimits.maxOutputTokens,
       timeout_ms: params.runtimeLimits.timeoutMs,
     },
-    // Anti-leak fields (LISA-FULL-001): BFF resolves these; worker scans.
+    // Anti-leak field (LISA-FULL-001): BFF resolves; worker scans when non-null.
     // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
     correct_answer: params.correctAnswer,
-    is_pre_submit: params.isPreSubmit,
     // Model Armor template IDs (Karl ruling: BFF passes, worker stays stateless).
     // @spec [Doc-03B_V4.1 §12B.8, ADR-001]
     model_armor_input_template_id:

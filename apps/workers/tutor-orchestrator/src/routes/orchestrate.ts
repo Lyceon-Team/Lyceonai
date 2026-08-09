@@ -203,9 +203,9 @@ import {
 /**
  * Maps a successful Vertex generation into the wire-contract OrchestrateResponse
  * shape. Applies worker-side anti-leak scan (LISA-FULL-001) when the request
- * carries pre-submit state. `question_links` / `instruction_exposures` are empty
- * (see file header trade-offs — candidate-slot resolution is not implemented in
- * this pass).
+ * carries a non-null correct_answer (pre-submit implied). `question_links` /
+ * `instruction_exposures` are empty (see file header trade-offs — candidate-slot
+ * resolution is not implemented in this pass).
  *
  * @spec [Doc-03C_V3 §7.1, INV-03-04]
  */
@@ -213,11 +213,12 @@ export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
 ): OrchestrateResponse {
-  // Worker-side anti-leak scan: if pre-submit and the response leaks the
-  // correct answer, substitute with the safe pedagogical fallback. This is
-  // the first anti-leak layer; BFF-side scanAndSubstitute is defense-in-depth.
+  // Worker-side anti-leak scan: if correct_answer is present (pre-submit
+  // implied) and the response leaks it, substitute with the safe pedagogical
+  // fallback. This is the first anti-leak layer; BFF-side scanAndSubstitute
+  // is defense-in-depth.
   let content = vertexResponse.text;
-  if (request.is_pre_submit) {
+  if (request.correct_answer !== null) {
     const leaked = hasAnswerLeak(content, request.correct_answer);
     if (leaked) {
       logEvent(
