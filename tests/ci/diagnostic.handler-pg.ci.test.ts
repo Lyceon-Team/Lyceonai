@@ -18,6 +18,17 @@
  *
  * If the handler stops calling applyMasteryEvent, (a)–(c) fail immediately.
  *
+ * GROUNDED SEED CONTRACT — seed data matches the real published-question shape:
+ *   - questions.options: [{key,text}] A–D (exactly 4, canonical keys)
+ *   - questions.correct_answer: keyed 'B' (MCQ key match)
+ *   - questions.option_metadata: {"A":{role:"distractor",...},"B":{role:"correct",...},...}
+ *   - questions.correct_variants: NULL (MCQs are NOT graded via correct_variants)
+ *   - NO option_order / option_token_map on questions (those live on PSI only)
+ *   - PSI.option_order: text[] randomized serve order
+ *   - PSI.option_token_map: token→key map (grading resolves tokens to canonical keys)
+ *   - PSI.question_option_metadata: mirrors questions.option_metadata in snapshot
+ *   - PSI.question_correct_variants: NULL for MCQ
+ *
  * Runs ONLY in CI jobs with PG16 service container (PGHOST set).
  * Skipped silently in the regular `ci` job (no PG available).
  */
@@ -476,14 +487,23 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       const [section, domain, skillCode] = CANONICAL_DOMAINS[d]!;
       for (let q = 1; q <= 5; q++) {
         const qid = questionId(d, q);
+        // Seed matches grounded real-question contract:
+        // - options: [{key,text}] A–D (4 canonical options)
+        // - correct_answer: keyed 'B' (MCQ key match)
+        // - option_metadata: one key role:"correct" (B), rest "distractor"
+        // - correct_variants: NULL (MCQs are NOT graded via correct_variants — that's grid-in)
+        // - NO option_order, NO option_token_map on questions (those live on PSI snapshot)
         await testPg.query(
           `INSERT INTO public.questions
               (id, section, source_type, domain, skill_codes, difficulty,
-               stem, options, correct_answer, explanation, status, published_at)
+               stem, options, correct_answer, explanation,
+               option_metadata, status, published_at)
             VALUES ($1, $2, 1, $3, ARRAY[$4], $5,
               $6,
               '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
-              'B', $7, 'published', now())`,
+              'B', $7,
+              '{"A":{"role":"distractor","error_taxonomy":"common-misconception"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"common-misconception"},"D":{"role":"distractor","error_taxonomy":"common-misconception"}}'::jsonb,
+              'published', now())`,
           [
             qid,
             section,
@@ -523,18 +543,28 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
         ordinal++;
         const iid = itemUuid(ordinal);
         const qid = questionId(d, q);
+        // PSI snapshot matches grounded real-question contract:
+        // - question_options: [{key,text}] A–D (canonical 4-option set)
+        // - question_correct_answer: 'B' (MCQ keyed answer)
+        // - question_option_metadata: {"A":{"role":"distractor",...},"B":{"role":"correct",...},...}
+        // - question_correct_variants: NULL (MCQ — NOT graded via correct_variants)
+        // - option_order: text[] (randomized serve order — on PSI, not questions)
+        // - option_token_map: jsonb token→key (on PSI, not questions)
         await testPg.query(
           `INSERT INTO public.practice_session_items
               (id, session_id, user_id, actor_id, ordinal,
                question_id, question_stem, question_options,
                question_correct_answer, question_explanation,
+               question_option_metadata,
                question_domain, question_skill, question_difficulty,
                question_section, status, question_item_type,
                option_order, option_token_map)
             VALUES ($1, $2, $3, $3, $4,
               $5, $6,
               '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
-              'B', $7, $8, $9, $10, $11, 'served', 'mcq',
+              'B', $7,
+              '{"A":{"role":"distractor","error_taxonomy":"common-misconception"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"common-misconception"},"D":{"role":"distractor","error_taxonomy":"common-misconception"}}'::jsonb,
+              $8, $9, $10, $11, 'served', 'mcq',
               ARRAY['A','B','C','D']::text[],
               '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb)`,
           [
