@@ -58,7 +58,6 @@ import {
 } from "../services/tutor-crisis";
 import {
   sanitizeInput,
-  wrapWithBoundaryMarkers,
   scanForInjectionPatterns,
   checkSignatureTable,
   logInjectionAttempt,
@@ -728,13 +727,10 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     };
 
     // Step 10: Input sanitization — length bound, escaping, injection scan.
+    // Boundary markers (Doc 03A §12.3 Layer 3) are applied worker-side in
+    // buildConversationMessages at prompt assembly time, covering ALL student
+    // messages in the conversation — not just the current turn.
     const { sanitized } = sanitizeInput(input.message);
-    const wrapped = wrapWithBoundaryMarkers(sanitized, "student_input");
-    // `wrapped` was previously passed to the now-deleted invokeOrchestration stub.
-    // The real worker prompt assembly (Doc 03A §12.3 student_input boundary
-    // markers) will consume this once the full prompt template system is wired.
-    // Retained so the injection-defense pipeline stays intact.
-    void wrapped;
     const patternScan = scanForInjectionPatterns(sanitized);
     const signatureScan = await checkSignatureTable(sanitized);
     const injectionDetected = patternScan.detected || signatureScan.matched;

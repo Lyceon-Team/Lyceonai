@@ -152,7 +152,10 @@ export function buildConversationMessages(
     if (message.role === "system") {
       return { role: "user", text: `[system note] ${message.message}` };
     }
-    return { role: "user", text: message.message };
+    // Student messages are wrapped in boundary markers so the model treats
+    // them as data, not instructions (Doc 03A §12.3 Layer 3 injection defense).
+    const wrapped = `${STUDENT_INPUT_OPEN}\n${message.message}\n${STUDENT_INPUT_CLOSE}`;
+    return { role: "user", text: wrapped };
   });
 }
 
@@ -180,6 +183,18 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
 function isCompactionRecommended(request: OrchestrateRequest): boolean {
   return request.recent_messages.length >= 20;
 }
+
+// ── Boundary markers (Doc 03A §12.3 Layer 3 injection defense) ─────────
+// @spec [Doc-03A_V3 §12.3, Doc-03_V3 §18.2 Layer 3]
+// The BFF sanitizes input and persists the raw text (tutor_messages); the
+// worker wraps student messages at prompt assembly time, right before they
+// become model content. This mirrors the anti-leak inlining pattern below:
+// the worker can't import from server/services/ (it drags in supabase-server
+// and breaks the Cloud Run buildpack), so the constants are duplicated here.
+// Update both locations together if marker wording ever changes.
+
+const STUDENT_INPUT_OPEN = "<<<STUDENT_INPUT>>>";
+const STUDENT_INPUT_CLOSE = "<<<END_STUDENT_INPUT>>>";
 
 // ── Worker-side anti-leak scan (LISA-FULL-001) ──────────────────────────
 // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
