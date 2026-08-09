@@ -14,7 +14,7 @@
  */
 
 import { z } from "zod";
-import { CANONICAL_ID_PATTERN } from "./canonical-id";
+import { CANONICAL_ID_PATTERN } from "./canonical-id.js";
 
 // ── Request sub-schemas ──────────────────────────────────────────────
 
