@@ -184,147 +184,28 @@ function isCompactionRecommended(request: OrchestrateRequest): boolean {
   return request.recent_messages.length >= 20;
 }
 
-// ── Boundary markers (Doc 03A §12.3 Layer 3 injection defense) ─────────
-// @spec [Doc-03A_V3 §12.3, Doc-03_V3 §18.2 Layer 3]
-// The BFF sanitizes input and persists the raw text (tutor_messages); the
-// worker wraps student messages at prompt assembly time, right before they
-// become model content. This mirrors the anti-leak inlining pattern below:
-// the worker can't import from server/services/ (it drags in supabase-server
-// and breaks the Cloud Run buildpack), so the constants are duplicated here.
-// Update both locations together if marker wording ever changes.
+// ── Shared safety constants (single source of truth) ──────────────────
+// All pure functions and constants are defined in shared/tutor-safety-constants.ts
+// and COPIED into the worker at prebuild (byte-identical). CI enforces drift.
+// The worker can't import from server/services/ (it drags in supabase-server
+// and breaks the isolated Cloud Run buildpack), so the shared file has zero
+// imports and is safe for both build contexts.
+// @see shared/tutor-safety-constants.ts
+// @see .github/workflows/ci.yml — "Safety-constants drift gate"
 
-const STUDENT_INPUT_OPEN = "<<<STUDENT_INPUT>>>";
-const STUDENT_INPUT_CLOSE = "<<<END_STUDENT_INPUT>>>";
-
-// ── Worker-side anti-leak scan (LISA-FULL-001) ──────────────────────────
-// @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 15]
-// The worker cannot import from server/services/tutor-antileak.ts (it
-// drags in supabase-server and breaks the isolated Cloud Run buildpack).
-// This is the same answer-aware hasAnswerLeak logic, inlined for the
-// worker boundary. BFF-side scanAndSubstitute is kept as defense-in-depth.
-
-/** Generic phrase patterns for null-correctAnswer fallback. */
-const GENERIC_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
-  /the\s+correct\s+answer\s+is\s+[A-Da-d]/i,
-  /the\s+right\s+answer\s+is\s+[A-Da-d]/i,
-  /choose\s+option\s+[A-Da-d]/i,
-  /(?:^|:\s*)Answer:\s*[A-Da-d]/im,
-];
-
-/** Structural prefixes excluded from grid-in matching. */
-const STRUCTURAL_PREFIXES =
-  /(?:step|question|part|item|number|#|no\.?|problem)\s*/i;
-
-function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
-  const l = letter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    new RegExp(`the\\s+correct\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`the\\s+right\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`the\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`(?:^|:\\s*)Answer:\\s*${l}\\b`, "im"),
-    new RegExp(`choose\\s+option\\s+${l}\\b`, "i"),
-    new RegExp(`select\\s+option\\s+${l}\\b`, "i"),
-    new RegExp(`option\\s+${l}\\s+is\\s+correct`, "i"),
-    new RegExp(`option\\s+${l}\\s+is\\s+right`, "i"),
-    new RegExp(`definitely\\s+${l}\\b`, "i"),
-    new RegExp(`it'?s\\s+${l}\\b`, "i"),
-  ];
-}
-
-function fractionToDecimal(value: string): number | null {
-  const fractionMatch = value.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
-  if (fractionMatch) {
-    const numerator = Number(fractionMatch[1]);
-    const denominator = Number(fractionMatch[2]);
-    if (denominator === 0) return null;
-    return numerator / denominator;
-  }
-  return null;
-}
-
-function hasGridInValueInText(text: string, value: string): boolean {
-  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, "g");
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    const beforeMatch = text.slice(Math.max(0, match.index - 20), match.index);
-    if (!STRUCTURAL_PREFIXES.test(beforeMatch.trim())) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Answer-aware leak detector — worker-side mirror of the canonical
- * `hasAnswerLeak` in server/services/tutor-antileak.ts. Kept identical
- * in logic; update both locations together.
- * @spec [INV-03-04, Doc-03_V3 §17]
- */
-export function hasAnswerLeak(
-  text: string,
-  correctAnswer: string | null,
-): boolean {
-  if (!text) return false;
-
-  if (correctAnswer !== null && correctAnswer.length > 0) {
-    const trimmed = correctAnswer.trim();
-
-    if (/^[A-Da-d]$/.test(trimmed)) {
-      const patterns = buildMcqPatterns(trimmed);
-      for (const p of patterns) {
-        if (p.test(text)) return true;
-      }
-      return false;
-    }
-
-    if (hasGridInValueInText(text, trimmed)) return true;
-
-    const asDecimal = fractionToDecimal(trimmed);
-    if (asDecimal !== null) {
-      if (hasGridInValueInText(text, String(asDecimal))) return true;
-    } else {
-      const numericValue = Number(trimmed);
-      if (!isNaN(numericValue)) {
-        const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
-        let frMatch: RegExpExecArray | null;
-        while ((frMatch = fractionPattern.exec(text)) !== null) {
-          const num = Number(frMatch[1]);
-          const den = Number(frMatch[2]);
-          if (den !== 0 && num / den === numericValue) {
-            const before = text.slice(
-              Math.max(0, frMatch.index - 20),
-              frMatch.index,
-            );
-            if (!STRUCTURAL_PREFIXES.test(before.trim())) return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  for (const pattern of GENERIC_LEAK_PATTERNS) {
-    if (pattern.test(text)) return true;
-  }
-  return false;
-}
-
-/**
- * Safe substitution text — mirrored from the canonical constant in
- * server/services/tutor-antileak.ts. Worker cannot import that module;
- * keep identical wording across both locations.
- * @spec [Doc-03_V3 §17.5, INV-03-04]
- */
-const WORKER_ANTI_LEAK_SUBSTITUTION =
-  "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
+import {
+  STUDENT_INPUT_OPEN,
+  STUDENT_INPUT_CLOSE,
+  TUTOR_ANTI_LEAK_SUBSTITUTION as WORKER_ANTI_LEAK_SUBSTITUTION,
+  hasAnswerLeak,
+} from "../lib/_tutor-safety-constants.generated";
 
 /**
  * Maps a successful Vertex generation into the wire-contract OrchestrateResponse
  * shape. Applies worker-side anti-leak scan (LISA-FULL-001) when the request
- * carries pre-submit state. `question_links` / `instruction_exposures` are empty
- * (see file header trade-offs — candidate-slot resolution is not implemented in
- * this pass).
+ * carries a non-null correct_answer (pre-submit implied). `question_links` /
+ * `instruction_exposures` are empty (see file header trade-offs — candidate-slot
+ * resolution is not implemented in this pass).
  *
  * @spec [Doc-03C_V3 §7.1, INV-03-04]
  */
@@ -332,11 +213,12 @@ export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
 ): OrchestrateResponse {
-  // Worker-side anti-leak scan: if pre-submit and the response leaks the
-  // correct answer, substitute with the safe pedagogical fallback. This is
-  // the first anti-leak layer; BFF-side scanAndSubstitute is defense-in-depth.
+  // Worker-side anti-leak scan: if correct_answer is present (pre-submit
+  // implied) and the response leaks it, substitute with the safe pedagogical
+  // fallback. This is the first anti-leak layer; BFF-side scanAndSubstitute
+  // is defense-in-depth.
   let content = vertexResponse.text;
-  if (request.is_pre_submit) {
+  if (request.correct_answer !== null) {
     const leaked = hasAnswerLeak(content, request.correct_answer);
     if (leaked) {
       logEvent(

@@ -25,6 +25,28 @@
 
 ## Entries
 
+SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
+Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
+  as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5
+  (loadOwnedConversation) — so a malformed request body is rejected with 400 before any DB lookup
+  occurs.
+WAS: Spec ordering — step 5 ownership check first, step 6 payload validation second. Under this
+  ordering, a request with a valid conversation_id but garbage body hits the DB for ownership
+  before discovering the body is invalid.
+IS: Implementation ordering — step 6 payload validation first (tutor-runtime.ts:622), step 5
+  ownership check second (tutor-runtime.ts:633). A malformed body returns 400 without touching
+  the database.
+Rationale: Fail-fast on shape. A 400 for an invalid body reveals nothing about conversation
+  ownership — the rejection is purely structural, independent of who owns the conversation. No
+  security property is lost. The reordering avoids a wasted DB round-trip on requests that would
+  fail validation anyway. Karl accepted.
+Version: Spec deviation — implementation intentionally diverges from the numbered step ordering
+  in §6.5. The spec text is correct as a logical description of what the pipeline does; only the
+  execution order differs.
+Artifact: PR for branch claude/lisa-tutor-inventory-27lras.
+Owner action: review — confirm acceptance of the step 5/6 ordering inversion in §6.5, or
+  renumber the spec steps to match the implementation order.
+
 SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
 Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated
   conversation history. This entry moves it to V1, captured per-turn from model output via the

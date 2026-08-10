@@ -55,19 +55,28 @@ type ModelArmorConfig = {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
+import {
+  STUDENT_INPUT_OPEN,
+  STUDENT_INPUT_CLOSE,
+} from "../../shared/tutor-safety-constants";
+
 /** Default max input length from tutor_context_runtime_config (injection_length_bound_chars). */
 const DEFAULT_MAX_INPUT_LENGTH = 4000;
 
 /**
  * Boundary marker templates per Doc 03A §12.3.
  * Content wrapped in these markers is treated as data, not instructions.
+ *
+ * student_input open/close are imported from the shared safety constants
+ * (single source of truth — same file is copied into the worker at prebuild).
+ * question_content and memory_content are BFF-only (not mirrored to worker).
  */
 const BOUNDARY_MARKERS: Readonly<
   Record<BoundaryContentType, { open: string; close: string }>
 > = {
   student_input: {
-    open: "<<<STUDENT_INPUT>>>",
-    close: "<<<END_STUDENT_INPUT>>>",
+    open: STUDENT_INPUT_OPEN,
+    close: STUDENT_INPUT_CLOSE,
   },
   question_content: {
     open: "<<<QUESTION_CONTENT>>>",

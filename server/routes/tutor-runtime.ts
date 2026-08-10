@@ -63,10 +63,10 @@ import {
   logInjectionAttempt,
 } from "../services/tutor-injection-defense";
 import {
-  logPolicyDecision,
   logContextResolution,
   logTurnMetrics,
 } from "../services/tutor-policy-logger";
+import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 
 const router = Router();
@@ -661,9 +661,11 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       logger.error(
         "TUTOR_RUNTIME",
         "idempotency_lookup_failed",
-        "tutor_messages idempotency lookup failed",
+        "tutor_messages idempotency lookup failed; failing closed",
         { message: existingTurnError.message, code: existingTurnError.code },
       );
+      sendTutorError(res, "idempotency_lookup_failed");
+      return;
     }
 
     if (existingTurn && existingTurn.length > 0) {
@@ -680,13 +682,32 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
 
       if (existingStudentMsg && existingTutorMsg) {
+        // AUDIT-003: Apply anti-leak scan to idempotency replay — the
+        // submission state may have changed since the original turn.
+        // Same defense-in-depth as the GET replay endpoint (§16 Layer 4).
+        const replayPreSubmit = await isPreSubmitForSurface(
+          conversation.source_surface,
+          conversation.source_session_item_id,
+          supabaseServer,
+        );
+        const replayCorrectAnswer = replayPreSubmit
+          ? await getCorrectAnswerForScope(conversation.source_question_row_id)
+          : null;
+        const cleanedReplay = removeInternalMetadataMentions(
+          existingTutorMsg.message,
+        );
+        const safeReplayContent =
+          replayPreSubmit && hasAnswerLeak(cleanedReplay, replayCorrectAnswer)
+            ? TUTOR_ANTI_LEAK_SUBSTITUTION
+            : cleanedReplay;
+
         res.status(200).json({
           data: {
             conversation_id: conversation.id,
             message_id: existingTutorMsg.id,
             client_turn_id: input.client_turn_id,
             response: {
-              content: existingTutorMsg.message,
+              content: safeReplayContent,
               content_kind: "message",
               suggested_action: { type: "none", label: null },
               ui_hints: {
@@ -745,7 +766,29 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
-    const crisisResult = await runCrisisClassifier(sanitized);
+    // Runs BEFORE orchestration — if crisis is detected, bypass model generation
+    // entirely and return regional crisis resources (Doc-03_V3 §21).
+    // The classifier infrastructure may be unavailable (missing tables in test
+    // environments, Vertex outage). In that case the turn proceeds with
+    // forceReview so it lands in the §21.3 safety review queue.
+    let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
+    try {
+      crisisResult = await runCrisisClassifier(sanitized);
+    } catch (crisisErr: unknown) {
+      // Classifier infrastructure failure — treat as degraded, not blocking.
+      // The turn proceeds but is force-enqueued to the review queue.
+      logger.error(
+        "TUTOR_RUNTIME",
+        "crisis_classifier_infrastructure_error",
+        "crisis classifier infrastructure error; treating as degraded",
+        {
+          message:
+            crisisErr instanceof Error ? crisisErr.message : String(crisisErr),
+          conversationId: conversation.id,
+        },
+      );
+      crisisResult = { crisis: false, forceReview: true };
+    }
 
     // Step 11: Persist student message.
     const { data: studentMessageRow, error: studentMessageError } =
@@ -851,20 +894,36 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Step 12: Persist instructional assignment (policy decision audit).
-    // A dedicated policy service will replace this deterministic default
-    // in a later workstream — see tutor-context.ts resolveDefaultPolicy.
-    await logPolicyDecision({
+    // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
+    // force-enqueued to the §21.3 review queue with classifier_degraded.
+    if (!crisisResult.crisis && crisisResult.forceReview) {
+      await flagConversationForReview(conversation.id);
+    }
+
+    // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
+    // Policy-assignment persistence is blocking per §1.4. If this write fails,
+    // the turn is not treated as successful.
+    // @spec [Doc-03B_V4.1 §6.5 step 12, Doc-03A_V1 §11, Doc-03B_V4.1 §1.4]
+    const instructionAssignmentResult = await persistInstructionAssignment({
       conversationId: conversation.id,
-      turnOrdinal: 0,
+      studentId,
+      relatedMessageId: studentMessageRow.id,
+      sourceSessionId: effectiveScope.source_session_id,
+      sourceSessionItemId: effectiveScope.source_session_item_id,
+      sourceQuestionRowId: effectiveScope.source_question_row_id,
       policyFamily: "base_v1",
       policyVariant: "standard",
       policyVersion: "1.0.0",
       promptVersion: null,
       assignmentMode: "deterministic",
       assignmentKey: `${studentId}:${conversation.entry_mode}`,
+      emotionalRegister: null,
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
+    if (!instructionAssignmentResult.ok) {
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope — these flow into both the wire request (worker-side scan) and
@@ -893,7 +952,6 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       recentMessages,
       runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
       correctAnswer,
-      isPreSubmit: preSubmit,
     });
 
     await logContextResolution({

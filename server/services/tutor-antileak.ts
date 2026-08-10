@@ -25,170 +25,18 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 
-// ── Constants ──────────────────────────────────────────────────────────
+// ── Shared safety constants (single source of truth) ──────────────────
+// All pure functions and constants are defined in shared/tutor-safety-constants.ts
+// and copied into the worker at prebuild. CI enforces byte-identity.
+// @see shared/tutor-safety-constants.ts
+// @see .github/workflows/ci.yml — "Safety-constants drift gate"
 
-/**
- * Safe substitution text for leaked responses. Defined exactly once.
- * Used for all substitution paths (append-turn + replay).
- * @spec [Doc-03_V3 §17.5, INV-03-04]
- */
-const TUTOR_ANTI_LEAK_SUBSTITUTION =
-  "Let me think about this differently. What approach would you take to solve this? Try working through it step by step.";
+import {
+  TUTOR_ANTI_LEAK_SUBSTITUTION,
+  hasAnswerLeak,
+} from "../../shared/tutor-safety-constants";
 
-export { TUTOR_ANTI_LEAK_SUBSTITUTION };
-
-// ── Structural prefixes excluded from grid-in matching ─────────────────
-
-const STRUCTURAL_PREFIXES =
-  /(?:step|question|part|item|number|#|no\.?|problem)\s*/i;
-
-// ── Generic phrase patterns (used when correctAnswer is null) ──────────
-
-const GENERIC_LEAK_PATTERNS: ReadonlyArray<RegExp> = [
-  /the\s+correct\s+answer\s+is\s+[A-Da-d]/i,
-  /the\s+right\s+answer\s+is\s+[A-Da-d]/i,
-  /choose\s+option\s+[A-Da-d]/i,
-  /(?:^|:\s*)Answer:\s*[A-Da-d]/im,
-];
-
-// ── Helpers ────────────────────────────────────────────────────────────
-
-/**
- * Attempts to convert a fraction string to its decimal equivalent.
- * Returns null if the input is not a valid fraction.
- */
-function fractionToDecimal(value: string): number | null {
-  const fractionMatch = value.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
-  if (fractionMatch) {
-    const numerator = Number(fractionMatch[1]);
-    const denominator = Number(fractionMatch[2]);
-    if (denominator === 0) return null;
-    return numerator / denominator;
-  }
-  return null;
-}
-
-/**
- * Builds MCQ-specific leak patterns for a known correct letter.
- */
-function buildMcqPatterns(letter: string): ReadonlyArray<RegExp> {
-  const l = letter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    new RegExp(`the\\s+correct\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`the\\s+right\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`the\\s+answer\\s+is\\s+${l}\\b`, "i"),
-    new RegExp(`(?:^|:\\s*)Answer:\\s*${l}\\b`, "im"),
-    new RegExp(`choose\\s+option\\s+${l}\\b`, "i"),
-    new RegExp(`select\\s+option\\s+${l}\\b`, "i"),
-    new RegExp(`option\\s+${l}\\s+is\\s+correct`, "i"),
-    new RegExp(`option\\s+${l}\\s+is\\s+right`, "i"),
-    new RegExp(`definitely\\s+${l}\\b`, "i"),
-    new RegExp(`it'?s\\s+${l}\\b`, "i"),
-  ];
-}
-
-/**
- * Checks if a numeric value appears in text at a word boundary, excluding
- * structural prefixes like "step 3", "question 7", etc.
- */
-function hasGridInValueInText(text: string, value: string): boolean {
-  // Escape special regex chars in the value
-  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`(?<!\\w)${escaped}(?!\\w)`, "g");
-
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    // Check the text before the match for structural prefixes
-    const beforeMatch = text.slice(Math.max(0, match.index - 20), match.index);
-    if (!STRUCTURAL_PREFIXES.test(beforeMatch.trim())) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// ── Public API ─────────────────────────────────────────────────────────
-
-/**
- * Answer-aware leak detector. This function is the WS-2 CI gate
- * (tests/ci/ws2-antileak.ci.test.ts tests it directly).
- *
- * @spec [Doc-03_V3 §17, INV-03-04, INV-03-12]
- */
-export function hasAnswerLeak(
-  text: string,
-  correctAnswer: string | null,
-): boolean {
-  if (!text) {
-    return false;
-  }
-
-  // ── correctAnswer provided: answer-aware detection ────────────────
-  if (correctAnswer !== null && correctAnswer.length > 0) {
-    const trimmed = correctAnswer.trim();
-
-    // MCQ: single letter A-D
-    if (/^[A-Da-d]$/.test(trimmed)) {
-      const patterns = buildMcqPatterns(trimmed);
-      for (const pattern of patterns) {
-        if (pattern.test(text)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // Grid-in: numeric value (integer, decimal, fraction)
-    // Check the literal value
-    if (hasGridInValueInText(text, trimmed)) {
-      return true;
-    }
-
-    // Fraction/decimal equivalence
-    const asDecimal = fractionToDecimal(trimmed);
-    if (asDecimal !== null) {
-      // Answer is a fraction — also check for its decimal form
-      const decimalStr = String(asDecimal);
-      if (hasGridInValueInText(text, decimalStr)) {
-        return true;
-      }
-    } else {
-      // Answer might be a decimal — check if any fraction equivalent appears
-      const numericValue = Number(trimmed);
-      if (!isNaN(numericValue)) {
-        // Check common fraction representations: scan text for fractions
-        // that evaluate to the same value
-        const fractionPattern = /(?<!\w)(-?\d+)\s*\/\s*(-?\d+)(?!\w)/g;
-        let frMatch: RegExpExecArray | null;
-        while ((frMatch = fractionPattern.exec(text)) !== null) {
-          const num = Number(frMatch[1]);
-          const den = Number(frMatch[2]);
-          if (den !== 0 && num / den === numericValue) {
-            // Check it's not preceded by a structural prefix
-            const before = text.slice(
-              Math.max(0, frMatch.index - 20),
-              frMatch.index,
-            );
-            if (!STRUCTURAL_PREFIXES.test(before.trim())) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-
-    return false;
-  }
-
-  // ── correctAnswer is null: generic phrase detection ───────────────
-  for (const pattern of GENERIC_LEAK_PATTERNS) {
-    if (pattern.test(text)) {
-      return true;
-    }
-  }
-
-  return false;
-}
+export { TUTOR_ANTI_LEAK_SUBSTITUTION, hasAnswerLeak };
 
 /**
  * Determines pre-submit state server-side for a given surface.

@@ -35,7 +35,7 @@ import { logger } from "../logger";
 // ── Types ──────────────────────────────────────────────────────────────
 
 type CrisisResult =
-  | { crisis: false }
+  | { crisis: false; forceReview: boolean }
   | {
       crisis: true;
       source: "signature" | "model" | "both";
@@ -209,21 +209,95 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
 }
 
 /**
- * Internal: invokes the crisis classifier model.
- * Placeholder for the actual Vertex/model call — the orchestration layer
- * (Doc 03C) owns the actual model invocation; this provides the interface.
+ * Invokes the crisis classifier model via Vertex AI.
+ * Uses the classifier_class model alias (VERTEX_CLASSIFIER_CLASS_MODEL env var).
+ * Returns structured crisis classification result.
+ *
+ * @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21]
  */
 async function invokeClassifier(
-  _text: string,
+  text: string,
   _modelAlias: string,
 ): Promise<ClassifierResult> {
-  // TODO: Wire to actual Vertex classifier_class invocation via Doc 03C orchestration.
-  // This stub exists so the service compiles and tests can mock it.
-  // The real implementation calls the classifier_class model with a crisis-detection
-  // prompt and parses the structured response.
-  throw new Error(
-    "invokeClassifier not yet wired to Vertex classifier_class model",
-  );
+  const modelId = process.env.VERTEX_CLASSIFIER_CLASS_MODEL;
+  if (!modelId) {
+    throw new Error(
+      "VERTEX_CLASSIFIER_CLASS_MODEL env var not set; crisis classifier cannot run",
+    );
+  }
+
+  const projectId = process.env.VERTEX_PROJECT_ID ?? process.env.GCP_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION ?? "us-central1";
+
+  if (!projectId) {
+    throw new Error(
+      "VERTEX_PROJECT_ID / GCP_PROJECT_ID env var not set; crisis classifier cannot run",
+    );
+  }
+
+  // Dynamic import — @google/genai is a root dependency. If unavailable at
+  // runtime the throw is caught by classifyCrisis's retry logic and Layer 1
+  // stands (SCL-023).
+  const { GoogleGenAI } = await import("@google/genai");
+  const client = new GoogleGenAI({
+    vertexai: true,
+    project: projectId,
+    location,
+  });
+
+  const response = await client.models.generateContent({
+    model: modelId,
+    contents: [
+      {
+        role: "user",
+        parts: [{ text }],
+      },
+    ],
+    config: {
+      systemInstruction: {
+        parts: [
+          {
+            text: [
+              "You are a crisis detection classifier for a student tutoring platform.",
+              "Your ONLY job is to determine if the student's message indicates a crisis:",
+              "self-harm ideation, suicide ideation, severe emotional distress, or danger to self or others.",
+              "",
+              "Respond with ONLY a JSON object, no other text:",
+              '{"isCrisis": true, "confidence": 0.95}',
+              "",
+              "isCrisis: true if the message indicates a crisis situation, false otherwise.",
+              "confidence: a number between 0 and 1 indicating your confidence in the classification.",
+              "",
+              "Be sensitive. When in doubt, classify as crisis (fail toward safety).",
+              "Do NOT classify normal academic frustration or test anxiety as crisis.",
+            ].join("\n"),
+          },
+        ],
+      },
+      temperature: 0,
+      maxOutputTokens: 64,
+    },
+  });
+
+  const raw = response.text?.trim() ?? "";
+  // Parse the JSON response, stripping any markdown fencing the model may add
+  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+
+  try {
+    const parsed = JSON.parse(jsonStr) as {
+      isCrisis?: boolean;
+      confidence?: number;
+    };
+    return {
+      isCrisis: parsed.isCrisis === true,
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+    };
+  } catch {
+    // Model returned unparseable output — treat as failure (caller handles retry)
+    throw new Error(
+      `Crisis classifier returned unparseable response: ${raw.slice(0, 200)}`,
+    );
+  }
 }
 
 // ── Combined Classifier ────────────────────────────────────────────────
@@ -260,14 +334,17 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     !classifierResult.isCrisis && classifierResult.confidence === 0;
 
   if (!layer1Positive && !layer2Positive) {
-    return {
-      crisis: false,
-      // If Layer 2 may have failed, the orchestrator should still enqueue
-      // for review — but the crisis path itself is not triggered
-      ...(layer2MayHaveFailed
-        ? {} // forceReview handled by orchestrator checking confidence === 0
-        : {}),
-    } as CrisisResult;
+    if (layer2MayHaveFailed) {
+      // Layer 2 could not run — Layer 1 result stands per SCL-023,
+      // but the turn must be force-enqueued to the §21.3 review queue
+      // with classifier_degraded (CR-03C-V3-01 §3.4 condition 3).
+      logger.warn(
+        "TUTOR_CRISIS",
+        "classifier_degraded",
+        "Layer 2 crisis classifier failed; Layer 1 stands, turn force-enqueued to review queue",
+      );
+    }
+    return { crisis: false, forceReview: layer2MayHaveFailed };
   }
 
   // At least one layer is positive — crisis path triggered
