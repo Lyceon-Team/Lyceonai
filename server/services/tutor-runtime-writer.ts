@@ -14,9 +14,7 @@
  *
  * trade-offs: this is a hard write gate — a DB outage blocks turns entirely.
  * This is the spec's explicit choice (§1.4): canonical logs missing = turn
- * not successful. The non-blocking audit log (tutor_policy_decisions via
- * logPolicyDecision) can still fire alongside this for observability, but
- * this write is the one that gates the turn.
+ * not successful.
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";

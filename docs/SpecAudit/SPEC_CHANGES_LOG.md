@@ -25,45 +25,27 @@
 
 ## Entries
 
-SCL-027 | 2026-08-09 | Doc 03B §6.5 steps 8/12, Doc 03B §1.4 (idempotency fail-closed + replay anti-leak) | PROPOSED
-Change: Two fail-open gaps in the tutor runtime pipeline corrected to fail-closed, plus the
-  idempotency replay path gains the same anti-leak scan applied on the forward path and GET replay.
-  (a) Idempotency lookup failure (step 8): DB error on the client_turn_id dedup query was logged
-  but the turn proceeded, meaning a duplicate turn could be processed if the lookup failed. Now
-  fails closed — returns an error to the client instead of proceeding without dedup assurance.
-  (b) Idempotency replay anti-leak (step 8 replay): when replaying a previously-completed turn
-  (both student and tutor messages found for the same client_turn_id), the stored tutor message
-  was returned verbatim with no anti-leak scan. The submission state may have changed since the
-  original turn was processed (e.g., the student submitted the answer after the tutor turn was
-  first served). Now applies the same removeInternalMetadataMentions + hasAnswerLeak scan as the
-  GET replay endpoint (§16 Layer 4 defense-in-depth).
-  (c) Step 12 writes to wrong table: step 12 called logPolicyDecision() which writes to
-  tutor_policy_decisions (a non-blocking observability table). Doc 03B §6.5 step 12 specifies
-  "Persist instructional assignment to tutor_instruction_assignments via tutor_runtime_writer."
-  Doc 03B §1.4 classifies policy-assignment persistence as blocking. Now writes to
-  tutor_instruction_assignments via persistInstructionAssignment(), blocking — turn fails if the
-  write fails.
-WAS (a): Idempotency lookup DB error logged at warn level, turn proceeds without dedup guarantee.
-WAS (b): Idempotency replay returns existingTutorMsg.message verbatim, no anti-leak scan.
-WAS (c): Step 12 calls logPolicyDecision() → tutor_policy_decisions (non-blocking, wrong table).
-IS (a): Idempotency lookup DB error returns sendTutorError(res, "idempotency_lookup_failed") —
-  turn does not proceed.
-IS (b): Idempotency replay resolves preSubmit via isPreSubmitForSurface, resolves correctAnswer
-  via getCorrectAnswerForScope, applies removeInternalMetadataMentions + hasAnswerLeak, substitutes
-  TUTOR_ANTI_LEAK_SUBSTITUTION if leak detected. Same defense-in-depth as GET replay endpoint.
-IS (c): Step 12 calls persistInstructionAssignment() → tutor_instruction_assignments (blocking).
-  On failure, returns sendTutorError(res, "canonical_write_failed") — turn does not proceed.
-Rationale: (a) is a straightforward fail-closed correction — without dedup guarantee the turn
-  must not proceed (idempotency is a hard invariant per Doc 03B §4). (b) is an anti-leak gap —
-  any surface that serves tutor content must apply the scan regardless of how the content was
-  retrieved (INV-03-04, §16 Layer 4). (c) is a table-targeting bug — the code wrote to an
-  observability table instead of the spec-mandated canonical table, and did so non-blocking when
-  §1.4 requires blocking.
-Version: Implementation correction — no spec text change required. Code now matches
-  Doc 03B §6.5 step 8, §6.5 step 12, §1.4 as already written.
+SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
+Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
+  as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5
+  (loadOwnedConversation) — so a malformed request body is rejected with 400 before any DB lookup
+  occurs.
+WAS: Spec ordering — step 5 ownership check first, step 6 payload validation second. Under this
+  ordering, a request with a valid conversation_id but garbage body hits the DB for ownership
+  before discovering the body is invalid.
+IS: Implementation ordering — step 6 payload validation first (tutor-runtime.ts:622), step 5
+  ownership check second (tutor-runtime.ts:633). A malformed body returns 400 without touching
+  the database.
+Rationale: Fail-fast on shape. A 400 for an invalid body reveals nothing about conversation
+  ownership — the rejection is purely structural, independent of who owns the conversation. No
+  security property is lost. The reordering avoids a wasted DB round-trip on requests that would
+  fail validation anyway. Karl accepted.
+Version: Spec deviation — implementation intentionally diverges from the numbered step ordering
+  in §6.5. The spec text is correct as a logical description of what the pipeline does; only the
+  execution order differs.
 Artifact: PR for branch claude/lisa-tutor-inventory-27lras.
-Owner action: none required — these are bug fixes aligning code to existing spec text, not spec
-  changes. The spec is correct as written; the code was wrong.
+Owner action: review — confirm acceptance of the step 5/6 ordering inversion in §6.5, or
+  renumber the spec steps to match the implementation order.
 
 SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
 Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated

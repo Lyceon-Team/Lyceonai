@@ -901,10 +901,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
-    // policy-assignment persistence is blocking per §1.4. If this write fails,
-    // the turn is not treated as successful. The non-blocking audit log
-    // (logPolicyDecision → tutor_policy_decisions) fires in addition for
-    // observability but does not gate the turn.
+    // Policy-assignment persistence is blocking per §1.4. If this write fails,
+    // the turn is not treated as successful.
     // @spec [Doc-03B_V4.1 §6.5 step 12, Doc-03A_V1 §11, Doc-03B_V4.1 §1.4]
     const instructionAssignmentResult = await persistInstructionAssignment({
       conversationId: conversation.id,
