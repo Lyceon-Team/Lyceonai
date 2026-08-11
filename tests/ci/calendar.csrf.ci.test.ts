@@ -22,6 +22,74 @@ function requireUser(req: any, res: any) {
   return req.user;
 }
 
+// ---------------------------------------------------------------------------
+// Stub supabaseServer so calendar handlers respond instead of hanging on
+// unreachable HTTP to placeholder.supabase.co.  Every chain method returns
+// the builder; terminal calls resolve to empty/null data.
+// Matches the pattern in calendar.ownership.contract.test.ts.
+// ---------------------------------------------------------------------------
+function stubChain(): Record<string, any> {
+  const self: Record<string, any> = {};
+  const chainMethods = [
+    "from",
+    "select",
+    "insert",
+    "upsert",
+    "update",
+    "delete",
+    "eq",
+    "neq",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "in",
+    "is",
+    "order",
+    "limit",
+    "range",
+    "match",
+    "not",
+    "or",
+    "filter",
+    "contains",
+    "containedBy",
+    "overlaps",
+    "textSearch",
+  ];
+  for (const m of chainMethods) {
+    self[m] = () => self;
+  }
+  self.maybeSingle = async () => ({ data: null, error: null });
+  self.single = async () => ({ data: null, error: null });
+  self.then = (resolve: (v: { data: never[]; error: null }) => void) =>
+    resolve({ data: [], error: null });
+  self.rpc = async () => ({ data: null, error: null });
+  return self;
+}
+
+vi.mock("../../apps/api/src/lib/supabase-server", () => ({
+  supabaseServer: stubChain(),
+}));
+
+// Stub kpi-access so ensurePremiumAccess resolves instead of reaching
+// supabaseServer through getEntitlementForProfile.
+vi.mock("../../server/services/kpi-access", () => ({
+  resolvePaidKpiAccessForUser: async () => ({
+    hasPaidAccess: true,
+    accountId: "student-auth-user",
+    plan: "paid" as const,
+    status: "active" as const,
+    currentPeriodEnd: "2099-12-31",
+    reason: "csrf-test-stub",
+  }),
+}));
+
+// Stub notification-authority (calendar emitCalendarEvent calls it best-effort).
+vi.mock("../../server/services/notification-authority", () => ({
+  publishCalendarEventNotificationBestEffort: async () => {},
+}));
+
 vi.mock("../../server/middleware/supabase-auth", () => ({
   enforceDeletionLock: (_req: any, _res: any, next: any) => next(),
   supabaseAuthMiddleware: (req: any, _res: any, next: any) => {
