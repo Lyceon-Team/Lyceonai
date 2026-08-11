@@ -13,7 +13,6 @@ import {
   getProfileStripeCustomerId,
   setProfileStripeCustomerId,
   getPrimaryGuardianLink,
-  mapStripeStatusToEntitlement,
   resolveLinkedPairPremiumAccessForGuardian,
   resolveLinkedPairPremiumAccessForStudent,
 } from "../lib/account";
