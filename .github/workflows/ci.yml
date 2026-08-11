@@ -287,6 +287,19 @@ jobs:
           PGPASSWORD: postgres
         run: pnpm exec vitest run tests/ci/diagnostic.handler-pg.ci.test.ts
 
+      # @spec [Doc-01_V8 §20–§24 | STRIPE-001] Entitlement write-path → real PG proof.
+      # Proves upsertEntitlement(profileId, ...) persists against the REAL genesis schema
+      # (profile_id + UNIQUE(profile_id), NO account_id). Would FAIL against the old
+      # account_id code (column does not exist). Also proves entitlement_active() and
+      # the stripe_webhook_events idempotency gate against real PG.
+      - name: Entitlement write-path → real PG proof
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: pnpm exec vitest run tests/ci/entitlement-write-path.ci.test.ts
+
   # ---------------------------------------------------------------------------
   # Destructive-path rehearsal (Doc 01 §40.5) — HARD GATE. Applies genesis + the
   # staged (owner-run) deletion-lifecycle migration to a throwaway Postgres and
