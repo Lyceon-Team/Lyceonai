@@ -328,7 +328,7 @@ router.get(
       null;
     let hasLinkedStudent = false;
     let linkRequiredForPremium = false;
-    let premiumSource: "student" | "guardian" | "both" | "none" = "none";
+    let premiumSource: "student" | "guardian" | "both" | "none";
     let effectiveAccess = false;
     let requiresStudentSubscription = false;
     let lockedReason:
