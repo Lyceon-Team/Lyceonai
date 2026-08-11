@@ -155,12 +155,6 @@ router.post(
         return res.status(403).json({ error: "Unsupported role", requestId });
       }
 
-      if (!profileId) {
-        return res
-          .status(500)
-          .json({ error: "Failed to resolve profile", requestId });
-      }
-
       const stripe = await getUncachableStripeClient();
 
       try {
