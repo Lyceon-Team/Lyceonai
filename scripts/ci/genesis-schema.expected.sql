@@ -4544,6 +4544,8 @@ CREATE TABLE public.student_section_projection_snapshots (
     mastery_model_version text DEFAULT 'v1.0'::text NOT NULL,
     snapshot_at timestamp with time zone DEFAULT now() NOT NULL,
     refreshed_at_t_now timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_kind text DEFAULT 'periodic'::text NOT NULL,
+    CONSTRAINT snapshot_kind_valid CHECK ((snapshot_kind = ANY (ARRAY['periodic'::text, 'diagnostic_baseline'::text]))),
     CONSTRAINT student_section_projection_snapshots_projected_score_high_check CHECK (((projected_score_high IS NULL) OR ((projected_score_high >= 200) AND (projected_score_high <= 800)))),
     CONSTRAINT student_section_projection_snapshots_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
     CONSTRAINT student_section_projection_snapshots_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
@@ -5613,6 +5615,13 @@ CREATE INDEX idx_profiles_stripe_customer ON public.profiles USING btree (stripe
 --
 
 CREATE INDEX idx_projection_refresh_outbox_unprocessed ON public.projection_refresh_outbox USING btree (requested_at) WHERE (processed_at IS NULL);
+
+
+--
+-- Name: idx_baseline_once_per_student_section; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
 
 
 --
@@ -8887,6 +8896,13 @@ GRANT SELECT(relevant_question_count) ON TABLE public.student_section_projection
 --
 
 GRANT SELECT(snapshot_at) ON TABLE public.student_section_projection_snapshots TO authenticated;
+
+
+--
+-- Name: COLUMN student_section_projection_snapshots.snapshot_kind; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT(snapshot_kind) ON TABLE public.student_section_projection_snapshots TO authenticated;
 
 
 --
