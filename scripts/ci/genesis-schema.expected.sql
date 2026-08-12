@@ -5450,6 +5450,13 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 
 
 --
+-- Name: idx_baseline_once_per_student_section; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
+
+
+--
 -- Name: idx_entitlements_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5615,13 +5622,6 @@ CREATE INDEX idx_profiles_stripe_customer ON public.profiles USING btree (stripe
 --
 
 CREATE INDEX idx_projection_refresh_outbox_unprocessed ON public.projection_refresh_outbox USING btree (requested_at) WHERE (processed_at IS NULL);
-
-
---
--- Name: idx_baseline_once_per_student_section; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_baseline_once_per_student_section ON public.student_section_projection_snapshots USING btree (student_id, section) WHERE (snapshot_kind = 'diagnostic_baseline'::text);
 
 
 --
