@@ -887,8 +887,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
           projected_score_high, range_width, relevant_question_count,
           snapshot_kind)
        VALUES
-         ($1, 'M',  999, 950, 1050, 100, 99, 'diagnostic_baseline'),
-         ($1, 'RW', 888, 850, 950, 100, 99, 'diagnostic_baseline')
+         ($1, 'M',  700, 650, 750, 100, 99, 'diagnostic_baseline'),
+         ($1, 'RW', 600, 550, 650, 100, 99, 'diagnostic_baseline')
        ON CONFLICT DO NOTHING`,
       [TEST_USER_ID],
     );
@@ -917,7 +917,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     // snapshot_id unchanged (same row, not replaced).
     expect(afterM!.snapshot_id).toEqual(originalM!.snapshot_id);
     expect(afterRW!.snapshot_id).toEqual(originalRW!.snapshot_id);
-    // Score unchanged (original preserved, 999/888 never written).
+    // Score unchanged (original preserved, 700/600 never written).
     expect(afterM!.projected_score_mid).toEqual(originalM!.projected_score_mid);
     expect(afterRW!.projected_score_mid).toEqual(
       originalRW!.projected_score_mid,
