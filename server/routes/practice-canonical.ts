@@ -2982,14 +2982,22 @@ async function captureDiagnosticBaseline(
     snapshot_kind: "diagnostic_baseline" as const,
   }));
 
+  // ON CONFLICT DO NOTHING: the partial unique index
+  // idx_baseline_once_per_student_section (student_id, section WHERE
+  // snapshot_kind='diagnostic_baseline') enforces once-only. upsert with
+  // ignoreDuplicates: true maps to INSERT ... ON CONFLICT DO NOTHING —
+  // a second diagnostic completion silently preserves the original baseline.
   const { error: insertError } = await supabaseServer
     .from("student_section_projection_snapshots")
-    .insert(baselineRows, { onConflict: "student_id,section" })
+    .upsert(baselineRows, {
+      onConflict: "student_id,section",
+      ignoreDuplicates: true,
+    })
     .select("snapshot_id");
 
   if (insertError) {
-    // Unique constraint violation is expected on re-submission (idempotent).
-    // Any other error is logged but non-fatal.
+    // Any error is logged but non-fatal — baseline capture must not block
+    // the answer response.
     logger.info("[diagnostic] baseline insert result", {
       requestId,
       userId,

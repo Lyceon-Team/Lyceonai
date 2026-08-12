@@ -65,10 +65,25 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     // and canAccessFeature('mastery_detail') both resolve to the same canonical
     // entitlement_active() predicate. The admin bypass in resolvePaidKpiAccessForUser
     // is mirrored here to avoid an extra DB call for admins.
-    const canSeeLiveProgression =
-      user.role === "admin"
-        ? true
-        : await EntitlementService.canAccessFeature(user.id, "mastery_detail");
+    //
+    // FAIL-CLOSED (Doc-05C §7.4): an entitlement-read failure must degrade to the
+    // unpaid view (baseline_only), never 500 and never the paid view. canAccessFeature
+    // itself fails closed, but we double-guard here so a thrown entitlement-read
+    // cannot reach the outer catch and 500 the entire projection page.
+    let canSeeLiveProgression: boolean;
+    if (user.role === "admin") {
+      canSeeLiveProgression = true;
+    } else {
+      try {
+        canSeeLiveProgression = await EntitlementService.canAccessFeature(
+          user.id,
+          "mastery_detail",
+        );
+      } catch {
+        // Entitlement-read failure → degrade to unpaid view, never 500.
+        canSeeLiveProgression = false;
+      }
+    }
 
     // ── Branch 1: no diagnostic baseline exists yet ──────────────────────
     if (!baseline) {

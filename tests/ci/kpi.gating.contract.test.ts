@@ -260,6 +260,52 @@ describe("KPI Gating Contract", () => {
     expect(payload.projection).toBeUndefined();
   }, 15_000);
 
+  // FAIL-CLOSED NEGATIVE TEST (Doc-05C §7.4): if canAccessFeature throws
+  // (entitlement-read failure), the projection route MUST degrade to
+  // baseline_only — never 500, never computed.
+  it("degrades to baseline_only when canAccessFeature throws (fail-closed)", async () => {
+    resolvePaidKpiAccessForUser.mockResolvedValueOnce({
+      hasPaidAccess: true,
+      accountId: "acc-paid",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
+      reason: "Active paid entitlement.",
+    });
+    // canAccessFeature THROWS (simulates entitlement-read failure).
+    canAccessFeature.mockRejectedValueOnce(
+      new Error("entitlement_rpc_exploded"),
+    );
+
+    const { getScoreEstimate } =
+      await import("../../server/routes/legacy/progress");
+
+    const req: any = {
+      user: {
+        id: "student-1",
+        role: "student",
+        isGuardian: false,
+        isAdmin: false,
+      },
+      requestId: "req-fail-closed",
+    };
+    const { res, getBody, getStatus } = createRes();
+
+    await getScoreEstimate(req, res as any);
+
+    // MUST NOT 500 — must degrade to unpaid view.
+    expect(getStatus()).toBe(200);
+    const payload = getBody();
+    expect(payload.estimateStatus).toBe("baseline_only");
+    expect(payload.cta).toBe(true);
+    // Baseline is served (frozen diagnostic capture).
+    expect(payload.baseline).toMatchObject({ composite: 1000 });
+    // Live estimate is NOT served (fail-closed → unpaid view).
+    expect(payload.estimate).toBeNull();
+    // buildScoreEstimateFromCanonical must NOT be called on entitlement failure.
+    expect(buildScoreEstimateFromCanonical).not.toHaveBeenCalled();
+  }, 15_000);
+
   // Q1 consolidation (2026-08-12): historical_trends gate now uses canAccessFeature
   // instead of ad-hoc hasPaidAccess binary.
   it("hides historical trends for free-tier KPI view", async () => {

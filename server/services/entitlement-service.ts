@@ -125,7 +125,10 @@ export class EntitlementService {
       }
 
       // Premium feature: delegate to the canonical entitlement predicate.
-      return EntitlementService.isEntitlementActiveForProfile(profileId);
+      // await is required so a thrown/rejected RPC is caught by the surrounding
+      // try/catch and fails closed (return false). Without await, an un-awaited
+      // promise rejection escapes the catch block.
+      return await EntitlementService.isEntitlementActiveForProfile(profileId);
     } catch {
       // Unexpected error → fail closed.
       logger.error(
