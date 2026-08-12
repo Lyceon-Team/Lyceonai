@@ -86,6 +86,10 @@ const SELF_DEPRECATING_PATTERNS: ReadonlyArray<RegExp> = [
   /too\s+(?:stupid|dumb)\s+for/i,
 ];
 
+export function detectsSelfDeprecatingLanguage(text: string): boolean {
+  return SELF_DEPRECATING_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // ── Scope Resolution ───────────────────────────────────────────────────
 
 /**
@@ -645,12 +649,7 @@ async function resolveRecentFriction(
       if (!msgError && recentStudentMessages) {
         for (const msg of recentStudentMessages) {
           const text = (msg as { message: string }).message;
-          for (const pattern of SELF_DEPRECATING_PATTERNS) {
-            if (pattern.test(text)) {
-              selfDeprecating = true;
-              break;
-            }
-          }
+          selfDeprecating = detectsSelfDeprecatingLanguage(text);
           if (selfDeprecating) break;
         }
       }

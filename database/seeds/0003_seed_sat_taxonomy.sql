@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS sat_sections_ref (
 );
 
 INSERT INTO sat_sections_ref (section, display_name, description) VALUES
-  ('Math', 'Mathematics', 'Algebra, Advanced Math, Problem-Solving, Geometry & Trigonometry'),
+  ('Math', 'Mathematics', 'Algebra, Advanced Math, Problem-Solving, Geometry and Trigonometry'),
   ('Reading', 'Reading & Writing', 'Reading Comprehension, Vocabulary in Context, Command of Evidence'),
   ('Writing', 'Writing & Language', 'Expression of Ideas, Standard English Conventions')
 ON CONFLICT (section) DO NOTHING;

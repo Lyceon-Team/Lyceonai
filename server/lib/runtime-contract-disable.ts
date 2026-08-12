@@ -1,12 +1,11 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-export type RuntimeContractDomain = "practice" | "full-length" | "review" | "diagnostic";
+export type RuntimeContractDomain = "practice" | "full-length" | "review";
 
 export const RUNTIME_CONTRACT_DISABLE_CODE: Record<RuntimeContractDomain, string> = {
   practice: "PRACTICE_RUNTIME_DISABLED_BY_CONTRACT",
   "full-length": "FULL_LENGTH_RUNTIME_DISABLED_BY_CONTRACT",
   review: "REVIEW_RUNTIME_DISABLED_BY_CONTRACT",
-  diagnostic: "DIAGNOSTIC_RUNTIME_DISABLED_BY_CONTRACT",
 };
 
 export const RUNTIME_CONTRACT_DISABLE_MESSAGE =
@@ -15,7 +14,6 @@ export const RUNTIME_CONTRACT_DISABLE_MESSAGE =
 function formatDomainError(domain: RuntimeContractDomain): string {
   if (domain === "full-length") return "Full-length runtime disabled by contract";
   if (domain === "practice") return "Practice runtime disabled by contract";
-  if (domain === "diagnostic") return "Diagnostic runtime disabled by contract";
   return "Review runtime disabled by contract";
 }
 
