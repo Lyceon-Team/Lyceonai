@@ -2891,6 +2891,121 @@ async function reconcileDiagnosticCompletionOnReplay(opts: {
   return { shouldComplete };
 }
 
+/**
+ * @spec [Doc-05C §7.4, Vertical-B Slice 2] @implemented 2026-08-12
+ *
+ * plain English: capture the current live section projections as frozen
+ * diagnostic_baseline snapshots. Called exactly once at diagnostic completion,
+ * after compute_section_projection already ran (the throttle fired on the
+ * 40th mastery event). Reads the live projection and writes a deliberate
+ * snapshot — decoupled from the projection engine.
+ *
+ * expected outcome: two rows inserted into student_section_projection_snapshots
+ * (one for M, one for RW) with snapshot_kind='diagnostic_baseline'. The partial
+ * unique index enforces once-only — a second call is a harmless no-op.
+ *
+ * trade-offs: if the evidence gate hasn't cleared yet (projections are NULL),
+ * this is a no-op with a warning. This is defensive — the diagnostic's 8×5=40
+ * events should always clear the evidence gate.
+ */
+async function captureDiagnosticBaseline(
+  userId: string,
+  requestId: string,
+): Promise<void> {
+  // Read both section projections (M + RW) from the already-computed live table.
+  const { data: projections, error: readError } = await supabaseServer
+    .from("student_section_projections")
+    .select(
+      "student_id, section, projected_score_mid, projected_score_low, projected_score_high, range_width, relevant_question_count, mastery_term, fl1_score, fl2_score, fl_count_used, blend_denominator, projection_constants_hash, mastery_model_version, refreshed_at_t_now",
+    )
+    .eq("student_id", userId);
+
+  if (readError) {
+    logger.warn("[diagnostic] baseline read failed", {
+      requestId,
+      userId,
+      error: readError.message,
+    });
+    return;
+  }
+
+  const rows = (projections ?? []) as Array<{
+    student_id: string;
+    section: string;
+    projected_score_mid: number | null;
+    projected_score_low: number | null;
+    projected_score_high: number | null;
+    range_width: number | null;
+    relevant_question_count: number | null;
+    mastery_term: number | null;
+    fl1_score: number | null;
+    fl2_score: number | null;
+    fl_count_used: number;
+    blend_denominator: number;
+    projection_constants_hash: string | null;
+    mastery_model_version: string;
+    refreshed_at_t_now: string;
+  }>;
+
+  // Both M and RW must have non-NULL projections (evidence gate passed).
+  const nonNull = rows.filter((r) => typeof r.projected_score_mid === "number");
+  if (nonNull.length < 2) {
+    logger.warn(
+      "[diagnostic] baseline skipped — projection evidence gate not yet cleared",
+      {
+        requestId,
+        userId,
+        sectionCount: nonNull.length,
+        totalRows: rows.length,
+      },
+    );
+    return;
+  }
+
+  // Insert baseline snapshots — ON CONFLICT DO NOTHING (once-only via partial unique index).
+  const baselineRows = nonNull.map((row) => ({
+    student_id: row.student_id,
+    section: row.section,
+    projected_score_mid: row.projected_score_mid,
+    projected_score_low: row.projected_score_low,
+    projected_score_high: row.projected_score_high,
+    range_width: row.range_width,
+    relevant_question_count: row.relevant_question_count,
+    mastery_term: row.mastery_term,
+    fl1_score: row.fl1_score,
+    fl2_score: row.fl2_score,
+    fl_count_used: row.fl_count_used,
+    blend_denominator: row.blend_denominator,
+    projection_constants_hash: row.projection_constants_hash,
+    mastery_model_version: row.mastery_model_version,
+    refreshed_at_t_now: row.refreshed_at_t_now,
+    snapshot_kind: "diagnostic_baseline" as const,
+  }));
+
+  const { error: insertError } = await supabaseServer
+    .from("student_section_projection_snapshots")
+    .insert(baselineRows, { onConflict: "student_id,section" })
+    .select("snapshot_id");
+
+  if (insertError) {
+    // Unique constraint violation is expected on re-submission (idempotent).
+    // Any other error is logged but non-fatal.
+    logger.info("[diagnostic] baseline insert result", {
+      requestId,
+      userId,
+      error: insertError.message,
+      code: insertError.code,
+    });
+    return;
+  }
+
+  logger.info("[diagnostic] baseline captured", {
+    requestId,
+    userId,
+    sections: nonNull.map((r) => r.section),
+  });
+}
+
 export async function submitPracticeAnswer(req: Request, res: Response) {
   const requestId = (req as any).requestId;
   const user = (req as any).user;
@@ -3545,6 +3660,37 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       status: "completed",
       completed_at: now,
     });
+
+    // @spec [Doc-05C §7.4, Vertical-B Slice 2] @implemented 2026-08-12
+    // plain English: on diagnostic completion, capture the current section
+    // projections as a frozen diagnostic_baseline snapshot — a deliberate,
+    // once-only artifact independent of the throttle-driven periodic snapshots.
+    //
+    // Placement: AFTER updateSessionLifecycle (the session is durably completed)
+    // and AFTER compute_section_projection already ran (step 2–5 above fired
+    // the throttle on the 40th mastery event). We READ the already-computed
+    // live projection and INSERT a snapshot with snapshot_kind='diagnostic_baseline'.
+    //
+    // Immutability: the partial unique index idx_baseline_once_per_student_section
+    // (student_id, section) WHERE snapshot_kind='diagnostic_baseline' enforces once-only.
+    // ON CONFLICT DO NOTHING means a second diagnostic (if ever allowed) silently
+    // preserves the original baseline. Best-effort — a failure here must not block
+    // the answer response.
+    if (session.mode === "diagnostic") {
+      try {
+        await captureDiagnosticBaseline(userId, requestId);
+      } catch (baselineErr: unknown) {
+        const baselineMsg =
+          baselineErr instanceof Error
+            ? baselineErr.message
+            : String(baselineErr);
+        logger.warn("[diagnostic] baseline capture failed (non-fatal)", {
+          requestId,
+          sessionId: payload.sessionId,
+          message: baselineMsg,
+        });
+      }
+    }
   } else {
     await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
       status: "active",

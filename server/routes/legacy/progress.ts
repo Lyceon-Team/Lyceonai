@@ -8,11 +8,10 @@ import { requireRequestUser } from "../../middleware/supabase-auth";
 import {
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
+  readDiagnosticBaseline,
 } from "../../services/canonical-runtime-views";
-import {
-  resolvePaidKpiAccessForUser,
-  type KpiEntitlementAccess,
-} from "../../services/kpi-access";
+import { resolvePaidKpiAccessForUser } from "../../services/kpi-access";
+import { EntitlementService } from "../../services/entitlement-service";
 
 function estimateExplanation(
   label: string,
@@ -30,35 +29,24 @@ function estimateExplanation(
   };
 }
 
-function premiumKpiRequired(
-  res: Response,
-  requestId: string | undefined,
-  feature: string,
-  entitlement: {
-    reason: string;
-    plan: "free" | "paid";
-    status: KpiEntitlementAccess["status"];
-    currentPeriodEnd: string | null;
-  },
-) {
-  return res.status(402).json({
-    error: "Premium feature required",
-    code: "PREMIUM_REQUIRED",
-    feature,
-    message: "Upgrade to an active paid plan to unlock this KPI surface.",
-    reason: entitlement.reason,
-    entitlement: {
-      plan: entitlement.plan,
-      status: entitlement.status,
-      currentPeriodEnd: entitlement.currentPeriodEnd,
-    },
-    requestId,
-  });
-}
-
 /**
- * GET /api/progress/projection
- * Premium-only mastery estimate surface (mastery hexagon / weighted score estimate).
+ * @spec [Doc-05C §7.4, Doc-01_V8 §20 entitlement_features, Vertical-B Slice 2]
+ * @implemented 2026-08-12
+ *
+ * plain English: GET /api/progress/projection — tiered score estimate surface.
+ *
+ * - no_baseline: the student hasn't completed the diagnostic yet (no baseline
+ *   captured, no progression to show). The honest-signal contract stands: never
+ *   fabricate a score.
+ * - baseline_only: the student completed the diagnostic (baseline exists) but does
+ *   NOT have the mastery_detail entitlement feature. Show the frozen diagnostic
+ *   baseline + upgrade CTA. Do NOT serve the live rolling projection.
+ * - computed: the student has the mastery_detail feature (paid or admin). Show the
+ *   live rolling projection AND the baseline for comparison.
+ *
+ * FAIL-CLOSED: if canAccessFeature errors, the student sees baseline_only (never
+ * the live projection). An entitlement-read failure must never accidentally grant
+ * the paid view.
  */
 export const getScoreEstimate = async (req: Request, res: Response) => {
   try {
@@ -68,22 +56,22 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
     }
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
-    if (!access.hasPaidAccess) {
-      return premiumKpiRequired(res, req.requestId, "mastery_hexagon", {
-        reason: access.reason,
-        plan: access.plan,
-        status: access.status,
-        currentPeriodEnd: access.currentPeriodEnd,
-      });
-    }
 
-    const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
-    const totalQuestions = scoreProjection.totalQuestionsAttempted;
+    // Read the frozen diagnostic baseline (null if no diagnostic completed yet).
+    const baseline = await readDiagnosticBaseline(user.id);
 
-    // LC-AM3-001 honest-signal: when the score estimate is UNCOMPUTED (05C projections deferred
-    // (AM-3) or not yet generated), return an explicit not-yet-available status with NO fabricated
-    // score — never a 200/400 baseline. The UI hides or labels the surface.
-    if (scoreProjection.status === "uncomputed") {
+    // Feature-scoped gate: admin bypass at call site, then canAccessFeature.
+    // Semantic equivalence confirmed (2026-08-12): for students, hasPaidAccess
+    // and canAccessFeature('mastery_detail') both resolve to the same canonical
+    // entitlement_active() predicate. The admin bypass in resolvePaidKpiAccessForUser
+    // is mirrored here to avoid an extra DB call for admins.
+    const canSeeLiveProgression =
+      user.role === "admin"
+        ? true
+        : await EntitlementService.canAccessFeature(user.id, "mastery_detail");
+
+    // ── Branch 1: no diagnostic baseline exists yet ──────────────────────
+    if (!baseline) {
       return res.json({
         modelVersion: "kpi_truth_v1",
         measurementModel: {
@@ -96,15 +84,16 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
           diagnostic: ["mastery_evidence_count"],
         },
         estimate: null,
-        estimateStatus: "not_yet_available",
+        baseline: null,
+        estimateStatus: "no_baseline",
         explanations: {
           estimated_scaled_total: {
             whatThisMeans:
-              "Your weighted score estimate isn't available yet — not a score of zero or a baseline.",
+              "Your score estimate isn't available yet — complete the diagnostic to establish your starting point.",
             whyThisChanged:
-              "It computes once mastery rollups (section projections) are generated from your scored practice evidence.",
+              "The estimate requires a completed diagnostic assessment to calibrate.",
             whatToDoNext:
-              "Keep practicing; the estimate appears once enough scored evidence accumulates.",
+              "Complete the diagnostic to unlock your baseline score.",
           },
           official_sat_score: {
             whatThisMeans:
@@ -112,15 +101,88 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
             whyThisChanged:
               "Practice estimates never replace official reporting.",
             whatToDoNext:
-              "Set your first target now; the estimate fills in as evidence accumulates.",
+              "Set your first target now; the estimate fills in after the diagnostic.",
           },
         },
-        totalQuestionsAttempted: totalQuestions,
-        lastUpdated: scoreProjection.lastUpdated,
+        totalQuestionsAttempted: 0,
+        lastUpdated: new Date().toISOString(),
         officialScore: null,
+        entitlement: {
+          hasPaidAccess: access.hasPaidAccess,
+          plan: access.plan,
+          status: access.status,
+          reason: access.reason,
+        },
         requestId: req.requestId,
       });
     }
+
+    // ── Branch 2: baseline exists, but no mastery_detail feature (unpaid) ─
+    if (!canSeeLiveProgression) {
+      return res.json({
+        modelVersion: "kpi_truth_v1",
+        measurementModel: {
+          official: ["official_sat_score"],
+          weighted: [
+            "estimated_scaled_total",
+            "estimated_scaled_math",
+            "estimated_scaled_rw",
+          ],
+          diagnostic: ["mastery_evidence_count"],
+        },
+        estimate: null,
+        baseline: {
+          composite: baseline.composite,
+          math: baseline.math,
+          rw: baseline.rw,
+          range: baseline.range,
+          confidence: baseline.confidence,
+          capturedAt: baseline.capturedAt,
+        },
+        estimateStatus: "baseline_only",
+        cta: true,
+        explanations: {
+          estimated_scaled_total: {
+            whatThisMeans:
+              "This is your starting point from the diagnostic. Upgrade to track your progression over time.",
+            whyThisChanged:
+              "Your baseline score was captured when you completed the diagnostic assessment.",
+            whatToDoNext:
+              "Upgrade to see how your score improves as you practice.",
+          },
+          official_sat_score: {
+            whatThisMeans:
+              "Official SAT scores only come from College Board score releases.",
+            whyThisChanged:
+              "This route intentionally separates official and diagnostic values to avoid conflation.",
+            whatToDoNext:
+              "Treat this as planning input and verify with your next proctored benchmark.",
+          },
+        },
+        totalQuestionsAttempted: 0,
+        lastUpdated: baseline.capturedAt,
+        officialScore: null,
+        entitlement: {
+          hasPaidAccess: access.hasPaidAccess,
+          plan: access.plan,
+          status: access.status,
+          reason: access.reason,
+          currentPeriodEnd: access.currentPeriodEnd,
+        },
+        requestId: req.requestId,
+      });
+    }
+
+    // ── Branch 3: paid — serve live projection + baseline for comparison ─
+    const scoreProjection = await buildScoreEstimateFromCanonical(user.id);
+    const totalQuestions = scoreProjection.totalQuestionsAttempted;
+
+    // LC-AM3-001 honest-signal: even for paid users, if the live projection is
+    // uncomputed (e.g. mastery_constants changed, evidence gate re-evaluated),
+    // show baseline only. This is a transient edge — the projection should exist
+    // if the baseline does, but we defend against it.
+    const liveEstimate =
+      scoreProjection.status === "computed" ? scoreProjection.estimate : null;
 
     return res.json({
       modelVersion: "kpi_truth_v1",
@@ -133,14 +195,24 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
         ],
         diagnostic: ["mastery_evidence_count"],
       },
-      estimate: {
-        composite: scoreProjection.estimate.composite,
-        math: scoreProjection.estimate.math,
-        rw: scoreProjection.estimate.rw,
-        range: scoreProjection.estimate.range,
-        confidence: scoreProjection.estimate.confidence,
+      estimate: liveEstimate
+        ? {
+            composite: liveEstimate.composite,
+            math: liveEstimate.math,
+            rw: liveEstimate.rw,
+            range: liveEstimate.range,
+            confidence: liveEstimate.confidence,
+          }
+        : null,
+      baseline: {
+        composite: baseline.composite,
+        math: baseline.math,
+        rw: baseline.rw,
+        range: baseline.range,
+        confidence: baseline.confidence,
+        capturedAt: baseline.capturedAt,
       },
-      estimateStatus: "computed",
+      estimateStatus: liveEstimate ? "computed" : "baseline_only",
       explanations: {
         estimated_scaled_total: estimateExplanation(
           "Estimated scaled total",
@@ -166,6 +238,13 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
       totalQuestionsAttempted: totalQuestions,
       lastUpdated: scoreProjection.lastUpdated,
       officialScore: null,
+      entitlement: {
+        hasPaidAccess: access.hasPaidAccess,
+        plan: access.plan,
+        status: access.status,
+        reason: access.reason,
+        currentPeriodEnd: access.currentPeriodEnd,
+      },
       requestId: req.requestId,
     });
   } catch (error) {
@@ -177,8 +256,16 @@ export const getScoreEstimate = async (req: Request, res: Response) => {
 };
 
 /**
- * GET /api/progress/kpis
- * Canonical student KPI snapshot with strict metric-kind separation.
+ * @spec [Doc-01_V8 §20 entitlement_features, Vertical-B Slice 2]
+ * @implemented 2026-08-12
+ *
+ * plain English: GET /api/progress/kpis — canonical student KPI snapshot.
+ *
+ * Q1 consolidation: historical_trends gate now delegates to canAccessFeature
+ * instead of the ad-hoc hasPaidAccess binary. For students, these resolve to
+ * the same entitlement_active() predicate (semantic equivalence confirmed
+ * 2026-08-12). The admin bypass mirrors getScoreEstimate — check role before
+ * canAccessFeature to avoid an extra DB call for admins.
  */
 export const getRecencyKpis = async (req: Request, res: Response) => {
   try {
@@ -189,7 +276,12 @@ export const getRecencyKpis = async (req: Request, res: Response) => {
 
     const access = await resolvePaidKpiAccessForUser(user.id, user.role);
     const includeHistoricalTrends =
-      user.role === "admin" ? true : access.hasPaidAccess;
+      user.role === "admin"
+        ? true
+        : await EntitlementService.canAccessFeature(
+            user.id,
+            "historical_trends",
+          );
 
     const view = await buildStudentKpiViewFromCanonical(
       user.id,

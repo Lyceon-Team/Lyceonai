@@ -44,7 +44,9 @@ export class EntitlementService {
    * (status IN ('active','past_due') — grace-inclusive per owner ruling 2026-06-14).
    * Fails closed (false) on any RPC error.
    */
-  static async isEntitlementActiveForProfile(profileId: string): Promise<boolean> {
+  static async isEntitlementActiveForProfile(
+    profileId: string,
+  ): Promise<boolean> {
     if (!profileId) {
       return false;
     }
@@ -58,11 +60,81 @@ export class EntitlementService {
         "ENTITLEMENT",
         "rpc_failed",
         "entitlement_active RPC failed; failing closed",
-        { profileId, error: error.message, code: error.code }
+        { profileId, error: error.message, code: error.code },
       );
       return false;
     }
 
     return data === true;
+  }
+
+  /**
+   * @spec [Doc-01_V8 §20 entitlement_features] @implemented 2026-08-12
+   *
+   * plain English: feature-scoped entitlement gate. Joins the canonical
+   * entitlement_active predicate with entitlement_features.required_tier
+   * to answer "can this profile access this specific feature?"
+   *
+   * expected outcome: returns true iff the feature exists, is enabled,
+   * and either (a) its required_tier is 'free', or (b) its required_tier
+   * is 'premium' AND the profile has an active entitlement.
+   *
+   * trade-offs / edge cases:
+   *  - FAIL-CLOSED: unknown feature key, disabled feature, DB error,
+   *    or entitlement-read error all return false. An entitlement-read
+   *    failure must never accidentally grant the paid view.
+   *  - This function is PROFILE-scoped, not role-scoped. Admin bypass
+   *    is the caller's responsibility (check role before calling).
+   *  - No caching — each call reads entitlement_features fresh. Acceptable
+   *    for the projection endpoint's request rate; revisit if used on
+   *    high-frequency paths.
+   */
+  static async canAccessFeature(
+    profileId: string,
+    featureKey: string,
+  ): Promise<boolean> {
+    if (!profileId || !featureKey) {
+      return false;
+    }
+
+    try {
+      const { data: feature, error: featureError } = await supabaseServer
+        .from("entitlement_features")
+        .select("required_tier, enabled")
+        .eq("feature_key", featureKey)
+        .maybeSingle();
+
+      if (featureError) {
+        logger.error(
+          "ENTITLEMENT",
+          "feature_read_failed",
+          "entitlement_features read failed; failing closed",
+          { profileId, featureKey, error: featureError.message },
+        );
+        return false;
+      }
+
+      // Unknown feature key or disabled feature → deny.
+      if (!feature || feature.enabled !== true) {
+        return false;
+      }
+
+      // Free-tier features are always accessible.
+      if (feature.required_tier === "free") {
+        return true;
+      }
+
+      // Premium feature: delegate to the canonical entitlement predicate.
+      return EntitlementService.isEntitlementActiveForProfile(profileId);
+    } catch {
+      // Unexpected error → fail closed.
+      logger.error(
+        "ENTITLEMENT",
+        "can_access_feature_threw",
+        "canAccessFeature threw unexpectedly; failing closed",
+        { profileId, featureKey },
+      );
+      return false;
+    }
   }
 }
