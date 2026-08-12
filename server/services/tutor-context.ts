@@ -89,32 +89,135 @@ const SELF_DEPRECATING_PATTERNS: ReadonlyArray<RegExp> = [
 // ── Scope Resolution ───────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03A_V3.0 §5.2]
- * @implemented 2026-08-09
- * plain English: Resolves the source scope for the current tutor turn.
- * If sessionItemId is provided, queries practice_session_items for the
- * question FK and canonical ID. If questionRowId is provided, uses it
- * directly. Both paths resolve the canonical question ID from the
- * questions table.
+ * @spec [Doc-03A_V3.0 §5.2, Doc-03B_V2 §5.4 rule 5, §11.1-11.2, INV-03-14]
+ * @implemented 2026-08-12
+ * plain English: Resolves the source scope for the current tutor turn with
+ * student-ownership predicates on every student-scoped query. Client-
+ * supplied references that are unowned, non-existent, or whose relationship
+ * chain is broken (item ∉ session, session ∉ student) degrade scope rather
+ * than resolving cross-student data.
  *
- * expected outcome: a ResolvedScope with all four fields populated
- * (nullable where no source context exists).
+ * expected outcome: a ResolvedScope where every non-null field is proven
+ * to belong to studentId via a WHERE-clause predicate — never a post-fetch
+ * comparison.
  *
- * trade-offs: fails closed on DB error — the orchestrator cannot function
- * without scope context, so a failed resolution must block the turn.
+ * trade-offs: DB errors still fail closed (throw). Ownership / existence
+ * failures degrade scope per Doc 03A §5.3 — the turn proceeds with less
+ * context rather than blocking, because blocking on an attacker-supplied
+ * reference is a DoS vector.
  *
- * edge cases: if sessionItemId points to a non-existent row, throws.
- * If questionRowId is provided but the question does not exist, throws.
+ * edge cases:
+ *  - sessionItemId exists but belongs to another student → degraded to null.
+ *  - sessionItemId belongs to student but references a different session
+ *    than sessionId → item degraded (relationship mismatch).
+ *  - sessionId exists but belongs to another student → degraded to null.
+ *  - questionRowId points to non-existent question → degraded to null.
  */
 export async function resolveScope(
+  studentId: string,
   sessionId: string | null,
   sessionItemId: string | null,
   questionRowId: string | null,
 ): Promise<ResolvedScope> {
-  // ── No scoping context: general mode ──────────────────────────────
-  if (!sessionItemId && !questionRowId) {
+  let validSessionId = sessionId;
+  let validItemId = sessionItemId;
+  let resolvedQuestionRowId = questionRowId;
+  let canonicalId: string | null = null;
+
+  // ── Validate session ownership (INV-03-14) ────────────────────────
+  // @spec [Doc-03B_V2 §5.4 rule 5, §11.1]: source_session_id must
+  // resolve to an existing row owned by the authenticated student.
+  if (validSessionId) {
+    const { data: sessionData, error: sessionError } = await supabaseServer
+      .from("practice_sessions")
+      .select("id")
+      .eq("id", validSessionId)
+      .eq("user_id", studentId)
+      .maybeSingle();
+
+    if (sessionError) {
+      logger.error(
+        "TUTOR_CONTEXT",
+        "scope_session_query_failed",
+        "practice_sessions ownership query failed; failing closed",
+        { message: sessionError.message, code: sessionError.code },
+      );
+      throw new Error(
+        `resolveScope: practice_sessions query failed: ${sessionError.message}`,
+      );
+    }
+
+    if (!sessionData) {
+      logger.warn(
+        "TUTOR_CONTEXT",
+        "scope_session_unowned",
+        "practice_sessions row not found or not owned by student; degrading session scope",
+        { sessionId: validSessionId },
+      );
+      validSessionId = null;
+    }
+  }
+
+  // ── Validate session item ownership + relationship ────────────────
+  // @spec [Doc-03B_V2 §5.4 rule 5, §11.2, INV-03-14]: session_item_id
+  // must belong to an existing row owned by the authenticated student,
+  // AND its session_id must match the claimed session (relationship
+  // validation — a student cannot borrow their own session id with
+  // someone else's item id).
+  if (validItemId) {
+    const { data: itemData, error: itemError } = await supabaseServer
+      .from("practice_session_items")
+      .select("question_id, session_id")
+      .eq("id", validItemId)
+      .eq("user_id", studentId)
+      .maybeSingle();
+
+    if (itemError) {
+      logger.error(
+        "TUTOR_CONTEXT",
+        "scope_item_query_failed",
+        "practice_session_items ownership query failed; failing closed",
+        { message: itemError.message, code: itemError.code },
+      );
+      throw new Error(
+        `resolveScope: practice_session_items query failed: ${itemError.message}`,
+      );
+    }
+
+    if (!itemData) {
+      // Not found or not owned — degrade per §5.3
+      logger.warn(
+        "TUTOR_CONTEXT",
+        "scope_item_unowned",
+        "practice_session_items row not found or not owned by student; degrading item scope",
+        { sessionItemId: validItemId },
+      );
+      validItemId = null;
+    } else {
+      // Relationship validation: item's session must match the claimed session
+      const itemSessionId = itemData.session_id as string;
+      if (validSessionId && itemSessionId !== validSessionId) {
+        logger.warn(
+          "TUTOR_CONTEXT",
+          "scope_item_session_mismatch",
+          "session_item belongs to a different session than claimed; degrading item scope",
+          { sessionItemId: validItemId, expectedSession: validSessionId },
+        );
+        validItemId = null;
+      } else {
+        resolvedQuestionRowId = itemData.question_id as string;
+        // Anchor session to the item's session if no session was claimed
+        if (!validSessionId) {
+          validSessionId = itemSessionId;
+        }
+      }
+    }
+  }
+
+  // ── No scoping context remaining: general mode ────────────────────
+  if (!validItemId && !resolvedQuestionRowId) {
     const scope: ResolvedScope = {
-      source_session_id: sessionId,
+      source_session_id: validSessionId,
       source_session_item_id: null,
       source_question_row_id: null,
       source_question_canonical_id: null,
@@ -132,53 +235,16 @@ export async function resolveScope(
     return parsed.data;
   }
 
-  // ── Resolve question_id from session item if needed ────────────────
-  let resolvedQuestionRowId: string | null = questionRowId;
-
-  if (sessionItemId) {
-    const { data: itemData, error: itemError } = await supabaseServer
-      .from("practice_session_items")
-      .select("question_id, session_id")
-      .eq("id", sessionItemId)
-      .single();
-
-    if (itemError) {
-      logger.error(
-        "TUTOR_CONTEXT",
-        "scope_item_query_failed",
-        "practice_session_items query failed during scope resolution; failing closed",
-        { message: itemError.message, code: itemError.code },
-        { sessionItemId },
-      );
-      throw new Error(
-        `resolveScope: practice_session_items query failed: ${itemError.message}`,
-      );
-    }
-
-    if (!itemData) {
-      logger.error(
-        "TUTOR_CONTEXT",
-        "scope_item_not_found",
-        "practice_session_items row not found; failing closed",
-        { sessionItemId },
-      );
-      throw new Error(
-        `resolveScope: practice_session_items row not found for id ${sessionItemId}`,
-      );
-    }
-
-    resolvedQuestionRowId = itemData.question_id as string;
-  }
-
-  // ── Resolve canonical ID from question row ─────────────────────────
-  let canonicalId: string | null = null;
-
+  // ── Resolve canonical ID from question row ────────────────────────
+  // Questions are shared canonical content, not student-owned — existence
+  // check only. The question_id was derived from the ownership-validated
+  // session item above.
   if (resolvedQuestionRowId) {
     const { data: questionData, error: questionError } = await supabaseServer
       .from("questions")
       .select("id")
       .eq("id", resolvedQuestionRowId)
-      .single();
+      .maybeSingle();
 
     if (questionError) {
       logger.error(
@@ -194,24 +260,22 @@ export async function resolveScope(
     }
 
     if (!questionData) {
-      logger.error(
+      logger.warn(
         "TUTOR_CONTEXT",
         "scope_question_not_found",
-        "Question row not found; failing closed",
+        "Question row not found; degrading question scope",
         { questionRowId: resolvedQuestionRowId },
       );
-      throw new Error(
-        `resolveScope: question not found for id ${resolvedQuestionRowId}`,
-      );
+      resolvedQuestionRowId = null;
+    } else {
+      // The canonical ID is the question ID itself (format: SAT[M|RW][1|2][A-Z0-9]{6})
+      canonicalId = questionData.id as string;
     }
-
-    // The canonical ID is the question ID itself (format: SAT[M|RW][1|2][A-Z0-9]{6})
-    canonicalId = questionData.id as string;
   }
 
   const scope: ResolvedScope = {
-    source_session_id: sessionId,
-    source_session_item_id: sessionItemId,
+    source_session_id: validSessionId,
+    source_session_item_id: validItemId,
     source_question_row_id: resolvedQuestionRowId,
     source_question_canonical_id: canonicalId,
   };
@@ -570,12 +634,15 @@ async function resolveRecentFriction(
 
   try {
     // ── Consecutive fails this session ──────────────────────────────
+    // @spec [INV-03-14]: ownership predicate prevents cross-student
+    // session data from entering friction signals.
     let consecutiveFailsSession = 0;
     if (scope.source_session_id) {
       const { data: sessionItems, error: sessionError } = await supabaseServer
         .from("practice_session_items")
         .select("is_correct")
         .eq("session_id", scope.source_session_id)
+        .eq("user_id", studentId)
         .eq("status", "answered")
         .order("ordinal", { ascending: false });
 
@@ -959,17 +1026,21 @@ function resolveDefaultPolicy(
 // ── Full Envelope Resolution ───────────────────────────────────────────
 
 /**
- * @spec [Doc-03B_V2 §6.5 steps 9-10]
- * @implemented 2026-08-09
+ * @spec [Doc-03B_V2 §6.5 steps 9-10, §5.4 rule 5, INV-03-14]
+ * @implemented 2026-08-12
  * plain English: The main entry point for context resolution. Orchestrates
  * all resolution steps (scope, learning context, memory summaries,
  * structured fields, policy) into a complete OrchestrateRequest, then
- * validates it against the wire schema before returning.
+ * validates it against the wire schema before returning. Scope resolution
+ * carries student-ownership predicates (INV-03-14) to prevent cross-student
+ * data from entering the envelope.
  *
  * expected outcome: a fully assembled and Zod-validated OrchestrateRequest
- * ready for dispatch to the tutor orchestrator worker.
+ * ready for dispatch to the tutor orchestrator worker. Every student-
+ * scoped field in resolved_scope is proven to belong to params.studentId.
  *
- * trade-offs: scope resolution fails closed (blocks the turn). All other
+ * trade-offs: scope resolution fails closed on DB errors (blocks the turn)
+ * and degrades on unowned/missing references (per §5.3). All other
  * subsections degrade gracefully (null/empty). Memory summaries and
  * structured fields use tutor-memory.ts; if that service throws, the
  * subsection degrades to empty/null rather than blocking the turn.
@@ -982,7 +1053,11 @@ export async function resolveFullEnvelope(
   params: EnvelopeParams,
 ): Promise<OrchestrateRequest> {
   // ── Step 1: Scope resolution (fails closed) ────────────────────────
+  // @spec [Doc-03B_V2 §5.4 rule 5, INV-03-14]: studentId is passed to
+  // resolveScope so every student-scoped query carries an ownership
+  // predicate in its WHERE clause.
   const resolvedScope = await resolveScope(
+    params.studentId,
     params.sourceSessionId,
     params.sourceSessionItemId,
     params.sourceQuestionRowId,
