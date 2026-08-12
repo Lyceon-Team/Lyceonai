@@ -1,0 +1,280 @@
+{
+  "audit": {
+    "pr": 541,
+    "batch": "B1.1e",
+    "branch": "claude/audit-pr-541-b1-1e-53u1ea",
+    "date": "2026-08-12",
+    "auditor": "claude-code-session",
+    "recommendation": "APPROVE",
+    "summary": "Both P0 fixes are correct. All five proofs reproduce on ephemeral PostgreSQL 16. No blocking findings. Three non-blocking observations documented below."
+  },
+
+  "preconditions": {
+    "passed": true,
+    "checks": [
+      {
+        "id": "PRE-1",
+        "description": "Migration file exists at expected path",
+        "result": "PASS",
+        "detail": "Found at supabase/migrations/20260812000000_tutor_messages_idempotency_role.sql (not infra/supabase/migrations/ — monorepo layout uses top-level supabase/)"
+      },
+      {
+        "id": "PRE-2",
+        "description": "tutor-runtime-writer.ts present and modified",
+        "result": "PASS",
+        "detail": "server/services/tutor-runtime-writer.ts contains P0-1 typed values and assignmentId return"
+      },
+      {
+        "id": "PRE-3",
+        "description": "tutor-runtime.ts present and modified at step 12 call site",
+        "result": "PASS",
+        "detail": "server/routes/tutor-runtime.ts step 12 call at lines 911-931 uses new values"
+      },
+      {
+        "id": "PRE-4",
+        "description": "Spec corpus readable",
+        "result": "PASS",
+        "detail": "docs/Spec/Doc-03A_V3.0.md and docs/Spec/Doc-03B_V4.1.md both readable; §18.4 CHECK constraints and §13.3 two-row model verified"
+      }
+    ]
+  },
+
+  "sections": {
+    "1_annotation_conformance": {
+      "verdict": "PASS",
+      "findings": [],
+      "detail": [
+        {
+          "file": "server/services/tutor-runtime-writer.ts:1-5",
+          "annotation": "@spec [Doc-03A_V1 §11, Doc-03A_V3 §18.4, Doc-03B_V4.1 §6.5 step 12, INV-03-11]",
+          "verified": true,
+          "notes": "Doc-03A §11 defines policy families. §18.4 defines tutor_instruction_assignments DDL with CHECK constraints. Doc-03B §6.5 step 12 is 'Persist instructional assignment'. INV-03-11 is the invariant tag. All citations resolve to correct spec content."
+        },
+        {
+          "file": "supabase/migrations/20260812000000_tutor_messages_idempotency_role.sql:20-21",
+          "annotation": "@spec [Doc-03A_V3.0 §18.2, Doc-03B_V4.1 §9, §13.3]",
+          "verified": true,
+          "notes": "§18.2 defines tutor_messages DDL (contains the spec defect: UNIQUE without role). §9 defines the two-row model. §13.3 defines idempotent recovery via client_turn_id. All citations accurate."
+        }
+      ]
+    },
+
+    "2_p0_1_step12_check_values": {
+      "verdict": "PASS",
+      "findings": [],
+      "detail": {
+        "columns_verified": [
+          {
+            "column": "policy_variant",
+            "old_value": "standard",
+            "new_value": "scaffolded",
+            "check_constraint": "CHECK (policy_variant IN ('concise','scaffolded','socratic','strategy_first'))",
+            "old_violates": true,
+            "new_satisfies": true,
+            "source": "Doc-03A_V3.0 §18.4 lines 1967-1968; default confirmed at Doc-03B:3470 misc.default_policy_variant = '\"scaffolded\"'"
+          },
+          {
+            "column": "emotional_register",
+            "old_value": "null (explicit)",
+            "new_value": "omitted → DB DEFAULT 'default'",
+            "check_constraint": "CHECK (emotional_register IN ('default','elite','recovery','sprint','calm')) + NOT NULL DEFAULT 'default'",
+            "old_violates": true,
+            "new_satisfies": true,
+            "source": "Doc-03A_V3.0 §18.4 lines 1969-1970; code at tutor-runtime-writer.ts:75-77 conditionally omits the field"
+          },
+          {
+            "column": "policy_family",
+            "old_value": "base_v1",
+            "new_value": "instructional_tutor",
+            "check_constraint": "TEXT NOT NULL (no CHECK — free-form)",
+            "old_violates": false,
+            "new_satisfies": true,
+            "source": "Doc-03A_V3.0 §18.4 line 1958"
+          },
+          {
+            "column": "policy_version",
+            "old_value": "1.0.0",
+            "new_value": "1.0",
+            "check_constraint": "TEXT NOT NULL (no CHECK — free-form)",
+            "old_violates": false,
+            "new_satisfies": true,
+            "source": "Doc-03A_V3.0 §18.4 line 1961"
+          },
+          {
+            "column": "assignment_mode",
+            "old_value": "deterministic",
+            "new_value": "deterministic",
+            "check_constraint": "CHECK (assignment_mode IN ('deterministic','explore','manual_override'))",
+            "old_violates": false,
+            "new_satisfies": true,
+            "source": "Doc-03A_V3.0 §18.4 line 1965"
+          }
+        ],
+        "blocking_write_verified": {
+          "is_blocking": true,
+          "evidence": "tutor-runtime-writer.ts returns { ok: false } on failure; tutor-runtime.ts lines 933-942 check ok===false and return 500, halting the turn. Matches Doc-03B §1.4: 'policy-assignment persistence is blocking for every turn'."
+        },
+        "assignment_id_reaches_step_18": {
+          "captured": true,
+          "used": false,
+          "file": "server/routes/tutor-runtime.ts:931",
+          "detail": "assignmentId is captured via destructuring but never referenced in the step 18 exposure insert (lines 1085-1109). See non-blocking finding NB-1."
+        }
+      }
+    },
+
+    "3_p0_2_idempotency_index": {
+      "verdict": "PASS",
+      "findings": [],
+      "detail": {
+        "drop_targets_correct_name": {
+          "verified": true,
+          "index_name": "idx_tutor_messages_client_turn_idempotency",
+          "created_by": "supabase/migrations/20260806020000_tutor_schema_proof_fixes.sql",
+          "definition": "CREATE UNIQUE INDEX idx_tutor_messages_client_turn_idempotency ON public.tutor_messages (student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL"
+        },
+        "new_index": {
+          "columns": ["student_id", "conversation_id", "client_turn_id", "role"],
+          "partial_predicate": "WHERE client_turn_id IS NOT NULL",
+          "permits_two_row_model": true,
+          "detail": "Each (student_id, conversation_id, client_turn_id) can have exactly one role='student' row and one role='tutor' row, matching Doc-03B §9 and §13.3."
+        },
+        "scl_028_accuracy": {
+          "verified": true,
+          "file": "docs/SpecAudit/SPEC_CHANGES_LOG.md",
+          "detail": "SCL-028 accurately records: §18.2 defines UNIQUE(conversation_id, client_turn_id), which contradicts the two-row model in §9/§13.3. Status: PROPOSED. The described defect is real — the spec's uniqueness key lacks role."
+        },
+        "transaction_safety": {
+          "wrapped_in_transaction": true,
+          "detail": "Migration wrapped in BEGIN/COMMIT. DROP IF EXISTS is idempotent. CREATE UNIQUE INDEX will fail if duplicate (role-unaware) rows already exist in prod — but tutor_messages is new (created in the same migration set) so no pre-existing violating data."
+        }
+      }
+    },
+
+    "4_reproducible_proofs": {
+      "verdict": "PASS",
+      "environment": "Ephemeral PostgreSQL 16 on /var/lib/postgresql/audit_proof",
+      "proofs": [
+        {
+          "id": "PROOF-1",
+          "title": "Old policy_variant 'standard' violates CHECK",
+          "command": "INSERT INTO tutor_instruction_assignments (..., policy_variant, ...) VALUES (..., 'standard', ...)",
+          "result": "ERROR: new row for relation \"tutor_instruction_assignments\" violates check constraint \"tutor_instruction_assignments_policy_variant_check\"",
+          "reproduced": true
+        },
+        {
+          "id": "PROOF-2",
+          "title": "New policy_variant 'scaffolded' passes CHECK",
+          "command": "INSERT INTO tutor_instruction_assignments (..., policy_variant, ...) VALUES (..., 'scaffolded', ...)",
+          "result": "INSERT 0 1",
+          "reproduced": true
+        },
+        {
+          "id": "PROOF-3",
+          "title": "Omitting emotional_register gets DB DEFAULT 'default'",
+          "command": "INSERT INTO tutor_instruction_assignments (omitting emotional_register) then SELECT emotional_register",
+          "result": "emotional_register = 'default'",
+          "reproduced": true
+        },
+        {
+          "id": "PROOF-4",
+          "title": "3-column index blocks second (tutor) row for same client_turn_id",
+          "command": "INSERT student row (OK), then INSERT tutor row with same (student_id, conversation_id, client_turn_id) but role='tutor'",
+          "result": "ERROR: duplicate key value violates unique constraint \"idx_tutor_messages_client_turn_idempotency\"",
+          "reproduced": true,
+          "detail": "This is the P0-2 bug: the 3-column index treats both roles as duplicates"
+        },
+        {
+          "id": "PROOF-5",
+          "title": "4-column index permits both student and tutor rows",
+          "command": "DROP old 3-col index, CREATE new 4-col index with role, re-insert both rows",
+          "result": "INSERT 0 1 (both rows accepted)",
+          "reproduced": true,
+          "detail": "After applying the migration fix, both role='student' and role='tutor' rows coexist for the same client_turn_id"
+        }
+      ]
+    },
+
+    "5_ci_artifact_delta": {
+      "verdict": "PASS",
+      "findings": [],
+      "detail": {
+        "genesis_snapshot": {
+          "file": "scripts/ci/genesis-schema.expected.sql",
+          "changes": 1,
+          "description": "Exactly one line changed: btree index column list updated from (student_id, conversation_id, client_turn_id) to (student_id, conversation_id, client_turn_id, role). No other objects added, removed, or modified."
+        },
+        "schema_proof_regex": {
+          "file": "scripts/tutor-schema-proof.ts",
+          "old_regex": "/\\(student_id,\\s*conversation_id,\\s*client_turn_id\\)/i",
+          "new_regex": "/\\(student_id,\\s*conversation_id,\\s*client_turn_id,\\s*role\\)/i",
+          "matches_4col": true,
+          "rejects_3col": true,
+          "verified": true
+        }
+      }
+    },
+
+    "6_scope_discipline": {
+      "verdict": "PASS — with observations",
+      "findings": [],
+      "detail": {
+        "out_of_scope_files": [
+          {
+            "file": "client/src/pages/chat.tsx",
+            "description": "Wires PremiumUpgradePrompt, RecoveryNotice, and SessionNotice into the chat page. Replaces toast-based error handling with structured notice components. Self-contained — does not touch P0-1 or P0-2 logic.",
+            "risk": "LOW — purely frontend UX, no domain logic change"
+          },
+          {
+            "file": "client/src/lib/api-error.ts",
+            "description": "Adds mapTutorErrorToPremiumReason() function. Thin wrapper around getPremiumDenialReason. Self-contained.",
+            "risk": "LOW — utility function, no domain logic change. See NB-3 for missing @spec annotation."
+          }
+        ],
+        "lisa_full_002_011_touched": false,
+        "detail": "Grep for LISA-FULL-002 through LISA-FULL-011 across all changed files returned no matches. No audit findings from the prior LISA-FULL series are partially addressed or regressed by this PR."
+      }
+    }
+  },
+
+  "non_blocking_findings": [
+    {
+      "id": "NB-1",
+      "severity": "NON-BLOCKING",
+      "category": "dead-code",
+      "file": "server/routes/tutor-runtime.ts:931",
+      "summary": "assignmentId captured but never wired to step 18 exposure insert",
+      "detail": "Line 931 destructures assignmentId from the writer result. The step 18 exposure insert (lines 1085-1109) does not reference it. The annotation on the writer documents intent ('return assignment id for step 18 exposure FK'), so this is a known incomplete wiring, not an oversight. Non-blocking because the assignment row IS persisted (the blocking write succeeds); only the FK from exposure → assignment is deferred.",
+      "action": "Wire assignmentId into the step 18 insert payload in a follow-up PR"
+    },
+    {
+      "id": "NB-2",
+      "severity": "NON-BLOCKING",
+      "category": "scope",
+      "file": "client/src/pages/chat.tsx, client/src/lib/api-error.ts",
+      "summary": "Two out-of-scope files included in a P0-fix PR",
+      "detail": "chat.tsx and api-error.ts add premium-upgrade and error-notice UX. They are self-contained and low-risk, but are unrelated to either P0 fix. Consider splitting into a separate PR for cleaner audit trail.",
+      "action": "Optional — split into separate PR or accept as-is"
+    },
+    {
+      "id": "NB-3",
+      "severity": "NON-BLOCKING",
+      "category": "annotation",
+      "file": "client/src/lib/api-error.ts:162",
+      "summary": "mapTutorErrorToPremiumReason lacks formal @spec annotation",
+      "detail": "The function has a doc comment but no @spec tag per coding standards §18 annotation requirements. Since it is a thin wrapper with no domain logic, the risk is minimal.",
+      "action": "Add @spec annotation in a follow-up"
+    }
+  ],
+
+  "blocking_findings": [],
+
+  "blocking_criteria_checklist": {
+    "value_violating_check": false,
+    "blocking_write_not_blocking": false,
+    "drop_targeting_nonexistent_index": false,
+    "proof_not_reproducing": false,
+    "unexplained_snapshot_objects": false,
+    "wrong_spec_citation": false
+  }
+}
