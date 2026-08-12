@@ -25,6 +25,206 @@
 
 ## Entries
 
+SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | PROPOSED
+Change: Doc 03A §18.2 defines the idempotency constraint as
+  UNIQUE (conversation_id, client_turn_id). Doc 03B §9 and §13.3 describe an idempotency model
+  that persists two tutor_messages rows per client_turn_id per turn — one role='student' (§6.5
+  step 11) and one role='tutor' (§6.5 step 16). The constraint as written permits only one row
+  per (conversation_id, client_turn_id), so the tutor message insert always fails. This is a spec
+  defect — the constraint contradicts the two-row model that the idempotency and retry sections
+  depend on.
+WAS: UNIQUE (conversation_id, client_turn_id) — or equivalently, partial unique index on
+  (student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL per
+  migration 20260806020000. Either shape permits only one row per client_turn_id per conversation.
+IS: UNIQUE (student_id, conversation_id, client_turn_id, role) WHERE client_turn_id IS NOT NULL.
+  Permits exactly one student row and one tutor row per turn. The idempotency lookup (§9, step 8)
+  finds both rows by (conversation_id, client_turn_id) and discriminates by role to detect full
+  replay vs. partial recovery.
+Rationale: The idempotency model at §9 and the retry model at §13.3 require two rows per
+  client_turn_id — one for the student message (step 11) and one for the tutor response (step 16).
+  The §18.2 constraint blocks the second insert. Without this fix, every non-crisis tutor turn
+  fails at step 16 with a uniqueness violation and cannot complete (P0 severity — total LISA
+  outage).
+Version: Spec defect — §18.2 constraint must be widened to include role in the uniqueness key.
+Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messages_idempotency_role.sql.
+Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
+  equivalently the partial unique index form with role included.
+
+SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
+Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
+  as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5
+  (loadOwnedConversation) — so a malformed request body is rejected with 400 before any DB lookup
+  occurs.
+WAS: Spec ordering — step 5 ownership check first, step 6 payload validation second. Under this
+  ordering, a request with a valid conversation_id but garbage body hits the DB for ownership
+  before discovering the body is invalid.
+IS: Implementation ordering — step 6 payload validation first (tutor-runtime.ts:622), step 5
+  ownership check second (tutor-runtime.ts:633). A malformed body returns 400 without touching
+  the database.
+Rationale: Fail-fast on shape. A 400 for an invalid body reveals nothing about conversation
+  ownership — the rejection is purely structural, independent of who owns the conversation. No
+  security property is lost. The reordering avoids a wasted DB round-trip on requests that would
+  fail validation anyway. Karl accepted.
+Version: Spec deviation — implementation intentionally diverges from the numbered step ordering
+  in §6.5. The spec text is correct as a logical description of what the pipeline does; only the
+  execution order differs.
+Artifact: PR for branch claude/lisa-tutor-inventory-27lras.
+Owner action: review — confirm acceptance of the step 5/6 ordering inversion in §6.5, or
+  renumber the spec steps to match the implementation order.
+
+SCL-026 | 2026-08-07 | Doc 03A §7.3, §10.3 (preferred_explanation_style V2→V1 per-turn capture) | PROPOSED
+Change: Doc 03A §7.3 defers preferred_explanation_style to V2 via batch extraction over accumulated
+  conversation history. This entry moves it to V1, captured per-turn from model output via the
+  orchestrator response schema.
+WAS: §7.3 defines preferred_explanation_style as a V2 target requiring "LLM-based pattern extraction
+  over conversation history" and "sufficient observed conversation data to train extraction prompts."
+  V1 stores only last_struggled_skill and last_mastered_skill on teaching_profile summaries.
+IS: V1 adds a learner_observation block to the orchestrator response schema (Doc 03C wire contract).
+  The model emits an enum-constrained explanation_form observation per turn (or null when no signal).
+  Enum values: step_by_step, conceptual, example_driven, visual. Observations accumulate as a tally
+  in tutor_memory_summaries type teaching_profile content_json. A preferred style is derived when
+  total observations ≥ 5 and a single-leader plurality exists. The derived style feeds back through
+  Layer 3 memory retrieval to shape subsequent prompts. Free text is never written to memory —
+  enum-constrained values only, satisfying §7.6 Layer B (schema constraints prevent self-injection).
+  The learner_observation block is INTERNAL ONLY — never serialized to any client response body.
+Rationale: Karl ruling 2026-08-07 — the batch-extraction prerequisite (sufficient conversation
+  history + trained extraction prompts) is unnecessary for a four-value enum that the model can
+  classify per-turn from student response patterns. Per-turn capture provides immediate V1 value
+  ("Knows Me" moments) without a separate extraction pipeline. The four-value enum
+  (step_by_step | conceptual | example_driven | visual) scopes to explanation form only — other
+  dimensions (scaffolding level, test strategy) are deferred to independent fields once conversation
+  data proves reliable model classification.
+Version: Doc 03A → V3.2 (§7.3 explanation style capture moved to V1; §10.3 adds learner_observation
+  to orchestrator response contract).
+Artifact: PR for branch claude/ws-l2-context.
+Owner action: at next spec pass, update §7.3 to reflect V1 per-turn capture with the four-value
+  enum, and add learner_observation to §10.3 orchestrator response contract.
+
+SCL-025 | 2026-08-04 | Doc 03B §3.1, Doc 03 §21.3, Doc 07E (safety review access path) | PROPOSED (Karl approved 2026-08-04)
+Change: The corpus mandates a human safety review workflow (Doc 03 §21.3) whose required actions
+  cannot be performed without reading the flagged conversation, but Doc 03B §3.1 line 243 forbids
+  admin absolutely on /api/tutor/*. Doc 07E has no provisions for staff access to tutor data.
+  The corpus mandates a capability its own role rule forbids.
+WAS: Doc 03B §3.1 blocks all non-student roles from /api/tutor/* (403 role_not_permitted). Doc 03
+  §21.3 mandates human review of crisis-flagged conversations. No access path connects the two.
+  Doc 07E provides no staff-access surface for tutor data.
+IS: (a) §3.1 stands unchanged for /api/tutor/*. student only. All other roles 403 role_not_permitted.
+  Already implemented in PR #519. (b) Safety review is a SEPARATE surface outside /api/tutor/*, not
+  a role exception. Read-only. Scoped to conversations where crisis_flagged = true. Not routed
+  through canAccessFeature — different authorization axis. Every read logged append-only with
+  reviewer identity, conversation id, timestamp, action. Write scope limited to classification
+  outcome and review disposition. (c) Doc 03 §21.3 tooling correction: the shared ticketing system
+  carries a conversation identifier and non-content metadata only. Conversation content never leaves
+  Supabase. As currently written §21.3 would export a minor's verbatim crisis disclosure to a
+  third-party SaaS, contradicting ADR-001 §3 and making the Doc 07E deletion cascade unenforceable.
+  (d) Open at V2: §21.3 transitions to a dedicated T&S function at 5,000 paid users or 20+ monthly
+  flags. At that scale the admin role is too broad for standing read access to minors' crisis
+  conversations. Flagged, not resolved.
+Rationale: Karl ruling 2026-08-04 — the contradiction is real. §3.1 is correct for the tutor API
+  surface (student only). The review capability is a separate access path, not an exception to §3.1.
+  Third-party export of crisis content contradicts ADR-001 §3 data-residency and Doc 07E deletion
+  cascade enforceability.
+Version: Doc 03B → V4.2, Doc 03 Main → V1.2.
+No code/schema change from this entry. Owner action: amend Doc 03B, Doc 03 §21.3, and Doc 07E at
+  next spec pass. V2 T&S function is tracked as open, not resolved.
+
+SCL-024 | 2026-08-04 | Doc 03A §18.7, §18.1, §18.2, §18.5 (config table shape + question FK type) | PROPOSED (Karl approved 2026-08-04)
+Change: Two defects in Doc 03A. Production is correct in both; the spec is wrong.
+  (a) Config table shape: Doc 03A §18.7 defines tutor_context_runtime_config with a bespoke shape
+  (id UUID PK, config_key, config_value). Production carries the Doc 01A §8 config template
+  (key TEXT PK, value, value_type, min_value, max_value, allowed_values, owner, description,
+  environment, updated_at, updated_by_profile_id), created by migration
+  supabase/migrations/20260610000000_ws2_config_constants.sql, applied and in ledger. Doc 01A Part I
+  owns config-table shape platform-wide. §18.7 restated a primitive another document owns,
+  differently.
+  (b) Question FK type: Doc 03A types questions(id) foreign keys as UUID. Production: questions.id
+  is TEXT, profiles.id is uuid. A UUID column cannot reference a TEXT primary key — the DDL fails.
+  Four columns across three tables: line 1734 §18.1 tutor_conversations.source_question_row_id;
+  line 1822 §18.2 tutor_messages.source_question_row_id; lines 2012 and 2016 §18.5
+  tutor_question_links.source_question_row_id and .related_question_row_id.
+WAS (a): §18.7 defined tutor_context_runtime_config with (id UUID PK, config_key TEXT, config_value
+  TEXT) — a bespoke shape that conflicts with the platform config template owned by Doc 01A §8.
+WAS (b): §18.1, §18.2, §18.5 typed source_question_row_id and related_question_row_id as UUID
+  REFERENCES questions(id). questions.id is TEXT in production — DDL would fail on type mismatch.
+IS (a): §18.7 removes its DDL and references Doc 01A §8 for config-table shape. §18.7 specifies
+  only the keys it requires and their semantics.
+IS (b): All four question FK columns (§18.1 tutor_conversations.source_question_row_id, §18.2
+  tutor_messages.source_question_row_id, §18.5 tutor_question_links.source_question_row_id and
+  .related_question_row_id) retype from UUID to TEXT. REFERENCES questions(id) ON DELETE SET NULL
+  unchanged.
+Rationale: Karl ruling 2026-08-04 — both are spec-vs-production mismatches. (a) Doc 01A Part I
+  owns config-table shape; §18.7 should not restate it differently. (b) UUID cannot reference TEXT
+  PK — the DDL is structurally invalid against the live schema.
+Version: Doc 03A → V3.1 (config table reference + FK type corrections).
+No code/DB change from this entry. Owner action: update Doc 03A §18.7 (remove DDL, reference
+  Doc 01A §8), retype §18.1/§18.2/§18.5 question FK columns to TEXT at next spec pass.
+SCL-024 | 2026-08-06 | Doc 03A §18.4, Doc 03B §4.1 (fifth question-FK column + wire-contract Zod schemas) | PROPOSED
+Change: Extends SCL-024(b) to cover a fifth column and the wire-contract Zod schemas that carry
+  the same UUID assumption.
+  (c) Fifth column: tutor_instruction_assignments.source_question_row_id (§18.4). SCL-024(b) listed
+  four columns across three tables; this fifth column was omitted because §18.4 defines it with no
+  FK to questions(id), and the original rationale (UUID cannot reference TEXT PK) appeared not to
+  apply. Karl ruled: the same resolvedScope.source_question_row_id value is written to all four
+  tutor tables from a single code path; the column must carry the same type. questions.id is TEXT
+  under CHECK (id ~ '^SAT(M|RW)[12][A-Z0-9]{6}$') — canonical SAT IDs, not UUIDs — making UUID
+  structurally impossible regardless of FK presence. The revert migration
+  (20260806010000_tutor_instruction_assignments_uuid_revert.sql) that would have cast this column
+  to UUID is dropped.
+  (d) Wire-contract Zod schemas: Doc 03B §4.1's wire protocol definitions validate
+  source_question_row_id and related_question_row_id as z.string().uuid(). These Zod schemas
+  (shared/tutor-contract.ts, shared/tutor-orchestrator-wire.ts, server/routes/tutor-runtime.ts)
+  would reject canonical SAT question IDs at parse time. Same root cause as (b) — the spec typed
+  question IDs as UUID when questions.id is TEXT.
+WAS (c): §18.4 typed tutor_instruction_assignments.source_question_row_id as UUID (no FK). A
+  revert migration existed to cast the production TEXT column back to UUID.
+WAS (d): Zod schemas validated source_question_row_id and related_question_row_id as
+  z.string().uuid() — 10 call sites across 4 files (shared + server + generated worker copy).
+IS (c): Column stays TEXT, matching the other four question-FK columns. Revert migration dropped.
+IS (d): Zod schemas validate with z.string().regex(CANONICAL_ID_PATTERN) using the existing
+  single-source-of-truth regex from shared/question-bank-contract.ts. All 10 call sites fixed.
+Rationale: Karl ruling 2026-08-06 — extend SCL-024, do not revert to UUID. The same value flows
+  to all four tables from one code path; mixed types are a latent runtime failure. The Zod UUID
+  validation would reject every real question ID at parse time.
+Artifact: PR #523, branch claude/lisa-tutor-inventory-27lras.
+Owner action: at next spec pass, retype §18.4 source_question_row_id to TEXT and update Doc 03B
+  §4.1 wire-contract definitions to use canonical question ID format, not UUID.
+
+SCL-023 | 2026-08-04 | Doc 03C V3.0, Doc 03C.1, Doc 03A (crisis classifier gate) | PROPOSED (Karl approved 2026-08-04)
+Change: Doc 03C V3.0 contains no crisis classifier stage. Full-text scan returns zero occurrences
+  of crisis, self-harm, safety classifier, or classifier. Three siblings delegate crisis handling
+  there: Doc 03 §21.1 (crisis detection trigger), INV-03-16 (crisis classification before main
+  response generation), Doc 03A §17 schema (crisis_flagged column + idx_tutor_conversations_crisis
+  index), Doc 03B §0 and §13 step 14 (crisis flow references). Doc 03C.1 has no crisis test
+  scenario.
+WAS: Doc 03C V3.0 has no crisis classifier stage. The pipeline spec gap means four sibling docs
+  reference a capability Doc 03C does not define. Doc 03C §4.5 "Content safety pre-pass" is named
+  misleadingly — it performs prompt-token bounding and its own body says it is not safety
+  enforcement. Doc 03C V3.0's "no further architectural change expected before V1 launch" is
+  falsified by this addition.
+IS: Two-layer crisis classifier gate, both pre-generation, parallel:
+  Layer 1: deterministic signature match against a tutor_crisis_signatures table, reusing the
+  tutor_injection_signatures pattern (Doc 03A). Layer 2: model inference on a new classifier_class
+  alias (alongside flash_class and pro_class; unknown alias continues to throw).
+  New pipeline stage inserted before Vertex invocation. Ordering is load-bearing: INV-03-16 requires
+  "before main response generation."
+  Either layer positive → crisis path per Doc 03 §21.2 (unchanged, referenced not restated).
+  Failure modes: Layer 2 failure → retry once, then Layer 1 result stands, turn proceeds, turn is
+  force-enqueued to the §21.3 review queue, SLI increments. Failure-rate breach pages ops rather
+  than flooding the queue. This is a deliberate narrow exception to fail-closed — blocking returns
+  an error to a student who may be the person the gate exists for. Layer 1 signature table
+  unreadable → fail closed on the turn.
+  Doc 03C §4.5 "Content safety pre-pass" renamed — it does prompt-token bounding, not safety
+  enforcement. The name collides with the crisis classifier stage.
+Rationale: Karl ruling 2026-08-04 — Doc 03C is the sole pipeline-architecture spec and four sibling
+  docs delegate crisis handling to it. The gap is structural, not editorial. Two-layer design
+  provides deterministic baseline (Layer 1) with model-backed depth (Layer 2). Fail-open on Layer 2
+  only is justified because the alternative (fail-closed) returns an error to the student who may be
+  in crisis — the person the gate exists to help.
+Version: Doc 03C → V3.1, Doc 03C.1 → V1.2, Doc 03A → V3.1 (crisis signature table).
+No code/schema change from this entry. Owner action: add crisis classifier stage to Doc 03C,
+  add classifier_class alias to Doc 03A, add crisis test scenarios to Doc 03C.1, rename §4.5 at
+  next spec pass.
+
 SCL-022 | 2026-07-01 | questions_governance.md §A.4 (skill-classification convention) | PROPOSED
 Change: Added **Skill Classification Convention** subsection to §A.4 with: primary-competency rule
   (tag the skill the student must exercise to reach the correct answer), disambiguation table for
