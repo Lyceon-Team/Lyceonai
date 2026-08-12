@@ -25,13 +25,22 @@ import { useLocation, useSearch } from "wouter";
 import { Send, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import {
   useConversation,
   useSendMessage,
   type TutorMessage,
 } from "@/hooks/tutor-client";
+import {
+  isSessionError,
+  mapTutorErrorToPremiumReason,
+  toUserFacingMessage,
+} from "@/lib/api-error";
+import {
+  PremiumUpgradePrompt,
+  type PremiumPromptReason,
+} from "@/components/billing/PremiumUpgradePrompt";
+import { RecoveryNotice } from "@/components/feedback/RecoveryNotice";
+import { SessionNotice } from "@/components/feedback/SessionNotice";
 
 function useConversationIdFromSearch(): string | null {
   const search = useSearch();
@@ -59,7 +68,6 @@ function MessageBubble({ message }: { message: TutorMessage }) {
 
 export default function ChatPage() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const conversationId = useConversationIdFromSearch();
 
   const {
@@ -70,9 +78,27 @@ export default function ChatPage() {
   const sendMessage = useSendMessage();
 
   const [draft, setDraft] = useState("");
+  const [dismissedPremium, setDismissedPremium] = useState(false);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const messages = conversation?.messages ?? [];
+
+  // Premium entitlement check — both the conversation query and the send
+  // mutation can surface entitlement denial errors. Derive the premium
+  // reason inline (not via useEffect — coding standards §11.4).
+  const conversationPremiumReason: PremiumPromptReason | null =
+    mapTutorErrorToPremiumReason(error) as PremiumPromptReason | null;
+  const sendPremiumReason: PremiumPromptReason | null =
+    mapTutorErrorToPremiumReason(
+      sendMessage.error,
+    ) as PremiumPromptReason | null;
+  const activePremiumReason = conversationPremiumReason ?? sendPremiumReason;
+
+  // Classify non-premium errors for the structured notice UX.
+  const activeNonPremiumError =
+    !conversationPremiumReason && error ? error : null;
+  const sendNonPremiumError =
+    !sendPremiumReason && sendMessage.error ? sendMessage.error : null;
 
   // Side effect only: scroll the message list into view when the message
   // count changes. This is imperative DOM behavior, not derived state, so a
@@ -81,7 +107,10 @@ export default function ChatPage() {
   useScrollToBottomOnChange(scrollAnchorRef, messageCount);
 
   const canSend =
-    !!conversationId && draft.trim().length > 0 && !sendMessage.isPending;
+    !!conversationId &&
+    draft.trim().length > 0 &&
+    !sendMessage.isPending &&
+    !activePremiumReason;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,22 +119,15 @@ export default function ChatPage() {
     const trimmed = draft.trim();
     if (!trimmed) return;
 
-    try {
-      await sendMessage.mutateAsync({
-        conversation_id: conversationId,
-        message: trimmed,
-        client_turn_id: crypto.randomUUID(),
-      });
-      setDraft("");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to send message.";
-      toast({
-        title: "Message not sent",
-        description: message,
-        variant: "destructive",
-      });
-    }
+    // Fire-and-forget — mutation errors surface via sendMessage.error
+    // and are rendered as RecoveryNotice / SessionNotice below. No toast
+    // with destructive variant (feedback-ux contract).
+    await sendMessage.mutateAsync({
+      conversation_id: conversationId,
+      message: trimmed,
+      client_turn_id: crypto.randomUUID(),
+    });
+    setDraft("");
   };
 
   if (!conversationId) {
@@ -140,10 +162,43 @@ export default function ChatPage() {
           </div>
         )}
 
-        {!isLoading && error && (
-          <Card className="p-4 text-sm text-destructive">
-            Could not load this conversation. Please try again.
-          </Card>
+        {!isLoading &&
+          activeNonPremiumError &&
+          (isSessionError(activeNonPremiumError) ? (
+            <SessionNotice
+              message={toUserFacingMessage(activeNonPremiumError).message}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              message={toUserFacingMessage(activeNonPremiumError).message}
+              onRetry={() => window.location.reload()}
+              retryLabel="Retry"
+            />
+          ))}
+
+        {sendNonPremiumError &&
+          (isSessionError(sendNonPremiumError) ? (
+            <SessionNotice
+              message={toUserFacingMessage(sendNonPremiumError).message}
+              onRefreshSession={() => window.location.reload()}
+            />
+          ) : (
+            <RecoveryNotice
+              message={toUserFacingMessage(sendNonPremiumError).message}
+              onRetry={() => sendMessage.reset()}
+              retryLabel="Dismiss"
+            />
+          ))}
+
+        {activePremiumReason && !dismissedPremium && (
+          <div className="py-4">
+            <PremiumUpgradePrompt
+              reason={activePremiumReason}
+              mode="inline"
+              onDismiss={() => setDismissedPremium(true)}
+            />
+          </div>
         )}
 
         {!isLoading &&
