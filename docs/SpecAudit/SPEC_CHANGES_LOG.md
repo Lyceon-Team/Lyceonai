@@ -25,6 +25,31 @@
 
 ## Entries
 
+SCL-028 | 2026-08-12 | Doc 03A §18.2 tutor_messages idempotency constraint (role-inclusive uniqueness) | PROPOSED
+Change: Doc 03A §18.2 defines the idempotency constraint as
+  UNIQUE (conversation_id, client_turn_id). Doc 03B §9 and §13.3 describe an idempotency model
+  that persists two tutor_messages rows per client_turn_id per turn — one role='student' (§6.5
+  step 11) and one role='tutor' (§6.5 step 16). The constraint as written permits only one row
+  per (conversation_id, client_turn_id), so the tutor message insert always fails. This is a spec
+  defect — the constraint contradicts the two-row model that the idempotency and retry sections
+  depend on.
+WAS: UNIQUE (conversation_id, client_turn_id) — or equivalently, partial unique index on
+  (student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL per
+  migration 20260806020000. Either shape permits only one row per client_turn_id per conversation.
+IS: UNIQUE (student_id, conversation_id, client_turn_id, role) WHERE client_turn_id IS NOT NULL.
+  Permits exactly one student row and one tutor row per turn. The idempotency lookup (§9, step 8)
+  finds both rows by (conversation_id, client_turn_id) and discriminates by role to detect full
+  replay vs. partial recovery.
+Rationale: The idempotency model at §9 and the retry model at §13.3 require two rows per
+  client_turn_id — one for the student message (step 11) and one for the tutor response (step 16).
+  The §18.2 constraint blocks the second insert. Without this fix, every non-crisis tutor turn
+  fails at step 16 with a uniqueness violation and cannot complete (P0 severity — total LISA
+  outage).
+Version: Spec defect — §18.2 constraint must be widened to include role in the uniqueness key.
+Artifact: PR for branch claude/ws-l3-b1-1e, migration 20260812000000_tutor_messages_idempotency_role.sql.
+Owner action: review — update §18.2 DDL to UNIQUE (conversation_id, client_turn_id, role), or
+  equivalently the partial unique index form with role included.
+
 SCL-027 | 2026-08-09 | Doc 03B §6.5 step 5 / step 6 ordering (payload validation before ownership check) | PROPOSED
 Change: Doc 03B §6.5 numbers ownership verification as step 5 and payload validation (Zod parse)
   as step 6. The implementation inverts the order — step 6 (Zod parse) runs before step 5

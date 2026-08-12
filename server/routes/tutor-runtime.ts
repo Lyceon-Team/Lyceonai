@@ -903,6 +903,10 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
     // Policy-assignment persistence is blocking per §1.4. If this write fails,
     // the turn is not treated as successful.
+    // Values match Doc 03A §18.4 CHECK constraints: policy_variant ∈
+    // {concise,scaffolded,socratic,strategy_first}, emotional_register ∈
+    // {default,elite,recovery,sprint,calm}. V1 default per §11.4 is
+    // scaffolded/default — mode transitions are not yet implemented.
     // @spec [Doc-03B_V4.1 §6.5 step 12, Doc-03A_V1 §11, Doc-03B_V4.1 §1.4]
     const instructionAssignmentResult = await persistInstructionAssignment({
       conversationId: conversation.id,
@@ -911,19 +915,20 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       sourceSessionId: effectiveScope.source_session_id,
       sourceSessionItemId: effectiveScope.source_session_item_id,
       sourceQuestionRowId: effectiveScope.source_question_row_id,
-      policyFamily: "base_v1",
-      policyVariant: "standard",
-      policyVersion: "1.0.0",
+      policyFamily: "instructional_tutor",
+      policyVariant: "scaffolded",
+      policyVersion: "1.0",
       promptVersion: null,
       assignmentMode: "deterministic",
       assignmentKey: `${studentId}:${conversation.entry_mode}`,
-      emotionalRegister: null,
+      // emotional_register: omitted → DB DEFAULT 'default' applies (§18.4)
       reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
     if (!instructionAssignmentResult.ok) {
       sendTutorError(res, "canonical_write_failed");
       return;
     }
+    const assignmentId = instructionAssignmentResult.assignmentId;
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
     // envelope — these flow into both the wire request (worker-side scan) and
