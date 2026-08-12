@@ -484,17 +484,20 @@ export function assertTutorSchemaProof(proof: SchemaProof): string[] {
     );
   }
 
+  // The idempotency index includes role so the two-row model (one student,
+  // one tutor per client_turn_id) can coexist.  See SCL-028 / migration
+  // 20260812000000_tutor_messages_idempotency_role.sql.
   const idempotencyUniqueIndex = proof.indexes.tutor_messages.find(
     (index) =>
       /\bunique\s+index\b/i.test(index.indexdef) &&
-      /\(student_id,\s*conversation_id,\s*client_turn_id\)/i.test(
+      /\(student_id,\s*conversation_id,\s*client_turn_id,\s*role\)/i.test(
         index.indexdef,
       ) &&
       /where\s+\(?client_turn_id\s+is\s+not\s+null\)?/i.test(index.indexdef),
   );
   if (!idempotencyUniqueIndex) {
     failures.push(
-      "Missing unique index for idempotency on tutor_messages(student_id, conversation_id, client_turn_id) WHERE client_turn_id IS NOT NULL.",
+      "Missing unique index for idempotency on tutor_messages(student_id, conversation_id, client_turn_id, role) WHERE client_turn_id IS NOT NULL.",
     );
   }
 

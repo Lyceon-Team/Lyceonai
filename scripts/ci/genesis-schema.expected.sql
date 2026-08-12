@@ -6145,7 +6145,7 @@ CREATE INDEX idx_tutor_memory_summaries_student_type ON public.tutor_memory_summ
 -- Name: idx_tutor_messages_client_turn_idempotency; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_tutor_messages_client_turn_idempotency ON public.tutor_messages USING btree (student_id, conversation_id, client_turn_id) WHERE (client_turn_id IS NOT NULL);
+CREATE UNIQUE INDEX idx_tutor_messages_client_turn_idempotency ON public.tutor_messages USING btree (student_id, conversation_id, client_turn_id, role) WHERE (client_turn_id IS NOT NULL);
 
 
 --
