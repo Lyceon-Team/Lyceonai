@@ -53,6 +53,12 @@ A task is open until: build passes, tests pass, no invariant violated, result re
 - One atomic change per step. Stop on ambiguity — do not guess or batch unrelated fixes.
 - Proof discipline: no "appears to / likely / should work." File:line or verbatim output, or it didn't happen.
 
+## Managed-service first
+
+Before implementing scheduling, queueing, retries, alerting, tracing, or any other infrastructure behavior, check whether a connected platform already provides it — GCP (Cloud Tasks, Cloud Scheduler, Cloud Monitoring, Cloud Logging, Pub/Sub), Supabase, Stripe, or Vercel. Hand-rolled infrastructure requires a stated reason in the PR description explaining why the managed service does not fit. "We already have code for it" is not a reason.
+
+This applies to spec implementation too: where a spec section names a managed service (e.g. Doc 03C §8 names Cloud Tasks queues), implement it with that service rather than an application-layer equivalent.
+
 ## Branch targeting — three integration branches, never `main`
 
 Three long-lived integration branches exist. Route every PR to the correct one by scope:
