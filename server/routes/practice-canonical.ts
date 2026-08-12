@@ -2982,23 +2982,32 @@ async function captureDiagnosticBaseline(
     snapshot_kind: "diagnostic_baseline" as const,
   }));
 
-  // ON CONFLICT DO NOTHING: the partial unique index
+  // Once-only enforcement: the partial unique index
   // idx_baseline_once_per_student_section (student_id, section WHERE
-  // snapshot_kind='diagnostic_baseline') enforces once-only. upsert with
-  // ignoreDuplicates: true maps to INSERT ... ON CONFLICT DO NOTHING —
-  // a second diagnostic completion silently preserves the original baseline.
+  // snapshot_kind='diagnostic_baseline') rejects duplicate diagnostic baselines.
+  // Because it's a PARTIAL unique index, Supabase's onConflict parameter can't
+  // reference it — PostgreSQL requires a non-partial constraint for ON CONFLICT.
+  // Instead we do a plain INSERT and treat the unique-violation error (23505)
+  // as success: the original baseline is preserved, exactly the DO NOTHING
+  // semantics we want.
   const { error: insertError } = await supabaseServer
     .from("student_section_projection_snapshots")
-    .upsert(baselineRows, {
-      onConflict: "student_id,section",
-      ignoreDuplicates: true,
-    })
+    .insert(baselineRows)
     .select("snapshot_id");
 
   if (insertError) {
-    // Any error is logged but non-fatal — baseline capture must not block
+    // 23505 = unique_violation from the partial unique index → baseline already
+    // captured. This is the expected idempotent path for a second diagnostic.
+    if (insertError.code === "23505") {
+      logger.info("[diagnostic] baseline already captured (idempotent no-op)", {
+        requestId,
+        userId,
+      });
+      return;
+    }
+    // Any other error is logged but non-fatal — baseline capture must not block
     // the answer response.
-    logger.info("[diagnostic] baseline insert result", {
+    logger.info("[diagnostic] baseline insert failed (non-fatal)", {
       requestId,
       userId,
       error: insertError.message,

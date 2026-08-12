@@ -339,8 +339,16 @@ class PgQueryBuilder {
             sql += ` ON CONFLICT (${this.upsertConflictCols}) DO NOTHING`;
           }
           sql += " RETURNING *";
-          const result = await this.pgClient.query(sql, allVals);
-          resolve({ data: result.rows, error: null });
+          try {
+            const result = await this.pgClient.query(sql, allVals);
+            resolve({ data: result.rows, error: null });
+          } catch (insertErr: unknown) {
+            const pgErr = insertErr as { message: string; code?: string };
+            resolve({
+              data: null,
+              error: { message: pgErr.message, code: pgErr.code },
+            });
+          }
           return;
         }
 
@@ -378,7 +386,11 @@ class PgQueryBuilder {
         const result = await this.pgClient.query(sql, params);
         resolve({ data: result.rows, error: null });
       } catch (err: unknown) {
-        resolve({ data: [], error: { message: (err as Error).message } });
+        const pgErr = err as { message: string; code?: string };
+        resolve({
+          data: [],
+          error: { message: pgErr.message, code: pgErr.code },
+        });
       }
     })();
   }
@@ -932,7 +944,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     await testPg!.query(
       `INSERT INTO public.practice_sessions
           (id, user_id, actor_id, mode, filters, target_count, platform, status)
-        VALUES ($1, $2, $2, 'practice',
+        VALUES ($1, $2, $2, 'flow',
           '{"target_question_count": 5}', 5, 'web', 'active')`,
       [REGULAR_SESSION_ID, REGULAR_USER_ID],
     );
