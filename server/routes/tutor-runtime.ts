@@ -829,7 +829,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // Crisis path: bypass model generation entirely; respond with the
     // regional crisis resource and flag for the safety review queue.
     if (crisisResult.crisis) {
-      await flagConversationForReview(conversation.id);
+      await flagConversationForReview(
+        conversation.id,
+        studentId,
+        crisisResult.source,
+        crisisResult.signatureId,
+        crisisResult.modelConfidence,
+      );
 
       const { data: profileRow } = await supabaseServer
         .from("profiles")
@@ -897,7 +903,13 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
     // force-enqueued to the §21.3 review queue with classifier_degraded.
     if (!crisisResult.crisis && crisisResult.forceReview) {
-      await flagConversationForReview(conversation.id);
+      await flagConversationForReview(
+        conversation.id,
+        studentId,
+        "classifier_degraded",
+        null,
+        null,
+      );
     }
 
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.

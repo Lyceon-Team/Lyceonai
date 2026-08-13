@@ -31,6 +31,8 @@
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { createCrisisReviewCase } from "./crisis-review-queue";
+import { notifyCrisisEvent } from "./crisis-notification";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -40,6 +42,7 @@ type CrisisResult =
       crisis: true;
       source: "signature" | "model" | "both";
       signatureId: string | null;
+      modelConfidence: number | null;
       forceReview: boolean;
     };
 
@@ -370,6 +373,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     crisis: true,
     source,
     signatureId: signatureResult.signatureId,
+    modelConfidence: layer2Positive ? classifierResult.confidence : null,
     forceReview: true,
   };
 }
@@ -391,14 +395,37 @@ export function getCrisisResponse(country: string): string {
 // ── Conversation Flagging ──────────────────────────────────────────────
 
 /**
- * Sets crisis_flagged = true on the conversation and logs for the
- * safety review queue (48-hour SLA at launch per §21.3).
+ * Sets crisis_flagged = true on the conversation AND creates a durable
+ * crisis_review_cases row with a 48h SLA deadline.
  *
- * @spec [Doc-03_V3 §21.2, §21.3]
+ * BLOCKING: throws on failure. A failed flag write means the crisis turn
+ * will not be reviewed — that is worse than a failed turn. The caller
+ * MUST let the throw propagate; the student receives an error rather than
+ * an untracked crisis turn.
+ *
+ * @spec [Doc-03_V3 §21.2, §21.3, SCL-025]
+ * @implemented 2026-08-13 (changed from fire-and-forget to BLOCKING)
+ *
+ * trade-offs:
+ *   - Previously this function swallowed errors so the crisis response
+ *     could still be delivered. The new behavior fails the turn on a flag
+ *     write failure. Rationale: an unreviewed crisis turn is a safety gap
+ *     that monitoring alone cannot close within the 48h SLA.
+ *   - The crisis_review_cases INSERT uses a UNIQUE partial index on
+ *     (conversation_id) WHERE status IN ('open', 'in_review'), so calling
+ *     this twice for the same conversation is safe — the second call will
+ *     throw a unique violation, which the route handler treats as a turn
+ *     failure (idempotency is NOT required here; duplicate calls indicate
+ *     a retry scenario that should be investigated).
  */
 export async function flagConversationForReview(
   conversationId: string,
-): Promise<void> {
+  studentId: string,
+  source: "signature" | "model" | "both" | "classifier_degraded",
+  signatureId: string | null,
+  modelConfidence: number | null,
+): Promise<string> {
+  // Step 1: Set crisis_flagged on tutor_conversations (BLOCKING)
   const { error } = await supabaseServer
     .from("tutor_conversations")
     .update({ crisis_flagged: true })
@@ -408,19 +435,40 @@ export async function flagConversationForReview(
     logger.error(
       "TUTOR_CRISIS",
       "crisis_flag_write_failed",
-      "failed to set crisis_flagged on tutor_conversations; crisis may not be reviewed",
+      "failed to set crisis_flagged on tutor_conversations; BLOCKING the turn",
       error,
       { conversationId },
     );
-    // Do not throw — the crisis response must still be delivered to the student.
-    // The failed flag is itself a critical operational event that monitoring catches.
-    return;
+    throw new Error(`crisis flag write failed: ${error.message}`);
   }
+
+  // Step 2: Create a durable review case with 48h SLA (BLOCKING)
+  const caseId = await createCrisisReviewCase({
+    conversationId,
+    studentId,
+    source,
+    signatureId,
+    modelConfidence,
+  });
 
   logger.warn(
     "TUTOR_CRISIS",
     "conversation_crisis_flagged",
     "conversation flagged for safety review queue (48h SLA at launch)",
-    { conversationId },
+    { conversationId, caseId, source },
   );
+
+  // Step 3: Fire-and-forget ops notification via Cloud Tasks (§21.2 step 5).
+  // Not blocking — the review case is the durable safety record.
+  void notifyCrisisEvent({
+    caseId,
+    conversationId,
+    studentId,
+    source,
+    signatureId,
+    modelConfidence,
+    timestamp: new Date().toISOString(),
+  });
+
+  return caseId;
 }

@@ -7,6 +7,7 @@ import {
   executeDueDeletions,
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
+import { getBreachedCases } from "../services/crisis-review-queue";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -104,6 +105,71 @@ router.get(
         err,
       );
       res.status(500).json({ error: "execute_deletions_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/crisis-sla-sweep
+ * @spec [Doc-03_V3 §21.3] Cloud Scheduler SLA breach sweep. Finds open crisis
+ * review cases past their 48h SLA deadline and logs a HIGH alert for each.
+ * Does not auto-resolve or auto-escalate — the sweep is an alerting mechanism
+ * so ops can prioritize breached cases.
+ *
+ * @implemented 2026-08-13
+ *
+ * trade-offs: Alerting only, no auto-action. At V1 scale (founder-staffed),
+ * the sweep surfaces overdue cases via structured logging. Cloud Monitoring
+ * alert policies pick up the log entries and route to the on-call channel.
+ * At V2 scale, this should emit to PagerDuty/Slack directly.
+ *
+ * IAM requirements (report only — Karl provisions):
+ *   - Cloud Scheduler job: `crisis-sla-sweep` targeting this endpoint.
+ *   - Runs every hour (0 * * * *).
+ *   - Uses CRON_SECRET for auth (same as other cron endpoints).
+ */
+router.get(
+  "/crisis-sla-sweep",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const breachedCases = await getBreachedCases();
+
+      if (breachedCases.length > 0) {
+        logger.error(
+          "CRISIS_SLA",
+          "sla_breach_detected",
+          `${breachedCases.length} crisis review case(s) past SLA deadline`,
+          undefined,
+          {
+            breachedCount: breachedCases.length,
+            caseIds: breachedCases.map((c) => c.id as string),
+            oldestDeadline: breachedCases[0]?.sla_deadline,
+          },
+        );
+      } else {
+        logger.info(
+          "CRISIS_SLA",
+          "sla_sweep_clean",
+          "No crisis review cases past SLA deadline",
+        );
+      }
+
+      res.json({
+        ok: true,
+        breachedCount: breachedCases.length,
+      });
+    } catch (err) {
+      logger.error(
+        "CRISIS_SLA",
+        "sla_sweep_error",
+        "Crisis SLA sweep failed",
+        err,
+      );
+      res.status(500).json({ error: "crisis_sla_sweep_failed" });
     }
   },
 );
