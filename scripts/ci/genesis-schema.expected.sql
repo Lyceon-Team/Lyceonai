@@ -1536,6 +1536,20 @@ $$;
 
 
 --
+-- Name: crisis_review_cases_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.crisis_review_cases_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: deidentify_user(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3552,6 +3566,49 @@ CREATE TABLE public.consent_runtime_config_history (
 
 
 --
+-- Name: crisis_review_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crisis_review_audit_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    reviewer_id uuid NOT NULL,
+    action text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    ip inet,
+    request_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT crisis_review_audit_log_action_check CHECK ((action = ANY (ARRAY['viewed'::text, 'status_changed'::text, 'disposition_set'::text, 'note_added'::text])))
+);
+
+
+--
+-- Name: crisis_review_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crisis_review_cases (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    source text NOT NULL,
+    signature_id uuid,
+    model_confidence numeric,
+    status text DEFAULT 'open'::text NOT NULL,
+    disposition text,
+    reviewer_id uuid,
+    reviewed_at timestamp with time zone,
+    review_notes text,
+    sla_deadline timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
+    CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text]))),
+    CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
+);
+
+
+--
 -- Name: difficulties; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5160,6 +5217,22 @@ ALTER TABLE ONLY public.consent_runtime_config
 
 
 --
+-- Name: crisis_review_audit_log crisis_review_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_audit_log
+    ADD CONSTRAINT crisis_review_audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crisis_review_cases crisis_review_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_cases
+    ADD CONSTRAINT crisis_review_cases_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: difficulties difficulties_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5864,6 +5937,41 @@ CREATE INDEX idx_audit_logs_target ON public.audit_logs USING btree (target_prof
 
 
 --
+-- Name: idx_crisis_audit_log_case; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_audit_log_case ON public.crisis_review_audit_log USING btree (case_id, created_at);
+
+
+--
+-- Name: idx_crisis_audit_log_reviewer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_audit_log_reviewer ON public.crisis_review_audit_log USING btree (reviewer_id, created_at DESC);
+
+
+--
+-- Name: idx_crisis_review_cases_conversation_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_crisis_review_cases_conversation_active ON public.crisis_review_cases USING btree (conversation_id) WHERE (status = ANY (ARRAY['open'::text, 'in_review'::text]));
+
+
+--
+-- Name: idx_crisis_review_cases_sla_breach; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_sla_breach ON public.crisis_review_cases USING btree (sla_deadline) WHERE (status = 'open'::text);
+
+
+--
+-- Name: idx_crisis_review_cases_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_crisis_review_cases_status ON public.crisis_review_cases USING btree (status, created_at DESC);
+
+
+--
 -- Name: idx_entitlements_active; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6445,6 +6553,13 @@ CREATE TRIGGER consent_runtime_config_notify AFTER INSERT OR UPDATE ON public.co
 
 
 --
+-- Name: crisis_review_cases crisis_review_cases_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crisis_review_cases_set_updated_at BEFORE UPDATE ON public.crisis_review_cases FOR EACH ROW EXECUTE FUNCTION public.crisis_review_cases_updated_at();
+
+
+--
 -- Name: entitlement_runtime_config_history entitlement_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6768,6 +6883,46 @@ ALTER TABLE ONLY public.consent_runtime_config_history
 
 ALTER TABLE ONLY public.consent_runtime_config
     ADD CONSTRAINT consent_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id);
+
+
+--
+-- Name: crisis_review_audit_log crisis_review_audit_log_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_audit_log
+    ADD CONSTRAINT crisis_review_audit_log_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.crisis_review_cases(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_audit_log crisis_review_audit_log_reviewer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_audit_log
+    ADD CONSTRAINT crisis_review_audit_log_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_cases crisis_review_cases_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_cases
+    ADD CONSTRAINT crisis_review_cases_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.tutor_conversations(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: crisis_review_cases crisis_review_cases_reviewer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_cases
+    ADD CONSTRAINT crisis_review_cases_reviewer_id_fkey FOREIGN KEY (reviewer_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: crisis_review_cases crisis_review_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crisis_review_cases
+    ADD CONSTRAINT crisis_review_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE RESTRICT;
 
 
 --
@@ -7433,6 +7588,60 @@ ALTER TABLE public.consent_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.consent_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: crisis_review_audit_log crisis_review_admin insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_admin insert crisis_review_audit_log" ON public.crisis_review_audit_log FOR INSERT TO crisis_review_admin WITH CHECK (true);
+
+
+--
+-- Name: crisis_review_audit_log crisis_review_admin select crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_admin select crisis_review_audit_log" ON public.crisis_review_audit_log FOR SELECT TO crisis_review_admin USING (true);
+
+
+--
+-- Name: crisis_review_cases crisis_review_admin select crisis_review_cases; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_admin select crisis_review_cases" ON public.crisis_review_cases FOR SELECT TO crisis_review_admin USING (true);
+
+
+--
+-- Name: crisis_review_cases crisis_review_admin update crisis_review_cases; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_admin update crisis_review_cases" ON public.crisis_review_cases FOR UPDATE TO crisis_review_admin USING (true) WITH CHECK (true);
+
+
+--
+-- Name: crisis_review_audit_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.crisis_review_audit_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.crisis_review_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_audit_log crisis_review_writer insert crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_writer insert crisis_review_audit_log" ON public.crisis_review_audit_log FOR INSERT TO crisis_review_writer WITH CHECK (true);
+
+
+--
+-- Name: crisis_review_cases crisis_review_writer insert crisis_review_cases; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "crisis_review_writer insert crisis_review_cases" ON public.crisis_review_cases FOR INSERT TO crisis_review_writer WITH CHECK (true);
+
+
+--
 -- Name: difficulties; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7790,6 +7999,20 @@ CREATE POLICY sections_read ON public.sections FOR SELECT TO anon, authenticated
 --
 
 ALTER TABLE public.service_auth_secrets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: crisis_review_audit_log service_role_crisis_review_audit_log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_role_crisis_review_audit_log ON public.crisis_review_audit_log TO service_role USING (true) WITH CHECK (true);
+
+
+--
+-- Name: crisis_review_cases service_role_crisis_review_cases; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY service_role_crisis_review_cases ON public.crisis_review_cases TO service_role USING (true) WITH CHECK (true);
+
 
 --
 -- Name: source_types; Type: ROW SECURITY; Schema: public; Owner: -
