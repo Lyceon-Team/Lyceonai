@@ -177,12 +177,28 @@ class PgQueryBuilder {
   textSearch(): this {
     return this;
   }
-  insert(): this {
+  private insertRows: Record<string, unknown>[] | null = null;
+  private upsertIgnoreDuplicates = false;
+  private upsertConflictCols: string | null = null;
+
+  insert(
+    rows: Record<string, unknown> | Record<string, unknown>[],
+    _opts?: Record<string, unknown>,
+  ): this {
+    this.insertRows = Array.isArray(rows) ? rows : [rows];
     return this;
   }
-  upsert(): this {
+
+  upsert(
+    rows: Record<string, unknown> | Record<string, unknown>[],
+    opts?: { onConflict?: string; ignoreDuplicates?: boolean },
+  ): this {
+    this.insertRows = Array.isArray(rows) ? rows : [rows];
+    this.upsertIgnoreDuplicates = opts?.ignoreDuplicates ?? false;
+    this.upsertConflictCols = opts?.onConflict ?? null;
     return this;
   }
+
   delete(): this {
     return this;
   }
@@ -306,6 +322,36 @@ class PgQueryBuilder {
   ): void {
     (async () => {
       try {
+        // INSERT / UPSERT (e.g. captureDiagnosticBaseline)
+        if (this.insertRows && this.insertRows.length > 0) {
+          const cols = Object.keys(this.insertRows[0]!);
+          const allVals: unknown[] = [];
+          const rowPlaceholders: string[] = [];
+          let pIdx = 1;
+          for (const row of this.insertRows) {
+            const ph = cols.map(() => `$${pIdx++}`);
+            rowPlaceholders.push(`(${ph.join(", ")})`);
+            for (const c of cols) allVals.push(row[c]);
+          }
+          const colList = cols.map((c) => `"${c}"`).join(", ");
+          let sql = `INSERT INTO public."${this.table}" (${colList}) VALUES ${rowPlaceholders.join(", ")}`;
+          if (this.upsertIgnoreDuplicates && this.upsertConflictCols) {
+            sql += ` ON CONFLICT (${this.upsertConflictCols}) DO NOTHING`;
+          }
+          sql += " RETURNING *";
+          try {
+            const result = await this.pgClient.query(sql, allVals);
+            resolve({ data: result.rows, error: null });
+          } catch (insertErr: unknown) {
+            const pgErr = insertErr as { message: string; code?: string };
+            resolve({
+              data: null,
+              error: { message: pgErr.message, code: pgErr.code },
+            });
+          }
+          return;
+        }
+
         // Bare .update().eq() without .select() (e.g. updateSessionLifecycle)
         if (this.updatePatch) {
           const cols = Object.keys(this.updatePatch);
@@ -340,7 +386,11 @@ class PgQueryBuilder {
         const result = await this.pgClient.query(sql, params);
         resolve({ data: result.rows, error: null });
       } catch (err: unknown) {
-        resolve({ data: [], error: { message: (err as Error).message } });
+        const pgErr = err as { message: string; code?: string };
+        resolve({
+          data: [],
+          error: { message: pgErr.message, code: pgErr.code },
+        });
       }
     })();
   }
@@ -765,5 +815,230 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       [TEST_SESSION_ID],
     );
     expect(auditResult.rows[0]!.cnt).toBe(40);
+  }, 120_000);
+
+  // -------------------------------------------------------------------
+  // F. Assert: diagnostic completion captures exactly one diagnostic_baseline
+  //    snapshot per section (M + RW), values match the live projection at
+  //    completion time.
+  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
+  // @implemented 2026-08-12
+  // -------------------------------------------------------------------
+  it("diagnostic completion writes exactly one diagnostic_baseline per section", async () => {
+    const baselineResult = await testPg!.query(
+      `SELECT student_id, section, snapshot_kind,
+              projected_score_mid, projected_score_low, projected_score_high
+         FROM public.student_section_projection_snapshots
+         WHERE student_id = $1
+           AND snapshot_kind = 'diagnostic_baseline'
+         ORDER BY section`,
+      [TEST_USER_ID],
+    );
+
+    // Exactly 2 baseline rows: one for M, one for RW.
+    expect(baselineResult.rows.length).toBe(2);
+
+    const sections = baselineResult.rows.map(
+      (r: Record<string, unknown>) => r.section,
+    );
+    expect(sections).toContain("M");
+    expect(sections).toContain("RW");
+
+    // Each baseline has a non-NULL projected_score_mid (evidence gate passed).
+    for (const row of baselineResult.rows) {
+      expect(row.projected_score_mid).not.toBeNull();
+      expect(row.snapshot_kind).toBe("diagnostic_baseline");
+    }
+  }, 30_000);
+
+  // -------------------------------------------------------------------
+  // G. Assert: second diagnostic baseline write is silently blocked by
+  //    partial unique index — original values preserved (immutability proof).
+  //    Tests the ON CONFLICT DO NOTHING path against REAL Postgres.
+  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
+  // @implemented 2026-08-12
+  // -------------------------------------------------------------------
+  it("second diagnostic baseline write is blocked — original preserved (immutability)", async () => {
+    // Capture original baseline values.
+    const originalResult = await testPg!.query(
+      `SELECT snapshot_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_at
+         FROM public.student_section_projection_snapshots
+         WHERE student_id = $1
+           AND snapshot_kind = 'diagnostic_baseline'
+         ORDER BY section`,
+      [TEST_USER_ID],
+    );
+    expect(originalResult.rows.length).toBe(2);
+    const originalM = originalResult.rows.find(
+      (r: Record<string, unknown>) => r.section === "M",
+    );
+    const originalRW = originalResult.rows.find(
+      (r: Record<string, unknown>) => r.section === "RW",
+    );
+    expect(originalM).toBeDefined();
+    expect(originalRW).toBeDefined();
+
+    // Attempt a second baseline write with different scores (simulating a
+    // hypothetical second diagnostic). ON CONFLICT DO NOTHING should silently
+    // no-op against the partial unique index.
+    const dupResult = await testPg!.query(
+      `INSERT INTO public.student_section_projection_snapshots
+         (student_id, section, projected_score_mid, projected_score_low,
+          projected_score_high, range_width, relevant_question_count,
+          snapshot_kind)
+       VALUES
+         ($1, 'M',  700, 650, 750, 100, 99, 'diagnostic_baseline'),
+         ($1, 'RW', 600, 550, 650, 100, 99, 'diagnostic_baseline')
+       ON CONFLICT DO NOTHING`,
+      [TEST_USER_ID],
+    );
+
+    // ON CONFLICT DO NOTHING: rowCount is 0 (no rows inserted).
+    expect(dupResult.rowCount).toBe(0);
+
+    // Verify original values are preserved (not overwritten).
+    const afterResult = await testPg!.query(
+      `SELECT snapshot_id, section, projected_score_mid, snapshot_at
+         FROM public.student_section_projection_snapshots
+         WHERE student_id = $1
+           AND snapshot_kind = 'diagnostic_baseline'
+         ORDER BY section`,
+      [TEST_USER_ID],
+    );
+    expect(afterResult.rows.length).toBe(2);
+
+    const afterM = afterResult.rows.find(
+      (r: Record<string, unknown>) => r.section === "M",
+    );
+    const afterRW = afterResult.rows.find(
+      (r: Record<string, unknown>) => r.section === "RW",
+    );
+
+    // snapshot_id unchanged (same row, not replaced).
+    expect(afterM!.snapshot_id).toEqual(originalM!.snapshot_id);
+    expect(afterRW!.snapshot_id).toEqual(originalRW!.snapshot_id);
+    // Score unchanged (original preserved, 700/600 never written).
+    expect(afterM!.projected_score_mid).toEqual(originalM!.projected_score_mid);
+    expect(afterRW!.projected_score_mid).toEqual(
+      originalRW!.projected_score_mid,
+    );
+  }, 30_000);
+
+  // -------------------------------------------------------------------
+  // H. Assert: regular practice completion writes NO diagnostic_baseline.
+  //    The mode gate (session.mode === 'diagnostic') is correct in code;
+  //    this proves it against real Postgres.
+  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
+  // @implemented 2026-08-12
+  // -------------------------------------------------------------------
+  it("regular practice session writes no diagnostic_baseline snapshot", async () => {
+    const REGULAR_USER_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const REGULAR_SESSION_ID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+
+    // Create a regular (non-diagnostic) user + session + 5 items
+    await testPg!.query(
+      `INSERT INTO auth.users (id, email) VALUES ($1, 'regular-pg-ci@example.com')`,
+      [REGULAR_USER_ID],
+    );
+
+    await testPg!.query(
+      `INSERT INTO public.practice_sessions
+          (id, user_id, actor_id, mode, filters, target_count, platform, status)
+        VALUES ($1, $2, $2, 'flow',
+          '{"target_question_count": 5}', 5, 'web', 'active')`,
+      [REGULAR_SESSION_ID, REGULAR_USER_ID],
+    );
+
+    // Serve 5 items (reuse first domain's questions)
+    for (let q = 1; q <= 5; q++) {
+      const qid = questionId(0, q);
+      const iid = `ffffffff-ffff-ffff-ffff-ffffffff${String(q).padStart(4, "0")}`;
+      await testPg!.query(
+        `INSERT INTO public.practice_session_items
+            (id, session_id, user_id, actor_id, ordinal,
+             question_id, question_stem, question_options,
+             question_correct_answer, question_explanation,
+             question_option_metadata,
+             question_domain, question_skill, question_difficulty,
+             question_section, status, question_item_type,
+             option_order, option_token_map)
+          VALUES ($1, $2, $3, $3, $4,
+            $5, $6,
+            '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
+            'B', $7,
+            '{"A":{"role":"distractor","error_taxonomy":"common-misconception"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"common-misconception"},"D":{"role":"distractor","error_taxonomy":"common-misconception"}}'::jsonb,
+            $8, $9, $10, $11, 'served', 'mcq',
+            ARRAY['A','B','C','D']::text[],
+            '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb)`,
+        [
+          iid,
+          REGULAR_SESSION_ID,
+          REGULAR_USER_ID,
+          q,
+          qid,
+          `Regular Algebra Q${q}`,
+          `Explanation for Algebra Q${q}`,
+          "Algebra",
+          "ALG.D01",
+          DIFFICULTIES[q - 1],
+          "M",
+        ],
+      );
+    }
+
+    // Submit all 5 answers (completing the session)
+    // Mock auth to use the regular user for these requests
+    const authModule = await import("../../server/middleware/supabase-auth");
+    vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
+      (req: Request, _res: Response, next: NextFunction) => {
+        (req as Record<string, unknown>).user = {
+          id: REGULAR_USER_ID,
+          email: "regular-pg-ci@example.com",
+          role: "student",
+          isAdmin: false,
+          isGuardian: false,
+          display_name: "Regular Student",
+        };
+        next();
+      },
+    );
+
+    for (let q = 1; q <= 5; q++) {
+      const qid = questionId(0, q);
+      const res = await request(app).post("/api/practice/answer").send({
+        sessionId: REGULAR_SESSION_ID,
+        questionId: qid,
+        selectedAnswer: "opt_tok_B",
+      });
+      expect(
+        res.status,
+        `regular answer ${q} (${qid}) failed: ${JSON.stringify(res.body)}`,
+      ).toBe(200);
+    }
+
+    // Assert: NO diagnostic_baseline snapshot for the regular user.
+    const baselineResult = await testPg!.query(
+      `SELECT count(*)::integer AS cnt
+         FROM public.student_section_projection_snapshots
+         WHERE student_id = $1
+           AND snapshot_kind = 'diagnostic_baseline'`,
+      [REGULAR_USER_ID],
+    );
+    expect(baselineResult.rows[0]!.cnt).toBe(0);
+
+    // Restore auth mock to diagnostic user for any subsequent tests.
+    vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
+      (req: Request, _res: Response, next: NextFunction) => {
+        (req as Record<string, unknown>).user = {
+          id: TEST_USER_ID,
+          email: "handler-pg-ci@example.com",
+          role: "student",
+          isAdmin: false,
+          isGuardian: false,
+          display_name: "Test Student",
+        };
+        next();
+      },
+    );
   }, 120_000);
 });
