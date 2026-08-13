@@ -2908,7 +2908,7 @@ async function reconcileDiagnosticCompletionOnReplay(opts: {
  * this is a no-op with a warning. This is defensive — the diagnostic's 8×5=40
  * events should always clear the evidence gate.
  */
-async function captureDiagnosticBaseline(
+export async function captureDiagnosticBaseline(
   userId: string,
   requestId: string,
 ): Promise<void> {

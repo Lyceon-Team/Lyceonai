@@ -824,7 +824,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
   // @spec [Doc-05C §7.4, Vertical-B Slice 2]
   // @implemented 2026-08-12
   // -------------------------------------------------------------------
-  it("diagnostic completion writes exactly one diagnostic_baseline per section", async () => {
+  it("diagnostic completion writes exactly one diagnostic_baseline per section, values match live projection", async () => {
     const baselineResult = await testPg!.query(
       `SELECT student_id, section, snapshot_kind,
               projected_score_mid, projected_score_low, projected_score_high
@@ -849,16 +849,49 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       expect(row.projected_score_mid).not.toBeNull();
       expect(row.snapshot_kind).toBe("diagnostic_baseline");
     }
+
+    // FIX B (Codex REVISE): assert captured baseline values EQUAL the live
+    // projection in student_section_projections at completion time.
+    const liveResult = await testPg!.query(
+      `SELECT section, projected_score_mid, projected_score_low, projected_score_high
+         FROM public.student_section_projections
+         WHERE student_id = $1
+         ORDER BY section`,
+      [TEST_USER_ID],
+    );
+    expect(liveResult.rows.length).toBe(2);
+
+    for (const baseline of baselineResult.rows) {
+      const live = liveResult.rows.find(
+        (r: Record<string, unknown>) => r.section === baseline.section,
+      );
+      expect(
+        live,
+        `live projection missing for section ${baseline.section}`,
+      ).toBeDefined();
+      expect(baseline.projected_score_mid).toEqual(live!.projected_score_mid);
+      expect(baseline.projected_score_low).toEqual(live!.projected_score_low);
+      expect(baseline.projected_score_high).toEqual(live!.projected_score_high);
+    }
   }, 30_000);
 
   // -------------------------------------------------------------------
-  // G. Assert: second diagnostic baseline write is silently blocked by
-  //    partial unique index — original values preserved (immutability proof).
-  //    Tests the ON CONFLICT DO NOTHING path against REAL Postgres.
+  // G. Assert: second diagnostic baseline capture through the PRODUCTION
+  //    code path (.insert() + catch-23505) is a harmless no-op — original
+  //    baseline values preserved (immutability proof).
+  //
+  //    This test calls the exported captureDiagnosticBaseline function
+  //    directly — the same code the handler calls on diagnostic completion.
+  //    The function reads live projections, attempts a plain INSERT (no
+  //    ON CONFLICT), and catches error code 23505 from the partial unique
+  //    index as an idempotent no-op. If the catch-23505 were removed,
+  //    the function would log "baseline insert failed" instead of
+  //    "baseline already captured" — the spied logger assertion below
+  //    detects that regression.
   // @spec [Doc-05C §7.4, Vertical-B Slice 2]
-  // @implemented 2026-08-12
+  // @implemented 2026-08-13
   // -------------------------------------------------------------------
-  it("second diagnostic baseline write is blocked — original preserved (immutability)", async () => {
+  it("second baseline capture via production path is blocked — original preserved (immutability)", async () => {
     // Capture original baseline values.
     const originalResult = await testPg!.query(
       `SELECT snapshot_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_at
@@ -878,27 +911,37 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     expect(originalM).toBeDefined();
     expect(originalRW).toBeDefined();
 
-    // Attempt a second baseline write with different scores (simulating a
-    // hypothetical second diagnostic). ON CONFLICT DO NOTHING should silently
-    // no-op against the partial unique index.
-    const dupResult = await testPg!.query(
-      `INSERT INTO public.student_section_projection_snapshots
-         (student_id, section, projected_score_mid, projected_score_low,
-          projected_score_high, range_width, relevant_question_count,
-          snapshot_kind)
-       VALUES
-         ($1, 'M',  700, 650, 750, 100, 99, 'diagnostic_baseline'),
-         ($1, 'RW', 600, 550, 650, 100, 99, 'diagnostic_baseline')
-       ON CONFLICT DO NOTHING`,
-      [TEST_USER_ID],
-    );
+    // Spy on logger to verify the 23505 idempotent path is taken.
+    const { logger } = await import("../../server/logger");
+    const infoSpy = vi.spyOn(logger, "info");
 
-    // ON CONFLICT DO NOTHING: rowCount is 0 (no rows inserted).
-    expect(dupResult.rowCount).toBe(0);
+    // Call the PRODUCTION baseline-capture function a second time.
+    // This exercises: supabaseServer.from(...).insert(rows) → PG raises
+    // 23505 from the partial unique index → production catches it as a no-op.
+    const { captureDiagnosticBaseline } = await import(
+      "../../server/routes/practice-canonical"
+    );
+    await captureDiagnosticBaseline(TEST_USER_ID, "req-immutability-proof");
+
+    // The production catch-23505 path logs "baseline already captured".
+    // If the 23505 catch were removed, the fallback logs "baseline insert
+    // failed" — this assertion would fail, detecting the regression.
+    const capturedCall = infoSpy.mock.calls.find(
+      (args) =>
+        typeof args[0] === "string" &&
+        args[0].includes("baseline already captured"),
+    );
+    expect(
+      capturedCall,
+      'Expected logger.info("[diagnostic] baseline already captured ...") — ' +
+        "the production catch-23505 path must be exercised",
+    ).toBeDefined();
+
+    infoSpy.mockRestore();
 
     // Verify original values are preserved (not overwritten).
     const afterResult = await testPg!.query(
-      `SELECT snapshot_id, section, projected_score_mid, snapshot_at
+      `SELECT snapshot_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_at
          FROM public.student_section_projection_snapshots
          WHERE student_id = $1
            AND snapshot_kind = 'diagnostic_baseline'
@@ -917,10 +960,20 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     // snapshot_id unchanged (same row, not replaced).
     expect(afterM!.snapshot_id).toEqual(originalM!.snapshot_id);
     expect(afterRW!.snapshot_id).toEqual(originalRW!.snapshot_id);
-    // Score unchanged (original preserved, 700/600 never written).
+    // Scores unchanged (original preserved).
     expect(afterM!.projected_score_mid).toEqual(originalM!.projected_score_mid);
+    expect(afterM!.projected_score_low).toEqual(originalM!.projected_score_low);
+    expect(afterM!.projected_score_high).toEqual(
+      originalM!.projected_score_high,
+    );
     expect(afterRW!.projected_score_mid).toEqual(
       originalRW!.projected_score_mid,
+    );
+    expect(afterRW!.projected_score_low).toEqual(
+      originalRW!.projected_score_low,
+    );
+    expect(afterRW!.projected_score_high).toEqual(
+      originalRW!.projected_score_high,
     );
   }, 30_000);
 
