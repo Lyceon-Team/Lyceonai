@@ -148,10 +148,6 @@ export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
 }
 
-export function isEntitlementError(error: unknown): boolean {
-  return isEntitlementDenialError(error);
-}
-
 /**
  * Tutor-specific premium denial mapper. The tutor surface runs through
  * mutations (send-message) and queries (load-conversation) whose errors
@@ -163,11 +159,6 @@ export function mapTutorErrorToPremiumReason(
   error: unknown,
 ): PremiumDenialReason | null {
   return getPremiumDenialReason(error);
-}
-
-export function isPaymentUpdateRequired(error: unknown): boolean {
-  const reason = getPremiumDenialReason(error);
-  return reason === "payment_required" || reason === "payment_past_due";
 }
 
 export function isCsrfError(error: unknown): boolean {

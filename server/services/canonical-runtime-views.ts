@@ -357,6 +357,105 @@ export type CanonicalScoreEstimate =
       lastUpdated: string;
     };
 
+/**
+ * @spec [Vertical-B Slice 2] @implemented 2026-08-12
+ *
+ * plain English: the frozen diagnostic baseline score estimate, captured once at
+ * diagnostic completion and never updated. Same shape as ScoreEstimate plus the
+ * timestamp it was captured at.
+ */
+export type BaselineEstimate = {
+  composite: number;
+  math: number;
+  rw: number;
+  range: { low: number; high: number };
+  confidence: number;
+  capturedAt: string;
+};
+
+/**
+ * @spec [Vertical-B Slice 2] @implemented 2026-08-12
+ *
+ * plain English: read the diagnostic_baseline snapshots for a student.
+ * Returns a BaselineEstimate if both M and RW baseline snapshots exist and have
+ * non-NULL projected_score_mid, or null if no baseline has been captured yet.
+ */
+export async function readDiagnosticBaseline(
+  userId: string,
+): Promise<BaselineEstimate | null> {
+  const { data: snapshots, error } = await supabaseServer
+    .from("student_section_projection_snapshots")
+    .select(
+      "section, projected_score_mid, projected_score_low, projected_score_high, relevant_question_count, snapshot_at",
+    )
+    .eq("student_id", userId)
+    .eq("snapshot_kind", "diagnostic_baseline");
+
+  if (error || !snapshots) {
+    return null;
+  }
+
+  const rows = snapshots as Array<{
+    section: string | null;
+    projected_score_mid: number | null;
+    projected_score_low: number | null;
+    projected_score_high: number | null;
+    relevant_question_count: number | null;
+    snapshot_at: string | null;
+  }>;
+
+  const sectionMap = new Map<"math" | "rw", (typeof rows)[0]>();
+  for (const row of rows) {
+    const key = normalizeSectionKey(row.section);
+    if (!key) continue;
+    sectionMap.set(key, row);
+  }
+
+  const math = sectionMap.get("math");
+  const rw = sectionMap.get("rw");
+  const mathMid = math?.projected_score_mid;
+  const rwMid = rw?.projected_score_mid;
+
+  // Both sections must have non-NULL projections for a valid baseline.
+  if (typeof mathMid !== "number" || typeof rwMid !== "number") {
+    return null;
+  }
+
+  const mathLow =
+    typeof math?.projected_score_low === "number"
+      ? math.projected_score_low
+      : mathMid;
+  const rwLow =
+    typeof rw?.projected_score_low === "number"
+      ? rw.projected_score_low
+      : rwMid;
+  const mathHigh =
+    typeof math?.projected_score_high === "number"
+      ? math.projected_score_high
+      : mathMid;
+  const rwHigh =
+    typeof rw?.projected_score_high === "number"
+      ? rw.projected_score_high
+      : rwMid;
+  const relevantCount =
+    (math?.relevant_question_count ?? 0) + (rw?.relevant_question_count ?? 0);
+
+  // Use the earlier snapshot_at as the baseline timestamp (both should be identical).
+  const capturedAt = math?.snapshot_at ?? rw?.snapshot_at ?? "";
+
+  return {
+    composite: clampScore(Math.round(mathMid + rwMid), 400, 1600),
+    math: clampScore(Math.round(mathMid), 200, 800),
+    rw: clampScore(Math.round(rwMid), 200, 800),
+    range: {
+      low: clampScore(Math.round(mathLow + rwLow), 400, 1600),
+      high: clampScore(Math.round(mathHigh + rwHigh), 400, 1600),
+    },
+    confidence: Math.max(0, Math.min(1, relevantCount / 120)),
+    capturedAt,
+  };
+}
+
 export async function buildScoreEstimateFromCanonical(
   userId: string,
 ): Promise<CanonicalScoreEstimate> {

@@ -14,178 +14,175 @@
  *   - KPI summary/progress view     → buildStudentKpiViewFromCanonical
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import express from 'express';
-import request from 'supertest';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import express from "express";
+import request from "supertest";
 
 const masteryMocks2 = vi.hoisted(() => ({
-    getWeakestSkills: vi.fn(),
+  getWeakestSkills: vi.fn(),
 }));
 
-vi.mock('../../apps/api/src/services/studentMastery', () => ({
-    getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
+vi.mock("../../apps/api/src/services/studentMastery", () => ({
+  getWeakestSkills: (...args: any[]) => masteryMocks2.getWeakestSkills(...args),
 }));
 
 // ---------------------------------------------------------------------------
 // Surface 2: Full-length report — buildStudentFullLengthReportView is the only
 //            assembler called by the /report route.
 // ---------------------------------------------------------------------------
-describe('Full-length report: single canonical builder', () => {
-    const kpiMocks = vi.hoisted(() => ({
-        buildStudentFullLengthReportView: vi.fn(),
-        resolvePaidKpiAccessForUser: vi.fn(),
-    }));
+describe("Full-length report: single canonical builder", () => {
+  const kpiMocks = vi.hoisted(() => ({
+    buildStudentFullLengthReportView: vi.fn(),
+    resolvePaidKpiAccessForUser: vi.fn(),
+  }));
 
-    const examMocks = vi.hoisted(() => ({
-        getExamReport: vi.fn(),
-    }));
+  const examMocks = vi.hoisted(() => ({
+    getExamReport: vi.fn(),
+  }));
 
-    vi.mock('../../server/services/canonical-runtime-views', () => ({
-        buildStudentFullLengthReportView: (...args: any[]) =>
-            kpiMocks.buildStudentFullLengthReportView(...args),
-        buildStudentKpiViewFromCanonical: vi.fn(),
-        buildScoreEstimateFromCanonical: vi.fn(),
-        projectGuardianFullLengthReportView: vi.fn(),
-    }));
+  vi.mock("../../server/services/canonical-runtime-views", () => ({
+    buildStudentFullLengthReportView: (...args: any[]) =>
+      kpiMocks.buildStudentFullLengthReportView(...args),
+    buildStudentKpiViewFromCanonical: vi.fn(),
+    buildScoreEstimateFromCanonical: vi.fn(),
+    projectGuardianFullLengthReportView: vi.fn(),
+  }));
 
-    vi.mock('../../apps/api/src/services/fullLengthExam', () => ({
-        getExamReport: (...args: any[]) => examMocks.getExamReport(...args),
-        createExamSession: vi.fn(),
-        getCurrentSession: vi.fn(),
-        startExam: vi.fn(),
-        submitAnswer: vi.fn(),
-        submitModule: vi.fn(),
-        continueFromBreak: vi.fn(),
-        completeExam: vi.fn(),
-        getExamReviewAfterCompletion: vi.fn(),
-        persistModuleCalculatorState: vi.fn(),
-    }));
+  vi.mock("../../apps/api/src/services/fullLengthExam", () => ({
+    getExamReport: (...args: any[]) => examMocks.getExamReport(...args),
+    createExamSession: vi.fn(),
+    getCurrentSession: vi.fn(),
+    startExam: vi.fn(),
+    submitAnswer: vi.fn(),
+    submitModule: vi.fn(),
+    continueFromBreak: vi.fn(),
+    completeExam: vi.fn(),
+    getExamReviewAfterCompletion: vi.fn(),
+    persistModuleCalculatorState: vi.fn(),
+  }));
 
-    vi.mock('../../server/services/kpi-access', () => ({
-        resolvePaidKpiAccessForUser: (...args: any[]) =>
-            kpiMocks.resolvePaidKpiAccessForUser(...args),
-    }));
+  vi.mock("../../server/services/kpi-access", () => ({
+    resolvePaidKpiAccessForUser: (...args: any[]) =>
+      kpiMocks.resolvePaidKpiAccessForUser(...args),
+  }));
 
-vi.mock('../../server/middleware/csrf-double-submit', () => ({
-  doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
-  generateToken: () => 'test-csrf-token',
-}));
+  vi.mock("../../server/middleware/csrf-double-submit", () => ({
+    doubleCsrfProtection: (_req: any, _res: any, next: any) => next(),
+    generateToken: () => "test-csrf-token",
+  }));
 
-    function buildReportApp() {
-        const app = express();
-        app.use(express.json());
-        app.use((req: any, _res: any, next: any) => {
-            req.user = { id: 'student-1', role: 'student' };
-            req.requestId = 'req-test';
-            next();
-        });
-        // Inline auth stub for requireSupabaseAuth
-        app.use((req: any, _res: any, next: any) => {
-            (req as any).__authPassed = true;
-            next();
-        });
-        return app;
-    }
+  function buildReportApp() {
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res: any, next: any) => {
+      req.user = { id: "student-1", role: "student" };
+      req.requestId = "req-test";
+      next();
+    });
+    // Inline auth stub for requireSupabaseAuth
+    app.use((req: any, _res: any, next: any) => {
+      (req as any).__authPassed = true;
+      next();
+    });
+    return app;
+  }
 
-    beforeEach(() => {
-        vi.clearAllMocks();
-        kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-            hasPaidAccess: true,
-            reason: 'active',
-            plan: 'paid',
-            status: 'active',
-            currentPeriodEnd: null,
-        });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: true,
+      reason: "active",
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
+    });
+  });
+
+  it("report route calls buildStudentFullLengthReportView with exam service result", async () => {
+    const fakeReport = {
+      sessionId: "sess-1",
+      scaledScore: { total: 1400, rw: 700, math: 700 },
+      rawScore: { total: { correct: 90, total: 98 } },
+      completedAt: new Date().toISOString(),
+    };
+    examMocks.getExamReport.mockResolvedValue(fakeReport);
+    kpiMocks.buildStudentFullLengthReportView.mockReturnValue({
+      ...fakeReport,
+      kpis: [],
+      measurementModel: { official: [], weighted: [], diagnostic: [] },
     });
 
-    it('report route calls buildStudentFullLengthReportView with exam service result', async () => {
-        const fakeReport = {
-            sessionId: 'sess-1',
-            scaledScore: { total: 1400, rw: 700, math: 700 },
-            rawScore: { total: { correct: 90, total: 98 } },
-            completedAt: new Date().toISOString(),
-        };
-        examMocks.getExamReport.mockResolvedValue(fakeReport);
-        kpiMocks.buildStudentFullLengthReportView.mockReturnValue({
-            ...fakeReport,
-            kpis: [],
-            measurementModel: { official: [], weighted: [], diagnostic: [] },
-        });
+    // Import here to pick up the hoisted mocks
+    const { default: fullLengthRouter } =
+      await import("../../server/routes/full-length-exam-routes");
 
-        // Import here to pick up the hoisted mocks
-        const { default: fullLengthRouter } = await import(
-            '../../server/routes/full-length-exam-routes'
-        );
+    const app = buildReportApp();
+    app.use("/api/full-length", fullLengthRouter);
 
-        const app = buildReportApp();
-        app.use('/api/full-length', fullLengthRouter);
+    const res = await request(app).get(
+      "/api/full-length/sessions/sess-1/report",
+    );
 
-        const res = await request(app).get(
-            '/api/full-length/sessions/sess-1/report'
-        );
-
-        expect(examMocks.getExamReport).toHaveBeenCalledWith({
-            sessionId: 'sess-1',
-            userId: 'student-1',
-        });
-        // The route MUST call the canonical builder, not inline-assemble
-        expect(kpiMocks.buildStudentFullLengthReportView).toHaveBeenCalledWith(
-            fakeReport
-        );
-        expect(res.status).toBe(200);
-        expect(res.body).toHaveProperty('kpis');
-        expect(res.body).toHaveProperty('measurementModel');
-    }, 15000);
-
-    it('report route fails closed when buildStudentFullLengthReportView throws', async () => {
-        examMocks.getExamReport.mockResolvedValue({
-            sessionId: 'sess-err',
-            scaledScore: { total: 1200, rw: 600, math: 600 },
-            rawScore: { total: { correct: 50, total: 98 } },
-            completedAt: new Date().toISOString(),
-        });
-        kpiMocks.buildStudentFullLengthReportView.mockImplementation(() => {
-            throw new Error('kpi_builder_exploded');
-        });
-
-        const { default: fullLengthRouter } = await import(
-            '../../server/routes/full-length-exam-routes'
-        );
-        const app = buildReportApp();
-        app.use('/api/full-length', fullLengthRouter);
-
-        const res = await request(app).get(
-            '/api/full-length/sessions/sess-err/report'
-        );
-
-        expect(res.status).toBe(500);
-        expect(res.body).toHaveProperty('error');
-    }, 15000);
-
-    it('report is premium-gated: returns 402 when entitlement resolves to free', async () => {
-        kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
-            hasPaidAccess: false,
-            reason: 'no active plan',
-            plan: 'free',
-            status: 'inactive',
-            currentPeriodEnd: null,
-        });
-
-        const { default: fullLengthRouter } = await import(
-            '../../server/routes/full-length-exam-routes'
-        );
-        const app = buildReportApp();
-        app.use('/api/full-length', fullLengthRouter);
-
-        const res = await request(app).get(
-            '/api/full-length/sessions/sess-gate/report'
-        );
-
-        expect(res.status).toBe(402);
-        // Builder must NOT be called if gating fails
-        expect(kpiMocks.buildStudentFullLengthReportView).not.toHaveBeenCalled();
-        expect(examMocks.getExamReport).not.toHaveBeenCalled();
+    expect(examMocks.getExamReport).toHaveBeenCalledWith({
+      sessionId: "sess-1",
+      userId: "student-1",
     });
+    // The route MUST call the canonical builder, not inline-assemble
+    expect(kpiMocks.buildStudentFullLengthReportView).toHaveBeenCalledWith(
+      fakeReport,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("kpis");
+    expect(res.body).toHaveProperty("measurementModel");
+  }, 15000);
+
+  it("report route fails closed when buildStudentFullLengthReportView throws", async () => {
+    examMocks.getExamReport.mockResolvedValue({
+      sessionId: "sess-err",
+      scaledScore: { total: 1200, rw: 600, math: 600 },
+      rawScore: { total: { correct: 50, total: 98 } },
+      completedAt: new Date().toISOString(),
+    });
+    kpiMocks.buildStudentFullLengthReportView.mockImplementation(() => {
+      throw new Error("kpi_builder_exploded");
+    });
+
+    const { default: fullLengthRouter } =
+      await import("../../server/routes/full-length-exam-routes");
+    const app = buildReportApp();
+    app.use("/api/full-length", fullLengthRouter);
+
+    const res = await request(app).get(
+      "/api/full-length/sessions/sess-err/report",
+    );
+
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
+  }, 15000);
+
+  it("report is premium-gated: returns 402 when entitlement resolves to free", async () => {
+    kpiMocks.resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: false,
+      reason: "no active plan",
+      plan: "free",
+      status: "inactive",
+      currentPeriodEnd: null,
+    });
+
+    const { default: fullLengthRouter } =
+      await import("../../server/routes/full-length-exam-routes");
+    const app = buildReportApp();
+    app.use("/api/full-length", fullLengthRouter);
+
+    const res = await request(app).get(
+      "/api/full-length/sessions/sess-gate/report",
+    );
+
+    expect(res.status).toBe(402);
+    // Builder must NOT be called if gating fails
+    expect(kpiMocks.buildStudentFullLengthReportView).not.toHaveBeenCalled();
+    expect(examMocks.getExamReport).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -193,46 +190,46 @@ vi.mock('../../server/middleware/csrf-double-submit', () => ({
 //            buildWeaknessSkillsView owns the skills shape. No inline fork.
 //            Clusters deprecated (post-launch revisit); table retained, code removed.
 // ---------------------------------------------------------------------------
-describe('Weakness view: single canonical builder per sub-surface', () => {
-    it('skills route calls buildWeaknessSkillsView with failOnError=true', async () => {
-        masteryMocks2.getWeakestSkills.mockResolvedValue([]);
+describe("Weakness view: single canonical builder per sub-surface", () => {
+  it("skills route calls buildWeaknessSkillsView with failOnError=true", async () => {
+    masteryMocks2.getWeakestSkills.mockResolvedValue([]);
 
-        const { weaknessRouter } = await import('../../apps/api/src/routes/weakness');
+    const { weaknessRouter } =
+      await import("../../apps/api/src/routes/weakness");
 
-        const app = express();
-        app.use(express.json());
-        app.use((req: any, _res, next) => {
-            req.user = { id: 'student-2', role: 'student' };
-            next();
-        });
-        app.use('/api/me/weakness', weaknessRouter);
-
-        await request(app).get('/api/me/weakness/skills');
-
-        // buildWeaknessSkillsView internally calls getWeakestSkills with failOnError=true
-        expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
-            expect.objectContaining({ failOnError: true, userId: 'student-2' })
-        );
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res, next) => {
+      req.user = { id: "student-2", role: "student" };
+      next();
     });
+    app.use("/api/me/weakness", weaknessRouter);
+
+    await request(app).get("/api/me/weakness/skills");
+
+    // buildWeaknessSkillsView internally calls getWeakestSkills with failOnError=true
+    expect(masteryMocks2.getWeakestSkills).toHaveBeenCalledWith(
+      expect.objectContaining({ failOnError: true, userId: "student-2" }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Surface 4: Calendar month view — getMonthPayload MUST be the buildCalendarMonthView
 //            alias and NOT any inline forked assembler.
 // ---------------------------------------------------------------------------
-describe('Calendar month view: getMonthPayload is buildCalendarMonthView alias', async () => {
-    it('calendar route exports getMonthPayload as the buildCalendarMonthView function', async () => {
-        // We import both the route alias and the service builder and confirm they're
-        // the exact same function reference (no forking).
-        const calendarRoute = await import('../../apps/api/src/routes/calendar');
-        const calendarService = await import(
-            '../../apps/api/src/services/calendar-month-view'
-        );
+describe("Calendar month view: getMonthPayload is buildCalendarMonthView alias", async () => {
+  it("calendar route exports getMonthPayload as the buildCalendarMonthView function", async () => {
+    // We import both the route alias and the service builder and confirm they're
+    // the exact same function reference (no forking).
+    const calendarRoute = await import("../../apps/api/src/routes/calendar");
+    const calendarService =
+      await import("../../apps/api/src/services/calendar-month-view");
 
-        expect(calendarRoute.getMonthPayload).toBe(
-            calendarService.buildCalendarMonthView
-        );
-    });
+    expect(calendarRoute.getMonthPayload).toBe(
+      calendarService.buildCalendarMonthView,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -240,90 +237,131 @@ describe('Calendar month view: getMonthPayload is buildCalendarMonthView alias',
 //            buildStudentKpiViewFromCanonical directly.
 //            No stale parallel builder present.
 // ---------------------------------------------------------------------------
-describe('KPI summary: canonical builder path', () => {
-    const kpiMocks5 = {
-        buildStudentKpiViewFromCanonical: vi.fn(),
-        resolvePaidKpiAccessForUser: vi.fn(),
-    };
+describe("KPI summary: canonical builder path", () => {
+  const kpiMocks5 = {
+    buildStudentKpiViewFromCanonical: vi.fn(),
+    resolvePaidKpiAccessForUser: vi.fn(),
+  };
 
-    it('getRecencyKpis calls buildStudentKpiViewFromCanonical', async () => {
-        kpiMocks5.buildStudentKpiViewFromCanonical.mockResolvedValue({
-            modelVersion: 'kpi_truth_v1',
-            timezone: 'America/Chicago',
-            week: { questionsSolved: 45, accuracy: 80, explanations: {} },
-            recency: null,
-            metrics: [],
-            gating: { historicalTrends: { allowed: false, requiredPlan: 'paid', reason: 'no plan' } },
-            measurementModel: { official: [], weighted: [], diagnostic: [] },
-        });
-        kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({
-            hasPaidAccess: false,
-            plan: 'free',
-            status: 'inactive',
-            currentPeriodEnd: null,
-            reason: 'no active plan',
-        });
-
-        // Override the mocks at the module level
-        vi.doMock('../../server/services/canonical-runtime-views', () => ({
-            buildStudentKpiViewFromCanonical: kpiMocks5.buildStudentKpiViewFromCanonical,
-            buildScoreEstimateFromCanonical: vi.fn(),
-            buildStudentFullLengthReportView: vi.fn(),
-            projectGuardianFullLengthReportView: vi.fn(),
-        }));
-
-        vi.doMock('../../server/services/kpi-access', () => ({
-            resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
-        }));
-
-        const { getRecencyKpis } = await import('../../server/routes/legacy/progress');
-
-        const app = express();
-        app.use(express.json());
-        app.use((req: any, _res, next) => {
-            req.user = { id: 'student-5', role: 'student' };
-            req.requestId = 'req-kpi-5';
-            next();
-        });
-        app.get('/api/progress/kpis', getRecencyKpis);
-
-        const res = await request(app).get('/api/progress/kpis');
-
-        expect(res.status).toBe(200);
-        // Must call the canonical view builder directly
-        expect(kpiMocks5.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith('student-5', false);
-        // Response must include the view props (not inlined elsewhere)
-        expect(res.body).toHaveProperty('modelVersion');
-        expect(res.body).toHaveProperty('week');
-        expect(res.body).toHaveProperty('entitlement');
+  it("getRecencyKpis calls buildStudentKpiViewFromCanonical", async () => {
+    kpiMocks5.buildStudentKpiViewFromCanonical.mockResolvedValue({
+      modelVersion: "kpi_truth_v1",
+      timezone: "America/Chicago",
+      week: { questionsSolved: 45, accuracy: 80, explanations: {} },
+      recency: null,
+      metrics: [],
+      gating: {
+        historicalTrends: {
+          allowed: false,
+          requiredPlan: "paid",
+          reason: "no plan",
+        },
+      },
+      measurementModel: { official: [], weighted: [], diagnostic: [] },
+    });
+    kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: false,
+      plan: "free",
+      status: "inactive",
+      currentPeriodEnd: null,
+      reason: "no active plan",
     });
 
-    it('getRecencyKpis fails closed when buildStudentKpiViewFromCanonical throws', async () => {
-        kpiMocks5.buildStudentKpiViewFromCanonical.mockRejectedValue(
-            new Error('kpi_snapshot_exploded')
-        );
-        kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({
-            hasPaidAccess: true,
-            plan: 'paid',
-            status: 'active',
-            currentPeriodEnd: null,
-            reason: 'active',
-        });
+    // Override the mocks at the module level
+    vi.doMock("../../server/services/canonical-runtime-views", () => ({
+      buildStudentKpiViewFromCanonical:
+        kpiMocks5.buildStudentKpiViewFromCanonical,
+      buildScoreEstimateFromCanonical: vi.fn(),
+      buildStudentFullLengthReportView: vi.fn(),
+      projectGuardianFullLengthReportView: vi.fn(),
+      readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
+    }));
 
-        const { getRecencyKpis } = await import('../../server/routes/legacy/progress');
+    vi.doMock("../../server/services/kpi-access", () => ({
+      resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+    }));
 
-        const app = express();
-        app.use(express.json());
-        app.use((req: any, _res, next) => {
-            req.user = { id: 'student-6', role: 'student' };
-            req.requestId = 'req-kpi-6';
-            next();
-        });
-        app.get('/api/progress/kpis', getRecencyKpis);
+    // Q1 consolidation: getRecencyKpis now uses canAccessFeature('historical_trends').
+    vi.doMock("../../server/services/entitlement-service", () => ({
+      EntitlementService: {
+        canAccessFeature: vi.fn().mockResolvedValue(false),
+        isEntitlementActiveForProfile: vi.fn().mockResolvedValue(false),
+      },
+    }));
 
-        const res = await request(app).get('/api/progress/kpis');
+    const { getRecencyKpis } =
+      await import("../../server/routes/legacy/progress");
 
-        expect(res.status).toBe(500);
-        expect(res.body).toHaveProperty('error');
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res, next) => {
+      req.user = { id: "student-5", role: "student" };
+      req.requestId = "req-kpi-5";
+      next();
     });
+    app.get("/api/progress/kpis", getRecencyKpis);
+
+    const res = await request(app).get("/api/progress/kpis");
+
+    expect(res.status).toBe(200);
+    // Must call the canonical view builder directly
+    expect(kpiMocks5.buildStudentKpiViewFromCanonical).toHaveBeenCalledWith(
+      "student-5",
+      false,
+    );
+    // Response must include the view props (not inlined elsewhere)
+    expect(res.body).toHaveProperty("modelVersion");
+    expect(res.body).toHaveProperty("week");
+    expect(res.body).toHaveProperty("entitlement");
+  });
+
+  it("getRecencyKpis fails closed when buildStudentKpiViewFromCanonical throws", async () => {
+    kpiMocks5.buildStudentKpiViewFromCanonical.mockRejectedValue(
+      new Error("kpi_snapshot_exploded"),
+    );
+    kpiMocks5.resolvePaidKpiAccessForUser.mockResolvedValue({
+      hasPaidAccess: true,
+      plan: "paid",
+      status: "active",
+      currentPeriodEnd: null,
+      reason: "active",
+    });
+
+    vi.doMock("../../server/services/canonical-runtime-views", () => ({
+      buildStudentKpiViewFromCanonical:
+        kpiMocks5.buildStudentKpiViewFromCanonical,
+      buildScoreEstimateFromCanonical: vi.fn(),
+      buildStudentFullLengthReportView: vi.fn(),
+      projectGuardianFullLengthReportView: vi.fn(),
+      readDiagnosticBaseline: vi.fn().mockResolvedValue(null),
+    }));
+
+    vi.doMock("../../server/services/kpi-access", () => ({
+      resolvePaidKpiAccessForUser: kpiMocks5.resolvePaidKpiAccessForUser,
+    }));
+
+    vi.doMock("../../server/services/entitlement-service", () => ({
+      EntitlementService: {
+        canAccessFeature: vi.fn().mockResolvedValue(true),
+        isEntitlementActiveForProfile: vi.fn().mockResolvedValue(true),
+      },
+    }));
+
+    const { getRecencyKpis } =
+      await import("../../server/routes/legacy/progress");
+
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res, next) => {
+      req.user = { id: "student-6", role: "student" };
+      req.requestId = "req-kpi-6";
+      next();
+    });
+    app.get("/api/progress/kpis", getRecencyKpis);
+
+    const res = await request(app).get("/api/progress/kpis");
+
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
+  });
 });

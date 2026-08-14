@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Calendar,
   FileText,
+  Loader2,
   MessageCircle,
   Play,
   Target,
@@ -29,7 +30,7 @@ import {
   getConfidenceLabel,
   type EstimateResponse,
 } from "@/lib/projectionApi";
-import { isEntitlementDenialError } from "@/lib/api-error";
+import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 
 interface KpiExplanation {
   ruleId: string;
@@ -164,7 +165,28 @@ export default function LyceonDashboard() {
     staleTime: 60000,
   });
 
-  const estimatePremiumLocked = isEntitlementDenialError(estimateError);
+  // Vertical-B Slice 2: 402→200 contract change — the projection endpoint
+  // now returns 200 with estimateStatus discriminator. Premium lock is conveyed
+  // via estimateStatus:'baseline_only' + cta:true, no longer via 402.
+  const estimateIsPremiumLocked =
+    estimateData?.estimateStatus === "baseline_only";
+
+  // Diagnostic client wiring: session creation via POST /diagnostic/sessions.
+  // 201 → sessionId (fresh); 409 → existingSessionId (seamless resume);
+  // 503 → curated error (never raw). Once we have a sessionId, navigate to
+  // /practice/session/:id where the shared practice loop takes over.
+  const {
+    startDiagnostic,
+    isStarting: isDiagnosticStarting,
+    error: diagnosticStartError,
+  } = useDiagnosticStart();
+
+  const handleStartDiagnostic = async (): Promise<void> => {
+    const sessionId = await startDiagnostic();
+    if (sessionId) {
+      setLocation(`/practice/session/${sessionId}`);
+    }
+  };
 
   const todayPlan: StudyPlanDay | undefined = useMemo(
     () => calendarData?.days?.find((day) => day.day_date === todayISO),
@@ -325,15 +347,61 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-12 w-48 bg-primary-foreground/20" />
                   <Skeleton className="h-5 w-32 bg-primary-foreground/20" />
                 </div>
-              ) : estimatePremiumLocked ? (
-                <EmptyStateCTA
-                  title="Unlock score insights"
-                  message="Score estimate is a premium KPI surface."
-                  actionLabel="View plans"
-                  onAction={handleUpgradeToPremium}
-                />
-              ) : estimateData &&
-                estimateData.estimateStatus === "computed" &&
+              ) : estimateData?.estimateStatus === "no_baseline" ? (
+                // Diagnostic client wiring: button calls POST /diagnostic/sessions
+                // (via useDiagnosticStart), then navigates to /practice/session/:id
+                // where the shared practice answer loop takes over. 409 (active session
+                // exists) is handled as seamless resume; 503 (insufficient pool) shows
+                // a curated message, never the raw domain-count string.
+                <div className="space-y-4">
+                  <p className="text-2xl font-semibold leading-tight tracking-tight">
+                    Not yet available
+                  </p>
+                  <p className="text-sm text-primary-foreground/80">
+                    Complete the diagnostic to establish your baseline score.
+                  </p>
+                  {diagnosticStartError && (
+                    <p
+                      className="text-sm font-medium text-primary-foreground"
+                      role="alert"
+                    >
+                      {diagnosticStartError.message}
+                    </p>
+                  )}
+                  <Button
+                    variant="secondary"
+                    className="w-fit"
+                    disabled={isDiagnosticStarting}
+                    onClick={handleStartDiagnostic}
+                  >
+                    {isDiagnosticStarting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting…
+                      </>
+                    ) : (
+                      "Start Diagnostic"
+                    )}
+                  </Button>
+                </div>
+              ) : estimateIsPremiumLocked && estimateData ? (
+                // Vertical-B Slice 2: baseline exists, unpaid — frozen baseline + CTA.
+                <div className="space-y-4">
+                  <p className="text-5xl font-semibold leading-none tracking-tight">
+                    {estimateData.baseline.composite}
+                  </p>
+                  <p className="text-xs text-primary-foreground/80">
+                    Diagnostic baseline — upgrade to track live progression.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    className="w-fit"
+                    onClick={handleUpgradeToPremium}
+                  >
+                    View Plans
+                  </Button>
+                </div>
+              ) : estimateData?.estimateStatus === "computed" &&
                 estimateData.estimate ? (
                 <div className="space-y-4">
                   <p className="text-5xl font-semibold leading-none tracking-tight">
@@ -349,23 +417,8 @@ export default function LyceonDashboard() {
                     questions.
                   </p>
                 </div>
-              ) : estimateData ? (
-                // LC-AM3-UI-001: estimate uncomputed (05C projections deferred / not yet generated) —
-                // honest not-yet-available, never a fabricated number or an unguarded dereference.
-                <div className="space-y-4">
-                  <p className="text-2xl font-semibold leading-tight tracking-tight">
-                    Not yet available
-                  </p>
-                  <p className="text-sm text-primary-foreground/80">
-                    {estimateData.totalQuestionsAttempted > 0
-                      ? "Your score estimate appears once enough scored evidence accumulates."
-                      : "Start practicing to generate a score estimate."}
-                  </p>
-                  <Button asChild variant="secondary" className="w-fit">
-                    <Link href="/practice">Start Practice</Link>
-                  </Button>
-                </div>
               ) : (
+                // Fallback: error or truly unavailable data.
                 <div className="space-y-4">
                   <p className="text-sm text-primary-foreground/80">
                     Start practicing to unlock a score estimate.
@@ -474,7 +527,7 @@ export default function LyceonDashboard() {
                   <Skeleton className="h-5 w-full" />
                   <Skeleton className="h-5 w-full" />
                 </div>
-              ) : estimatePremiumLocked ? (
+              ) : estimateIsPremiumLocked ? (
                 <EmptyStateCTA
                   title="Unlock detailed breakdown"
                   message="Detailed score breakdown is locked behind paid KPI access."
