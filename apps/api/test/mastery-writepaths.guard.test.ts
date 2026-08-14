@@ -211,33 +211,50 @@ This is a CRITICAL security and consistency invariant.
     ).toBe(true);
   });
 
-  it("should verify that diagnostic routes use applyMasteryEvent", () => {
+  /**
+   * @spec [INV-03-01, Doc-05_V2 §6.2]
+   * @implemented 2026-08-14
+   *
+   * plain English: verifies the REAL diagnostic routes file
+   * (server/routes/diagnostic-routes.ts) does not bypass the mastery-write
+   * choke point. The previous test targeted a phantom path
+   * (apps/api/src/routes/diagnostic.ts) that never existed, passing
+   * vacuously via fs.existsSync early return. Rewritten per audit F-08.
+   */
+  it("should verify that diagnostic routes do not bypass mastery-write chokepoint", () => {
     const projectRoot = path.resolve(__dirname, "../../..");
     const diagnosticPath = path.join(
       projectRoot,
-      "apps/api/src/routes/diagnostic.ts",
+      "server/routes/diagnostic-routes.ts",
     );
 
-    if (!fs.existsSync(diagnosticPath)) {
-      // Diagnostic routes not yet implemented - skip this check
-      return;
-    }
+    expect(
+      fs.existsSync(diagnosticPath),
+      "server/routes/diagnostic-routes.ts must exist",
+    ).toBe(true);
 
     const content = fs.readFileSync(diagnosticPath, "utf-8");
 
-    expect(
-      content.includes("applyMasteryEvent"),
-      "diagnostic.ts must use applyMasteryEvent for mastery updates",
-    ).toBe(true);
+    // Diagnostic routes may READ from mastery tables (e.g. weakest-skills
+    // endpoint reads student_skill_mastery). The invariant is about WRITES:
+    // no .insert(), .update(), .upsert(), .delete() on mastery tables.
+    const violations = checkFileForViolations(diagnosticPath);
 
-    expect(
-      !content.includes('.from("student_skill_mastery")'),
-      "diagnostic.ts must NOT directly write to student_skill_mastery",
-    ).toBe(true);
+    if (violations.length > 0) {
+      const report = violations
+        .map((v) => `  L${v.line} [${v.type}]: ${v.content}`)
+        .join("\n");
+      throw new Error(
+        `diagnostic-routes.ts bypasses mastery-write chokepoint:\n${report}`,
+      );
+    }
 
+    expect(violations.length).toBe(0);
+
+    // Diagnostic routes must NOT directly call the mastery RPC
     expect(
-      !content.includes('.from("student_domain_mastery")'),
-      "diagnostic.ts must NOT directly write to student_domain_mastery",
+      !content.includes('.rpc("apply_mastery_event"'),
+      "diagnostic-routes.ts must NOT directly call apply_mastery_event RPC",
     ).toBe(true);
   });
 });

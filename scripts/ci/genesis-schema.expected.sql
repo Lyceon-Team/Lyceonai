@@ -3571,8 +3571,8 @@ CREATE TABLE public.consent_runtime_config_history (
 
 CREATE TABLE public.crisis_review_audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    case_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    case_id uuid,
+    conversation_id uuid,
     reviewer_id uuid NOT NULL,
     action text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
