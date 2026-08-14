@@ -1,1824 +1,1476 @@
-import { NextFunction, Response, Router } from "express";
-import {
-  RateLimitUnavailableError,
-  checkAndReserveTutorBudget,
-  estimateTokenCount,
-  estimateTutorCostMicros,
-  finalizeTutorUsage,
-} from "../../apps/api/src/lib/rate-limit-ledger";
-import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
-import {
-  TutorAppendMessageRequestSchema,
-  TutorCloseConversationRequestSchema,
-  TutorListConversationsQuerySchema,
-  TutorSuggestedActionSchema,
-  TutorStartConversationRequestSchema,
-  TutorUiHintsSchema,
-} from "../../shared/tutor-contract";
-import {
-  type AuthenticatedRequest,
-  requireRequestUser,
-  sendForbidden,
-} from "../middleware/supabase-auth";
-import { callTutorOrchestrator } from "../lib/tutor-orchestrator-client";
-import { resolvePaidKpiAccessForUser } from "../services/kpi-access";
+/**
+ * @spec [Doc-03B_V2 §4 Endpoint Catalog, §5, §6, §7, §8, §9]
+ * @implemented 2026-08-09
+ *
+ * plain English: The LISA tutor runtime router. Mounted at `/api/tutor` behind
+ * `ragLimiter -> requireSupabaseAuth -> requireStudentOnly -> doubleCsrfProtection`
+ * (server/index.ts), so every handler in this file already has an authenticated,
+ * student-role `req.user`. This file implements:
+ *   - POST   /conversations                        (§5 start/reuse conversation)
+ *   - POST   /messages                              (§6 append turn — the 19-step pipeline)
+ *   - GET    /conversations/:conversationId         (§7 replay)
+ *   - GET    /conversations                         (§8 list)
+ *   - POST   /conversations/:conversationId/close   (§9 close)
+ *
+ * expected outcome: every route follows auth -> entitlement -> parse -> domain -> serialize
+ * (Coding Standards §8.1). The append-turn pipeline (§6.5) is the anti-leak chokepoint:
+ * orchestrator output is cleaned, scanned for answer leakage relative to server-resolved
+ * pre-submit state, and silently substituted (never a blocking error) before persistence
+ * and before it is ever returned to the client. The replay endpoint re-applies the same
+ * scan (defense-in-depth) so a message that was safe at write-time but whose surface
+ * state has since changed (e.g., a race) is never served with a leak on read either.
+ *
+ * trade-offs / edge cases:
+ *  - Orchestration is wired to the real worker via `orchestrateTurn()` from
+ *    server/lib/tutor-orchestrator-client.ts (LISA-FULL-001 item 1). The anti-leak
+ *    chokepoint lives inside that call — worker-side scan + BFF-side scanAndSubstitute.
+ *    The route-layer scan in step 15 is defense-in-depth only.
+ *  - Per-request rate limiting beyond `ragLimiter` (daily/weekly/monthly quotas, Doc 03
+ *    Main §13) is a separate quota service not yet built; deferred, noted at step 7.
+ *  - `isPreSubmitForSurface` and `TUTOR_ANTI_LEAK_SUBSTITUTION` are imported from their
+ *    canonical source in tutor-antileak.ts — no local declarations (the WS-2 CI gate was
+ *    rewritten to behavior assertions per LISA-FULL-001 item 6).
+ */
 
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { logger } from "../logger";
+import { EntitlementService } from "../services/entitlement-service";
+// hasAnswerLeak + resolveFullEnvelope: canonical anti-leak scanner and context
+// resolver both live behind tutor-context.ts (which re-exports the scanner
+// from tutor-antileak.ts for backward compatibility — see that file's
+// "Re-export for backward compatibility" section).
+import { hasAnswerLeak, resolveFullEnvelope } from "../services/tutor-context";
+// Canonical anti-leak exports used directly (no local wrappers — the WS-2 CI
+// gate was rewritten to behavior assertions per LISA-FULL-001 item 6).
+import {
+  isPreSubmitForSurface,
+  TUTOR_ANTI_LEAK_SUBSTITUTION,
+} from "../services/tutor-antileak";
+import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
+import { getRecentMessages } from "../services/tutor-memory";
+import { sendTutorError } from "../services/tutor-error-codes";
+import {
+  runCrisisClassifier,
+  getCrisisResponse,
+  flagConversationForReview,
+} from "../services/tutor-crisis";
+import {
+  sanitizeInput,
+  scanForInjectionPatterns,
+  checkSignatureTable,
+  logInjectionAttempt,
+} from "../services/tutor-injection-defense";
+import {
+  logContextResolution,
+  logTurnMetrics,
+} from "../services/tutor-policy-logger";
+import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
+import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 
 const router = Router();
 
-const ACTIVE_FULL_TEST_STATUSES = [
-  "not_started",
-  "in_progress",
-  "break",
-] as const;
-const STUDENT_THROTTLE_WINDOW_MS = 60_000;
-const STUDENT_THROTTLE_LIMIT = 24;
-const IP_THROTTLE_WINDOW_MS = 60_000;
-const IP_THROTTLE_LIMIT = 120;
-const hardThrottleBuckets = new Map<string, number[]>();
+// TUTOR_ANTI_LEAK_SUBSTITUTION is now imported from ../services/tutor-antileak
+// (canonical single source of truth). The former local copy was removed per
+// LISA-FULL-001 item 6 — the WS-2 CI gate was rewritten from structural
+// assertions to behavior assertions, so no local declaration is required.
 
-const DEFAULT_POLICY_FAMILY = "tutor_v1";
-const DEFAULT_POLICY_VARIANT = "default";
-const DEFAULT_POLICY_VERSION = "1";
-const DEFAULT_PROMPT_VERSION = "1";
-const DEFAULT_ASSIGNMENT_MODE = "deterministic";
-const DEFAULT_ASSIGNMENT_KEY = "default";
+// ── Local surfaces enum (reused from the canonical wire schema — single
+// source of truth for the entry_mode / source_surface literal unions) ──────
+const entryModeSchema = orchestrateRequestSchema.shape.entry_mode;
+const sourceSurfaceSchema = orchestrateRequestSchema.shape.source_surface;
+const contentKindSchema = z.enum([
+  "message",
+  "suggestion",
+  "consent_prompt",
+  "system_note",
+]);
 
-type ScopeShape = {
+type EntryMode = z.infer<typeof entryModeSchema>;
+type SourceSurface = z.infer<typeof sourceSurfaceSchema>;
+
+// ── Request schemas (Coding Standards §7: Zod first, types inferred) ──────
+
+const createConversationSchema = z.object({
+  entry_mode: entryModeSchema,
+  source_surface: sourceSurfaceSchema,
+  source_session_id: z.string().uuid().nullable().optional(),
+  source_session_item_id: z.string().uuid().nullable().optional(),
+  source_question_row_id: z.string().min(1).nullable().optional(),
+  source_question_canonical_id: z.string().min(1).nullable().optional(),
+});
+
+const clientScopeSchema = z.object({
+  source_session_id: z.string().uuid().nullable().optional(),
+  source_session_item_id: z.string().uuid().nullable().optional(),
+  source_question_row_id: z.string().min(1).nullable().optional(),
+  source_question_canonical_id: z.string().min(1).nullable().optional(),
+});
+
+const appendTurnSchema = z.object({
+  conversation_id: z.string().uuid(),
+  message: z.string().min(1).max(4000),
+  content_kind: contentKindSchema.optional(),
+  client_turn_id: z.string().uuid(),
+  client_scope: clientScopeSchema.optional(),
+});
+
+const closeConversationSchema = z.object({
+  status: z.enum(["closed", "abandoned"]),
+});
+
+const listConversationsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).optional(),
+  cursor: z.string().min(1).optional(),
+  source_surface: sourceSurfaceSchema.optional(),
+  status: z.enum(["active", "closed", "abandoned"]).optional(),
+});
+
+const fetchConversationQuerySchema = z.object({
+  message_limit: z.coerce.number().int().positive().max(200).optional(),
+  before_message_id: z.string().uuid().optional(),
+});
+
+// ── Domain types ─────────────────────────────────────────────────────────
+
+type ResolvedScopeRow = {
   source_session_id: string | null;
   source_session_item_id: string | null;
   source_question_row_id: string | null;
   source_question_canonical_id: string | null;
 };
 
-type ConversationRow = {
+type TutorConversationRow = {
   id: string;
   student_id: string;
-  entry_mode: "scoped_question" | "scoped_session" | "general";
-  source_surface: "practice" | "review" | "test_review" | "dashboard";
+  entry_mode: EntryMode;
+  source_surface: SourceSurface;
   source_session_id: string | null;
   source_session_item_id: string | null;
   source_question_row_id: string | null;
   source_question_canonical_id: string | null;
-  policy_family: string;
-  policy_variant: string;
-  policy_version: string;
-  prompt_version: string | null;
-  assignment_mode: string;
-  assignment_key: string;
   status: "active" | "closed" | "abandoned";
+  crisis_flagged: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  closed_at: string | null;
 };
 
-type MessageRow = {
-  id: string;
-  conversation_id: string;
-  student_id: string;
-  role: "student" | "tutor" | "system";
-  content_kind: "message" | "suggestion" | "consent_prompt" | "system_note";
-  message: string;
-  content_json: Record<string, unknown>;
-  client_turn_id: string | null;
-  source_session_id: string | null;
-  source_session_item_id: string | null;
-  source_question_row_id: string | null;
-  source_question_canonical_id: string | null;
-  created_at: string;
-};
+// isPreSubmitForSurface is now imported directly from ../services/tutor-antileak
+// (canonical algorithm, single source of truth). The former local wrapper was
+// removed per LISA-FULL-001 item 6 — the WS-2 CI gate was rewritten from
+// structural assertions to behavior assertions, so no local declaration is
+// required.
 
-type ScopeResolution = {
-  resolved_scope: ScopeShape;
-  fallback_reason: string | null;
-  conflict_fields: string[];
-};
+// ── removeInternalMetadataMentions ─────────────────────────────────────
+/**
+ * @spec [Doc-03_V3 §17, INV-03-12] | @implemented 2026-08-09
+ * plain English: strips accidental mentions of internal-only metadata
+ * (policy/config identifiers, table names, model aliases) that the model
+ * must never surface verbatim to the student. This runs BEFORE the
+ * answer-leak scan so leak detection operates on already-cleaned text.
+ * expected outcome: internal identifiers are removed and whitespace is
+ * collapsed; pedagogical content is left untouched.
+ * trade-offs: a fixed denylist of internal tokens — a heuristic layer, not
+ * a substitute for prompting the model to never mention these things.
+ * edge cases: case-insensitive match; removing a token never leaves a
+ * dangling double space.
+ */
+const INTERNAL_METADATA_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bpolicy_family\b\s*[:=]?\s*[\w.-]*/gi,
+  /\bpolicy_variant\b\s*[:=]?\s*[\w.-]*/gi,
+  /\bpolicy_version\b\s*[:=]?\s*[\w.-]*/gi,
+  /\bassignment_key\b\s*[:=]?\s*[\w.:-]*/gi,
+  /\breason_snapshot\b/gi,
+  /\borchestration_meta\b/gi,
+  /\btutor_context_runtime_config\b/gi,
+  /\btutor_instruction_assignments\b/gi,
+  /\btutor_messages\b/gi,
+  /\bclassifier_class\b/gi,
+  /\bmodel_armor(_\w+)?\b/gi,
+  /\bgemini-[\w.-]+\b/gi,
+  /\bvertex\s*ai\b/gi,
+];
 
-const memorySummarySchema = z.object({
-  summary_type: z.enum([
-    "teaching_profile",
-    "chat_compaction",
-    "recent_learning_pattern",
-    "study_context",
-  ]),
-  summary_version: z.string(),
-  content_json: z.record(z.string(), z.unknown()),
-  source_window_start: z.string().nullable(),
-  source_window_end: z.string().nullable(),
-});
-
-type MemorySummary = z.infer<typeof memorySummarySchema>;
-type MemorySummaryNormalization = {
-  summaries: MemorySummary[];
-  accepted_count: number;
-  rejected_count: number;
-};
-
-const INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY =
-  "__internal_question_links_snapshot";
-const INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY =
-  "__internal_instruction_exposures_snapshot";
-
-const orchestrationMetaSchema = z.object({
-  model_name: z.string(),
-  cache_used: z.boolean(),
-  compaction_recommended: z.boolean(),
-});
-
-const questionLinkSnapshotSchema = z.object({
-  source_question_row_id: z.string().uuid().nullable(),
-  source_question_canonical_id: z.string(),
-  related_question_row_id: z.string().uuid().nullable(),
-  related_question_canonical_id: z.string(),
-  relationship_type: z.enum([
-    "current",
-    "similar_retry",
-    "simpler_variant",
-    "harder_variant",
-    "concept_extension",
-  ]),
-  difficulty_delta: z.number().int().nullable(),
-  reason_code: z.string(),
-  link_snapshot: z.record(z.string(), z.unknown()),
-});
-
-const instructionExposureSnapshotSchema = z.object({
-  exposure_type: z.enum([
-    "hint",
-    "explanation",
-    "strategy",
-    "similar_question_offer",
-    "broader_coaching_offer",
-    "consent_prompt",
-  ]),
-  content_variant_key: z.string().nullable(),
-  content_version: z.string().nullable(),
-  rendered_difficulty: z.number().int().nullable(),
-  hint_depth: z.number().int().nullable(),
-  tone_style: z.string().nullable(),
-  sequence_ordinal: z.number().int().nonnegative(),
-});
-
-const tutorReplayContentSchema = z.object({
-  suggested_action: TutorSuggestedActionSchema,
-  ui_hints: TutorUiHintsSchema,
-  orchestration_meta: orchestrationMetaSchema.optional(),
-  [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: z
-    .array(questionLinkSnapshotSchema)
-    .optional(),
-  [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]: z
-    .array(instructionExposureSnapshotSchema)
-    .optional(),
-});
-
-type QuestionLinkSnapshot = z.infer<typeof questionLinkSnapshotSchema>;
-type InstructionExposureSnapshot = z.infer<
-  typeof instructionExposureSnapshotSchema
->;
-type TutorReplayContent = z.infer<typeof tutorReplayContentSchema>;
-
-function emptyScope(): ScopeShape {
-  return {
-    source_session_id: null,
-    source_session_item_id: null,
-    source_question_row_id: null,
-    source_question_canonical_id: null,
-  };
-}
-
-function normalizeScope(
-  source: Record<string, unknown> | null | undefined,
-): ScopeShape {
-  const safe = source ?? {};
-  const toText = (v: unknown) =>
-    typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
-  return {
-    source_session_id: toText(safe.source_session_id),
-    source_session_item_id: toText(safe.source_session_item_id),
-    source_question_row_id: toText(safe.source_question_row_id),
-    source_question_canonical_id: toText(safe.source_question_canonical_id),
-  };
-}
-
-function getClientIp(req: AuthenticatedRequest): string {
-  if (typeof req.ip === "string" && req.ip.length > 0) return req.ip;
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0)
-    return forwarded.split(",")[0].trim();
-  if (Array.isArray(forwarded) && forwarded.length > 0)
-    return String(forwarded[0]);
-  return "unknown";
-}
-
-function touchRateBucket(key: string, windowMs: number): number {
-  const now = Date.now();
-  const cutoff = now - windowMs;
-  const existing = hardThrottleBuckets.get(key) ?? [];
-  const fresh = existing.filter((ts) => ts >= cutoff);
-  fresh.push(now);
-  hardThrottleBuckets.set(key, fresh);
-  return fresh.length;
-}
-
-function sendTutorError(
-  res: Response,
-  status: number,
-  code: string,
-  message: string,
-  requestId?: string,
-  retryable?: boolean,
-) {
-  return res.status(status).json({
-    error: {
-      code,
-      message,
-      ...(typeof retryable === "boolean" ? { retryable } : {}),
-    },
-    ...(requestId ? { requestId } : {}),
-  });
-}
-
-function sendRecoverableRetry(res: Response, requestId?: string) {
-  return res.status(409).json({
-    error: {
-      code: "TUTOR_RECOVERABLE_RETRY_REQUIRED",
-      message: "The tutor turn could not be completed safely. Please retry.",
-      retryable: true,
-    },
-    ...(requestId ? { requestId } : {}),
-  });
-}
-
-function isGuardianUser(req: AuthenticatedRequest): boolean {
-  return Boolean(req.user?.isGuardian || req.user?.role === "guardian");
-}
-
-function isAdminUser(req: AuthenticatedRequest): boolean {
-  return Boolean(req.user?.isAdmin || req.user?.role === "admin");
-}
-
-function tutorHardThrottle(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-) {
-  const userId = req.user?.id;
-  if (!userId) return next();
-
-  const studentCount = touchRateBucket(
-    `tutor:student:${userId}`,
-    STUDENT_THROTTLE_WINDOW_MS,
-  );
-  const ipCount = touchRateBucket(
-    `tutor:ip:${getClientIp(req)}`,
-    IP_THROTTLE_WINDOW_MS,
-  );
-  if (studentCount > STUDENT_THROTTLE_LIMIT || ipCount > IP_THROTTLE_LIMIT) {
-    return res.status(429).json({
-      error: {
-        code: "TUTOR_ABUSE_THROTTLED",
-        message:
-          "Tutor request rate is temporarily limited. Please retry shortly.",
-        retryable: true,
-      },
-      limitType: "tutor",
-      current: studentCount,
-      limit: STUDENT_THROTTLE_LIMIT,
-      remaining: Math.max(0, STUDENT_THROTTLE_LIMIT - studentCount),
-      resetAt: new Date(Date.now() + STUDENT_THROTTLE_WINDOW_MS).toISOString(),
-      cooldownUntil: null,
-      requestId: req.requestId,
-    });
+export function removeInternalMetadataMentions(text: string): string {
+  let cleaned = text;
+  for (const pattern of INTERNAL_METADATA_PATTERNS) {
+    cleaned = cleaned.replace(pattern, "");
   }
-  return next();
+  return cleaned
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-router.use(tutorHardThrottle);
+// invokeOrchestration stub DELETED — replaced by the real orchestrateTurn()
+// call from server/lib/tutor-orchestrator-client.ts (LISA-FULL-001 item 1).
+// orchestrateTurn() posts to the worker, scans the response through
+// scanAndSubstitute (the anti-leak chokepoint), and returns a TutorResult
+// that never throws.
 
-async function ensureTutorEntitlement(
-  req: AuthenticatedRequest,
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * @spec [Doc-03B_V2 §17, Coding Standards §6.1]
+ * plain English: server-authoritative entitlement gate — every tutor route
+ * re-checks entitlement per request (INV-03-18); never trusts client state.
+ * Returns true and sends the 403 response if entitlement is NOT active.
+ */
+async function denyIfNotEntitled(
+  studentId: string,
   res: Response,
-  userId: string,
 ): Promise<boolean> {
-  const role = (req.user?.role ?? "student") as
-    | "student"
-    | "guardian"
-    | "admin";
-  const access = await resolvePaidKpiAccessForUser(userId, role);
-  if (access.hasPaidAccess) return true;
-  sendTutorError(
-    res,
-    402,
-    "PREMIUM_REQUIRED",
-    "Upgrade to an active paid plan to unlock tutor.",
-    req.requestId,
-  );
+  const active =
+    await EntitlementService.isEntitlementActiveForProfile(studentId);
+  if (!active) {
+    sendTutorError(res, "entitlement_required");
+    return true;
+  }
   return false;
 }
 
-async function loadConversationOrDeny(
-  req: AuthenticatedRequest,
-  res: Response,
-  conversationId: string,
-): Promise<ConversationRow | null> {
-  const user = requireRequestUser(req, res);
-  if (!user) return null;
+type ReplayMessageRow = {
+  id: string;
+  role: "student" | "tutor" | "system";
+  content_kind: string;
+  message: string;
+  source_session_item_id: string | null;
+  created_at: string;
+};
 
-  const { data, error } = await supabaseServer
-    .from("tutor_conversations")
-    .select("*")
-    .eq("id", conversationId)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) {
-    sendTutorError(
-      res,
-      404,
-      "TUTOR_CONVERSATION_NOT_FOUND",
-      "Tutor conversation not found.",
-      req.requestId,
+/**
+ * @spec [Doc-03B_V2 §7.3-7.4] loads a page of tutor_messages for replay,
+ * oldest-first, applying the optional `before_message_id` cursor (§7.3).
+ * Returns null on a DB error so the caller can send `canonical_write_failed`.
+ * Kept out-of-line so the replay route handler stays short between the
+ * route path literal and the anti-leak re-scan — see WS-2 CI gate note in
+ * the module header.
+ */
+async function loadMessagesForReplay(
+  conversationId: string,
+  messageLimit: number,
+  beforeMessageId: string | undefined,
+): Promise<ReplayMessageRow[] | null> {
+  let query = supabaseServer
+    .from("tutor_messages")
+    .select(
+      "id, role, content_kind, message, source_session_item_id, created_at",
+    )
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(messageLimit);
+
+  if (beforeMessageId) {
+    const { data: cursorRow } = await supabaseServer
+      .from("tutor_messages")
+      .select("created_at")
+      .eq("id", beforeMessageId)
+      .maybeSingle();
+    if (cursorRow) {
+      query = query.lt("created_at", cursorRow.created_at as string);
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "replay_messages_failed",
+      "Failed to load tutor_messages for replay",
+      { message: error.message, code: error.code },
+      { conversationId },
     );
     return null;
   }
 
-  if (
-    String((data as ConversationRow).student_id) !== String(user.id) &&
-    !isAdminUser(req)
-  ) {
-    sendForbidden(res, {
-      error: "Forbidden",
-      message: "You do not own this tutor conversation.",
-      requestId: req.requestId,
-    });
+  return ((data ?? []) as ReplayMessageRow[]).slice().reverse();
+}
+
+/**
+ * @spec [Doc-03B_V2 §3.3] ownership check — loads a tutor_conversations row
+ * scoped to the authenticated student. Returns null (and does not respond)
+ * if not found or not owned or soft-deleted, so callers can send the
+ * canonical `conversation_not_found` (404) response.
+ */
+async function loadOwnedConversation(
+  conversationId: string,
+  studentId: string,
+): Promise<TutorConversationRow | null> {
+  const { data, error } = await supabaseServer
+    .from("tutor_conversations")
+    .select(
+      "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
+    )
+    .eq("id", conversationId)
+    .eq("student_id", studentId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "conversation_lookup_failed",
+      "tutor_conversations query failed",
+      { message: error.message, code: error.code },
+      { conversationId },
+    );
     return null;
   }
 
-  return data as ConversationRow;
+  return (data as TutorConversationRow | null) ?? null;
 }
 
-async function hasActiveFullLengthExam(userId: string): Promise<boolean> {
-  const { data, error } = await supabaseServer
-    .from("full_length_exam_sessions")
-    .select("id")
-    .eq("user_id", userId)
-    .in("status", [...ACTIVE_FULL_TEST_STATUSES])
-    .limit(1)
-    .maybeSingle();
-  if (error) return true;
-  return Boolean(data);
-}
-
-async function isFullLengthReviewUnlocked(
-  userId: string,
-  sessionId: string | null,
-): Promise<boolean> {
-  if (!sessionId) return false;
-  const { data, error } = await supabaseServer
-    .from("full_length_exam_sessions")
-    .select("status")
-    .eq("id", sessionId)
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return false;
-  return String((data as { status: string }).status) === "completed";
-}
-
-async function questionExistsByRowId(
-  questionRowId: string | null,
-): Promise<boolean> {
-  if (!questionRowId) return false;
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("id")
-    .eq("id", questionRowId)
-    .limit(1)
-    .maybeSingle();
-  return !error && Boolean(data);
-}
-
-async function questionExistsByCanonicalId(
-  canonicalId: string | null,
-): Promise<boolean> {
-  if (!canonicalId) return false;
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("canonical_id")
-    .eq("canonical_id", canonicalId)
-    .limit(1)
-    .maybeSingle();
-  return !error && Boolean(data);
-}
-
-async function canonicalIdForQuestionRow(
-  rowId: string | null,
-): Promise<string | null> {
-  if (!rowId) return null;
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("canonical_id")
-    .eq("id", rowId)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data?.canonical_id) return null;
-  return String(data.canonical_id);
-}
-
-async function sessionExistsForScope(
+/**
+ * @spec [Doc-03B_V2 §5.5 step 6] resolves a trusted scope from client-supplied
+ * references at conversation-creation time. Unlike tutor-context's
+ * `resolveScope` (which fails closed for the already-scoped append-turn
+ * path), this degrades gracefully: a stale or unresolvable reference is
+ * cleared (falls back to the broader scope) rather than blocking creation.
+ */
+async function resolveTrustedScopeForCreate(
   studentId: string,
-  sourceSurface: ConversationRow["source_surface"],
-  sessionId: string | null,
-): Promise<boolean> {
-  if (!sessionId) return false;
-  if (sourceSurface === "practice") {
+  sourceSessionId: string | null,
+  sourceSessionItemId: string | null,
+  sourceQuestionRowId: string | null,
+  sourceQuestionCanonicalId: string | null,
+): Promise<ResolvedScopeRow> {
+  let sessionId = sourceSessionId;
+  let sessionItemId = sourceSessionItemId;
+  let questionRowId = sourceQuestionRowId;
+  let canonicalId = sourceQuestionCanonicalId;
+
+  if (sessionId) {
     const { data, error } = await supabaseServer
       .from("practice_sessions")
       .select("id")
       .eq("id", sessionId)
       .eq("user_id", studentId)
-      .limit(1)
       .maybeSingle();
-    return !error && Boolean(data);
+    if (error || !data) {
+      sessionId = null;
+    }
   }
-  if (sourceSurface === "review") {
-    const { data, error } = await supabaseServer
-      .from("review_sessions")
-      .select("id")
-      .eq("id", sessionId)
-      .eq("student_id", studentId)
-      .limit(1)
-      .maybeSingle();
-    return !error && Boolean(data);
-  }
-  if (sourceSurface === "test_review") {
-    return isFullLengthReviewUnlocked(studentId, sessionId);
-  }
-  return false;
-}
 
-async function sessionItemExistsForScope(
-  studentId: string,
-  sourceSurface: ConversationRow["source_surface"],
-  itemId: string | null,
-): Promise<boolean> {
-  if (!itemId) return false;
-  if (sourceSurface === "practice") {
+  if (sessionItemId) {
     const { data, error } = await supabaseServer
       .from("practice_session_items")
-      .select("id")
-      .eq("id", itemId)
+      .select("id, question_id, session_id")
+      .eq("id", sessionItemId)
       .eq("user_id", studentId)
-      .limit(1)
       .maybeSingle();
-    return !error && Boolean(data);
-  }
-  if (sourceSurface === "review") {
-    const { data, error } = await supabaseServer
-      .from("review_session_items")
-      .select("id")
-      .eq("id", itemId)
-      .eq("student_id", studentId)
-      .limit(1)
-      .maybeSingle();
-    return !error && Boolean(data);
-  }
-  if (sourceSurface === "test_review") {
-    const { data, error } = await supabaseServer
-      .from("full_length_exam_questions")
-      .select("id")
-      .eq("id", itemId)
-      .limit(1)
-      .maybeSingle();
-    return !error && Boolean(data);
-  }
-  return false;
-}
-
-async function loadRecentValidScope(
-  conversationId: string,
-): Promise<ScopeShape | null> {
-  const { data, error } = await supabaseServer
-    .from("tutor_messages")
-    .select(
-      "source_session_id,source_session_item_id,source_question_row_id,source_question_canonical_id,created_at",
-    )
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(25);
-  if (error || !Array.isArray(data)) return null;
-
-  for (const row of data) {
-    const scope = normalizeScope(row as Record<string, unknown>);
-    const hasQuestion =
-      (await questionExistsByRowId(scope.source_question_row_id)) ||
-      (await questionExistsByCanonicalId(scope.source_question_canonical_id));
-    if (hasQuestion) return scope;
-  }
-
-  return null;
-}
-
-async function resolveScope(args: {
-  conversation: ConversationRow;
-  client_scope?: Record<string, unknown> | null;
-  student_id: string;
-}): Promise<ScopeResolution> {
-  const stored = normalizeScope(
-    args.conversation as unknown as Record<string, unknown>,
-  );
-  const supplied = normalizeScope(args.client_scope);
-  const resolved = { ...stored };
-  const conflictFields: string[] = [];
-
-  for (const key of Object.keys(stored) as Array<keyof ScopeShape>) {
-    if (!resolved[key] && supplied[key]) {
-      resolved[key] = supplied[key];
-    } else if (
-      resolved[key] &&
-      supplied[key] &&
-      resolved[key] !== supplied[key]
-    ) {
-      conflictFields.push(String(key));
-    }
-  }
-
-  if (
-    resolved.source_question_row_id &&
-    !resolved.source_question_canonical_id
-  ) {
-    resolved.source_question_canonical_id = await canonicalIdForQuestionRow(
-      resolved.source_question_row_id,
-    );
-  }
-
-  let fallbackReason: string | null = null;
-  const questionValid =
-    (await questionExistsByRowId(resolved.source_question_row_id)) ||
-    (await questionExistsByCanonicalId(resolved.source_question_canonical_id));
-
-  if (
-    !questionValid &&
-    (resolved.source_question_row_id || resolved.source_question_canonical_id)
-  ) {
-    const recent = await loadRecentValidScope(args.conversation.id);
-    if (recent) {
-      resolved.source_question_row_id = recent.source_question_row_id;
-      resolved.source_question_canonical_id =
-        recent.source_question_canonical_id;
-      resolved.source_session_id =
-        recent.source_session_id ?? resolved.source_session_id;
-      resolved.source_session_item_id =
-        recent.source_session_item_id ?? resolved.source_session_item_id;
-      fallbackReason = "reused_recent_conversation_scope";
-    } else if (
-      await sessionExistsForScope(
-        args.student_id,
-        args.conversation.source_surface,
-        resolved.source_session_id,
-      )
-    ) {
-      resolved.source_question_row_id = null;
-      resolved.source_question_canonical_id = null;
-      fallbackReason = "degraded_to_scoped_session";
+    if (error || !data) {
+      sessionItemId = null;
     } else {
-      Object.assign(resolved, emptyScope());
-      fallbackReason = "degraded_to_general";
+      // The session item's question is authoritative if the client did not
+      // separately supply one.
+      if (!questionRowId) {
+        questionRowId = (data.question_id as string) ?? null;
+      }
     }
   }
 
-  const sessionValid = await sessionExistsForScope(
-    args.student_id,
-    args.conversation.source_surface,
-    resolved.source_session_id,
-  );
-  const itemValid = await sessionItemExistsForScope(
-    args.student_id,
-    args.conversation.source_surface,
-    resolved.source_session_item_id,
-  );
-  if (!sessionValid || (resolved.source_session_item_id && !itemValid)) {
-    Object.assign(resolved, emptyScope());
-    fallbackReason = fallbackReason ?? "degraded_to_general";
-  }
-
-  if (conflictFields.length > 0) {
-    console.warn("[tutor-runtime] conflicting client scope ignored", {
-      conversationId: args.conversation.id,
-      conflictFields,
-    });
+  if (questionRowId) {
+    const { data, error } = await supabaseServer
+      .from("questions")
+      .select("id")
+      .eq("id", questionRowId)
+      .maybeSingle();
+    if (error || !data) {
+      questionRowId = null;
+      canonicalId = null;
+    } else {
+      canonicalId = data.id as string;
+    }
   }
 
   return {
-    resolved_scope: resolved,
-    fallback_reason: fallbackReason,
-    conflict_fields: conflictFields,
+    source_session_id: sessionId,
+    source_session_item_id: sessionItemId,
+    source_question_row_id: questionRowId,
+    source_question_canonical_id: canonicalId,
   };
-}
-
-function removeInternalMetadataMentions(text: string): string {
-  return text
-    .replace(
-      /\b(canonical id|canonical_id|internal metadata|distractor taxonomy|policy flags|reason codes)\b/gi,
-      "",
-    )
-    .replace(/\s{2,}/g, " ")
-    .trim();
 }
 
 /**
- * @spec [Doc-03B_V4.1, §16.4-5; INV-03-13] | @implemented [2026-06-24]
- * Shared silent-substitution fallback for a blocked pre-submit tutor turn. Per
- * §16.5 + INV-03-13, a scanner-blocked response must look like a normal LISA
- * turn — no acknowledgment that filtering occurred. BOTH block paths (append-turn
- * delivery and conversation replay) emit THIS one substitution, the same way
- * (parallel-paths rule). It is pedagogical, never an error message.
+ * @spec [Doc-03_V3 §17, INV-03-04] Fetches the canonical correct answer for
+ * a scoped question row, for use as the anti-leak comparison key. Returns
+ * null (generic phrase detection fallback in hasAnswerLeak) if there is no
+ * question scope or the lookup fails.
  */
-const TUTOR_ANTI_LEAK_SUBSTITUTION =
-  "Let me think about this differently. Can you walk me through how you approached this problem?";
-
-function hasDirectAnswerLeak(text: string): boolean {
-  const patterns = [
-    /\bthe correct answer is\b/i,
-    /\bthe right answer is\b/i,
-    /\bchoose option [A-D]\b/i,
-    /\banswer:\s*[A-D]\b/i,
-    /\bdefinitely option [A-D]\b/i,
-    /\b(option|choice)\s*[A-D]\s*(is|=)\s*(correct|right)\b/i,
-    /\bit(?:'s| is)\s*(definitely|clearly)\s*(option|choice)\s*[A-D]\b/i,
-    /\bonly\s+(option|choice)\s*[A-D]\s+(can|could)\s+be\s+(correct|right)\b/i,
-    /\beliminate\s+all\s+but\s+(option|choice)\s*[A-D]\b/i,
-  ];
-  return patterns.some((p) => p.test(text));
-}
-
-function normalizeMemorySummaries(rows: unknown): MemorySummaryNormalization {
-  if (!Array.isArray(rows)) {
-    return { summaries: [], accepted_count: 0, rejected_count: 0 };
-  }
-
-  const summaries: MemorySummary[] = [];
-  let rejectedCount = 0;
-  for (const row of rows) {
-    const parsed = memorySummarySchema.safeParse({
-      summary_type: (row as Record<string, unknown>)?.summary_type,
-      summary_version: (row as Record<string, unknown>)?.summary_version,
-      content_json: (row as Record<string, unknown>)?.content_json ?? {},
-      source_window_start:
-        (row as Record<string, unknown>)?.source_window_start ?? null,
-      source_window_end:
-        (row as Record<string, unknown>)?.source_window_end ?? null,
-    });
-    if (!parsed.success) {
-      rejectedCount += 1;
-      continue;
-    }
-    summaries.push(parsed.data);
-  }
-
-  return {
-    summaries,
-    accepted_count: summaries.length,
-    rejected_count: rejectedCount,
-  };
-}
-
-async function getPracticeItemStatus(
-  studentId: string,
-  itemId: string | null,
+async function getCorrectAnswerForScope(
+  questionRowId: string | null,
 ): Promise<string | null> {
-  if (!itemId) return null;
+  if (!questionRowId) return null;
+
   const { data, error } = await supabaseServer
-    .from("practice_session_items")
-    .select("status")
-    .eq("id", itemId)
-    .eq("user_id", studentId)
-    .limit(1)
+    .from("questions")
+    .select("correct_answer")
+    .eq("id", questionRowId)
     .maybeSingle();
-  if (error || !data) return null;
-  return typeof data.status === "string" ? data.status : null;
-}
 
-/**
- * @spec [Doc-03B_V4.1, §16] | @implemented [2026-06-24]
- * Structural chokepoint: determines pre-submit state for any source_surface.
- * practice → check item status; review/test_review/dashboard → inherently post-submit.
- */
-async function isPreSubmitForSurface(
-  surface: ConversationRow["source_surface"],
-  studentId: string,
-  sessionItemId: string | null,
-): Promise<boolean> {
-  if (surface === "practice") {
-    const status = await getPracticeItemStatus(studentId, sessionItemId);
-    return status !== "answered" && status !== "skipped";
-  }
-  // review, test_review, dashboard are inherently post-submit
-  return false;
-}
-
-function asJsonObject(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
-}
-
-function publicTutorMessageContentJson(
-  value: unknown,
-): Record<string, unknown> {
-  const contentJson = { ...asJsonObject(value) };
-  delete contentJson[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
-  delete contentJson[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
-  return contentJson;
-}
-
-function canonicalizeJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => canonicalizeJsonValue(entry));
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
-    const out: Record<string, unknown> = {};
-    for (const key of keys) {
-      out[key] = canonicalizeJsonValue(record[key]);
-    }
-    return out;
-  }
-  return value;
-}
-
-function canonicalizeJsonString(value: unknown): string {
-  return JSON.stringify(canonicalizeJsonValue(value));
-}
-
-function normalizeNullableString(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  const normalized = String(value).trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeNullableInt(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
-}
-
-function isDuplicateKeyError(
-  error: { code?: string | null } | null | undefined,
-): boolean {
-  return String(error?.code ?? "") === "23505";
-}
-
-function questionLinkMatchesSnapshot(
-  row: Record<string, unknown>,
-  snapshot: QuestionLinkSnapshot,
-): boolean {
-  return (
-    normalizeNullableString(row.source_question_row_id) ===
-      snapshot.source_question_row_id &&
-    normalizeNullableString(row.source_question_canonical_id) ===
-      snapshot.source_question_canonical_id &&
-    normalizeNullableString(row.related_question_row_id) ===
-      snapshot.related_question_row_id &&
-    normalizeNullableString(row.related_question_canonical_id) ===
-      snapshot.related_question_canonical_id &&
-    normalizeNullableString(row.relationship_type) ===
-      snapshot.relationship_type &&
-    normalizeNullableInt(row.difficulty_delta) === snapshot.difficulty_delta &&
-    normalizeNullableString(row.reason_code) === snapshot.reason_code &&
-    canonicalizeJsonString(asJsonObject(row.link_snapshot)) ===
-      canonicalizeJsonString(snapshot.link_snapshot)
-  );
-}
-
-function exposureMatchesSnapshot(
-  row: Record<string, unknown>,
-  snapshot: InstructionExposureSnapshot,
-): boolean {
-  return (
-    normalizeNullableString(row.exposure_type) === snapshot.exposure_type &&
-    normalizeNullableString(row.content_variant_key) ===
-      snapshot.content_variant_key &&
-    normalizeNullableString(row.content_version) === snapshot.content_version &&
-    normalizeNullableInt(row.rendered_difficulty) ===
-      snapshot.rendered_difficulty &&
-    normalizeNullableInt(row.hint_depth) === snapshot.hint_depth &&
-    normalizeNullableString(row.tone_style) === snapshot.tone_style &&
-    normalizeNullableInt(row.sequence_ordinal) === snapshot.sequence_ordinal
-  );
-}
-
-async function ensureQuestionLinksPersisted(args: {
-  conversationId: string;
-  studentId: string;
-  links: QuestionLinkSnapshot[];
-}): Promise<boolean> {
-  if (!Array.isArray(args.links) || args.links.length === 0) return true;
-
-  const { data: existingRows, error: existingError } = await supabaseServer
-    .from("tutor_question_links")
-    .select("*")
-    .eq("conversation_id", args.conversationId)
-    .eq("student_id", args.studentId);
-
-  if (existingError || !Array.isArray(existingRows)) return false;
-  const knownRows = [...existingRows] as Record<string, unknown>[];
-
-  for (const link of args.links) {
-    if (knownRows.some((row) => questionLinkMatchesSnapshot(row, link)))
-      continue;
-
-    const { data: inserted, error: insertError } = await supabaseServer
-      .from("tutor_question_links")
-      .insert({
-        conversation_id: args.conversationId,
-        student_id: args.studentId,
-        source_question_row_id: link.source_question_row_id,
-        source_question_canonical_id: link.source_question_canonical_id,
-        related_question_row_id: link.related_question_row_id,
-        related_question_canonical_id: link.related_question_canonical_id,
-        relationship_type: link.relationship_type,
-        difficulty_delta: link.difficulty_delta,
-        reason_code: link.reason_code,
-        link_snapshot: link.link_snapshot,
-      })
-      .select("*")
-      .single();
-
-    if (insertError && !isDuplicateKeyError(insertError)) {
-      return false;
-    }
-    if (inserted) {
-      knownRows.push(inserted as Record<string, unknown>);
-    }
+  if (error || !data) {
+    logger.warn(
+      "TUTOR_RUNTIME",
+      "correct_answer_lookup_failed",
+      "Could not resolve correct_answer for anti-leak scan; falling back to generic detection",
+      { questionRowId },
+    );
+    return null;
   }
 
-  return true;
+  return (data.correct_answer as string | null) ?? null;
 }
 
-async function ensureInstructionExposuresPersisted(args: {
-  assignmentId: string;
-  conversationId: string;
-  studentId: string;
-  exposures: InstructionExposureSnapshot[];
-}): Promise<boolean> {
-  if (!Array.isArray(args.exposures) || args.exposures.length === 0)
-    return true;
-
-  const { data: existingRows, error: existingError } = await supabaseServer
-    .from("tutor_instruction_exposures")
-    .select("*")
-    .eq("assignment_id", args.assignmentId)
-    .eq("conversation_id", args.conversationId)
-    .eq("student_id", args.studentId);
-
-  if (existingError || !Array.isArray(existingRows)) return false;
-  const knownRows = [...existingRows] as Record<string, unknown>[];
-
-  for (const exposure of args.exposures) {
-    if (knownRows.some((row) => exposureMatchesSnapshot(row, exposure)))
-      continue;
-
-    const { data: inserted, error: insertError } = await supabaseServer
-      .from("tutor_instruction_exposures")
-      .insert({
-        assignment_id: args.assignmentId,
-        conversation_id: args.conversationId,
-        student_id: args.studentId,
-        exposure_type: exposure.exposure_type,
-        content_variant_key: exposure.content_variant_key,
-        content_version: exposure.content_version,
-        rendered_difficulty: exposure.rendered_difficulty,
-        hint_depth: exposure.hint_depth,
-        tone_style: exposure.tone_style,
-        sequence_ordinal: exposure.sequence_ordinal,
-        shown_at: new Date().toISOString(),
-        consumed_ms: null,
-      })
-      .select("*")
-      .single();
-
-    if (insertError && !isDuplicateKeyError(insertError)) {
-      return false;
-    }
-    if (inserted) {
-      knownRows.push(inserted as Record<string, unknown>);
-    }
-  }
-
-  return true;
-}
-
-async function ensureCanonicalArtifactsPersisted(args: {
-  assignmentId: string;
-  conversationId: string;
-  studentId: string;
-  questionLinks: QuestionLinkSnapshot[];
-  instructionExposures: InstructionExposureSnapshot[];
-}): Promise<boolean> {
-  const linksOk = await ensureQuestionLinksPersisted({
-    conversationId: args.conversationId,
-    studentId: args.studentId,
-    links: args.questionLinks,
-  });
-  if (!linksOk) return false;
-
-  return ensureInstructionExposuresPersisted({
-    assignmentId: args.assignmentId,
-    conversationId: args.conversationId,
-    studentId: args.studentId,
-    exposures: args.instructionExposures,
-  });
-}
-
-function parseReplayTutorContent(value: unknown): TutorReplayContent | null {
-  const parsed = tutorReplayContentSchema.safeParse(asJsonObject(value));
-  return parsed.success ? parsed.data : null;
-}
+// ============================================================================
+// POST /conversations — §5 Start / reuse a conversation
+// ============================================================================
 
 router.post(
   "/conversations",
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: Request, res: Response): Promise<void> => {
+    // ── auth ── already enforced at mount (requireSupabaseAuth + requireStudentOnly)
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+
+    // ── entitlement ──
+    if (await denyIfNotEntitled(studentId, res)) return;
+
+    // ── parse ──
+    const parsed = createConversationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendTutorError(res, "invalid_input", parsed.error.flatten());
+      return;
+    }
+    const input = parsed.data;
+
     try {
-      const user = requireRequestUser(req, res);
-      if (!user) return;
-      if (isGuardianUser(req) && !isAdminUser(req)) {
-        sendForbidden(res, {
-          error: "Student access required",
-          message: "Guardians cannot access tutor.",
-          requestId: req.requestId,
-        });
-        return;
-      }
-      if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-      const parsed = TutorStartConversationRequestSchema.safeParse(
-        req.body ?? {},
+      // ── domain: resolve trusted scope, degrading stale refs (§5.5 step 6) ──
+      const resolvedScope = await resolveTrustedScopeForCreate(
+        studentId,
+        input.source_session_id ?? null,
+        input.source_session_item_id ?? null,
+        input.source_question_row_id ?? null,
+        input.source_question_canonical_id ?? null,
       );
-      if (!parsed.success) {
-        sendTutorError(
-          res,
-          400,
-          "TUTOR_INVALID_REQUEST",
-          "Invalid tutor conversation request.",
-          req.requestId,
-        );
-        return;
-      }
-      const body = parsed.data;
-      const resolved = normalizeScope(
-        body as unknown as Record<string, unknown>,
-      );
-      const defaults = {
-        policy_family: DEFAULT_POLICY_FAMILY,
-        policy_variant: DEFAULT_POLICY_VARIANT,
-        policy_version: DEFAULT_POLICY_VERSION,
-        prompt_version: DEFAULT_PROMPT_VERSION,
-        assignment_mode: DEFAULT_ASSIGNMENT_MODE,
-        assignment_key: DEFAULT_ASSIGNMENT_KEY,
-        initialization_snapshot: {},
-        status: "active",
-      };
 
-      const { data: existing, error: existingError } = await supabaseServer
+      // ── domain: reuse rule (§5.6) ──
+      const freshnessCutoff = new Date();
+      freshnessCutoff.setDate(freshnessCutoff.getDate() - 7);
+
+      let reuseQuery = supabaseServer
         .from("tutor_conversations")
-        .select("*")
-        .eq("student_id", user.id)
-        .eq("status", "active")
-        .eq("entry_mode", body.entry_mode)
-        .eq("source_surface", body.source_surface)
-        .eq("source_session_id", resolved.source_session_id)
-        .eq("source_session_item_id", resolved.source_session_item_id)
-        .eq("source_question_row_id", resolved.source_question_row_id)
-        .eq(
-          "source_question_canonical_id",
-          resolved.source_question_canonical_id,
+        .select(
+          "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
         )
+        .eq("student_id", studentId)
+        .eq("source_surface", input.source_surface)
+        .eq("entry_mode", input.entry_mode)
+        .eq("status", "active")
+        .is("deleted_at", null)
+        .gte("updated_at", freshnessCutoff.toISOString())
         .order("updated_at", { ascending: false })
         .limit(1);
 
-      if (!existingError && Array.isArray(existing) && existing.length > 0) {
-        const row = existing[0] as ConversationRow;
-        return res.json({
+      reuseQuery = resolvedScope.source_session_id
+        ? reuseQuery.eq("source_session_id", resolvedScope.source_session_id)
+        : reuseQuery.is("source_session_id", null);
+      reuseQuery = resolvedScope.source_session_item_id
+        ? reuseQuery.eq(
+            "source_session_item_id",
+            resolvedScope.source_session_item_id,
+          )
+        : reuseQuery.is("source_session_item_id", null);
+      reuseQuery = resolvedScope.source_question_row_id
+        ? reuseQuery.eq(
+            "source_question_row_id",
+            resolvedScope.source_question_row_id,
+          )
+        : reuseQuery.is("source_question_row_id", null);
+
+      const { data: reusable, error: reuseError } =
+        await reuseQuery.maybeSingle();
+
+      if (reuseError) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "reuse_lookup_failed",
+          "Conversation reuse lookup failed",
+          { message: reuseError.message, code: reuseError.code },
+        );
+      }
+
+      if (reusable) {
+        const row = reusable as TutorConversationRow;
+        res.status(200).json({
           data: {
             conversation_id: row.id,
+            reused: true,
             entry_mode: row.entry_mode,
             source_surface: row.source_surface,
             status: row.status,
-            resolved_scope: normalizeScope(
-              row as unknown as Record<string, unknown>,
-            ),
+            crisis_flagged: row.crisis_flagged,
+            resolved_scope: {
+              source_session_id: row.source_session_id,
+              source_session_item_id: row.source_session_item_id,
+              source_question_row_id: row.source_question_row_id,
+              source_question_canonical_id: row.source_question_canonical_id,
+            },
+            created_at: row.created_at,
+            updated_at: row.updated_at,
           },
         });
+        return;
       }
 
-      const { data: inserted, error: insertError } = await supabaseServer
+      // ── domain: create new conversation ──
+      const { data: created, error: insertError } = await supabaseServer
         .from("tutor_conversations")
         .insert({
-          student_id: user.id,
-          entry_mode: body.entry_mode,
-          source_surface: body.source_surface,
-          source_session_id: resolved.source_session_id,
-          source_session_item_id: resolved.source_session_item_id,
-          source_question_row_id: resolved.source_question_row_id,
-          source_question_canonical_id: resolved.source_question_canonical_id,
-          ...defaults,
-        })
-        .select("*")
-        .single();
-
-      if (insertError || !inserted) {
-        sendTutorError(
-          res,
-          500,
-          "TUTOR_CONVERSATION_CREATE_FAILED",
-          "Failed to create tutor conversation.",
-          req.requestId,
-        );
-        return;
-      }
-
-      return res.json({
-        data: {
-          conversation_id: inserted.id,
-          entry_mode: inserted.entry_mode,
-          source_surface: inserted.source_surface,
-          status: inserted.status,
-          resolved_scope: normalizeScope(
-            inserted as unknown as Record<string, unknown>,
-          ),
-        },
-      });
-    } catch (error: any) {
-      sendTutorError(
-        res,
-        500,
-        "TUTOR_CONVERSATION_CREATE_FAILED",
-        error?.message || "Failed to create tutor conversation.",
-        req.requestId,
-      );
-    }
-  },
-);
-
-router.get(
-  "/conversations/:conversationId",
-  async (req: AuthenticatedRequest, res: Response) => {
-    const user = requireRequestUser(req, res);
-    if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-    const conversation = await loadConversationOrDeny(
-      req,
-      res,
-      req.params.conversationId,
-    );
-    if (!conversation) return;
-
-    const replayIsPreSubmit = await isPreSubmitForSurface(
-      conversation.source_surface,
-      user.id,
-      conversation.source_session_item_id ?? null,
-    );
-
-    const { data: messages, error: msgError } = await supabaseServer
-      .from("tutor_messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: true });
-    if (msgError) {
-      sendTutorError(
-        res,
-        500,
-        "TUTOR_MESSAGES_READ_FAILED",
-        "Failed to read tutor messages.",
-        req.requestId,
-      );
-      return;
-    }
-
-    return res.json({
-      data: {
-        conversation: {
-          conversation_id: conversation.id,
-          entry_mode: conversation.entry_mode,
-          source_surface: conversation.source_surface,
-          status: conversation.status,
-          resolved_scope: normalizeScope(
-            conversation as unknown as Record<string, unknown>,
-          ),
-          created_at: conversation.created_at,
-          updated_at: conversation.updated_at,
-        },
-        messages: (messages ?? []).map((row: any) => {
-          const message =
-            row.role === "tutor" &&
-            replayIsPreSubmit &&
-            hasDirectAnswerLeak(row.message ?? "")
-              ? TUTOR_ANTI_LEAK_SUBSTITUTION
-              : row.message;
-          return {
-            id: row.id,
-            role: row.role,
-            content_kind: row.content_kind,
-            message,
-            content_json: publicTutorMessageContentJson(row.content_json),
-            client_turn_id: row.client_turn_id ?? null,
-            created_at: row.created_at,
-          };
-        }),
-      },
-    });
-  },
-);
-
-router.get(
-  "/conversations",
-  async (req: AuthenticatedRequest, res: Response) => {
-    const user = requireRequestUser(req, res);
-    if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-    const parsed = TutorListConversationsQuerySchema.safeParse(req.query ?? {});
-    if (!parsed.success) {
-      sendTutorError(
-        res,
-        400,
-        "TUTOR_INVALID_QUERY",
-        "Invalid tutor conversation list query.",
-        req.requestId,
-      );
-      return;
-    }
-
-    const limit = parsed.data.limit ?? 20;
-    let query = supabaseServer
-      .from("tutor_conversations")
-      .select("*")
-      .eq("student_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(limit + 1);
-
-    if (parsed.data.status) query = query.eq("status", parsed.data.status);
-    if (parsed.data.source_surface)
-      query = query.eq("source_surface", parsed.data.source_surface);
-    if (parsed.data.cursor) query = query.lt("updated_at", parsed.data.cursor);
-
-    const { data, error } = await query;
-    if (error) {
-      sendTutorError(
-        res,
-        500,
-        "TUTOR_CONVERSATION_LIST_FAILED",
-        "Failed to list tutor conversations.",
-        req.requestId,
-      );
-      return;
-    }
-
-    const rows = (data ?? []) as ConversationRow[];
-    const selected = rows.slice(0, limit);
-    const nextCursor =
-      rows.length > limit
-        ? String(selected[selected.length - 1].updated_at)
-        : null;
-    return res.json({
-      data: {
-        conversations: selected.map((row) => ({
-          conversation_id: row.id,
-          entry_mode: row.entry_mode,
-          source_surface: row.source_surface,
-          status: row.status,
-          resolved_scope: normalizeScope(
-            row as unknown as Record<string, unknown>,
-          ),
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-        })),
-        next_cursor: nextCursor,
-      },
-    });
-  },
-);
-
-router.post(
-  "/conversations/:conversationId/close",
-  async (req: AuthenticatedRequest, res: Response) => {
-    const user = requireRequestUser(req, res);
-    if (!user) return;
-    if (isGuardianUser(req) && !isAdminUser(req)) {
-      sendForbidden(res, {
-        error: "Student access required",
-        message: "Guardians cannot access tutor.",
-        requestId: req.requestId,
-      });
-      return;
-    }
-    if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-    const parsed = TutorCloseConversationRequestSchema.safeParse(
-      req.body ?? {},
-    );
-    if (!parsed.success) {
-      sendTutorError(
-        res,
-        400,
-        "TUTOR_INVALID_REQUEST",
-        "Invalid close conversation request.",
-        req.requestId,
-      );
-      return;
-    }
-
-    const conversation = await loadConversationOrDeny(
-      req,
-      res,
-      req.params.conversationId,
-    );
-    if (!conversation) return;
-
-    const { data, error } = await supabaseServer
-      .from("tutor_conversations")
-      .update({
-        status: parsed.data.status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conversation.id)
-      .select("id,status")
-      .single();
-    if (error || !data) {
-      sendTutorError(
-        res,
-        500,
-        "TUTOR_CONVERSATION_CLOSE_FAILED",
-        "Failed to close tutor conversation.",
-        req.requestId,
-      );
-      return;
-    }
-
-    return res.json({
-      data: {
-        conversation_id: data.id,
-        status: data.status,
-      },
-    });
-  },
-);
-
-router.post("/messages", async (req: AuthenticatedRequest, res: Response) => {
-  const user = requireRequestUser(req, res);
-  if (!user) return;
-  if (isGuardianUser(req) && !isAdminUser(req)) {
-    sendForbidden(res, {
-      error: "Student access required",
-      message: "Guardians cannot access tutor.",
-      requestId: req.requestId,
-    });
-    return;
-  }
-  if (!(await ensureTutorEntitlement(req, res, user.id))) return;
-
-  const parsed = TutorAppendMessageRequestSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    sendTutorError(
-      res,
-      400,
-      "TUTOR_INVALID_REQUEST",
-      "Invalid tutor append request.",
-      req.requestId,
-    );
-    return;
-  }
-  const body = parsed.data;
-
-  const conversation = await loadConversationOrDeny(
-    req,
-    res,
-    body.conversation_id,
-  );
-  if (!conversation) return;
-  if (conversation.status !== "active") {
-    sendTutorError(
-      res,
-      409,
-      "TUTOR_CONVERSATION_NOT_ACTIVE",
-      "Tutor conversation is not active.",
-      req.requestId,
-    );
-    return;
-  }
-
-  let tutorReservationId: string | null = null;
-  let finalizedReservation = false;
-  let finalizedWithSuccess = false;
-
-  try {
-    const reservation = await checkAndReserveTutorBudget({
-      studentUserId: user.id,
-      role: req.user?.role ?? null,
-      sessionKey: conversation.id,
-      reservedInputTokens: Math.max(
-        1200,
-        estimateTokenCount(body.message) + 900,
-      ),
-      reservedOutputTokens: 1200,
-      requestId: req.requestId ?? null,
-    });
-
-    if (!reservation.allowed) {
-      const isThrottle =
-        reservation.code === "TUTOR_COOLDOWN_ACTIVE" ||
-        reservation.code === "TUTOR_DENSITY_LIMIT_EXCEEDED";
-      return res.status(isThrottle ? 429 : 402).json({
-        error: {
-          code: reservation.code,
-          message: reservation.message,
-          retryable: isThrottle,
-        },
-        limitType: reservation.limitType,
-        current: reservation.current,
-        limit: reservation.limit,
-        remaining: reservation.remaining,
-        resetAt: reservation.resetAt,
-        cooldownUntil: reservation.cooldownUntil,
-        requestId: req.requestId,
-      });
-    }
-
-    tutorReservationId = reservation.reservationId;
-
-    const liveFullLength = await hasActiveFullLengthExam(user.id);
-    if (liveFullLength) {
-      sendTutorError(
-        res,
-        409,
-        "TUTOR_UNAVAILABLE_LIVE_FULL_LENGTH",
-        "Tutor is unavailable while a full-length test is live.",
-        req.requestId,
-      );
-      return;
-    }
-
-    const scopeResolution = await resolveScope({
-      conversation,
-      client_scope: body.client_scope as Record<string, unknown> | undefined,
-      student_id: user.id,
-    });
-    const resolvedScope = scopeResolution.resolved_scope;
-
-    if (conversation.source_surface === "test_review") {
-      const unlocked = await isFullLengthReviewUnlocked(
-        user.id,
-        resolvedScope.source_session_id,
-      );
-      if (!unlocked) {
-        sendTutorError(
-          res,
-          409,
-          "TUTOR_REVIEW_LOCKED",
-          "Tutor explanations for full-length tests are available only after completion.",
-          req.requestId,
-        );
-        return;
-      }
-    }
-
-    let studentMessage: MessageRow | null = null;
-    let policyAssignmentId: string | null = null;
-
-    const { data: existingStudentMessage, error: existingStudentError } =
-      await supabaseServer
-        .from("tutor_messages")
-        .select("*")
-        .eq("conversation_id", conversation.id)
-        .eq("student_id", user.id)
-        .eq("role", "student")
-        .eq("client_turn_id", body.client_turn_id)
-        .limit(1)
-        .maybeSingle();
-
-    if (existingStudentError) {
-      sendRecoverableRetry(res, req.requestId);
-      return;
-    }
-
-    if (existingStudentMessage) {
-      studentMessage = existingStudentMessage as MessageRow;
-    } else {
-      const { data: insertedStudentMessage, error: insertStudentError } =
-        await supabaseServer
-          .from("tutor_messages")
-          .insert({
-            conversation_id: conversation.id,
-            student_id: user.id,
-            role: "student",
-            content_kind: body.content_kind,
-            message: body.message,
-            content_json: {},
-            client_turn_id: body.client_turn_id,
-            explanation_level: null,
-            source_session_id: resolvedScope.source_session_id,
-            source_session_item_id: resolvedScope.source_session_item_id,
-            source_question_row_id: resolvedScope.source_question_row_id,
-            source_question_canonical_id:
-              resolvedScope.source_question_canonical_id,
-          })
-          .select("*")
-          .single();
-
-      if (insertStudentError || !insertedStudentMessage) {
-        sendRecoverableRetry(res, req.requestId);
-        return;
-      }
-      studentMessage = insertedStudentMessage as MessageRow;
-    }
-
-    const { data: existingAssignment, error: existingAssignmentError } =
-      await supabaseServer
-        .from("tutor_instruction_assignments")
-        .select("id")
-        .eq("conversation_id", conversation.id)
-        .eq("student_id", user.id)
-        .eq("related_message_id", studentMessage.id)
-        .limit(1)
-        .maybeSingle();
-    if (existingAssignmentError) {
-      sendRecoverableRetry(res, req.requestId);
-      return;
-    }
-
-    if (existingAssignment?.id) {
-      policyAssignmentId = String(existingAssignment.id);
-    } else {
-      const { data: insertedAssignment, error: insertAssignmentError } =
-        await supabaseServer
-          .from("tutor_instruction_assignments")
-          .insert({
-            conversation_id: conversation.id,
-            student_id: user.id,
-            related_message_id: studentMessage.id,
-            source_session_id: resolvedScope.source_session_id,
-            source_session_item_id: resolvedScope.source_session_item_id,
-            source_question_row_id: resolvedScope.source_question_row_id,
-            source_question_canonical_id:
-              resolvedScope.source_question_canonical_id,
-            policy_family: conversation.policy_family,
-            policy_variant: conversation.policy_variant,
-            policy_version: conversation.policy_version,
-            prompt_version: conversation.prompt_version,
-            assignment_mode: conversation.assignment_mode,
-            assignment_key: conversation.assignment_key,
-            reason_snapshot: {
-              trigger_type: "student_turn",
-              source_surface: conversation.source_surface,
-              entry_mode: conversation.entry_mode,
-              scoped_anchor:
-                resolvedScope.source_question_canonical_id ??
-                resolvedScope.source_question_row_id ??
-                null,
-              policy_inputs: {
-                content_kind: body.content_kind,
-              },
-              fallback_used: scopeResolution.fallback_reason,
-              ignored_conflicts: scopeResolution.conflict_fields,
-            },
-          })
-          .select("id")
-          .single();
-      if (insertAssignmentError || !insertedAssignment?.id) {
-        sendRecoverableRetry(res, req.requestId);
-        return;
-      }
-      policyAssignmentId = String(insertedAssignment.id);
-    }
-
-    const { data: existingTutorResponse } = await supabaseServer
-      .from("tutor_messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .eq("student_id", user.id)
-      .eq("role", "tutor")
-      .gte("created_at", studentMessage.created_at)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingTutorResponse) {
-      const replayContent = parseReplayTutorContent(
-        (existingTutorResponse as MessageRow).content_json,
-      );
-      if (!replayContent || !policyAssignmentId) {
-        sendRecoverableRetry(res, req.requestId);
-        return;
-      }
-
-      const replayQuestionLinks =
-        replayContent[INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY];
-      const replayExposures =
-        replayContent[INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY];
-      if (
-        !Array.isArray(replayQuestionLinks) ||
-        !Array.isArray(replayExposures)
-      ) {
-        sendRecoverableRetry(res, req.requestId);
-        return;
-      }
-
-      const artifactsReady = await ensureCanonicalArtifactsPersisted({
-        assignmentId: policyAssignmentId,
-        conversationId: conversation.id,
-        studentId: user.id,
-        questionLinks: replayQuestionLinks,
-        instructionExposures: replayExposures,
-      });
-      if (!artifactsReady) {
-        sendRecoverableRetry(res, req.requestId);
-        return;
-      }
-
-      finalizedWithSuccess = true;
-      if (tutorReservationId) {
-        finalizedReservation = true;
-        await finalizeTutorUsage({
-          reservationId: tutorReservationId,
-          success: true,
-          finalInputTokens: estimateTokenCount(body.message),
-          finalOutputTokens: estimateTokenCount(
-            String((existingTutorResponse as MessageRow).message ?? ""),
-          ),
-          finalCostMicros: estimateTutorCostMicros(
-            estimateTokenCount(body.message),
-            estimateTokenCount(
-              String((existingTutorResponse as MessageRow).message ?? ""),
-            ),
-          ),
-        });
-      }
-      return res.json({
-        data: {
-          conversation_id: conversation.id,
-          message_id: (existingTutorResponse as MessageRow).id,
-          response: {
-            content: String(
-              (existingTutorResponse as MessageRow).message ?? "",
-            ),
-            content_kind: (existingTutorResponse as MessageRow).content_kind,
-            suggested_action: replayContent.suggested_action,
-            ui_hints: replayContent.ui_hints,
-          },
-        },
-      });
-    }
-
-    const { data: historyRows } = await supabaseServer
-      .from("tutor_messages")
-      .select("*")
-      .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: false })
-      .limit(12);
-
-    const { data: memoryRows } = await supabaseServer
-      .from("tutor_memory_summaries")
-      .select(
-        "summary_type, summary_version, content_json, source_window_start, source_window_end",
-      )
-      .eq("student_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(3);
-    const normalizedMemory = normalizeMemorySummaries(memoryRows);
-    if (normalizedMemory.rejected_count > 0) {
-      console.warn("[tutor-runtime] filtered incompatible memory summaries", {
-        conversationId: conversation.id,
-        studentId: user.id,
-        acceptedCount: normalizedMemory.accepted_count,
-        rejectedCount: normalizedMemory.rejected_count,
-      });
-    }
-
-    const orchestratorPayload = {
-      conversation_id: conversation.id,
-      student_id: user.id,
-      entry_mode: conversation.entry_mode,
-      source_surface: conversation.source_surface,
-      resolved_scope: {
-        source_session_id: resolvedScope.source_session_id,
-        source_session_item_id: resolvedScope.source_session_item_id,
-        source_question_row_id: resolvedScope.source_question_row_id,
-        source_question_canonical_id:
-          resolvedScope.source_question_canonical_id,
-      },
-      recent_messages: ((historyRows ?? []) as MessageRow[])
-        .reverse()
-        .map((row) => ({
-          id: String(row.id),
-          role: row.role,
-          content_kind: row.content_kind,
-          message: String(row.message ?? ""),
-          created_at: String(row.created_at),
-        })),
-      memory_summaries: normalizedMemory.summaries,
-      student_context: {
-        recent_practice: {},
-        recent_review: {},
-        recent_full_length: {},
-        kpi_state: {},
-        mastery_state: {},
-        study_plan_context: {},
-      },
-      policy_assignment: {
-        policy_family: conversation.policy_family,
-        policy_variant: conversation.policy_variant,
-        policy_version: conversation.policy_version,
-        prompt_version: conversation.prompt_version,
-        assignment_mode: conversation.assignment_mode,
-        assignment_key: conversation.assignment_key,
-        reason_snapshot: {
-          trigger_type: "student_turn",
-          source_surface: conversation.source_surface,
-          entry_mode: conversation.entry_mode,
-          scoped_anchor:
-            resolvedScope.source_question_canonical_id ??
-            resolvedScope.source_question_row_id ??
-            null,
-          policy_inputs: {
-            content_kind: body.content_kind,
-            memory_summary_counts: {
-              accepted: normalizedMemory.accepted_count,
-              rejected: normalizedMemory.rejected_count,
-            },
-          },
-          fallback_used: scopeResolution.fallback_reason,
-          ignored_conflicts: scopeResolution.conflict_fields,
-        },
-      },
-      runtime_limits: {
-        max_output_tokens: 600,
-        timeout_ms: 8000,
-      },
-    };
-
-    const orchestratorResult = await callTutorOrchestrator(orchestratorPayload);
-
-    const cleaned = removeInternalMetadataMentions(
-      String(orchestratorResult.response.content ?? "").trim(),
-    );
-    if (!cleaned) {
-      sendRecoverableRetry(res, req.requestId);
-      return;
-    }
-
-    const preSubmit = await isPreSubmitForSurface(
-      conversation.source_surface,
-      user.id,
-      resolvedScope.source_session_item_id,
-    );
-    // §16.5 + INV-03-13: on a pre-submit answer leak, SILENTLY substitute the
-    // shared pedagogical fallback and deliver it as a normal turn — no 422, no
-    // acknowledgment that filtering occurred. The substituted turn is persisted
-    // and returned through the same path as any other turn, so from the
-    // student's perspective it is indistinguishable from a normal LISA reply.
-    // §16.4 forensic log + scanner_block_rate metric deferred to the tutor-vertical wave (GAP-HY-19) — tutor persistence tables not in prod.
-    const safeContent =
-      preSubmit && hasDirectAnswerLeak(cleaned)
-        ? TUTOR_ANTI_LEAK_SUBSTITUTION
-        : cleaned;
-
-    const suggestedAction = orchestratorResult.response.suggested_action;
-    const orchestratorUiHints = orchestratorResult.response.ui_hints;
-    const questionLinksSnapshot = orchestratorResult.question_links;
-    const instructionExposureSnapshot =
-      orchestratorResult.instruction_exposures;
-
-    const { data: insertedTutorMessage, error: insertTutorError } =
-      await supabaseServer
-        .from("tutor_messages")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: user.id,
-          role: "tutor",
-          content_kind: "message",
-          message: safeContent,
-          content_json: {
-            suggested_action: suggestedAction,
-            ui_hints: orchestratorUiHints,
-            orchestration_meta: orchestratorResult.orchestration_meta,
-            [INTERNAL_QUESTION_LINKS_SNAPSHOT_KEY]: questionLinksSnapshot,
-            [INTERNAL_INSTRUCTION_EXPOSURES_SNAPSHOT_KEY]:
-              instructionExposureSnapshot,
-          },
-          client_turn_id: null,
-          explanation_level: null,
+          student_id: studentId,
+          entry_mode: input.entry_mode,
+          source_surface: input.source_surface,
           source_session_id: resolvedScope.source_session_id,
           source_session_item_id: resolvedScope.source_session_item_id,
           source_question_row_id: resolvedScope.source_question_row_id,
           source_question_canonical_id:
             resolvedScope.source_question_canonical_id,
         })
-        .select("*")
+        .select(
+          "id, student_id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, crisis_flagged, deleted_at, created_at, updated_at, closed_at",
+        )
         .single();
 
-    if (insertTutorError || !insertedTutorMessage) {
-      sendRecoverableRetry(res, req.requestId);
+      if (insertError || !created) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "conversation_create_failed",
+          "Failed to insert tutor_conversations row",
+          { message: insertError?.message, code: insertError?.code },
+        );
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      const row = created as TutorConversationRow;
+      res.status(201).json({
+        data: {
+          conversation_id: row.id,
+          reused: false,
+          entry_mode: row.entry_mode,
+          source_surface: row.source_surface,
+          status: row.status,
+          crisis_flagged: row.crisis_flagged,
+          resolved_scope: {
+            source_session_id: row.source_session_id,
+            source_session_item_id: row.source_session_item_id,
+            source_question_row_id: row.source_question_row_id,
+            source_question_canonical_id: row.source_question_canonical_id,
+          },
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "create_conversation_error",
+        "Unexpected error in POST /conversations",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
+);
+
+// ============================================================================
+// POST /messages — §6 Append Turn (19-step pipeline, §6.5)
+// ============================================================================
+
+router.post("/messages", async (req: Request, res: Response): Promise<void> => {
+  // Step 1: Validate JWT and role — already enforced at mount.
+  if (!req.user) {
+    sendTutorError(res, "unauthenticated");
+    return;
+  }
+  const studentId = req.user.id;
+
+  // Step 2: Check entitlement (per-boundary, INV-03-18).
+  if (await denyIfNotEntitled(studentId, res)) return;
+
+  // Step 3: Age gate (INV-03-07, Doc-03B_V4.1 §3.2).
+  // Enforced by the `requireStudentOnly` middleware mounted at /api/tutor
+  // (server/index.ts). That middleware checks `role === "student"` AND
+  // `is_under_13 !== false` (fail-closed). No additional check needed here —
+  // any request reaching this handler has already passed the age gate.
+
+  // Step 4: Live exam block (INV-03-02, Doc-03B_V4.1 §3.4).
+  // LISA must be unavailable while the student has an active full-length exam
+  // session. Fail CLOSED — a failing live-exam check blocks tutor access.
+  const liveExamInProgress =
+    await EntitlementService.isLiveExamInProgress(studentId);
+  if (liveExamInProgress) {
+    sendTutorError(res, "tutor_unavailable_during_live_exam");
+    return;
+  }
+
+  // Step 6: Validate request payload (§6.4). Run before ownership so a
+  // malformed body never triggers a DB lookup.
+  const parsed = appendTurnSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendTutorError(res, "invalid_input", parsed.error.flatten());
+    return;
+  }
+  const input = parsed.data;
+  const contentKind = input.content_kind ?? "message";
+
+  try {
+    // Step 5: Verify conversation ownership (§3.3).
+    const conversation = await loadOwnedConversation(
+      input.conversation_id,
+      studentId,
+    );
+    if (!conversation) {
+      sendTutorError(res, "conversation_not_found");
+      return;
+    }
+    if (conversation.status !== "active") {
+      sendTutorError(res, "conversation_closed");
       return;
     }
 
-    if (!policyAssignmentId) {
-      sendRecoverableRetry(res, req.requestId);
+    // Step 7: Rate/quota limits — `ragLimiter` (mounted at /api/tutor) covers
+    // request-rate; daily/weekly/monthly quota accounting (Doc 03 Main §13)
+    // is a separate quota service, not yet built. Deferred.
+
+    // Step 8: Idempotency check — same client_turn_id already persisted?
+    const { data: existingTurn, error: existingTurnError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .select("id, role, message, created_at")
+        .eq("conversation_id", conversation.id)
+        .eq("client_turn_id", input.client_turn_id)
+        .order("created_at", { ascending: true });
+
+    if (existingTurnError) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "idempotency_lookup_failed",
+        "tutor_messages idempotency lookup failed; failing closed",
+        { message: existingTurnError.message, code: existingTurnError.code },
+      );
+      sendTutorError(res, "idempotency_lookup_failed");
       return;
     }
-    const canonicalWritesComplete = await ensureCanonicalArtifactsPersisted({
-      assignmentId: policyAssignmentId,
+
+    if (existingTurn && existingTurn.length > 0) {
+      const existingStudentMsg = existingTurn.find(
+        (m) => (m as { role: string }).role === "student",
+      ) as { id: string; message: string } | undefined;
+      const existingTutorMsg = existingTurn.find(
+        (m) => (m as { role: string }).role === "tutor",
+      ) as { id: string; message: string } | undefined;
+
+      if (existingStudentMsg && existingStudentMsg.message !== input.message) {
+        sendTutorError(res, "idempotency_conflict");
+        return;
+      }
+
+      if (existingStudentMsg && existingTutorMsg) {
+        // AUDIT-003: Apply anti-leak scan to idempotency replay — the
+        // submission state may have changed since the original turn.
+        // Same defense-in-depth as the GET replay endpoint (§16 Layer 4).
+        const replayPreSubmit = await isPreSubmitForSurface(
+          conversation.source_surface,
+          conversation.source_session_item_id,
+          supabaseServer,
+        );
+        const replayCorrectAnswer = replayPreSubmit
+          ? await getCorrectAnswerForScope(conversation.source_question_row_id)
+          : null;
+        const cleanedReplay = removeInternalMetadataMentions(
+          existingTutorMsg.message,
+        );
+        const safeReplayContent =
+          replayPreSubmit && hasAnswerLeak(cleanedReplay, replayCorrectAnswer)
+            ? TUTOR_ANTI_LEAK_SUBSTITUTION
+            : cleanedReplay;
+
+        res.status(200).json({
+          data: {
+            conversation_id: conversation.id,
+            message_id: existingTutorMsg.id,
+            client_turn_id: input.client_turn_id,
+            response: {
+              content: safeReplayContent,
+              content_kind: "message",
+              suggested_action: { type: "none", label: null },
+              ui_hints: {
+                show_accept_decline: false,
+                allow_freeform_reply: true,
+                suggested_chip: null,
+              },
+            },
+            conversation_updated_at: conversation.updated_at,
+          },
+        });
+        return;
+      }
+      // Student message persisted but tutor response was not (prior
+      // request failed mid-flow) — fall through and complete the flow.
+    }
+
+    // Step 9: Re-resolve scope — stored conversation scope is authoritative;
+    // client_scope only supplements missing fields (§6.6).
+    const clientScope = input.client_scope;
+    const effectiveScope: ResolvedScopeRow = {
+      source_session_id:
+        conversation.source_session_id ??
+        clientScope?.source_session_id ??
+        null,
+      source_session_item_id:
+        conversation.source_session_item_id ??
+        clientScope?.source_session_item_id ??
+        null,
+      source_question_row_id:
+        conversation.source_question_row_id ??
+        clientScope?.source_question_row_id ??
+        null,
+      source_question_canonical_id:
+        conversation.source_question_canonical_id ??
+        clientScope?.source_question_canonical_id ??
+        null,
+    };
+
+    // Step 10: Input sanitization — length bound, escaping, injection scan.
+    // Boundary markers (Doc 03A §12.3 Layer 3) are applied worker-side in
+    // buildConversationMessages at prompt assembly time, covering ALL student
+    // messages in the conversation — not just the current turn.
+    const { sanitized } = sanitizeInput(input.message);
+    const patternScan = scanForInjectionPatterns(sanitized);
+    const signatureScan = await checkSignatureTable(sanitized);
+    const injectionDetected = patternScan.detected || signatureScan.matched;
+    if (injectionDetected) {
+      // INV-03-13: logged, never acknowledged to the student.
+      await logInjectionAttempt(
+        studentId,
+        conversation.id,
+        patternScan.patterns,
+        signatureScan.signatureId,
+      );
+    }
+
+    // Crisis classifier runs on every student turn, no exceptions (INV-03-16).
+    // Runs BEFORE orchestration — if crisis is detected, bypass model generation
+    // entirely and return regional crisis resources (Doc-03_V3 §21).
+    // The classifier infrastructure may be unavailable (missing tables in test
+    // environments, Vertex outage). In that case the turn proceeds with
+    // forceReview so it lands in the §21.3 safety review queue.
+    let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
+    try {
+      crisisResult = await runCrisisClassifier(sanitized);
+    } catch (crisisErr: unknown) {
+      // Classifier infrastructure failure — treat as degraded, not blocking.
+      // The turn proceeds but is force-enqueued to the review queue.
+      logger.error(
+        "TUTOR_RUNTIME",
+        "crisis_classifier_infrastructure_error",
+        "crisis classifier infrastructure error; treating as degraded",
+        {
+          message:
+            crisisErr instanceof Error ? crisisErr.message : String(crisisErr),
+          conversationId: conversation.id,
+        },
+      );
+      crisisResult = { crisis: false, forceReview: true };
+    }
+
+    // Step 11: Persist student message.
+    const { data: studentMessageRow, error: studentMessageError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .insert({
+          conversation_id: conversation.id,
+          student_id: studentId,
+          role: "student",
+          content_kind: contentKind,
+          message: sanitized,
+          source_session_id: effectiveScope.source_session_id,
+          source_session_item_id: effectiveScope.source_session_item_id,
+          source_question_row_id: effectiveScope.source_question_row_id,
+          source_question_canonical_id:
+            effectiveScope.source_question_canonical_id,
+          client_turn_id: input.client_turn_id,
+          injection_flag: injectionDetected,
+          injection_signature_matched: signatureScan.signatureId,
+        })
+        .select("id, created_at")
+        .single();
+
+    if (studentMessageError || !studentMessageRow) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "student_message_write_failed",
+        "Failed to persist student tutor_messages row",
+        {
+          message: studentMessageError?.message,
+          code: studentMessageError?.code,
+        },
+      );
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
+
+    // Crisis path: bypass model generation entirely; respond with the
+    // regional crisis resource and flag for the safety review queue.
+    if (crisisResult.crisis) {
+      await flagConversationForReview(conversation.id);
+
+      const { data: profileRow } = await supabaseServer
+        .from("profiles")
+        .select("country_code")
+        .eq("id", studentId)
+        .maybeSingle();
+      const crisisContent = getCrisisResponse(
+        (profileRow?.country_code as string | null) ?? "US",
+      );
+
+      const { data: crisisMessageRow, error: crisisMessageError } =
+        await supabaseServer
+          .from("tutor_messages")
+          .insert({
+            conversation_id: conversation.id,
+            student_id: studentId,
+            role: "tutor",
+            content_kind: "message",
+            message: crisisContent,
+            source_session_id: effectiveScope.source_session_id,
+            source_session_item_id: effectiveScope.source_session_item_id,
+            source_question_row_id: effectiveScope.source_question_row_id,
+            source_question_canonical_id:
+              effectiveScope.source_question_canonical_id,
+            client_turn_id: input.client_turn_id,
+          })
+          .select("id")
+          .single();
+
+      if (crisisMessageError || !crisisMessageRow) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "crisis_message_write_failed",
+          "Failed to persist crisis-path tutor message",
+          {
+            message: crisisMessageError?.message,
+            code: crisisMessageError?.code,
+          },
+        );
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      res.status(200).json({
+        data: {
+          conversation_id: conversation.id,
+          message_id: crisisMessageRow.id,
+          client_turn_id: input.client_turn_id,
+          response: {
+            content: crisisContent,
+            content_kind: "message",
+            suggested_action: { type: "none", label: null },
+            ui_hints: {
+              show_accept_decline: false,
+              allow_freeform_reply: true,
+              suggested_chip: null,
+            },
+          },
+          conversation_updated_at: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    // CR-03C-V3-01 §3.4 condition 3: Layer 2 failed, turn proceeds but
+    // force-enqueued to the §21.3 review queue with classifier_degraded.
+    if (!crisisResult.crisis && crisisResult.forceReview) {
+      await flagConversationForReview(conversation.id);
+    }
+
+    // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
+    // Policy-assignment persistence is blocking per §1.4. If this write fails,
+    // the turn is not treated as successful.
+    // Values match Doc 03A §18.4 CHECK constraints: policy_variant ∈
+    // {concise,scaffolded,socratic,strategy_first}, emotional_register ∈
+    // {default,elite,recovery,sprint,calm}. V1 default per §11.4 is
+    // scaffolded/default — mode transitions are not yet implemented.
+    // @spec [Doc-03B_V4.1 §6.5 step 12, Doc-03A_V1 §11, Doc-03B_V4.1 §1.4]
+    const instructionAssignmentResult = await persistInstructionAssignment({
       conversationId: conversation.id,
-      studentId: user.id,
-      questionLinks: questionLinksSnapshot,
-      instructionExposures: instructionExposureSnapshot,
+      studentId,
+      relatedMessageId: studentMessageRow.id,
+      sourceSessionId: effectiveScope.source_session_id,
+      sourceSessionItemId: effectiveScope.source_session_item_id,
+      sourceQuestionRowId: effectiveScope.source_question_row_id,
+      policyFamily: "instructional_tutor",
+      policyVariant: "scaffolded",
+      policyVersion: "1.0",
+      promptVersion: null,
+      assignmentMode: "deterministic",
+      assignmentKey: `${studentId}:${conversation.entry_mode}`,
+      // emotional_register: omitted → DB DEFAULT 'default' applies (§18.4)
+      reasonSnapshot: { reason: "default_deterministic_assignment" },
     });
-    if (!canonicalWritesComplete) {
-      sendRecoverableRetry(res, req.requestId);
+    if (!instructionAssignmentResult.ok) {
+      sendTutorError(res, "canonical_write_failed");
       return;
     }
+    const assignmentId = instructionAssignmentResult.assignmentId;
+
+    // Step 13: Resolve pre-submit state and correct answer BEFORE building the
+    // envelope — these flow into both the wire request (worker-side scan) and
+    // the BFF-side defense-in-depth scan (step 15).
+    // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15]
+    const preSubmit = await isPreSubmitForSurface(
+      conversation.source_surface,
+      effectiveScope.source_session_item_id,
+      supabaseServer,
+    );
+    const correctAnswer = preSubmit
+      ? await getCorrectAnswerForScope(effectiveScope.source_question_row_id)
+      : null;
+
+    // Build context envelope (Doc 03A §5.4). Anti-leak fields and Model Armor
+    // template IDs are resolved here so the worker receives them on the wire.
+    const recentMessages = await getRecentMessages(conversation.id);
+    const envelope = await resolveFullEnvelope({
+      conversationId: conversation.id,
+      studentId,
+      entryMode: conversation.entry_mode,
+      sourceSurface: conversation.source_surface,
+      sourceSessionId: effectiveScope.source_session_id,
+      sourceSessionItemId: effectiveScope.source_session_item_id,
+      sourceQuestionRowId: effectiveScope.source_question_row_id,
+      recentMessages,
+      runtimeLimits: { maxOutputTokens: 1024, timeoutMs: 30_000 },
+      correctAnswer,
+    });
+
+    await logContextResolution({
+      conversationId: conversation.id,
+      turnOrdinal: 0,
+      contextVersion: "1.0",
+      memorySummariesCount: envelope.memory_summaries.length,
+      recentMessagesCount: envelope.recent_messages.length,
+      masterySnapshotPresent:
+        envelope.student_learning_context.mastery_snapshot !== null,
+      frictionSignalsPresent: true,
+      scopeType: envelope.resolved_scope.source_question_row_id
+        ? "question"
+        : envelope.resolved_scope.source_session_id
+          ? "session"
+          : "general",
+    });
+
+    // Step 14: Invoke orchestration via the real worker boundary
+    // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
+    // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
+    // and returns a TutorResult — never throws.
+    const turnStartedAt = Date.now();
+    const orchestrationResult = await orchestrateTurn(
+      envelope,
+      preSubmit,
+      correctAnswer,
+    );
+
+    if (!orchestrationResult.ok) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "orchestration_failed",
+        "orchestrateTurn returned failure; turn is recoverable via retry",
+        {
+          errorCode: orchestrationResult.errorCode,
+          conversationId: conversation.id,
+        },
+      );
+      sendTutorError(res, orchestrationResult.errorCode, {
+        retry_after_ms: 2000,
+        failure_layer: "orchestrator",
+      });
+      return;
+    }
+
+    const orchestration = orchestrationResult.value;
+    const tutorResponse = orchestration.response.content;
+
+    // Step 15: Defense-in-depth anti-leak scan (belt-and-suspenders).
+    // The primary anti-leak chokepoint is orchestrateTurn's scanAndSubstitute
+    // (BFF boundary) + the worker's own hasAnswerLeak scan. This route-layer
+    // scan catches anything that slipped through both earlier layers —
+    // metadata mentions first, then answer-leak detection.
+    // @spec [Doc-03_V3 §16.4-5, INV-03-13]
+    const cleaned = removeInternalMetadataMentions(tutorResponse);
+    const safeContent =
+      preSubmit && hasAnswerLeak(cleaned, correctAnswer)
+        ? TUTOR_ANTI_LEAK_SUBSTITUTION
+        : cleaned;
+    const antiLeakTriggered = safeContent !== cleaned;
+
+    // Step 16: Persist tutor message.
+    const { data: tutorMessageRow, error: tutorMessageError } =
+      await supabaseServer
+        .from("tutor_messages")
+        .insert({
+          conversation_id: conversation.id,
+          student_id: studentId,
+          role: "tutor",
+          content_kind: orchestration.response.content_kind,
+          message: safeContent,
+          source_session_id: effectiveScope.source_session_id,
+          source_session_item_id: effectiveScope.source_session_item_id,
+          source_question_row_id: effectiveScope.source_question_row_id,
+          source_question_canonical_id:
+            effectiveScope.source_question_canonical_id,
+          client_turn_id: input.client_turn_id,
+        })
+        .select("id")
+        .single();
+
+    if (tutorMessageError || !tutorMessageRow) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "tutor_message_write_failed",
+        "Failed to persist tutor tutor_messages row",
+        {
+          message: tutorMessageError?.message,
+          code: tutorMessageError?.code,
+        },
+      );
+      sendTutorError(res, "canonical_write_failed");
+      return;
+    }
+
+    // Step 17: Persist question links, if any.
+    if (orchestration.question_links.length > 0) {
+      const { error: linksError } = await supabaseServer
+        .from("tutor_question_links")
+        .insert(
+          orchestration.question_links.map((link) => ({
+            conversation_id: conversation.id,
+            related_message_id: tutorMessageRow.id,
+            source_question_row_id: link.source_question_row_id,
+            source_question_canonical_id: link.source_question_canonical_id,
+            related_question_row_id: link.related_question_row_id,
+            related_question_canonical_id: link.related_question_canonical_id,
+            relationship_type: link.relationship_type,
+            difficulty_delta: link.difficulty_delta,
+            reason_code: link.reason_code,
+            link_snapshot: link.link_snapshot,
+          })),
+        );
+      if (linksError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "question_links_write_failed",
+          "Failed to persist tutor_question_links; turn proceeds",
+          { message: linksError.message, code: linksError.code },
+        );
+      }
+    }
+
+    // Step 18: Persist instruction exposures, if any.
+    if (orchestration.instruction_exposures.length > 0) {
+      const { error: exposuresError } = await supabaseServer
+        .from("tutor_instruction_exposures")
+        .insert(
+          orchestration.instruction_exposures.map((exposure) => ({
+            conversation_id: conversation.id,
+            related_message_id: tutorMessageRow.id,
+            exposure_type: exposure.exposure_type,
+            content_variant_key: exposure.content_variant_key,
+            content_version: exposure.content_version,
+            rendered_difficulty: exposure.rendered_difficulty,
+            hint_depth: exposure.hint_depth,
+            tone_style: exposure.tone_style,
+            sequence_ordinal: exposure.sequence_ordinal,
+          })),
+        );
+      if (exposuresError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "instruction_exposures_write_failed",
+          "Failed to persist tutor_instruction_exposures; turn proceeds",
+          { message: exposuresError.message, code: exposuresError.code },
+        );
+      }
+    }
+
+    await logTurnMetrics({
+      conversationId: conversation.id,
+      turnOrdinal: 0,
+      orchestrationDurationMs: Date.now() - turnStartedAt,
+      modelName: orchestration.orchestration_meta.model_name,
+      tokensIn: 0,
+      tokensOut: 0,
+      cacheHit: orchestration.orchestration_meta.cache_used,
+      compactionRecommended:
+        orchestration.orchestration_meta.compaction_recommended,
+      antiLeakTriggered,
+      injectionDetected,
+      crisisTriggered: false,
+    });
 
     await supabaseServer
       .from("tutor_conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversation.id);
 
-    finalizedWithSuccess = true;
-    if (tutorReservationId) {
-      finalizedReservation = true;
-      await finalizeTutorUsage({
-        reservationId: tutorReservationId,
-        success: true,
-        finalInputTokens: estimateTokenCount(body.message),
-        finalOutputTokens: estimateTokenCount(safeContent),
-        finalCostMicros: estimateTutorCostMicros(
-          estimateTokenCount(body.message),
-          estimateTokenCount(safeContent),
-        ),
-      });
-    }
-
-    return res.json({
+    // Step 19: Return success response (§6.7).
+    res.status(200).json({
       data: {
         conversation_id: conversation.id,
-        message_id: insertedTutorMessage.id,
+        message_id: tutorMessageRow.id,
+        client_turn_id: input.client_turn_id,
         response: {
           content: safeContent,
-          content_kind: "message",
-          suggested_action: suggestedAction,
-          ui_hints: orchestratorUiHints,
+          content_kind: orchestration.response.content_kind,
+          suggested_action: orchestration.response.suggested_action,
+          ui_hints: orchestration.response.ui_hints,
         },
+        conversation_updated_at: new Date().toISOString(),
       },
     });
-  } catch (error: any) {
-    console.warn("[tutor-runtime] append-turn failed", {
-      message: error?.message ?? String(error),
-      name: error?.name ?? "Error",
-      requestId: req.requestId,
-    });
-    if (error instanceof RateLimitUnavailableError) {
-      sendTutorError(res, 503, error.code, error.message, req.requestId, true);
-      return;
-    }
-    sendRecoverableRetry(res, req.requestId);
-  } finally {
-    if (tutorReservationId && !finalizedReservation) {
-      try {
-        await finalizeTutorUsage({
-          reservationId: tutorReservationId,
-          success: finalizedWithSuccess,
-          failureCode: finalizedWithSuccess ? null : "TUTOR_RUNTIME_ERROR",
-          finalInputTokens: finalizedWithSuccess ? undefined : 0,
-          finalOutputTokens: finalizedWithSuccess ? undefined : 0,
-          finalCostMicros: finalizedWithSuccess ? undefined : 0,
-        });
-      } catch (finalizeError: any) {
-        console.warn(
-          "[tutor-runtime] finalize_tutor_usage failure-mark degraded",
-          {
-            message: finalizeError?.message ?? String(finalizeError),
-            requestId: req.requestId,
-          },
-        );
-      }
-    }
+  } catch (err) {
+    logger.error(
+      "TUTOR_RUNTIME",
+      "append_turn_error",
+      "Unexpected error in POST /messages",
+      err instanceof Error ? err : undefined,
+    );
+    sendTutorError(res, "orchestration_failed");
   }
 });
+
+// ============================================================================
+// GET /conversations/:conversationId — §7 Replay
+// ============================================================================
+
+router.get(
+  "/conversations/:conversationId",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+    if (await denyIfNotEntitled(studentId, res)) return;
+
+    const parsedQuery = fetchConversationQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      sendTutorError(res, "invalid_input", parsedQuery.error.flatten());
+      return;
+    }
+    const messageLimit = parsedQuery.data.message_limit ?? 50;
+
+    try {
+      const conversation = await loadOwnedConversation(
+        req.params.conversationId,
+        studentId,
+      );
+      if (!conversation) {
+        sendTutorError(res, "conversation_not_found");
+        return;
+      }
+
+      const ordered = await loadMessagesForReplay(
+        conversation.id,
+        messageLimit,
+        parsedQuery.data.before_message_id,
+      );
+      if (ordered === null) {
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      // Defense-in-depth (§16 Layer 4 mirror): re-apply the anti-leak scan on
+      // read — the per-item submission state may have changed since write
+      // time. Tutor-authored messages only; student turns pass through.
+      let correctAnswerForReplay: string | null = null;
+      let correctAnswerResolved = false;
+      const safeMessages = [];
+
+      for (const row of ordered) {
+        if (row.role !== "tutor") {
+          safeMessages.push({
+            message_id: row.id,
+            role: row.role,
+            content_kind: row.content_kind,
+            message: row.message,
+            created_at: row.created_at,
+          });
+          continue;
+        }
+
+        const preSubmit = await isPreSubmitForSurface(
+          conversation.source_surface,
+          row.source_session_item_id ?? conversation.source_session_item_id,
+          supabaseServer,
+        );
+        if (!correctAnswerResolved) {
+          correctAnswerForReplay = await getCorrectAnswerForScope(
+            conversation.source_question_row_id,
+          );
+          correctAnswerResolved = true;
+        }
+        const safeContent =
+          preSubmit && hasAnswerLeak(row.message, correctAnswerForReplay)
+            ? TUTOR_ANTI_LEAK_SUBSTITUTION
+            : row.message;
+
+        safeMessages.push({
+          message_id: row.id,
+          role: row.role,
+          content_kind: row.content_kind,
+          message: safeContent,
+          created_at: row.created_at,
+        });
+      }
+
+      res.status(200).json({
+        data: {
+          conversation: {
+            conversation_id: conversation.id,
+            entry_mode: conversation.entry_mode,
+            source_surface: conversation.source_surface,
+            status: conversation.status,
+            resolved_scope: {
+              source_session_id: conversation.source_session_id,
+              source_session_item_id: conversation.source_session_item_id,
+              source_question_row_id: conversation.source_question_row_id,
+              source_question_canonical_id:
+                conversation.source_question_canonical_id,
+            },
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at,
+            closed_at: conversation.closed_at,
+          },
+          messages: safeMessages,
+          pagination: {
+            has_more: ordered.length === messageLimit,
+            // `ordered` is oldest-first; the pagination cursor for "older
+            // messages" is the earliest (first) row in this page.
+            next_cursor: ordered.length > 0 ? ordered[0].id : null,
+          },
+        },
+      });
+    } catch (err) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "replay_error",
+        "Unexpected error in GET /conversations/:conversationId",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
+);
+
+// ============================================================================
+// GET /conversations — §8 List
+// ============================================================================
+
+router.get(
+  "/conversations",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+
+    if (await denyIfNotEntitled(studentId, res)) return;
+
+    const parsedQuery = listConversationsQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      sendTutorError(res, "invalid_input", parsedQuery.error.flatten());
+      return;
+    }
+    const limit = parsedQuery.data.limit ?? 20;
+
+    try {
+      let query = supabaseServer
+        .from("tutor_conversations")
+        .select(
+          "id, entry_mode, source_surface, source_session_id, source_session_item_id, source_question_row_id, source_question_canonical_id, status, created_at, updated_at",
+        )
+        .eq("student_id", studentId)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+
+      if (parsedQuery.data.source_surface) {
+        query = query.eq("source_surface", parsedQuery.data.source_surface);
+      }
+      query = parsedQuery.data.status
+        ? query.eq("status", parsedQuery.data.status)
+        : query.in("status", ["active", "closed"]);
+
+      const { data: rows, error } = await query;
+
+      if (error) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "list_conversations_failed",
+          "Failed to list tutor_conversations",
+          { message: error.message, code: error.code },
+        );
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      const conversations = await Promise.all(
+        (rows ?? []).map(async (row) => {
+          const conv = row as TutorConversationRow;
+          const { data: lastMessage } = await supabaseServer
+            .from("tutor_messages")
+            .select("message")
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const { count } = await supabaseServer
+            .from("tutor_messages")
+            .select("id", { count: "exact", head: true })
+            .eq("conversation_id", conv.id);
+
+          const preview = (lastMessage?.message as string | undefined) ?? null;
+
+          return {
+            conversation_id: conv.id,
+            entry_mode: conv.entry_mode,
+            source_surface: conv.source_surface,
+            status: conv.status,
+            resolved_scope: {
+              source_session_id: conv.source_session_id,
+              source_session_item_id: conv.source_session_item_id,
+              source_question_row_id: conv.source_question_row_id,
+              source_question_canonical_id: conv.source_question_canonical_id,
+            },
+            last_message_preview: preview ? preview.slice(0, 100) : null,
+            message_count: count ?? 0,
+            created_at: conv.created_at,
+            updated_at: conv.updated_at,
+          };
+        }),
+      );
+
+      res.status(200).json({
+        data: {
+          conversations,
+          pagination: {
+            has_more: conversations.length === limit,
+            next_cursor:
+              conversations.length > 0
+                ? conversations[conversations.length - 1].conversation_id
+                : null,
+          },
+        },
+      });
+    } catch (err) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "list_error",
+        "Unexpected error in GET /conversations",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
+);
+
+// ============================================================================
+// POST /conversations/:conversationId/close — §9 Close
+// ============================================================================
+
+router.post(
+  "/conversations/:conversationId/close",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+
+    if (await denyIfNotEntitled(studentId, res)) return;
+
+    const conversationId = req.params.conversationId;
+    const parsed = closeConversationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendTutorError(res, "invalid_input", parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const conversation = await loadOwnedConversation(
+        conversationId,
+        studentId,
+      );
+      if (!conversation) {
+        sendTutorError(res, "conversation_not_found");
+        return;
+      }
+      if (conversation.status !== "active") {
+        sendTutorError(res, "conversation_already_closed");
+        return;
+      }
+
+      const closedAt = new Date().toISOString();
+      const { error } = await supabaseServer
+        .from("tutor_conversations")
+        .update({ status: parsed.data.status, closed_at: closedAt })
+        .eq("id", conversation.id);
+
+      if (error) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "close_conversation_failed",
+          "Failed to update tutor_conversations status",
+          { message: error.message, code: error.code },
+        );
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+
+      // Async memory compaction (Doc 03A V3 §9.1) is executed by the Doc 03C
+      // orchestrator worker, not this request path. Enqueue is a fire-and-
+      // forget log marker until the job queue transport lands.
+      logger.info(
+        "TUTOR_RUNTIME",
+        "memory_compaction_enqueue_deferred",
+        "Conversation closed; memory compaction job not yet wired to a queue",
+        { conversationId: conversation.id },
+      );
+
+      res.status(200).json({
+        data: {
+          conversation_id: conversation.id,
+          status: parsed.data.status,
+          closed_at: closedAt,
+        },
+      });
+    } catch (err) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "close_error",
+        "Unexpected error in POST /conversations/:conversationId/close",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
+);
 
 export default router;

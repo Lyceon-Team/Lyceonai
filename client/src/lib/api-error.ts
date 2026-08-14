@@ -148,6 +148,19 @@ export function isEntitlementDenialError(error: unknown): boolean {
   return getPremiumDenialReason(error) !== null;
 }
 
+/**
+ * Tutor-specific premium denial mapper. The tutor surface runs through
+ * mutations (send-message) and queries (load-conversation) whose errors
+ * carry the same entitlement codes as other premium surfaces. This named
+ * mapper keeps the chat page's premium wiring explicit and auditable
+ * per the premium-cta-wiring contract test.
+ */
+export function mapTutorErrorToPremiumReason(
+  error: unknown,
+): PremiumDenialReason | null {
+  return getPremiumDenialReason(error);
+}
+
 export function isCsrfError(error: unknown): boolean {
   if (!isApiError(error)) return false;
   const code = normalizeCode(error.code);
