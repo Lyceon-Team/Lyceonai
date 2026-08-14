@@ -22,6 +22,14 @@
  * scanner falls back to the full CHAIN_WINDOW — same behavior as the
  * pre-fix version, which is strictly no worse.
  *
+ * A `;` inside a template literal (backtick string) is string content,
+ * not a statement boundary. The scanner tracks unescaped-backtick
+ * parity cumulatively from the anchor line: odd count = inside a
+ * template literal, so `;` on that line is ignored. Escaped backticks
+ * (`\``) are excluded from the count. Nested template literals
+ * (`${`...`}`) are a known limitation — they would require a recursive
+ * parser, and this codebase does not use them inside Supabase chains.
+ *
  * edge cases: legitimate operations that only match the anchor (e.g.
  * `.from("table").select(...)`) pass because the follow-up pattern is
  * not found. Same-line matches are still caught trivially (the anchor
@@ -86,10 +94,22 @@ export function scanFileWithBoundedWindow(
       // content ends with ';'. Stopping there prevents the window from bridging
       // into the next statement (F-01 false-positive fix). If no ';' is found
       // within CHAIN_WINDOW, the full window is used (fallback, no regression).
+      //
+      // A ';' inside a template literal is string content, not a statement
+      // boundary. Track unescaped-backtick parity: odd = inside a template
+      // literal, so skip ';' on that line.
       const maxEnd = Math.min(i + CHAIN_WINDOW, lines.length);
       let windowEnd = maxEnd;
+      let insideTemplateLiteral = false;
       for (let j = i; j < maxEnd; j++) {
-        if (lines[j].trimEnd().endsWith(";")) {
+        // Count unescaped backticks on this line to track parity
+        const lineText = lines[j];
+        for (let k = 0; k < lineText.length; k++) {
+          if (lineText[k] === "`" && (k === 0 || lineText[k - 1] !== "\\")) {
+            insideTemplateLiteral = !insideTemplateLiteral;
+          }
+        }
+        if (!insideTemplateLiteral && lineText.trimEnd().endsWith(";")) {
           windowEnd = j + 1;
           break;
         }
