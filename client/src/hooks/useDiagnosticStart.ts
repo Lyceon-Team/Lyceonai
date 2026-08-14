@@ -90,10 +90,11 @@ export function useDiagnosticStart(): {
         return null;
       }
 
-      // Other errors — generic message.
+      // Other errors — FIXED generic message. Never expose raw server
+      // body.message to the student (data-leak vector: internal error
+      // strings, DB timeouts, stack traces, etc.).
       setError({
-        message:
-          body?.message ?? "Something went wrong starting the diagnostic.",
+        message: "Something went wrong starting the diagnostic.",
         code: body?.error ?? body?.code,
       });
       return null;
